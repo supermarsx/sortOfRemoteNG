@@ -20,6 +20,7 @@ import {
 } from "../types/settings/settings";
 import { SettingsManager } from "../utils/settings/settingsManager";
 import { DEFAULT_PASSWORD_POLICY } from "../types/security/passwordPolicy";
+import { DEFAULT_NAS_FILE_VIEWERS } from "../types/settings/nasFileViewers";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../components/ui/display/loadingElement/defaults";
 import { DEFAULT_MCP_CONFIG } from "../types/mcp/mcpServer";
 import {
@@ -42,6 +43,7 @@ interface SettingsContextType {
 }
 
 export const defaultSettings: GlobalSettings = {
+  nasFileViewers: DEFAULT_NAS_FILE_VIEWERS,
   passwordPolicy: DEFAULT_PASSWORD_POLICY,
   iconLibrary: undefined,
   language: "en-US",

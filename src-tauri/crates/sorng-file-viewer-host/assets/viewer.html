@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Isolated file viewer</title>
+    <link rel="stylesheet" href="/viewer.css" />
+    <script type="module" src="/viewer.js"></script>
+  </head>
+  <body>
+    <header>
+      <div>
+        <strong id="name">File viewer</strong
+        ><small>Isolated OS renderer · read-only</small>
+      </div>
+      <div id="controls" hidden>
+        <button id="previous" type="button">Previous page</button
+        ><span id="page"></span
+        ><button id="next" type="button">Next page</button>
+      </div>
+    </header>
+    <p id="status" role="status">Opening file…</p>
+    <main id="content"></main>
+  </body>
+</html>

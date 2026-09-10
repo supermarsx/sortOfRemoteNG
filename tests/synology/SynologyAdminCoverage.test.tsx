@@ -549,6 +549,9 @@ describe("typed domain-action invocation", () => {
       "syn_fs_create_share_link",
       "syn_fs_list_share_links",
       "syn_fs_delete_share_links",
+      "syn_fs_preview_file",
+      "syn_fs_close_preview",
+      "syn_fs_open_external",
     ]);
     const replaced = [
       "syn_connect",

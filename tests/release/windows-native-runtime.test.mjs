@@ -488,6 +488,7 @@ test("normal Windows Tauri builds select the staged dynamic feature set", () => 
     [
       "../src/i18n/locales/",
       "crates/sorng-opkssh-vendor/bundle/opkssh/",
+      "crates/sorng-file-viewer-host/bundle/",
       "resources/native-runtime-licenses/",
       ...runtimeDlls.map((filename) => `resources/native-runtime/${filename}`),
     ].sort(),

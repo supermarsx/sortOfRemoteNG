@@ -767,6 +767,7 @@ jobs:
             createUpdaterArtifacts: process.env.UPDATER_ENABLED === "true",
             resources: {
               "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
+              "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
               "../src/i18n/locales/": "locales/",
               "resources/native-runtime-licenses/": "native-runtime-licenses/",
             },
@@ -1084,6 +1085,8 @@ jobs:
           # Keep the Next beforeBuildCommand heap override scoped to the native
           # build while the repository-owned launcher reports Cargo/Tauri phases.
           NODE_OPTIONS: --max-old-space-size=4096
+          WINDOWS_CERT_THUMBPRINT: ${{ steps.windows_signing.outputs.thumbprint || '' }}
+          WINDOWS_SDK_ARCH: ${{ matrix.windows_sdk_arch }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: >-
@@ -1855,6 +1858,9 @@ jobs:
           $runtimeDlls = @(Get-ChildItem "src-tauri/resources/native-runtime/*.dll" -File)
           if ($runtimeDlls.Count -ne 9) { throw "Expected nine signed native runtime DLLs." }
           $files += $runtimeDlls
+          $viewerExecutables = @(Get-ChildItem "src-tauri/crates/sorng-file-viewer-host/bundle" -Recurse -File -Filter sorng-file-viewer-host.exe)
+          if ($viewerExecutables.Count -ne 1) { throw "Expected exactly one signed isolated viewer executable." }
+          $files += $viewerExecutables
           foreach ($file in $files) {
             & $signtool verify /pa /tw $file.FullName
             if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for $($file.FullName)" }
@@ -2013,6 +2019,12 @@ jobs:
           if ($expectedResourceHashes.Count -eq 0) {
             throw "Portable OPKSSH resource manifest is empty."
           }
+          $viewerSource = "src-tauri/crates/sorng-file-viewer-host/bundle"
+          $viewerBinaries = @(Get-ChildItem -LiteralPath $viewerSource -Recurse -File -Filter sorng-file-viewer-host.exe)
+          if ($viewerBinaries.Count -ne 1 -or (Get-PeMachine -Path $viewerBinaries[0].FullName) -ne $expectedMachine) {
+            throw "Portable isolated viewer helper is missing or has the wrong architecture."
+          }
+          $expectedViewerHashes = @(Get-RelativeFileHashes -Root $viewerSource)
 
           $localeSource = "src/i18n/locales"
           $localeFiles = @(Get-ChildItem -LiteralPath $localeSource -Recurse -File)
@@ -2042,6 +2054,7 @@ jobs:
           $resourceRoot = Join-Path $portableRoot "resources"
           New-Item -ItemType Directory -Path $resourceRoot | Out-Null
           Copy-Item -LiteralPath $opksshSource -Destination (Join-Path $resourceRoot "opkssh") -Recurse
+          Copy-Item -LiteralPath $viewerSource -Destination (Join-Path $resourceRoot "file-viewer") -Recurse
           Copy-Item -LiteralPath $localeSource -Destination (Join-Path $resourceRoot "locales") -Recurse
           Copy-Item -LiteralPath $nativeLicenseSource -Destination (Join-Path $resourceRoot "native-runtime-licenses") -Recurse
 
@@ -2074,6 +2087,9 @@ jobs:
             throw "Portable archive is missing the resources/opkssh directory."
           }
           $verifiedLocaleRoot = Join-Path $verificationRoot "resources/locales"
+          $verifiedViewerRoot = Join-Path $verificationRoot "resources/file-viewer"
+          $viewerHashDifference = @(Compare-Object -ReferenceObject $expectedViewerHashes -DifferenceObject @(Get-RelativeFileHashes -Root $verifiedViewerRoot))
+          if ($viewerHashDifference.Count -ne 0) { throw "Portable isolated viewer resources failed byte-for-byte verification." }
           if (-not (Test-Path -LiteralPath $verifiedLocaleRoot -PathType Container)) {
             throw "Portable archive is missing the resources/locales directory."
           }

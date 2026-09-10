@@ -50,6 +50,7 @@ pub mod download_station;
 pub mod error;
 pub mod file_station;
 pub mod file_transfer;
+pub mod file_viewers;
 pub mod hardware;
 pub mod instances;
 pub mod logs;
@@ -67,6 +68,7 @@ pub mod surveillance;
 pub mod system;
 pub mod types;
 pub mod users;
+pub mod viewer_host;
 pub mod virtualization;
 
 #[cfg(test)]

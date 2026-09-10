@@ -3,6 +3,24 @@ use serde_json::json;
 use std::sync::Arc;
 
 #[test]
+fn isolated_viewer_paths_cover_installed_and_portable_without_search_or_arch_fallback() {
+    let directory = std::env::temp_dir().join("synthetic-viewer-install");
+    for (architecture, folder) in [("x86_64", "windows-amd64"), ("aarch64", "windows-arm64")] {
+        let relative = std::path::Path::new(folder).join("sorng-file-viewer-host.exe");
+        assert_eq!(
+            isolated_viewer_candidates(&directory, architecture).unwrap(),
+            [
+                directory.join("file-viewer").join(&relative),
+                directory.join("resources/file-viewer").join(&relative)
+            ]
+        );
+    }
+    assert!(isolated_viewer_candidates(&directory, "x86").is_err());
+    assert!(isolated_viewer_candidates(&directory, "../../foreign").is_err());
+    assert!(isolated_viewer_candidates(std::path::Path::new("relative"), "x86_64").is_err());
+}
+
+#[test]
 fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
     let _production_handler = crate::build();
     let state: crate::synology::service::SynologyServiceState =
@@ -19,6 +37,10 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
             syn_fs_list_share_links,
             syn_fs_delete_share_links,
             syn_fs_camera_snapshot,
+            syn_get_section_access,
+            syn_fs_preview_file,
+            syn_fs_close_preview,
+            syn_fs_open_external,
             syn_get_config,
             syn_get_system_info,
             syn_reboot,
@@ -71,6 +93,31 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
         (
             "syn_fs_camera_snapshot",
             json!({"instanceId":"a","expectedSessionId":"wrong","camId":"1"}),
+            Err("SYNOLOGY_SESSION_EXPIRED"),
+        ),
+        (
+            "syn_get_section_access",
+            json!({"instanceId":"a","expectedSessionId":"wrong","section":"system"}),
+            Err("SYNOLOGY_SESSION_EXPIRED"),
+        ),
+        (
+            "syn_fs_preview_file",
+            json!({"instanceId":"a","expectedSessionId":"wrong","path":"/share/file.txt","kind":"text","maxBytes":1024,"viewerOptions":{"textWrap":true,"textFontSize":14,"imageFit":"contain"}}),
+            Err("SYNOLOGY_SESSION_EXPIRED"),
+        ),
+        (
+            "syn_fs_preview_file",
+            json!({"instanceId":"a","expectedSessionId":"wrong","path":"/share/file.txt","kind":"text","maxBytes":1024,"viewerOptions":{"textWrap":"yes","textFontSize":14,"imageFit":"contain"}}),
+            Err("viewerOptions"),
+        ),
+        (
+            "syn_fs_close_preview",
+            json!({"instanceId":"old-instance","expectedSessionId":"old-receipt","viewerId":"missing-viewer"}),
+            Ok(json!(false)),
+        ),
+        (
+            "syn_fs_open_external",
+            json!({"instanceId":"a","expectedSessionId":"wrong","path":"/share/file.txt","kind":"text","maxBytes":1024,"application":"choose","retentionMinutes":30}),
             Err("SYNOLOGY_SESSION_EXPIRED"),
         ),
         (

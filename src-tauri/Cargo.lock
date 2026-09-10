@@ -10743,6 +10743,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-file-viewer-host"
+version = "26.45.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tao",
+ "tempfile",
+ "webview2-com",
+ "windows 0.61.3",
+ "wry",
+]
+
+[[package]]
 name = "sorng-filesharing"
 version = "26.45.0"
 dependencies = [
@@ -12663,6 +12676,7 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

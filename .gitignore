@@ -86,6 +86,9 @@ target/reports/
 /src-tauri/crates/sorng-ssh/-f.pin
 
 # OPKSSH vendor bundle staging outputs
+/src-tauri/crates/sorng-file-viewer-host/bundle/windows-*/*.exe
+/src-tauri/crates/sorng-file-viewer-host/bundle/windows-*/*.staging
+/src-tauri/crates/sorng-file-viewer-host/bundle/PDFJS-LICENSE.txt
 /src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/sorng_opkssh_vendor.dll
 /src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/libsorng_opkssh_vendor.dylib
 /src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/libsorng_opkssh_vendor.so

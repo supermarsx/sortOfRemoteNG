@@ -4,7 +4,7 @@
 
 use super::service::{synology_command_error, SynologyServiceState};
 use super::types::*;
-use tauri::State;
+use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 // ─── Scoped File Station explorer ─────────────────────────────────
@@ -71,6 +71,179 @@ pub async fn syn_get_section_access(
         .map_err(synology_command_error)?;
     context
         .probe(&section)
+        .await
+        .map_err(synology_command_error)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // Existing scoped IPC fields plus display policy.
+pub async fn syn_fs_preview_file<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: State<'_, SynologyServiceState>,
+    instance_id: String,
+    expected_session_id: String,
+    path: String,
+    kind: sorng_synology::file_viewers::FileViewerKind,
+    max_bytes: u64,
+    viewer_options: sorng_synology::viewer_host::ViewerDisplayOptions,
+) -> Result<sorng_synology::viewer_host::IsolatedViewerHandle, String> {
+    let context = state
+        .resolve(Some(&instance_id), Some(&expected_session_id))
+        .await?
+        .fs_transfer_context(&expected_session_id)
+        .map_err(synology_command_error)?;
+    if !cfg!(windows) {
+        return Err("OS-isolated file previews are not available on this platform yet. No file was opened. Download or explicitly choose an external application instead.".into());
+    }
+    let helper = isolated_viewer_executable(&window)?;
+    viewer_options.validate().map_err(synology_command_error)?;
+    let prepared = context
+        .prepare_preview_file(&path, kind, max_bytes)
+        .await
+        .map_err(synology_command_error)?;
+    sorng_synology::viewer_host::open_preview(
+        &context,
+        &helper,
+        &instance_id,
+        &expected_session_id,
+        sorng_synology::viewer_host::PreparedPreview {
+            name: prepared.name,
+            kind: prepared.kind,
+            bytes: prepared.bytes,
+            display: viewer_options,
+        },
+    )
+    .await
+    .map_err(synology_command_error)
+}
+
+fn isolated_viewer_relative(architecture: &str) -> Result<std::path::PathBuf, String> {
+    let architecture = match architecture {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        _ => return Err("OS-isolated file previews are unavailable for this architecture.".into()),
+    };
+    Ok(std::path::PathBuf::from(format!("windows-{architecture}"))
+        .join("sorng-file-viewer-host.exe"))
+}
+
+pub(crate) fn isolated_viewer_candidates(
+    resources: &std::path::Path,
+    architecture: &str,
+) -> Result<[std::path::PathBuf; 2], String> {
+    if !resources.is_absolute() {
+        return Err("The isolated viewer resource directory must be absolute.".into());
+    }
+    let relative = isolated_viewer_relative(architecture)?;
+    Ok([
+        resources.join("file-viewer").join(&relative),
+        resources.join("resources/file-viewer").join(&relative),
+    ])
+}
+
+fn isolated_viewer_executable<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> Result<std::path::PathBuf, String> {
+    let resources = window
+        .app_handle()
+        .path()
+        .resource_dir()
+        .map_err(|_| "The isolated viewer installation could not be located.")?;
+    // Installed bundles place resources next to the executable; our portable
+    // archive keeps them in its explicit resources/ child. Never search CWD/PATH.
+    for installed in isolated_viewer_candidates(&resources, std::env::consts::ARCH)? {
+        if installed.is_file() {
+            return Ok(installed);
+        }
+    }
+    #[cfg(debug_assertions)]
+    {
+        let development = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../sorng-file-viewer-host/bundle")
+            .join(isolated_viewer_relative(std::env::consts::ARCH)?);
+        if development.is_file() {
+            return development
+                .canonicalize()
+                .map_err(|_| "The isolated viewer build is unavailable.".into());
+        }
+    }
+    Err("The isolated viewer is missing from this build. Rebuild or reinstall the complete application. No unsandboxed preview was used.".into())
+}
+
+#[tauri::command]
+pub async fn syn_fs_close_preview(
+    instance_id: String,
+    expected_session_id: String,
+    viewer_id: String,
+) -> Result<bool, String> {
+    // Exact old-receipt cleanup remains possible after a database/session lock.
+    // This endpoint cannot retarget a viewer belonging to a new receipt.
+    sorng_synology::viewer_host::close_preview(&instance_id, &expected_session_id, &viewer_id)
+        .await
+        .map_err(synology_command_error)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn syn_fs_open_external<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: State<'_, SynologyServiceState>,
+    instance_id: String,
+    expected_session_id: String,
+    path: String,
+    kind: sorng_synology::file_viewers::FileViewerKind,
+    max_bytes: u64,
+    application: String,
+    retention_minutes: u32,
+) -> Result<sorng_synology::file_viewers::ExternalFileResult, String> {
+    use sorng_synology::file_viewers::{ExternalApplication, ExternalFileResult};
+    state
+        .resolve(Some(&instance_id), Some(&expected_session_id))
+        .await?
+        .fs_assert_session(&expected_session_id)
+        .map_err(synology_command_error)?;
+    let target = match application.as_str() {
+        "default" => ExternalApplication::Default,
+        "choose" => {
+            let (send, receive) = tokio::sync::oneshot::channel();
+            let picker = window
+                .dialog()
+                .file()
+                .set_title("Open with: choose an installed application")
+                .set_parent(&window);
+            #[cfg(target_os = "windows")]
+            let picker = picker.add_filter("Applications", &["exe"]);
+            picker.pick_file(move |path| {
+                let _ = send.send(path);
+            });
+            let selected = receive
+                .await
+                .map_err(|_| "Application selection was cancelled".to_string())?;
+            let Some(selected) = selected else {
+                return Ok(ExternalFileResult {
+                    cancelled: true,
+                    message: "No application selected. Nothing was downloaded or opened.",
+                });
+            };
+            ExternalApplication::Selected(
+                selected
+                    .into_path()
+                    .map_err(|_| "Choose a local application executable, not a URL".to_string())?,
+            )
+        }
+        _ => {
+            return Err(
+                "Choose the system default application or select an installed application.".into(),
+            )
+        }
+    };
+    // The dialog may outlive the database or NAS session. Capture a fresh
+    // exact-receipt context only after it closes; never reuse a stale lease.
+    let context = state
+        .resolve(Some(&instance_id), Some(&expected_session_id))
+        .await?
+        .fs_transfer_context(&expected_session_id)
+        .map_err(synology_command_error)?;
+    context
+        .open_external_file(&path, kind, max_bytes, target, retention_minutes)
         .await
         .map_err(synology_command_error)
 }

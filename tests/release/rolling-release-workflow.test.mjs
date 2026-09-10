@@ -48,6 +48,56 @@ const tauriConfig = JSON.parse(
     "utf8",
   ),
 );
+test("isolated viewer is staged, signed when configured, and verified in portable archives", () => {
+  for (const jobName of ["rust-check-linux", "rust-check-windows"]) {
+    const start = ciWorkflow.indexOf(`  ${jobName}:`);
+    const nextJob = ciWorkflow.indexOf("\n  rust-", start + 3);
+    const job = ciWorkflow.slice(start, nextJob < 0 ? undefined : nextJob);
+    assert.match(
+      job,
+      /Install pinned file-viewer build assets\n\s+working-directory: \.\n\s+run: npm ci[\s\S]*?cargo check --workspace/,
+    );
+  }
+  assert.match(
+    tauriConfig.build.beforeBuildCommand,
+    /stage:file-viewer -- --release/,
+  );
+  assert.equal(
+    tauriConfig.bundle.resources["crates/sorng-file-viewer-host/bundle/"],
+    "file-viewer/",
+  );
+  assert.ok(
+    statSync(
+      new URL(
+        "../../src-tauri/crates/sorng-file-viewer-host/bundle/README.txt",
+        import.meta.url,
+      ),
+    ).isFile(),
+  );
+  assert.match(
+    releaseWorkflow,
+    /name: Build native bundles with progress telemetry[\s\S]*?WINDOWS_CERT_THUMBPRINT: \$\{\{ steps.windows_signing.outputs.thumbprint/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /\$viewerExecutables.Count -ne 1[\s\S]*?\$files \+= \$viewerExecutables[\s\S]*?signtool verify/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /\$viewerBinaries.Count -ne 1 -or \(Get-PeMachine -Path \$viewerBinaries\[0\].FullName\) -ne \$expectedMachine/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /Copy-Item -LiteralPath \$viewerSource -Destination \(Join-Path \$resourceRoot "file-viewer"\) -Recurse/,
+  );
+  // Hash rows are strings, not objects. Comparing nonexistent properties would
+  // accidentally approve changed or missing helper bytes.
+  assert.match(
+    releaseWorkflow,
+    /Compare-Object -ReferenceObject \$expectedViewerHashes -DifferenceObject @\(Get-RelativeFileHashes -Root \$verifiedViewerRoot\)\)/,
+  );
+  assert.doesNotMatch(releaseWorkflow, /expectedViewerHashes[^\n]*-Property/);
+});
 const flatpakManifest = readFileSync(
   new URL("../../packaging/flatpak/com.sortofremote.ng.yml", import.meta.url),
   "utf8",
@@ -665,7 +715,7 @@ test("release Tauri launchers give the inherited Next build a 4 GiB Node heap", 
   );
   assert.equal(
     tauriConfig.build.beforeBuildCommand,
-    "npm run build && npm run stage:opkssh-vendor -- --release --enable",
+    "npm run build && npm run stage:opkssh-vendor -- --release --enable && npm run stage:file-viewer -- --release",
   );
 });
 
@@ -1230,6 +1280,7 @@ test("Windows releases stage, map, and validate the exact dynamic native runtime
   const windowsReleaseConfig = JSON.parse(releaseConfigWrite.contents);
   assert.deepEqual(windowsReleaseConfig.bundle.resources, {
     "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
+    "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
     "../src/i18n/locales/": "locales/",
     "resources/native-runtime-licenses/": "native-runtime-licenses/",
     "resources/native-runtime/libcrypto-3-x64.dll": "libcrypto-3-x64.dll",
@@ -1621,6 +1672,7 @@ test("Windows signing is architecture-aware and both portable archives are compl
     ".portable",
     ...expectedNativeDllNames,
     "resources/opkssh",
+    "resources/file-viewer",
     "resources/locales",
     "resources/native-runtime-licenses",
   ]) {
@@ -2429,6 +2481,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.equal(tauriConfig.productName, "sortOfRemoteNG");
   assert.deepEqual(tauriConfig.bundle.resources, {
     "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
+    "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
     "../src/i18n/locales/": "locales/",
   });
   assert.match(

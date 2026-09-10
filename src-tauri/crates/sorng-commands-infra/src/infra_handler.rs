@@ -568,6 +568,9 @@ pub fn is_command(command: &str) -> bool {
             | "syn_fs_disconnect"
             | "syn_fs_session_health"
             | "syn_get_section_access"
+            | "syn_fs_preview_file"
+            | "syn_fs_close_preview"
+            | "syn_fs_open_external"
             | "syn_fs_list"
             | "syn_fs_create_folder"
             | "syn_fs_rename"
@@ -1378,6 +1381,9 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         synology_commands::syn_fs_disconnect,
         synology_commands::syn_fs_session_health,
         synology_commands::syn_get_section_access,
+        synology_commands::syn_fs_preview_file,
+        synology_commands::syn_fs_close_preview,
+        synology_commands::syn_fs_open_external,
         synology_commands::syn_fs_list,
         synology_commands::syn_fs_create_folder,
         synology_commands::syn_fs_rename,
@@ -1537,6 +1543,9 @@ mod tests {
             "syn_fs_disconnect",
             "syn_fs_session_health",
             "syn_get_section_access",
+            "syn_fs_preview_file",
+            "syn_fs_close_preview",
+            "syn_fs_open_external",
             "syn_fs_list",
             "syn_fs_create_folder",
             "syn_fs_rename",

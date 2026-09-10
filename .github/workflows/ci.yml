@@ -398,6 +398,13 @@ jobs:
         working-directory: src-tauri
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          cache: "npm"
+      - name: Install pinned file-viewer build assets
+        working-directory: .
+        run: npm ci
       - uses: dtolnay/rust-toolchain@stable
       - name: Install librdkafka build prerequisites
         # libcurl/sasl/zstd/zlib -dev are needed by the `kafka-static` cmake
@@ -422,6 +429,13 @@ jobs:
         working-directory: src-tauri
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          cache: "npm"
+      - name: Install pinned file-viewer build assets
+        working-directory: .
+        run: npm ci
       - name: Pin MSVC host toolchain (explicit)
         shell: pwsh
         run: rustup set default-host x86_64-pc-windows-msvc

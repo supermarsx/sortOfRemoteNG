@@ -18,6 +18,7 @@ import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
 import { DialogHeader } from "../../ui/overlays/DialogHeader";
 import type { SubProps } from "./types";
 import FileDetailsSharing from "./FileDetailsSharing";
+import FileViewerActions from "./FileViewerActions";
 import FileStationLoadingState from "./FileStationLoadingState";
 import type {
   FileStationReview,
@@ -375,6 +376,7 @@ export function FileStationExplorer({
             mgr={mgr}
             listingPending={listingPending || !fs.fileList}
           />
+          <FileViewerActions mgr={mgr} listingPending={listingPending} />
           <button
             className="sor-btn-secondary-sm"
             disabled={actionsBlocked || root}

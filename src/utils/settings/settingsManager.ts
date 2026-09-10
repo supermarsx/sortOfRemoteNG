@@ -37,6 +37,10 @@ import { normalizeSessionQuickActions } from "../connection/sessionQuickActions"
 import { DEFAULT_PASSWORD_POLICY } from "../../types/security/passwordPolicy";
 import { normalizePasswordPolicy } from "../security/passwordPolicy";
 import {
+  DEFAULT_NAS_FILE_VIEWERS,
+  normalizeNasFileViewers,
+} from "../../types/settings/nasFileViewers";
+import {
   validateIconLibrary,
   type IconLibraryData,
 } from "../icons/iconLibrary";
@@ -308,6 +312,7 @@ const delay = (ms: number): Promise<void> =>
  * fall back to these defaults.
  */
 const DEFAULT_SETTINGS: GlobalSettings = {
+  nasFileViewers: DEFAULT_NAS_FILE_VIEWERS,
   iconLibrary: undefined,
   language: "en-US",
   autoDetectOsLanguage: true,
@@ -1153,6 +1158,7 @@ export class SettingsManager {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
       showDocumentsIcon: normalizedStored.showDocumentsIcon !== false,
+      nasFileViewers: normalizeNasFileViewers(normalizedStored.nasFileViewers),
       // Older preferences may contain only autoSave. Complete this nested
       // UI preference group before publishing a validated full snapshot;
       // otherwise a successful save is rejected by live context consumers.
@@ -1291,6 +1297,10 @@ export class SettingsManager {
     if ("passwordPolicy" in safePatch)
       safePatch.passwordPolicy = normalizePasswordPolicy(
         safePatch.passwordPolicy,
+      );
+    if ("nasFileViewers" in safePatch)
+      safePatch.nasFileViewers = normalizeNasFileViewers(
+        safePatch.nasFileViewers,
       );
     if ("proxyRequestLogLimit" in safePatch)
       safePatch.proxyRequestLogLimit = validateProxyRequestLogLimit(
@@ -1509,7 +1519,8 @@ export class SettingsManager {
       delete safeSettings.iconLibrary;
       // A draft or failed zero limit must never reach the runtime through an
       // unrelated settings broadcast: zero irreversibly clears this log.
-      const { proxyRequestLogLimit, ...optimisticSettings } = safeSettings;
+      const { proxyRequestLogLimit, nasFileViewers, ...optimisticSettings } =
+        safeSettings;
       this.settings = { ...this.settings, ...optimisticSettings };
       // Write only the patch: the backend shallow-merges it into
       // settings.json, so partial saves never drop sibling keys.
@@ -1518,6 +1529,8 @@ export class SettingsManager {
         throw new Error("Global settings changed lock state while saving.");
       if (proxyRequestLogLimit !== undefined)
         this.settings = { ...this.settings, proxyRequestLogLimit };
+      if (nasFileViewers !== undefined)
+        this.settings = { ...this.settings, nasFileViewers };
       // Only log explicit user-initiated saves, not auto-saves or intermediate changes
       if (!options?.silent) {
         this.logAction(

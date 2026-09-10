@@ -23,6 +23,7 @@ members = [
   "crates/sorng-rdp-vendor",
   "crates/sorng-aws-vendor",
   "crates/sorng-compression-vendor",
+  "crates/sorng-file-viewer-host",
   "crates/sorng-opkssh-vendor",
   "crates/sorng-protocols",
   "crates/sorng-socket-transport",

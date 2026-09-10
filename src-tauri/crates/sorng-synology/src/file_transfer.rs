@@ -27,7 +27,7 @@ fn io_error(_: std::io::Error) -> SynologyError {
     )
 }
 impl FileTransferContext {
-    fn api_error(&self, code: i32, message: &str) -> SynologyError {
+    pub(crate) fn api_error(&self, code: i32, message: &str) -> SynologyError {
         if matches!(code, 106 | 107 | 119 | 150) {
             self.active.store(false, Ordering::Release);
             self.cancelled.notify_waiters();
@@ -36,7 +36,10 @@ impl FileTransferContext {
             SynologyError::api(code, message)
         }
     }
-    async fn while_active<F: std::future::Future>(&self, future: F) -> SynologyResult<F::Output> {
+    pub(crate) async fn while_active<F: std::future::Future>(
+        &self,
+        future: F,
+    ) -> SynologyResult<F::Output> {
         let cancelled = self.cancelled.notified();
         tokio::pin!(cancelled);
         cancelled.as_mut().enable();
@@ -47,7 +50,7 @@ impl FileTransferContext {
             value=future => {self.assert_active()?;Ok(value)}
         }
     }
-    fn assert_active(&self) -> SynologyResult<()> {
+    pub(crate) fn assert_active(&self) -> SynologyResult<()> {
         if self.active.load(Ordering::Acquire) {
             Ok(())
         } else {

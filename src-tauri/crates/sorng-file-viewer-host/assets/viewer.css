@@ -1,0 +1,149 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  background: Canvas;
+  color: CanvasText;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 18px;
+  border-bottom: 1px solid GrayText;
+}
+header strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+small {
+  display: block;
+  color: GrayText;
+  font-size: 11px;
+  margin-top: 4px;
+}
+button {
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid GrayText;
+  border-radius: 5px;
+  background: Canvas;
+  color: CanvasText;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+#controls {
+  flex-shrink: 0;
+}
+#page {
+  display: inline-block;
+  min-width: 90px;
+  text-align: center;
+  font-size: 12px;
+}
+#status {
+  margin: 12px 18px;
+  color: GrayText;
+  font-size: 13px;
+}
+main {
+  padding: 16px;
+  overflow: auto;
+}
+pre {
+  margin: 0;
+  tab-size: 4;
+  line-height: 1.5;
+}
+pre.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+pre.font-10 {
+  font-size: 10px;
+}
+pre.font-11 {
+  font-size: 11px;
+}
+pre.font-12 {
+  font-size: 12px;
+}
+pre.font-13 {
+  font-size: 13px;
+}
+pre.font-14 {
+  font-size: 14px;
+}
+pre.font-15 {
+  font-size: 15px;
+}
+pre.font-16 {
+  font-size: 16px;
+}
+pre.font-17 {
+  font-size: 17px;
+}
+pre.font-18 {
+  font-size: 18px;
+}
+pre.font-19 {
+  font-size: 19px;
+}
+pre.font-20 {
+  font-size: 20px;
+}
+pre.font-21 {
+  font-size: 21px;
+}
+pre.font-22 {
+  font-size: 22px;
+}
+pre.font-23 {
+  font-size: 23px;
+}
+pre.font-24 {
+  font-size: 24px;
+}
+pre.font-25 {
+  font-size: 25px;
+}
+pre.font-26 {
+  font-size: 26px;
+}
+pre.font-27 {
+  font-size: 27px;
+}
+pre.font-28 {
+  font-size: 28px;
+}
+pre.font-29 {
+  font-size: 29px;
+}
+pre.font-30 {
+  font-size: 30px;
+}
+pre.font-31 {
+  font-size: 31px;
+}
+pre.font-32 {
+  font-size: 32px;
+}
+canvas {
+  display: block;
+  margin: 0 auto;
+}
+canvas.contain {
+  max-width: 100%;
+  height: auto;
+}

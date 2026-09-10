@@ -37,6 +37,7 @@
     "build": "next build",
     "build:cold:check": "node ./scripts/ci/check-frontend-cold-bundle.mjs",
     "stage:opkssh-vendor": "node ./scripts/stage-opkssh-vendor.mjs",
+    "stage:file-viewer": "node ./scripts/stage-file-viewer-host.mjs",
     "stage:opkssh-vendor:enable": "node ./scripts/stage-opkssh-vendor.mjs --enable",
     "stage:opkssh-vendor:disable": "node ./scripts/stage-opkssh-vendor.mjs --disable",
     "native:stage:windows": "node ./scripts/stage-windows-native-runtime.mjs",

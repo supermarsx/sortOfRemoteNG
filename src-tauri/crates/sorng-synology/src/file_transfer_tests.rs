@@ -417,3 +417,181 @@ async fn legacy_shared_folder_result_consumes_shares_not_files() {
     assert_eq!(data.files[0].path, "/share");
     peer.await.unwrap();
 }
+
+#[tokio::test]
+async fn file_preview_text_roundtrips_exact_bytes_without_exposing_session_metadata() {
+    use crate::file_viewers::FileViewerKind;
+    let content = "Synthetic UTF-8 note: café\n<script>shown as text</script>".as_bytes();
+    let (port, server) = peer(response(content, true)).await;
+    let preview = context(port)
+        .prepare_preview_file("/share/note.html", FileViewerKind::Text, 1024)
+        .await
+        .unwrap();
+    assert_eq!(preview.name, "note.html");
+    assert_eq!(preview.kind, FileViewerKind::Text);
+    assert_eq!(preview.mime_type, "text/plain");
+    assert_eq!(preview.bytes, content);
+    // Raw bytes stay native and are handed directly to the isolated helper.
+    let request = server.await.unwrap();
+    let (_, body) = assert_private_post(&request);
+    let fields: std::collections::HashMap<_, _> =
+        url::form_urlencoded::parse(body).into_owned().collect();
+    assert_eq!(fields["path"], "[\"/share/note.html\"]");
+    assert_eq!(fields["mode"], "\"download\"");
+    assert_eq!(fields["_sid"], "private-fixture-sid");
+}
+
+#[tokio::test]
+async fn file_preview_rejects_declared_and_streamed_oversize_without_reading_a_large_body() {
+    use crate::file_viewers::FileViewerKind;
+    let declared = b"HTTP/1.1 200 OK\r\nContent-Disposition: attachment\r\nContent-Length: 999999999\r\nConnection: close\r\n\r\n".to_vec();
+    let streamed = format!("HTTP/1.1 200 OK\r\nContent-Disposition: attachment\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n20\r\n{}\r\n21\r\n{}\r\n0\r\n\r\n", "a".repeat(32), "b".repeat(33)).into_bytes();
+    for bytes in [declared, streamed] {
+        let (port, server) = peer(bytes).await;
+        let error = context(port)
+            .prepare_preview_file("/share/large.txt", FileViewerKind::Text, 64)
+            .await
+            .err()
+            .expect("size rejected");
+        assert!(error.message.contains("size limit"));
+        assert_private_post(&server.await.unwrap());
+    }
+}
+
+#[tokio::test]
+async fn file_preview_rejects_binary_text_and_mismatched_or_active_formats() {
+    use crate::file_viewers::FileViewerKind;
+    for (kind, bytes) in [
+        (FileViewerKind::Text, vec![0xff, 0xfe, 0]),
+        (FileViewerKind::Text, b"abc\0binary".to_vec()),
+        (FileViewerKind::Pdf, b"<html>not PDF</html>".to_vec()),
+        (FileViewerKind::Image, b"<svg onload='bad()'/>".to_vec()),
+    ] {
+        let (port, server) = peer(response(&bytes, true)).await;
+        assert!(context(port)
+            .prepare_preview_file("/share/file", kind, 1024)
+            .await
+            .is_err());
+        assert_private_post(&server.await.unwrap());
+    }
+    for kind in ["html", "svg", "executable", "auto"] {
+        assert!(serde_json::from_value::<FileViewerKind>(serde_json::json!(kind)).is_err());
+    }
+}
+
+#[tokio::test]
+async fn file_preview_expired_response_revokes_lease_and_redacts_upstream_details() {
+    use crate::file_viewers::FileViewerKind;
+    let (port, server) = peer(response(
+        br#"{"success":false,"error":{"code":119,"errors":["private-fixture-password"]}}"#,
+        false,
+    ))
+    .await;
+    let context = context(port);
+    let error = context
+        .prepare_preview_file("/share/file.txt", FileViewerKind::Text, 1024)
+        .await
+        .err()
+        .expect("expired receipt rejected");
+    assert!(matches!(
+        error.kind,
+        crate::error::SynologyErrorKind::SessionExpired
+    ));
+    assert!(!error.message.contains("private-fixture"));
+    assert!(!context.active.load(Ordering::Acquire));
+    assert_private_post(&server.await.unwrap());
+}
+
+#[tokio::test]
+async fn file_preview_revocation_cancels_stalled_headers_and_body_before_timeout() {
+    use crate::file_viewers::FileViewerKind;
+    for send_headers in [false, true] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let ready = entered.clone();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut data = [0; 8192];
+            let _ = socket.read(&mut data).await.unwrap();
+            if send_headers {
+                socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Disposition: attachment\r\nContent-Length: 100\r\n\r\nfirst").await.unwrap();
+            }
+            ready.notify_one();
+            std::future::pending::<()>().await;
+        });
+        let context = context(port);
+        let active = context.active.clone();
+        let cancelled = context.cancelled.clone();
+        let pending = tokio::spawn(async move {
+            context
+                .prepare_preview_file("/share/file.txt", FileViewerKind::Text, 1024)
+                .await
+        });
+        entered.notified().await;
+        active.store(false, Ordering::Release);
+        cancelled.notify_waiters();
+        let error = tokio::time::timeout(Duration::from_secs(1), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .err()
+            .expect("revocation rejected");
+        assert!(matches!(
+            error.kind,
+            crate::error::SynologyErrorKind::SessionExpired
+        ));
+        server.abort();
+    }
+}
+
+#[tokio::test]
+async fn file_preview_and_external_validation_stop_before_any_network_or_application_launch() {
+    use crate::file_viewers::{ExternalApplication, FileViewerKind};
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let context = context(listener.local_addr().unwrap().port());
+    for path in ["relative.txt", "/share/../private", "/share/control\n"] {
+        assert!(context
+            .prepare_preview_file(path, FileViewerKind::Text, 1024)
+            .await
+            .is_err());
+    }
+    for limit in [0, 16 * 1024 * 1024 + 1] {
+        assert!(context
+            .prepare_preview_file("/share/file", FileViewerKind::Text, limit)
+            .await
+            .is_err());
+    }
+    for retention in [0, 4, 1441] {
+        assert!(context
+            .open_external_file(
+                "/share/file",
+                FileViewerKind::Text,
+                1024,
+                ExternalApplication::Default,
+                retention
+            )
+            .await
+            .is_err());
+    }
+    assert!(context
+        .open_external_file(
+            "/share/file",
+            FileViewerKind::Text,
+            1024,
+            ExternalApplication::Selected("relative.exe".into()),
+            5
+        )
+        .await
+        .is_err());
+    context.active.store(false, Ordering::Release);
+    assert!(context
+        .prepare_preview_file("/share/file", FileViewerKind::Text, 1024)
+        .await
+        .is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), listener.accept())
+            .await
+            .is_err()
+    );
+}
