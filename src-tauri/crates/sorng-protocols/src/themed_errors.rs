@@ -147,9 +147,9 @@ impl ProxyErrorKind {
             ProxyErrorKind::CrossOriginRedirect =>
                 "The server redirected to another origin. No credentials or form body were forwarded. Reviewed redirects require the connection opt-in and a top-level GET or HEAD without a body; submitted forms are never replayed. Open a separate connection if this request cannot be reviewed.",
             ProxyErrorKind::RedirectReview =>
-                "This page redirects to another origin. Review the destination in the browser dialog to open a fresh anonymous tab. Credentials, cookies, form bodies and query parameters are not transferred.",
+                "Use the in-page redirect review to continue in this tab or open a new tab. Each new origin requires review before a request is sent there. Cookies, form bodies and query parameters are never transferred; saved login requires a separate explicit choice.",
             ProxyErrorKind::InsecureRedirect =>
-                "The HTTPS server redirected to plaintext HTTP. Review requires both Allow reviewed cross-origin redirects and Allow reviewed HTTPS-to-HTTP downgrades, with Require HTTPS upstream off. Only GET/HEAD navigation without a form body is eligible; nothing is automatically forwarded. Prefer a secure destination. An explicitly approved HTTP tab opens anonymously without TLS.",
+                "The HTTPS server redirected to plaintext HTTP. Review requires both Allow reviewed cross-origin redirects and Allow reviewed HTTPS-to-HTTP downgrades, with Require HTTPS upstream off. Only GET/HEAD navigation without a form body is eligible; nothing is automatically forwarded. Prefer a secure destination. A reviewed HTTP destination has no TLS protection; forwarding a saved login requires additional explicit approval.",
             ProxyErrorKind::Other =>
                 "The upstream request failed for an unexpected reason. The detail below may help.",
         }
@@ -618,6 +618,23 @@ mod tests {
         assert_eq!(
             ProxyErrorKind::RedirectLoop.status(),
             StatusCode::LOOP_DETECTED
+        );
+    }
+
+    #[test]
+    fn redirect_review_describes_inline_choices_without_implicit_credential_forwarding() {
+        let hint = ProxyErrorKind::RedirectReview.hint();
+        assert!(hint.contains("in-page redirect review"));
+        assert!(hint.contains("this tab or open a new tab"));
+        assert!(hint.contains("separate explicit choice"));
+        assert!(!hint.contains("browser dialog"));
+        let insecure = ProxyErrorKind::InsecureRedirect.hint();
+        assert!(insecure.contains("no TLS protection"));
+        assert!(insecure.contains("additional explicit approval"));
+        assert!(!insecure.contains("opens anonymously"));
+        assert_eq!(
+            ProxyErrorKind::RedirectReview.status(),
+            StatusCode::FORBIDDEN
         );
     }
 

@@ -1929,6 +1929,9 @@ pub async fn axum_proxy_handler(
                 upstream::UpstreamError::Policy(_) => {
                     crate::themed_errors::ProxyErrorKind::BadRequest
                 }
+                upstream::UpstreamError::RedirectLoop => {
+                    crate::themed_errors::ProxyErrorKind::RedirectLoop
+                }
                 upstream::UpstreamError::CrossOriginRedirect(destination) => {
                     if redirect_review_available {
                         crate::themed_errors::ProxyErrorKind::RedirectReview
@@ -1950,6 +1953,7 @@ pub async fn axum_proxy_handler(
             let err_msg = match e {
                 upstream::UpstreamError::Policy(message) => message.to_string(),
                 upstream::UpstreamError::CrossOriginRedirect(_) => kind.hint().to_string(),
+                upstream::UpstreamError::RedirectLoop => "The upstream exceeded ten redirects in one navigation. Review the destination and reverse-proxy configuration; no further request was sent.".to_string(),
                 upstream::UpstreamError::Deadline => "The complete upstream request timed out while negotiating authentication or redirects.".to_string(),
                 upstream::UpstreamError::Transport(_) => {
                     format!("Upstream request failed ({}): {}", kind.code(), kind.hint())

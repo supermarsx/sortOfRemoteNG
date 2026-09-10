@@ -509,3 +509,285 @@ async fn actual_cross_origin_redirects_never_forward_auth_query_or_post_and_same
     upstream_task.abort();
     foreign_task.abort();
 }
+
+#[tokio::test]
+async fn quickconnect_style_chain_requires_each_review_and_never_carries_source_state() {
+    // Regional portal -> canonical portal -> DSM. All addresses/credentials are
+    // synthetic loopback fixtures; creating the next proxy models explicit UI
+    // receipt acceptance, never an automatic cross-origin native request.
+    let mut listeners = Vec::new();
+    let mut origins = Vec::new();
+    for _ in 0..3 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        origins.push(format!("http://{}", listener.local_addr().unwrap()));
+        listeners.push(listener);
+    }
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut servers = Vec::new();
+    for (index, listener) in listeners.into_iter().enumerate() {
+        let captured = requests.clone();
+        let destination = origins.get(index + 1).cloned();
+        servers.push(tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().fallback(move |uri: axum::http::Uri, headers: HeaderMap| {
+                    let captured = captured.clone();
+                    let destination = destination.clone();
+                    async move {
+                        captured
+                            .lock()
+                            .unwrap()
+                            .push((index, uri.to_string(), headers));
+                        if uri.path() == "/asset.css" {
+                            return Response::builder()
+                                .header("Content-Type", "text/css")
+                                .body(Body::from("body{color:black}"))
+                                .unwrap();
+                        }
+                        if let Some(destination) = destination {
+                            let location = if uri.path() == "/entry" {
+                                "/regional".into()
+                            } else {
+                                format!("{destination}/entry?relay=secret-{index}#private")
+                            };
+                            Response::builder()
+                                .status(307)
+                                .header("Location", location)
+                                .header("Set-Cookie", format!("portal-{index}=private; Path=/"))
+                                .body(Body::empty())
+                                .unwrap()
+                        } else {
+                            Response::builder()
+                                .header("Content-Type", "text/html")
+                                .body(Body::from(
+                                    "<!doctype html><title>Synthetic DSM login</title>",
+                                ))
+                                .unwrap()
+                        }
+                    }
+                }),
+            )
+            .await
+            .unwrap();
+        }));
+    }
+    let mut previous_receipt = None;
+    for (index, origin) in origins.iter().enumerate() {
+        assert!(requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(owner, _, _)| *owner < index));
+        let transport = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .cookie_store(true)
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let fixture = proxy_with_policy(
+            format!("{origin}/"),
+            transport,
+            if index == 0 {
+                UpstreamAuthMode::Basic
+            } else {
+                UpstreamAuthMode::None
+            },
+            HttpProxyPolicy {
+                allow_cross_origin_redirects: true,
+                query_parameters: if index == 0 {
+                    vec![proxy_policy::QueryParameter {
+                        name: "source-query".into(),
+                        value: "private-query".into(),
+                    }]
+                } else {
+                    vec![]
+                },
+                ..Default::default()
+            },
+            if index == 0 {
+                HashMap::from([("X-Source-Secret".into(), "private-header".into())])
+            } else {
+                HashMap::new()
+            },
+        )
+        .await;
+        register(&fixture);
+        if index == 0 {
+            *fixture.state.username.write().unwrap() = "private-user".into();
+            *fixture.state.password.write().unwrap() = "private-password".into();
+        }
+        let response = fetch(&fixture, &format!("/entry?__sorng_navigation_v1={TOKEN}")).await;
+        if index == 2 {
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(response
+                .text()
+                .await
+                .unwrap()
+                .contains("Synthetic DSM login"));
+        } else {
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            let html = response.text().await.unwrap();
+            assert!(html.contains("redirect_review"));
+            assert!(html.contains("in-page redirect review"));
+            assert!(!html.contains("browser dialog"));
+            assert!(!html.contains("private-query") && !html.contains("secret-"));
+            let mut receipt = fixture
+                .state
+                .global_sessions
+                .lock()
+                .unwrap()
+                .review_redirect(&fixture.state.session_id, None)
+                .unwrap();
+            assert_eq!(
+                receipt.destination_url,
+                format!("{}/entry", origins[index + 1])
+            );
+            assert_eq!(receipt.navigation_token.as_deref(), Some(TOKEN));
+            assert!(receipt.removed_query);
+            assert_ne!(previous_receipt.as_ref(), Some(&receipt.receipt_id));
+            assert!(requests
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(owner, _, _)| *owner <= index));
+
+            // Error-page assets and an XHR returning its own redirect cannot
+            // churn the document identity or replace the navigation receipt.
+            for (path, destination) in [("/asset.css", "style"), ("/poll", "empty")] {
+                let _ = client()
+                    .get(format!(
+                        "{}{path}?__sorng_navigation_v1={TOKEN}",
+                        fixture.base
+                    ))
+                    .header("Host", &fixture.state.proxy_authority)
+                    .header("Sec-Fetch-Dest", destination)
+                    .send()
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(
+                fixture.state.document_sequence.load(Ordering::SeqCst),
+                receipt.document_sequence
+            );
+            if index == 0 {
+                // A real subsequent document navigation, unlike a resource,
+                // invalidates the old receipt even when it returns only CSS.
+                let stale_id = receipt.receipt_id.clone();
+                let _ = fetch(&fixture, "/asset.css").await;
+                assert!(fixture
+                    .state
+                    .global_sessions
+                    .lock()
+                    .unwrap()
+                    .review_redirect(&fixture.state.session_id, Some(&stale_id))
+                    .is_none());
+                assert_eq!(
+                    fetch(&fixture, &format!("/entry?__sorng_navigation_v1={TOKEN}"))
+                        .await
+                        .status(),
+                    StatusCode::FORBIDDEN
+                );
+                receipt = fixture
+                    .state
+                    .global_sessions
+                    .lock()
+                    .unwrap()
+                    .review_redirect(&fixture.state.session_id, None)
+                    .unwrap();
+                assert_ne!(receipt.receipt_id, stale_id);
+                assert_eq!(receipt.navigation_token.as_deref(), Some(TOKEN));
+            }
+            let mut manager = fixture.state.global_sessions.lock().unwrap();
+            assert_eq!(
+                manager
+                    .review_redirect(&fixture.state.session_id, None)
+                    .unwrap()
+                    .receipt_id,
+                receipt.receipt_id
+            );
+            assert!(manager
+                .review_redirect(&fixture.state.session_id, Some(&receipt.receipt_id))
+                .is_some());
+            assert!(manager
+                .review_redirect(&fixture.state.session_id, Some(&receipt.receipt_id))
+                .is_none());
+            previous_receipt = Some(receipt.receipt_id);
+        }
+        let captured = requests.lock().unwrap();
+        let first = captured
+            .iter()
+            .find(|(owner, _, _)| *owner == index)
+            .unwrap();
+        if index == 0 {
+            assert!(first.2.contains_key("authorization"));
+            assert!(first.2.contains_key("x-source-secret"));
+            assert!(first.1.contains("source-query=private-query"));
+        } else {
+            assert!(!first.2.contains_key("authorization"));
+            assert!(!first.2.contains_key("cookie"));
+            assert!(!first.2.contains_key("x-source-secret"));
+            assert!(!first.1.contains('?'));
+        }
+    }
+    for server in servers {
+        server.abort();
+    }
+}
+
+#[tokio::test]
+async fn same_origin_chains_allow_ten_hops_but_bound_loops_with_the_correct_failure_kind() {
+    let hits = Arc::new(AtomicU64::new(0));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}/", listener.local_addr().unwrap());
+    let counter = hits.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            axum::Router::new().fallback(move |uri: axum::http::Uri| {
+                let hits = counter.clone();
+                async move {
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    let parts: Vec<_> = uri.path().split('/').collect();
+                    let location = if uri.path() == "/loop" {
+                        Some("/loop".to_string())
+                    } else {
+                        let limit: usize = parts[2].parse().unwrap();
+                        let step: usize = parts[3].parse().unwrap();
+                        (step < limit).then(|| format!("/chain/{limit}/{}", step + 1))
+                    };
+                    match location {
+                        Some(location) => Response::builder()
+                            .status(302)
+                            .header("Location", location)
+                            .body(Body::empty())
+                            .unwrap(),
+                        None => Response::new(Body::from("Reached login")),
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    });
+    let fixture = proxy(origin, client()).await;
+    for (path, expected, expected_hits) in [
+        ("/chain/2/0", StatusCode::OK, 3),
+        ("/chain/10/0", StatusCode::OK, 11),
+        ("/chain/11/0", StatusCode::LOOP_DETECTED, 11),
+        ("/loop", StatusCode::LOOP_DETECTED, 11),
+    ] {
+        hits.store(0, Ordering::SeqCst);
+        let response = fetch(&fixture, path).await;
+        assert_eq!(response.status(), expected);
+        let body = response.text().await.unwrap();
+        if expected == StatusCode::LOOP_DETECTED {
+            assert!(body.contains("redirect_loop"));
+            assert!(body.contains("ten redirects"));
+        } else {
+            assert_eq!(body, "Reached login");
+        }
+        assert_eq!(hits.load(Ordering::SeqCst), expected_hits);
+    }
+    server.abort();
+}

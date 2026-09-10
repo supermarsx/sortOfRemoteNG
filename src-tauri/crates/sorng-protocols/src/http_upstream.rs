@@ -5,6 +5,7 @@ pub(super) enum UpstreamError {
     Transport(reqwest::Error),
     Policy(&'static str),
     CrossOriginRedirect(reqwest::Url),
+    RedirectLoop,
     Deadline,
 }
 impl From<reqwest::Error> for UpstreamError {
@@ -116,9 +117,7 @@ async fn send_inner(
             return Ok(response);
         }
         if redirect == 10 {
-            return Err(UpstreamError::Policy(
-                "The upstream exceeded the allowed redirect count.",
-            ));
+            return Err(UpstreamError::RedirectLoop);
         }
         let location = response
             .headers()
@@ -152,7 +151,5 @@ async fn send_inner(
             UpstreamError::Policy("The configured HTTP query parameters could not be applied.")
         })?;
     }
-    Err(UpstreamError::Policy(
-        "The upstream exceeded the allowed redirect count.",
-    ))
+    Err(UpstreamError::RedirectLoop)
 }
