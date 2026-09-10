@@ -10,6 +10,31 @@ Synology is an application, not a transport protocol. Choose either the DSM
 website or **Synology NAS API**. Existing saved Synology records
 remain readable; editing and saving them uses the HTTP(S) application format.
 
+## QuickConnect and reviewed website redirects
+
+In **Protocol → Application → Synology access**, **Allow reviewed redirects to
+another address** is off by default. Enable and save it when a DSM website or
+reverse proxy needs a different address. This is the same saved setting as
+**Advanced → Internal proxy controls → Allow reviewed cross-origin redirects**;
+it does not enable HTTP downgrades or login forwarding.
+
+Up to five top-level GET/HEAD handoffs can be reviewed, one destination at a
+time. Continue in the current tab or open an anonymous tab. Each HTTPS
+destination has a fresh certificate/trust check. Query parameters and fragments
+are removed, cookies are not carried over, and form POSTs are never replayed.
+Saved-login forwarding requires its own separate settings and review; some
+portal or SSO flows therefore still require manual sign-in.
+
+If an HTTPS server temporarily redirects to HTTP, **Allow insecure redirects**
+is a separate explicit exception. **Require HTTPS upstream** still blocks it.
+No QuickConnect hostname receives an automatic exception. Prefer the secure
+final DSM address when available.
+
+These options are for **Website — DSM in browser**, not **Synology NAS API**.
+Switching to API mode hides the website aliases without changing their saved
+values. The native API client requires a directly usable DSM API endpoint and
+does not follow the browser's reviewed multi-hop handoffs or inherit its login.
+
 ## DSM website sign-in
 
 Choose **DSM website** and **Manual browsing** to sign in yourself without

@@ -77,6 +77,35 @@ export default function SynologyOptions({
         <div className="space-y-2">
           <CheckboxField
             variant="form"
+            label="Allow reviewed redirects to another address"
+            aria-label="Allow reviewed redirects to another address"
+            checked={proxyPolicy?.allowCrossOriginRedirects === true}
+            disabled={!proxyPolicy}
+            description="Off by default. Review up to five website handoffs individually, with fresh HTTPS trust checks. This does not enable HTTP downgrades or saved-login forwarding. The same setting is available in Advanced."
+            onChange={(allowCrossOriginRedirects) =>
+              setFormData((previous) => {
+                if (
+                  isSynologyFileConnection(previous) ||
+                  !["http", "https"].includes(previous.protocol ?? "") ||
+                  previous.httpApplication?.id !== "synology-dsm"
+                )
+                  return previous;
+                try {
+                  const current = normalizeHttpProxyPolicy(
+                    previous.httpProxyPolicy,
+                  );
+                  return {
+                    ...previous,
+                    httpProxyPolicy: { ...current, allowCrossOriginRedirects },
+                  };
+                } catch {
+                  return previous;
+                }
+              })
+            }
+          />
+          <CheckboxField
+            variant="form"
             label="Allow insecure redirects — review each HTTPS-to-HTTP handoff"
             aria-label="Allow insecure redirects"
             checked={proxyPolicy?.allowHttpDowngradeRedirects === true}
@@ -131,9 +160,9 @@ export default function SynologyOptions({
           ) : proxyPolicy.allowHttpDowngradeRedirects &&
             !proxyPolicy.allowCrossOriginRedirects ? (
             <p role="status" className="text-xs text-warning">
-              Reviewed cross-origin redirects are currently off in Advanced, so
-              insecure handoffs remain blocked. Re-enable this checkbox to
-              enable both review permissions.
+              Reviewed cross-origin redirects are currently off, so insecure
+              handoffs remain blocked. Enable reviewed redirects to another
+              address above before reviewing a handoff.
             </p>
           ) : null}
         </div>

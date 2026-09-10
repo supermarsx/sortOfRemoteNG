@@ -45,6 +45,71 @@ function selectMode(name: string) {
 const savedShape = () =>
   JSON.parse(screen.getByTestId("saved-shape").textContent!);
 describe("Synology HTTP application views", () => {
+  it("offers safe reviewed redirects off by default without enabling downgrades", () => {
+    render(<Editor advanced />);
+    const alias = screen.getByRole("checkbox", {
+      name: "Allow reviewed redirects to another address",
+    });
+    expect(alias).not.toBeChecked();
+    expect(savedShape().httpProxyPolicy).toBeUndefined();
+    fireEvent.click(alias);
+    expect(savedShape().httpProxyPolicy).toEqual({
+      ...DEFAULT_HTTP_PROXY_POLICY,
+      allowCrossOriginRedirects: true,
+    });
+    expect(savedShape().httpRedirectAuthentication).toBeUndefined();
+    expect(
+      screen.getByRole("checkbox", { name: "Allow insecure redirects" }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole("checkbox", {
+        name: /^Allow reviewed cross-origin redirects/,
+      }),
+    ).toBeChecked();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /^Allow reviewed cross-origin redirects/,
+      }),
+    );
+    expect(alias).not.toBeChecked();
+  });
+  it("roundtrips the safe alias with Advanced while preserving strict HTTPS and other policy", () => {
+    const policy = {
+      ...DEFAULT_HTTP_PROXY_POLICY,
+      httpsOnly: true,
+      cacheMode: "bypass" as const,
+      queryParameters: [{ name: "tenant", value: "synthetic" }],
+    };
+    const { unmount } = render(
+      <Editor seed={{ httpProxyPolicy: policy }} advanced />,
+    );
+    const alias = screen.getByRole("checkbox", {
+      name: "Allow reviewed redirects to another address",
+    });
+    expect(alias).toBeEnabled();
+    fireEvent.click(alias);
+    const saved = savedShape();
+    expect(saved.httpProxyPolicy).toEqual({
+      ...policy,
+      allowCrossOriginRedirects: true,
+    });
+    unmount();
+    render(<Editor seed={JSON.parse(JSON.stringify(saved))} advanced />);
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Allow reviewed redirects to another address",
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Allow insecure redirects" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Allow reviewed redirects to another address",
+      }),
+    );
+    expect(savedShape().httpProxyPolicy).toEqual(policy);
+  });
   it("starts as a website and switches to an API explorer without inventing a protocol", () => {
     render(<Editor />);
     expect(
@@ -219,6 +284,11 @@ describe("Synology HTTP application views", () => {
       "saved proxy controls are invalid",
     );
     expect(savedShape().httpProxyPolicy).toEqual(invalid);
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Allow reviewed redirects to another address",
+      }),
+    ).toBeDisabled();
   });
   it.each([
     { protocol: "ssh" as const },
@@ -244,6 +314,11 @@ describe("Synology HTTP application views", () => {
       expect(
         screen.queryByRole("checkbox", { name: "Allow insecure redirects" }),
       ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("checkbox", {
+          name: "Allow reviewed redirects to another address",
+        }),
+      ).not.toBeInTheDocument();
     },
   );
   it("hides the website alias when switching to NAS API without altering the stored browser policy", () => {
@@ -261,6 +336,18 @@ describe("Synology HTTP application views", () => {
         /website redirect exception does not apply to the NAS API/,
       ),
     ).toBeInTheDocument();
+    expect(savedShape().httpProxyPolicy).toEqual(policy);
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Allow reviewed redirects to another address",
+      }),
+    ).not.toBeInTheDocument();
+    selectMode("Website — DSM in browser");
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Allow reviewed redirects to another address",
+      }),
+    ).toBeChecked();
     expect(savedShape().httpProxyPolicy).toEqual(policy);
   });
   it("maps the explicit choice to the existing anonymous reviewed handoff, not credential forwarding", () => {
