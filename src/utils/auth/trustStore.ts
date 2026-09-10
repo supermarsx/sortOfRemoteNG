@@ -234,6 +234,38 @@ export class NoActiveDatabaseError extends Error {
   }
 }
 
+/** Safe retry hint, never a trust decision or permission to unlock storage. */
+export class TransientTrustStoreError extends Error {
+  readonly name = "TransientTrustStoreError";
+  constructor() {
+    super(
+      "The Trust Center is completing a storage transition. Trust verification may be retried after the transition.",
+    );
+  }
+}
+
+/** Only positively classified contention or a superseded read may be retried. */
+export function isTransientTrustStoreError(error: unknown): boolean {
+  return (
+    error instanceof TransientTrustStoreError ||
+    error instanceof TrustRefreshSupersededError
+  );
+}
+
+function isNativeTrustTransition(error: unknown): boolean {
+  const message =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : null;
+  return (
+    message ===
+      "encryption storage transition in progress; retry after it completes" ||
+    message === "encryption key transition in progress"
+  );
+}
+
 interface NativeActiveTrustDatabase {
   databaseId?: string | null;
   encrypted?: boolean;
@@ -366,6 +398,7 @@ let mutationTail: Promise<unknown> = Promise.resolve();
 let pendingMutations = 0;
 let hydrationFailureCount = 0;
 let nextHydrationAttemptAt = 0;
+let lastHydrationError: Error | null = null;
 let hydrationState: "idle" | "loading" | "ready" | "error" = "idle";
 let nextNativeOperationId = 1;
 
@@ -1136,7 +1169,9 @@ async function refreshNativeCache(
   }
 }
 
-function markTrustStoreUnavailable(): Error {
+function markTrustStoreUnavailable(cause?: unknown): Error {
+  // A failure propagating through two read layers is still one failed attempt.
+  if (cause instanceof Error && cause === lastHydrationError) return cause;
   clearCache();
   hydrationState = "error";
   hydrationFailureCount = Math.min(hydrationFailureCount + 1, 16);
@@ -1146,9 +1181,12 @@ function markTrustStoreUnavailable(): Error {
   );
   nextHydrationAttemptAt = Date.now() + delay;
   notifyTrustStoreChanged();
-  return new Error(
-    "The native Trust Center is unavailable. Trust decisions remain blocked until it recovers.",
-  );
+  lastHydrationError = isNativeTrustTransition(cause)
+    ? new TransientTrustStoreError()
+    : new Error(
+        "The native Trust Center is unavailable. Trust decisions remain blocked until it recovers.",
+      );
+  return lastHydrationError;
 }
 
 function legacyIdentity(
@@ -1407,6 +1445,7 @@ async function hydrateTrustStore(): Promise<void> {
   hydrationState = "ready";
   hydrationFailureCount = 0;
   nextHydrationAttemptAt = 0;
+  lastHydrationError = null;
   notifyTrustStoreChanged();
 }
 
@@ -1487,6 +1526,7 @@ function adoptTrustStoreScope(
   hydrationState = "idle";
   hydrationFailureCount = 0;
   nextHydrationAttemptAt = 0;
+  lastHydrationError = null;
   activeScope = {
     databaseId,
     encrypted: false,
@@ -1564,6 +1604,7 @@ export async function ensureTrustStoreReady(): Promise<void> {
   if (hydrationPromise) return hydrationPromise;
   if (hydrated) return;
   if (Date.now() < nextHydrationAttemptAt) {
+    if (lastHydrationError) throw lastHydrationError;
     throw new Error(
       "The native Trust Center is temporarily unavailable. Retry from the Trust Center.",
     );
@@ -1572,8 +1613,8 @@ export async function ensureTrustStoreReady(): Promise<void> {
     hydrationState = "loading";
     notifyTrustStoreChanged();
     hydrationPromise = hydrateTrustStore()
-      .catch(() => {
-        throw markTrustStoreUnavailable();
+      .catch((error) => {
+        throw markTrustStoreUnavailable(error);
       })
       .finally(() => {
         hydrationPromise = null;
@@ -1616,6 +1657,7 @@ export async function refreshTrustStoreRecords(): Promise<void> {
     hydrationState = "ready";
     hydrationFailureCount = 0;
     nextHydrationAttemptAt = 0;
+    lastHydrationError = null;
     notifyTrustStoreChanged();
   } catch (error) {
     if (generation !== scopeGeneration) throw new TrustScopeChangedError();
@@ -1793,7 +1835,7 @@ export async function verifyIdentity<T extends TrustRecordType>(
       error instanceof TrustRefreshSupersededError
     )
       throw error;
-    throw markTrustStoreUnavailable();
+    throw markTrustStoreUnavailable(error);
   }
 }
 
@@ -2160,6 +2202,7 @@ export function resetTrustStoreCacheForTests(): void {
   pendingMutations = 0;
   hydrationFailureCount = 0;
   nextHydrationAttemptAt = 0;
+  lastHydrationError = null;
   hydrationState = "idle";
   nativeTrustOperations.clear();
   scopeGeneration += 1;

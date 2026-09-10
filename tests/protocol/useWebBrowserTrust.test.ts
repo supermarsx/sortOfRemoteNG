@@ -58,7 +58,11 @@ vi.mock("../../src/contexts/SettingsContext", () => ({
   }),
 }));
 vi.mock("../../src/utils/session/sessionDatabaseOwnership", () => ({
-  captureSessionDatabaseAccess: () => {
+  captureSessionDatabaseAccess: (value: ConnectionSession) => {
+    if (!value.ownerDatabaseId)
+      throw new Error(
+        "Open and unlock this session's owning database before continuing.",
+      );
     mocks.assertLease();
     return mocks.assertLease;
   },
@@ -88,6 +92,7 @@ vi.mock("../../src/utils/auth/trustStore", async (original) => ({
   trustIdentity: mocks.trust,
 }));
 import { useWebBrowser } from "../../src/hooks/protocol/useWebBrowser";
+import { TransientTrustStoreError } from "../../src/utils/auth/trustStore";
 import ApplicationSignInNotice from "../../src/components/protocol/webBrowser/ApplicationSignInNotice";
 
 const session: ConnectionSession = {
@@ -124,6 +129,7 @@ describe("HTTPS certificate and native trust stages", () => {
   beforeEach(() => {
     mocks.policy = "tofu";
     mocks.proxyInvalid = false;
+    mocks.proxy = "http://proxy.fixture:8080";
     mocks.verifySsl = true;
     mocks.credentialOverrides = {};
     mocks.settingsReady = false;
@@ -956,6 +962,224 @@ describe("HTTPS certificate and native trust stages", () => {
         ([name]) => name === "start_basic_auth_proxy",
       ),
     ).toBe(false);
+  });
+
+  const ownedSession = { ...session, ownerDatabaseId: "owner" };
+  const proxyStarts = () =>
+    mocks.invoke.mock.calls.filter(
+      ([name]) => name === "start_basic_auth_proxy",
+    );
+  async function pendingTrustRead() {
+    vi.useFakeTimers();
+    mocks.verify.mockRejectedValue(new TransientTrustStoreError());
+    const hook = renderHook(() => useWebBrowser(ownedSession));
+    await act(async () => {});
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.navigationFailure).toBeNull();
+    expect(proxyStarts()).toHaveLength(0);
+    return hook;
+  }
+
+  it("waits one then two seconds for transient trust reads without releasing credentials or repeating certificate inspection", async () => {
+    const { result } = await pendingTrustRead();
+    const iframe = document.createElement("iframe");
+    iframe.src = "about:blank";
+    result.current.iframeRef.current = iframe;
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(iframe.src).toBe("about:blank");
+    expect(result.current.pageInteractionBlocked).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(mocks.verify).toHaveBeenCalledTimes(2);
+    expect(proxyStarts()).toHaveLength(0);
+    expect(mocks.trust).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1_999));
+    expect(mocks.verify).toHaveBeenCalledTimes(2);
+    mocks.verify.mockResolvedValue({ status: "trusted" });
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(mocks.verify).toHaveBeenCalledTimes(3);
+    expect(proxyStarts()).toHaveLength(1);
+    expect(proxyStarts()[0][1].config.verify_ssl).toBe(true);
+    expect(proxyStarts()[0][1].config.accepted_cert_fingerprint).toBe(
+      cert.fingerprint,
+    );
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([name]) => name === "get_tls_certificate_info",
+      ),
+    ).toHaveLength(1);
+    expect(result.current.navigationFailure).toBeNull();
+    expect(mocks.trust).not.toHaveBeenCalled();
+  });
+
+  it("stops after exactly two retries and offers explicit recovery without reconnect loops", async () => {
+    const { result } = await pendingTrustRead();
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(3);
+    expect(result.current.navigationFailure?.kind).toBe("trust_failure");
+    expect(result.current.navigationFailure?.reason).toContain(
+      "after two retries",
+    );
+    expect(result.current.isLoading).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(3);
+    expect(proxyStarts()).toHaveLength(0);
+    expect(mocks.trust).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not retry an ownerless legacy tab by adopting the currently selected database", async () => {
+    vi.useFakeTimers();
+    mocks.verify.mockRejectedValue(new TransientTrustStoreError());
+    const { result } = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(result.current.navigationFailure?.detail).toContain(
+      "owning database",
+    );
+    expect(proxyStarts()).toHaveLength(0);
+  });
+
+  it("never retries a TOFU persistence failure even when it is transient", async () => {
+    vi.useFakeTimers();
+    mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
+    mocks.trust.mockRejectedValue(new TransientTrustStoreError());
+    const { result } = renderHook(() => useWebBrowser(ownedSession));
+    await act(async () => {});
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(mocks.trust).toHaveBeenCalledTimes(1);
+    expect(result.current.navigationFailure?.title).toBe(
+      "Unable to save the HTTPS trust decision",
+    );
+    expect(proxyStarts()).toHaveLength(0);
+  });
+
+  it.each([
+    "Database Trust Center is locked",
+    "No database is open",
+    "Trust database changed; refresh and review the action again",
+    "Malformed native trust verification response",
+    "Trust identity revoked",
+    "The native Trust Center is temporarily unavailable. Retry from the Trust Center.",
+    "The native Trust Center operation exceeded its UI deadline",
+  ])("does not retry a non-transient trust failure: %s", async (message) => {
+    vi.useFakeTimers();
+    mocks.verify.mockRejectedValue(new Error(message));
+    const { result } = renderHook(() => useWebBrowser(ownedSession));
+    await act(async () => {});
+    expect(result.current.navigationFailure?.kind).toBe("trust_failure");
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(proxyStarts()).toHaveLength(0);
+  });
+
+  it.each(["cancel", "unmount", "lock", "switch"] as const)(
+    "cancels pending trust backoff on %s",
+    async (event) => {
+      const { result, rerender, unmount } = await pendingTrustRead();
+      if (event === "cancel") act(() => result.current.handleCancelLoading());
+      else if (event === "unmount") unmount();
+      else {
+        mocks.availability = {
+          status: event === "lock" ? "suspended" : "ready",
+          databaseId: event === "switch" ? "other" : "owner",
+          generation: 2,
+        };
+        rerender();
+      }
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(mocks.verify).toHaveBeenCalledTimes(1);
+      expect(proxyStarts()).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+      if (event !== "unmount")
+        expect(result.current.navigationFailure?.kind).toBe(
+          "navigation_cancelled",
+        );
+    },
+  );
+
+  it("checks the native owner lease again before retry even without a context rerender", async () => {
+    const { result } = await pendingTrustRead();
+    mocks.assertLease.mockImplementation(() => {
+      throw new Error("Database lease is locked");
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(result.current.navigationFailure?.detail).toContain(
+      "lease is locked",
+    );
+    expect(proxyStarts()).toHaveLength(0);
+  });
+
+  it("refuses a retry on a different configured route", async () => {
+    const { result } = await pendingTrustRead();
+    mocks.proxy = "http://replacement.fixture:8081";
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(result.current.navigationFailure?.detail).toContain("route changed");
+    expect(proxyStarts()).toHaveLength(0);
+  });
+
+  it("cancels old backoff when a newer navigation succeeds", async () => {
+    const { result } = await pendingTrustRead();
+    mocks.verify.mockResolvedValue({ status: "trusted" });
+    await act(async () =>
+      result.current.navigateToUrl("https://10.10.10.2/new"),
+    );
+    expect(mocks.verify).toHaveBeenCalledTimes(2);
+    expect(proxyStarts()).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(2);
+    expect(proxyStarts()).toHaveLength(1);
+    expect(result.current.navigationFailure).toBeNull();
+  });
+
+  it("ignores a late successful retry after the owning database is locked", async () => {
+    const { result, rerender } = await pendingTrustRead();
+    let finish!: (value: { status: string }) => void;
+    mocks.verify.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(2);
+    mocks.availability = {
+      status: "suspended",
+      databaseId: "owner",
+      generation: 2,
+    };
+    rerender();
+    await act(async () => finish({ status: "trusted" }));
+    expect(proxyStarts()).toHaveLength(0);
+    expect(result.current.navigationFailure?.kind).toBe("navigation_cancelled");
+    expect(mocks.trust).not.toHaveBeenCalled();
+  });
+
+  it("shows only one consent prompt after recovery and never retries an uncertain trust write", async () => {
+    const { result } = await pendingTrustRead();
+    mocks.verify.mockResolvedValue({
+      status: "first-use",
+      identity: cert,
+      requiresApproval: true,
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(result.current.trustPrompt).not.toBeNull();
+    expect(mocks.trust).not.toHaveBeenCalled();
+    expect(proxyStarts()).toHaveLength(0);
+    mocks.trust.mockRejectedValue(new TransientTrustStoreError());
+    await act(async () => result.current.handleTrustAccept());
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(mocks.verify).toHaveBeenCalledTimes(2);
+    expect(mocks.trust).toHaveBeenCalledTimes(1);
+    expect(result.current.navigationFailure?.title).toBe(
+      "Unable to save the HTTPS trust decision",
+    );
+    expect(result.current.trustPrompt).toBeNull();
+    expect(proxyStarts()).toHaveLength(0);
   });
 
   it("keeps explicit trust persistence failures blocked with an actionable error", async () => {

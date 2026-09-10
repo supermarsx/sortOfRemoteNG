@@ -36,6 +36,10 @@ import {
   trustIdentity,
   verifyIdentity,
   validateCertificateIdentity,
+  isTransientTrustStoreError,
+  TransientTrustStoreError,
+  getTrustStoreAvailability,
+  refreshTrustStoreRecords,
 } from "../../src/utils/auth/trustStore";
 import type {
   CertIdentity,
@@ -169,6 +173,192 @@ describe("native-backed trustStore", () => {
     native.invoke.mockReset();
     installNativeMock();
     resetTrustStoreCacheForTests();
+  });
+
+  it.each([
+    "encryption storage transition in progress; retry after it completes",
+    "encryption key transition in progress",
+  ])(
+    "preserves only recognized native contention through hydration and cooldown: %s",
+    async (message) => {
+      native.activeDatabase = {
+        databaseId: "fixture-db",
+        encrypted: true,
+        recordCount: 0,
+        seededRecords: 0,
+      };
+      let now = 1000;
+      const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+      const original = native.invoke.getMockImplementation()!;
+      native.invoke.mockImplementation(async (command, args) => {
+        if (command === "trust_get_all_records") throw message;
+        return original(command, args);
+      });
+      try {
+        const failure = await ensureTrustStoreReady().catch((error) => error);
+        expect(failure).toBeInstanceOf(TransientTrustStoreError);
+        expect(isTransientTrustStoreError(failure)).toBe(true);
+        expect(isTransientTrustStoreError(message)).toBe(false);
+        expect(getTrustStoreAvailability()).toMatchObject({
+          retryCount: 1,
+          retryAfterMs: 1000,
+        });
+        const reads = native.invoke.mock.calls.length;
+        expect(
+          await verifyIdentity(
+            "fixture",
+            443,
+            "https",
+            makeTlsIdentity("aa"),
+          ).catch((error) => error),
+        ).toBe(failure);
+        expect(native.invoke.mock.calls).toHaveLength(reads);
+        expect(getTrustStoreAvailability().retryCount).toBe(1);
+        now += 1000;
+        expect(
+          await ensureTrustStoreReady().catch((error) => error),
+        ).toBeInstanceOf(TransientTrustStoreError);
+        expect(getTrustStoreAvailability()).toMatchObject({
+          retryCount: 2,
+          retryAfterMs: 2000,
+        });
+        now += 2000;
+        native.invoke.mockImplementation(original);
+        await ensureTrustStoreReady();
+        expect(getTrustStoreAvailability()).toMatchObject({
+          state: "ready",
+          retryCount: 0,
+          retryAfterMs: 0,
+        });
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
+  it("preserves a recognized verification failure without re-marking the cooldown", async () => {
+    await ensureTrustStoreReady();
+    const original = native.invoke.getMockImplementation()!;
+    native.invoke.mockImplementation(async (command, args) => {
+      if (command === "trust_verify_identity")
+        throw new Error("encryption key transition in progress");
+      return original(command, args);
+    });
+    const error = await verifyIdentity(
+      "fixture",
+      443,
+      "https",
+      makeTlsIdentity("aa"),
+    ).catch((error) => error);
+    expect(isTransientTrustStoreError(error)).toBe(true);
+    expect(await ensureTrustStoreReady().catch((error) => error)).toBe(error);
+    expect(getTrustStoreAvailability().retryCount).toBe(1);
+  });
+
+  it.each([
+    "master encryption is locked; artifact writes are blocked",
+    "artifact transition requires recovery; writes are blocked",
+    "native trust store unavailable",
+    "encryption key transition in progress: unrelated suffix",
+    "Trust database changed; refresh and review the action again",
+    "Malformed native trust verification response",
+    "The native Trust Center operation exceeded its UI deadline",
+  ])(
+    "does not classify terminal/native-unknown failure as retryable: %s",
+    async (message) => {
+      await ensureTrustStoreReady();
+      const original = native.invoke.getMockImplementation()!;
+      native.invoke.mockImplementation(async (command, args) => {
+        if (command === "trust_verify_identity") throw message;
+        return original(command, args);
+      });
+      const error = await verifyIdentity(
+        "fixture",
+        443,
+        "https",
+        makeTlsIdentity("aa"),
+      ).catch((error) => error);
+      expect(isTransientTrustStoreError(error)).toBe(false);
+      expect(error.message).not.toContain(message);
+      expect(
+        isTransientTrustStoreError(
+          await ensureTrustStoreReady().catch((error) => error),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each(["revoked", "pending-threshold", "pending-verification", "unknown"])(
+    "never retries policy denial or malformed status %s",
+    async (status) => {
+      await ensureTrustStoreReady();
+      native.invoke.mockResolvedValueOnce({ status });
+      expect(
+        isTransientTrustStoreError(
+          await verifyIdentity(
+            "fixture",
+            443,
+            "https",
+            makeTlsIdentity("aa"),
+          ).catch((error) => error),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("retries superseded reads against fresh records without resurrecting a forgotten identity", async () => {
+    await trustIdentity("fixture", 443, "https", makeTlsIdentity("aa"));
+    let complete!: (value: unknown) => void;
+    const original = native.invoke.getMockImplementation()!;
+    native.invoke.mockImplementation((command, args) =>
+      command === "trust_verify_identity"
+        ? new Promise((resolve) => {
+            complete = resolve;
+          })
+        : original(command, args),
+    );
+    const pending = verifyIdentity(
+      "fixture",
+      443,
+      "https",
+      makeTlsIdentity("aa"),
+    ).catch((error) => error);
+    await vi.waitFor(() => expect(complete).toBeTypeOf("function"));
+    native.records = [];
+    await refreshTrustStoreRecords();
+    complete({ status: "trusted" });
+    expect(isTransientTrustStoreError(await pending)).toBe(true);
+    native.invoke.mockImplementation(original);
+    expect(
+      await verifyIdentity("fixture", 443, "https", makeTlsIdentity("aa")),
+    ).toMatchObject({ status: "first-use" });
+    expect(native.records).toEqual([]);
+  });
+
+  it("does not retry verification across a database generation change", async () => {
+    await ensureTrustStoreReady();
+    let complete!: (value: unknown) => void;
+    const original = native.invoke.getMockImplementation()!;
+    native.invoke.mockImplementation((command, args) =>
+      command === "trust_verify_identity"
+        ? new Promise((resolve) => {
+            complete = resolve;
+          })
+        : original(command, args),
+    );
+    const pending = verifyIdentity(
+      "fixture",
+      443,
+      "https",
+      makeTlsIdentity("aa"),
+    ).catch((error) => error);
+    await vi.waitFor(() => expect(complete).toBeTypeOf("function"));
+    resetTrustStoreCacheForTests();
+    complete({ status: "trusted" });
+    const error = await pending;
+    expect(error.message).toContain("Trust database changed");
+    expect(isTransientTrustStoreError(error)).toBe(false);
+    expect(isTransientTrustStoreError(new NoActiveDatabaseError())).toBe(false);
   });
 
   it.each(["", null, undefined])(

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
+import { retryTransientTrustRead } from "../../utils/auth/retryTransientTrustRead";
 import { debugLog } from "../../utils/core/debugLogger";
 import {
   clearWebBrowserFrame,
@@ -25,6 +26,7 @@ import {
   trustIdentity,
   resolveEffectiveTrustPolicy,
   validateCertificateIdentity,
+  isTransientTrustStoreError,
   type CertIdentity,
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
@@ -521,6 +523,19 @@ export function useWebBrowser(session: ConnectionSession) {
   const proxyUrlRef = useRef<string>("");
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
+  const trustReadAbortRef = useRef<AbortController | null>(null);
+  const cancelTrustRead = useCallback(() => {
+    trustReadAbortRef.current?.abort();
+    trustReadAbortRef.current = null;
+  }, []);
+  const trustOwnerScope = JSON.stringify([
+    session.ownerDatabaseId,
+    databaseAvailability?.status,
+    databaseAvailability?.databaseId,
+    databaseAvailability?.generation,
+  ]);
+  const trustOwnerScopeRef = useRef(trustOwnerScope);
+  trustOwnerScopeRef.current = trustOwnerScope;
   const loadingIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -608,6 +623,7 @@ export function useWebBrowser(session: ConnectionSession) {
     if (previousCertificateScope.current === certificateScope) return;
     previousCertificateScope.current = certificateScope;
     navGenRef.current += 1;
+    cancelTrustRead();
     clearLoadingIndicator();
     awaitingFrameGenerationRef.current = null;
     setCertificateCapture(null);
@@ -615,7 +631,7 @@ export function useWebBrowser(session: ConnectionSession) {
     setTrustPrompt(null);
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
-  }, [certificateScope, clearLoadingIndicator]);
+  }, [certificateScope, clearLoadingIndicator, cancelTrustRead]);
   const navigationFailureRef = useRef<ProxyNavigationFailure | null>(
     navigationFailure,
   );
@@ -630,6 +646,7 @@ export function useWebBrowser(session: ConnectionSession) {
 
   const applyNavigationFailure = useCallback(
     (failure: ProxyNavigationFailure) => {
+      cancelTrustRead();
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
         loadTimeoutRef.current = null;
@@ -645,8 +662,25 @@ export function useWebBrowser(session: ConnectionSession) {
       setDiagnosticReport(null);
       setDiagnosticError(null);
     },
-    [clearLoadingIndicator],
+    [clearLoadingIndicator, cancelTrustRead],
   );
+  const previousTrustOwnerScope = useRef(trustOwnerScope);
+  useEffect(() => {
+    if (previousTrustOwnerScope.current === trustOwnerScope) return;
+    previousTrustOwnerScope.current = trustOwnerScope;
+    // A suspended/replaced owner cannot finish a pending read or its backoff.
+    if (!trustReadAbortRef.current) return;
+    navGenRef.current += 1;
+    cancelTrustRead();
+    applyNavigationFailure(
+      localNavigationFailure(
+        "navigation_cancelled",
+        "HTTPS trust verification stopped",
+        activeNavigationUrlRef.current,
+        "Database access changed. Open and unlock the owning database, then reload to verify HTTPS trust.",
+      ),
+    );
+  }, [trustOwnerScope, applyNavigationFailure, cancelTrustRead]);
   /**
    * Set once `fetchAndVerifyCert` has resolved trust for this tab.
    * The proxy receives this SHA-256 leaf certificate fingerprint and pins
@@ -750,6 +784,30 @@ export function useWebBrowser(session: ConnectionSession) {
       // detect whether a newer navigation has superseded us after the
       // await completes (e.g. React StrictMode double-mount race).
       const genBefore = navGenRef.current;
+      const ownerScope = trustOwnerScopeRef.current;
+      cancelTrustRead();
+      const abort = new AbortController();
+      trustReadAbortRef.current = abort;
+      let assertOwner: (() => void) | undefined;
+      const assertCurrent = (attempt: number) => {
+        if (
+          abort.signal.aborted ||
+          !mountedRef.current ||
+          genBefore !== navGenRef.current ||
+          ownerScope !== trustOwnerScopeRef.current
+        )
+          throw new DOMException("Trust verification cancelled", "AbortError");
+        if (getGlobalHttpProxyUrl({ failClosed: true }) !== proxyUrl)
+          throw new Error(
+            "The configured route changed. Reload to verify HTTPS trust on the current route.",
+          );
+        // Bind known owners before the first read, not after a transition may
+        // already have replaced their lease. Older ownerless tabs may perform
+        // the initial verification, but cannot schedule an unowned retry.
+        if (session.ownerDatabaseId || attempt > 0)
+          assertOwner ??= captureSessionDatabaseAccess(session);
+        assertOwner?.();
+      };
       let stage: "inspection" | "identity" | "verification" | "persistence" =
         "inspection";
 
@@ -804,6 +862,8 @@ export function useWebBrowser(session: ConnectionSession) {
             validTo: c.valid_to,
           })),
         });
+        stage = "verification";
+        assertCurrent(0);
         setCertificateCapture({
           scope: certificateScope,
           identity,
@@ -820,14 +880,14 @@ export function useWebBrowser(session: ConnectionSession) {
         }
         const connId = connection?.id;
         stage = "verification";
-        const result = await verifyIdentity(
-          normalizedHostname,
-          port,
-          "https",
-          identity,
-          connId,
+        const result = await retryTransientTrustRead(
+          () =>
+            verifyIdentity(normalizedHostname, port, "https", identity, connId),
+          abort.signal,
+          assertCurrent,
         );
         if (genBefore !== navGenRef.current) return false;
+        assertCurrent(0);
         if (result.status === "trusted") {
           // The cert was previously accepted (this session or a prior one).
           // Pin the proxy to the same fingerprint.
@@ -849,6 +909,7 @@ export function useWebBrowser(session: ConnectionSession) {
             connId,
           );
           if (genBefore !== navGenRef.current) return false;
+          assertCurrent(0);
           // P6c: TOFU auto-trusted on first contact — same as above.
           acceptedCertFingerprintRef.current = identity.fingerprint;
           return true;
@@ -878,7 +939,8 @@ export function useWebBrowser(session: ConnectionSession) {
         }
         return false;
       } catch (err) {
-        if (genBefore !== navGenRef.current) return false;
+        if (abort.signal.aborted || genBefore !== navGenRef.current)
+          return false;
         debugLog("WebBrowser", "HTTPS trust pipeline failed", { stage, err });
         acceptedCertFingerprintRef.current = null;
         applyNavigationFailure(
@@ -896,15 +958,20 @@ export function useWebBrowser(session: ConnectionSession) {
             activeNavigationUrlRef.current,
             stage === "inspection" || stage === "identity"
               ? "Certificate inspection or identity validation failed on the configured route. The connection was not opened without the trust check."
-              : "The certificate was inspected, but the database Trust Center could not complete its decision. Open or unlock the correct database and inspect its Trust Center; TLS verification was not bypassed.",
+              : stage === "verification" && isTransientTrustStoreError(err)
+                ? "The Trust Center is still busy after two retries. Wait for its storage transition or refresh to finish, then reload. TLS verification was not bypassed."
+                : "The certificate was inspected, but the database Trust Center could not complete its decision. Open or unlock the correct database and inspect its Trust Center; TLS verification was not bypassed.",
             err instanceof Error ? err.message : String(err),
           ),
         );
         return false;
+      } finally {
+        if (trustReadAbortRef.current === abort)
+          trustReadAbortRef.current = null;
       }
     },
     [
-      session.protocol,
+      session,
       normalizedHostname,
       connection,
       settings.httpsTrustPolicy,
@@ -912,6 +979,7 @@ export function useWebBrowser(session: ConnectionSession) {
       settings.tlsTrustPolicy,
       applyNavigationFailure,
       certificateScope,
+      cancelTrustRead,
     ],
   );
 
@@ -1066,6 +1134,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const navigateToUrl = useCallback(
     async (url: string, addToHistory = true) => {
       const gen = ++navGenRef.current;
+      cancelTrustRead();
       pendingNavigationRef.current = true;
       pendingInternalNavigationRef.current = false;
       awaitingFrameGenerationRef.current = null;
@@ -1355,6 +1424,7 @@ export function useWebBrowser(session: ConnectionSession) {
       beginLoadingPresentation,
       armNavigationDeadline,
       navigateFrame,
+      cancelTrustRead,
     ],
   );
 
@@ -1413,6 +1483,7 @@ export function useWebBrowser(session: ConnectionSession) {
     return () => {
       mountedRef.current = false;
       navGenRef.current += 1;
+      cancelTrustRead();
       trustResolveRef.current?.(false);
       trustResolveRef.current = null;
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
@@ -1428,7 +1499,7 @@ export function useWebBrowser(session: ConnectionSession) {
         invoke("stop_basic_auth_proxy", { sessionId: id }).catch(() => {});
       }
     };
-  }, []);
+  }, [cancelTrustRead]);
 
   // P3/P4: listen for `proxy-credentials-applied`. The Rust-side
   // themed-auth POST handler emits this after the user submits the
