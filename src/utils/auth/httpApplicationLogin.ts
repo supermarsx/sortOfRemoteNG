@@ -44,8 +44,9 @@ export function validateHttpApplicationTarget(
 
 export interface HttpApplicationLogin {
   credentials: { username: string; password: string } | null;
-  upstreamAuthMode?: "none" | "basic" | "digest" | "header" | "bitwarden-form";
-  loginFlow?: "bitwarden";
+  upstreamAuthMode?:
+    "none" | "basic" | "digest" | "header" | "bitwarden-form" | "synology-form";
+  loginFlow?: "bitwarden" | "synology";
   autoLogin: boolean;
   selectors?: HttpAutoLoginSelectors;
 }
@@ -167,7 +168,7 @@ export function resolveHttpApplicationLogin(
     throw new Error(
       "Automatic form login requires both the website username and password.",
     );
-  if (profile.loginFlow === "bitwarden") {
+  if (profile.loginFlow === "bitwarden" || profile.loginFlow === "synology") {
     if (
       Object.keys(
         normalizeHttpApplicationSelectors(connection.httpAutoLoginSelectors) ??
@@ -175,12 +176,13 @@ export function resolveHttpApplicationLogin(
       ).length
     )
       throw new Error(
-        "The reviewed web-vault flow does not accept selector overrides. Clear Advanced selectors or use manual login.",
+        "The reviewed staged login flow does not accept selector overrides. Clear Advanced selectors or use manual login.",
       );
     return {
       credentials,
-      upstreamAuthMode: "bitwarden-form",
-      loginFlow: "bitwarden",
+      upstreamAuthMode:
+        profile.loginFlow === "synology" ? "synology-form" : "bitwarden-form",
+      loginFlow: profile.loginFlow,
       autoLogin: true,
     };
   }

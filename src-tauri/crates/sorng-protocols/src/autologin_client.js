@@ -56,6 +56,7 @@
   function cancelRun() {
     stopped = true;
     if (window.__sorng_bitwarden_login) window.__sorng_bitwarden_login.cancel();
+    if (window.__sorng_synology_login) window.__sorng_synology_login.cancel();
     if (fetchController) fetchController.abort();
     fetchController = null;
     if (cancelActive) cancelActive();
@@ -1002,12 +1003,19 @@
         var creds = null;
         try {
           if (stopped) return;
-          if (data && data.loginFlow === "bitwarden") {
-            if (!window.__sorng_bitwarden_login) {
+          if (
+            data &&
+            (data.loginFlow === "bitwarden" || data.loginFlow === "synology")
+          ) {
+            var reviewedClient =
+              data.loginFlow === "synology"
+                ? window.__sorng_synology_login
+                : window.__sorng_bitwarden_login;
+            if (!reviewedClient) {
               report({ ok: false, reason: "autologin-client-unavailable" });
               return;
             }
-            return window.__sorng_bitwarden_login.run(data, {
+            return reviewedClient.run(data, {
               fillField: fillField,
               isVisible: isVisible,
               report: report,

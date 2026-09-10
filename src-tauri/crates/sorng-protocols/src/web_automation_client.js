@@ -16,12 +16,76 @@
   var closed = false;
   var totpChallenge = null,
     totpSubmitted = false;
+  // DSM's reviewed desktop OTP panel is deliberately not a form. Keep this
+  // fixed contract separate from generic POST/SPA form validation.
+  function synologyTotpTarget(payload, field, button) {
+    var root = document.querySelector("#sds-login-vue"),
+      panel = field.closest(".login-tabs-content-wrapper"),
+      container = field.closest("#dsm-otp-fieldset");
+    if (
+      payload.codeSelector !==
+        '#dsm-otp-fieldset input[name="one-time-code"][autocomplete="one-time-code"]' ||
+      payload.submitSelector !==
+        'div[role="button"][syno-id="otp-panel-next-btn"]' ||
+      location.hash !== "#/signin/otp" ||
+      !["/", "/webman/index.cgi"].includes(location.pathname) ||
+      document.querySelector("base") ||
+      document.querySelectorAll("#sds-login-vue").length !== 1 ||
+      document.querySelectorAll("#dsm-otp-fieldset").length !== 1 ||
+      !root ||
+      !panel ||
+      !root.contains(panel) ||
+      !(container instanceof HTMLDivElement) ||
+      !(field instanceof HTMLInputElement) ||
+      field.type !== "text" ||
+      field.form ||
+      field.disabled ||
+      field.matches(":disabled") ||
+      field.readOnly ||
+      !visible(field) ||
+      !(button instanceof HTMLDivElement) ||
+      !visible(button) ||
+      button.closest(".login-tabs-content-wrapper") !== panel ||
+      button.matches(".disable,.spin,[aria-disabled=true]") ||
+      [
+        "action",
+        "method",
+        "target",
+        "formaction",
+        "formmethod",
+        "formtarget",
+        "onclick",
+      ].some(function (key) {
+        return container.hasAttribute(key) || button.hasAttribute(key);
+      }) ||
+      Array.prototype.some.call(
+        root.querySelectorAll(
+          'input[type="password"], input[name*="captcha" i], [class*="captcha" i], iframe[src*="recaptcha" i]',
+        ),
+        visible,
+      )
+    )
+      throw new Error("challenge");
+    return {
+      field: field,
+      button: button,
+      form: container,
+      root: root,
+      panel: panel,
+      fingerprint: JSON.stringify([
+        location.href,
+        document.baseURI,
+        panel.id,
+        payload.submission,
+      ]),
+    };
+  }
   function totpTarget(payload) {
     if (
       !payload ||
       typeof payload.nonce !== "string" ||
       !/^[0-9a-f]{32}$/.test(payload.nonce) ||
-      !["post", "spa"].includes(payload.submission)
+      !["post", "spa", "synology"].includes(payload.submission)
     )
       throw new Error("challenge");
     var selectors = [payload.codeSelector, payload.submitSelector];
@@ -42,6 +106,8 @@
     var field = fields[0],
       button = buttons[0],
       form = field.form;
+    if (payload.submission === "synology")
+      return synologyTotpTarget(payload, field, button);
     if (
       !(field instanceof HTMLInputElement) ||
       !["text", "tel", "number"].includes(field.type) ||
@@ -141,6 +207,8 @@
       target.field !== original.field ||
       target.button !== original.button ||
       target.form !== original.form ||
+      target.root !== original.root ||
+      target.panel !== original.panel ||
       target.fingerprint !== original.fingerprint ||
       target.field.value
     )
@@ -158,6 +226,8 @@
         checked.field !== original.field ||
         checked.button !== original.button ||
         checked.form !== original.form ||
+        checked.root !== original.root ||
+        checked.panel !== original.panel ||
         checked.fingerprint !== original.fingerprint ||
         checked.field.value !== payload.code ||
         Date.now() >= payload.expires

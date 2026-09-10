@@ -58,6 +58,7 @@
 /// dependency. Validated with `node --check`.
 pub const AUTOLOGIN_CLIENT_JS: &str = include_str!("autologin_client.js");
 pub const BITWARDEN_CLIENT_JS: &str = include_str!("bitwarden_autologin_client.js");
+pub const SYNOLOGY_CLIENT_JS: &str = include_str!("synology_autologin_client.js");
 
 /// The full e5 client asset wrapped in a `<script>` element, ready to splice
 /// into served HTML **ahead of** the e3 bootstrap so its
@@ -69,8 +70,8 @@ pub const BITWARDEN_CLIENT_JS: &str = include_str!("bitwarden_autologin_client.j
 /// so it never needs templating and never embeds a credential.
 pub fn autologin_client_asset_script() -> String {
     format!(
-        "<script>{}{}</script>",
-        BITWARDEN_CLIENT_JS, AUTOLOGIN_CLIENT_JS
+        "<script>{}{}{}</script>",
+        BITWARDEN_CLIENT_JS, SYNOLOGY_CLIENT_JS, AUTOLOGIN_CLIENT_JS
     )
 }
 

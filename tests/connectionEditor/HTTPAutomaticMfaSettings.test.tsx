@@ -55,6 +55,30 @@ const enable = () =>
   });
 
 describe("explicit linked website authenticator consent", () => {
+  it("exposes the reviewed DSM code challenge without enabling it or selecting an authenticator", () => {
+    render(
+      <Fixture
+        value={{
+          ...initial,
+          httpApplication: {
+            version: 1,
+            id: "synology-dsm",
+            loginMode: "manual",
+          },
+        }}
+      />,
+    );
+    expect(enable()).toBeDisabled();
+    expect(draft().httpAutoMfa).toBeUndefined();
+    choose("Connection authenticator", "Fixture — admin");
+    fireEvent.click(enable());
+    expect(draft().httpAutoMfa).toMatchObject({
+      enabled: true,
+      challengeId: "synology-dsm-otp",
+      origin: "https://rmm.example.test:8443",
+    });
+    expect(draft().httpApplication?.loginMode).toBe("manual");
+  });
   it.each([
     ["GitHub", "github", "github.com"],
     ["Brevo", "brevo", "login.brevo.com"],

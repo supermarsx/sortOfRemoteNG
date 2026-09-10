@@ -219,7 +219,10 @@ pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64)
         &state.auto_login_nonce,
         &state.auto_login_selectors,
     )?;
-    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::BitwardenForm {
+    if matches!(
+        state.upstream_auth_mode,
+        crate::http::UpstreamAuthMode::BitwardenForm | crate::http::UpstreamAuthMode::SynologyForm
+    ) {
         bitwarden::bind_document(state, document_sequence)?;
     }
     Some(injection)
@@ -293,7 +296,10 @@ pub async fn autologin_cred_handler(
     {
         return forbidden("invalid advanced form settings");
     }
-    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::BitwardenForm {
+    if matches!(
+        state.upstream_auth_mode,
+        crate::http::UpstreamAuthMode::BitwardenForm | crate::http::UpstreamAuthMode::SynologyForm
+    ) {
         return bitwarden::dispense(&state, &query);
     }
     if query.phase.is_some() {

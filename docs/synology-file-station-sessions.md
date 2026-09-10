@@ -10,6 +10,43 @@ Synology is an application, not a transport protocol. Choose either the DSM
 website or **Synology NAS API**. Existing saved Synology records
 remain readable; editing and saving them uses the HTTP(S) application format.
 
+## DSM website sign-in
+
+Choose **DSM website** and **Manual browsing** to sign in yourself without
+providing saved credentials to the website proxy. Saved API credentials do not
+become a website session, and website cookies do not sign the API view in.
+
+For the reviewed DSM 7 desktop login, use an HTTPS address, save the website
+username/password, and explicitly select **Automatic form login**. The app
+submits the username once, waits for the matching password panel, then releases
+and submits the password once. It never fills the hidden password control on
+the username screen, selects “remember me,” or retries a rejected password.
+Advanced selector, timing, extra-field and fill-only overrides are not supported
+by this fixed staged flow. Other DSM layouts remain manual.
+
+Authenticator codes can be entered manually. To opt into automatic codes, add
+the account's authenticator in the connection's 2FA settings, then select
+**Automatic 2FA → DSM 7 verification code**, choose that authenticator, enable
+codes for the displayed HTTPS origin, and save the connection. This is separate
+consent: choosing DSM or enabling password login does not enable automatic 2FA.
+The app sends at most one code to the reviewed OTP panel and never selects
+“trust this device.” Submission is not proof of successful sign-in.
+
+CAPTCHA, Approve sign-in, security keys/passkeys, account recovery and password
+changes remain interactive. Use the explicit original-origin browser action
+when the embedded view cannot complete them. That browser has separate cookies
+and does not sign in the embedded session. See Synology's
+[two-factor authentication instructions](https://kb.synology.com/en-global/DSM/help/DSM/SecureSignIn/2factor_authentication?version=7).
+
+The DOM contract was reviewed against DSM's public desktop Vue login assets:
+`dsmAccountPanel.vue`, `dsmPasswordPanel.vue`, `otpPanel.vue` and `nextButton.vue`
+as embedded in `webman/login/dist/dsm.login.bundle.js` (SHA-256
+`4b75091b7f860b06ae37a7339d0fa067dd8c367664a4622262766348ae47e384`).
+Regression fixtures use synthetic inputs only; this is not a claim of a live
+NAS authentication test. A changed layout stops automation rather than guessing.
+
+## Native NAS API sign-in
+
 **Synology NAS API** includes the **File Station** file-management section and
 supported NAS administration tools such as system, storage, network, users and
 packages. Individual operations depend on DSM version, installed packages and

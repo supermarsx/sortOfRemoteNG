@@ -479,6 +479,8 @@ pub enum UpstreamAuthMode {
     /// Closed capability gate: old backends reject instead of generically filling.
     #[serde(rename = "bitwarden-form")]
     BitwardenForm,
+    #[serde(rename = "synology-form")]
+    SynologyForm,
     /// Form-only or manual application login: never inject proxy credentials
     /// into Authorization. Opted-in form fill may still consume them once.
     #[serde(rename = "none")]
@@ -492,7 +494,12 @@ pub enum UpstreamAuthMode {
 impl UpstreamAuthMode {
     fn authorization_value(self, username: &str, password: &str) -> Option<String> {
         match self {
-            Self::Basic | Self::Digest | Self::Header | Self::None | Self::BitwardenForm => None,
+            Self::Basic
+            | Self::Digest
+            | Self::Header
+            | Self::None
+            | Self::BitwardenForm
+            | Self::SynologyForm => None,
             Self::PfSenseV1 if !username.is_empty() && !password.is_empty() => {
                 Some(format!("{username} {password}"))
             }
@@ -506,7 +513,11 @@ impl UpstreamAuthMode {
     pub fn manager_visible_username(self, username: &str) -> String {
         match self {
             Self::Basic | Self::Digest => username.to_string(),
-            Self::PfSenseV1 | Self::Header | Self::None | Self::BitwardenForm => String::new(),
+            Self::PfSenseV1
+            | Self::Header
+            | Self::None
+            | Self::BitwardenForm
+            | Self::SynologyForm => String::new(),
         }
     }
 
@@ -524,7 +535,12 @@ impl UpstreamAuthMode {
                 Some(value) => request.header(reqwest::header::AUTHORIZATION, value),
                 None => request,
             },
-            Self::Basic | Self::Digest | Self::Header | Self::None | Self::BitwardenForm => request,
+            Self::Basic
+            | Self::Digest
+            | Self::Header
+            | Self::None
+            | Self::BitwardenForm
+            | Self::SynologyForm => request,
         }
     }
 
@@ -662,6 +678,7 @@ mod upstream_auth_mode_tests {
         for (mode, expected) in [
             (UpstreamAuthMode::None, "Bearer fixture-session"),
             (UpstreamAuthMode::BitwardenForm, "Bearer fixture-session"),
+            (UpstreamAuthMode::SynologyForm, "Bearer fixture-session"),
             (UpstreamAuthMode::Basic, "Basic YWRtaW46c2VjcmV0"),
             (UpstreamAuthMode::PfSenseV1, "admin secret"),
         ] {
@@ -1237,7 +1254,9 @@ fn collect_upstream_headers(
             || (name == "authorization"
                 && !matches!(
                     mode,
-                    UpstreamAuthMode::None | UpstreamAuthMode::BitwardenForm
+                    UpstreamAuthMode::None
+                        | UpstreamAuthMode::BitwardenForm
+                        | UpstreamAuthMode::SynologyForm
                 ))
             || matches!(
                 name,
@@ -1402,7 +1421,10 @@ pub async fn axum_proxy_handler(
     let document_sequence = if document_request {
         // Serialize a reviewed password handout with document invalidation.
         // A queued old-page redemption cannot observe a pre-navigation sequence.
-        if state.upstream_auth_mode == UpstreamAuthMode::BitwardenForm {
+        if matches!(
+            state.upstream_auth_mode,
+            UpstreamAuthMode::BitwardenForm | UpstreamAuthMode::SynologyForm
+        ) {
             let mut continuation = state.bitwarden_continuation.lock().ok();
             let next = state.document_sequence.fetch_add(1, Ordering::SeqCst) + 1;
             if let Some(slot) = continuation.as_mut() {

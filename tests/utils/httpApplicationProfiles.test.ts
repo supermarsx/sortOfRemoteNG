@@ -52,6 +52,7 @@ describe("HTTP application profile policy", () => {
       "plausible",
       "odoo",
       "phpmyadmin",
+      "synology-dsm",
       "portainer",
       "nginxProxyMgr",
       "proxmox",

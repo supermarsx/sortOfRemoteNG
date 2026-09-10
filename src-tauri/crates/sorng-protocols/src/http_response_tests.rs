@@ -144,12 +144,11 @@ async fn fetch(proxy: &FixtureProxy, path: &str) -> reqwest::Response {
 }
 
 async fn reviewed_vault_proxy() -> FixtureProxy {
-    let proxy = proxy_with_mode(
-        "https://synthetic.invalid/".into(),
-        client(),
-        UpstreamAuthMode::BitwardenForm,
-    )
-    .await;
+    reviewed_login_proxy(UpstreamAuthMode::BitwardenForm).await
+}
+
+async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
+    let proxy = proxy_with_mode("https://synthetic.invalid/".into(), client(), mode).await;
     let state = &proxy.state;
     *state.username.write().unwrap() = "synthetic-user".into();
     *state.password.write().unwrap() = "synthetic-master-password".into();
@@ -161,7 +160,7 @@ async fn reviewed_vault_proxy() -> FixtureProxy {
             target_url: state.target_url.clone(),
             username: "synthetic-user".into(),
             password: "synthetic-master-password".into(),
-            upstream_auth_mode: UpstreamAuthMode::BitwardenForm,
+            upstream_auth_mode: mode,
             proxy_policy: Default::default(),
             custom_headers: HashMap::new(),
             upstream_proxy_url: None,
@@ -185,7 +184,16 @@ async fn reviewed_vault_proxy() -> FixtureProxy {
 
 #[tokio::test]
 async fn reviewed_vault_staged_grants_are_one_use_and_keep_password_out_of_email_response() {
-    let proxy = reviewed_vault_proxy().await;
+    for mode in [
+        UpstreamAuthMode::BitwardenForm,
+        UpstreamAuthMode::SynologyForm,
+    ] {
+        assert_reviewed_staged_grants(mode).await;
+    }
+}
+
+async fn assert_reviewed_staged_grants(mode: UpstreamAuthMode) {
+    let proxy = reviewed_login_proxy(mode).await;
     let nonce = proxy
         .state
         .auto_login_nonce
@@ -199,6 +207,14 @@ async fn reviewed_vault_staged_grants_are_one_use_and_keep_password_out_of_email
     let body = first.text().await.unwrap();
     assert!(!body.contains("password"));
     let data: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        data["loginFlow"],
+        if mode == UpstreamAuthMode::SynologyForm {
+            "synology"
+        } else {
+            "bitwarden"
+        }
+    );
     assert_eq!(data["username"], "synthetic-user");
     assert_eq!(
         fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={nonce}"))
@@ -248,8 +264,17 @@ async fn reviewed_vault_staged_grants_are_one_use_and_keep_password_out_of_email
 
 #[tokio::test]
 async fn reviewed_vault_document_navigation_and_session_stop_revoke_pending_passwords() {
+    for mode in [
+        UpstreamAuthMode::BitwardenForm,
+        UpstreamAuthMode::SynologyForm,
+    ] {
+        assert_reviewed_revocation(mode).await;
+    }
+}
+
+async fn assert_reviewed_revocation(mode: UpstreamAuthMode) {
     for stop in [false, true] {
-        let proxy = reviewed_vault_proxy().await;
+        let proxy = reviewed_login_proxy(mode).await;
         let nonce = proxy
             .state
             .auto_login_nonce

@@ -1,4 +1,4 @@
-//! One-shot, document-bound email/password grants for the reviewed web-vault flow.
+//! One-shot, document-bound username/password grants for reviewed staged flows.
 //! No password is read or serialized during the email grant.
 use super::{forbidden, server_error, AutoLoginQuery};
 use crate::http::{AxumProxyState, BasicAuthProxyConfig, UpstreamAuthMode};
@@ -39,7 +39,10 @@ pub fn bind_document(state: &AxumProxyState, sequence: u64) -> Option<()> {
 }
 
 pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
-    if config.upstream_auth_mode != UpstreamAuthMode::BitwardenForm {
+    if !matches!(
+        config.upstream_auth_mode,
+        UpstreamAuthMode::BitwardenForm | UpstreamAuthMode::SynologyForm
+    ) {
         return Ok(());
     }
     let https = reqwest::Url::parse(&config.target_url).is_ok_and(|url| {
@@ -54,7 +57,7 @@ pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
             && options.fields.is_empty()
     });
     if !https || config.http_auto_login_selectors.is_some() || !options_supported {
-        return Err("Reviewed web-vault login requires HTTPS and its fixed two-stage controls. Clear advanced selector, timing, fill-only and extra-field overrides, or use manual login.".into());
+        return Err("Reviewed staged login requires HTTPS and its fixed two-stage controls. Clear advanced selector, timing, fill-only and extra-field overrides, or use manual login.".into());
     }
     Ok(())
 }
@@ -68,6 +71,11 @@ fn json(value: serde_json::Value) -> Response<Body> {
 }
 
 pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body> {
+    let flow = match state.upstream_auth_mode {
+        UpstreamAuthMode::BitwardenForm => "bitwarden",
+        UpstreamAuthMode::SynologyForm => "synology",
+        _ => return forbidden("reviewed login mode required"),
+    };
     // Hold the manager's short synchronous lock through dispensing. Removing the
     // session (owner lock/close) makes every subsequent grant fail, including a
     // request on a keep-alive socket while graceful shutdown drains.
@@ -102,7 +110,7 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
             Ok(password) => password,
             Err(_) => return forbidden("reviewed login credential unavailable"),
         };
-        return json(serde_json::json!({"loginFlow":"bitwarden", "password": &*password}));
+        return json(serde_json::json!({"loginFlow":flow, "password": &*password}));
     }
     if query.phase.is_some() || !state.auto_login_armed.load(Ordering::SeqCst) {
         return forbidden("reviewed login not armed");
@@ -133,7 +141,7 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
         issued: Instant::now(),
         password_stage: true,
     });
-    json(serde_json::json!({"loginFlow":"bitwarden", "username": &*username, "continuation":token}))
+    json(serde_json::json!({"loginFlow":flow, "username": &*username, "continuation":token}))
 }
 
 #[cfg(test)]
@@ -175,5 +183,19 @@ mod tests {
                 .extend(patch.as_object().unwrap().clone());
             assert!(validate_config(&serde_json::from_value(raw).unwrap()).is_err());
         }
+    }
+
+    #[test]
+    fn reviewed_synology_mode_is_closed_https_only_and_never_manager_visible() {
+        let mut raw = serde_json::json!({"target_url":"https://nas.invalid/", "username":"synthetic-user", "password":"synthetic-secret", "upstream_auth_mode":"synology-form", "http_auto_login":true});
+        let config: BasicAuthProxyConfig = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(config.upstream_auth_mode, UpstreamAuthMode::SynologyForm);
+        assert!(validate_config(&config).is_ok());
+        assert!(config
+            .upstream_auth_mode
+            .manager_visible_username("synthetic-user")
+            .is_empty());
+        raw["target_url"] = serde_json::json!("http://nas.invalid/");
+        assert!(validate_config(&serde_json::from_value(raw).unwrap()).is_err());
     }
 }

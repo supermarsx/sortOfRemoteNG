@@ -31,7 +31,7 @@ export interface HttpApplicationProfile {
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];
   requiresHttps?: boolean;
-  loginFlow?: "bitwarden";
+  loginFlow?: "bitwarden" | "synology";
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -41,7 +41,7 @@ export interface HttpApplicationTotpChallenge {
   codeSelector: string;
   submitSelector: string;
   paths: readonly string[];
-  submission: "post" | "spa";
+  submission: "post" | "spa" | "synology";
 }
 
 export const HTTP_APPLICATION_CATEGORIES = {
@@ -118,9 +118,23 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     id: "synology-dsm",
     label: "Synology DSM",
     category: "mailStorage",
-    capability: "manual",
+    capability: "known-form",
+    loginModes: ["manual", "form"],
+    loginFlow: "synology",
+    requiresHttps: true,
+    totpChallenges: [
+      {
+        id: "synology-dsm-otp",
+        label: "DSM 7 verification code",
+        codeSelector:
+          '#dsm-otp-fieldset input[name="one-time-code"][autocomplete="one-time-code"]',
+        submitSelector: 'div[role="button"][syno-id="otp-panel-next-btn"]',
+        paths: ["/", "/webman/index.cgi"],
+        submission: "synology",
+      },
+    ],
     description:
-      "Interactive DSM website sign-in and MFA. Use the system browser at the NAS origin for security keys or approval challenges. Website sign-in does not authorize the separate native File Station API.",
+      "Optional reviewed DSM 7 desktop username-then-password website login over HTTPS. Verification codes remain manual unless Automatic 2FA is explicitly enabled. CAPTCHA, approval, security keys, password changes and other layouts stay interactive. Website sign-in does not authorize the separate native File Station API.",
   },
   {
     id: "custom",

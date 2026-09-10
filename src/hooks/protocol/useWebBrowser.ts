@@ -1211,7 +1211,11 @@ export function useWebBrowser(session: ConnectionSession) {
       armNavigationDeadline(gen, url);
       try {
         let assertReviewedFlow = () => {};
-        if (applicationAuth.login?.loginFlow === "bitwarden") {
+        if (
+          ["bitwarden", "synology"].includes(
+            applicationAuth.login?.loginFlow ?? "",
+          )
+        ) {
           const scope = reviewedFlowScopeRef.current;
           if (!scope)
             throw new Error(
@@ -2608,7 +2612,7 @@ export function useWebBrowser(session: ConnectionSession) {
     // Auth
     hasAuth,
     authLabel:
-      ["none", "bitwarden-form"].includes(
+      ["none", "bitwarden-form", "synology-form"].includes(
         applicationAuth.login?.upstreamAuthMode ?? "",
       ) &&
       applicationAuth.login &&
