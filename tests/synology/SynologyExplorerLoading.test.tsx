@@ -86,12 +86,25 @@ const openFolder = async () => {
   fireEvent.click(screen.getByRole("button", { name: "public" }));
   await resolveRead(1, folder);
 };
+const mountExplorer = async () => {
+  let view!: ReturnType<typeof render>;
+  await act(async () => {
+    view = render(<SynologySessionContent connection={connection()} />);
+  });
+  return view;
+};
 
 beforeEach(() => {
   reads = [];
   vi.mocked(invoke)
     .mockReset()
     .mockImplementation((command, args) => {
+      if (command === "syn_get_section_access")
+        return Promise.resolve({
+          section: (args as { section: string }).section,
+          status: "available",
+          reason: "Read access verified.",
+        });
       if (command !== "syn_fs_list") return Promise.resolve(null);
       return new Promise<FileListResult>((resolve, reject) => {
         reads.push({ args: args as Record<string, unknown>, resolve, reject });
@@ -102,7 +115,7 @@ afterEach(cleanup);
 
 describe("File Station in-list loading", () => {
   it("mounts the complete explorer during the first shared-folder request and keeps its DOM on completion", async () => {
-    render(<SynologySessionContent connection={connection()} />);
+    await mountExplorer();
     const original = shell();
     expect(original.table).toHaveAttribute("aria-busy", "true");
     expect(within(original.explorer).getByRole("status")).toHaveTextContent(
@@ -115,7 +128,9 @@ describe("File Station in-list loading", () => {
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Go" })).toBeEnabled();
     expect(
-      screen.getByRole("button", { name: "Shared folders" }),
+      within(original.breadcrumbs).getByRole("button", {
+        name: "Shared folders",
+      }),
     ).toBeEnabled();
     expect(screen.getByLabelText("Select this page")).toBeDisabled();
     await resolveRead(0, shares);
@@ -131,7 +146,7 @@ describe("File Station in-list loading", () => {
   });
 
   it("retains table, breadcrumbs and footer while navigating, masks the old folder and publishes the new rows", async () => {
-    render(<SynologySessionContent connection={connection()} />);
+    await mountExplorer();
     await openFolder();
     const original = shell();
     fireEvent.click(screen.getByRole("button", { name: "docs" }));
@@ -170,7 +185,7 @@ describe("File Station in-list loading", () => {
   });
 
   it("keeps existing rows read-only during same-folder refresh without remounting them", async () => {
-    render(<SynologySessionContent connection={connection()} />);
+    await mountExplorer();
     await openFolder();
     const original = shell();
     const row = screen.getByText("notes.txt").closest("tr");
@@ -195,7 +210,9 @@ describe("File Station in-list loading", () => {
     expect(
       vi
         .mocked(invoke)
-        .mock.calls.every(([command]) => command === "syn_fs_list"),
+        .mock.calls.every(([command]) =>
+          ["syn_fs_list", "syn_get_section_access"].includes(command),
+        ),
     ).toBe(true);
     await resolveRead(2, empty);
     expectSameShell(original);
@@ -204,7 +221,7 @@ describe("File Station in-list loading", () => {
   });
 
   it("keeps the explorer usable after a failed read and retries only when requested", async () => {
-    render(<SynologySessionContent connection={connection()} />);
+    await mountExplorer();
     await resolveRead(0, shares);
     const original = shell();
     fireEvent.click(screen.getByRole("button", { name: "public" }));
@@ -231,12 +248,16 @@ describe("File Station in-list loading", () => {
   });
 
   it("allows navigation away from a pending folder and ignores its late response", async () => {
-    render(<SynologySessionContent connection={connection()} />);
+    await mountExplorer();
     await openFolder();
     const original = shell();
     fireEvent.click(screen.getByRole("button", { name: "docs" }));
     await readAt(2);
-    fireEvent.click(screen.getByRole("button", { name: "Shared folders" }));
+    fireEvent.click(
+      within(original.breadcrumbs).getByRole("button", {
+        name: "Shared folders",
+      }),
+    );
     expect((await readAt(3)).args.folderPath).toBeNull();
     await resolveRead(3, shares);
     await resolveRead(2, {
@@ -259,7 +280,7 @@ describe("File Station in-list loading", () => {
   });
 
   it("masks previous NAS rows and selections on scope replacement and ignores the previous session's late read", async () => {
-    const view = render(<SynologySessionContent connection={connection()} />);
+    const view = await mountExplorer();
     await openFolder();
     fireEvent.click(screen.getByLabelText("Select notes.txt"));
     fireEvent.click(screen.getByRole("button", { name: "Refresh files" }));

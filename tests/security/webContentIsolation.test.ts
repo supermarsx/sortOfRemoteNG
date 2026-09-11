@@ -3,6 +3,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import capability from "../../src-tauri/capabilities/default.json";
+import {
+  EMPTY_WEB_FRAME_SANDBOX,
+  PROXY_WEB_FRAME_SANDBOX,
+  clearWebBrowserFrame,
+  navigateWebBrowserFrame,
+} from "../../src/utils/protocol/webBrowserFrame";
 
 const contentAreaSource = readFileSync(
   join(
@@ -16,21 +22,39 @@ const contentAreaSource = readFileSync(
   "utf8",
 );
 
-const sandboxMatch = contentAreaSource.match(/sandbox="([^"]+)"/u);
-const sandboxTokens = new Set(sandboxMatch?.[1].split(/\s+/u) ?? []);
-
 describe("embedded web content isolation", () => {
   it("does not authorize remote origins in the production capability", () => {
     expect("remote" in capability).toBe(false);
   });
 
   it("keeps cookie-compatible isolation without popup or download escapes", () => {
-    expect(sandboxMatch).not.toBeNull();
-    expect(sandboxTokens.has("allow-same-origin")).toBe(true);
-    expect(sandboxTokens.has("allow-scripts")).toBe(true);
-    expect(sandboxTokens.has("allow-forms")).toBe(true);
-    expect(sandboxTokens.has("allow-popups")).toBe(false);
-    expect(sandboxTokens.has("allow-popups-to-escape-sandbox")).toBe(false);
-    expect(sandboxTokens.has("allow-downloads")).toBe(false);
+    expect(contentAreaSource).toContain("sandbox={EMPTY_WEB_FRAME_SANDBOX}");
+    expect(EMPTY_WEB_FRAME_SANDBOX).toBe("");
+    const frame = document.createElement("iframe");
+    clearWebBrowserFrame(frame);
+    expect(frame.getAttribute("sandbox")).toBe("");
+    const proxy = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
+    navigateWebBrowserFrame(frame, `${proxy}/portal`, proxy);
+    expect(frame.getAttribute("sandbox")).toBe(PROXY_WEB_FRAME_SANDBOX);
+    expect(new Set(frame.getAttribute("sandbox")!.split(/\s+/u))).toEqual(
+      new Set(["allow-same-origin", "allow-scripts", "allow-forms"]),
+    );
+    clearWebBrowserFrame(frame);
+    expect(frame.getAttribute("sandbox")).toBe("");
+    expect(frame.getAttribute("src")).toBe("about:blank");
+  });
+
+  it("does not enable scripts for an unapproved website or app-origin target", () => {
+    const frame = document.createElement("iframe");
+    clearWebBrowserFrame(frame);
+    const proxy = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
+    for (const target of [
+      "https://foreign.example/",
+      document.location.origin,
+    ]) {
+      expect(() => navigateWebBrowserFrame(frame, target, proxy)).toThrow();
+      expect(frame.getAttribute("sandbox")).toBe("");
+      expect(frame.getAttribute("src")).toBe("about:blank");
+    }
   });
 });
