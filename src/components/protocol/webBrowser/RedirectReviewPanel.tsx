@@ -20,6 +20,7 @@ type ReviewManager = Pick<
     >
   > & {
     trustedDestination?: boolean;
+    defaultDestination?: boolean;
     canRememberDestination?: boolean;
     rememberUnavailableReason?: string;
     rememberingDestination?: boolean;
@@ -163,7 +164,12 @@ export default function RedirectReviewPanel({
                       {destinationOrigin}
                     </p>
                   </div>
-                  {manager.trustedDestination === true ? (
+                  {manager.defaultDestination === true ? (
+                    <span className="flex items-center gap-1.5 text-xs text-[var(--color-textSecondary)]">
+                      <ShieldCheck size={15} aria-hidden="true" />
+                      Built-in Synology destination
+                    </span>
+                  ) : manager.trustedDestination === true ? (
                     <span className="flex items-center gap-1.5 text-xs text-[var(--color-textSecondary)]">
                       <ShieldCheck size={15} aria-hidden="true" />
                       Trusted for this saved connection
@@ -182,18 +188,32 @@ export default function RedirectReviewPanel({
                   )}
                 </div>
                 <p className="text-xs leading-relaxed text-[var(--color-textSecondary)]">
-                  Trust is saved for the original connection in its owning
-                  database. This action does not continue the redirect, approve
-                  its certificate, or send saved login details. Future redirects
-                  to this exact origin skip the destination review. Manage saved
-                  destinations in Trust Center → Redirect destinations.
+                  {manager.defaultDestination ? (
+                    <>
+                      This is a built-in exact Synology destination, not a saved
+                      user trust entry. Disable built-in defaults in this
+                      connection's Internal proxy controls. Certificate checks
+                      and separate saved-login approval still apply.
+                    </>
+                  ) : (
+                    <>
+                      Trust is saved for the original connection in its owning
+                      database. This action does not continue the redirect,
+                      approve its certificate, or send saved login details.
+                      Future redirects to this exact origin skip the destination
+                      review. Manage saved destinations in Trust Center →
+                      Redirect destinations.
+                    </>
+                  )}
                 </p>
-                {!manager.trustedDestination && !canRemember && (
-                  <p className="text-xs leading-relaxed text-[var(--color-textSecondary)]">
-                    {manager.rememberUnavailableReason ||
-                      "Save the original connection and open its owning database to remember a destination."}
-                  </p>
-                )}
+                {!manager.defaultDestination &&
+                  !manager.trustedDestination &&
+                  !canRemember && (
+                    <p className="text-xs leading-relaxed text-[var(--color-textSecondary)]">
+                      {manager.rememberUnavailableReason ||
+                        "Save the original connection and open its owning database to remember a destination."}
+                    </p>
+                  )}
               </div>
             )}
             {manager.trustNotice && (

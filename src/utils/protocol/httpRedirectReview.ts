@@ -1,9 +1,10 @@
 import type { Connection } from "../../types/connection/connection";
-import {
-  DEFAULT_HTTP_PROXY_POLICY,
-  type HttpProxyPolicy,
-} from "../../types/connection/httpProxyPolicy";
+import { DEFAULT_HTTP_PROXY_POLICY } from "../../types/connection/httpProxyPolicy";
 import { generateId } from "../core/id";
+import {
+  isSynologyDefaultRedirect,
+  type EffectiveHttpProxyPolicy,
+} from "./synologyRedirectDefaults";
 
 export interface HttpRedirectReview {
   receiptId: string;
@@ -18,7 +19,7 @@ export function parseHttpRedirectReview(
   value: unknown,
   sessionId: string,
   sourceOrigin: string,
-  policy?: HttpProxyPolicy,
+  policy?: EffectiveHttpProxyPolicy,
 ): HttpRedirectReview | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<HttpRedirectReview>;
@@ -44,6 +45,11 @@ export function parseHttpRedirectReview(
       (destination.protocol === "http:" &&
         (policy?.httpsOnly === true ||
           (new URL(sourceOrigin).protocol === "https:" &&
+            !isSynologyDefaultRedirect(
+              policy,
+              sourceOrigin,
+              candidate.destinationUrl,
+            ) &&
             !(
               policy?.allowCrossOriginRedirects === true &&
               policy.allowHttpDowngradeRedirects === true
@@ -68,6 +74,7 @@ export function parseHttpRedirectReview(
 export function anonymousRedirectConnection(
   source: Connection,
   review: HttpRedirectReview,
+  effectivePolicy?: EffectiveHttpProxyPolicy,
 ): Connection {
   const target = new URL(review.destinationUrl);
   if (
@@ -75,7 +82,7 @@ export function anonymousRedirectConnection(
       review,
       review.sessionId,
       review.sourceOrigin,
-      source.httpProxyPolicy,
+      effectivePolicy ?? source.httpProxyPolicy,
     )
   )
     throw new Error(
@@ -98,7 +105,9 @@ export function anonymousRedirectConnection(
       ...DEFAULT_HTTP_PROXY_POLICY,
       queryParameters: [],
       httpsOnly: source.httpProxyPolicy?.httpsOnly === true,
-      allowCrossOriginRedirects: true,
+      // Default-only handoffs do not expand to arbitrary destinations later.
+      allowCrossOriginRedirects:
+        source.httpProxyPolicy?.allowCrossOriginRedirects === true,
       allowHttpDowngradeRedirects:
         source.httpProxyPolicy?.allowHttpDowngradeRedirects === true,
       pageScripts: source.httpProxyPolicy?.pageScripts ?? "allow",

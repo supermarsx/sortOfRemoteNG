@@ -14,6 +14,7 @@ import { normalizePowerShellRemotingSettings } from "../powershell/normalizePowe
 import { normalizeRloginSettings } from "../rlogin/rloginSettings";
 import { normalizeHttpApplicationSettings } from "./httpApplicationProfiles";
 import { normalizeHttpTrustedRedirectDestinations } from "../protocol/httpTrustedRedirectDestinations";
+import { stripSynologyRedirectRuntimeContext } from "../protocol/synologyRedirectDefaults";
 import {
   normalizeHttpAutomation,
   normalizeSshQuickActions,
@@ -77,7 +78,11 @@ export function normalizeAdvancedProtocolConnection(
         : sourceProtocol === "mongo"
           ? "mongodb"
           : sourceProtocol || input.protocol);
-  const next: AdvancedProtocolConnectionInput = { ...input, protocol };
+  const next: AdvancedProtocolConnectionInput =
+    stripSynologyRedirectRuntimeContext({
+      ...input,
+      protocol,
+    } as Partial<Connection>);
   if (input.httpTrustedRedirectDestinations !== undefined) {
     next.httpTrustedRedirectDestinations =
       normalizeHttpTrustedRedirectDestinations(

@@ -21,6 +21,7 @@ pub struct ProxyRedirectReview {
 
 pub(super) struct PendingRedirect {
     review: ProxyRedirectReview,
+    defaults_context: Option<super::SynologyQuickConnectDefaults>,
     sequence: Arc<AtomicU64>,
     created: Instant,
     state: std::sync::Weak<AxumProxyState>,
@@ -38,10 +39,19 @@ fn destination_allowed(
     destination: &reqwest::Url,
 ) -> bool {
     let downgrade = source_origin.starts_with("https:") && destination.scheme() == "http";
-    policy.allow_cross_origin_redirects
+    let defaults = policy.synology_quick_connect_defaults.as_ref();
+    let valid_context = defaults.is_none_or(|scope| {
+        reqwest::Url::parse(source_origin).is_ok_and(|source| scope.validate(&source).is_ok())
+    });
+    let explicit = policy.allow_cross_origin_redirects
+        && (!downgrade || policy.allow_http_downgrade_redirects);
+    let default_destination =
+        defaults.is_some_and(|scope| scope.permits(source_origin, destination));
+    valid_context
+        && (explicit || default_destination)
         && matches!(destination.scheme(), "http" | "https")
         && (!policy.https_only || destination.scheme() == "https")
-        && (!downgrade || policy.allow_http_downgrade_redirects)
+        && destination.origin().ascii_serialization() != source_origin
         && destination.username().is_empty()
         && destination.password().is_none()
         && destination.port() != Some(0)
@@ -85,6 +95,7 @@ pub(super) fn record(
                 document_sequence,
                 removed_query,
             },
+            defaults_context: state.proxy_policy.synology_quick_connect_defaults.clone(),
             sequence: state.document_sequence.clone(),
             created: Instant::now(),
             state: Arc::downgrade(state),
@@ -113,6 +124,8 @@ impl ProxySessionManager {
             .zip(self.redirect_reviews.get(session_id))
             .is_some_and(|(entry, pending)| {
                 entry.target_origin == pending.review.source_origin
+                    && entry.proxy_policy.synology_quick_connect_defaults
+                        == pending.defaults_context
                     && reqwest::Url::parse(&pending.review.destination_url).is_ok_and(
                         |destination| {
                             destination_allowed(
@@ -176,6 +189,7 @@ mod tests {
                 document_sequence: 1,
                 removed_query: false,
             },
+            defaults_context: None,
             sequence: sequence.clone(),
             created: Instant::now(),
             state: std::sync::Weak::new(),

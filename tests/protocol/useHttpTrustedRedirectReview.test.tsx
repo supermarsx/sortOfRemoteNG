@@ -121,6 +121,8 @@ function fixture(
     stopSource,
     continueInTab,
     trust: {
+      defaults: undefined,
+      defaultSource: undefined,
       canRemember: true,
       unavailableReason: "",
       revision: "1",

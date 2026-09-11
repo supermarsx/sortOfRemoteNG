@@ -42,6 +42,8 @@ mod http_digest;
 mod network;
 #[path = "http_redirect.rs"]
 mod redirect;
+#[path = "http_synology_redirect_defaults.rs"]
+mod synology_redirect_defaults;
 #[path = "http_upstream.rs"]
 mod upstream;
 #[path = "http_websocket.rs"]
@@ -49,6 +51,7 @@ mod websocket;
 pub use crate::webview_origins;
 pub use network::ProxyNetworkState;
 pub use redirect::ProxyRedirectReview;
+pub use synology_redirect_defaults::SynologyQuickConnectDefaults;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};

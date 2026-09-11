@@ -31,6 +31,7 @@ import {
 import { normalizeRecycleBin } from "./recycleBin";
 import { rebindDatabaseQuickActions } from "./rebindDatabaseQuickActions";
 import { stripHttpTrustedRedirectDestinations } from "../protocol/httpTrustedRedirectDestinations";
+import { assertNoSynologyRedirectRuntimeContext } from "../protocol/synologyRedirectDefaults";
 import {
   stripExportSecrets,
   containsExportSecrets,
@@ -2107,6 +2108,7 @@ export class DatabaseManager {
     expectedSecurityRevision?: string,
     contentExpectation?: { expectedData: unknown },
   ): Promise<void> {
+    assertNoSynologyRedirectRuntimeContext(data);
     // Capture before ANY await; a later read must not bless an older writer.
     const expectedData = contentExpectation
       ? contentExpectation.expectedData

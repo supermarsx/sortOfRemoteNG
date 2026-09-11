@@ -21,12 +21,23 @@ export interface TrustedRedirectSource {
   /** Compare a freshly resolved saved source without exposing its credentials. */
   assertIdentity: (connection: Connection) => void;
 }
+/** Original website's built-in routing preference, never an imported trust grant. */
+export interface SynologyRedirectSource {
+  originalOrigin: string;
+  enabled: boolean;
+  databaseId: string;
+  savedConnectionId?: string;
+  assertOwner: () => void;
+  assertIdentity: (connection: Connection) => void;
+}
 export interface RuntimeWebNavigation {
   initialUrl: string;
   redirectHops: number;
   /** Checked by canonical launch after asynchronous capability/confirmation work. */
   assertCurrent: () => void;
   trustedRedirectSource?: TrustedRedirectSource;
+  /** Volatile original-source lease; never learn a NAS alias from a later hop. */
+  synologyRedirectSource?: SynologyRedirectSource;
 }
 const webNavigation = new Map<string, RuntimeWebNavigation>();
 

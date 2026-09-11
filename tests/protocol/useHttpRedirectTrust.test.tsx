@@ -17,6 +17,8 @@ import {
   clearRuntimeConnectionsForTests,
   registerRuntimeConnection,
 } from "../../src/utils/session/runtimeConnectionRegistry";
+import { DEFAULT_HTTP_PROXY_POLICY } from "../../src/types/connection/httpProxyPolicy";
+import { withSynologyRedirectDefaults } from "../../src/utils/protocol/synologyRedirectDefaults";
 
 const h = vi.hoisted(() => ({
   context: null as unknown,
@@ -75,14 +77,14 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-function fixture(saved: Connection = structuredClone(source)) {
+function fixture(saved: Connection = structuredClone(source), isSaved = true) {
   let databaseId = "db-a",
     epoch = 1;
-  let persisted = { connections: [structuredClone(saved)] };
+  let persisted = { connections: isSaved ? [structuredClone(saved)] : [] };
   const readCurrent = vi.fn(async () => structuredClone(persisted));
   const flush = vi.fn(async (): Promise<void> => undefined);
   const context = {
-    state: { connections: [saved] },
+    state: { connections: isSaved ? [saved] : [] },
     databaseAvailability: { status: "ready", databaseId, generation: 1 },
     flushPendingSave: flush,
     dispatchAndFlush: vi.fn(
@@ -142,6 +144,190 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("database-owned trusted HTTP redirect preferences", () => {
+  const qc = (): Connection => ({
+    ...source,
+    hostname: "example-nas.fr3.quickconnect.to",
+    httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, queryParameters: [] },
+  });
+  const qcReview = (
+    origin = "https://example-nas.fr3.quickconnect.to",
+    destinationUrl = "http://example-nas.quickconnect.to/",
+  ): HttpRedirectReview => ({
+    ...review,
+    sourceOrigin: origin,
+    destinationUrl,
+  });
+  it.each([true, false])(
+    "uses exact defaults from the original source across a %s saved chain",
+    async (isSaved) => {
+      const initial = qc();
+      const view = fixture(initial, isSaved);
+      const receipt = qcReview();
+      const first = await view.result.current.inspect(receipt, vi.fn());
+      expect(first).toMatchObject({
+        trusted: true,
+        defaultTrusted: true,
+        synologySource: { originalOrigin: receipt.sourceOrigin, enabled: true },
+      });
+      expect(view.context.dispatchAndFlush).not.toHaveBeenCalled();
+      const target = anonymousRedirectConnection(
+        initial,
+        receipt,
+        withSynologyRedirectDefaults(
+          initial.httpProxyPolicy!,
+          view.result.current.defaults,
+        ),
+      );
+      registerRuntimeConnection(target, {
+        initialUrl: receipt.destinationUrl,
+        redirectHops: 1,
+        assertCurrent: first.assertLaunchCurrent!,
+        trustedRedirectSource: first.provenance ?? undefined,
+        synologyRedirectSource: first.synologySource,
+      });
+      view.rerender({
+        connection: target,
+        session: {
+          ...session,
+          connectionId: target.id,
+          hostname: target.hostname,
+          protocol: "http",
+        },
+      });
+      const second = await view.result.current.inspect(
+        qcReview(
+          "http://example-nas.quickconnect.to",
+          "https://global.quickconnect.to/",
+        ),
+        vi.fn(),
+      );
+      expect(second).toMatchObject({ trusted: true, defaultTrusted: true });
+      expect(view.result.current.defaults?.originalOrigin).toBe(
+        receipt.sourceOrigin,
+      );
+      expect(target.httpProxyPolicy?.allowCrossOriginRedirects).toBe(false);
+      expect(target.httpProxyPolicy).not.toHaveProperty(
+        "synologyQuickConnectDefaults",
+      );
+      expect(JSON.stringify(first.synologySource)).not.toContain("private");
+    },
+  );
+  it("does not revive unsaved default opt-out after a manual portal handoff", async () => {
+    const initial = {
+      ...qc(),
+      synologySettings: {
+        version: 1 as const,
+        useHttps: true,
+        useDefaultRedirectDestinations: false,
+      },
+      httpProxyPolicy: {
+        ...DEFAULT_HTTP_PROXY_POLICY,
+        allowCrossOriginRedirects: true,
+      },
+    };
+    const view = fixture(initial, false);
+    const receipt = qcReview(undefined, "https://global.quickconnect.to/");
+    const first = await view.result.current.inspect(receipt, vi.fn());
+    expect(first.trusted).toBe(false);
+    expect(first.synologySource?.enabled).toBe(false);
+    const target = anonymousRedirectConnection(initial, receipt);
+    registerRuntimeConnection(target, {
+      initialUrl: receipt.destinationUrl,
+      redirectHops: 1,
+      assertCurrent: vi.fn(),
+      synologyRedirectSource: first.synologySource,
+    });
+    view.rerender({
+      connection: target,
+      session: {
+        ...session,
+        connectionId: target.id,
+        hostname: target.hostname,
+      },
+    });
+    expect(view.result.current.defaults).toBeUndefined();
+    expect(
+      (
+        await view.result.current.inspect(
+          qcReview(
+            "https://global.quickconnect.to",
+            "https://www.quickconnect.to/",
+          ),
+          vi.fn(),
+        )
+      ).trusted,
+    ).toBe(false);
+  });
+  it("checks persisted defaults and rejects opt-out during a delayed inspection", async () => {
+    const initial = qc();
+    const view = fixture(initial);
+    const pending = deferred<{ connections: Connection[] }>();
+    view.readCurrent.mockImplementationOnce(() => pending.promise);
+    const result = view.result.current.inspect(qcReview(), vi.fn());
+    const disabled = {
+      ...initial,
+      synologySettings: {
+        version: 1 as const,
+        useHttps: true,
+        useDefaultRedirectDestinations: false,
+      },
+    };
+    view.context.state.connections = [disabled];
+    view.rerender({ connection: disabled, session });
+    pending.resolve({ connections: [initial] });
+    await expect(result).rejects.toThrow(/unavailable/);
+    expect(view.result.current.defaults).toBeUndefined();
+    view.persisted = { connections: [disabled] };
+    const explicit = {
+      ...disabled,
+      httpProxyPolicy: {
+        ...DEFAULT_HTTP_PROXY_POLICY,
+        allowCrossOriginRedirects: true,
+      },
+      httpTrustedRedirectDestinations: grant([
+        "https://global.quickconnect.to",
+      ]),
+    };
+    view.context.state.connections = [explicit];
+    view.persisted = { connections: [explicit] };
+    view.rerender({ connection: explicit, session });
+    expect(
+      await view.result.current.inspect(
+        qcReview(undefined, "https://global.quickconnect.to/"),
+        vi.fn(),
+      ),
+    ).toMatchObject({ trusted: true, defaultTrusted: false });
+  });
+  it("establishes fresh direct-source authority after saved opt-out without reviving the old inspection", async () => {
+    const initial = qc();
+    const view = fixture(initial);
+    const previous = await view.result.current.inspect(qcReview(), vi.fn());
+    const disabled = {
+      ...initial,
+      synologySettings: {
+        version: 1 as const,
+        useHttps: true,
+        useDefaultRedirectDestinations: false,
+      },
+      httpProxyPolicy: {
+        ...DEFAULT_HTTP_PROXY_POLICY,
+        allowCrossOriginRedirects: true,
+      },
+      httpTrustedRedirectDestinations: grant([
+        "https://global.quickconnect.to",
+      ]),
+    };
+    view.context.state.connections = [disabled];
+    view.persisted = { connections: [disabled] };
+    view.rerender({ connection: disabled, session });
+    expect(previous.assertCurrent).toThrow(/unavailable/);
+    expect(
+      await view.result.current.inspect(
+        qcReview(undefined, "https://global.quickconnect.to/"),
+        vi.fn(),
+      ),
+    ).toMatchObject({ trusted: true, defaultTrusted: false });
+  });
   it("matches hydrated creation timestamps without dropping creation identity or invalid distinctions", () => {
     const original = httpRedirectTrustIdentity(source);
     for (const createdAt of [

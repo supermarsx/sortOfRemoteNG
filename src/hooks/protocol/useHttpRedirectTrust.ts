@@ -9,6 +9,7 @@ import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabas
 import {
   getRuntimeWebNavigation,
   type TrustedRedirectSource,
+  type SynologyRedirectSource,
 } from "../../utils/session/runtimeConnectionRegistry";
 import {
   parseHttpRedirectReview,
@@ -23,6 +24,15 @@ import {
   normalizeHttpTrustedRedirectDestinations,
 } from "../../utils/protocol/httpTrustedRedirectDestinations";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
+import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy";
+import { normalizeSynologySettings } from "../../types/protocols/synology";
+import {
+  isSynologyDefaultRedirect,
+  synologyDefaultRedirectOrigins,
+  synologyRedirectDefaultsForConnection,
+  withSynologyRedirectDefaults,
+  type SynologyQuickConnectDefaults,
+} from "../../utils/protocol/synologyRedirectDefaults";
 
 const UNSAVED =
   "Save this connection in its owning database before remembering redirect destinations. One-time review is still available.";
@@ -35,7 +45,9 @@ const FULL =
 
 export interface HttpRedirectTrustInspection {
   trusted: boolean;
+  defaultTrusted?: boolean;
   provenance: TrustedRedirectSource | null;
+  synologySource?: SynologyRedirectSource;
   assertCurrent: () => void;
   /** After an authorized stop, transport is gone but database authority remains. */
   assertLaunchCurrent?: () => void;
@@ -61,13 +73,120 @@ export function useHttpRedirectTrust(
     source: TrustedRedirectSource;
   } | null>(null);
   const writing = useRef(false);
+  const defaultSourceRef = useRef<{
+    key: string;
+    value: SynologyRedirectSource;
+  } | null>(null);
   const revisionState = useRef({ identity: "", number: 0 });
 
-  const inherited = connection
-    ? getRuntimeWebNavigation(connection.id)?.trustedRedirectSource
+  const runtimeNavigation = connection
+    ? getRuntimeWebNavigation(connection.id)
     : undefined;
-  const savedId = inherited?.savedConnectionId ?? connection?.id;
+  const inherited = runtimeNavigation?.trustedRedirectSource;
+  const inheritedDefault = connection
+    ? getRuntimeWebNavigation(connection.id)?.synologyRedirectSource
+    : undefined;
+  const savedId =
+    inherited?.savedConnectionId ??
+    inheritedDefault?.savedConnectionId ??
+    connection?.id;
   const saved = context.state.connections.find((item) => item.id === savedId);
+  let defaults: SynologyQuickConnectDefaults | undefined;
+  let defaultSource: SynologyRedirectSource | undefined;
+  try {
+    const availability = context.databaseAvailability;
+    if (
+      connection &&
+      availability?.status === "ready" &&
+      availability.databaseId === session.ownerDatabaseId
+    ) {
+      if (inheritedDefault) {
+        inheritedDefault.assertOwner();
+        if (inheritedDefault.databaseId !== availability.databaseId)
+          throw new Error();
+        if (inheritedDefault.savedConnectionId) {
+          if (!saved) throw new Error();
+          inheritedDefault.assertIdentity(saved);
+          defaults = synologyRedirectDefaultsForConnection(saved);
+        } else if (inheritedDefault.enabled) {
+          defaults = {
+            version: 1,
+            originalOrigin: inheritedDefault.originalOrigin,
+          };
+        }
+        defaultSource = inheritedDefault;
+      } else if (!runtimeNavigation || inherited) {
+        const source = saved ?? connection;
+        if (inherited) {
+          inherited.assertOwner();
+          if (!saved) throw new Error();
+          inherited.assertIdentity(saved);
+        } else if (
+          saved &&
+          httpRedirectTrustIdentity(saved) !==
+            httpRedirectTrustIdentity(connection)
+        )
+          throw new Error();
+        const settings = normalizeSynologySettings(source.synologySettings);
+        const original = synologyRedirectDefaultsForConnection({
+          ...source,
+          synologySettings: {
+            ...settings,
+            useDefaultRedirectDestinations: true,
+          },
+        });
+        defaults =
+          settings.useDefaultRedirectDestinations === false
+            ? undefined
+            : original;
+        if (original) {
+          const identity = httpRedirectTrustIdentity(source);
+          const key = JSON.stringify([
+            session.id,
+            availability.databaseId,
+            availability.generation,
+            source.id,
+            saved?.id ?? null,
+            identity,
+          ]);
+          if (defaultSourceRef.current?.key !== key) {
+            defaultSourceRef.current = {
+              key,
+              value: {
+                originalOrigin: original.originalOrigin,
+                enabled: settings.useDefaultRedirectDestinations !== false,
+                databaseId: availability.databaseId!,
+                savedConnectionId: saved?.id,
+                assertOwner: captureSessionDatabaseAccess(session),
+                assertIdentity: (current) => {
+                  if (httpRedirectTrustIdentity(current) !== identity)
+                    throw new Error(UNAVAILABLE);
+                },
+              },
+            };
+          }
+          defaultSource = defaultSourceRef.current.value;
+        }
+      }
+      if (defaults) {
+        const currentOrigin = httpRedirectConnectionOrigin(connection);
+        if (
+          currentOrigin !== defaults.originalOrigin &&
+          !synologyDefaultRedirectOrigins(defaults.originalOrigin).includes(
+            currentOrigin,
+          )
+        )
+          throw new Error();
+      }
+    }
+  } catch {
+    defaults = undefined;
+    // Keep invalidated provenance as an inert marker across an explicit manual
+    // handoff; never reinterpret a later portal as a new original NAS source.
+    defaultSource = inheritedDefault;
+  }
+  const latestDefaults = useRef({ defaults, source: defaultSource });
+  latestDefaults.current = { defaults, source: defaultSource };
   let canRemember = false;
   let unavailableReason = UNSAVED;
   let identity = "unavailable";
@@ -84,6 +203,7 @@ export function useHttpRedirectTrust(
         inherited?.assertIdentity(saved);
         if (
           !inherited &&
+          !inheritedDefault &&
           httpRedirectTrustIdentity(saved) !==
             httpRedirectTrustIdentity(connection)
         )
@@ -97,6 +217,7 @@ export function useHttpRedirectTrust(
           saved.id,
           httpRedirectTrustIdentity(saved),
           preferences,
+          defaults,
         ]);
         canRemember =
           preferences.origins.length < MAX_TRUSTED_REDIRECT_DESTINATIONS;
@@ -124,17 +245,25 @@ export function useHttpRedirectTrust(
     const runtime = captured.connection;
     if (!runtime) throw new Error(UNAVAILABLE);
     const origin = httpRedirectConnectionOrigin(runtime);
+    const capturedDefaults = latestDefaults.current;
     if (
       !parseHttpRedirectReview(
         review,
         review.sessionId,
         origin,
-        runtime.httpProxyPolicy,
+        withSynologyRedirectDefaults(
+          normalizeHttpProxyPolicy(runtime.httpProxyPolicy),
+          capturedDefaults.defaults,
+        ),
       )
     )
       throw new Error(UNAVAILABLE);
     const upstream = getRuntimeWebNavigation(runtime.id)?.trustedRedirectSource;
-    const sourceId = upstream?.savedConnectionId ?? runtime.id;
+    const defaultProvenance = capturedDefaults.source;
+    const sourceId =
+      upstream?.savedConnectionId ??
+      defaultProvenance?.savedConnectionId ??
+      runtime.id;
     const source = captured.context.state.connections.find(
       (item) => item.id === sourceId,
     );
@@ -149,6 +278,7 @@ export function useHttpRedirectTrust(
       captured.session.ownerDatabaseId,
       available?.generation,
       runtime.id,
+      httpRedirectTrustIdentity(source),
     ]);
     let provenance =
       upstream ??
@@ -157,7 +287,10 @@ export function useHttpRedirectTrust(
         : undefined);
     if (!provenance) {
       const originalIdentity = httpRedirectTrustIdentity(source);
-      if (originalIdentity !== runtimeIdentity) throw new Error(UNAVAILABLE);
+      if (!defaultProvenance && originalIdentity !== runtimeIdentity)
+        throw new Error(UNAVAILABLE);
+      defaultProvenance?.assertOwner();
+      defaultProvenance?.assertIdentity(source);
       provenance = {
         databaseId: captured.session.ownerDatabaseId ?? "",
         savedConnectionId: source.id,
@@ -223,6 +356,8 @@ export function useHttpRedirectTrust(
       checkAuthority,
       settings,
       target: target!,
+      persisted,
+      defaultProvenance,
     };
   };
 
@@ -232,12 +367,61 @@ export function useHttpRedirectTrust(
   ): Promise<HttpRedirectTrustInspection> => {
     try {
       const verified = await readVerified(review, assertCurrent);
-      if (!verified)
+      if (!verified) {
+        const captured = latest.current;
+        const capturedDefaults = latestDefaults.current;
+        const source = capturedDefaults.source;
+        const runtime = captured.connection;
+        if (
+          source &&
+          !source.savedConnectionId &&
+          runtime &&
+          capturedDefaults.defaults
+        ) {
+          const identity = httpRedirectTrustIdentity(runtime);
+          const checkOwner = () => {
+            source.assertOwner();
+            if (
+              latestDefaults.current.source !== source ||
+              !latest.current.connection ||
+              latest.current.session.id !== captured.session.id ||
+              latest.current.session.ownerDatabaseId !== source.databaseId ||
+              httpRedirectTrustIdentity(latest.current.connection) !== identity
+            )
+              throw new Error(UNAVAILABLE);
+          };
+          const check = () => {
+            assertCurrent();
+            checkOwner();
+          };
+          check();
+          const defaultTrusted = isSynologyDefaultRedirect(
+            withSynologyRedirectDefaults(
+              normalizeHttpProxyPolicy(runtime.httpProxyPolicy),
+              capturedDefaults.defaults,
+            ),
+            review.sourceOrigin,
+            review.destinationUrl,
+          );
+          return {
+            trusted: defaultTrusted,
+            defaultTrusted,
+            provenance: null,
+            synologySource: source,
+            assertCurrent: check,
+            assertLaunchCurrent: () => {
+              if (!mounted.current) throw new Error(UNAVAILABLE);
+              checkOwner();
+            },
+          };
+        }
         return {
           trusted: false,
           provenance: null,
+          synologySource: source,
           assertCurrent,
         };
+      }
       const grantIdentity = stableJsonStringify(
         normalizeHttpTrustedRedirectDestinations(
           verified.check().httpTrustedRedirectDestinations,
@@ -255,13 +439,30 @@ export function useHttpRedirectTrust(
         )
           throw new Error(UNAVAILABLE);
       };
+      const defaultTrusted =
+        grantIsSettled &&
+        isSynologyDefaultRedirect(
+          withSynologyRedirectDefaults(
+            normalizeHttpProxyPolicy(
+              latest.current.connection?.httpProxyPolicy,
+            ),
+            verified.defaultProvenance
+              ? synologyRedirectDefaultsForConnection(verified.persisted)
+              : undefined,
+          ),
+          review.sourceOrigin,
+          review.destinationUrl,
+        );
       return {
         trusted:
           grantIsSettled &&
-          verified.settings.origins.includes(
-            new URL(review.destinationUrl).origin,
-          ),
+          (defaultTrusted ||
+            verified.settings.origins.includes(
+              new URL(review.destinationUrl).origin,
+            )),
+        defaultTrusted,
         provenance: verified.provenance,
+        synologySource: verified.defaultProvenance,
         assertCurrent: () => checkGrant(verified.check()),
         assertLaunchCurrent: () => {
           // Automatic current-tab handoff is synchronous before source unmount.
@@ -356,5 +557,13 @@ export function useHttpRedirectTrust(
       writing.current = false;
     }
   };
-  return { canRemember, unavailableReason, revision, inspect, remember };
+  return {
+    canRemember,
+    unavailableReason,
+    revision,
+    inspect,
+    remember,
+    defaults,
+    defaultSource,
+  };
 }

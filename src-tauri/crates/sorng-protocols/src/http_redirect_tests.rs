@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "http_synology_redirect_tests.rs"]
+mod synology_defaults_tests;
+
 fn register(proxy: &FixtureProxy) {
     let state = &proxy.state;
     state.global_sessions.lock().unwrap().sessions.insert(

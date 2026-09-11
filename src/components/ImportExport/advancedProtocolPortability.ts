@@ -1,5 +1,6 @@
 import type { Connection } from "../../types/connection/connection";
 import { stripHttpTrustedRedirectDestinations } from "../../utils/protocol/httpTrustedRedirectDestinations";
+import { stripSynologyRedirectRuntimeContext } from "../../utils/protocol/synologyRedirectDefaults";
 import {
   createDefaultRawSocketSettings,
   normalizeRawSocketSettings,
@@ -66,6 +67,7 @@ const SENSITIVE_REFERENCE_FIELD_NAMES = new Set([
 ]);
 
 const RUNTIME_FIELD_NAMES = new Set([
+  "synologyquickconnectdefaults",
   "backendsessionid",
   "shellid",
   "runtimesessionid",
@@ -159,7 +161,11 @@ export function mapPortableProtocol(source: unknown): ImportedProtocolMapping {
 export function normalizeImportedAdvancedProtocolConnection(
   connection: Connection,
 ): Connection {
-  const imported = deepCopy(stripHttpTrustedRedirectDestinations(connection));
+  const imported = deepCopy(
+    stripSynologyRedirectRuntimeContext(
+      stripHttpTrustedRedirectDestinations(connection),
+    ),
+  );
   // Our credential-free exports reserve this exact sentinel. Never replay it
   // as a real website password when a saved profile requests automatic login.
   if (imported.password === SECRET_PLACEHOLDER) delete imported.password;
@@ -271,7 +277,11 @@ const sanitizeValue = <T>(
 };
 
 const resetLocalConsent = (connection: Connection): Connection => {
-  const copy = deepCopy(stripHttpTrustedRedirectDestinations(connection));
+  const copy = deepCopy(
+    stripSynologyRedirectRuntimeContext(
+      stripHttpTrustedRedirectDestinations(connection),
+    ),
+  );
   if (copy.rloginSettings) {
     copy.rloginSettings = migrateRloginSettings(copy.rloginSettings, {
       resetPlaintextAcknowledgement: true,

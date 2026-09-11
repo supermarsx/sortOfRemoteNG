@@ -2,6 +2,7 @@ import { Connection } from "../../types/connection/connection";
 import { IndexedDbService } from "./indexedDbService";
 import { PBKDF2_ITERATIONS } from "../../config";
 import { getInvoke } from "../tauri/invoke";
+import { assertNoSynologyRedirectRuntimeContext } from "../protocol/synologyRedirectDefaults";
 
 const STORAGE_KEY = "mremote-connections";
 const STORAGE_META_KEY = "mremote-storage-meta";
@@ -175,6 +176,7 @@ export class SecureStorage {
     data: StorageData,
     usePassword: boolean = false,
   ): Promise<void> {
+    assertNoSynologyRedirectRuntimeContext(data);
     const invoke = await getInvoke();
     if (invoke) {
       try {
@@ -413,6 +415,7 @@ export class SecureStorage {
    * Save data using vault-backed encryption (DEK stored in OS keychain).
    */
   static async saveDataVault(data: StorageData): Promise<void> {
+    assertNoSynologyRedirectRuntimeContext(data);
     const invoke = await getInvoke();
     if (!invoke) {
       throw new Error("Vault storage requires Tauri");

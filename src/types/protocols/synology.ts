@@ -5,6 +5,8 @@ export interface SynologySettings {
   version: 1;
   useHttps: boolean;
   accessMode?: "native" | "website";
+  /** Missing enables only the closed website redirect defaults, never login forwarding. */
+  useDefaultRedirectDestinations?: boolean;
 }
 
 export function normalizeSynologySettings(value: unknown): SynologySettings {
@@ -18,18 +20,35 @@ export function normalizeSynologySettings(value: unknown): SynologySettings {
     (input.accessMode !== undefined &&
       input.accessMode !== "native" &&
       input.accessMode !== "website") ||
+    (Object.prototype.hasOwnProperty.call(
+      input,
+      "useDefaultRedirectDestinations",
+    ) &&
+      typeof input.useDefaultRedirectDestinations !== "boolean") ||
     Object.keys(input).some(
-      (key) => !["version", "useHttps", "accessMode"].includes(key),
+      (key) =>
+        ![
+          "version",
+          "useHttps",
+          "accessMode",
+          "useDefaultRedirectDestinations",
+        ].includes(key),
     )
   )
     throw new Error(
-      "Unsupported Synology connection settings. Only transport and view preferences can be saved.",
+      "Unsupported Synology connection settings. Only transport, view and website redirect preferences can be saved.",
     );
   return {
     version: 1,
     useHttps: input.useHttps,
     ...(input.accessMode !== undefined
       ? { accessMode: input.accessMode as "native" | "website" }
+      : {}),
+    ...(input.useDefaultRedirectDestinations !== undefined
+      ? {
+          useDefaultRedirectDestinations:
+            input.useDefaultRedirectDestinations as boolean,
+        }
       : {}),
   };
 }

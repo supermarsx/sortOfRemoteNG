@@ -24,6 +24,7 @@ import {
   parseHttpRedirectReview,
   type HttpRedirectReview,
 } from "../../utils/protocol/httpRedirectReview";
+import type { EffectiveHttpProxyPolicy } from "../../utils/protocol/synologyRedirectDefaults";
 
 interface Options {
   connection?: Connection;
@@ -32,6 +33,8 @@ interface Options {
   accessKey: string;
   route: string | undefined;
   enabled: boolean;
+  /** Runtime-only exact defaults; never copied onto a saved connection. */
+  effectivePolicy?: EffectiveHttpProxyPolicy;
   generation: () => number;
   proxySessionId: () => string;
   navigationToken: () => string | null;
@@ -70,6 +73,7 @@ export function useHttpRedirectReview(options: Options) {
     options.sourceOrigin,
     options.route,
     options.enabled,
+    options.effectivePolicy,
     options.trust?.revision,
   ]);
   // Saving an explicitly reviewed origin changes only the local consent list.
@@ -83,6 +87,7 @@ export function useHttpRedirectReview(options: Options) {
     options.sourceOrigin,
     options.route,
     options.enabled,
+    options.effectivePolicy,
   ]);
   const latest = useRef({ options, signature, transportSignature });
   latest.current = { options, signature, transportSignature };
@@ -215,7 +220,7 @@ export function useHttpRedirectReview(options: Options) {
         value,
         id,
         captured.sourceOrigin,
-        captured.connection.httpProxyPolicy,
+        captured.effectivePolicy ?? captured.connection.httpProxyPolicy,
       );
       if (
         !receipt ||
@@ -293,8 +298,9 @@ export function useHttpRedirectReview(options: Options) {
         current.review.receiptId !== manuallyRememberedReceipt.current &&
         captured.continueInTab &&
         captured.enabled &&
-        captured.connection?.httpProxyPolicy?.allowCrossOriginRedirects ===
-          true &&
+        (captured.connection?.httpProxyPolicy?.allowCrossOriginRedirects ===
+          true ||
+          current.trust.defaultTrusted === true) &&
         normalizeRedirectAuthentication(
           captured.connection?.httpRedirectAuthentication,
         ).mode === "none"
@@ -360,7 +366,7 @@ export function useHttpRedirectReview(options: Options) {
         }),
         receipt.review.sessionId,
         captured.sourceOrigin,
-        captured.connection.httpProxyPolicy,
+        captured.effectivePolicy ?? captured.connection.httpProxyPolicy,
       );
       receipt.assertCurrent();
       if (automatic) receipt.trust?.assertCurrent();
@@ -377,8 +383,13 @@ export function useHttpRedirectReview(options: Options) {
             captured.connection,
             consumed,
             insecureApproved,
+            captured.effectivePolicy,
           )
-        : anonymousRedirectConnection(captured.connection, consumed);
+        : anonymousRedirectConnection(
+            captured.connection,
+            consumed,
+            captured.effectivePolicy,
+          );
       const assertLaunchCurrent = () => {
         receipt.assertLaunchCurrent();
         // The expected source stop invalidates receipt transport, not the
@@ -398,6 +409,11 @@ export function useHttpRedirectReview(options: Options) {
           1,
         assertCurrent: assertLaunchCurrent,
         trustedRedirectSource: receipt.trust?.provenance ?? undefined,
+        synologyRedirectSource:
+          receipt.trust?.synologySource ??
+          captured.trust?.defaultSource ??
+          getRuntimeWebNavigation(captured.connection.id)
+            ?.synologyRedirectSource,
       });
       try {
         assertLaunchCurrent();
@@ -448,7 +464,7 @@ export function useHttpRedirectReview(options: Options) {
         }),
         current.review.sessionId,
         captured.sourceOrigin,
-        captured.connection?.httpProxyPolicy,
+        captured.effectivePolicy ?? captured.connection?.httpProxyPolicy,
       );
       current.assertCurrent();
       if (
@@ -525,7 +541,11 @@ export function useHttpRedirectReview(options: Options) {
     trustNotice,
     trustedDestination:
       pending.current?.signature === signature &&
-      pending.current.trust?.trusted === true,
+      pending.current.trust?.trusted === true &&
+      pending.current.trust.defaultTrusted !== true,
+    defaultDestination:
+      pending.current?.signature === signature &&
+      pending.current.trust?.defaultTrusted === true,
     canRememberDestination: options.trust?.canRemember === true,
     rememberUnavailableReason:
       options.trust?.unavailableReason ??

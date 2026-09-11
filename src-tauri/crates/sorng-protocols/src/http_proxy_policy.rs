@@ -40,6 +40,10 @@ pub struct HttpProxyPolicy {
     /// Separate opt-in to review (never automatically follow) an HTTP handoff.
     #[serde(default)]
     pub allow_http_downgrade_redirects: bool,
+    /// Renderer-derived, reference-fenced navigation context. This must never
+    /// be persisted/imported as an ordinary saved connection policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synology_quick_connect_defaults: Option<super::SynologyQuickConnectDefaults>,
     pub cache_mode: CacheMode,
     pub query_parameters: Vec<QueryParameter>,
 }
@@ -75,6 +79,7 @@ impl Default for HttpProxyPolicy {
             same_origin_only: false,
             allow_cross_origin_redirects: false,
             allow_http_downgrade_redirects: false,
+            synology_quick_connect_defaults: None,
             cache_mode: CacheMode::Normal,
             query_parameters: Vec::new(),
         }
@@ -90,6 +95,9 @@ impl HttpProxyPolicy {
         }
         if self.https_only && target.scheme() != "https" {
             return Err("HTTPS-only policy requires an HTTPS connection; no automatic upgrade or insecure fallback was attempted.".into());
+        }
+        if let Some(defaults) = &self.synology_quick_connect_defaults {
+            defaults.validate(target)?;
         }
         let mut names = HashSet::new();
         let mut bytes = 0;

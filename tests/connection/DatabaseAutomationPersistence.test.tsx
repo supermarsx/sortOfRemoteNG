@@ -164,6 +164,49 @@ async function mount() {
 }
 
 describe("owning database automation persistence", () => {
+  it("round-trips the Synology redirect opt-out through the real Provider without saving runtime provenance", async () => {
+    state.saved!.connections[0] = {
+      ...state.saved!.connections[0],
+      protocol: "https",
+      hostname: "nas.fr3.quickconnect.to",
+      port: 443,
+      synologySettings: {
+        version: 1,
+        useHttps: true,
+        useDefaultRedirectDestinations: false,
+      },
+    };
+    Object.assign(state.saved!.connections[0], {
+      synologyQuickConnectDefaults: {
+        version: 1,
+        originalOrigin: "https://nas.fr3.quickconnect.to",
+      },
+    });
+    const first = await mount();
+    await act(async () => {
+      await first.result.current.dispatchAndFlush({
+        type: "UPDATE_CONNECTION",
+        payload: {
+          ...first.result.current.state.connections[0],
+          name: "saved NAS",
+        },
+      });
+    });
+    expect(
+      state.saved!.connections[0].synologySettings
+        ?.useDefaultRedirectDestinations,
+    ).toBe(false);
+    expect(JSON.stringify(state.saved)).not.toContain(
+      "synologyQuickConnectDefaults",
+    );
+    first.unmount();
+    const second = await mount();
+    expect(second.result.current.state.connections[0]).toMatchObject({
+      name: "saved NAS",
+      synologySettings: { useDefaultRedirectDestinations: false },
+    });
+    second.unmount();
+  });
   it("real Provider durable edits refresh scoped SSH favorites and external deletion cannot execute the cached macro", async () => {
     const ref = {
       kind: "macro" as const,

@@ -127,7 +127,7 @@ describe("redirect review boundary", () => {
       httpAutoLogin: false,
       proxyChainId: "route",
       httpProxyPolicy: {
-        allowCrossOriginRedirects: true,
+        allowCrossOriginRedirects: false,
         queryParameters: [],
         pageScripts: "block",
       },

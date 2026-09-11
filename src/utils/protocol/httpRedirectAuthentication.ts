@@ -4,6 +4,7 @@ import {
   anonymousRedirectConnection,
   type HttpRedirectReview,
 } from "./httpRedirectReview";
+import type { EffectiveHttpProxyPolicy } from "./synologyRedirectDefaults";
 
 export interface HttpRedirectAuthentication {
   version: 1;
@@ -82,13 +83,14 @@ export function authenticatedRedirectConnection(
   source: Connection,
   review: HttpRedirectReview,
   insecureApproved: boolean,
+  effectivePolicy?: EffectiveHttpProxyPolicy,
 ): Connection {
   const availability = redirectAuthenticationAvailability(source, review);
   if (!availability.available || (availability.insecure && !insecureApproved))
     throw new Error(
       "Login forwarding requires explicit destination approval and separate approval for plaintext HTTP.",
     );
-  const target = anonymousRedirectConnection(source, review);
+  const target = anonymousRedirectConnection(source, review, effectivePolicy);
   const login = resolveHttpApplicationLogin(source);
   if (!login.credentials) throw new Error("No saved login is available.");
   return {

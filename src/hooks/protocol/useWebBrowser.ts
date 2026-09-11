@@ -40,6 +40,7 @@ import {
 } from "../../utils/security/runtimeCredentialVault";
 import { useHttpRedirectReview } from "./useHttpRedirectReview";
 import { useHttpRedirectTrust } from "./useHttpRedirectTrust";
+import { withSynologyRedirectDefaults } from "../../utils/protocol/synologyRedirectDefaults";
 import * as macroService from "../../utils/recording/macroService";
 import {
   verifyIdentity,
@@ -308,6 +309,7 @@ export function useWebBrowser(session: ConnectionSession) {
     state.connections,
     session.connectionId,
   );
+  const redirectTrust = useHttpRedirectTrust(session, connection);
   const targetResolution = useMemo(() => {
     const protocol = session.protocol === "https" ? "https" : "http";
     const defaultPort = protocol === "https" ? 443 : 80;
@@ -428,9 +430,15 @@ export function useWebBrowser(session: ConnectionSession) {
   const reviewedFlowScopeRef = useRef(reviewedFlowScope);
   reviewedFlowScopeRef.current = reviewedFlowScope;
   const reviewedFlowStartedRef = useRef<string | null>(null);
+  const synologyRedirectOriginalOrigin = redirectTrust.defaults?.originalOrigin;
   const proxyOptions = useMemo(() => {
     try {
-      const policy = normalizeHttpProxyPolicy(connection?.httpProxyPolicy);
+      const policy = withSynologyRedirectDefaults(
+        normalizeHttpProxyPolicy(connection?.httpProxyPolicy),
+        synologyRedirectOriginalOrigin
+          ? { version: 1, originalOrigin: synologyRedirectOriginalOrigin }
+          : undefined,
+      );
       const mode =
         applicationAuth.login?.upstreamAuthMode ??
         connection?.authType ??
@@ -454,9 +462,14 @@ export function useWebBrowser(session: ConnectionSession) {
           "Review Advanced login and internal proxy controls: the saved options or custom headers are invalid.",
       };
     }
-  }, [connection, applicationAuth.login?.upstreamAuthMode]);
+  }, [
+    connection,
+    applicationAuth.login?.upstreamAuthMode,
+    synologyRedirectOriginalOrigin,
+  ]);
   const proxyInputs = stableJsonStringify([
     connection?.httpProxyPolicy,
+    redirectTrust.defaults,
     connection?.httpHeaders,
     connection?.httpFormAutomation,
     connection ? runtimeCredentialTargetKey(connection) : null,
@@ -1234,7 +1247,6 @@ export function useWebBrowser(session: ConnectionSession) {
     }
   }, []);
 
-  const redirectTrust = useHttpRedirectTrust(session, connection);
   const redirectReview = useHttpRedirectReview({
     trust: redirectTrust,
     connection: noncredentialConnection,
@@ -1244,7 +1256,10 @@ export function useWebBrowser(session: ConnectionSession) {
       : "",
     accessKey: reviewedFlowScope,
     route: getGlobalHttpProxyUrl(),
-    enabled: proxyOptions.policy?.allowCrossOriginRedirects === true,
+    enabled:
+      proxyOptions.policy?.allowCrossOriginRedirects === true ||
+      !!proxyOptions.policy?.synologyQuickConnectDefaults,
+    effectivePolicy: proxyOptions.policy ?? undefined,
     generation: () => navGenRef.current,
     proxySessionId: () => proxySessionIdRef.current,
     navigationToken: () => pendingFrameRef.current?.token ?? null,

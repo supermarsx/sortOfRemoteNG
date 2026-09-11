@@ -41,6 +41,47 @@ certificate pin are not reusable permission for another origin. A source
 WebSocket cannot redirect those values to another server. HTTPS inspection and
 the connection itself remain subject to the existing trust workflow.
 
+## Synology default redirect destinations
+
+For Synology DSM website profiles and recognized QuickConnect HTTP(S)
+connections, **Use Synology default redirect destinations** is enabled by
+default. Find it in the connection editor's **HTTP(S) → Advanced → Internal
+proxy controls**. Clear the checkbox and save to opt out.
+
+The closed destination list is:
+
+- `http://<original NAS alias>.quickconnect.to` on port 80, when the original
+  address identifies a NAS alias;
+- `https://global.quickconnect.to` on port 443;
+- `https://www.quickconnect.to` on port 443.
+
+The alias comes only from the original connection. For example,
+`https://nas-example.fr3.quickconnect.to` identifies
+`http://nas-example.quickconnect.to`. A single alias label or an alias followed
+by one region label (two lowercase letters and digits) is recognized. Bare
+QuickConnect, reserved service names, deeper/direct hostnames and custom DSM
+addresses receive only the two fixed HTTPS portals; no NAS alias is guessed.
+An unsupported or noncanonical source does not gain these defaults. Later
+global/www hops retain the original connection's identity instead of learning
+a new alias from a redirect.
+
+These destinations have a narrow exception to the general cross-origin and
+HTTP-downgrade review switches. **Require HTTPS upstream always takes
+precedence**, including for the built-in HTTP alias. Defaults permit anonymous
+handoffs without repeated destination review; they do not approve forwarding
+a saved login. Configured login forwarding still requires its separate explicit
+approval. Source cookies, secret headers, query additions and certificate pins
+are not inherited by the destination.
+
+Each hop still uses a one-use native redirect receipt and a fresh protected
+proxy session, with HTTPS trust checked independently. There is no direct
+browser fallback, native cross-origin follow, wildcard QuickConnect grant or
+additional subresource permission. Changing the original source, opting out,
+or invalidating the document cancels stale default receipts. Disabling defaults
+does not delete explicitly trusted destinations; those remain subject to the
+general redirect policy. The derived runtime origin context is not saved or
+imported as connection policy.
+
 ## Foreign origins and unsupported traffic
 
 Third-party origins are currently **blocked, not transparently proxied**, except
@@ -156,6 +197,12 @@ redirect fixtures remain relevant. These tests do not contact user sites,
 install trusted roots, prove compatibility with every website, or establish
 zero browser-engine egress. Native app compilation and actual platform guard
 acceptance are separate gates.
+
+`http_synology_redirect_tests.rs` covers the exact built-in destinations,
+HTTPS-only precedence, opt-out and original-source/document revocation, and
+sequential protected QuickConnect handoffs. Its local tripwire verifies that
+receipt creation sends no upstream or destination request; it does not perform
+a live QuickConnect or NAS login.
 
 `http_font_asset_tests.rs` checks actual native CSS/HTML/JS rewriting, closed
 asset names, binary MIME/size/signature refusal, anonymous CONNECT routing,

@@ -18,6 +18,7 @@ import {
   clearRuntimeConnectionsForTests,
   getRuntimeWebNavigation,
   resolveRuntimeConnection,
+  registerRuntimeConnection,
 } from "../../src/utils/session/runtimeConnectionRegistry";
 import type { HttpRedirectReview } from "../../src/utils/protocol/httpRedirectReview";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
@@ -33,6 +34,7 @@ const h = vi.hoisted(() => ({
   dispatchAndFlush: vi.fn(),
   connections: [] as Connection[],
   persistedConnections: [] as Connection[],
+  runtimeStart: null as Connection | null,
   failSave: false,
   failSaveAfterDispatch: false,
   sessions: [] as ConnectionSession[],
@@ -133,10 +135,10 @@ const holdFrameLoad = (event: Event) => {
 };
 const initialSession = (): ConnectionSession => ({
   id: "web-tab",
-  connectionId: h.connections[0].id,
+  connectionId: (h.runtimeStart ?? h.connections[0]).id,
   name: "NAS website",
-  hostname: "quickconnect.example.test",
-  protocol: h.connections[0].protocol,
+  hostname: (h.runtimeStart ?? h.connections[0]).hostname,
+  protocol: (h.runtimeStart ?? h.connections[0]).protocol,
   ownerDatabaseId: "owned",
   status: "connected",
   startTime: new Date(),
@@ -177,6 +179,7 @@ beforeEach(() => {
   h.locked = false;
   h.failSave = false;
   h.failSaveAfterDispatch = false;
+  h.runtimeStart = null;
   h.dispatch.mockReset();
   h.connections = [
     {
@@ -481,6 +484,207 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  it("labels built-in destinations separately and keeps configured login forwarding behind explicit review", async () => {
+    h.connections = [
+      {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+        httpRedirectAuthentication: {
+          version: 1,
+          mode: "saved-login",
+          allowInsecureHttp: false,
+        },
+      },
+    ];
+    const view = await mounted();
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://global.quickconnect.to/",
+    );
+    expect(
+      await screen.findByText("Built-in Synology destination"),
+    ).toBeVisible();
+    expect(screen.queryByText("Trusted for this saved connection")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Continue in this tab" }),
+    ).toBeVisible();
+    expect(proxies).toHaveLength(1);
+    expect(h.invoke).not.toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: "proxy-1",
+    });
+  });
+  it("does not launch a default destination after opt-out while native receipt consumption is pending", async () => {
+    h.connections = [
+      {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+      },
+    ];
+    const view = await mounted();
+    const originalInvoke = h.invoke.getMockImplementation()!;
+    let finish!: (review: HttpRedirectReview) => void;
+    const pending = new Promise<HttpRedirectReview>((resolve) => {
+      finish = resolve;
+    });
+    let consuming = false;
+    h.invoke.mockImplementation(
+      (command: string, args: Record<string, unknown>) => {
+        if (command === "review_proxy_redirect" && args.receiptId) {
+          consuming = true;
+          return pending;
+        }
+        return originalInvoke(command, args);
+      },
+    );
+    const review = redirect(
+      view.container.querySelector("iframe")!,
+      "http://example-nas.quickconnect.to/",
+    );
+    await waitFor(() => expect(consuming).toBe(true));
+    h.connections = [
+      {
+        ...h.connections[0],
+        synologySettings: {
+          version: 1,
+          useHttps: true,
+          useDefaultRedirectDestinations: false,
+        },
+      },
+    ];
+    h.persistedConnections = structuredClone(h.connections);
+    view.rerender(<Harness />);
+    await act(async () => {
+      finish(review);
+    });
+    expect(proxies).toHaveLength(1);
+    expect(h.sessions[0].connectionId).toBe("saved-nas");
+    expect(
+      screen.queryByRole("region", { name: "Redirect review" }),
+    ).toBeNull();
+  });
+  it.each([true, false])(
+    "carries original built-in defaults through three anonymous proxy handoffs (saved=%s)",
+    async (saved) => {
+      const original: Connection = {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+        basicAuthUsername: "private-user",
+        basicAuthPassword: "private-password",
+      };
+      if (saved) h.connections = [original];
+      else {
+        h.connections = [];
+        h.runtimeStart = { ...original, id: "unsaved-qc" };
+        registerRuntimeConnection(h.runtimeStart);
+      }
+      const view = await mounted();
+      const destinations = [
+        "http://example-nas.quickconnect.to/",
+        "https://global.quickconnect.to/",
+        "https://www.quickconnect.to/",
+      ];
+      for (const [index, destination] of destinations.entries()) {
+        redirect(view.container.querySelector("iframe")!, destination);
+        await waitFor(() => expect(proxies).toHaveLength(index + 2));
+        await waitFor(() =>
+          expect(view.container.querySelector("iframe")?.src).toContain(
+            proxies[index + 1].proxy_url,
+          ),
+        );
+        expect(
+          screen.queryByRole("region", { name: "Redirect review" }),
+        ).toBeNull();
+        const runtime = resolveRuntimeConnection(
+          [],
+          h.sessions[0].connectionId,
+        )!;
+        expect(runtime.httpProxyPolicy).toMatchObject({
+          allowCrossOriginRedirects: false,
+          allowHttpDowngradeRedirects: false,
+          queryParameters: [],
+        });
+        expect(runtime.httpProxyPolicy).not.toHaveProperty(
+          "synologyQuickConnectDefaults",
+        );
+        expect(JSON.stringify(runtime)).not.toContain("private-");
+        expect(
+          getRuntimeWebNavigation(runtime.id)?.synologyRedirectSource
+            ?.originalOrigin,
+        ).toBe("https://example-nas.fr3.quickconnect.to");
+      }
+      const starts = h.invoke.mock.calls.filter(
+        ([name]) => name === "start_basic_auth_proxy",
+      );
+      expect(starts).toHaveLength(4);
+      for (const [, args] of starts)
+        expect(args.config.proxy_policy).toMatchObject({
+          allowCrossOriginRedirects: false,
+          allowHttpDowngradeRedirects: false,
+          synologyQuickConnectDefaults: {
+            version: 1,
+            originalOrigin: "https://example-nas.fr3.quickconnect.to",
+          },
+        });
+      expect(
+        h.invoke.mock.calls.filter(
+          ([name]) => name === "get_tls_certificate_info",
+        ),
+      ).toHaveLength(3);
+      expect(h.dispatchAndFlush).not.toHaveBeenCalled();
+    },
+  );
+  it("revokes a later portal proxy when original defaults are disabled and reloads without the exception", async () => {
+    h.connections = [
+      {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+      },
+    ];
+    const view = await mounted();
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://global.quickconnect.to/",
+    );
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    await waitFor(() =>
+      expect(view.container.querySelector("iframe")?.src).toContain(
+        proxies[1].proxy_url,
+      ),
+    );
+    h.connections = [
+      {
+        ...h.connections[0],
+        synologySettings: {
+          version: 1,
+          useHttps: true,
+          useDefaultRedirectDestinations: false,
+        },
+      },
+    ];
+    h.persistedConnections = structuredClone(h.connections);
+    view.rerender(<Harness />);
+    await waitFor(() =>
+      expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+        sessionId: "proxy-2",
+      }),
+    );
+    expect(view.container.querySelector("iframe")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(proxies).toHaveLength(3));
+    const starts = h.invoke.mock.calls.filter(
+      ([name]) => name === "start_basic_auth_proxy",
+    );
+    expect(starts[2][1].config.proxy_policy).not.toHaveProperty(
+      "synologyQuickConnectDefaults",
+    );
+    expect(starts[2][1].config.proxy_policy.allowCrossOriginRedirects).toBe(
+      false,
+    );
+  });
   it.each(["valid", "missing", "replaced"] as const)(
     "discovers a %s native receipt after a pathful page ignores the redacted origin-root failure URL",
     async (receiptState) => {
