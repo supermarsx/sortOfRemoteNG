@@ -23,13 +23,13 @@ const boundary = vi.hoisted(() => ({
   save: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
-  listener: null as null | ((event: { status: string }) => void),
+  listeners: new Set<(event: { status: string }) => void>(),
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => ({
-  onDatabaseAccessChange: (listener: typeof boundary.listener) => {
-    boundary.listener = listener;
+  onDatabaseAccessChange: (listener: (event: { status: string }) => void) => {
+    boundary.listeners.add(listener);
     return () => {
-      boundary.listener = null;
+      boundary.listeners.delete(listener);
     };
   },
   DatabaseManager: {
@@ -151,6 +151,7 @@ async function mount(props = {}) {
   return view;
 }
 beforeEach(() => {
+  boundary.listeners.clear();
   boundary.owner = "database-a";
   boundary.lease = 1;
   boundary.accessible = true;
@@ -206,6 +207,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  expect(boundary.listeners.size).toBe(0);
   vi.restoreAllMocks();
 });
 describe("mounted website automation controls and ownership", () => {
@@ -254,6 +256,9 @@ describe("mounted website automation controls and ownership", () => {
   });
   it("closes favorite menus on revocation and rejects captured opening callbacks", async () => {
     await mount();
+    // The real broadcaster owns independent subscriptions. The appearance
+    // hook must not overwrite the automation hook's revocation callback.
+    expect(boundary.listeners.size).toBeGreaterThanOrEqual(2);
     const oldOpen = current.openLibrary;
     fireEvent.contextMenu(screen.getByRole("button", { name: "Demo script" }), {
       clientX: 5,
@@ -263,7 +268,10 @@ describe("mounted website automation controls and ownership", () => {
       screen.getByTestId("web-automation-favorite-menu"),
     ).toBeInTheDocument();
     boundary.accessible = false;
-    act(() => boundary.listener!({ status: "suspended" }));
+    act(() => {
+      for (const listener of [...boundary.listeners])
+        listener({ status: "suspended" });
+    });
     expect(
       screen.queryByTestId("web-automation-favorite-menu"),
     ).not.toBeInTheDocument();
@@ -362,7 +370,10 @@ describe("mounted website automation controls and ownership", () => {
   it("does not revive page actions on Reload when the owning database is locked, even if Macros storage remains readable", async () => {
     await mount();
     boundary.accessible = false;
-    act(() => boundary.listener!({ status: "suspended" }));
+    act(() => {
+      for (const listener of [...boundary.listeners])
+        listener({ status: "suspended" });
+    });
     await act(async () => current.reload());
     expect(current.libraryReady).toBe(false);
     expect(current.allItems).toEqual([]);

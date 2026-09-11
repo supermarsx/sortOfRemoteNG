@@ -86,7 +86,11 @@ describe("independent HTTP application security audit", () => {
         if (loginMode === "form")
           expect(result).toMatchObject({
             upstreamAuthMode:
-              profile.loginFlow === "bitwarden" ? "bitwarden-form" : "none",
+              profile.loginFlow === "bitwarden"
+                ? "bitwarden-form"
+                : profile.loginFlow === "synology"
+                  ? "synology-form"
+                  : "none",
             autoLogin: true,
           });
         if (loginMode === "basic")
