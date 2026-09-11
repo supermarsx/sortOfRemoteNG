@@ -93,6 +93,7 @@ pub struct ProtectionStatus {
     security_revision: String,
     slots: Vec<SlotInfo>,
     unlocked: bool,
+    global_encryption_protected: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     session_expires_at: Option<u64>,
 }
@@ -431,6 +432,8 @@ async fn status_inner(
     let snapshot = managed_snapshot(root, state, id).await?;
     let profile = profile_binding(root)?;
     let revision = revision(&snapshot).to_owned();
+    let global_encryption_protected =
+        crate::database_files::globally_protected_database(root, state, id).await?;
     if is_managed(&snapshot) {
         let envelope = DatabaseEnvelope::parse(&snapshot.data, id)?;
         let session_expires_at = database_sessions::global()
@@ -444,6 +447,7 @@ async fn status_inner(
             security_revision: revision,
             slots: envelope.slots.iter().map(|s| s.info()).collect(),
             unlocked: session_expires_at.is_some(),
+            global_encryption_protected,
             session_expires_at,
         })
     } else {
@@ -458,6 +462,7 @@ async fn status_inner(
             security_revision: revision,
             slots: vec![],
             unlocked: !snapshot.data.is_string(),
+            global_encryption_protected,
             session_expires_at: None,
         })
     }
@@ -821,6 +826,7 @@ async fn change_inner_with_initialization(
     let managed = target.is_some();
     if !managed {
         crate::database_files::reject_unprotected_documents(&data)?;
+        crate::database_files::require_credential_vault_protection(state, None, &data).await?;
     }
     let new_revision = codec::random_id();
     let output = if let Some(target) = target {

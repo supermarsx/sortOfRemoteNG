@@ -39,6 +39,8 @@ export interface DatabaseProtectionStatus {
   securityRevision: string;
   slots: DatabaseProtectionSlot[];
   unlocked: boolean;
+  /** Native proof of both effective policy and authenticated encrypted file bytes. */
+  globalEncryptionProtected?: boolean;
   sessionExpiresAt?: number;
 }
 export type NewDatabaseProtectionSlot =

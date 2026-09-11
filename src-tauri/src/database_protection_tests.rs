@@ -67,6 +67,162 @@ fn password_target(cipher: &str) -> ProtectionTarget {
 }
 
 #[tokio::test]
+async fn credential_vault_removal_preserves_last_encryption_layer_and_stale_revision_fence() {
+    let _coordinator = sorng_encryption::settings_coordinator::lock().await;
+    use sorng_encryption::artifact_policy::{self, PolicyDocument, ProtectionMode};
+    for mode in ["disabled", "encrypted", "plaintext-override"] {
+        for (vault_data, empty) in [
+            (
+                json!({"version":1,"revision":1,"entries":[{"facets":{"password":"SYNTHETIC_PRIVATE"}}]}),
+                false,
+            ),
+            (Value::Null, false),
+            (json!({"version":1,"revision":0,"entries":[]}), true),
+        ] {
+            let (root, state, data) = fixture().await;
+            if mode != "disabled" {
+                state.install(sorng_encryption::MasterDek::generate()).await;
+            }
+            let vault = FakeVault::default();
+            let protected = change_inner(
+                root.path(),
+                &state,
+                "main",
+                "db",
+                "r0",
+                data.clone(),
+                None,
+                Some(data.clone()),
+                Some(password_target("aes-256-gcm")),
+                false,
+                false,
+                &vault,
+            )
+            .await
+            .unwrap();
+            if mode != "disabled" {
+                let policy = PolicyDocument::default()
+                    .with_mode(
+                        sorng_encryption::ArtifactKind::Connections,
+                        if mode == "encrypted" {
+                            ProtectionMode::Encrypted
+                        } else {
+                            ProtectionMode::Plaintext
+                        },
+                    )
+                    .unwrap();
+                std::fs::write(
+                    root.path().join(artifact_policy::POLICY_FILENAME),
+                    artifact_policy::encode(&state, &policy).await.unwrap(),
+                )
+                .unwrap();
+                artifact_policy::refresh(&state).await;
+            }
+            let mut private = data.clone();
+            private["credentialVault"] = vault_data;
+            save_inner(
+                root.path(),
+                &state,
+                "main",
+                "db",
+                protected.session_id.as_deref().unwrap(),
+                &protected.security_revision,
+                private.clone(),
+                Some(data),
+            )
+            .await
+            .unwrap();
+            let before = managed_snapshot(root.path(), &state, "db").await.unwrap();
+            let payload_path = root.path().join("databases/db.json");
+            let before_bytes = std::fs::read(&payload_path).unwrap();
+            let index_before = std::fs::read(root.path().join("databases/index.json")).unwrap();
+            let stale = change_inner(
+                root.path(),
+                &state,
+                "main",
+                "db",
+                "stale-revision",
+                before.data.clone(),
+                protected.session_id.clone(),
+                None,
+                None,
+                true,
+                false,
+                &vault,
+            )
+            .await;
+            assert!(stale.is_err());
+            let stale_contents = change_inner(
+                root.path(),
+                &state,
+                "main",
+                "db",
+                &protected.security_revision,
+                json!("stale-envelope"),
+                protected.session_id.clone(),
+                None,
+                None,
+                true,
+                false,
+                &vault,
+            )
+            .await;
+            assert!(stale_contents.is_err());
+            assert_eq!(std::fs::read(&payload_path).unwrap(), before_bytes);
+            let result = change_inner(
+                root.path(),
+                &state,
+                "main",
+                "db",
+                &protected.security_revision,
+                before.data,
+                protected.session_id,
+                None,
+                None,
+                true,
+                false,
+                &vault,
+            )
+            .await;
+            if mode == "encrypted" || empty {
+                assert!(result.unwrap().committed);
+                let after = managed_snapshot(root.path(), &state, "db").await.unwrap();
+                assert_eq!(
+                    after.data, private,
+                    "vault and unrelated data are preserved"
+                );
+                assert!(after.row.get("protectionFormat").is_none());
+                let bytes = std::fs::read(&payload_path).unwrap();
+                assert_eq!(
+                    sdbf::parse_and_verify(&bytes)
+                        .unwrap()
+                        .starts_with(sorng_encryption::envelope::MAGIC),
+                    mode == "encrypted"
+                );
+                let status = status_inner(root.path(), &state, "main", "db")
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(status).unwrap()["globalEncryptionProtected"],
+                    mode == "encrypted"
+                );
+            } else {
+                let error = result
+                    .err()
+                    .expect("generic confirmation cannot authorize vault plaintext");
+                assert!(error.contains("credential vault"));
+                assert!(!error.contains("SYNTHETIC_PRIVATE"));
+                assert_eq!(std::fs::read(&payload_path).unwrap(), before_bytes);
+                assert_eq!(
+                    std::fs::read(root.path().join("databases/index.json")).unwrap(),
+                    index_before
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn new_password_policy_refuses_before_managed_data_or_vault_mutation() {
     let _coordinator = sorng_encryption::settings_coordinator::lock().await;
     let (root, state, data) = fixture().await;

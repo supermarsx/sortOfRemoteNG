@@ -26,6 +26,83 @@ async fn fixture() -> (tempfile::TempDir, ArtifactRoots, EncryptionState) {
     (dir, roots, state)
 }
 
+#[tokio::test]
+async fn credential_vault_blocks_connections_decryption_including_recovery_generations() {
+    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    for suffix in ["", ".bak", ".v0.bak"] {
+        for vault in [
+            serde_json::json!({"version":1,"revision":1,"entries":[{"facets":{"password":"SYNTHETIC_PRIVATE"}}]}),
+            serde_json::Value::Null,
+        ] {
+            let (_dir, roots, state) = fixture().await;
+            let path = roots.app_data.join(format!("databases/db.json{suffix}"));
+            let plain =
+                serde_json::to_vec(&serde_json::json!({"connections":[],"credentialVault":vault}))
+                    .unwrap();
+            let encrypted = encoded_bytes(&state, ArtifactKind::Connections, &plain, true)
+                .await
+                .unwrap();
+            let original = sdbf_bytes(&encrypted);
+            put(&path, &original);
+            let inventory = scan(&roots, &state).await.unwrap();
+            let mut tx = ArtifactTransaction::begin(&roots.app_data, &inventory.roots, &state)
+                .await
+                .unwrap();
+            let error = prepare_artifact(
+                &inventory,
+                ArtifactKind::Connections,
+                ProtectionMode::Plaintext,
+                &state,
+                &mut tx,
+                &|_, _| Ok(()),
+            )
+            .await
+            .unwrap_err();
+            assert!(error.contains("credential vault"), "{error}");
+            assert!(!error.contains("SYNTHETIC_PRIVATE"));
+            tx.recover().unwrap();
+            assert_eq!(fs::read(&path).unwrap(), original);
+            assert!(!artifact_transaction::has_pending(&roots.app_data).unwrap());
+            assert!(!roots
+                .app_data
+                .join(artifact_policy::POLICY_FILENAME)
+                .exists());
+        }
+    }
+}
+
+#[tokio::test]
+async fn credential_vault_empty_or_inner_ciphertext_keeps_supported_outer_policy_transition() {
+    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    for data in [
+        serde_json::json!({"connections":[],"credentialVault":{"version":1,"revision":0,"entries":[]}}),
+        serde_json::json!("opaque-password-envelope.salt.iv.ciphertext"),
+    ] {
+        let (_dir, roots, state) = fixture().await;
+        let path = roots.app_data.join("databases/db.json");
+        let plain = serde_json::to_vec(&data).unwrap();
+        put(
+            &path,
+            &sdbf_bytes(
+                &encoded_bytes(&state, ArtifactKind::Connections, &plain, true)
+                    .await
+                    .unwrap(),
+            ),
+        );
+        convert(
+            &roots,
+            &state,
+            ArtifactKind::Connections,
+            ProtectionMode::Plaintext,
+        )
+        .await;
+        assert_eq!(
+            sdbf::parse_and_verify(&fs::read(&path).unwrap()).unwrap(),
+            plain
+        );
+    }
+}
+
 fn put(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, bytes).unwrap();

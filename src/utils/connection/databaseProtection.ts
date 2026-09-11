@@ -86,6 +86,8 @@ export const databaseProtection = {
     )<DatabaseProtectionStatus>("database_protection_status", { databaseId });
     if (
       !record(result) ||
+      (result.globalEncryptionProtected !== undefined &&
+        typeof result.globalEncryptionProtected !== "boolean") ||
       !["none", "legacy-password", "managed"].includes(result.kind) ||
       (result.kind === "managed" && !isDatabaseCipher(result.dataCipher)) ||
       (result.dataCipher !== undefined && !isDatabaseCipher(result.dataCipher))

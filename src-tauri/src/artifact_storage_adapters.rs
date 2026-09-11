@@ -823,6 +823,11 @@ async fn encoded_bytes(
     encrypted: bool,
 ) -> Result<Vec<u8>, String> {
     if !encrypted {
+        if kind == ArtifactKind::Connections {
+            let data: serde_json::Value = serde_json::from_slice(plain)
+                .map_err(|_| "Connections data could not be verified before removing encryption")?;
+            crate::database_files::reject_plaintext_credential_vault(&data)?;
+        }
         return Ok(plain.to_vec());
     }
     let key = state

@@ -122,6 +122,10 @@ use sorng_encryption::envelope::{
 };
 use sorng_encryption::{ArtifactKind, EncryptionState};
 
+#[cfg(test)]
+#[path = "database_credential_vault_tests.rs"]
+mod credential_vault_tests;
+
 /// Returns true when the given payload bytes start with the SORNG
 /// envelope magic — i.e. they've been P4-encrypted. False matches
 /// the legacy plaintext-P1 shape (raw JSON bytes).
@@ -517,7 +521,6 @@ async fn encode_payload(
     if state.resolve_write_policy(artifact, unlocked)? {
         return encrypt_payload(state, artifact, &plain).await;
     }
-
     if master_encryption_configured && !unlocked {
         return Err(
             "database storage is encrypted; unlock first via Settings → Security".to_string(),
@@ -525,6 +528,19 @@ async fn encode_payload(
     }
     if !unlocked {
         ensure_locked_plaintext_write_is_safe(canonical)?;
+    }
+    if artifact == ArtifactKind::Connections {
+        reject_plaintext_credential_vault(value)?;
+        // Preserve the legacy writer's recoverable orphan-.tmp behavior: only
+        // a generation from the actual read ladder supplies an existing vault.
+        if safe_read_raw(canonical)
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            if let Some(current) = encrypted_load(state, artifact, canonical).await? {
+                reject_plaintext_credential_vault(&current.value)?;
+            }
+        }
     }
     Ok(plain)
 }
@@ -837,6 +853,12 @@ pub async fn save_database_data(
         expected_data.as_ref(),
     )?;
     reject_managed_raw_write(row, existing.as_ref().map(|entry| &entry.value), &data)?;
+    require_credential_vault_protection(
+        &enc_state,
+        existing.as_ref().map(|entry| &entry.value),
+        &data,
+    )
+    .await?;
     reject_unprotected_documents(&data)?;
     validate_data_shape(
         &data,
@@ -866,6 +888,79 @@ pub(crate) fn assert_database_content_matches(
         );
     }
     Ok(())
+}
+
+const VAULT_PLAINTEXT_WARNING: &str = "This database contains a credential vault that must remain encrypted. Enable and unlock global encryption with Connections set to encrypted, or keep managed database protection (a password or OS-vault slot). Removing the last encryption layer would expose saved credentials; no plaintext copy was created.";
+
+/// Only the exact empty supported vault can be proven free of credentials.
+/// Unknown versions, malformed fields, and extra fields never authorize a
+/// plaintext downgrade. Managed/legacy inner ciphertext remains opaque here.
+pub(crate) fn reject_plaintext_credential_vault(data: &serde_json::Value) -> Result<(), String> {
+    let Some(vault) = data.get("credentialVault") else {
+        return Ok(());
+    };
+    let empty = vault.as_object().is_some_and(|object| {
+        object.len() == 3
+            && object.get("version").and_then(serde_json::Value::as_u64) == Some(1)
+            && object
+                .get("revision")
+                .and_then(serde_json::Value::as_u64)
+                .is_some()
+            && object
+                .get("entries")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(Vec::is_empty)
+    });
+    if empty {
+        Ok(())
+    } else {
+        Err(VAULT_PLAINTEXT_WARNING.into())
+    }
+}
+
+/// Writer/key coordinator must be held. Inspect the current value as well so
+/// omitting the vault from a raw replacement cannot authorize its downgrade.
+pub(crate) async fn require_credential_vault_protection(
+    state: &EncryptionState,
+    current: Option<&serde_json::Value>,
+    proposed: &serde_json::Value,
+) -> Result<(), String> {
+    if reject_plaintext_credential_vault(proposed).is_ok()
+        && current.is_none_or(|value| reject_plaintext_credential_vault(value).is_ok())
+    {
+        return Ok(());
+    }
+    let unlocked = state.is_unlocked().await;
+    if unlocked && state.resolve_write_policy(ArtifactKind::Connections, unlocked)? {
+        Ok(())
+    } else {
+        Err(VAULT_PLAINTEXT_WARNING.into())
+    }
+}
+
+/// Status is stricter than a future write policy: a tolerant-read plaintext
+/// database is not protected merely because its next save would encrypt it.
+pub(crate) async fn globally_protected_database(
+    profile: &Path,
+    state: &EncryptionState,
+    id: &str,
+) -> Result<bool, String> {
+    database_transaction::validate_database_id(id)?;
+    let unlocked = state.is_unlocked().await;
+    if !unlocked || !state.resolve_write_policy(ArtifactKind::Connections, unlocked)? {
+        return Ok(false);
+    }
+    let path = profile.join("databases").join(format!("{id}.json"));
+    let Some((bytes, LoadSource::Current)) = safe_read_raw(&path).map_err(|e| e.to_string())?
+    else {
+        return Ok(false);
+    };
+    if !is_envelope_blob(&bytes) {
+        return Ok(false);
+    }
+    // Never turn a header alone into an authenticated protection claim.
+    decrypt_payload(state, ArtifactKind::Connections, &bytes).await?;
+    Ok(true)
 }
 
 /// Documents may contain private records and attachments: the initial format
@@ -942,6 +1037,7 @@ pub async fn change_database_security(
         );
     }
     reject_managed_raw_write(row, Some(&existing.value), &data)?;
+    require_credential_vault_protection(&enc_state, Some(&existing.value), &data).await?;
     validate_data_shape(
         &existing.value,
         row.get("isEncrypted")
