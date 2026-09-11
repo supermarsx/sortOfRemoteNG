@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
+import { resolveWindowsOpenSslEnvironment } from "./lib/windows-openssl-env.mjs";
 import {
   rustTargetFromArgs,
   stageWindowsNativeRuntime,
@@ -44,6 +45,13 @@ function nativeWindowsPathPrefix() {
 }
 
 const env = { ...process.env };
+Object.assign(
+  env,
+  resolveWindowsOpenSslEnvironment({
+    ...env,
+    CARGO_BUILD_TARGET: rustTargetFromArgs(args, env),
+  }),
+);
 const prefix = nativeWindowsPathPrefix();
 if (prefix.length > 0) {
   const existingPath = env.Path ?? env.PATH ?? "";
