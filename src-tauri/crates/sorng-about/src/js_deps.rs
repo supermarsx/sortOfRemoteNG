@@ -51,6 +51,7 @@ const PRODUCTION_DEPS: &[(&str, &str, &str, &str)] = &[
     ("react-dom", "19.3.0", "MIT", "React & UI"),
     ("react-i18next", "17.0.13", "MIT", "React & UI"),
     ("rxjs", "7.8.2", "Apache-2.0", "Other"),
+    ("tldts", "7.0.30", "MIT", "Other"),
     ("webssh2-frontend", "1.0.3", "MIT", "Remote Desktop & SSH"),
 ];
 
