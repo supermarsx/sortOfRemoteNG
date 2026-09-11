@@ -1,6 +1,11 @@
 //! Native managed inner-database control plane. The renderer receives plaintext
 //! only for an unlocked database, never DEKs, KEKs, or vault secret material.
 use crate::database_files::{managed_commit, managed_snapshot, ManagedSnapshot};
+// Shared artifact adapters also compile in app_lib, which intentionally has no
+// database_files module. Expose the same guard through the existing public
+// protection facade; do not duplicate or weaken its plaintext-vault checks.
+#[doc(hidden)]
+pub use crate::database_files::reject_plaintext_credential_vault;
 use crate::trust_store_commands as trust_reads;
 use codec::Zeroizing;
 use serde::Serialize;

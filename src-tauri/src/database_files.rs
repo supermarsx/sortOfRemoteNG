@@ -895,7 +895,7 @@ const VAULT_PLAINTEXT_WARNING: &str = "This database contains a credential vault
 /// Only the exact empty supported vault can be proven free of credentials.
 /// Unknown versions, malformed fields, and extra fields never authorize a
 /// plaintext downgrade. Managed/legacy inner ciphertext remains opaque here.
-pub(crate) fn reject_plaintext_credential_vault(data: &serde_json::Value) -> Result<(), String> {
+pub fn reject_plaintext_credential_vault(data: &serde_json::Value) -> Result<(), String> {
     let Some(vault) = data.get("credentialVault") else {
         return Ok(());
     };
