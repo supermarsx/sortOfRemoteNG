@@ -409,6 +409,9 @@ fn actor_config(config: ExternalSshConfig<'_>) -> SshConnectionConfig {
             .password
             .map(|value| SecretString::from(value.to_string())),
         private_key_path: config.private_key.map(str::to_string),
+        private_key_content: None,
+        totp_options: None,
+        allow_agent_auth: true,
         private_key_passphrase: None,
         jump_hosts: vec![],
         proxy_config: None,

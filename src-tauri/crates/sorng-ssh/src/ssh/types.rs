@@ -261,6 +261,14 @@ pub struct SshCompressionInfo {
 // ===============================
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SshTotpOptions {
+    pub algorithm: String,
+    pub digits: u8,
+    pub period: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SshConnectionConfig {
     pub host: String,
     pub port: u16,
@@ -268,6 +276,13 @@ pub struct SshConnectionConfig {
     #[serde(skip_serializing, default)]
     pub password: Option<SecretString>,
     pub private_key_path: Option<String>,
+    /// In-memory vault key material. Never serialized, written to disk, or logged.
+    #[serde(skip_serializing, default)]
+    pub private_key_content: Option<SecretString>,
+    #[serde(default)]
+    pub totp_options: Option<SshTotpOptions>,
+    #[serde(default = "default_true")]
+    pub allow_agent_auth: bool,
     #[serde(skip_serializing, default)]
     pub private_key_passphrase: Option<SecretString>,
     pub jump_hosts: Vec<JumpHostConfig>,
@@ -1483,6 +1498,9 @@ mod tests {
             username: "user".to_string(),
             password: None,
             private_key_path: None,
+            private_key_content: None,
+            totp_options: None,
+            allow_agent_auth: true,
             private_key_passphrase: None,
             jump_hosts: vec![],
             proxy_config: None,
@@ -1535,6 +1553,9 @@ mod tests {
             username: "admin".to_string(),
             password: Some(secret("pass")),
             private_key_path: None,
+            private_key_content: None,
+            totp_options: None,
+            allow_agent_auth: true,
             private_key_passphrase: None,
             jump_hosts: vec![JumpHostConfig {
                 host: "jump.example.com".to_string(),
@@ -1798,6 +1819,9 @@ mod tests {
             username: "user".to_string(),
             password: Some(secret("password123")),
             private_key_path: Some("/keys/id_ed25519".to_string()),
+            private_key_content: Some(secret("PRIVATE-KEY-SECRET-FIXTURE")),
+            totp_options: None,
+            allow_agent_auth: false,
             private_key_passphrase: Some(secret("keypass")),
             jump_hosts: vec![],
             proxy_config: Some(ProxyConfig {
@@ -1855,6 +1879,7 @@ mod tests {
 
         for leaked in [
             "password123",
+            "PRIVATE-KEY-SECRET-FIXTURE",
             "keypass",
             "proxy-pass",
             "proxy-command-pass",

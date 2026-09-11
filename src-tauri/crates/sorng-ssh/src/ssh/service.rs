@@ -913,9 +913,55 @@ pub fn preview_known_hosts(path: Option<String>) -> Result<KnownHostsPreview, St
     })
 }
 
+fn validate_vault_ssh_config(config: &SshConnectionConfig) -> Result<(), String> {
+    if let Some(key) = &config.private_key_content {
+        let value = key.expose_secret();
+        if value.len() > 65_536
+            || value.contains('\0')
+            || !value.trim_start().starts_with("-----BEGIN ")
+            || !value.contains("PRIVATE KEY-----")
+            || config.private_key_path.is_some()
+        {
+            return Err("Invalid in-memory SSH key. Use bounded PEM/OpenSSH private-key material without a local key path.".into());
+        }
+    }
+    if let Some(options) = &config.totp_options {
+        if !["sha1", "sha256", "sha512"].contains(&options.algorithm.as_str())
+            || ![6, 8].contains(&options.digits)
+            || !(1..=3600).contains(&options.period)
+            || config.totp_secret.is_none()
+        {
+            return Err("Invalid selected SSH authenticator parameters.".into());
+        }
+    }
+    Ok(())
+}
+
 /// Generate a TOTP code from a secret
 pub fn generate_totp_code(secret: &str) -> Result<String, String> {
+    generate_configured_totp_code(secret, None)
+}
+
+fn generate_configured_totp_code(
+    secret: &str,
+    options: Option<&SshTotpOptions>,
+) -> Result<String, String> {
     use totp_rs::{Algorithm, Builder};
+    let (algorithm, digits, period) = match options {
+        Some(options) => {
+            let algorithm = match options.algorithm.as_str() {
+                "sha1" => Algorithm::SHA1,
+                "sha256" => Algorithm::SHA256,
+                "sha512" => Algorithm::SHA512,
+                _ => return Err("Unsupported SSH authenticator algorithm".into()),
+            };
+            if ![6, 8].contains(&options.digits) || !(1..=3600).contains(&options.period) {
+                return Err("Invalid SSH authenticator parameters".into());
+            }
+            (algorithm, options.digits, options.period)
+        }
+        None => (Algorithm::SHA1, 6, 30),
+    };
 
     // Try to decode the secret (it might be base32 encoded)
     let secret_bytes = if secret.chars().all(|c| c.is_ascii_alphanumeric()) {
@@ -928,10 +974,10 @@ pub fn generate_totp_code(secret: &str) -> Result<String, String> {
     };
 
     let totp = Builder::new()
-        .with_algorithm(Algorithm::SHA1)
-        .with_digits(6) // 6 digits
+        .with_algorithm(algorithm)
+        .with_digits(digits)
         .with_skew(1) // 1 step
-        .with_step_duration(30) // 30 second period
+        .with_step_duration(period)
         .with_secret(secret_bytes)
         .build()
         .map_err(|e| format!("Failed to create TOTP: {}", e))?;
@@ -2610,6 +2656,7 @@ fn retained_ssh_config_bytes(
         .map_err(|_| SshConnectionAdmissionError::ConfigAccounting)?
         .len();
     add_secret_bytes(&mut total, config.password.as_ref())?;
+    add_secret_bytes(&mut total, config.private_key_content.as_ref())?;
     add_secret_bytes(&mut total, config.private_key_passphrase.as_ref())?;
     add_secret_bytes(&mut total, config.totp_secret.as_ref())?;
     add_secret_list_bytes(&mut total, &config.keyboard_interactive_responses)?;
@@ -3450,6 +3497,7 @@ impl SshService {
         &self,
         config: &SshConnectionConfig,
     ) -> Result<(Self, SshConnectionAttempt), String> {
+        validate_vault_ssh_config(config)?;
         // Establish cleanup capacity before leases, sessions, or native bridge
         // handles can exist for this attempt.
         detached_ssh_cleanup_executor()?;
@@ -5122,7 +5170,27 @@ impl SshService {
         config: &SshConnectionConfig,
         phase: &dyn SshDeadlinePhase,
     ) -> Result<(), String> {
-        // Try public key authentication first if key is provided
+        // A vault key is provided only in memory; never reinterpret it as a path.
+        if let Some(key) = &config.private_key_content {
+            phase.configure_session_timeout(session)?;
+            if session
+                .userauth_pubkey_memory(
+                    &config.username,
+                    None,
+                    key.expose_secret(),
+                    config
+                        .private_key_passphrase
+                        .as_ref()
+                        .map(|value| value.expose_secret()),
+                )
+                .is_ok()
+                && session.authenticated()
+            {
+                return Ok(());
+            }
+            phase.ensure_active()?;
+        }
+        // Try public key authentication first if a local key path is provided.
         if let Some(private_key_path) = &config.private_key_path {
             phase.ensure_active()?;
             if let Ok(private_key_content) = std::fs::read_to_string(private_key_path) {
@@ -5155,6 +5223,7 @@ impl SshService {
                         passphrase,
                     )
                     .is_ok()
+                    && session.authenticated()
                 {
                     return Ok(());
                 }
@@ -5169,6 +5238,7 @@ impl SshService {
             if session
                 .userauth_password(&config.username, password.expose_secret())
                 .is_ok()
+                && session.authenticated()
             {
                 return Ok(());
             }
@@ -5183,6 +5253,7 @@ impl SshService {
             struct KeyboardInteractiveHandler {
                 password: Option<SecretString>,
                 totp_secret: Option<SecretString>,
+                totp_options: Option<SshTotpOptions>,
                 responses: Vec<SecretString>,
             }
 
@@ -5206,7 +5277,10 @@ impl SshService {
                                 || prompt_lower.contains("mfa")
                             {
                                 if let Some(ref secret) = self.totp_secret {
-                                    if let Ok(code) = generate_totp_code(secret.expose_secret()) {
+                                    if let Ok(code) = generate_configured_totp_code(
+                                        secret.expose_secret(),
+                                        self.totp_options.as_ref(),
+                                    ) {
                                         return code;
                                     }
                                 }
@@ -5236,6 +5310,7 @@ impl SshService {
             let mut handler = KeyboardInteractiveHandler {
                 password: config.password.clone(),
                 totp_secret: config.totp_secret.clone(),
+                totp_options: config.totp_options.clone(),
                 responses: config.keyboard_interactive_responses.clone(),
             };
 
@@ -5243,6 +5318,7 @@ impl SshService {
             if session
                 .userauth_keyboard_interactive(&config.username, &mut handler)
                 .is_ok()
+                && session.authenticated()
             {
                 return Ok(());
             }
@@ -5251,7 +5327,10 @@ impl SshService {
 
         // Try agent authentication
         phase.configure_session_timeout(session)?;
-        if session.userauth_agent(&config.username).is_ok() {
+        if config.allow_agent_auth
+            && session.userauth_agent(&config.username).is_ok()
+            && session.authenticated()
+        {
             return Ok(());
         }
         phase.ensure_active()?;
@@ -5402,6 +5481,7 @@ impl SshService {
 
         if let Some(private_key_path) = private_key_path {
             next_config.private_key_path = Some(private_key_path);
+            next_config.private_key_content = None;
         }
 
         if let Some(passphrase) = private_key_passphrase {
@@ -8560,6 +8640,7 @@ where
     F: FnOnce(SshService, String, SshConnectionConfig, SshConnectionWorkerLease) -> Fut,
     Fut: Future<Output = Result<EstablishedSshConnection, String>>,
 {
+    validate_vault_ssh_config(&config)?;
     let (connector, mut attempt) = {
         let service = state.lock().await;
         service.begin_connection_attempt(&config)?
@@ -9649,6 +9730,48 @@ mod connection_admission_tests {
             }
             wait_for_snapshot(&admission, SshConnectionAdmissionSnapshot::default()).await;
         }
+    }
+
+    #[test]
+    fn vault_inline_keys_are_bounded_redacted_and_counted() {
+        let mut value = config();
+        let key = "-----BEGIN OPENSSH PRIVATE KEY-----\nFIXTURE-PRIVATE-KEY\n-----END OPENSSH PRIVATE KEY-----";
+        value.private_key_content = Some(SecretString::from(key.to_string()));
+        value.allow_agent_auth = false;
+        assert!(validate_vault_ssh_config(&value).is_ok());
+        let public = serde_json::to_string(&value).unwrap();
+        assert!(!public.contains("FIXTURE-PRIVATE-KEY"));
+        assert!(!format!("{value:?}").contains("FIXTURE-PRIVATE-KEY"));
+        assert_eq!(
+            retained_ssh_config_bytes(&value).unwrap(),
+            public.len() + key.len()
+        );
+        value.private_key_path = Some("ignored-local-key".into());
+        assert!(validate_vault_ssh_config(&value).is_err());
+        value.private_key_path = None;
+        value.private_key_content = Some(SecretString::from("x".repeat(65_537)));
+        assert!(validate_vault_ssh_config(&value).is_err());
+    }
+
+    #[test]
+    fn vault_totp_parameters_support_configured_algorithms_and_refuse_invalid_values() {
+        let mut value = config();
+        let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        value.totp_secret = Some(SecretString::from(secret.to_string()));
+        for algorithm in ["sha1", "sha256", "sha512"] {
+            value.totp_options = Some(SshTotpOptions {
+                algorithm: algorithm.into(),
+                digits: 8,
+                period: 60,
+            });
+            assert!(validate_vault_ssh_config(&value).is_ok());
+            let code = generate_configured_totp_code(secret, value.totp_options.as_ref()).unwrap();
+            assert_eq!(code.len(), 8);
+            assert!(code.bytes().all(|byte| byte.is_ascii_digit()));
+        }
+        value.totp_options.as_mut().unwrap().period = 0;
+        assert!(validate_vault_ssh_config(&value).is_err());
+        assert!(generate_configured_totp_code(secret, value.totp_options.as_ref()).is_err());
     }
 
     #[test]

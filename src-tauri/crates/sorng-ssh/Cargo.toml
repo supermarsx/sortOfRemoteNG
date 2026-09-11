@@ -28,7 +28,7 @@ sorng-storage = { path = "../sorng-storage" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-ssh2 = { workspace = true }
+ssh2 = { workspace = true, features = ["openssl-on-win32"] }
 futures = { workspace = true }
 async-trait = { workspace = true }
 shell-escape = "0.1"
