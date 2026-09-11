@@ -15,6 +15,10 @@ import { openDB } from "idb";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
+import {
+  passwordPolicyError,
+  type PasswordPurpose,
+} from "../../src/utils/security/passwordPolicy";
 
 const DB_NAME = "mremote-keyval";
 const STORE_NAME = "keyval";
@@ -39,6 +43,15 @@ function installInvoke(impl: (cmd: string, args?: InvokeArgs) => unknown) {
 
 function defaultInvoke(cmd: string, args?: InvokeArgs): unknown {
   switch (cmd) {
+    case "encryption_validate_new_password": {
+      const error = passwordPolicyError(
+        String(args?.password ?? ""),
+        undefined,
+        args?.purpose as PasswordPurpose,
+      );
+      if (error) throw new Error(error);
+      return undefined;
+    }
     case "databases_list":
       return indexFile;
     case "databases_save_index":
@@ -144,13 +157,18 @@ describe("DatabaseManager (IPC path)", () => {
 
   it("saveDatabaseData encrypts up front when a password is set", async () => {
     const manager = new DatabaseManager();
-    const col = await manager.createDatabase("Secret", "desc", true, "pw");
+    const password = "Fixture-long-password-1!";
+    const col = await manager.createDatabase("Secret", "desc", true, password);
+    expect(invokeSpy).toHaveBeenCalledWith("encryption_validate_new_password", {
+      password,
+      purpose: "database",
+    });
     const data = {
       connections: [{ id: "c", name: "n" } as any],
       settings: {},
       timestamp: 1,
     } as const;
-    await manager.saveDatabaseData(col.id, data as any, "pw");
+    await manager.saveDatabaseData(col.id, data as any, password);
 
     const stored = fileStore.get(col.id)!.value;
     // The file payload must NOT be the raw object — it's the
@@ -159,7 +177,7 @@ describe("DatabaseManager (IPC path)", () => {
     expect(stored).not.toContain("timestamp");
 
     // And the load path must produce the original cleartext back.
-    const loaded = await manager.loadDatabaseData(col.id, "pw");
+    const loaded = await manager.loadDatabaseData(col.id, password);
     expect(loaded).toEqual(data);
   });
 
