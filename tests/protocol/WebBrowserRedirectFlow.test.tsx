@@ -27,6 +27,7 @@ const h = vi.hoisted(() => ({
   invoke: vi.fn(),
   dispatch: vi.fn(),
   verify: vi.fn(),
+  activate: vi.fn(),
   readCurrent: vi.fn(),
   flushPendingSave: vi.fn(),
   dispatchAndFlush: vi.fn(),
@@ -37,13 +38,26 @@ const h = vi.hoisted(() => ({
   sessions: [] as ConnectionSession[],
   settingsReady: true,
   locked: false,
+  availabilityGeneration: 1,
+  networkGuardStatus: {
+    platform: "windows",
+    frameNavigation: "enforced",
+    allNetworkRequestsMediated: false,
+  },
   settings: {
     httpsTrustPolicy: "always-ask",
     proxyKeepaliveEnabled: false,
     webRecording: { autoRecordWebSessions: false },
   },
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (command: string, ...args: unknown[]) =>
+    command === "web_network_guard_status"
+      ? Promise.resolve(h.networkGuardStatus)
+      : command === "activate_proxy_network_document"
+        ? h.activate(...args)
+        : h.invoke(command, ...args),
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async () => () => undefined,
 }));
@@ -59,7 +73,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
     databaseAvailability: {
       status: "ready",
       databaseId: "owned",
-      generation: 1,
+      generation: h.availabilityGeneration,
     },
     recycleBin: { snapshot: { scope: { databaseId: "owned", generation: 1 } } },
   }),
@@ -149,6 +163,13 @@ function Harness() {
   return <WebBrowser key={session.connectionId} session={session} />;
 }
 beforeEach(() => {
+  h.activate.mockReset().mockResolvedValue(false);
+  h.availabilityGeneration = 1;
+  h.networkGuardStatus = {
+    platform: "windows",
+    frameNavigation: "enforced",
+    allNetworkRequestsMediated: false,
+  };
   clearRuntimeConnectionsForTests();
   receipts.clear();
   proxies.length = 0;
@@ -243,6 +264,176 @@ async function mounted() {
   );
   return view;
 }
+
+describe("mounted website network boundary", () => {
+  it.each(["initializing", "failed"])(
+    "blocks %s native guard before certificate or proxy requests",
+    async (state) => {
+      h.networkGuardStatus.frameNavigation = state;
+      const view = render(<Harness />);
+      await waitFor(() =>
+        expect(view.container.textContent).toContain(
+          state === "failed"
+            ? "Website navigation protection failed"
+            : "Website navigation protection is still starting",
+        ),
+      );
+      expect(proxies).toHaveLength(0);
+      expect(h.verify).not.toHaveBeenCalled();
+      expect(h.invoke).not.toHaveBeenCalledWith(
+        "get_tls_certificate_info",
+        expect.anything(),
+      );
+      expect(view.container.querySelector("iframe")).toBeNull();
+    },
+  );
+  it("discloses unsupported platform enforcement without claiming every request is mediated", async () => {
+    h.networkGuardStatus = {
+      platform: "linux",
+      frameNavigation: "unsupported",
+      allNetworkRequestsMediated: false,
+    };
+    await mounted();
+    expect(
+      screen.getByText(/Native frame navigation protection is not available/),
+    ).toBeInTheDocument();
+  });
+  it.each(["owner", "navigation"])(
+    "only displays current primary-document origin reports and clears on %s changes",
+    async (change) => {
+      const view = await mounted();
+      const iframe = view.container.querySelector("iframe")!;
+      const url = new URL(iframe.src),
+        navigationToken = url.searchParams.get("__sorng_navigation_v1");
+      url.searchParams.delete("__sorng_navigation_v1");
+      const identity = {
+        version: 1,
+        sessionId: "proxy-1",
+        documentToken: "d".repeat(32),
+        documentSequence: 1,
+        navigationToken,
+        url: url.href,
+      };
+      const send = (
+        data: Record<string, unknown>,
+        source: MessageEventSource | null = iframe.contentWindow,
+        origin = url.origin,
+      ) =>
+        act(() =>
+          window.dispatchEvent(
+            new MessageEvent("message", { source, origin, data }),
+          ),
+        );
+      send({ ...identity, type: "proxy_document_start" });
+      send({ ...identity, type: "proxy_dom_ready" });
+      expect(h.activate).toHaveBeenCalledWith({
+        sessionId: "proxy-1",
+        documentSequence: 1,
+      });
+      expect(h.activate).toHaveBeenCalledOnce();
+      const report = {
+        ...identity,
+        type: "sorng_web_network_blocked",
+        kind: "fetch",
+        reason: "origin-not-approved",
+        origin: "https://blocked.example",
+      };
+      send(report, window);
+      send(report, iframe.contentWindow, "https://foreign.example");
+      send({ ...report, documentSequence: 9 });
+      send({ ...report, origin: "https://blocked.example/?secret=hidden" });
+      expect(
+        screen.queryByText("https://blocked.example"),
+      ).not.toBeInTheDocument();
+      send(report);
+      send(report);
+      expect(screen.getByText("https://blocked.example")).toBeInTheDocument();
+      expect(
+        screen.getByText("Review 1 network restriction"),
+      ).toBeInTheDocument();
+      if (change === "owner") {
+        h.availabilityGeneration++;
+        view.rerender(<Harness />);
+      } else send({ ...identity, type: "proxy_navigation_start" });
+      expect(
+        screen.queryByText("https://blocked.example"),
+      ).not.toBeInTheDocument();
+      send(report);
+      expect(
+        screen.queryByText("https://blocked.example"),
+      ).not.toBeInTheDocument();
+      expect(view.container.textContent).not.toContain("secret=hidden");
+    },
+  );
+});
+describe("primary network document activation lifecycle", () => {
+  it.each([false, true])(
+    "handles deferred activation failure with owner change=%s",
+    async (changeOwner) => {
+      let reject!: (error: Error) => void;
+      const pending = new Promise<boolean>((_, fail) => {
+        reject = fail;
+      });
+      h.activate.mockReturnValueOnce(pending);
+      const view = await mounted(),
+        iframe = view.container.querySelector("iframe")!;
+      const url = new URL(iframe.src),
+        navigationToken = url.searchParams.get("__sorng_navigation_v1");
+      url.searchParams.delete("__sorng_navigation_v1");
+      const data = {
+        version: 1,
+        type: "proxy_document_start",
+        sessionId: "proxy-1",
+        documentToken: "d".repeat(32),
+        documentSequence: 1,
+        navigationToken,
+        url: url.href,
+      };
+      // A different window cannot select a native document, even with known tokens.
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: window,
+            origin: url.origin,
+            data,
+          }),
+        ),
+      );
+      expect(h.activate).not.toHaveBeenCalled();
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: url.origin,
+            data,
+          }),
+        ),
+      );
+      expect(h.activate).toHaveBeenCalledOnce();
+      if (changeOwner) {
+        h.availabilityGeneration++;
+        view.rerender(<Harness />);
+      }
+      await act(async () => {
+        reject(new Error("Synthetic activation failure"));
+        await pending.catch(() => undefined);
+      });
+      if (changeOwner)
+        expect(
+          screen.queryByRole("button", { name: "Reload page" }),
+        ).not.toBeInTheDocument();
+      else
+        expect(
+          screen.getByRole("button", { name: "Reload page" }),
+        ).toBeInTheDocument();
+      expect(view.container.textContent).not.toContain(
+        "Synthetic activation failure",
+      );
+      expect(proxies).toHaveLength(1);
+    },
+  );
+});
+
 function redirect(
   iframe: HTMLIFrameElement,
   destination: string,

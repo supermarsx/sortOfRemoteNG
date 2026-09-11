@@ -4,6 +4,15 @@ import { retryTransientTrustRead } from "../../utils/auth/retryTransientTrustRea
 import { debugLog } from "../../utils/core/debugLogger";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import {
+  appendWebNetworkReport,
+  parseWebNetworkReport,
+  type WebNetworkReport,
+} from "../../utils/protocol/webNetworkReport";
+import {
+  parseWebNetworkGuardStatus,
+  type WebNetworkGuardStatus,
+} from "../../utils/protocol/webNetworkGuard";
+import {
   clearWebBrowserFrame,
   navigateWebBrowserFrame,
   assertWebBrowserFrameNavigation,
@@ -608,7 +617,53 @@ export function useWebBrowser(session: ConnectionSession) {
     sequence: number;
     navigationToken: string | null;
     url: string;
+    ownerScope: string;
   } | null>(null);
+  const [networkReports, setNetworkReports] = useState<{
+    scope: string;
+    rows: WebNetworkReport[];
+  }>({ scope: "", rows: [] });
+  const networkReportScope = useCallback(
+    () =>
+      JSON.stringify([
+        trustOwnerScopeRef.current,
+        currentDocumentRef.current?.token,
+        navGenRef.current,
+      ]),
+    [],
+  );
+  const [networkGuard, setNetworkGuard] = useState<{
+    scope: string;
+    status: WebNetworkGuardStatus;
+  } | null>(null);
+  const requireNetworkGuard = useCallback(async (assertCurrent: () => void) => {
+    const scope = trustOwnerScopeRef.current;
+    assertCurrent();
+    let raw: unknown;
+    try {
+      raw = await invoke("web_network_guard_status");
+    } catch {
+      throw new Error(
+        "Website navigation protection is unavailable. Update or restart the desktop application before retrying.",
+      );
+    }
+    assertCurrent();
+    if (scope !== trustOwnerScopeRef.current)
+      throw new Error(
+        "The website navigation was cancelled because its database access changed.",
+      );
+    const status = parseWebNetworkGuardStatus(raw);
+    setNetworkGuard({ scope, status });
+    if (
+      status.frameNavigation === "initializing" ||
+      status.frameNavigation === "failed"
+    )
+      throw new Error(
+        status.frameNavigation === "initializing"
+          ? "Website navigation protection is still starting. Wait briefly and reload the tab."
+          : "Website navigation protection failed. Restart the desktop application before retrying.",
+      );
+  }, []);
   const pendingFrameRef = useRef<{
     generation: number;
     url: string;
@@ -1363,6 +1418,10 @@ export function useWebBrowser(session: ConnectionSession) {
       let attemptPassword = "";
       let attemptUsername = "";
       try {
+        await requireNetworkGuard(() => {
+          if (gen !== navGenRef.current)
+            throw new Error("The website navigation was cancelled.");
+        });
         let assertReviewedFlow = () => {};
         const unsupportedVault =
           connection && getVaultRuntimeUnsupportedMessage(connection);
@@ -1629,6 +1688,7 @@ export function useWebBrowser(session: ConnectionSession) {
       cancelTrustRead,
       resolveVaultCredential,
       vaultSource,
+      requireNetworkGuard,
     ],
   );
 
@@ -1760,6 +1820,10 @@ export function useWebBrowser(session: ConnectionSession) {
   // result belongs only to the same navigation generation and proxy session.
   const restartOwnedProxy = useCallback(
     async (sid: string, gen: number) => {
+      await requireNetworkGuard(() => {
+        if (gen !== navGenRef.current || proxySessionIdRef.current !== sid)
+          throw new Error("The website restart was cancelled.");
+      });
       const vault = await resolveVaultCredential(() => {
         if (gen !== navGenRef.current || proxySessionIdRef.current !== sid)
           throw new Error("The website restart was cancelled.");
@@ -1807,6 +1871,7 @@ export function useWebBrowser(session: ConnectionSession) {
       navigateFrame,
       beginLoadingPresentation,
       resolveVaultCredential,
+      requireNetworkGuard,
     ],
   );
 
@@ -1900,6 +1965,28 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       if (event.origin !== expectedOrigin) return;
+      if (event.data?.type === "sorng_web_network_blocked") {
+        const current = currentDocumentRef.current;
+        if (
+          !current ||
+          current.generation !== navGenRef.current ||
+          current.sessionId !== proxySessionIdRef.current ||
+          current.ownerScope !== trustOwnerScopeRef.current ||
+          navigationFailureRef.current
+        )
+          return;
+        const report = parseWebNetworkReport(event.data, current);
+        if (!report) return;
+        const scope = networkReportScope();
+        setNetworkReports((previous) => ({
+          scope,
+          rows: appendWebNetworkReport(
+            previous.scope === scope ? previous.rows : [],
+            report,
+          ),
+        }));
+        return;
+      }
       const targetUrlFor = (reported: URL) => {
         // Assign components rather than resolving a path: a leading // is a
         // legitimate path here, never permission to change the saved authority.
@@ -2023,7 +2110,38 @@ export function useWebBrowser(session: ConnectionSession) {
             sequence: report.documentSequence,
             navigationToken: report.navigationToken,
             url,
+            ownerScope: trustOwnerScopeRef.current,
           };
+          const activatedDocument = currentDocumentRef.current;
+          const activationScope = networkReportScope();
+          void invoke<boolean>("activate_proxy_network_document", {
+            sessionId: activatedDocument.sessionId,
+            documentSequence: activatedDocument.sequence,
+          })
+            .then((selected) => {
+              if (typeof selected !== "boolean")
+                throw new Error("Invalid document activation result");
+            })
+            .catch(() => {
+              if (
+                !mountedRef.current ||
+                currentDocumentRef.current !== activatedDocument ||
+                activatedDocument.generation !== navGenRef.current ||
+                activatedDocument.ownerScope !== trustOwnerScopeRef.current
+              )
+                return;
+              setNetworkReports((previous) => ({
+                scope: activationScope,
+                rows: appendWebNetworkReport(
+                  previous.scope === activationScope ? previous.rows : [],
+                  {
+                    kind: "document",
+                    reason: "document-activation-failed",
+                    origin: null,
+                  },
+                ),
+              }));
+            });
           const realUrl = targetUrlFor(reported);
           activeNavigationUrlRef.current = realUrl;
           setCurrentUrl(realUrl);
@@ -2088,6 +2206,7 @@ export function useWebBrowser(session: ConnectionSession) {
     beginLoadingPresentation,
     armNavigationDeadline,
     appendHistory,
+    networkReportScope,
   ]);
 
   // ── Navigation handlers ────────────────────────────────────
@@ -2779,6 +2898,10 @@ export function useWebBrowser(session: ConnectionSession) {
   });
 
   return {
+    webNetworkReports:
+      networkReports.scope === networkReportScope() ? networkReports.rows : [],
+    webNetworkGuard:
+      networkGuard?.scope === trustOwnerScope ? networkGuard.status : null,
     showClearSessionConfirm,
     setShowClearSessionConfirm,
     clearingSession,

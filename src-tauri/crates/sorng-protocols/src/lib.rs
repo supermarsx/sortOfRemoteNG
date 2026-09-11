@@ -5,6 +5,7 @@
 
 pub mod db;
 pub mod http;
+pub mod webview_origins;
 pub mod autologin_asset;
 pub mod raw_socket;
 pub mod rlogin;

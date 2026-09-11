@@ -14,6 +14,9 @@ fn is_tray_command(command: &str) -> bool {
 pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     // Always-on command crates
     let tray_handler = erase_handler(tauri::generate_handler![crate::tray::set_tray_icon_visible]);
+    let web_guard_handler = erase_handler(tauri::generate_handler![
+        crate::web_network_guard::web_network_guard_status
+    ]);
     let core_handler = sorng_commands_core::build();
     let sessions_handler = erase_handler(sorng_commands_sessions::build());
     let access_handler = erase_handler(sorng_commands_access::build());
@@ -42,6 +45,9 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
 
     move |invoke| {
         let command = invoke.message.command();
+        if command == "web_network_guard_status" {
+            return web_guard_handler(invoke);
+        }
         if is_tray_command(command) {
             return tray_handler(invoke);
         }

@@ -48,6 +48,7 @@ mod invoke_handler;
 mod splash;
 mod state_registry;
 mod tray;
+mod web_network_guard;
 // Compatibility helpers for the updater settings file. The production
 // updater path is owned by `sorng-updater` and `tauri-plugin-updater`.
 pub mod updater_config;
@@ -183,6 +184,7 @@ pub fn run() {
         // sorng-updater supply settings, status, and private endpoint wiring.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            web_network_guard::install(app);
             state_registry::register(app)?;
             splash::show(app)?;
             Ok(())
@@ -192,6 +194,9 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            web_network_guard::close();
+        }
         #[cfg(not(feature = "ops"))]
         let _ = (app_handle, event);
 

@@ -8,7 +8,18 @@ const { invoke, settings, getProxyUrl } = vi.hoisted(() => ({
   getProxyUrl: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (command: string, ...args: unknown[]) =>
+    command === "web_network_guard_status"
+      ? Promise.resolve({
+          platform: "windows",
+          frameNavigation: "enforced",
+          allNetworkRequestsMediated: false,
+        })
+      : command === "activate_proxy_network_document"
+        ? Promise.resolve(false)
+        : invoke(command, ...args),
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
 }));

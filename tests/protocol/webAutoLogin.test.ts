@@ -12,7 +12,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { invoke } from "@tauri-apps/api/core";
 import {
   verifyIdentity,
   resolveEffectiveTrustPolicy,
@@ -23,9 +22,22 @@ import {
 } from "../../src/utils/settings/settingsManager";
 
 // ── Mocks for the hook's context / side-effect dependencies ──
-const { mockDispatch, connections } = vi.hoisted(() => ({
+const { mockDispatch, connections, mockInvoke } = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
   mockDispatch: vi.fn(),
   connections: [] as Record<string, unknown>[],
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (command: string, ...args: unknown[]) =>
+    command === "web_network_guard_status"
+      ? Promise.resolve({
+          platform: "windows",
+          frameNavigation: "enforced",
+          allNetworkRequestsMediated: false,
+        })
+      : command === "activate_proxy_network_document"
+        ? Promise.resolve(false)
+        : mockInvoke(command, ...args),
 }));
 
 vi.mock("../../src/contexts/useConnections", () => ({
@@ -76,7 +88,6 @@ import {
 import type { ConnectionSession } from "../../src/types/connection/connection";
 import { useHTTPViewer } from "../../src/hooks/protocol/useHTTPViewer";
 
-const mockInvoke = vi.mocked(invoke);
 const mockVerifyIdentity = vi.mocked(verifyIdentity);
 const mockResolveEffectiveTrustPolicy = vi.mocked(resolveEffectiveTrustPolicy);
 

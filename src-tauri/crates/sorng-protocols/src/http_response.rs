@@ -335,6 +335,8 @@ pub(super) fn inject_readiness(
     session_id: &str,
     token: Option<&str>,
     sequence: u64,
+    source_origin: &str,
+    proxy_origin: &str,
 ) -> String {
     if sequence == 0 || sequence > 9_007_199_254_740_991 {
         return html.to_string();
@@ -354,6 +356,7 @@ pub(super) fn inject_readiness(
 var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){{return v.split('=')[0]!=='{NAVIGATION_MARKER}';}}).join('&');
 u.search=q?'?'+q:'';try{{history.replaceState(history.state,'',u.href);}}catch(_){{}}
 function emit(type){{p.type=type;p.url=u.href;try{{window.parent.postMessage(p,'*');}}catch(_){{}}}}
+{network_client}
 window.addEventListener('beforeunload',function(){{emit('proxy_navigation_start');}});
 {dark_mode_client}
 {automation_client}
@@ -363,6 +366,8 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
 }})();</script>"#,
         automation_client = include_str!("web_automation_client.js"),
         dark_mode_client = include_str!("web_dark_mode_client.js"),
+        network_client =
+            super::network::bootstrap(session_id, sequence, source_origin, proxy_origin),
     );
     let insertion = early_script_insertion(html);
     format!("{}{}{}", &html[..insertion], script, &html[insertion..])
@@ -787,8 +792,14 @@ mod tests {
             "<!DOCTYPE html><!-- <script>fake</script> --><header>title</header>",
             "<!DOCTYPE html><html><head data-label='>'><script>app()</script></head></html>",
         ] {
-            let result =
-                inject_readiness(html, "fixture", Some("0123456789abcdef0123456789abcdef"), 1);
+            let result = inject_readiness(
+                html,
+                "fixture",
+                Some("0123456789abcdef0123456789abcdef"),
+                1,
+                "https://device.test",
+                "http://p0123456789abcdef0123456789abcdef.localhost:43123",
+            );
             assert!(result.starts_with("<!DOCTYPE html>"));
             assert!(result.contains("proxy_dom_ready"));
             let injected = result.find("<script>(function()").unwrap();

@@ -271,6 +271,8 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "webview2-com",
+ "windows 0.61.3",
  "windows 0.62.2",
 ]
 
@@ -10681,6 +10683,7 @@ dependencies = [
  "serde_json",
  "tao",
  "tempfile",
+ "url",
  "webview2-com",
  "windows 0.61.3",
  "wry",
@@ -11970,6 +11973,8 @@ dependencies = [
  "flate2",
  "futures-util",
  "hex",
+ "hyper",
+ "hyper-util",
  "log",
  "md-5 0.10.6",
  "rand 0.8.8",
@@ -11979,6 +11984,7 @@ dependencies = [
  "rustls-native-certs 0.8.4",
  "serde",
  "serde_json",
+ "sha1 0.10.7",
  "sha2 0.10.9",
  "socket2 0.6.5",
  "sorng-core",

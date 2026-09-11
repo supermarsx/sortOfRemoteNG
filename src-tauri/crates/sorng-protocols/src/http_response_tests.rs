@@ -1,5 +1,7 @@
 //! Actual protected Axum proxy route regressions; all endpoints and credentials
 //! are synthetic. No Tauri profile or desktop runtime is initialized.
+#[path = "http_network_tests.rs"]
+mod network_tests;
 #[path = "http_quickconnect_tests.rs"]
 mod quickconnect_tests;
 #[path = "http_redirect_tests.rs"]
@@ -22,6 +24,7 @@ struct FixtureProxy {
 }
 impl Drop for FixtureProxy {
     fn drop(&mut self) {
+        self.state.network.revoke();
         self.task.abort();
     }
 }
@@ -56,6 +59,7 @@ async fn proxy_with_policy(
     let port = listener.local_addr().unwrap().port();
     let authority = format!("p{TOKEN}.localhost:{port}");
     let state = Arc::new(AxumProxyState {
+        network: Arc::new(ProxyNetworkState::default()),
         session_id: "synthetic-proxy-session".into(),
         connection_id: "fixture".into(),
         target_origin: reqwest::Url::parse(&target)
@@ -162,6 +166,7 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
     state.global_sessions.lock().unwrap().sessions.insert(
         state.session_id.clone(),
         ProxySessionEntry {
+            network: state.network.clone(),
             target_url: state.target_url.clone(),
             username: "synthetic-user".into(),
             password: "synthetic-master-password".into(),
@@ -836,7 +841,20 @@ async fn actual_proxy_decodes_gzip_documents_assets_and_preserves_raw_query_and_
         let body = response.text().await.unwrap();
         assert_eq!(length, body.len() as u64);
         if path.starts_with("/?") {
-            assert!(!body.contains(&target_origin));
+            // Only the immutable routing DTO retains the upstream origin;
+            // every executable/document resource URL must still be rewritten.
+            let routing_source = format!(
+                "\"sourceOrigin\":{}",
+                serde_json::to_string(&target_origin).unwrap()
+            );
+            assert_eq!(body.matches(&routing_source).count(), 1);
+            assert!(!body
+                .replacen(
+                    &routing_source,
+                    "\"sourceOrigin\":\"[routing identity]\"",
+                    1
+                )
+                .contains(&target_origin));
             assert!(body.contains("<form>"));
             assert!(body.contains("proxy_dom_ready"));
             assert!(body.contains("synthetic-proxy-session"));

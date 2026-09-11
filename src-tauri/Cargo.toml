@@ -379,6 +379,8 @@ tauri-plugin-window-state = "=2.4.1"
 rustls = { workspace = true, features = ["ring"] }
 
 [target.'cfg(windows)'.dependencies]
+webview2-com = "=0.38.2"
+windows61 = { package = "windows", version = "=0.61.3" }
 windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [dev-dependencies]

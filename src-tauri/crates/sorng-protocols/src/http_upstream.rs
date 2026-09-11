@@ -25,7 +25,20 @@ pub(super) async fn send(
     // than multiplying the client's timeout for each reissued request.
     tokio::time::timeout(
         std::time::Duration::from_secs(120),
-        send_inner(state, method, input_url, headers, body),
+        send_inner(state, method, input_url, headers, body, false),
+    )
+    .await
+    .map_err(|_| UpstreamError::Deadline)?
+}
+
+pub(super) async fn send_websocket(
+    state: &AxumProxyState,
+    input_url: &str,
+    headers: &[(String, String)],
+) -> Result<reqwest::Response, UpstreamError> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        send_inner(state, &reqwest::Method::GET, input_url, headers, &[], true),
     )
     .await
     .map_err(|_| UpstreamError::Deadline)?
@@ -37,6 +50,7 @@ async fn send_inner(
     input_url: &str,
     headers: &[(String, String)],
     body: &[u8],
+    websocket: bool,
 ) -> Result<reqwest::Response, UpstreamError> {
     let mut url = state.proxy_policy.request_url(input_url).map_err(|_| {
         UpstreamError::Policy("The configured HTTP query parameters could not be applied.")
@@ -57,6 +71,9 @@ async fn send_inner(
         }
         let request = |authorization: Option<String>| {
             let mut request = state.client.request(method.clone(), url.clone());
+            if websocket {
+                request = request.version(reqwest::Version::HTTP_11);
+            }
             for (name, value) in headers {
                 if body.is_empty()
                     && method == reqwest::Method::GET
@@ -115,6 +132,9 @@ async fn send_inner(
         let status = response.status();
         if !matches!(status.as_u16(), 301 | 302 | 303 | 307 | 308) {
             return Ok(response);
+        }
+        if websocket {
+            return Err(UpstreamError::Policy("A WebSocket handshake cannot follow redirects. Review the endpoint before reconnecting."));
         }
         if redirect == 10 {
             return Err(UpstreamError::RedirectLoop);

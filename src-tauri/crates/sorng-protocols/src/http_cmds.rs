@@ -82,6 +82,9 @@ fn proxy_client_builder(
     upstream_proxy_url: Option<&str>,
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
+        // Route ownership is explicit. Ambient process proxy variables must
+        // not disagree with certificate inspection's selected direct route.
+        .no_proxy()
         // Response editing owns bounded decoding. Keep opaque byte/header
         // behavior stable even if another crate enables reqwest codecs.
         .no_gzip()
@@ -419,6 +422,7 @@ pub async fn start_basic_auth_proxy(
     _service: tauri::State<'_, HttpServiceState>,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
+    crate::http::webview_origins::require_frame_guard_ready()?;
     let validated_target = validate_proxy_target_url(&config.target_url)?;
     let proxy_policy = config.proxy_policy.clone().unwrap_or_default();
     validate_reviewed_login_config(&config)?;
@@ -466,6 +470,7 @@ pub async fn start_basic_auth_proxy(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
+    let network = Arc::new(ProxyNetworkState::with_origin(&protected_endpoint.origin)?);
 
     let request_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
@@ -484,6 +489,7 @@ pub async fn start_basic_auth_proxy(
         .map(crate::theme_tokens::ThemeTokens::sanitized)
         .unwrap_or_else(crate::theme_tokens::ThemeTokens::dark_default);
     let proxy_state = Arc::new(AxumProxyState {
+        network: network.clone(),
         session_id: session_id.clone(),
         connection_id: connection_id.clone(),
         target_url: target_url.clone(),
@@ -548,7 +554,9 @@ pub async fn start_basic_auth_proxy(
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
     // Spawn the server.
+    let server_guard = network.server_guard();
     tokio::spawn(async move {
+        let _server_guard = server_guard;
         axum::serve(listener, router.into_make_service())
             .with_graceful_shutdown(async {
                 shutdown_rx.await.ok();
@@ -563,6 +571,7 @@ pub async fn start_basic_auth_proxy(
         mgr.sessions.insert(
             session_id.clone(),
             ProxySessionEntry {
+                network,
                 target_url: target_url.clone(),
                 username: config.username.clone(),
                 password: config.password.clone(),
@@ -600,6 +609,7 @@ pub fn stop_basic_auth_proxy(
 ) -> Result<(), String> {
     let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     if let Some(mut entry) = mgr.sessions.remove(&session_id) {
+        entry.network.revoke();
         mgr.discard_redirect_review(&session_id);
         // Signal the axum server to shut down.
         if let Some(tx) = entry.shutdown_tx.take() {
@@ -612,6 +622,22 @@ pub fn stop_basic_auth_proxy(
 }
 
 /// List all active proxy sessions.
+#[tauri::command]
+pub fn activate_proxy_network_document(
+    session_id: String,
+    document_sequence: u64,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<bool, String> {
+    let manager = sessions
+        .lock()
+        .map_err(|_| "Proxy document selection is unavailable")?;
+    let entry = manager
+        .sessions
+        .get(&session_id)
+        .ok_or("Proxy document selection is stale or unavailable")?;
+    entry.network.activate_document(document_sequence)
+}
+
 #[tauri::command]
 pub fn review_proxy_redirect(
     session_id: String,
@@ -633,10 +659,12 @@ pub fn list_proxy_sessions(
     Ok(mgr
         .sessions
         .iter()
-        .map(|(id, entry)| ProxyMediatorResponse {
-            local_port: entry.local_port,
-            session_id: id.clone(),
-            proxy_url: format!("http://127.0.0.1:{}/", entry.local_port),
+        .filter_map(|(id, entry)| {
+            Some(ProxyMediatorResponse {
+                local_port: entry.local_port,
+                session_id: id.clone(),
+                proxy_url: entry.network.proxy_url()?,
+            })
         })
         .collect())
 }
@@ -650,18 +678,20 @@ pub fn get_proxy_session_details(
     Ok(mgr
         .sessions
         .iter()
-        .map(|(id, entry)| ProxySessionDetail {
-            session_id: id.clone(),
-            target_url: entry.target_url.clone(),
-            username: entry
-                .upstream_auth_mode
-                .manager_visible_username(&entry.username),
-            connection_id: entry.connection_id.clone(),
-            proxy_url: format!("http://127.0.0.1:{}/", entry.local_port),
-            created_at: entry.created_at.clone(),
-            request_count: entry.request_count.load(Ordering::Relaxed),
-            error_count: entry.error_count.load(Ordering::Relaxed),
-            last_error: entry.last_error.lock().ok().and_then(|g| g.clone()),
+        .filter_map(|(id, entry)| {
+            Some(ProxySessionDetail {
+                session_id: id.clone(),
+                target_url: entry.target_url.clone(),
+                username: entry
+                    .upstream_auth_mode
+                    .manager_visible_username(&entry.username),
+                connection_id: entry.connection_id.clone(),
+                proxy_url: entry.network.proxy_url()?,
+                created_at: entry.created_at.clone(),
+                request_count: entry.request_count.load(Ordering::Relaxed),
+                error_count: entry.error_count.load(Ordering::Relaxed),
+                last_error: entry.last_error.lock().ok().and_then(|g| g.clone()),
+            })
         })
         .collect())
 }
@@ -714,6 +744,7 @@ pub fn stop_all_proxy_sessions(
     let count = mgr.sessions.len() as u32;
     mgr.clear_redirect_reviews();
     for (_id, mut entry) in mgr.sessions.drain() {
+        entry.network.revoke();
         if let Some(tx) = entry.shutdown_tx.take() {
             let _ = tx.send(());
         }
@@ -799,6 +830,7 @@ pub async fn restart_proxy_session(
     session_id: String,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
+    crate::http::webview_origins::require_frame_guard_ready()?;
     // Extract the config from the existing (dead) session entry.
     let (
         target_url,
@@ -839,6 +871,7 @@ pub async fn restart_proxy_session(
     {
         let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         if let Some(mut entry) = mgr.sessions.remove(&session_id) {
+            entry.network.revoke();
             mgr.discard_redirect_review(&session_id);
             if let Some(tx) = entry.shutdown_tx.take() {
                 let _ = tx.send(());
@@ -863,6 +896,7 @@ pub async fn restart_proxy_session(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
+    let network = Arc::new(ProxyNetworkState::with_origin(&protected_endpoint.origin)?);
 
     let new_session_id = uuid::Uuid::new_v4().to_string();
     let request_count = Arc::new(AtomicU64::new(0));
@@ -870,6 +904,7 @@ pub async fn restart_proxy_session(
     let last_error: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
 
     let proxy_state = Arc::new(AxumProxyState {
+        network: network.clone(),
         session_id: new_session_id.clone(),
         connection_id: connection_id.clone(),
         target_url: target_url.clone(),
@@ -934,7 +969,9 @@ pub async fn restart_proxy_session(
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
+    let server_guard = network.server_guard();
     tokio::spawn(async move {
+        let _server_guard = server_guard;
         axum::serve(listener, router.into_make_service())
             .with_graceful_shutdown(async {
                 shutdown_rx.await.ok();
@@ -949,6 +986,7 @@ pub async fn restart_proxy_session(
         mgr.sessions.insert(
             new_session_id.clone(),
             ProxySessionEntry {
+                network,
                 target_url,
                 username,
                 password,
@@ -1679,6 +1717,94 @@ mod http_authentication_diagnostic_tests {
             assert!(bytes.len() < 16 * 1024);
         }
         String::from_utf8(bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn explicit_proxy_client_ignores_ambient_environment_in_isolated_child() {
+        const CHILD: &str = "SORNG_PROXY_ROUTE_TEST_CHILD";
+        const TARGET: &str = "SORNG_PROXY_ROUTE_TEST_TARGET";
+        if std::env::var(CHILD).as_deref() == Ok("1") {
+            let target = std::env::var(TARGET).unwrap();
+            // Control proves the child really has an effective ambient proxy.
+            let ambient = reqwest::Client::builder()
+                .build()
+                .unwrap()
+                .get(&target)
+                .timeout(std::time::Duration::from_secs(3))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            assert_eq!(ambient, "ambient-proxy");
+            let direct = proxy_client_builder(true, None, "1.2", None)
+                .unwrap()
+                .get(&target)
+                .timeout(std::time::Duration::from_secs(3))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            assert_eq!(direct, "explicit-direct-route");
+            return;
+        }
+        let direct = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = format!("http://127.0.0.1:{}/", direct.local_addr().unwrap().port());
+        let ambient = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy = format!("http://127.0.0.1:{}/", ambient.local_addr().unwrap().port());
+        let direct_task = tokio::spawn(async move {
+            axum::serve(
+                direct,
+                axum::Router::new().fallback(|| async { "explicit-direct-route" }),
+            )
+            .await
+            .unwrap();
+        });
+        let ambient_task = tokio::spawn(async move {
+            axum::serve(
+                ambient,
+                axum::Router::new().fallback(|| async { "ambient-proxy" }),
+            )
+            .await
+            .unwrap();
+        });
+        let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .arg("explicit_proxy_client_ignores_ambient_environment_in_isolated_child")
+            .arg("--nocapture")
+            .env(CHILD, "1")
+            .env(TARGET, target)
+            .env_remove("NO_PROXY")
+            .env_remove("no_proxy")
+            .env_remove("REQUEST_METHOD")
+            .kill_on_drop(true);
+        for name in [
+            "HTTP_PROXY",
+            "http_proxy",
+            "HTTPS_PROXY",
+            "https_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+        ] {
+            command.env(name, &proxy);
+        }
+        #[cfg(windows)]
+        command.creation_flags(0x08000000);
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(15), command.output()).await;
+        direct_task.abort();
+        ambient_task.abort();
+        let result = result.unwrap().unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed"));
     }
 
     #[test]

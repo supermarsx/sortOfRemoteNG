@@ -628,6 +628,7 @@ pub fn is_command(command: &str) -> bool {
             | "list_proxy_sessions"
             | "get_proxy_session_details"
             | "review_proxy_redirect"
+            | "activate_proxy_network_document"
             | "get_proxy_request_log"
             | "set_proxy_request_log_capacity"
             | "clear_proxy_request_log"
@@ -2089,6 +2090,7 @@ define_command_group!(
         http_commands::list_proxy_sessions,
         http_commands::get_proxy_session_details,
         http_commands::review_proxy_redirect,
+        http_commands::activate_proxy_network_document,
         http_commands::get_proxy_request_log,
         http_commands::set_proxy_request_log_capacity,
         http_commands::clear_proxy_request_log,

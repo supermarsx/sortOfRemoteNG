@@ -38,6 +38,7 @@ fn register(proxy: &FixtureProxy) {
     state.global_sessions.lock().unwrap().sessions.insert(
         state.session_id.clone(),
         ProxySessionEntry {
+            network: state.network.clone(),
             target_url: state.target_url.clone(),
             username: String::new(),
             password: String::new(),

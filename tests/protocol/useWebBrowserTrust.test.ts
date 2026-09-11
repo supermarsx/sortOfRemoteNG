@@ -32,7 +32,18 @@ const mocks = vi.hoisted(() => ({
   availability: { status: "ready", databaseId: "owner", generation: 1 },
   assertLease: vi.fn(),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (command: string, ...args: unknown[]) =>
+    command === "web_network_guard_status"
+      ? Promise.resolve({
+          platform: "windows",
+          frameNavigation: "enforced",
+          allNetworkRequestsMediated: false,
+        })
+      : command === "activate_proxy_network_document"
+        ? Promise.resolve(false)
+        : mocks.invoke(command, ...args),
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async () => () => undefined,
 }));
@@ -673,6 +684,9 @@ describe("HTTPS certificate and native trust stages", () => {
     act(() => {
       void result.current.navigateToUrl("https://10.10.10.2/second");
     });
+    // Native navigation readiness is asynchronous and precedes certificate
+    // inspection. Drain that preflight without resolving the certificate.
+    await act(async () => {});
     act(() => result.current.handleIframeLoad());
     expect(result.current.isLoading).toBe(true);
     act(() => vi.advanceTimersByTime(199));

@@ -36,10 +36,16 @@ mod web_automation;
 pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
 #[path = "http_digest.rs"]
 mod http_digest;
+#[path = "http_network_client.rs"]
+mod network;
 #[path = "http_redirect.rs"]
 mod redirect;
 #[path = "http_upstream.rs"]
 mod upstream;
+#[path = "http_websocket.rs"]
+mod websocket;
+pub use crate::webview_origins;
+pub use network::ProxyNetworkState;
 pub use redirect::ProxyRedirectReview;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -914,6 +920,7 @@ pub struct ProxySessionManager {
 }
 
 pub struct ProxySessionEntry {
+    pub network: Arc<ProxyNetworkState>,
     pub target_url: String,
     pub username: String,
     pub password: String,
@@ -1169,6 +1176,7 @@ mod recording_header_redaction_tests {
 /// toast).
 #[derive(Clone)]
 pub struct AxumProxyState {
+    pub network: Arc<ProxyNetworkState>,
     pub session_id: String,
     pub connection_id: String,
     pub target_url: String,
@@ -1321,10 +1329,36 @@ pub async fn enforce_proxy_access(
         return axum::http::Response::builder()
             .status(axum::http::StatusCode::FORBIDDEN)
             .header("Cache-Control", "no-store")
+            .header("X-DNS-Prefetch-Control", "off")
+            .header(
+                "Content-Security-Policy",
+                "default-src 'none'; frame-ancestors 'none'",
+            )
             .body(axum::body::Body::from("Forbidden"))
             .expect("static forbidden proxy response is valid");
     }
-    next.run(request).await
+    let mut response = if state.network.is_active() {
+        next.run(request).await
+    } else {
+        axum::http::Response::builder()
+            .status(axum::http::StatusCode::GONE)
+            .body(axum::body::Body::from("This proxy session has ended."))
+            .expect("static expired proxy response")
+    };
+    // Enforce on every response, including errors, redirects, JS/CSS and
+    // worker candidates. Never depend on successful HTML injection.
+    let policy = network::content_security_policy(&state.proxy_policy, &state.proxy_authority);
+    response.headers_mut().insert(
+        "x-dns-prefetch-control",
+        axum::http::HeaderValue::from_static("off"),
+    );
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_SECURITY_POLICY,
+        policy
+            .parse()
+            .expect("native proxy authority is header-safe"),
+    );
+    response
 }
 
 #[cfg(test)]
@@ -1395,6 +1429,9 @@ pub async fn axum_proxy_handler(
     use axum::http::{Response, StatusCode};
 
     let method = req.method().clone();
+    if websocket::is_upgrade_candidate(req.headers()) {
+        return websocket::handle(state, req).await;
+    }
     if req.uri().path() == web_automation::DARKREADER_PATH {
         // The router's protected-host/origin middleware has already run. Never
         // forward this bundled asset path or count it as an upstream request.
@@ -1444,6 +1481,11 @@ pub async fn axum_proxy_handler(
     } else {
         0
     };
+    if document_request {
+        state
+            .network
+            .document_issued(document_sequence, navigation_token.is_some());
+    }
 
     if req.uri().path() == quickconnect::PATH {
         // A versioned vendor-script handoff is a local review request, never
@@ -1877,6 +1919,8 @@ pub async fn axum_proxy_handler(
                     &state.session_id,
                     navigation_token.as_deref(),
                     document_sequence,
+                    &state.target_origin,
+                    &state.proxy_origin,
                 )
                 .into_bytes();
             }
