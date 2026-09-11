@@ -470,7 +470,15 @@ pub async fn start_basic_auth_proxy(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
-    let network = Arc::new(ProxyNetworkState::with_origin(&protected_endpoint.origin)?);
+    let network = Arc::new(
+        ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_font_route(
+            upstream_proxy_url
+                .as_deref()
+                .map(validate_upstream_proxy)
+                .transpose()?,
+            &min_tls,
+        ),
+    );
 
     let request_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
@@ -896,7 +904,15 @@ pub async fn restart_proxy_session(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
-    let network = Arc::new(ProxyNetworkState::with_origin(&protected_endpoint.origin)?);
+    let network = Arc::new(
+        ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_font_route(
+            upstream_proxy_url
+                .as_deref()
+                .map(validate_upstream_proxy)
+                .transpose()?,
+            &min_tls,
+        ),
+    );
 
     let new_session_id = uuid::Uuid::new_v4().to_string();
     let request_count = Arc::new(AtomicU64::new(0));

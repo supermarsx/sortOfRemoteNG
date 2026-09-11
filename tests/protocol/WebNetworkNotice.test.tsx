@@ -3,6 +3,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import WebNetworkNotice from "../../src/components/protocol/webBrowser/WebNetworkNotice";
 afterEach(cleanup);
 describe("compact website network notice", () => {
+  it("explains a blocked font without claiming unrelated SecurityErrors have the same cause", () => {
+    render(
+      <WebNetworkNotice
+        reports={[
+          {
+            kind: "font",
+            reason: "origin-not-approved",
+            origin: "https://cdn.example",
+          },
+        ]}
+        guard={null}
+        onReload={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        /Font request blocked; only explicitly routed font assets can load/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/A console SecurityError alone does not identify/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
   it("does not create a placeholder before a status or report exists", () => {
     const view = render(
       <WebNetworkNotice reports={[]} guard={null} onReload={vi.fn()} />,

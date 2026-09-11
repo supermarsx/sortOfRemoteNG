@@ -34,6 +34,8 @@ mod tls_test_fixture;
 #[path = "http_web_automation.rs"]
 mod web_automation;
 pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
+#[path = "http_font_assets.rs"]
+mod font_assets;
 #[path = "http_digest.rs"]
 mod http_digest;
 #[path = "http_network_client.rs"]
@@ -1429,6 +1431,11 @@ pub async fn axum_proxy_handler(
     use axum::http::{Response, StatusCode};
 
     let method = req.method().clone();
+    if req.uri().path().starts_with("/__sortofremoteng_assets_v1/") {
+        // Closed public binary capability: never send this reserved path,
+        // browser credentials or source query policies to the NAS.
+        return font_assets::handle(state, req).await;
+    }
     if websocket::is_upgrade_candidate(req.headers()) {
         return websocket::handle(state, req).await;
     }
@@ -1857,6 +1864,7 @@ pub async fn axum_proxy_handler(
                     &state.target_origin,
                     &state.proxy_origin,
                 );
+                let text = font_assets::rewrite(&text, &state.proxy_origin);
                 // Apply the versioned adapter last: its deliberately bound
                 // upstream discovery origin must not be rewritten to loopback.
                 proxy_response::repair_quickconnect_redirect(

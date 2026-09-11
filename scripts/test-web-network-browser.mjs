@@ -17,7 +17,6 @@ assert.ok(
   executable,
   "This acceptance needs an existing installed Edge; no browser is downloaded.",
 );
-const profile = await mkdtemp(path.join(tmpdir(), "sorng-network-smoke-"));
 const source = await readFile(
   new URL(
     "../src-tauri/crates/sorng-protocols/src/web_network_client.js",
@@ -25,6 +24,30 @@ const source = await readFile(
   ),
   "utf8",
 );
+// Installed, public package fixture only: no font download or user file.
+const fontBytes = await readFile(
+  new URL(
+    "../node_modules/next/dist/next-devtools/server/font/geist-latin.woff2",
+    import.meta.url,
+  ),
+);
+const fontUrl = "https://synostatic.synology.com/font/inter/inter-w400-1.woff2";
+const fontPath =
+  "/__sortofremoteng_assets_v1/synology-inter/inter-w400-1.woff2";
+const profile = await mkdtemp(path.join(tmpdir(), "sorng-network-smoke-"));
+let fontRequests = 0;
+let directBytes = 0;
+const tripwire = createServer((_request, response) =>
+  response.writeHead(403).end(),
+);
+tripwire.on("connection", (socket) => {
+  sockets.add(socket);
+  socket.on("data", (chunk) => {
+    directBytes += chunk.length;
+    socket.destroy();
+  });
+  socket.on("close", () => sockets.delete(socket));
+});
 const received = [];
 const sockets = new Set();
 let finish;
@@ -33,6 +56,24 @@ const result = new Promise((resolve) => {
 });
 let origin;
 const server = createServer(async (request, response) => {
+  if (request.url === fontPath) {
+    fontRequests++;
+    response
+      .writeHead(200, {
+        "Content-Type": "font/woff2",
+        "Cache-Control": "no-store",
+      })
+      .end(fontBytes);
+    return;
+  }
+  if (request.url === "/rewritten-font.css") {
+    response
+      .writeHead(200, { "Content-Type": "text/css" })
+      .end(
+        `@font-face{font-family:StaticFixture;src:url("${origin + fontPath}") format("woff2")}`,
+      );
+    return;
+  }
   if (request.url === "/favicon.ico") {
     response.writeHead(204).end();
     return;
@@ -45,19 +86,67 @@ const server = createServer(async (request, response) => {
       sourceOrigin: "https://source.example",
       proxyOrigin: origin,
       mappings: [],
+      fontAssets: [{ upstreamUrl: fontUrl, proxyUrl: origin + fontPath }],
     };
     response.writeHead(200, {
       "Content-Type": "text/html",
       "Cache-Control": "no-store",
+      "Content-Security-Policy":
+        "font-src 'self'; connect-src 'self' ws:; worker-src 'none'",
     });
-    response.end(`<!doctype html><html><head><title>Synthetic proxy fixture</title><script>window.onerror=function(message){fetch('/result',{method:'POST',body:JSON.stringify([{name:'page startup',ok:false,error:String(message)}])});};</script></head><body><script>
+    response.end(`<!doctype html><html><head><title>Synthetic proxy fixture</title><link rel="stylesheet" href="/rewritten-font.css"><script>window.onerror=function(message){fetch('/result',{method:'POST',body:JSON.stringify([{name:'page startup',ok:false,error:String(message)}])});};</script></head><body><script>
 const originalFetch = window.fetch.bind(window);
+const OriginalFontFace=window.FontFace;
 ${source}
 const reports=[];
 installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push(report);});
 (async function(){
  const results=[];
  async function check(name,run){try{await Promise.race([run(),new Promise((_,reject)=>setTimeout(()=>reject(Error('Case timed out')),5000))]);results.push({name,ok:true});}catch(error){results.push({name,ok:false,error:String(error)});}}
+ await check('FontFace uses exact routed font and document.fonts',async()=>{
+   const face=new FontFace('FontFaceFixture','url("${fontUrl}") format("woff2")',{weight:'400'});
+   document.fonts.add(face); await face.load();
+   const loaded=await document.fonts.load('16px FontFaceFixture','Fixture');
+   if(face.status!=='loaded'||loaded.length!==1)throw Error('FontFace did not load');
+ });
+ await check('dynamic CSS font routes before load',async()=>{
+   const style=document.createElement('style');document.head.append(style);
+   style.sheet.insertRule('@font-face{font-family:DynamicFixture;src:url("${fontUrl}") format("woff2")}');
+   const loaded=await document.fonts.load('16px DynamicFixture','Fixture');
+   if(loaded.length!==1||loaded[0].status!=='loaded')throw Error('Dynamic font did not load');
+ });
+ await check('font rule src property routes before load',async()=>{
+   const style=document.createElement('style');document.head.append(style);
+   style.sheet.insertRule('@font-face{font-family:PropertyFixture;}');
+   style.sheet.cssRules[0].style.src='url("${fontUrl}") format("woff2")';
+   const loaded=await document.fonts.load('16px PropertyFixture','Fixture');
+   if(loaded.length!==1||loaded[0].status!=='loaded')throw Error('Font src property did not load');
+ });
+ await check('fetch font ArrayBuffer stays on the exact local route',async()=>{
+   const response=await fetch('${fontUrl}');
+   const face=new FontFace('FetchedFixture',await response.arrayBuffer());
+   await face.load();if(face.status!=='loaded')throw Error('Fetched font did not decode');
+ });
+ await check('XHR font ArrayBuffer stays on the exact local route',async()=>{
+   const bytes=await new Promise((resolve,reject)=>{
+     const xhr=new XMLHttpRequest();xhr.open('GET','${fontUrl}');xhr.responseType='arraybuffer';
+     xhr.onload=()=>xhr.status===200?resolve(xhr.response):reject(Error('XHR status'));
+     xhr.onerror=()=>reject(Error('XHR font failed'));xhr.send();
+   });
+   const face=new FontFace('XhrFixture',bytes);await face.load();
+   if(face.status!=='loaded')throw Error('XHR font did not decode');
+ });
+ await check('pre-rewritten static CSS font loads locally',async()=>{
+   const loaded=await document.fonts.load('16px StaticFixture','Fixture');
+   if(loaded.length!==1||loaded[0].status!=='loaded')throw Error('Static font did not load');
+ });
+ await check('unrouted native font stays CSP blocked',async()=>{
+   const face=new OriginalFontFace('BlockedFixture','url("https://synostatic.synology.com/font/inter/unknown.woff2")');
+   let rejected=false;try{await face.load();}catch(_){rejected=true;}
+   if(!rejected)throw Error('Foreign font escaped CSP');
+   await new Promise(resolve=>setTimeout(resolve,50));
+   if(!reports.some(r=>r.kind==='font'&&r.reason==='policy-blocked-resource'))throw Error('Missing font restriction notice');
+ });
  await check('string-backed Request POST',async()=>{
    const response=await fetch(new Request('https://source.example/string',{method:'POST',body:'string-body',headers:{'X-Fixture':'string'}}));
    if(await response.text()!=='string-body')throw Error('Body mismatch');
@@ -142,6 +231,7 @@ let browser;
 let exit;
 let timer;
 try {
+  await new Promise((resolve) => tripwire.listen(0, "127.0.0.1", resolve));
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   origin = `http://p0123456789abcdef0123456789abcdef.localhost:${server.address().port}`;
   browser = spawn(
@@ -151,6 +241,7 @@ try {
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
+      `--host-resolver-rules=MAP synostatic.synology.com 127.0.0.1:${tripwire.address().port}`,
       `--user-data-dir=${profile}`,
       "--remote-debugging-port=0",
       origin + "/",
@@ -174,7 +265,14 @@ try {
       );
     }),
   ]);
-  console.log(JSON.stringify({ results, received }, null, 2));
+  console.log(
+    JSON.stringify({ results, received, fontRequests, directBytes }, null, 2),
+  );
+  assert.ok(
+    fontRequests >= 1,
+    "Actual font bytes must be served by the local route",
+  );
+  assert.equal(directBytes, 0, "No direct CDN tripwire traffic is permitted");
   assert.ok(
     results.every((item) => item.ok),
     "Browser Request/stream acceptance failed; never fall back to a direct request.",
@@ -206,6 +304,7 @@ try {
   }
   for (const socket of sockets) socket.destroy();
   await new Promise((resolve) => server.close(resolve));
+  await new Promise((resolve) => tripwire.close(resolve));
   assert.equal(path.dirname(profile), path.resolve(tmpdir()));
   assert.ok(path.basename(profile).startsWith("sorng-network-smoke-"));
   await rm(profile, {

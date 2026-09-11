@@ -16,6 +16,7 @@ pub struct ProxyNetworkState {
     origin_lease: Option<crate::webview_origins::ProxyOriginLease>,
     proxy_origin: Option<String>,
     pub(super) sockets: Arc<Semaphore>,
+    pub(super) font_assets: Option<super::font_assets::ReviewedFontAssets>,
 }
 
 pub struct ProxyNetworkServerGuard(Arc<ProxyNetworkState>);
@@ -34,6 +35,7 @@ impl Default for ProxyNetworkState {
             origin_lease: None,
             proxy_origin: None,
             sockets: Arc::new(Semaphore::new(16)),
+            font_assets: None,
         }
     }
 }
@@ -53,6 +55,18 @@ impl ProxyNetworkState {
         self.active.load(Ordering::Acquire)
     }
 
+    pub fn with_reviewed_font_route(
+        mut self,
+        proxy: Option<reqwest::Proxy>,
+        min_tls: &str,
+    ) -> Self {
+        // Public typography is optional: a root-store/client setup failure
+        // leaves this route unavailable (503), never disables source browsing
+        // and never substitutes the source's possibly pinned/unverified TLS.
+        self.font_assets = super::font_assets::ReviewedFontAssets::new(proxy, min_tls).ok();
+        self
+    }
+
     pub fn proxy_url(&self) -> Option<String> {
         self.is_active()
             .then(|| {
@@ -69,6 +83,9 @@ impl ProxyNetworkState {
             lease.revoke();
         }
         self.sockets.close();
+        if let Some(fonts) = &self.font_assets {
+            fonts.revoke();
+        }
         self.document.send_modify(|_| {});
     }
 
@@ -175,6 +192,31 @@ impl ProxyNetworkState {
             }
         }
     }
+
+    /// Fixed public resources carry no document credentials. Their lease lasts
+    /// for this native session, including script-disabled/manual pages and CSS
+    /// requests which cannot know the primary document's asynchronous identity.
+    pub(super) async fn while_active<T>(
+        &self,
+        future: impl std::future::Future<Output = T>,
+    ) -> Result<T, &'static str> {
+        let mut changes = self.document.subscribe();
+        if !self.is_active() {
+            return Err("The proxy session has ended.");
+        }
+        tokio::select! {
+            biased;
+            _ = async {
+                loop {
+                    if !self.is_active() || changes.changed().await.is_err() { return; }
+                }
+            } => Err("The proxy session has ended."),
+            output = future => {
+                if self.is_active() { Ok(output) }
+                else { Err("The proxy session has ended.") }
+            }
+        }
+    }
 }
 
 pub(super) fn content_security_policy(policy: &HttpProxyPolicy, authority: &str) -> String {
@@ -185,7 +227,7 @@ pub(super) fn content_security_policy(policy: &HttpProxyPolicy, authority: &str)
     };
     format!(
         "default-src 'self' data: blob:; connect-src 'self' ws://{authority}; \
-         script-src {scripts}; style-src 'self' 'unsafe-inline'; \
+         script-src {scripts}; style-src 'self' 'unsafe-inline'; font-src 'self' data: blob:; \
          form-action 'self'; frame-src 'self'; child-src 'self'; \
          worker-src 'none'; object-src 'none'; base-uri 'self'"
     )
@@ -202,7 +244,8 @@ pub(super) fn bootstrap(
 ) -> String {
     let json = serde_json::json!({
         "version": 1, "sessionId": session_id, "documentSequence": sequence,
-        "sourceOrigin": source_origin, "proxyOrigin": proxy_origin, "mappings": []
+        "sourceOrigin": source_origin, "proxyOrigin": proxy_origin, "mappings": [],
+        "fontAssets": super::font_assets::manifest(proxy_origin)
     })
     .to_string()
     .replace('<', "\\u003c")

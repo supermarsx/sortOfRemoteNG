@@ -9,6 +9,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     nativeFetch = window.fetch,
     rootLocation = location.href,
     routes = new Map(),
+    fontAssets = new Map(),
     proxies = new Set(),
     reports = new Set(),
     restores = [],
@@ -64,6 +65,29 @@ function installWebNetworkClient(configuration, reportBlocked) {
     if (!entry) throw new TypeError("Invalid network route configuration");
     addRoute(entry.upstreamOrigin, entry.proxyOrigin);
   });
+  // These are closed binary asset routes, NOT permission to fetch from a CDN
+  // origin. Native independently validates the path, response and anonymous route.
+  var configuredFonts =
+    configuration.fontAssets === undefined ? [] : configuration.fontAssets;
+  if (!Array.isArray(configuredFonts) || configuredFonts.length > 28)
+    throw new TypeError("Invalid font asset configuration");
+  configuredFonts.forEach(function (entry) {
+    if (!entry || typeof entry.upstreamUrl !== "string")
+      throw new TypeError("Invalid font asset configuration");
+    var match = entry.upstreamUrl.match(
+      /^https:\/\/synostatic\.synology\.com\/font\/inter\/(inter-w(?:400|500|600|700)-[1-7]\.woff2)$/,
+    );
+    if (
+      !match ||
+      entry.proxyUrl !==
+        proxyOrigin +
+          "/__sortofremoteng_assets_v1/synology-inter/" +
+          match[1] ||
+      fontAssets.has(entry.upstreamUrl)
+    )
+      throw new TypeError("Invalid font asset configuration");
+    fontAssets.set(entry.upstreamUrl, entry.proxyUrl);
+  });
 
   function blocked(kind, reason, destination) {
     var key = kind + ":" + reason + ":" + (destination || "");
@@ -90,11 +114,17 @@ function installWebNetworkClient(configuration, reportBlocked) {
       }
     }
     return new DOMException(
-      "This request is blocked by the session network policy.",
+      "Blocked " +
+        kind +
+        " request (" +
+        reason +
+        ")" +
+        (destination ? " to " + destination : "") +
+        ". Review Website network restrictions.",
       "SecurityError",
     );
   }
-  function mapUrl(value, kind, localData) {
+  function mapUrl(value, kind, localData, method) {
     if (!active) throw blocked(kind, "document-closed");
     var target;
     try {
@@ -108,6 +138,14 @@ function installWebNetworkClient(configuration, reportBlocked) {
     }
     if (target.username || target.password)
       throw blocked(kind, "url-credentials");
+    if (fontAssets.has(target.href)) {
+      if (kind === "font" || kind === "css") return fontAssets.get(target.href);
+      if (kind === "fetch" || kind === "xhr") {
+        if (String(method).toUpperCase() !== "GET")
+          throw blocked("font", "font-read-only", target.origin);
+        return fontAssets.get(target.href);
+      }
+    }
     if (
       localData &&
       (target.protocol === "data:" || target.protocol === "blob:")
@@ -233,7 +271,12 @@ function installWebNetworkClient(configuration, reportBlocked) {
     replace(window, "fetch", function (input, init) {
       try {
         if (NativeRequest && input instanceof NativeRequest) {
-          var url = mapUrl(input.url, "fetch");
+          var url = mapUrl(
+            input.url,
+            "fetch",
+            false,
+            init?.method ?? input.method,
+          );
           if (url !== input.url) {
             input = new NativeRequest(input, init);
             var requestOptions = {
@@ -264,7 +307,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
               ]);
             });
           }
-        } else input = mapUrl(input, "fetch");
+        } else input = mapUrl(input, "fetch", false, init?.method ?? "GET");
         return Reflect.apply(nativeFetch, window, [input, init]);
       } catch (error) {
         return Promise.reject(error);
@@ -276,7 +319,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
       nativeOpen = xhrPrototype.open;
     replace(xhrPrototype, "open", function () {
       var args = Array.prototype.slice.call(arguments);
-      args[1] = mapUrl(args[1], "xhr");
+      args[1] = mapUrl(args[1], "xhr", false, args[0]);
       return Reflect.apply(nativeOpen, this, args);
     });
   }
@@ -355,7 +398,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
       value,
       element.tagName === "FORM" || name.toLowerCase() === "formaction"
         ? "form"
-        : "resource",
+        : element.tagName === "LINK" &&
+            element.getAttribute("rel")?.toLowerCase() === "preload" &&
+            element.getAttribute("as")?.toLowerCase() === "font"
+          ? "font"
+          : "resource",
       /^(IMG|SOURCE|AUDIO|VIDEO)$/.test(element.tagName),
     );
   }
@@ -378,19 +425,20 @@ function installWebNetworkClient(configuration, reportBlocked) {
       })
       .join(", ");
   }
-  function css(value) {
+  function css(value, kind) {
+    kind = kind || "css";
     value = String(value);
     if (!/url\s*\(|@import/i.test(value)) return value;
     // This intentionally small compatibility parser must not guess CSS escapes.
     // Native policy covers CSS loaded without these dynamic API hooks.
     if (/\\|\/\*/.test(value))
-      throw blocked("css", "unsupported-css-url-syntax");
+      throw blocked(kind, "unsupported-css-url-syntax");
     value = value.replace(
       /url\(\s*(?:"([^"\n]*)"|'([^'\n]*)'|([^\s()"']+))\s*\)/gi,
       function (_, double, single, plain) {
         return (
           'url("' +
-          mapUrl(double ?? single ?? plain, "css", true).replace(/"/g, "%22") +
+          mapUrl(double ?? single ?? plain, kind, true).replace(/"/g, "%22") +
           '")'
         );
       },
@@ -401,6 +449,29 @@ function installWebNetworkClient(configuration, reportBlocked) {
         return prefix + quote + mapUrl(url, "css") + quote;
       },
     );
+  }
+  if (typeof window.FontFace === "function") {
+    var NativeFontFace = window.FontFace;
+    var RoutedFontFace = function () {
+      if (!new.target) throw new TypeError("Constructor requires new");
+      if (!active) throw blocked("font", "document-closed");
+      var args = Array.prototype.slice.call(arguments);
+      // BufferSource is not a URL; preserve native validation and binary identity.
+      if (
+        args.length >= 2 &&
+        !ArrayBuffer.isView(args[1]) &&
+        Object.prototype.toString.call(args[1]) !== "[object ArrayBuffer]"
+      )
+        args[1] = css(String(args[1]), "font");
+      return Reflect.construct(
+        NativeFontFace,
+        args,
+        new.target === RoutedFontFace ? NativeFontFace : new.target,
+      );
+    };
+    Object.setPrototypeOf(RoutedFontFace, NativeFontFace);
+    RoutedFontFace.prototype = NativeFontFace.prototype;
+    replace(window, "FontFace", RoutedFontFace);
   }
   replace(Element.prototype, "setAttribute", function (name, value) {
     var lower = String(name).toLowerCase();
@@ -430,6 +501,43 @@ function installWebNetworkClient(configuration, reportBlocked) {
   mapSetter(window.HTMLImageElement?.prototype, "srcset", srcset);
   mapSetter(window.HTMLSourceElement?.prototype, "srcset", srcset);
   mapSetter(window.CSSStyleDeclaration?.prototype, "cssText", css);
+  mapSetter(window.CSSStyleDeclaration?.prototype, "src", function (value) {
+    return css(value, "font");
+  });
+  if (
+    window.CSSStyleDeclaration &&
+    !Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, "src")
+  ) {
+    // Chromium exposes this descriptor through named CSS properties, not an
+    // ordinary prototype setter. Keep native get/set semantics for this one
+    // URL-bearing font descriptor; do not proxy all CSS declarations.
+    var fontStylePrototype = CSSStyleDeclaration.prototype;
+    var nativeFontGet = fontStylePrototype.getPropertyValue;
+    var nativeFontSet = fontStylePrototype.setProperty;
+    var fontSrcSetter = function (value) {
+      return Reflect.apply(nativeFontSet, this, ["src", css(value, "font")]);
+    };
+    try {
+      Object.defineProperty(fontStylePrototype, "src", {
+        configurable: true,
+        get: function () {
+          return Reflect.apply(nativeFontGet, this, ["src"]);
+        },
+        set: fontSrcSetter,
+      });
+      restores.push(function () {
+        if (
+          Object.getOwnPropertyDescriptor(fontStylePrototype, "src")?.set ===
+          fontSrcSetter
+        )
+          delete fontStylePrototype.src;
+      });
+    } catch (_) {
+      // A restricted host prototype must not abort the other routing hooks.
+      // Native response policy still blocks this unsupported font setter.
+      blocked("compatibility", "unavailable-interceptor");
+    }
+  }
   if (window.CSSStyleDeclaration) {
     var setProperty = CSSStyleDeclaration.prototype.setProperty;
     replace(
@@ -544,7 +652,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
         destination = url.origin;
       }
     } catch (_) {}
-    blocked("resource", "policy-blocked-resource", destination);
+    blocked(
+      event.effectiveDirective === "font-src" ? "font" : "resource",
+      "policy-blocked-resource",
+      destination,
+    );
   }
   document.addEventListener("securitypolicyviolation", policyViolation);
   // BFCache may restore this exact JS realm. Keep revoked wrappers installed;
@@ -556,6 +668,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
       reader.cancel().catch(function () {});
     });
     routes.clear();
+    fontAssets.clear();
     proxies.clear();
   }
   function restored(event) {

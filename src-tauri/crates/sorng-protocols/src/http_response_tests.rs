@@ -1,5 +1,7 @@
 //! Actual protected Axum proxy route regressions; all endpoints and credentials
 //! are synthetic. No Tauri profile or desktop runtime is initialized.
+#[path = "http_font_asset_tests.rs"]
+mod font_asset_tests;
 #[path = "http_network_tests.rs"]
 mod network_tests;
 #[path = "http_quickconnect_tests.rs"]
@@ -55,11 +57,30 @@ async fn proxy_with_policy(
     policy: HttpProxyPolicy,
     custom_headers: HashMap<String, String>,
 ) -> FixtureProxy {
+    proxy_with_policy_and_network(
+        target,
+        client,
+        auth_mode,
+        policy,
+        custom_headers,
+        Arc::new(ProxyNetworkState::default()),
+    )
+    .await
+}
+
+async fn proxy_with_policy_and_network(
+    target: String,
+    client: reqwest::Client,
+    auth_mode: UpstreamAuthMode,
+    policy: HttpProxyPolicy,
+    custom_headers: HashMap<String, String>,
+    network: Arc<ProxyNetworkState>,
+) -> FixtureProxy {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let authority = format!("p{TOKEN}.localhost:{port}");
     let state = Arc::new(AxumProxyState {
-        network: Arc::new(ProxyNetworkState::default()),
+        network,
         session_id: "synthetic-proxy-session".into(),
         connection_id: "fixture".into(),
         target_origin: reqwest::Url::parse(&target)

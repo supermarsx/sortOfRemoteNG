@@ -24,6 +24,18 @@ const report = {
   origin: "https://cdn.example",
 };
 describe("untrusted page network report boundary", () => {
+  it("accepts a fenced font category without exporting path or page errors", () => {
+    expect(
+      parseWebNetworkReport(
+        { ...report, kind: "font", error: "private" },
+        document,
+      ),
+    ).toEqual({
+      kind: "font",
+      reason: "origin-not-approved",
+      origin: "https://cdn.example",
+    });
+  });
   it("returns only closed diagnostic categories and an exact origin", () => {
     expect(
       parseWebNetworkReport(

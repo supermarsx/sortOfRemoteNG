@@ -307,6 +307,7 @@ async fn mandatory_network_csp_covers_success_error_css_script_and_revoked_sessi
             csp.contains("worker-src 'none'")
                 && csp.contains("form-action 'self'")
                 && csp.contains("connect-src 'self' ws://")
+                && csp.contains("font-src 'self' data: blob:")
         );
         assert!(!csp.contains("https:") && !csp.contains("default-src *"));
     }

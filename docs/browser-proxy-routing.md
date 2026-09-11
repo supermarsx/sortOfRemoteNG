@@ -43,12 +43,45 @@ the connection itself remain subject to the existing trust workflow.
 
 ## Foreign origins and unsupported traffic
 
-Third-party origins are currently **blocked, not transparently proxied**.
+Third-party origins are currently **blocked, not transparently proxied**, except
+for the closed public-font capability below.
 This includes a CDN or API that an otherwise trusted page references. A trusted
 redirect destination is not automatically an approved subresource origin or
 TLS identity. Supporting such origins requires a separate origin mapping and
 trust decision; arbitrary URLs are not sent through a generic native fetch
 endpoint under the authenticated page's origin.
+
+### Reviewed Synology public fonts
+
+All embedded web sessions include one built-in, anonymous capability for the
+28 fixed HTTPS files at
+`https://synostatic.synology.com/font/inter/inter-w{400,500,600,700}-{1..7}.woff2`.
+It works for manual DSM, plain HTTP(S), and reverse-proxy connections without
+requiring saved credentials or selecting an application profile. It does not
+approve the CDN origin generally, any other filename, query, or redirect.
+
+The browser loads the fonts through its protected local proxy. Native response
+rewriting handles exact URLs in decoded CSS, inline styles and scripts; the
+document bridge also handles supported dynamic CSS, `FontFace`, and exact GET
+fetch/XHR binary loaders. `font-src 'self' data: blob:` stays in force: the CDN
+is never added to the browser's CSP allowlist.
+
+The font route uses a separate cookie-free client with OS-root and hostname
+verification, including for an HTTPS upstream proxy. It follows the configured
+HTTP(S) proxy but never inherits the website's credentials, cookies, custom
+headers, query parameters, certificate pin, or disabled certificate checks.
+Only GET is accepted; response redirects are refused. The maximum is 512 KiB
+per font, four simultaneous downloads and 32 outstanding requests, with a
+30-second overall deadline. MIME and bounded WOFF2 container-header checks are
+required; responses are normalized to `font/woff2` with `nosniff`, without
+upstream cookies or redirect headers. These checks are not a font decoder or
+a claim that arbitrary font files are sanitized.
+
+If verified font-client setup is unavailable, only the font route fails with
+503; the main website can still load. A download failure never switches to
+direct CDN loading or unverified TLS. Session closure cancels outstanding font
+reads. Other blocked resource or unsupported-API notices remain meaningful and
+are not hidden by this exception.
 
 Mandatory response CSP restricts resources, connections, frames, and forms to
 the session origin and its local WebSocket endpoint. It applies to assets and
@@ -110,6 +143,12 @@ redirect fixtures remain relevant. These tests do not contact user sites,
 install trusted roots, prove compatibility with every website, or establish
 zero browser-engine egress. Native app compilation and actual platform guard
 acceptance are separate gates.
+
+`http_font_asset_tests.rs` checks actual native CSS/HTML/JS rewriting, closed
+asset names, binary MIME/size/signature refusal, anonymous CONNECT routing,
+independent TLS rejection, and stop-time cancellation. Its positive transport
+uses an isolated fixture certificate, not a system trust-store modification;
+the installed-Edge fixture separately verifies actual font decoding.
 
 From the repository root, `node scripts/test-web-network-browser.mjs` exercises
 the compatibility bridge in installed headless Edge using synthetic endpoints.

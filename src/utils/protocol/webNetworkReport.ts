@@ -6,6 +6,7 @@ const kinds = new Set([
   "websocket",
   "resource",
   "css",
+  "font",
   "form",
   "navigation",
   "document",
@@ -22,6 +23,7 @@ const kinds = new Set([
 const reasons = new Set([
   "origin-not-approved",
   "policy-blocked-resource",
+  "font-read-only",
   "unsupported-network-context",
   "unsupported-scheme",
   "invalid-url",

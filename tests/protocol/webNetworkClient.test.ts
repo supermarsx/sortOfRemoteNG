@@ -57,6 +57,7 @@ beforeEach(() => {
   for (const kind of [
     "WebSocket",
     "EventSource",
+    "FontFace",
     "Worker",
     "SharedWorker",
     "RTCPeerConnection",
@@ -88,6 +89,193 @@ function start(value = config()) {
 }
 
 describe("proxy routing compatibility client (not native egress proof)", () => {
+  const fontUrl =
+    "https://synostatic.synology.com/font/inter/inter-w400-1.woff2";
+  const fontPath =
+    "/__sortofremoteng_assets_v1/synology-inter/inter-w400-1.woff2";
+  const withFonts = () => ({
+    ...config(),
+    fontAssets: [{ upstreamUrl: fontUrl, proxyUrl: proxy + fontPath }],
+  });
+  it("routes FontFace string sources only and preserves native binary/descriptors/subclasses", () => {
+    const original = window.FontFace;
+    const configuration = withFonts();
+    start(configuration);
+    configuration.fontAssets[0].proxyUrl = "https://evil.example/";
+    const descriptors = { weight: "400", display: "swap" as const };
+    const face = new FontFace(
+      "Inter",
+      `url('${fontUrl}') format('woff2')`,
+      descriptors,
+    );
+    expect(face).toBeInstanceOf(original);
+    expect(constructed[constructed.length - 1]?.args).toEqual([
+      "Inter",
+      `url("${proxy + fontPath}") format('woff2')`,
+      descriptors,
+    ]);
+    const bytes = new Uint8Array([1, 2]);
+    class CustomFont extends FontFace {}
+    expect(new CustomFont("Binary", bytes)).toBeInstanceOf(CustomFont);
+    expect(constructed[constructed.length - 1]?.args[1]).toBe(bytes);
+    new FontFace("Buffer", bytes.buffer);
+    expect(constructed[constructed.length - 1]?.args[1]).toBe(bytes.buffer);
+    new FontFace("Boxed", Object(`url(${fontUrl})`) as string);
+    expect(constructed[constructed.length - 1]?.args[1]).toBe(
+      `url("${proxy + fontPath}")`,
+    );
+    expect(() =>
+      Reflect.apply(FontFace, undefined, ["Bad", "local(Arial)"]),
+    ).toThrow();
+  });
+  it("routes dynamic font CSS and preloads without granting writes, socket or frame access", async () => {
+    const insertRule = vi.spyOn(CSSStyleSheet.prototype, "insertRule");
+    start(withFonts());
+    const style = document.createElement("style");
+    document.head.append(style);
+    try {
+      style.sheet!.insertRule(
+        `@font-face {font-family: Inter; src: url('${fontUrl}');}`,
+      );
+      // The DOM emulator drops font src descriptors during serialization.
+      // Real FontFace/CSS loading is separately exercised by the Edge smoke.
+      expect(insertRule).toHaveBeenCalledWith(
+        expect.stringContaining(`url("${proxy + fontPath}")`),
+      );
+      const link = document.createElement("link");
+      link.setAttribute("rel", "preload");
+      link.setAttribute("as", "font");
+      link.setAttribute("href", fontUrl);
+      expect(link.getAttribute("href")).toBe(proxy + fontPath);
+      await expect(
+        window.fetch(fontUrl, { method: "POST", body: "private" }),
+      ).rejects.toMatchObject({
+        name: "SecurityError",
+      });
+      expect(() => new WebSocket(fontUrl)).toThrow();
+      expect(() =>
+        document.createElement("iframe").setAttribute("src", fontUrl),
+      ).toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      style.remove();
+    }
+  });
+  it("maps exact font GET fetch/Request/XHR binary loaders but rejects other methods and contexts", async () => {
+    start(withFonts());
+    await window.fetch(fontUrl);
+    expect(fetch).toHaveBeenLastCalledWith(proxy + fontPath, undefined);
+    await window.fetch(new Request(fontUrl));
+    expect(
+      (fetch.mock.calls[fetch.mock.calls.length - 1][0] as Request).url,
+    ).toBe(proxy + fontPath);
+    expect(
+      (fetch.mock.calls[fetch.mock.calls.length - 1][0] as Request).method,
+    ).toBe("GET");
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", fontUrl, true);
+    expect(xhrOpen).toHaveBeenCalledWith("GET", proxy + fontPath, true);
+    fetch.mockClear();
+    xhrOpen.mockClear();
+    for (const method of ["POST", "PUT", "DELETE", "HEAD"]) {
+      await expect(window.fetch(fontUrl, { method })).rejects.toMatchObject({
+        name: "SecurityError",
+      });
+      await expect(
+        window.fetch(new Request(fontUrl), { method }),
+      ).rejects.toMatchObject({ name: "SecurityError" });
+      expect(() => xhr.open(method, fontUrl)).toThrow();
+    }
+    expect(() => new EventSource(fontUrl)).toThrow();
+    expect(navigator.sendBeacon(fontUrl, "private")).toBe(false);
+    expect(() => controller!.mapUrl(fontUrl, "navigation")).toThrow();
+    expect(() => controller!.mapUrl(fontUrl, "form")).toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(xhrOpen).not.toHaveBeenCalled();
+    expect(JSON.stringify(report.mock.calls)).not.toContain("private");
+  });
+  it("rejects unknown or query-bearing font sources and keeps expired wrappers closed", () => {
+    start(withFonts());
+    for (const url of [
+      fontUrl + "?token=private",
+      fontUrl.replace("400", "900"),
+      "https://other.example/private?token=private",
+    ]) {
+      try {
+        new FontFace("Inter", `url('${url}')`);
+        throw new Error("Expected refusal");
+      } catch (error) {
+        expect(error).toMatchObject({ name: "SecurityError" });
+        expect((error as Error).message).toContain(
+          "Blocked font request (origin-not-approved)",
+        );
+        expect((error as Error).message).toContain(
+          "Review Website network restrictions",
+        );
+        expect((error as Error).message).not.toMatch(/private|woff2|token=/);
+      }
+    }
+    expect(constructed).toHaveLength(0);
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "font", reason: "origin-not-approved" }),
+    );
+    expect(JSON.stringify(report.mock.calls)).not.toContain("private");
+    window.dispatchEvent(new Event("pagehide"));
+    expect(() => new FontFace("Inter", `url('${fontUrl}')`)).toThrow();
+  });
+  it("validates the closed immutable font asset table before installing wrappers", () => {
+    for (const fontAssets of [
+      null,
+      {},
+      Array.from({ length: 29 }, () => withFonts().fontAssets[0]),
+      [withFonts().fontAssets[0], withFonts().fontAssets[0]],
+      [{ upstreamUrl: fontUrl + "?token=x", proxyUrl: proxy + fontPath }],
+      [{ upstreamUrl: fontUrl, proxyUrl: otherProxy + fontPath }],
+      [{ upstreamUrl: fontUrl, proxyUrl: proxy + "/api" }],
+      [
+        {
+          upstreamUrl:
+            "http://synostatic.synology.com/font/inter/inter-w400-1.woff2",
+          proxyUrl: proxy + fontPath,
+        },
+      ],
+    ]) {
+      expect(() => install({ ...config(), fontAssets }, report)).toThrow();
+      expect(window.fetch).toBe(fetch);
+    }
+  });
+  it("keeps routing installed when the host refuses the font src interceptor", async () => {
+    const defineProperty = Object.defineProperty;
+    vi.spyOn(Object, "defineProperty").mockImplementation(
+      (target, name, descriptor) => {
+        if (target === CSSStyleDeclaration.prototype && name === "src")
+          throw new TypeError("Synthetic restricted host prototype");
+        return defineProperty(target, name, descriptor);
+      },
+    );
+    expect(() => start(withFonts())).not.toThrow();
+    expect(
+      report.mock.calls.filter(
+        ([value]) =>
+          (value as { reason: string }).reason === "unavailable-interceptor",
+      ),
+    ).toHaveLength(1);
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "compatibility",
+        reason: "unavailable-interceptor",
+        origin: null,
+      }),
+    );
+    await window.fetch(`${upstream}/still-routed`);
+    expect(fetch).toHaveBeenCalledWith(`${proxy}/still-routed`, undefined);
+    fetch.mockClear();
+    await expect(
+      window.fetch("https://foreign.example/private?token=private"),
+    ).rejects.toMatchObject({ name: "SecurityError" });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(JSON.stringify(report.mock.calls)).not.toMatch(/private|Synthetic/);
+  });
   it("maps exact, protocol-relative and dynamic URLs without changing global URL", async () => {
     const URLBefore = window.URL;
     start();

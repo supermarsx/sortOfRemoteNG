@@ -76,15 +76,17 @@ export default function WebNetworkNotice({
                 {report.origin ?? "This page"}
               </span>
               {" — "}
-              {report.reason === "origin-not-approved"
-                ? "Destination not yet approved/routed"
-                : report.reason === "document-expired"
-                  ? "Reload to establish a fresh session document"
-                  : report.reason === "unsupported-network-context"
-                    ? `Unsupported ${report.kind} request`
-                    : report.reason === "request-body-too-large"
-                      ? "Retargeted Request uploads are limited to 16 MiB; nothing was sent"
-                      : "Request cannot use this session's routing policy"}
+              {report.kind === "font"
+                ? "Font request blocked; only explicitly routed font assets can load"
+                : report.reason === "origin-not-approved"
+                  ? "Destination not yet approved/routed"
+                  : report.reason === "document-expired"
+                    ? "Reload to establish a fresh session document"
+                    : report.reason === "unsupported-network-context"
+                      ? `Unsupported ${report.kind} request`
+                      : report.reason === "request-body-too-large"
+                        ? "Retargeted Request uploads are limited to 16 MiB; nothing was sent"
+                        : "Request cannot use this session's routing policy"}
             </li>
           ))}
         </ul>
@@ -92,6 +94,12 @@ export default function WebNetworkNotice({
           Only destination origins are shown. This notice is not proof that
           every browser network channel is intercepted.
         </p>
+        {reports.length > 0 && (
+          <p className="mt-2">
+            A console SecurityError alone does not identify the blocked request.
+            Match it to these reports; unrelated page errors are not suppressed.
+          </p>
+        )}
       </details>
     </section>
   );
