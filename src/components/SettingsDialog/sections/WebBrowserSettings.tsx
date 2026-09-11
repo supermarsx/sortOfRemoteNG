@@ -1,5 +1,13 @@
 import React from "react";
-import { Globe, Wifi, Bookmark, RefreshCw, Trash2, Timer, Repeat } from "lucide-react";
+import {
+  Globe,
+  Wifi,
+  Bookmark,
+  RefreshCw,
+  Trash2,
+  Timer,
+  Repeat,
+} from "lucide-react";
 import { GlobalSettings } from "../../../types/settings/settings";
 import { NumberInput } from "../../ui/forms";
 import SectionHeading from "../../ui/SectionHeading";
@@ -9,6 +17,7 @@ import {
   Toggle,
 } from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
+import WebsiteAppearanceSection from "./WebsiteAppearanceSection";
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
@@ -60,6 +69,13 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
         description="Internal proxy keepalive, bookmarks, and web browser connection settings."
       />
 
+      <div data-setting-key="websiteDarkMode">
+        <WebsiteAppearanceSection
+          settings={settings}
+          updateSettings={updateSettings}
+        />
+      </div>
+
       {/* Proxy Keepalive */}
       <div className="space-y-4">
         <SectionHeader
@@ -69,8 +85,8 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
         <Card>
           <p className="text-xs text-[var(--color-textSecondary)]">
             When the web browser connects through an internal authentication
-            proxy, these settings control how dead proxy sessions are
-            detected and recovered.
+            proxy, these settings control how dead proxy sessions are detected
+            and recovered.
           </p>
 
           <Toggle
@@ -143,10 +159,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                 value={settings.proxyMaxAutoRestarts}
                 onChange={(v: number) =>
                   updateSettings({
-                    proxyMaxAutoRestarts: Math.max(
-                      0,
-                      Math.min(100, v || 0),
-                    ),
+                    proxyMaxAutoRestarts: Math.max(0, Math.min(100, v || 0)),
                   })
                 }
                 variant="settings-compact"

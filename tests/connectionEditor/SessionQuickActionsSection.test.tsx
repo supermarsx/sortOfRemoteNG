@@ -41,7 +41,7 @@ describe("connection quick-action settings", () => {
       ["Website quick-action bar", "httpEnabled"],
       ["Allow website interaction macros", "allowWebMacros"],
       ["Allow website script injection", "allowWebScriptInjection"],
-      ["Allow forced-dark websites", "allowWebForceDark"],
+      ["Allow dark-mode extension", "allowWebForceDark"],
       ["Confirm before running scripts", "confirmBeforeScriptRun"],
     ];
     for (const [label, key] of controls) {
@@ -61,7 +61,9 @@ describe("connection quick-action settings", () => {
   });
   it("requires independent explicit website opt-ins and preserves unrelated connection fields", () => {
     render(<Harness initial={{ name: "Fixture" }} />);
-    for (const box of screen.getAllByRole("checkbox"))
+    for (const box of screen.getAllByRole("checkbox", {
+      name: /^(Allow |Enable )/,
+    }))
       expect(box).not.toBeChecked();
     fireEvent.click(
       screen.getByRole("checkbox", {
@@ -82,7 +84,7 @@ describe("connection quick-action settings", () => {
     });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: "Force dark appearance for this connection",
+        name: "Enable dark-mode extension for this connection",
       }),
     );
     expect(

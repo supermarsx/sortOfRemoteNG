@@ -4,6 +4,10 @@ const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_automation_client.js",
   "utf8",
 );
+const darkSource = readFileSync(
+  "src-tauri/crates/sorng-protocols/src/web_dark_mode_client.js",
+  "utf8",
+);
 const identity = {
   sessionId: "demo-proxy",
   documentToken: "d".repeat(32),
@@ -79,7 +83,7 @@ beforeEach(() => {
     },
   );
   window.eval(
-    `(function(){var p=${JSON.stringify(identity)},u=new URL(location.href);${source}\n})();`,
+    `(function(){var p=${JSON.stringify(identity)},u=new URL(location.href);${darkSource}\n${source}\n})();`,
   );
 });
 afterEach(() => {

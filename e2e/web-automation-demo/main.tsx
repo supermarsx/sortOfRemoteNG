@@ -10,6 +10,7 @@ import type {
   WebInteractionMacro,
 } from "../../src/types/recording/webAutomation";
 import { refuse } from "./native";
+import { normalizeWebsiteDarkModeConfig } from "../../src/utils/connection/websiteDarkMode";
 declare global {
   interface Window {
     __WEB_AUTOMATION_DEMO__: { ready: boolean; refused: string[] };
@@ -91,6 +92,21 @@ export function Demo() {
     window.__WEB_AUTOMATION_DEMO__.ready = true;
   }, []);
   const automation: ReturnType<typeof useWebAutomation> = {
+    darkMode: {
+      scopeKey: "demo",
+      enabled: false,
+      available: false,
+      busy: false,
+      error: null,
+      unavailableReason:
+        "Extension unavailable in the synthetic recording fixture.",
+      configuration: normalizeWebsiteDarkModeConfig(undefined),
+      theme: normalizeWebsiteDarkModeConfig(undefined).theme,
+      defaultTheme: normalizeWebsiteDarkModeConfig(undefined).theme,
+      presets: [],
+      setEnabled: async () => false,
+      updateConfiguration: async () => false,
+    },
     permissions: {
       showActionBar: true,
       interactionMacrosEnabled: enabled,

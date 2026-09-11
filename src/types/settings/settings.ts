@@ -392,6 +392,7 @@ export interface GlobalSettings {
   webRecording: WebRecordingConfig;
   macros: MacroConfig;
   sessionQuickActions: import("../connection/sessionQuickActions").SessionQuickActionsSettings;
+  websiteDarkMode?: import("../connection/websiteDarkMode").WebsiteDarkModeSettings;
   /** Show Recording Manager icon in secondary bar */
   showRecordingManagerIcon: boolean;
 

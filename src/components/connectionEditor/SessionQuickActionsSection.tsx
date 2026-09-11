@@ -9,6 +9,12 @@ import {
   quickActionScopeLabel,
 } from "../../utils/connection/sessionQuickActions";
 import { Checkbox } from "../ui/forms";
+import { WebsiteDarkModeFields } from "../websites/WebsiteDarkModeFields";
+import {
+  BUILTIN_WEBSITE_DARK_PRESETS,
+  normalizeWebsiteDarkModeConfig,
+} from "../../utils/connection/websiteDarkMode";
+import type { WebsiteDarkModeConfig } from "../../types/connection/websiteDarkMode";
 
 interface Props {
   formData: Partial<Connection>;
@@ -41,8 +47,8 @@ export function SessionQuickActionsSection({
           <>
             <p className="text-sm">
               Reset this draft? All favorite references will be cleared and
-              website automation and forced dark mode will be disabled. The
-              database changes only when you save the connection.
+              website automation and the dark-mode extension will be disabled.
+              The database changes only when you save the connection.
             </p>
             <button
               type="button"
@@ -167,12 +173,30 @@ export function SessionQuickActionsSection({
               checked={web.forceDark}
               onChange={(checked) => setWeb("forceDark", checked)}
             />
-            Force dark appearance for this connection
+            Enable dark-mode extension for this connection
           </label>
+          <ConnectionAppearance
+            key={JSON.stringify(web.darkMode)}
+            value={normalizeWebsiteDarkModeConfig(web.darkMode)}
+            onChange={(darkMode) =>
+              setFormData((previous) =>
+                previous.id !== formData.id ||
+                previous.httpAutomation !== formData.httpAutomation
+                  ? previous
+                  : {
+                      ...previous,
+                      httpAutomation: {
+                        ...normalizeHttpAutomation(previous.httpAutomation),
+                        darkMode,
+                      },
+                    },
+              )
+            }
+          />
           <p className="text-xs text-[var(--color-textSecondary)]">
             Scripts can read and change this website, including signed-in
-            content. Enable only for trusted scripts. Forced dark appearance may
-            affect site colors. Global Macros settings can disable these
+            content. Enable only for trusted scripts. The dark-mode extension
+            may affect site colors. Global settings can disable these
             capabilities; enabling a favorite never runs it automatically.
           </p>
         </div>
@@ -246,5 +270,75 @@ export function SessionQuickActionsSection({
         </>
       )}
     </section>
+  );
+}
+
+function ConnectionAppearance({
+  value,
+  onChange,
+}: {
+  value: WebsiteDarkModeConfig;
+  onChange: (value: WebsiteDarkModeConfig) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <details className="rounded-lg border border-[var(--color-border)] p-3">
+      <summary className="cursor-pointer text-sm">
+        Dark-mode extension appearance
+      </summary>
+      <div className="pt-3 space-y-3">
+        <label className="flex gap-2 items-center text-sm">
+          <Checkbox
+            checked={draft.useGlobalDefaults}
+            onChange={(useGlobalDefaults) =>
+              setDraft({ ...draft, useGlobalDefaults })
+            }
+          />
+          Use app appearance defaults
+        </label>
+        {!draft.useGlobalDefaults && (
+          <WebsiteDarkModeFields
+            theme={draft.theme}
+            presets={[...BUILTIN_WEBSITE_DARK_PRESETS]}
+            onChange={(theme) => setDraft({ ...draft, theme })}
+          />
+        )}
+        {error && (
+          <p role="alert" className="text-sm text-error">
+            {error}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="sor-btn-secondary-sm"
+            onClick={() => setDraft(normalizeWebsiteDarkModeConfig(undefined))}
+          >
+            Reset appearance
+          </button>
+          <button
+            type="button"
+            className="sor-btn-secondary-sm"
+            onClick={() => {
+              try {
+                onChange(normalizeWebsiteDarkModeConfig(draft));
+                setError(null);
+              } catch {
+                setError(
+                  "Appearance is invalid. Check the custom CSS and limits before applying.",
+                );
+              }
+            }}
+          >
+            Apply to connection draft
+          </button>
+        </div>
+        <p className="text-xs text-[var(--color-textMuted)]">
+          Save the connection to persist these changes. Applying appearance does
+          not enable the extension.
+        </p>
+      </div>
+    </details>
   );
 }

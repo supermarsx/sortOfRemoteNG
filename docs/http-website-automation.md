@@ -5,7 +5,7 @@ description: Explicit, page-only website actions beside your bookmarks, with pro
 permalink: /http-website-automation/
 ---
 
-Open an HTTP or HTTPS connection's **Protocol → Advanced** settings to opt into website macros, manual JavaScript, or forced dark mode. Each capability starts off. Global **Session quick actions** settings control availability but never grant permission for a connection. Save the connection and open its website normally; certificate approval and website sign-in remain separate.
+Open an HTTP or HTTPS connection's **Protocol → Advanced** settings to opt into website macros, manual JavaScript, or the dark-mode extension. Each capability starts off. Global **Session quick actions** settings control availability but never grant permission for a connection. Save the connection and open its website normally; certificate approval and website sign-in remain separate.
 
 ## Record a website macro
 
@@ -27,8 +27,61 @@ Scripts have only the website's JavaScript privileges, including any current sig
 
 Libraries use the desktop **Macros** artifact protection policy, not browser local storage or the Connections artifact policy. Encryption depends on that policy; it is not always enabled. The library is limited to 128 scripts, 128 macros and 2 MiB total, with each script at most 64 KiB. Favorites save only ordered item IDs in the connection. A failed save is reported rather than silently switching to browser storage. Locked, unavailable or changed owning databases prevent new actions; older sessions without an owner receipt must be reconnected.
 
-## Force a dark appearance
+## Enable the dark-mode extension
 
-Enable **Force dark mode** only for sites that need it. This uses the locally bundled [Dark Reader API](https://github.com/darkreader/darkreader/blob/main/README.md), pinned to version 4.9.130, and does not download a CDN script at runtime. Resource fetching is restricted to the same proxy origin, with redirects refused; the page receives no native fetch bridge. Site CSP, unusual styling or blocked resources may prevent complete recoloring. Disable the connection option to restore the website's styling. Locking, access changes and navigation revoke pending automation and disable the old document's forced styling.
+Choose the moon icon immediately before the website recording controls, then
+**Enable extension**. Use **Disable extension** to restore the site's appearance.
+Enabling is remembered for this saved connection in its owning database; another
+website does not become enabled automatically. Appearance can also be configured
+in the connection editor. Saving appearance changes does not reconnect the proxy
+or discard the website login session.
+
+Choose **Use app appearance defaults**, or turn it off to customize this
+connection. **Settings → Web Browser → Website appearance** holds shared defaults
+and your named presets. Save the Settings dialog to apply those defaults to
+already-enabled connections that use them. The global **Allow dark-mode
+extension** switch controls availability, not consent for every website.
+
+- **Dynamic** recolors backgrounds, text, borders and other styled elements as
+  the page changes, using the locally bundled [Dark Reader API](https://github.com/darkreader/darkreader/blob/main/README.md),
+  pinned to version 4.9.130. No CDN script is downloaded at runtime.
+- **Filter** applies a whole-page inversion and color adjustments, without
+  loading the dynamic engine. This can help unusual pages, but may affect fixed
+  positioning and media colors.
+- **Dynamic + filter** combines dynamic recoloring with brightness, contrast,
+  sepia and grayscale adjustments. It does not invert the page twice.
+- **Custom CSS only** applies your local styles without either conversion engine.
+  Custom CSS can also supplement the other modes.
+
+Adjust the base background and text colors, brightness, contrast, sepia and
+grayscale, and choose whether to preserve images and video. Media preservation
+reduces recoloring; whole-page filters can still affect their appearance. Start
+with a built-in preset or save your current app defaults as a named custom preset.
+Use **Save appearance** to persist connection changes; selecting a preset alone
+does not save or enable the extension.
+
+Custom CSS is limited to 16 KiB of local styles: selectors, colors, gradients and
+calculations are supported. Imports, URLs, external fonts, at-rules, comments,
+escapes and indirect resource functions such as `var()` are intentionally
+rejected. For example:
+
+```css
+main {
+  background: #151515 !important;
+  color: #ededed !important;
+}
+```
+
+The dynamic engine can fetch resources only from the same proxy origin, with
+redirects refused; the page receives no native fetch bridge. Site CSP, disabled
+page scripts, unusual styling or blocked resources can prevent conversion. No
+security policy is relaxed to make a theme work. Database locks, owner changes
+and navigation revoke pending operations and remove old-document styles. A save
+or engine failure is reported in the extension controls instead of being treated
+as success. The dark-mode controls do not depend on the scripts/macros library
+being available.
+
+After updating the native proxy, rebuild/restart the desktop app and reopen the
+web tab. Frontend Fast Refresh alone cannot update the injected native helper.
 
 Website replies are untrusted. The app checks the iframe, origin, proxy session, document identity and current navigation, and accepts only replies to its own armed operations. These freshness checks do not bypass TLS trust or establish that a website account is signed in. See [website application profiles]({{ '/http-application-profiles/' | relative_url }}) for supported sign-in modes and [web viewer troubleshooting]({{ '/http-viewer-trust/' | relative_url }}) for trust and loading behavior.

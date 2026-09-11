@@ -10,6 +10,7 @@ const boundary = vi.hoisted(() => ({
   lease: 1,
   accessible: true,
   accessChanged: null as null | ((event: { status: "suspended" }) => void),
+  accessListeners: new Set<(event: { status: "suspended" }) => void>(),
   load: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
@@ -19,9 +20,13 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
   onDatabaseAccessChange: (
     callback: (event: { status: "suspended" }) => void,
   ) => {
-    boundary.accessChanged = callback;
+    boundary.accessListeners.add(callback);
+    boundary.accessChanged = (event) => {
+      for (const listener of boundary.accessListeners) listener(event);
+    };
     return () => {
-      boundary.accessChanged = null;
+      boundary.accessListeners.delete(callback);
+      if (!boundary.accessListeners.size) boundary.accessChanged = null;
     };
   },
   DatabaseManager: {

@@ -7,6 +7,7 @@ import {
 } from "../../src/utils/settings/settingsManager";
 import { _resetInvokeCache } from "../../src/utils/tauri/invoke";
 import type { GlobalSettings } from "../../src/types/settings/settings";
+import { normalizeWebsiteDarkModeSettings } from "../../src/utils/connection/websiteDarkMode";
 
 let dom: JSDOM;
 
@@ -69,6 +70,42 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
 }
 
 describe("folder icon appearance persistence", () => {
+  it("persists website appearance and custom presets without granting connection consent", async () => {
+    const manager = SettingsManager.getInstance();
+    const initial = await manager.loadSettings();
+    expect(initial.websiteDarkMode).toEqual(
+      normalizeWebsiteDarkModeSettings(undefined),
+    );
+    const appearance = normalizeWebsiteDarkModeSettings(undefined);
+    appearance.defaults.brightness = 85;
+    appearance.presets = [
+      {
+        id: "local",
+        name: "Local preset",
+        theme: { ...appearance.defaults, mode: "filter" },
+      },
+    ];
+    await manager.saveSettings({ websiteDarkMode: appearance });
+    SettingsManager.resetInstance();
+    expect(
+      (await SettingsManager.getInstance().loadSettings()).websiteDarkMode,
+    ).toEqual(appearance);
+    expect(fakeStoredSettings).not.toHaveProperty("forceDark");
+    expect(fakeStoredSettings).not.toHaveProperty("httpAutomation");
+    const before = structuredClone(fakeStoredSettings);
+    await expect(
+      SettingsManager.getInstance().saveSettings({
+        websiteDarkMode: {
+          ...appearance,
+          defaults: {
+            ...appearance.defaults,
+            customCss: "a{background:url(https://example.test)}",
+          },
+        },
+      }),
+    ).rejects.toThrow();
+    expect(fakeStoredSettings).toEqual(before);
+  });
   it("defaults Documents visibility on and preserves explicit false/true through native settings reload", async () => {
     const manager = SettingsManager.getInstance();
     expect((await manager.loadSettings()).showDocumentsIcon).toBe(true);

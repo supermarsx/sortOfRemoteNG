@@ -34,6 +34,7 @@ import {
 } from "./folderIconColor";
 import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../types/connection/sessionQuickActions";
 import { normalizeSessionQuickActions } from "../connection/sessionQuickActions";
+import { normalizeWebsiteDarkModeSettings } from "../connection/websiteDarkMode";
 import { DEFAULT_PASSWORD_POLICY } from "../../types/security/passwordPolicy";
 import { normalizePasswordPolicy } from "../security/passwordPolicy";
 import {
@@ -511,6 +512,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   },
   showRecordingManagerIcon: true,
   sessionQuickActions: { ...DEFAULT_SESSION_QUICK_ACTIONS },
+  websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
   macros: {
     defaultStepDelayMs: 200,
     confirmBeforeReplay: true,
@@ -1178,6 +1180,9 @@ export class SettingsManager {
       sessionQuickActions: normalizeSessionQuickActions(
         normalizedStored.sessionQuickActions,
       ),
+      websiteDarkMode: normalizeWebsiteDarkModeSettings(
+        normalizedStored.websiteDarkMode,
+      ),
       allowSshExternalLinks: normalizedStored.allowSshExternalLinks === true,
       ...sshReconnectSettings,
       sshTerminal: mergeSSHTerminalConfig(
@@ -1317,6 +1322,10 @@ export class SettingsManager {
     if ("sessionQuickActions" in safePatch)
       safePatch.sessionQuickActions = normalizeSessionQuickActions(
         safePatch.sessionQuickActions,
+      );
+    if ("websiteDarkMode" in safePatch)
+      safePatch.websiteDarkMode = normalizeWebsiteDarkModeSettings(
+        safePatch.websiteDarkMode,
       );
     if (safePatch.restApi) {
       const restApi = { ...safePatch.restApi } as Record<string, unknown>;

@@ -101,6 +101,10 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
 }));
 import { WebBrowser } from "../../src/components/protocol/WebBrowser";
 import { normalizeWebAutomationLibrary } from "../../src/utils/recording/webAutomationLibrary";
+import {
+  normalizeWebsiteDarkModeConfig,
+  normalizeWebsiteDarkModeSettings,
+} from "../../src/utils/connection/websiteDarkMode";
 const proxy = {
   session_id: "automation-proxy",
   local_port: 43081,
@@ -123,6 +127,9 @@ const holdFrameLoad = (event: Event) => {
 beforeEach(() => {
   document.addEventListener("load", holdFrameLoad, true);
   native.locked = false;
+  Object.assign(native.settings, {
+    websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
+  });
   native.vaultApi = undefined;
   native.sessions = [];
   clearRuntimeConnectionsForTests();
@@ -179,7 +186,9 @@ async function mount() {
   };
   native.sessions = [session];
   const view = render(<WebBrowser session={session} />);
-  const iframe = screen.getByTitle(connection.name) as HTMLIFrameElement;
+  const iframe = (await screen.findByTitle(
+    connection.name,
+  )) as HTMLIFrameElement;
   await waitFor(() => expect(iframe.src).toContain(proxy.proxy_url));
   const post = vi
     .spyOn(iframe.contentWindow!, "postMessage")
@@ -214,6 +223,89 @@ async function mount() {
   return { ...view, iframe, post, identity, emit };
 }
 describe("real WebBrowser iframe and website automation integration", () => {
+  it("reapplies saved appearance and global defaults without replacing the iframe or restarting authentication", async () => {
+    const { iframe, post, emit, rerender } = await mount();
+    emit("proxy_document_start");
+    emit("proxy_dom_ready");
+    await waitFor(() =>
+      expect(
+        post.mock.calls.some(
+          ([data]) => data.action === "dark" && data.payload.enabled,
+        ),
+      ).toBe(true),
+    );
+    const session = native.sessions[0];
+    for (const [data] of post.mock.calls)
+      if (data.action === "dark")
+        emit("proxy_web_automation", { ...data, status: "ok" });
+    const started = native.invoke.mock.calls.filter(
+      ([command]) => command === "start_basic_auth_proxy",
+    ).length;
+    native.connections = [
+      {
+        ...native.connections[0],
+        httpAutomation: {
+          ...native.connections[0].httpAutomation!,
+          darkMode: {
+            ...normalizeWebsiteDarkModeConfig(undefined),
+            useGlobalDefaults: false,
+            theme: {
+              ...normalizeWebsiteDarkModeConfig(undefined).theme,
+              brightness: 72,
+            },
+          },
+        },
+      },
+    ];
+    rerender(<WebBrowser session={session} />);
+    await waitFor(() =>
+      expect(
+        post.mock.calls.some(
+          ([data]) =>
+            data.action === "dark" &&
+            data.payload.enabled &&
+            data.payload.theme.brightness === 72,
+        ),
+      ).toBe(true),
+    );
+    for (const [data] of post.mock.calls)
+      if (data.action === "dark")
+        emit("proxy_web_automation", { ...data, status: "ok" });
+    native.connections = [
+      {
+        ...native.connections[0],
+        httpAutomation: {
+          ...native.connections[0].httpAutomation!,
+          darkMode: normalizeWebsiteDarkModeConfig(undefined),
+        },
+      },
+    ];
+    const global = normalizeWebsiteDarkModeSettings(undefined);
+    global.defaults.brightness = 83;
+    Object.assign(native.settings, { websiteDarkMode: global });
+    rerender(<WebBrowser session={session} />);
+    await waitFor(() =>
+      expect(
+        post.mock.calls.some(
+          ([data]) =>
+            data.action === "dark" &&
+            data.payload.enabled &&
+            data.payload.theme.brightness === 83,
+        ),
+      ).toBe(true),
+    );
+    expect(screen.getByTitle(session.name)).toBe(iframe);
+    expect(
+      native.invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(started);
+    expect(
+      native.invoke.mock.calls.some(
+        ([command]) => command === "stop_basic_auth_proxy",
+      ),
+    ).toBe(false);
+  });
   it.each([false, true])(
     "releases a replaced redirect registry only when no other tab owns it (other owner=%s)",
     async (otherOwner) => {

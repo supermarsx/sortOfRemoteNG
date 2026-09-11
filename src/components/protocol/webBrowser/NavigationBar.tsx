@@ -1,5 +1,6 @@
 import type { SectionProps } from "./types";
 import RecordingControls from "./RecordingControls";
+import WebsiteDarkModeControls from "./WebsiteDarkModeControls";
 import SecurityIcon, { AuthIcon } from "./SecurityIcon";
 import React, { useRef, useState } from "react";
 import {
@@ -283,6 +284,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           />
         )}
       </div>
+      <WebsiteDarkModeControls controller={mgr.automation.darkMode} />
       <RecordingControls mgr={mgr} />
       <button
         onClick={mgr.handleOpenExternal}

@@ -11,6 +11,7 @@ import type {
   WebInteractionStep,
 } from "../../types/recording/webAutomation";
 import { prepareWebsiteScript } from "../../utils/recording/websiteScriptCompiler";
+import { useWebsiteDarkMode } from "./useWebsiteDarkMode";
 import {
   normalizeHttpAutomation,
   normalizeSessionQuickActions,
@@ -42,6 +43,7 @@ interface Options {
   settings: GlobalSettings;
   settingsReady: boolean;
   scopeKey: string;
+  appearanceScopeKey?: string;
   blocked: boolean;
   navigationKey: string;
   iframe: React.RefObject<HTMLIFrameElement | null>;
@@ -191,7 +193,7 @@ export function useWebAutomation(options: Options) {
       }
       return !revoked.current &&
         current.settingsReady &&
-        current.scopeKey &&
+        (current.appearanceScopeKey ?? current.scopeKey) &&
         !current.blocked &&
         doc &&
         frame
@@ -457,33 +459,12 @@ export function useWebAutomation(options: Options) {
     bridge.cancel(true);
   }, [executionKey, cancel, bridge]);
 
-  // Re-evaluated on each authenticated document readiness/config change. Never
-  // enables darkness from the global switch alone, nor before a trust decision.
-  const darkEnabled = permissions.value?.forceDark === true;
-  useEffect(() => {
-    const current = latest.current;
-    if (
-      !current.settingsReady ||
-      current.blocked ||
-      !current.scopeKey ||
-      !current.getDocument()
-    )
-      return;
-    let alive = true;
-    void bridge.request("dark", { enabled: darkEnabled }).catch((failure) => {
-      if (alive && darkEnabled) setError(message(failure));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [
-    executionKey,
-    options.settingsReady,
-    options.blocked,
-    options.scopeKey,
+  const darkMode = useWebsiteDarkMode({
+    ...options,
+    scopeKey: options.appearanceScopeKey ?? options.scopeKey,
     bridge,
-    darkEnabled,
-  ]);
+    resetKey: executionKey,
+  });
 
   // Consent is a connection setting, not an implicit command to the website.
   // This check intentionally does not treat missing per-connection consent as
@@ -1159,6 +1140,7 @@ export function useWebAutomation(options: Options) {
     }
   };
   return {
+    darkMode,
     permissions: permissions.value,
     error:
       permissions.error ??

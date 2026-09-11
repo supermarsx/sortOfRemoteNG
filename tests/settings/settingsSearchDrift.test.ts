@@ -86,6 +86,7 @@ const FILE_TAB_OVERRIDES: Record<string, string> = {
   "UpdaterSettings.tsx": "updater",
   "VpnSettings.tsx": "vpn",
   "WebBrowserSettings.tsx": "webBrowser",
+  "WebsiteAppearanceSection.tsx": "webBrowser",
 };
 
 /** Sub-directories of `sections/` and the tab they belong to. */

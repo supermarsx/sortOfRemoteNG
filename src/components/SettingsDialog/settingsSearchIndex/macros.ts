@@ -27,7 +27,7 @@ export const MACROS_SEARCH_ENTRIES: SettingSearchEntry[] = [
     ],
     [
       "allowWebForceDark",
-      "Allow forced-dark websites",
+      "Allow dark-mode extension",
       "website dark mode appearance colors",
     ],
     [

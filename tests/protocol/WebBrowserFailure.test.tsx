@@ -8,6 +8,10 @@ import ContentArea from "../../src/components/protocol/webBrowser/ContentArea";
 import NavigationBar from "../../src/components/protocol/webBrowser/NavigationBar";
 import progressStyles from "../../src/components/protocol/webBrowser/NavigationProgress.module.css";
 import {
+  normalizeWebsiteDarkModeConfig,
+  DEFAULT_WEBSITE_DARK_THEME,
+} from "../../src/utils/connection/websiteDarkMode";
+import {
   parseProxyFailurePayload,
   type ProxyNavigationFailure,
   type WebBrowserMgr,
@@ -262,8 +266,41 @@ describe("embedded web failure recovery screen", () => {
       } as WebBrowserMgr["displayRecorder"],
       proxySessionIdRef: { current: "fixture" },
       totpConfigs: [],
+      automation: {
+        darkMode: {
+          scopeKey: "fixture",
+          enabled: false,
+          available: false,
+          busy: false,
+          error: null,
+          unavailableReason: "Open a saved connection first.",
+          configuration: normalizeWebsiteDarkModeConfig(undefined),
+          theme: { ...DEFAULT_WEBSITE_DARK_THEME },
+          defaultTheme: { ...DEFAULT_WEBSITE_DARK_THEME },
+          presets: [],
+          setEnabled: vi.fn(async () => false),
+          updateConfiguration: vi.fn(async () => false),
+        },
+        // NavigationBar consumes only darkMode; unrelated library actions are
+        // deliberately absent from this isolated toolbar fixture.
+      } as unknown as WebBrowserMgr["automation"],
     });
     render(<NavigationBar mgr={mgr} />);
+    const extension = screen.getByRole("button", {
+      name: "Dark-mode extension",
+    });
+    const recording = screen.getByTitle("Record HTTP traffic (HAR)");
+    expect(
+      extension.compareDocumentPosition(recording) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(extension);
+    expect(
+      screen.getByRole("button", { name: "Enable extension" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close appearance settings" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Stop loading" }));
     expect(stop).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "Back history" }));

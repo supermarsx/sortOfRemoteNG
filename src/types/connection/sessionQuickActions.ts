@@ -16,6 +16,7 @@ export interface HttpAutomationConfig extends SshQuickActionsConfig {
   interactionMacrosEnabled: boolean;
   scriptInjectionEnabled: boolean;
   forceDark: boolean;
+  darkMode?: import("./websiteDarkMode").WebsiteDarkModeConfig;
 }
 
 /** Global availability does not grant consent to run code on a website. */

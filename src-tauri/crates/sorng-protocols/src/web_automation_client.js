@@ -11,8 +11,7 @@
     /^html > body(?: > [a-z][a-z0-9-]{0,30}:nth-of-type\([1-9][0-9]{0,3}\)){1,24}$/;
   var recording = null,
     stepNumber = 0,
-    darkDesired = false,
-    darkLoading = null;
+    darkMode = null;
   var closed = false;
   var totpChallenge = null,
     totpSubmitted = false;
@@ -470,50 +469,9 @@
     element.dispatchEvent(new Event("input", { bubbles: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   }
-  function enableDark() {
-    if (!darkDesired || closed || !window.DarkReader) return;
-    window.DarkReader.setFetchMethod(function (url) {
-      var target = new URL(url, location.href);
-      if (
-        target.origin !== location.origin ||
-        target.username ||
-        target.password
-      )
-        return Promise.reject(new Error("External dark-mode resource blocked"));
-      return fetch(target.href, {
-        credentials: "same-origin",
-        redirect: "error",
-        cache: "no-store",
-      });
-    });
-    window.DarkReader.enable({ brightness: 100, contrast: 100, sepia: 0 });
-  }
-  function setDark(enabled) {
-    darkDesired = enabled;
-    if (!enabled) {
-      if (window.DarkReader) window.DarkReader.disable();
-      return Promise.resolve();
-    }
-    if (window.DarkReader) {
-      enableDark();
-      return Promise.resolve();
-    }
-    if (!darkLoading)
-      darkLoading = new Promise(function (resolve, reject) {
-        var script = document.createElement("script");
-        script.src = location.origin + "/__sortofremoteng_web_darkreader_v1.js";
-        script.onload = function () {
-          enableDark();
-          resolve();
-        };
-        script.onerror = function () {
-          darkLoading = null;
-          script.remove();
-          reject(new Error("dark"));
-        };
-        (document.head || document.documentElement).appendChild(script);
-      });
-    return darkLoading;
+  function setDark(payload) {
+    if (!darkMode) darkMode = createWebDarkModeController();
+    return darkMode.set(payload);
   }
   window.addEventListener("message", function (event) {
     if (
@@ -576,7 +534,7 @@
           return;
         case "dark":
           if (!payload || typeof payload.enabled !== "boolean") return;
-          setDark(payload.enabled).then(
+          setDark(payload).then(
             function () {
               reply(request, event.origin, "ok");
             },
@@ -596,7 +554,7 @@
     closed = true;
     totpChallenge = null;
     recording = null;
-    darkDesired = false;
+    if (darkMode) darkMode.dispose();
     document.removeEventListener("click", record, true);
     document.removeEventListener("change", record, true);
   });

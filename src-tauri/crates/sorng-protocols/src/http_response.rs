@@ -355,12 +355,14 @@ var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){{
 u.search=q?'?'+q:'';try{{history.replaceState(history.state,'',u.href);}}catch(_){{}}
 function emit(type){{p.type=type;p.url=u.href;try{{window.parent.postMessage(p,'*');}}catch(_){{}}}}
 window.addEventListener('beforeunload',function(){{emit('proxy_navigation_start');}});
+{dark_mode_client}
 {automation_client}
 emit('proxy_document_start');
 function ready(){{emit('proxy_dom_ready');}}
 if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',ready,{{once:true}});}}else{{ready();}}
 }})();</script>"#,
         automation_client = include_str!("web_automation_client.js"),
+        dark_mode_client = include_str!("web_dark_mode_client.js"),
     );
     let insertion = early_script_insertion(html);
     format!("{}{}{}", &html[..insertion], script, &html[insertion..])

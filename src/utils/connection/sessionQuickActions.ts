@@ -6,6 +6,7 @@ import {
   type SshQuickActionsConfig,
 } from "../../types/connection/sessionQuickActions";
 import type { AutomationScope } from "../../types/recording/automationLibrary";
+import { normalizeWebsiteDarkModeConfig } from "./websiteDarkMode";
 
 export const MAX_QUICK_ACTION_ITEMS = 64;
 export const MAX_QUICK_ACTION_ID_LENGTH = 128;
@@ -126,7 +127,7 @@ export function normalizeHttpAutomation(value: unknown): HttpAutomationConfig {
     config.version !== 1 ||
     booleans.some((key) => typeof config[key] !== "boolean") ||
     Object.keys(config).some(
-      (key) => !["version", "items", ...booleans].includes(key),
+      (key) => !["version", "items", "darkMode", ...booleans].includes(key),
     )
   )
     throw new Error(
@@ -138,6 +139,9 @@ export function normalizeHttpAutomation(value: unknown): HttpAutomationConfig {
     interactionMacrosEnabled: config.interactionMacrosEnabled === true,
     scriptInjectionEnabled: config.scriptInjectionEnabled === true,
     forceDark: config.forceDark === true,
+    ...(config.darkMode !== undefined
+      ? { darkMode: normalizeWebsiteDarkModeConfig(config.darkMode) }
+      : {}),
   };
 }
 

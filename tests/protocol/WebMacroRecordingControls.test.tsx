@@ -7,6 +7,7 @@ import {
 } from "../../src/components/protocol/webBrowser/WebAutomationControls";
 import type { useWebAutomation } from "../../src/hooks/protocol/useWebAutomation";
 import type { BrowserScript } from "../../src/types/recording/webAutomation";
+import { normalizeWebsiteDarkModeConfig } from "../../src/utils/connection/websiteDarkMode";
 
 type Automation = ReturnType<typeof useWebAutomation>;
 const script: BrowserScript = {
@@ -20,6 +21,20 @@ const script: BrowserScript = {
 };
 function model(overrides: Partial<Automation> = {}): Automation {
   const value: Automation = {
+    darkMode: {
+      scopeKey: "database-a:lease-1",
+      enabled: false,
+      available: true,
+      busy: false,
+      error: null,
+      unavailableReason: "",
+      configuration: normalizeWebsiteDarkModeConfig(undefined),
+      theme: normalizeWebsiteDarkModeConfig(undefined).theme,
+      defaultTheme: normalizeWebsiteDarkModeConfig(undefined).theme,
+      presets: [],
+      setEnabled: vi.fn().mockResolvedValue(true),
+      updateConfiguration: vi.fn().mockResolvedValue(true),
+    },
     permissions: {
       showActionBar: true,
       interactionMacrosEnabled: true,

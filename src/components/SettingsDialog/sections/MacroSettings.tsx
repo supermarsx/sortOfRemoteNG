@@ -152,7 +152,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           />
           <Toggle
             settingKey="sessionQuickActions.allowWebForceDark"
-            label="Allow forced-dark websites"
+            label="Allow dark-mode extension"
             description="Allow the appearance override only on connections that explicitly enable it."
             checked={quickActions.allowWebForceDark}
             onChange={(allowWebForceDark) =>

@@ -2734,6 +2734,11 @@ export function useWebBrowser(session: ConnectionSession) {
     ownerDatabaseId: session.ownerDatabaseId,
     settings,
     settingsReady: settingsReady === true,
+    appearanceScopeKey:
+      databaseAvailability?.status === "ready" &&
+      databaseAvailability.databaseId === session.ownerDatabaseId
+        ? `${databaseAvailability.databaseId}:${databaseAvailability.generation}`
+        : "",
     scopeKey: recycleBin?.snapshot
       ? `${recycleBin.snapshot.scope.databaseId}:${recycleBin.snapshot.scope.generation}`
       : "",

@@ -8,6 +8,26 @@ import type { SettingSearchEntry } from "./types";
  * enforces the join in both directions.
  */
 export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  {
+    key: "websiteDarkMode",
+    label: "Website appearance and dark-mode extension",
+    description:
+      "Configure dynamic colors, filters, custom CSS, brightness and reusable appearance presets. Enable the extension separately for each website.",
+    tags: [
+      "dark",
+      "extension",
+      "appearance",
+      "brightness",
+      "contrast",
+      "sepia",
+      "grayscale",
+      "presets",
+      "custom CSS",
+    ],
+    synonyms: ["darkreader", "night mode", "website colors", "dynamic filter"],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
   // ─── Internal Proxy Keepalive ───────────────────────────────────
   {
     key: "proxyKeepaliveEnabled",
