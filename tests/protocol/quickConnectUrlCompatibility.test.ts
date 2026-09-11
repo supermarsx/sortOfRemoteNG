@@ -22,6 +22,79 @@ const navigation = readFileSync(
   "src-tauri/crates/sorng-protocols/src/quickconnect_navigation_client.js",
   "utf8",
 );
+const publishedUrlModule = readFileSync(
+  "tests/fixtures/quickconnect-url-module.fixture.js.txt",
+  "utf8",
+);
+const publishedErrorModule = readFileSync(
+  "tests/fixtures/quickconnect-error-module.fixture.js.txt",
+  "utf8",
+);
+// Native tests feed these exact modules through the real response adapter,
+// including gzip decoding. This VM additionally executes the published module
+// methods: no entrypoint, AJAX, timers, cookies, or network APIs are installed.
+function errorPageModule(urlModule: string, href: string, retry = false) {
+  return runInNewContext(
+    `
+    const rows = {};
+    const element = (selector) => {
+      const row = rows[selector] ||= {text: selector === '#message' ? 'Cannot connect to {0}' : '', visible: false};
+      const chain = {
+        text(value) { if(value === undefined) return row.text; row.text = value; return chain; },
+        html(value) { row.html = value; return chain; },
+        show() { row.visible = true; return chain; },
+        css() { return chain; },
+        click(fn) { row.click = fn; return chain; },
+        attr() { return chain; },
+      };
+      return chain;
+    };
+    const factories = {96: ${urlModule}, 419: ${publishedErrorModule}};
+    const cached = {};
+    function load(id) {
+      if (id === 47) return element;
+      if (id === 142) return (template, ...values) => template.replace(/\\{(\\d+)\\}/g, (_, index) => values[index]);
+      if (id === 359) return {parse(value) { const url = new URL(value); return {query: Object.fromEntries(url.searchParams)}; }};
+      if (id === 397) return {ERR_SERVER_ERROR: 9};
+      if (cached[id]) return cached[id].exports;
+      const module = cached[id] = {exports:{}};
+      factories[id](module,module.exports,load);
+      return module.exports;
+    }
+    const source = load(96).default;
+    source.setupTitle(); source.setupLang(); source.setupICP();
+    const error = load(419).default;
+    error.setupError(); error.setupTitle(); error.setupRetry();
+    const beforeRetry = {alias:error.getQuickConnectID(),host:source.getHost(),url:source.getUrl(),errno:error.getErrno(),title:rows['#message'].html,busy:rows['#check-item-server-error'].visible};
+    if (retry) rows['#retry'].click();
+    ({...beforeRetry,href:window.location.href});
+    `,
+    {
+      URL,
+      retry,
+      navigator: { language: "en-GB", userAgent: "synthetic" },
+      document: {
+        title: "QuickConnect",
+        body: { setAttribute() {} },
+        referrer: "",
+      },
+      window: { location: new URL(href), history: { length: 1 } },
+    },
+    { timeout: 100 },
+  );
+}
+function projectedErrorUrlModule(origin: string) {
+  const boundNavigation = bind(navigation, origin);
+  return publishedUrlModule
+    .replace(
+      "i=new URL(window.location.href),u=function()",
+      bind(nativeConstant("QUICKCONNECT_SOURCE_PROJECTION"), origin),
+    )
+    .replace(
+      "window.location.href=n}}]),t}();e.default=u}",
+      `window.location.href=(function(){${boundNavigation};return sorngQuickConnectNavigation(n);})()}}]),t}();e.default=u}`,
+    );
+}
 const mapped = (raw: string) =>
   runInNewContext(
     `${bind(navigation)};sorngQuickConnectNavigation(raw)`,
@@ -107,5 +180,55 @@ describe("QuickConnect versioned redirect URL compatibility", () => {
     expect(result.pathname).toBe("/__sortofremoteng_quickconnect_redirect_v1");
     expect([...result.searchParams.keys()]).toEqual(["destination"]);
     expect(result.searchParams.get("destination")).toBe(new URL(raw).href);
+  });
+});
+
+describe("QuickConnect published error-page source and retry", () => {
+  it("reproduces the separate error bundle reporting the random local alias", () => {
+    const output = errorPageModule(
+      publishedUrlModule,
+      `${local}/portal/error.html?error=9`,
+      true,
+    );
+    expect(output.alias).toBe("p0123456789abcdef");
+    expect(output.title).toContain("p0123456789abcdef");
+    expect(output.href).toBe("http://p0123456789abcdef.localhost/");
+    expect(output.busy).toBe(true);
+  });
+  it.each([
+    "https://nas.quickconnect.to",
+    "https://nas.fr3.quickconnect.to",
+    "http://nas.quickconnect.cn",
+  ])(
+    "uses the actual source for bootstrap, error title and retry: %s",
+    (origin) => {
+      const output = errorPageModule(
+        projectedErrorUrlModule(origin),
+        `${local}/portal/error.html?error=9&__sorng_navigation_v1=internal`,
+        true,
+      );
+      expect(output.alias).toBe("nas");
+      expect(output.host).toBe(new URL(origin).hostname);
+      expect(output.title).toContain(">nas</p>");
+      expect(output.title).not.toContain("p0123456789abcdef");
+      expect(output.url).toBe(`${origin}/portal/error.html?error=9`);
+      expect(output.href).toBe(`${local}/`);
+      // A corrected identity must not suppress Synology's real failure reason.
+      expect(output.errno).toBe(9);
+      expect(output.busy).toBe(true);
+    },
+  );
+  it("still reviews retry when the vendor drops a custom upstream port", () => {
+    const output = errorPageModule(
+      projectedErrorUrlModule("https://nas.quickconnect.to:5001"),
+      `${local}/portal/error.html?error=9`,
+      true,
+    );
+    const target = new URL(output.href);
+    expect(target.origin).toBe(local);
+    expect(target.pathname).toBe("/__sortofremoteng_quickconnect_redirect_v1");
+    expect(target.searchParams.get("destination")).toBe(
+      "https://nas.quickconnect.to/",
+    );
   });
 });

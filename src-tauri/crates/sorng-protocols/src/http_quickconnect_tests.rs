@@ -105,6 +105,59 @@ fn enabled() -> HttpProxyPolicy {
 }
 
 #[tokio::test]
+async fn quickconnect_error_bundle_is_projected_after_gzip_decode_without_changing_page_identity() {
+    let text = format!(
+        "{};{}",
+        include_str!("../../../../tests/fixtures/quickconnect-url-module.fixture.js.txt"),
+        include_str!("../../../../tests/fixtures/quickconnect-error-module.fixture.js.txt"),
+    );
+    let compressed = gzip(text.as_bytes());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let router = axum::Router::new().fallback(move || {
+        let compressed = compressed.clone();
+        async move {
+            Response::builder()
+                .header("Content-Type", "application/javascript; charset=utf-8")
+                .header("Content-Encoding", "gzip")
+                .body(Body::from(compressed))
+                .unwrap()
+        }
+    });
+    let upstream = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let transport = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve("fixture.quickconnect.to", address)
+        .build()
+        .unwrap();
+    let origin = format!("http://fixture.quickconnect.to:{}", address.port());
+    let proxy = proxy(format!("{origin}/"), transport).await;
+    proxy.state.document_sequence.store(7, Ordering::SeqCst);
+    let response = client()
+        .get(format!(
+            "{}/error.5f00273a9cb73fd1c411.bundle.js",
+            proxy.base
+        ))
+        .header("Host", &proxy.state.proxy_authority)
+        .header("Sec-Fetch-Dest", "script")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(!response.headers().contains_key("content-encoding"));
+    let body = response.text().await.unwrap();
+    assert!(body.contains(&format!("new URL(\"{origin}\")")));
+    assert!(!body.contains("i=new URL(window.location.href)"));
+    assert!(body.contains("sorngQuickConnectNavigation(n)"));
+    assert!(body.contains("ERR_SERVER_ERROR"));
+    assert_eq!(proxy.state.document_sequence.load(Ordering::SeqCst), 7);
+    assert!(peek(&proxy).is_none());
+    assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 1);
+    upstream.abort();
+}
+
+#[tokio::test]
 async fn quickconnect_navigation_records_one_use_receipt_without_any_upstream_or_destination_request(
 ) {
     let (proxy, upstream) = fixture("fixture.quickconnect.to", enabled()).await;

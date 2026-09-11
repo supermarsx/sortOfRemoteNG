@@ -38,6 +38,9 @@ pub(super) fn rewrite_target_origin(text: &str, target: &str, proxy: &str) -> St
 
 // Versioned compatibility fix for Synology's published QuickConnect client:
 // https://quickconnect.to/connect_lib.da3fae9c5d057ef58d3a.bundle.js
+// The separate error page bundles the same cached URL utility. It needs its
+// own versioned adapter or the error title/retry fall back to the proxy nonce.
+// https://quickconnect.to/error.5f00273a9cb73fd1c411.bundle.js
 // Its redirect() appends location.port to location.host (which includes port),
 // yielding an invalid double-port URL on our ephemeral loopback authority.
 const QUICKCONNECT_REDIRECT_HEAD: &str = r#"key:"redirect",value:function(t){var e=t.protocol,n=void 0===e?window.location.protocol:e,r=t.ip,o=void 0===r?window.location.host:r,u=t.port,f=void 0===u?window.location.port:u"#;
@@ -46,6 +49,8 @@ const QUICKCONNECT_SOURCE_URL: &str = "i=new URL(window.location.href),u=functio
 const QUICKCONNECT_SOURCE_PROJECTION: &str = r#"i=(function(){var u=new URL(__SORNG_QUICKCONNECT_SOURCE_ORIGIN__);u.pathname=window.location.pathname;u.search=window.location.search.slice(1).split('&').filter(function(v){return v.split('=')[0]!=='__sorng_navigation_v1';}).join('&');u.hash=window.location.hash;return u;})(),u=function()"#;
 const QUICKCONNECT_ASSIGN: &str = "window.location.assign(P),this.refreshLoadingImage()";
 const QUICKCONNECT_RETRY_ASSIGN: &str = "window.location.href=n}}]),t}();e.default=u}";
+const QUICKCONNECT_ERROR_ID: &str =
+    r#"key:"getQuickConnectID",value:function(){return s.default.getHost().split(".")[0]}"#;
 
 pub(super) fn repair_quickconnect_redirect(
     text: &str,
@@ -73,14 +78,25 @@ pub(super) fn repair_quickconnect_redirect(
         || !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
-        || url.path() != "/connect_lib.da3fae9c5d057ef58d3a.bundle.js"
-        || text.matches(QUICKCONNECT_REDIRECT_HEAD).count() != 1
         || text.matches(QUICKCONNECT_SOURCE_URL).count() != 1
-        || text.matches(QUICKCONNECT_ASSIGN).count() != 1
         || text.matches(QUICKCONNECT_RETRY_ASSIGN).count() != 1
     {
         return text.to_string();
     }
+    let connecting_page = match url.path() {
+        "/connect_lib.da3fae9c5d057ef58d3a.bundle.js"
+            if text.matches(QUICKCONNECT_REDIRECT_HEAD).count() == 1
+                && text.matches(QUICKCONNECT_ASSIGN).count() == 1 =>
+        {
+            true
+        }
+        "/error.5f00273a9cb73fd1c411.bundle.js"
+            if text.matches(QUICKCONNECT_ERROR_ID).count() == 1 =>
+        {
+            false
+        }
+        _ => return text.to_string(),
+    };
     let source_origin = serde_json::to_string(&url.origin().ascii_serialization()).unwrap();
     // QuickConnect reads this cached URL to discover the NAS alias/service.
     // Keep the real window Location unchanged, and preserve the page's path,
@@ -91,14 +107,17 @@ pub(super) fn repair_quickconnect_redirect(
         .replace("__SORNG_QUICKCONNECT_SOURCE_ORIGIN__", &source_origin);
     let navigation = include_str!("quickconnect_navigation_client.js")
         .replace("__SORNG_QUICKCONNECT_SOURCE_ORIGIN__", &source_origin);
-    text.replacen(QUICKCONNECT_REDIRECT_HEAD, &defaults, 1)
-        .replacen(QUICKCONNECT_SOURCE_URL, &projection, 1)
-        .replacen(
+    let projected = text.replacen(QUICKCONNECT_SOURCE_URL, &projection, 1);
+    let projected = if connecting_page {
+        projected.replacen(QUICKCONNECT_REDIRECT_HEAD, &defaults, 1).replacen(
             QUICKCONNECT_ASSIGN,
             &format!("window.location.assign((function(){{{navigation};return sorngQuickConnectNavigation(P);}})()),this.refreshLoadingImage()"),
             1,
         )
-        .replacen(
+    } else {
+        projected
+    };
+    projected.replacen(
             QUICKCONNECT_RETRY_ASSIGN,
             &format!("window.location.href=(function(){{{navigation};return sorngQuickConnectNavigation(n);}})()}}}}]),t}}();e.default=u}}"),
             1,
@@ -599,6 +618,55 @@ mod tests {
         assert_eq!(
             repair_quickconnect_redirect(&changed, &url, Some("text/javascript")),
             changed
+        );
+    }
+
+    #[test]
+    fn quickconnect_error_asset_preserves_vendor_errors_but_projects_alias_and_retry() {
+        let text = format!(
+            "{};{}",
+            include_str!("../../../../tests/fixtures/quickconnect-url-module.fixture.js.txt"),
+            include_str!("../../../../tests/fixtures/quickconnect-error-module.fixture.js.txt"),
+        );
+        let asset = "/error.5f00273a9cb73fd1c411.bundle.js";
+        let url = format!("https://nas.quickconnect.to:5001{asset}");
+        let result = repair_quickconnect_redirect(&text, &url, Some("text/javascript"));
+        assert_ne!(result, text);
+        assert!(result.contains("new URL(\"https://nas.quickconnect.to:5001\")"));
+        assert!(result.contains("sorngQuickConnectNavigation(n)"));
+        assert!(!result.contains(QUICKCONNECT_SOURCE_URL));
+        assert!(!result.contains(QUICKCONNECT_RETRY_ASSIGN));
+        // Error rendering remains the vendor's actual implementation. Do not
+        // turn a genuine service/discovery failure into a successful login.
+        assert!(result.contains(include_str!(
+            "../../../../tests/fixtures/quickconnect-error-module.fixture.js.txt"
+        )));
+        for invalid_url in [
+            format!("https://quickconnect.to.attacker.invalid{asset}"),
+            format!("https://user:secret@nas.quickconnect.to{asset}"),
+            "https://nas.quickconnect.to/error.changed.bundle.js".into(),
+            format!("https://nas.quickconnect.to{asset}/extra"),
+            "https://nas.quickconnect.to/connect_lib.da3fae9c5d057ef58d3a.bundle.js".into(),
+        ] {
+            assert_eq!(
+                repair_quickconnect_redirect(&text, &invalid_url, Some("text/javascript")),
+                text
+            );
+        }
+        for altered in [
+            text.repeat(2),
+            text.replace(QUICKCONNECT_ERROR_ID, "key:\"changedErrorId\""),
+            text.replace(QUICKCONNECT_SOURCE_URL, "changedCachedUrl"),
+            text.replace(QUICKCONNECT_RETRY_ASSIGN, "changedRetryAssignment"),
+        ] {
+            assert_eq!(
+                repair_quickconnect_redirect(&altered, &url, Some("text/javascript")),
+                altered
+            );
+        }
+        assert_eq!(
+            repair_quickconnect_redirect(&text, &url, Some("text/html")),
+            text
         );
     }
 
