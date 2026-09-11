@@ -28,7 +28,7 @@ sorng-storage = { path = "../sorng-storage" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-ssh2 = { workspace = true, features = ["openssl-on-win32"] }
+ssh2 = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 shell-escape = "0.1"
@@ -82,6 +82,25 @@ bytes = "1"
 http = "1"
 
 [target.'cfg(windows)'.dependencies]
+# WinCNG remains the SSH transport backend. RustCrypto signs in-memory keys
+# through libssh2's public callback API; no OpenSSL or plaintext key files.
+libssh2-sys = "0.3"
+libc = "0.2"
+pkcs8 = { version = "0.10", features = ["encryption", "pem"] }
+# Read existing PBES2 legacy envelopes; never used for new key encryption.
+pkcs5 = { version = "0.7", features = ["sha1-insecure", "3des", "des-insecure"] }
+sha1 = { version = "0.10", features = ["oid"] }
+ssh-key = { version = "0.6", features = ["crypto", "dsa"] }
+p256 = { version = "0.13", features = ["pkcs8", "pem"] }
+p384 = { version = "0.13", features = ["pkcs8", "pem"] }
+p521 = { version = "0.13", features = ["pkcs8", "pem"] }
+ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
+dsa = "0.6"
+md-5 = "0.10"
+aes = { version = "0.8", features = ["zeroize"] }
+cbc = { version = "0.1", features = ["alloc", "block-padding", "zeroize"] }
+des = { version = "0.8", features = ["zeroize"] }
+sec1 = "0.7"
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Networking_WinSock",

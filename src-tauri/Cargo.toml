@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 default-members = ["."]
-exclude = ["vendor/psrp-rs-core"]
+exclude = ["vendor/psrp-rs-core", "vendor/tiberius-rustls", "vendor/libssh2-sys-wincng"]
 members = [
   "crates/sorng-app-api",
   "crates/sorng-app-auth",
@@ -689,3 +689,9 @@ office-crypto = { path = "patches/office-crypto" }
 # and `.orchestration/logs/t23-e7.md`. Version matches the locked 0.0.8 so it
 # applies cleanly and the whole workspace (incl. h3-quinn) uses the patched h3.
 h3 = { path = "vendor/h3-ssh3" }
+# Tiberius 0.12.3 TLS-only patch: maintained Rustls 0.23, explicit provider,
+# fallible native roots and additive custom CA trust. See its PATCHES.md.
+tiberius = { path = "vendor/tiberius-rustls" }
+# Enable upstream WinCNG ECC for the application's Windows 10+ baseline.
+# No changes to native cryptography or host-key policy; see its PATCHES.md.
+libssh2-sys = { path = "vendor/libssh2-sys-wincng" }

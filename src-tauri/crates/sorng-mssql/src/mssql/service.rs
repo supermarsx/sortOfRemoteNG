@@ -320,7 +320,9 @@ impl MssqlService {
 
     fn tds_connection_error(context: &str, error: tiberius::error::Error) -> MssqlError {
         let message = error.to_string();
-        let kind = if message.to_ascii_lowercase().contains("login failed") {
+        let kind = if matches!(error, tiberius::error::Error::Tls(_)) {
+            MssqlErrorKind::TlsError
+        } else if message.to_ascii_lowercase().contains("login failed") {
             MssqlErrorKind::AuthenticationFailed
         } else {
             MssqlErrorKind::ConnectionFailed
@@ -1368,6 +1370,21 @@ impl MssqlService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_tls_errors_remain_distinct_without_message_guessing() {
+        let error = MssqlService::tds_connection_error(
+            "TDS connect",
+            tiberius::error::Error::Tls("synthetic verification failure".into()),
+        );
+        assert!(matches!(error.kind, MssqlErrorKind::TlsError));
+        assert!(error.to_string().contains("synthetic verification failure"));
+        let error = MssqlService::tds_connection_error(
+            "TDS connect",
+            tiberius::error::Error::Protocol("a TLS-looking protocol message".into()),
+        );
+        assert!(matches!(error.kind, MssqlErrorKind::ConnectionFailed));
+    }
 
     #[test]
     fn service_new() {

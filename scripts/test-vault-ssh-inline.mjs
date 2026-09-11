@@ -11,6 +11,7 @@ const password = "isolated-fixture-password",
 const pair = () => generateKeyPairSync("rsa", { modulusLength: 2048 });
 const good = pair(),
   bad = pair();
+const ec = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const word = (value) => {
   const bytes = Buffer.from(value);
   const size = Buffer.alloc(4);
@@ -25,6 +26,8 @@ const integer = (value) => {
 };
 const jwk = good.publicKey.export({ format: "jwk" });
 const publicKey = `ssh-rsa ${Buffer.concat([word("ssh-rsa"), integer(jwk.e), integer(jwk.n)]).toString("base64")} isolated-fixture`;
+const ecJwk = ec.publicKey.export({ format: "jwk" });
+const ecPublic = `ecdsa-sha2-nistp256 ${Buffer.concat([word("ecdsa-sha2-nistp256"), word("nistp256"), word(Buffer.concat([Buffer.from([4]), Buffer.from(ecJwk.x, "base64url"), Buffer.from(ecJwk.y, "base64url")]))]).toString("base64")}`;
 const docker = (...args) => {
   const result = spawnSync("docker", args, {
     encoding: "utf8",
@@ -121,6 +124,39 @@ try {
     SSH_BAD_INLINE_KEY: bad.privateKey
       .export({ format: "pem", type: "pkcs8" })
       .toString(),
+    SSH_LEGACY_RSA_KEY: good.privateKey
+      .export({
+        format: "pem",
+        type: "pkcs1",
+        cipher: "aes-256-cbc",
+        passphrase,
+      })
+      .toString(),
+    SSH_EC_INLINE_KEY: ec.privateKey
+      .export({
+        format: "pem",
+        type: "sec1",
+        cipher: "aes-256-cbc",
+        passphrase,
+      })
+      .toString(),
+    SSH_EC_PKCS8_KEY: ec.privateKey
+      .export({
+        format: "pem",
+        type: "pkcs8",
+        cipher: "aes-256-cbc",
+        passphrase,
+      })
+      .toString(),
+    SSH_EC_PUBLIC_KEY: ecPublic,
+    SSH_LEGACY_RSA_3DES_KEY: good.privateKey
+      .export({
+        format: "pem",
+        type: "pkcs1",
+        cipher: "des-ede3-cbc",
+        passphrase,
+      })
+      .toString(),
   };
   console.log(
     "Running native inline-key and key-plus-password tests against isolated loopback SSH.",
@@ -159,6 +195,10 @@ try {
     "SSH_BAD_INLINE_KEY",
     "SSH_PASSWORD",
     "SSH_KEY_PASSPHRASE",
+    "SSH_LEGACY_RSA_KEY",
+    "SSH_LEGACY_RSA_3DES_KEY",
+    "SSH_EC_INLINE_KEY",
+    "SSH_EC_PKCS8_KEY",
   ])
     delete env[key];
   if (result !== 0) throw new Error("Native inline-key fixture failed.");

@@ -460,18 +460,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-native-tls"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d57d4cec3c647232e1094dc013546c0b33ce785d8aeb251e1f20dfaf8a9a13fe"
-dependencies = [
- "futures-util",
- "native-tls",
- "thiserror 1.0.69",
- "url",
-]
-
-[[package]]
 name = "async-process"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1615,7 +1603,7 @@ dependencies = [
  "bitflags 2.13.1",
  "core-foundation 0.10.1",
  "core-graphics-types",
- "foreign-types 0.5.0",
+ "foreign-types",
  "libc",
 ]
 
@@ -3154,21 +3142,12 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreign-types"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6f339eb8adc052cd2ca78910fda869aefa38d22d5cb648e6485e4d3fc06f3b1"
-dependencies = [
- "foreign-types-shared 0.1.1",
-]
-
-[[package]]
-name = "foreign-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d737d9aa519fb7b749cbc3b962edcf310a8dd1f4b67c91c4f83975dbdd17d965"
 dependencies = [
  "foreign-types-macros",
- "foreign-types-shared 0.3.1",
+ "foreign-types-shared",
 ]
 
 [[package]]
@@ -3181,12 +3160,6 @@ dependencies = [
  "quote",
  "syn 3.0.4",
 ]
-
-[[package]]
-name = "foreign-types-shared"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
 name = "foreign-types-shared"
@@ -5174,8 +5147,6 @@ dependencies = [
 [[package]]
 name = "libssh2-sys"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c04141a07bb0c0bc461cb657808764de571702a59bc5c726c400ac9a7625e3ab"
 dependencies = [
  "cc",
  "libc",
@@ -5698,23 +5669,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "706bf8a5e8c8ddb99128c3291d31bd21f4bcde17f0f4c20ec678d85c74faa149"
 dependencies = [
  "log",
-]
-
-[[package]]
-name = "native-tls"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "465500e14ea162429d264d44189adc38b199b62b1c21eea9f69e4b73cb03bbf2"
-dependencies = [
- "libc",
- "log",
- "openssl",
- "openssl-probe 0.2.1",
- "openssl-sys",
- "schannel",
- "security-framework 3.7.0",
- "security-framework-sys",
- "tempfile",
 ]
 
 [[package]]
@@ -6418,31 +6372,6 @@ dependencies = [
  "nasm-rs",
  "sha2 0.10.9",
  "walkdir",
-]
-
-[[package]]
-name = "openssl"
-version = "0.10.81"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77823a27f0babb03091cb9ed9ef80af3b39dbc82f97e8fa530374b7dafd87a45"
-dependencies = [
- "bitflags 2.13.1",
- "cfg-if 1.0.4",
- "foreign-types 0.3.2",
- "libc",
- "openssl-macros",
- "openssl-sys",
-]
-
-[[package]]
-name = "openssl-macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -7152,8 +7081,10 @@ dependencies = [
  "aes 0.8.4",
  "cbc 0.1.2",
  "der 0.7.10",
+ "des 0.8.1",
  "pbkdf2 0.12.2",
  "scrypt 0.11.0",
+ "sha1 0.10.7",
  "sha2 0.10.9",
  "spki 0.7.3",
 ]
@@ -11414,13 +11345,17 @@ version = "26.45.0"
 dependencies = [
  "chrono",
  "log",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "sorng-core",
  "ssh2",
+ "tempfile",
  "thiserror 2.0.20",
  "tiberius",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
  "uuid",
 ]
@@ -12536,12 +12471,17 @@ dependencies = [
 name = "sorng-ssh"
 version = "26.45.0"
 dependencies = [
+ "aes 0.8.4",
  "async-trait",
  "base64 0.23.1",
  "bytes",
+ "cbc 0.1.2",
  "chrono",
  "data-encoding",
+ "des 0.8.1",
  "dirs 6.0.0",
+ "dsa",
+ "ed25519-dalek 2.2.0",
  "futures",
  "h3",
  "h3-quinn",
@@ -12549,7 +12489,15 @@ dependencies = [
  "http",
  "jsonwebtoken",
  "lazy_static",
+ "libc",
+ "libssh2-sys",
  "log",
+ "md-5 0.10.6",
+ "p256 0.13.2",
+ "p384 0.13.1",
+ "p521 0.13.3",
+ "pkcs5 0.7.1",
+ "pkcs8 0.10.2",
  "quinn",
  "rand 0.8.8",
  "rcgen",
@@ -12559,9 +12507,11 @@ dependencies = [
  "rustls",
  "rustls-native-certs 0.8.4",
  "rustls-pemfile 2.2.0",
+ "sec1 0.7.3",
  "secrecy",
  "serde",
  "serde_json",
+ "sha1 0.10.7",
  "sha2 0.10.9",
  "shell-escape",
  "socket2 0.6.5",
@@ -13604,6 +13554,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b86f5297f0f04d08cabaa0f6bff7cb6aec4d9c3b49d87990d63da9d9156a8c3"
 dependencies = [
  "bcrypt-pbkdf 0.10.0",
+ "dsa",
  "ed25519-dalek 2.2.0",
  "num-bigint-dig",
  "p256 0.13.2",
@@ -13612,6 +13563,7 @@ dependencies = [
  "rand_core 0.6.4",
  "rsa 0.9.10",
  "sec1 0.7.3",
+ "sha1 0.10.7",
  "sha2 0.10.9",
  "signature 2.2.0",
  "ssh-cipher 0.2.0",
@@ -14428,10 +14380,7 @@ dependencies = [
 [[package]]
 name = "tiberius"
 version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1446cb4198848d1562301a3340424b4f425ef79f35ef9ee034769a9dd92c10d"
 dependencies = [
- "async-native-tls",
  "async-trait",
  "asynchronous-codec",
  "byteorder",
@@ -14445,7 +14394,11 @@ dependencies = [
  "once_cell",
  "pin-project-lite",
  "pretty-hex",
+ "rustls-native-certs 0.8.4",
+ "rustls-pemfile 2.2.0",
  "thiserror 1.0.69",
+ "tokio-rustls",
+ "tokio-util",
  "tracing",
  "uuid",
 ]

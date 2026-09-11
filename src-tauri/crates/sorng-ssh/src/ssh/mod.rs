@@ -6,6 +6,10 @@ pub mod automation;
 pub mod diagnostics;
 pub mod fido2;
 pub mod highlighting;
+#[cfg(windows)]
+mod inline_key;
+#[cfg(windows)]
+mod inline_key_pem;
 pub mod integration;
 pub mod output_state;
 pub mod proxy_command;

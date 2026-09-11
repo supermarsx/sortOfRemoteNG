@@ -5173,19 +5173,27 @@ impl SshService {
         // A vault key is provided only in memory; never reinterpret it as a path.
         if let Some(key) = &config.private_key_content {
             phase.configure_session_timeout(session)?;
-            if session
-                .userauth_pubkey_memory(
-                    &config.username,
-                    None,
-                    key.expose_secret(),
-                    config
-                        .private_key_passphrase
-                        .as_ref()
-                        .map(|value| value.expose_secret()),
-                )
-                .is_ok()
-                && session.authenticated()
-            {
+            #[cfg(not(windows))]
+            let key_result = session.userauth_pubkey_memory(
+                &config.username,
+                None,
+                key.expose_secret(),
+                config
+                    .private_key_passphrase
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+            );
+            #[cfg(windows)]
+            let key_result = super::inline_key::authenticate(
+                session,
+                &config.username,
+                key.expose_secret(),
+                config
+                    .private_key_passphrase
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+            );
+            if key_result.is_ok() && session.authenticated() {
                 return Ok(());
             }
             phase.ensure_active()?;
