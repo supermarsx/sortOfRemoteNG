@@ -184,7 +184,7 @@ export default function CredentialEntryForm({
               )}
               {kind === "social"
                 ? textField(
-                    `${label} HTTPS origin`,
+                    `${label} Website HTTPS origin where sign-in starts`,
                     (row as VaultSocialBinding).origin,
                     (value) => change({ origin: value }),
                   )

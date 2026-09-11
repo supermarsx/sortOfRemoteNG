@@ -300,6 +300,9 @@ describe("WebTerminal", () => {
     vaultAttempt.resolve.mockReset().mockResolvedValue(null);
     Reflect.deleteProperty(mockConnection, "credentialSource");
     Reflect.deleteProperty(mockConnection, "totpConfigs");
+    Reflect.deleteProperty(mockConnection, "authType");
+    Reflect.deleteProperty(mockConnection, "privateKey");
+    Reflect.deleteProperty(mockConnection, "passphrase");
     mockDispatch.mockClear();
     hostKeyPromptListener = undefined;
     shellClosedListener = undefined;
@@ -378,7 +381,7 @@ describe("WebTerminal", () => {
       expect(button).toBeDisabled();
       expect(button.parentElement).toHaveAttribute(
         "data-tooltip",
-        expect.stringContaining("connection-local codes are ignored"),
+        expect.stringContaining("Connection-local codes are ignored"),
       );
       fireEvent.click(button);
       expect(
@@ -445,6 +448,64 @@ describe("WebTerminal", () => {
           ([command]) => command === "connect_ssh" || command === "start_shell",
         ),
       ).toBe(false);
+    });
+    it("sends the vault inline key/passphrase/password and selected TOTP parameters without a key path or agent fallback", async () => {
+      const totpId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+      Object.assign(mockConnection, {
+        authType: "key",
+        privateKey: "IGNORED_LOCAL_PATH",
+        passphrase: "IGNORED_PHRASE",
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          totpId,
+        },
+      });
+      vaultAttempt.resolve.mockImplementation(
+        async (assertCurrent: () => void) => ({
+          facets: {
+            username: "VAULT_USER",
+            privateKey: "VAULT_PEM",
+            passphrase: "VAULT_PHRASE",
+            password: "VAULT_SECOND_FACTOR",
+            totp: [
+              {
+                id: totpId,
+                label: "SSH",
+                secret: "VAULT_SEED",
+                algorithm: "sha256",
+                digits: 8,
+                period: 60,
+              },
+            ],
+          },
+          assertCurrent,
+        }),
+      );
+      renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("connect_ssh", {
+          config: expect.objectContaining({
+            username: "VAULT_USER",
+            private_key_content: "VAULT_PEM",
+            private_key_path: null,
+            private_key_passphrase: "VAULT_PHRASE",
+            password: "VAULT_SECOND_FACTOR",
+            totp_secret: "VAULT_SEED",
+            totp_options: { algorithm: "sha256", digits: 8, period: 60 },
+            allow_agent_auth: false,
+          }),
+        }),
+      );
+      const calls = JSON.stringify(mockDispatch.mock.calls);
+      for (const secret of [
+        "VAULT_PEM",
+        "VAULT_PHRASE",
+        "VAULT_SECOND_FACTOR",
+        "VAULT_SEED",
+      ])
+        expect(calls).not.toContain(secret);
+      expect(mockConnection.privateKey).toBe("IGNORED_LOCAL_PATH");
     });
     it("should display connection details during SSH connection", async () => {
       mockInvoke.mockResolvedValueOnce("ssh-session-123");

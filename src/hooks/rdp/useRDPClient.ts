@@ -21,6 +21,7 @@ import { writeFile } from "@tauri-apps/plugin-fs";
 import * as macroService from "../../utils/recording/macroService";
 import { useConnections } from "../../contexts/useConnections";
 import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
+import { useRuntimeVaultTotp } from "../security/useRuntimeVaultTotp";
 import { withoutConnectionLocalCredentials } from "../../utils/security/runtimeCredentialVault";
 import type { DatabaseCredentialFacets } from "../../types/security/databaseCredentialVault";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
@@ -226,6 +227,7 @@ export function useRDPClient(session: ConnectionSession) {
     session.connectionId,
   );
   const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
+  const vaultTotp = useRuntimeVaultTotp(session, connection);
 
   const rdpSettings: RDPConnectionSettings = useMemo(
     () => mergeRdpSettings(connection?.rdpSettings, settings.rdpDefaults),
@@ -3721,6 +3723,7 @@ export function useRDPClient(session: ConnectionSession) {
 
   return {
     // Refs
+    vaultTotp,
     canvasRef,
     magnifierCanvasRef,
     containerRef,

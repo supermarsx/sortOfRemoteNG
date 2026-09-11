@@ -23,6 +23,7 @@ import { useDisplayRecorder } from "../recording/useDisplayRecorder";
 import { useWebAutomation } from "./useWebAutomation";
 import { useWebAutoMfa } from "./useWebAutoMfa";
 import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
+import { useRuntimeVaultTotp } from "../security/useRuntimeVaultTotp";
 import {
   getVaultRuntimeUnsupportedMessage,
   runtimeCredentialTargetKey,
@@ -400,6 +401,7 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [connection]);
   const resolvedCreds = applicationAuth.login?.credentials ?? null;
   const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
+  const vaultTotp = useRuntimeVaultTotp(session, connection);
   const vaultSource = connection?.credentialSource?.kind === "vault";
   const noncredentialConnection = useMemo(
     () =>
@@ -828,7 +830,7 @@ export function useWebBrowser(session: ConnectionSession) {
   >(null);
   const pendingRecordingRef = useRef<unknown>(null);
 
-  const totpConfigs = connection?.totpConfigs ?? [];
+  const totpConfigs = vaultSource ? [] : (connection?.totpConfigs ?? []);
 
   const closeFolderDropdown = useCallback((idx: number) => {
     setOpenFolders((prev) => {
@@ -2758,11 +2760,11 @@ export function useWebBrowser(session: ConnectionSession) {
 
   const autoMfa = useWebAutoMfa({
     connection: noncredentialConnection,
+    vaultTotp: vaultSource ? vaultTotp : undefined,
     ownerDatabaseId: session.ownerDatabaseId,
     availability: databaseAvailability,
     settingsReady: settingsReady === true,
     blocked:
-      vaultSource ||
       waitingForTrust ||
       !!trustPrompt ||
       !!loadError ||
@@ -2895,6 +2897,7 @@ export function useWebBrowser(session: ConnectionSession) {
     handleCopyAll,
     // TOTP
     totpConfigs,
+    vaultTotp,
     showTotpPanel,
     setShowTotpPanel,
     totpBtnRef,

@@ -48,6 +48,8 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
   },
 }));
 import { useWebAutoMfa } from "../../src/hooks/protocol/useWebAutoMfa";
+import type { RuntimeVaultTotpController } from "../../src/hooks/security/useRuntimeVaultTotp";
+let vaultTotp: RuntimeVaultTotpController | undefined;
 let conn: Connection,
   saved: Connection,
   availability: DatabaseAvailability,
@@ -70,6 +72,7 @@ function Fixture() {
     navigationKey: `${doc?.generation}:${doc?.token}`,
     iframe,
     getDocument: () => doc,
+    vaultTotp,
   });
   return null;
 }
@@ -109,6 +112,7 @@ beforeEach(() => {
   mock.owner = "db";
   mock.accessible = true;
   ready = true;
+  vaultTotp = undefined;
   blocked = false;
   currentUrl = "https://nas.example/wp-login.php";
   availability = { status: "ready", databaseId: "db", generation: 1 };
@@ -159,6 +163,97 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("explicit origin-bound automatic website 2FA", () => {
+  it("generates only the explicitly linked vault code after probe acknowledgement, never a preserved local seed", async () => {
+    conn.credentialSource = {
+      kind: "vault",
+      credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      totpId: "auth",
+    };
+    saved = structuredClone(conn);
+    const assertCurrent = vi.fn();
+    vaultTotp = {
+      scopeKey: "owning-vault",
+      available: true,
+      unavailableReason: "",
+      load: vi.fn(),
+      generate: vi.fn(async () => ({
+        code: "87654321",
+        expires: Date.now() + 30000,
+        assertCurrent,
+      })),
+    };
+    await mount();
+    expect(vaultTotp.generate).not.toHaveBeenCalled();
+    await reply(requests("totpProbe")[0]);
+    expect(vaultTotp.generate).toHaveBeenCalledWith("auth");
+    expect(mock.compute).not.toHaveBeenCalled();
+    expect(requests("totpSubmit")[0].payload.code).toBe("87654321");
+    expect(assertCurrent).toHaveBeenCalled();
+    expect(JSON.stringify(post.mock.calls)).not.toContain("SYNTHETIC-SEED");
+  });
+  it("refuses a different vault authenticator reference and revocation during generated-code handoff", async () => {
+    conn.credentialSource = {
+      kind: "vault",
+      credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      totpId: "other",
+    };
+    saved = structuredClone(conn);
+    vaultTotp = {
+      scopeKey: "owning-vault",
+      available: true,
+      unavailableReason: "",
+      load: vi.fn(),
+      generate: vi.fn(),
+    };
+    const view = await mount();
+    expect(requests("totpProbe")).toHaveLength(0);
+    view.unmount();
+    conn.credentialSource.totpId = "auth";
+    saved = structuredClone(conn);
+    vaultTotp.generate = vi.fn(async () => ({
+      code: "123456",
+      expires: Date.now() + 30000,
+      assertCurrent: () => {
+        throw new Error("revoked");
+      },
+    }));
+    await mount();
+    await reply(requests("totpProbe")[0]);
+    expect(requests("totpSubmit")).toHaveLength(0);
+    expect(mock.compute).not.toHaveBeenCalled();
+  });
+  it.each(["owner-change", "generation-failure"])(
+    "does not submit or use local seeds after vault %s",
+    async (reason) => {
+      conn.credentialSource = {
+        kind: "vault",
+        credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        totpId: "auth",
+      };
+      saved = structuredClone(conn);
+      vaultTotp = {
+        scopeKey: "owning-vault",
+        available: true,
+        unavailableReason: "",
+        load: vi.fn(),
+        generate: vi.fn(async () => {
+          if (reason === "generation-failure")
+            throw new Error("VAULT_SECRET_ERROR");
+          mock.owner = "other-db";
+          return {
+            code: "123456",
+            expires: Date.now() + 30000,
+            assertCurrent: () => {},
+          };
+        }),
+      };
+      await mount();
+      await reply(requests("totpProbe")[0]);
+      expect(requests("totpSubmit")).toHaveLength(0);
+      expect(mock.compute).not.toHaveBeenCalled();
+      expect(api.status).not.toContain("VAULT_SECRET_ERROR");
+    },
+  );
   it("waits for native lock observation before probing the page", async () => {
     let registered!: (unlisten: () => void) => void;
     vi.mocked(listen).mockImplementationOnce(

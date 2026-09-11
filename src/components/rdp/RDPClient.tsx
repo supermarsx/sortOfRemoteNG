@@ -694,9 +694,15 @@ const RDPClient: React.FC<RDPClientProps> = ({
           }
           onUpdateServerCertValidation={mgr.handleUpdateServerCertValidation}
           totpConfigs={mgr.connection?.totpConfigs}
-          totpUnavailableReason={
+          vaultTotp={
             mgr.connection?.credentialSource?.kind === "vault"
-              ? "Vault TOTP is not supported for RDP yet. Preserved connection-local codes are ignored."
+              ? mgr.vaultTotp
+              : undefined
+          }
+          totpUnavailableReason={
+            mgr.connection?.credentialSource?.kind === "vault" &&
+            !mgr.vaultTotp.available
+              ? mgr.vaultTotp.unavailableReason
               : undefined
           }
           onUpdateTotpConfigs={mgr.handleUpdateTotpConfigs}

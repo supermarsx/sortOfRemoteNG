@@ -14,6 +14,16 @@ export interface SynologyFileConnectionOptions {
   instanceId?: string;
   initialConfig?: SynologyFileLogin;
   assertCurrent?: () => void;
+  /** Saved vault adapter. Secrets stay in this attempt, never form state. */
+  resolveCredentials?: (assertAttempt: () => void) => Promise<{
+    username: string;
+    password: string;
+    assertCurrent: () => void;
+  }>;
+  /** Explicit selected vault authenticator; only invoked after DSM requests OTP. */
+  resolveOtp?: (
+    assertAttempt: () => void,
+  ) => Promise<{ code: string; assertCurrent: () => void }>;
 }
 const challengeMessages = {
   otp_required: "Enter the current one-time code from your authenticator.",
@@ -63,8 +73,18 @@ export function useSynologyFileConnection(
     SynologyFileAuthResult,
     { status: "connected" }
   > | null>(null);
-  const current = useRef({ isOpen, assertCurrent: options.assertCurrent });
-  current.current = { isOpen, assertCurrent: options.assertCurrent };
+  const current = useRef({
+    isOpen,
+    assertCurrent: options.assertCurrent,
+    resolveCredentials: options.resolveCredentials,
+    resolveOtp: options.resolveOtp,
+  });
+  current.current = {
+    isOpen,
+    assertCurrent: options.assertCurrent,
+    resolveCredentials: options.resolveCredentials,
+    resolveOtp: options.resolveOtp,
+  };
   const alive = useRef(true),
     generation = useRef(0),
     busy = useRef(false);
@@ -223,7 +243,8 @@ export function useSynologyFileConnection(
     release,
   ]);
 
-  const attempt = async (config: SynologyFileLogin, otp?: string) => {
+  const attempt = async (input: SynologyFileLogin, otp?: string) => {
+    const config = { ...input };
     if (
       busy.current ||
       receipt.current ||
@@ -232,6 +253,9 @@ export function useSynologyFileConnection(
     )
       return;
     const access = current.current.assertCurrent;
+    const resolveCredentials = current.current.resolveCredentials;
+    const resolveOtp = current.current.resolveOtp;
+    let credentialGuard: (() => void) | undefined;
     try {
       access?.();
     } catch {
@@ -242,19 +266,22 @@ export function useSynologyFileConnection(
       return;
     }
     busy.current = true;
-    const captured = ++generation.current,
-      requestId = crypto.randomUUID();
+    const captured = ++generation.current;
+    let requestId = crypto.randomUUID();
     pendingRequest.current = requestId;
-    const valid = () => {
+    const valid = (includeCredential = true) => {
       if (
         !alive.current ||
         !current.current.isOpen ||
         generation.current !== captured ||
-        current.current.assertCurrent !== access
+        current.current.assertCurrent !== access ||
+        current.current.resolveCredentials !== resolveCredentials ||
+        current.current.resolveOtp !== resolveOtp
       )
         return false;
       try {
         access?.();
+        if (includeCredential) credentialGuard?.();
         return true;
       } catch {
         return false;
@@ -264,12 +291,53 @@ export function useSynologyFileConnection(
     setConnectionStatus("connecting");
     setOtpCode("");
     try {
-      const result = await invoke<SynologyFileAuthResult>("syn_fs_connect", {
+      // The resolver's returned guard calls this base guard. It must not recurse
+      // through the returned credential guard that is installed afterwards.
+      const assertBaseAttempt = () => {
+        if (!valid(false))
+          throw new Error("This NAS authentication attempt was cancelled.");
+      };
+      const assertAttempt = () => {
+        if (!valid())
+          throw new Error("This NAS authentication attempt was cancelled.");
+      };
+      if (resolveCredentials) {
+        const credentials = await resolveCredentials(assertBaseAttempt);
+        assertAttempt();
+        credentials.assertCurrent();
+        credentialGuard = credentials.assertCurrent;
+        config.username = credentials.username;
+        config.password = credentials.password;
+        if (!config.username.trim() || !config.password)
+          throw new Error(
+            "The selected vault credential needs a username and password for Synology NAS API.",
+          );
+      }
+      assertAttempt();
+      let result = await invoke<SynologyFileAuthResult>("syn_fs_connect", {
         ...config,
         instanceId,
         requestId,
         otpCode: otp || null,
       });
+      if (result?.status === "otp_required" && !otp && resolveOtp && valid()) {
+        // One server-requested factor, never an automatic retry of a rejected code.
+        const generated = await resolveOtp(assertAttempt);
+        assertAttempt();
+        generated.assertCurrent();
+        otp = generated.code;
+        if (!/^\d{6,8}$/.test(otp))
+          throw new Error("The vault authenticator returned an invalid code.");
+        requestId = crypto.randomUUID();
+        pendingRequest.current = requestId;
+        generated.assertCurrent();
+        result = await invoke<SynologyFileAuthResult>("syn_fs_connect", {
+          ...config,
+          instanceId,
+          requestId,
+          otpCode: otp,
+        });
+      }
       if (
         !result ||
         typeof result !== "object" ||
@@ -325,6 +393,8 @@ export function useSynologyFileConnection(
         setPassword("");
       }
     } finally {
+      if (resolveCredentials) config.password = "";
+      otp = undefined;
       if (pendingRequest.current === requestId) pendingRequest.current = null;
       if (generation.current === captured) busy.current = false;
     }
@@ -354,8 +424,8 @@ export function useSynologyFileConnection(
     };
     if (
       !host.trim() ||
-      !login.username.trim() ||
-      !login.password ||
+      (!options.resolveCredentials &&
+        (!login.username.trim() || !login.password)) ||
       !Number.isInteger(port) ||
       port < 1 ||
       port > 65535
@@ -419,6 +489,7 @@ export function useSynologyFileConnection(
   return {
     instanceId,
     targetLocked: initialTarget.current !== null,
+    credentialsLocked: !!options.resolveCredentials,
     assertSessionAccess,
     host,
     setHost,

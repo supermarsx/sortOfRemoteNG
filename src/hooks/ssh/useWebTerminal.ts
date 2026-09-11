@@ -24,6 +24,7 @@ import {
 } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
+import { useRuntimeVaultTotp } from "../security/useRuntimeVaultTotp";
 import { withoutConnectionLocalCredentials } from "../../utils/security/runtimeCredentialVault";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { useToastContext } from "../../contexts/ToastContext";
@@ -259,6 +260,7 @@ export function useWebTerminal(
     [state.connections, session.connectionId],
   );
   const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
+  const vaultTotp = useRuntimeVaultTotp(session, connection);
 
   const sshTerminalConfig = useMemo(
     () =>
@@ -1614,6 +1616,12 @@ export function useWebTerminal(
           ? ""
           : currentConnection.username || "";
       let privateKeyPassphrase: string | null = null;
+      let privateKeyContent: string | null = null;
+      let totpOptions: {
+        algorithm: string;
+        digits: number;
+        period: number;
+      } | null = null;
       let totpSecret: string | null = null;
       let proxyCommandPassword: string | null = null;
       let runtimePath: RuntimeNetworkPath | null = null;
@@ -1699,6 +1707,23 @@ export function useWebTerminal(
         if (vault) {
           sshUsername = vault.facets.username ?? "";
           sshPassword = vault.facets.password ?? null;
+          privateKeyContent = vault.facets.privateKey ?? null;
+          privateKeyPassphrase = vault.facets.passphrase ?? null;
+          const selectedTotp =
+            currentConnection.credentialSource?.kind === "vault"
+              ? currentConnection.credentialSource.totpId
+              : undefined;
+          const authenticator = selectedTotp
+            ? vault.facets.totp?.find((item) => item.id === selectedTotp)
+            : undefined;
+          if (authenticator) {
+            totpSecret = authenticator.secret;
+            totpOptions = {
+              algorithm: authenticator.algorithm,
+              digits: authenticator.digits,
+              period: authenticator.period,
+            };
+          }
           vault.facets = {};
         }
         if (await stopIfStale()) return;
@@ -1984,6 +2009,16 @@ export function useWebTerminal(
           proxy_command: buildProxyCommandConfig(),
         };
 
+        sshConfig.allow_agent_auth =
+          currentConnection.credentialSource?.kind !== "vault";
+        sshConfig.private_key_content = null;
+        if (
+          currentConnection.credentialSource?.kind === "vault" &&
+          totpSecret
+        ) {
+          sshConfig.totp_secret = totpSecret;
+          sshConfig.totp_options = totpOptions;
+        }
         switch (authMethod) {
           case "password":
             sshPassword =
@@ -1997,6 +2032,17 @@ export function useWebTerminal(
             sshConfig.private_key_passphrase = null;
             break;
           case "key":
+            if (currentConnection.credentialSource?.kind === "vault") {
+              if (!privateKeyContent)
+                throw new Error(
+                  "Vault key authentication requires private-key material.",
+                );
+              sshConfig.password = sshPassword;
+              sshConfig.private_key_path = null;
+              sshConfig.private_key_content = privateKeyContent;
+              sshConfig.private_key_passphrase = privateKeyPassphrase;
+              break;
+            }
             if (!currentConnection.privateKey)
               throw new Error("Key authentication requires a key path");
             privateKeyPassphrase = currentConnection.passphrase || null;
@@ -2005,10 +2051,12 @@ export function useWebTerminal(
             sshConfig.private_key_passphrase = privateKeyPassphrase;
             break;
           case "totp":
-            if (!currentConnection.password || !currentConnection.totpSecret)
+            if (currentConnection.credentialSource?.kind !== "vault") {
+              sshPassword = currentConnection.password ?? null;
+              totpSecret = currentConnection.totpSecret ?? null;
+            }
+            if (!sshPassword || !totpSecret)
               throw new Error("TOTP requires password and TOTP secret");
-            sshPassword = currentConnection.password;
-            totpSecret = currentConnection.totpSecret;
             sshConfig.password = sshPassword;
             sshConfig.totp_secret = totpSecret;
             sshConfig.private_key_path = null;
@@ -2182,6 +2230,9 @@ export function useWebTerminal(
         }
         const secrets = [
           sshPassword,
+          privateKeyContent,
+          privateKeyPassphrase,
+          totpSecret,
           currentConnection.credentialSource?.kind === "vault"
             ? sshUsername
             : null,
@@ -2268,6 +2319,8 @@ export function useWebTerminal(
         sshPassword = null;
         sshUsername = "";
         privateKeyPassphrase = null;
+        privateKeyContent = null;
+        totpOptions = null;
         totpSecret = null;
         proxyCommandPassword = null;
         const pendingSshTrustResolve = takeAttemptHostKeyResolve();
@@ -3764,6 +3817,7 @@ export function useWebTerminal(
     showTotpPanel,
     setShowTotpPanel,
     totpConfigs,
+    vaultTotp,
     handleUpdateTotpConfigs,
     /* recording */
     terminalRecorder,

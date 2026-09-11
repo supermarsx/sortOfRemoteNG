@@ -16,8 +16,10 @@ import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicatio
 import { resolveHttpBasicCredentials } from "../../src/utils/auth/httpCredentials";
 import { resolveRuntimeConnection } from "../../src/utils/session/runtimeConnectionRegistry";
 import { useRuntimeCredentialVault } from "../../src/hooks/security/useRuntimeCredentialVault";
+import { useRuntimeVaultTotp } from "../../src/hooks/security/useRuntimeVaultTotp";
 
 const state = vi.hoisted(() => ({
+  compute: vi.fn(),
   api: undefined as DatabaseCredentialVaultApi | undefined,
   target: undefined as DatabaseDataTarget | undefined,
   connections: [] as Connection[],
@@ -26,6 +28,9 @@ const state = vi.hoisted(() => ({
     databaseId: "database-a",
     generation: 1,
   },
+}));
+vi.mock("../../src/hooks/totp/useTOTP", () => ({
+  totpApi: { computeCode: state.compute },
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
@@ -109,6 +114,7 @@ function fixture(overrides: Partial<Connection> = {}) {
 }
 afterEach(cleanup);
 beforeEach(() => {
+  state.compute.mockReset().mockResolvedValue("123456");
   state.api = undefined;
   state.target = undefined;
   state.connections = [];
@@ -119,6 +125,87 @@ beforeEach(() => {
   };
 });
 describe("runtime database vault boundary", () => {
+  it("keeps vault seeds out of manual-controller metadata and revokes generated codes on owner/entry changes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-11T12:00:10Z"));
+    try {
+      const input = fixture();
+      vi.mocked(input.api.resolve).mockImplementation(async () => ({
+        totp: [
+          {
+            id: "chosen",
+            label: "Vault account",
+            secret: "VAULT_SEED",
+            algorithm: "sha1",
+            digits: 6,
+            period: 30,
+          },
+        ],
+      }));
+      const hook = renderHook(() =>
+        useRuntimeVaultTotp(input.session, input.connection),
+      );
+      const metadata = await hook.result.current.load();
+      expect(metadata).toEqual([
+        {
+          id: "chosen",
+          label: "Vault account",
+          algorithm: "sha1",
+          digits: 6,
+          period: 30,
+        },
+      ]);
+      expect(JSON.stringify(hook.result.current)).not.toContain("VAULT_SEED");
+      const result = await hook.result.current.generate("chosen");
+      expect(state.compute).toHaveBeenCalledWith("VAULT_SEED", "SHA1", 6, 30);
+      expect(result.code).toBe("123456");
+      result.assertCurrent();
+      state.api = { ...input.api, changeRevision: 2 };
+      hook.rerender();
+      expect(() => result.assertCurrent()).toThrow();
+      hook.unmount();
+      await expect(hook.result.current.generate("chosen")).rejects.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("never selects the first vault authenticator or falls back to local seeds after generation failure", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-11T12:00:10Z"));
+    try {
+      const input = fixture({ totpSecret: "LOCAL_SEED" });
+      vi.mocked(input.api.resolve).mockImplementation(async () => ({
+        totp: [
+          {
+            id: "first",
+            label: "One",
+            secret: "VAULT_SEED",
+            algorithm: "sha1",
+            digits: 6,
+            period: 30,
+          },
+        ],
+      }));
+      const hook = renderHook(() =>
+        useRuntimeVaultTotp(input.session, input.connection),
+      );
+      await expect(hook.result.current.generate("missing")).rejects.toThrow();
+      expect(state.compute).not.toHaveBeenCalled();
+      state.compute.mockRejectedValue(new Error("secret backend text"));
+      await expect(hook.result.current.generate("first")).rejects.toThrow(
+        /could not be generated safely/,
+      );
+      expect(state.compute).toHaveBeenCalledOnce();
+      expect(state.compute.mock.calls[0][0]).toBe("VAULT_SEED");
+      state.compute.mockResolvedValue("123456");
+      const result = await hook.result.current.generate("first");
+      vi.advanceTimersByTime(21_000);
+      expect(() => result.assertCurrent()).toThrow(/expired/);
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("compares nested target settings semantically while retaining sensitive values and array order", () => {
     const input = fixture({
       protocol: "https",
@@ -232,7 +319,7 @@ describe("runtime database vault boundary", () => {
       ],
     });
     await expect(resolveRuntimeVaultCredential(input)).rejects.toThrow(
-      /requires a vault username and password/,
+      /credential facets required/,
     );
   });
   it.each(["owner", "target", "reference", "missing"])(
@@ -260,18 +347,11 @@ describe("runtime database vault boundary", () => {
   );
   it.each([
     { protocol: "ftp" },
-    { protocol: "ssh", authType: "key" },
-    { protocol: "ssh", authType: "totp" },
     { protocol: "https", authType: "header" },
-    {
-      protocol: "https",
-      httpApplication: { version: 1, id: "synology-dsm", loginMode: "manual" },
-      synologySettings: { version: 1, useHttps: true, accessMode: "native" },
-    },
   ] as Partial<Connection>[])("rejects unwired modes %#", async (overrides) => {
     const input = fixture(overrides);
     expect(getVaultRuntimeUnsupportedMessage(input.connection)).toContain(
-      "not supported",
+      "unavailable",
     );
     await expect(resolveRuntimeVaultCredential(input)).rejects.toThrow();
     expect(input.api.resolve).not.toHaveBeenCalled();
@@ -348,10 +428,91 @@ describe("runtime database vault boundary", () => {
     vi.mocked(input.api.resolve).mockResolvedValue({
       username: "user",
       password: "",
+      domain: "",
     });
     expect((await resolveRuntimeVaultCredential(input)).facets.password).toBe(
       "",
     );
+  });
+  it("resolves an SSH inline key with explicitly available password/passphrase and only the chosen authenticator", async () => {
+    const totpId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const input = fixture({
+      authType: "key",
+      credentialSource: { kind: "vault", credentialId: id, totpId },
+    });
+    const snapshot = await input.api.list(input.api.scope!);
+    snapshot.entries[0].availableFacets.push("passphrase");
+    vi.mocked(input.api.list).mockResolvedValue(snapshot);
+    vi.mocked(input.api.resolve).mockResolvedValue({
+      username: "vault",
+      privateKey: "PEM",
+      password: "second-factor",
+      passphrase: "key-passphrase",
+      totp: [
+        {
+          id: totpId,
+          label: "NAS",
+          secret: "SECRET",
+          algorithm: "sha256",
+          digits: 8,
+          period: 60,
+        },
+      ],
+    });
+    const result = await resolveRuntimeVaultCredential(input);
+    expect(input.api.resolve).toHaveBeenLastCalledWith(expect.anything(), id, [
+      "username",
+      "privateKey",
+      "passphrase",
+      "password",
+      "totp",
+    ]);
+    expect(result.facets.privateKey).toBe("PEM");
+    input.connection.credentialSource = {
+      kind: "vault",
+      credentialId: id,
+      totpId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    };
+    await expect(resolveRuntimeVaultCredential(input)).rejects.toThrow(
+      /no first-entry fallback/,
+    );
+  });
+  it("requires explicit SSH TOTP choice, supports NAS password login and separates TOTP disclosure from manual website login", async () => {
+    await expect(
+      resolveRuntimeVaultCredential(fixture({ authType: "totp" })),
+    ).rejects.toThrow(/specific vault authenticator/);
+    const nas = fixture({
+      protocol: "https",
+      port: 5001,
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "manual" },
+      synologySettings: { version: 1, useHttps: true, accessMode: "native" },
+    });
+    await resolveRuntimeVaultCredential(nas);
+    expect(nas.api.resolve).toHaveBeenCalledWith(expect.anything(), id, [
+      "username",
+      "password",
+    ]);
+    const website = fixture({
+      protocol: "https",
+      port: 443,
+      httpApplication: { version: 1, id: "wordpress", loginMode: "manual" },
+    });
+    vi.mocked(website.api.resolve).mockResolvedValue({
+      totp: [
+        {
+          id: "code",
+          label: "Account",
+          secret: "SECRET",
+          algorithm: "sha1",
+          digits: 6,
+          period: 30,
+        },
+      ],
+    });
+    await resolveRuntimeVaultCredential({ ...website, intent: "totp" });
+    expect(website.api.resolve).toHaveBeenCalledWith(expect.anything(), id, [
+      "totp",
+    ]);
   });
   it("removes ignored local secrets from automation and redirect context without changing the saved row", () => {
     const input = fixture({

@@ -6,6 +6,7 @@ import {
   normalizeHttpAutoMfa,
 } from "../../../utils/connection/httpAutoMfa";
 import type { Mgr } from "./types";
+import { useVaultTotpChoices } from "../../../hooks/security/useVaultTotpChoices";
 
 /** Draft-only explicit consent; never computes a code or copies an authenticator seed. */
 export default function AutomaticMfaSection({
@@ -16,7 +17,9 @@ export default function AutomaticMfaSection({
   profile: HttpApplicationProfile;
 }) {
   const id = useId();
-  const configs = mgr.formData.totpConfigs ?? [];
+  const vault = mgr.formData.credentialSource?.kind === "vault";
+  const vaultChoices = useVaultTotpChoices(mgr.formData);
+  const configs = vault ? [] : (mgr.formData.totpConfigs ?? []);
   const challenges = profile.totpChallenges ?? [];
   let configuration: ReturnType<typeof normalizeHttpAutoMfa> | undefined;
   let invalid = false;
@@ -46,6 +49,13 @@ export default function AutomaticMfaSection({
   }
   const selected =
     authenticator === "" ? undefined : configs[Number(authenticator)];
+  const vaultId =
+    mgr.formData.credentialSource?.kind === "vault"
+      ? mgr.formData.credentialSource.totpId
+      : undefined;
+  const selectedVault = vaultChoices.entries.find(
+    (entry) => entry.id === vaultId,
+  );
   const challenge = challenges.find((item) => item.id === challengeId);
   const disable = () =>
     mgr.setFormData((previous) => ({
@@ -54,7 +64,7 @@ export default function AutomaticMfaSection({
     }));
   const enable = () => {
     if (
-      !selected ||
+      !(vault ? selectedVault : selected) ||
       !challenge ||
       !origin ||
       mgr.formData.httpVerifySsl === false
@@ -69,7 +79,17 @@ export default function AutomaticMfaSection({
       )
         return previous;
       const currentConfigs = previous.totpConfigs ?? [];
-      if (currentConfigs[Number(authenticator)] !== selected) return previous;
+      if (
+        vault
+          ? previous.credentialSource?.kind !== "vault" ||
+            mgr.formData.credentialSource?.kind !== "vault" ||
+            previous.credentialSource.credentialId !==
+              mgr.formData.credentialSource.credentialId ||
+            previous.credentialSource.totpId !== selectedVault?.id
+          : previous.credentialSource?.kind === "vault" ||
+            currentConfigs[Number(authenticator)] !== selected
+      )
+        return previous;
       try {
         if (
           getHttpAutoMfaOrigin({
@@ -82,6 +102,18 @@ export default function AutomaticMfaSection({
       } catch {
         return previous;
       }
+      if (vault && selectedVault)
+        return {
+          ...previous,
+          httpAutoMfa: {
+            version: 1,
+            enabled: true,
+            totpConfigId: selectedVault.id,
+            challengeId: challenge.id,
+            origin: expectedOrigin,
+          },
+        };
+      if (!selected) return previous;
       const stableId =
         selected.id &&
         currentConfigs.filter((item) => item.id === selected.id).length === 1
@@ -132,7 +164,7 @@ export default function AutomaticMfaSection({
         </p>
       ) : (
         <>
-          {!configs.length && (
+          {!vault && !configs.length && (
             <p className="text-sm text-[var(--color-textSecondary)]">
               Configure an authenticator under Protocol → Recovery → 2FA / TOTP
               first. Use a secret already enrolled with this website; this does
@@ -142,23 +174,58 @@ export default function AutomaticMfaSection({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor={`${id}-auth`} className="mb-1 block text-sm">
-                Connection authenticator
+                {vault ? "Vault authenticator" : "Connection authenticator"}
               </label>
               <Select
                 id={`${id}-auth`}
-                value={authenticator}
+                value={vault ? (vaultId ?? "") : authenticator}
+                disabled={
+                  vault && (!vaultChoices.available || vaultChoices.loading)
+                }
                 onChange={(value) => {
+                  if (vault) {
+                    if (
+                      value &&
+                      !vaultChoices.entries.some((entry) => entry.id === value)
+                    )
+                      return;
+                    mgr.setFormData((previous) => {
+                      if (previous.credentialSource?.kind !== "vault")
+                        return previous;
+                      if (
+                        previous.credentialSource.totpId ===
+                        (value || undefined)
+                      )
+                        return previous;
+                      const { totpId: _previousTotp, ...reference } =
+                        previous.credentialSource;
+                      return {
+                        ...previous,
+                        credentialSource: value
+                          ? { ...reference, totpId: value }
+                          : reference,
+                        httpAutoMfa: { version: 1, enabled: false },
+                      };
+                    });
+                    return;
+                  }
                   setAuthenticator(value);
                   disable();
                 }}
                 options={[
                   { value: "", label: "Choose an authenticator" },
-                  ...configs.map((item, index) => ({
-                    value: String(index),
-                    label:
-                      [item.issuer, item.account].filter(Boolean).join(" — ") ||
-                      `Authenticator ${index + 1}`,
-                  })),
+                  ...(vault
+                    ? vaultChoices.entries.map((entry) => ({
+                        value: entry.id,
+                        label: entry.label,
+                      }))
+                    : configs.map((item, index) => ({
+                        value: String(index),
+                        label:
+                          [item.issuer, item.account]
+                            .filter(Boolean)
+                            .join(" — ") || `Authenticator ${index + 1}`,
+                      }))),
                 ]}
                 variant="form"
               />
@@ -182,6 +249,18 @@ export default function AutomaticMfaSection({
               />
             </div>
           </div>
+          {vault && (
+            <p className="text-xs text-[var(--color-textSecondary)]">
+              Uses only the selected owning-vault authenticator. Local
+              authenticators are ignored; no seed is copied into this
+              connection.
+            </p>
+          )}
+          {vaultChoices.error && vault && (
+            <p role="alert" className="text-xs text-error">
+              {vaultChoices.error}
+            </p>
+          )}
           <p className="text-xs text-[var(--color-textMuted)]">
             Allowed login paths: {challenge?.paths.join(", ") ?? "none"}. Custom
             paths or changed forms remain manual. CAPTCHA, external identity
@@ -210,7 +289,7 @@ export default function AutomaticMfaSection({
             className="sor-btn sor-btn-secondary"
             disabled={
               invalid ||
-              !selected ||
+              !(vault ? selectedVault : selected) ||
               !challenge ||
               !origin ||
               mgr.formData.httpVerifySsl === false

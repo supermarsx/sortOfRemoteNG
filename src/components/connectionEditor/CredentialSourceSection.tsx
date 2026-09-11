@@ -8,6 +8,7 @@ import {
 } from "../../hooks/security/useDatabaseCredentialVault";
 import { normalizeConnectionCredentialSource } from "../../utils/security/databaseCredentialVault";
 import { Select } from "../ui/forms";
+import { useVaultTotpChoices } from "../../hooks/security/useVaultTotpChoices";
 
 export default function CredentialSourceSection({
   formData,
@@ -16,6 +17,7 @@ export default function CredentialSourceSection({
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
 }) {
+  const authenticators = useVaultTotpChoices(formData);
   const context = useContext(ConnectionContext),
     api = context?.credentialVault,
     key = credentialVaultScopeKey(api);
@@ -76,11 +78,28 @@ export default function CredentialSourceSection({
         !rows.some((row) => row.id === credentialSource.credentialId))
     )
       return;
-    setFormData((previous) =>
-      credentialSource?.kind === "vault" && latest.current.key !== owner.current
-        ? previous
-        : { ...previous, credentialSource },
-    );
+    setFormData((previous) => {
+      if (
+        credentialSource?.kind === "vault" &&
+        latest.current.key !== owner.current
+      )
+        return previous;
+      const old = previous.credentialSource;
+      const same =
+        old?.kind === credentialSource?.kind &&
+        (old?.kind !== "vault" ||
+          (credentialSource?.kind === "vault" &&
+            old.credentialId === credentialSource.credentialId &&
+            old.totpId === credentialSource.totpId));
+      if (same) return previous;
+      return {
+        ...previous,
+        credentialSource,
+        httpAutoMfa: previous.httpAutoMfa
+          ? { version: 1, enabled: false }
+          : undefined,
+      };
+    });
   };
   return (
     <section
@@ -185,6 +204,55 @@ export default function CredentialSourceSection({
             Only this database's names and credential types are listed.
             Selecting an entry stores its reference, not a copy of its secrets.
           </p>
+          {vault && (
+            <div className="space-y-2">
+              <Select
+                label="Vault authenticator for login challenges"
+                variant="form"
+                value={source?.kind === "vault" ? (source.totpId ?? "") : ""}
+                disabled={!authenticators.available || authenticators.loading}
+                options={[
+                  { value: "", label: "None — enter codes manually" },
+                  ...authenticators.entries.map((entry) => ({
+                    value: entry.id,
+                    label: entry.label,
+                  })),
+                ]}
+                onChange={(totpId) => {
+                  if (
+                    source?.kind !== "vault" ||
+                    (totpId &&
+                      !authenticators.entries.some(
+                        (entry) => entry.id === totpId,
+                      ))
+                  )
+                    return;
+                  const { totpId: _previousTotp, ...reference } = source;
+                  mutate(totpId ? { ...reference, totpId } : reference);
+                }}
+              />
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                Optional and never selected automatically. SSH and Synology use
+                this authenticator only when the server requests a code.
+                Websites additionally require explicit automatic 2FA consent in
+                Application settings. All vault authenticators remain available
+                for manual generation.
+              </p>
+              {authenticators.error && (
+                <p role="alert" className="text-xs text-error">
+                  {authenticators.error}
+                </p>
+              )}
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary"
+                disabled={!authenticators.available || authenticators.loading}
+                onClick={authenticators.reload}
+              >
+                Reload authenticators
+              </button>
+            </div>
+          )}
         </>
       )}
       {vault ? (

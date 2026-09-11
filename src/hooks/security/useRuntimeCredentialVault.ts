@@ -8,6 +8,7 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 import {
   resolveRuntimeVaultCredential,
   runtimeCredentialTargetKey,
+  type RuntimeVaultCredentialIntent,
 } from "../../utils/security/runtimeCredentialVault";
 import { normalizeConnectionCredentialSource } from "../../utils/security/databaseCredentialVault";
 
@@ -36,7 +37,11 @@ export function useRuntimeCredentialVault(
     };
   }, []);
   return useCallback(
-    async (assertAttempt: () => void, validateOnly = false) => {
+    async (
+      assertAttempt: () => void,
+      validateOnly = false,
+      intent: RuntimeVaultCredentialIntent = "login",
+    ) => {
       const captured = latest.current;
       if (
         captured.saved &&
@@ -95,6 +100,7 @@ export function useRuntimeCredentialVault(
         target,
         assertCurrent,
         validateOnly,
+        intent,
       });
     },
     [],

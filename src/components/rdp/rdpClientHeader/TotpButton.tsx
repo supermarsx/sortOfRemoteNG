@@ -2,12 +2,14 @@ import React from "react";
 import { Mgr, RDPClientHeaderProps, btnActive, btnDefault } from "./helpers";
 import RDPTotpPanel from "../RDPTotpPanel";
 import { Shield } from "lucide-react";
+import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
 
 const TotpButton: React.FC<{
   mgr: Mgr;
   p: RDPClientHeaderProps;
 }> = ({ mgr, p }) => {
-  const configs = p.totpUnavailableReason ? [] : (p.totpConfigs ?? []);
+  const configs =
+    p.vaultTotp || p.totpUnavailableReason ? [] : (p.totpConfigs ?? []);
   return (
     <div
       ref={mgr.totpBtnRef}
@@ -28,7 +30,14 @@ const TotpButton: React.FC<{
           </span>
         )}
       </button>
-      {mgr.showTotpPanel && !p.totpUnavailableReason && (
+      {mgr.showTotpPanel && p.vaultTotp && (
+        <RuntimeVaultTotpPanel
+          controller={p.vaultTotp}
+          anchorRef={mgr.totpBtnRef}
+          onClose={() => mgr.setShowTotpPanel(false)}
+        />
+      )}
+      {mgr.showTotpPanel && !p.vaultTotp && !p.totpUnavailableReason && (
         <RDPTotpPanel
           configs={configs}
           onUpdate={p.onUpdateTotpConfigs}

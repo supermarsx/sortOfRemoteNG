@@ -1,4 +1,11 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { listen } from "@tauri-apps/api/event";
 import { PackageX, CircleHelp, X } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
@@ -28,6 +35,8 @@ import {
 import { SynologySessionContent } from "./SynologyPanel";
 import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 import SynologyInitializationStatus from "./synologyPanel/SynologyInitializationStatus";
+import { useRuntimeCredentialVault } from "../../hooks/security/useRuntimeCredentialVault";
+import { useRuntimeVaultTotp } from "../../hooks/security/useRuntimeVaultTotp";
 
 const unavailable =
   "Open and unlock this session's owning database, then reopen the Synology connection.";
@@ -169,10 +178,53 @@ function BoundSynologySession({
     issue = error instanceof Error ? error.message : unavailable;
   }
   const settings = normalizeSynologySettings(saved.synologySettings);
-  const credentials = resolveHttpBasicCredentials({
-    ...saved,
-    authType: "basic",
-  });
+  const vault = saved.credentialSource?.kind === "vault";
+  const resolveVault = useRuntimeCredentialVault(session, saved);
+  const vaultTotp = useRuntimeVaultTotp(session, saved);
+  const latestTotp = useRef(vaultTotp);
+  latestTotp.current = vaultTotp;
+  const totpId =
+    saved.credentialSource?.kind === "vault"
+      ? saved.credentialSource.totpId
+      : undefined;
+  const resolveCredentials = useCallback(
+    async (assertAttempt: () => void) => {
+      const value = await resolveVault(assertAttempt);
+      if (!value)
+        throw new Error("The selected vault credential is unavailable.");
+      try {
+        value.assertCurrent();
+        return {
+          username: value.facets.username ?? "",
+          password: value.facets.password ?? "",
+          assertCurrent: value.assertCurrent,
+        };
+      } finally {
+        value.facets = {};
+      }
+    },
+    [resolveVault],
+  );
+  const resolveOtp = useCallback(
+    async (assertAttempt: () => void) => {
+      assertAttempt();
+      if (!totpId)
+        throw new Error(
+          "Select a vault authenticator before automatic NAS verification.",
+        );
+      const value = await latestTotp.current.generate(totpId);
+      assertAttempt();
+      value.assertCurrent();
+      return value;
+    },
+    [totpId],
+  );
+  const credentials = vault
+    ? null
+    : resolveHttpBasicCredentials({
+        ...saved,
+        authType: "basic",
+      });
   const connection = useSynologyFileConnection(!issue, {
     instanceId: session.id,
     initialConfig: {
@@ -186,6 +238,8 @@ function BoundSynologySession({
           : saved.protocol === "https",
     },
     assertCurrent: access ?? undefined,
+    resolveCredentials: vault ? resolveCredentials : undefined,
+    resolveOtp: vault && totpId ? resolveOtp : undefined,
   });
   const runtime = useRef(connection);
   runtime.current = connection;

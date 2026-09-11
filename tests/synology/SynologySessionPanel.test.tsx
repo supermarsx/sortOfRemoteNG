@@ -13,6 +13,7 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import type { DatabaseAvailability } from "../../src/contexts/ConnectionContextTypes";
+import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 import SynologySessionPanel from "../../src/components/synology/SynologySessionPanel";
 import { disconnectSynologySession } from "../../src/utils/session/synologySessionLifecycle";
 
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
 }));
 let connections: Connection[] = [];
 let availability: DatabaseAvailability;
+let vaultApi: DatabaseCredentialVaultApi | undefined;
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../../src/components/ui/display/loadingElement", () => ({
   LoadingElement: () => <span data-testid="configured-app-loader" />,
@@ -47,6 +49,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
     state: { connections },
     dispatch: mocks.dispatch,
     databaseAvailability: availability,
+    credentialVault: vaultApi,
   }),
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => ({
@@ -55,6 +58,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       getCurrentDatabase: () => ({ id: mocks.owner }),
       captureCurrentDatabaseDataTarget: () => ({
         databaseId: mocks.owner,
+        readCurrent: async () => ({ connections }),
         assertAccessible: () => {
           if (!mocks.allowed) throw new Error("locked");
         },
@@ -140,6 +144,7 @@ beforeEach(() => {
   mocks.owner = "db-a";
   mocks.allowed = true;
   mocks.realContent = false;
+  vaultApi = undefined;
   connections = [saved("one"), saved("two")];
   availability = { status: "ready", databaseId: "db-a", generation: 1 };
   mocks.capabilities.mockResolvedValue({
@@ -160,6 +165,64 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("saved Synology session ownership", () => {
+  it("mounts the actual saved-vault adapter without copying ignored local credentials into native login or session updates", async () => {
+    const credentialId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    connections[0].credentialSource = { kind: "vault", credentialId };
+    vaultApi = {
+      scope: { databaseId: "db-a", generation: 1 },
+      changeRevision: 1,
+      list: vi.fn<DatabaseCredentialVaultApi["list"]>(async () => ({
+        scope: { databaseId: "db-a", generation: 1 },
+        revision: 1,
+        receipt: "vault-receipt",
+        entries: [
+          {
+            id: credentialId,
+            name: "NAS account",
+            createdAt: "2026-09-01",
+            updatedAt: "2026-09-01",
+            availableFacets: ["username", "password"],
+          },
+        ],
+      })),
+      resolve: vi.fn(async () => ({
+        username: "VAULT_NAS_ACCOUNT",
+        password: "VAULT_NAS_SECRET",
+      })),
+      compareAndSwap: vi.fn(),
+    };
+    render(
+      <React.StrictMode>
+        <SynologySessionPanel session={session("one")} />
+      </React.StrictMode>,
+    );
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "syn_fs_connect",
+        expect.objectContaining({
+          username: "VAULT_NAS_ACCOUNT",
+          password: "VAULT_NAS_SECRET",
+          host: "one.example.test",
+          instanceId: "one",
+        }),
+      ),
+    );
+    expect(vaultApi!.resolve).toHaveBeenCalledWith(
+      expect.anything(),
+      credentialId,
+      ["username", "password"],
+    );
+    await waitFor(() =>
+      expect(screen.getByText("connected")).toBeInTheDocument(),
+    );
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+      "VAULT_NAS_SECRET",
+    );
+    expect(JSON.stringify(mocks.invoke.mock.calls)).not.toContain(
+      "synthetic-private-password",
+    );
+    expect(connections[0].password).toBe("synthetic-private-password");
+  });
   it("starts the initial saved sign-in after Strict Mode effect replay without requiring Retry", async () => {
     mocks.realContent = true;
     let resolveLogin!: (result: unknown) => void;

@@ -292,9 +292,14 @@ describe("database vault manager", () => {
     fireEvent.change(screen.getByLabelText("Social binding 1 provider"), {
       target: { value: "Example SSO" },
     });
-    fireEvent.change(screen.getByLabelText("Social binding 1 HTTPS origin"), {
-      target: { value: "https://example.com" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(
+        "Social binding 1 Website HTTPS origin where sign-in starts",
+      ),
+      {
+        target: { value: "https://example.com" },
+      },
+    );
     fireEvent.change(screen.getByLabelText("Passkey binding 1 provider"), {
       target: { value: "Hardware key" },
     });
@@ -371,7 +376,8 @@ describe("vault picker and settings entry point", () => {
         initial={{ credentialSource: { kind: "vault", credentialId: id } }}
       />,
     );
-    await waitFor(() => expect(api.list).toHaveBeenCalledOnce());
+    // Credential picker plus the explicit selected-authenticator metadata picker.
+    await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
     const other = facade().api;
     other.scope = { databaseId: "db-b", generation: 2 };
     view.rerender(

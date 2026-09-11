@@ -25,6 +25,142 @@ const setup = () => {
 beforeEach(() => vi.mocked(invoke).mockReset());
 afterEach(cleanup);
 describe("scoped Synology sign-in", () => {
+  it("resolves vault credentials with a base guard, completes one server-requested OTP, and never stores login secrets in form state", async () => {
+    const resolveCredentials = vi.fn(async (assertAttempt: () => void) => ({
+      username: "vault-user",
+      password: "vault-secret",
+      assertCurrent: assertAttempt,
+    }));
+    const resolveOtp = vi.fn(async (assertAttempt: () => void) => ({
+      code: "123456",
+      assertCurrent: assertAttempt,
+    }));
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === "syn_fs_connect"
+        ? vi
+            .mocked(invoke)
+            .mock.calls.filter(([name]) => name === "syn_fs_connect").length ===
+          1
+          ? { status: "otp_required" }
+          : { status: "connected", sessionId: "vault-receipt" }
+        : {
+            status: "connected",
+            lastVerifiedAt: "",
+            consecutiveFailures: 0,
+            message: null,
+          },
+    );
+    const { result } = renderHook(() =>
+      useSynologyFileConnection(true, {
+        initialConfig: {
+          host: "nas.test",
+          port: 5001,
+          useHttps: true,
+          username: "",
+          password: "",
+        },
+        resolveCredentials,
+        resolveOtp,
+      }),
+    );
+    await act(() => result.current.connect());
+    expect(result.current.connectionStatus).toBe("connected");
+    expect(result.current.username).toBe("");
+    expect(result.current.password).toBe("");
+    expect(result.current.otpCode).toBe("");
+    const calls = vi
+      .mocked(invoke)
+      .mock.calls.filter(([name]) => name === "syn_fs_connect");
+    expect(calls).toHaveLength(2);
+    expect(calls[0][1]).toMatchObject({
+      username: "vault-user",
+      password: "vault-secret",
+      otpCode: null,
+    });
+    expect(calls[1][1]).toMatchObject({
+      username: "vault-user",
+      password: "vault-secret",
+      otpCode: "123456",
+    });
+    expect((calls[0][1] as Record<string, unknown>).requestId).not.toBe(
+      (calls[1][1] as Record<string, unknown>).requestId,
+    );
+    expect(resolveOtp).toHaveBeenCalledOnce();
+  });
+  it("does not retry a rejected vault OTP and re-resolves credentials for explicit manual verification", async () => {
+    const resolveCredentials = vi.fn(async (assertAttempt: () => void) => ({
+      username: "vault-user",
+      password: "vault-secret",
+      assertCurrent: assertAttempt,
+    }));
+    const resolveOtp = vi.fn(async (assertAttempt: () => void) => ({
+      code: "123456",
+      assertCurrent: assertAttempt,
+    }));
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({ status: "otp_required" })
+      .mockResolvedValue({ status: "otp_invalid" });
+    const { result } = renderHook(() =>
+      useSynologyFileConnection(true, {
+        initialConfig: {
+          host: "nas.test",
+          port: 5001,
+          useHttps: true,
+          username: "",
+          password: "",
+        },
+        resolveCredentials,
+        resolveOtp,
+      }),
+    );
+    await act(() => result.current.connect());
+    expect(result.current.challenge?.status).toBe("otp_invalid");
+    expect(invoke).toHaveBeenCalledTimes(2);
+    act(() => result.current.setOtpCode("654321"));
+    await act(() => result.current.submitOtp());
+    expect(resolveCredentials).toHaveBeenCalledTimes(2);
+    expect(resolveOtp).toHaveBeenCalledOnce();
+    expect(vi.mocked(invoke).mock.calls[2][1]).toMatchObject({
+      otpCode: "654321",
+      password: "vault-secret",
+    });
+  });
+  it("cancels a deferred vault resolution before any NAS request", async () => {
+    const pending = deferred<{
+      username: string;
+      password: string;
+      assertCurrent: () => void;
+    }>();
+    const resolveCredentials = vi.fn(() => pending.promise);
+    const { result, unmount } = renderHook(() =>
+      useSynologyFileConnection(true, {
+        initialConfig: {
+          host: "nas.test",
+          port: 5001,
+          useHttps: true,
+          username: "",
+          password: "",
+        },
+        resolveCredentials,
+      }),
+    );
+    let work!: Promise<void>;
+    act(() => {
+      work = result.current.connect();
+    });
+    unmount();
+    pending.resolve({
+      username: "late",
+      password: "secret",
+      assertCurrent: () => {},
+    });
+    await act(() => work);
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "syn_fs_connect"),
+    ).toBe(false);
+  });
   it.each<[string, boolean]>([
     ["http://nas.example.test/", true],
     ["https://nas.example.test/", false],

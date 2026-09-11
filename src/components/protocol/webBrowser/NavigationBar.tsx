@@ -1,6 +1,7 @@
 import type { SectionProps } from "./types";
 import RecordingControls from "./RecordingControls";
 import WebsiteDarkModeControls from "./WebsiteDarkModeControls";
+import VaultInteractiveSignIn from "../../security/VaultInteractiveSignIn";
 import SecurityIcon, { AuthIcon } from "./SecurityIcon";
 import React, { useRef, useState } from "react";
 import {
@@ -20,6 +21,7 @@ import {
   Eraser,
 } from "lucide-react";
 import WebTotpPanel from "./WebTotpPanel";
+import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
 import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
 import { useCertificateTrustRecord } from "../../../hooks/security/useCertificateTrustRecord";
 import { MenuSurface } from "../../ui/overlays/MenuSurface";
@@ -273,17 +275,54 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
             </span>
           )}
         </button>
-        {mgr.showTotpPanel && (
-          <WebTotpPanel
-            configs={mgr.totpConfigs}
-            autoMfa={mgr.autoMfa}
-            ownerDatabaseId={mgr.session.ownerDatabaseId}
-            connectionId={mgr.connection?.id}
-            anchorRef={mgr.totpBtnRef}
-            onClose={() => mgr.setShowTotpPanel(false)}
+        {mgr.showTotpPanel &&
+          mgr.connection?.credentialSource?.kind === "vault" && (
+            <RuntimeVaultTotpPanel
+              controller={mgr.vaultTotp}
+              anchorRef={mgr.totpBtnRef}
+              onClose={() => mgr.setShowTotpPanel(false)}
+              footer={
+                mgr.autoMfa.status ? (
+                  <div className="border-t border-[var(--color-border)] pt-3 space-y-2">
+                    <p
+                      role="status"
+                      className="text-xs text-[var(--color-textSecondary)]"
+                    >
+                      {mgr.autoMfa.status}
+                    </p>
+                    <button
+                      type="button"
+                      className="sor-btn sor-btn-secondary"
+                      disabled={!mgr.autoMfa.canRetry}
+                      onClick={mgr.autoMfa.retry}
+                    >
+                      Check for 2FA challenge again
+                    </button>
+                  </div>
+                ) : undefined
+              }
+            />
+          )}
+        {mgr.showTotpPanel &&
+          mgr.connection?.credentialSource?.kind !== "vault" && (
+            <WebTotpPanel
+              configs={mgr.totpConfigs}
+              autoMfa={mgr.autoMfa}
+              ownerDatabaseId={mgr.session.ownerDatabaseId}
+              connectionId={mgr.connection?.id}
+              anchorRef={mgr.totpBtnRef}
+              onClose={() => mgr.setShowTotpPanel(false)}
+            />
+          )}
+      </div>
+      {mgr.connection?.credentialSource?.kind === "vault" &&
+        ["http", "https"].includes(mgr.connection.protocol) && (
+          <VaultInteractiveSignIn
+            session={mgr.session}
+            connection={mgr.connection}
+            sessionTarget={mgr.buildTargetUrl()}
           />
         )}
-      </div>
       <WebsiteDarkModeControls controller={mgr.automation.darkMode} />
       <RecordingControls mgr={mgr} />
       <button

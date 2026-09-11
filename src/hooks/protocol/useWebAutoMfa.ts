@@ -17,6 +17,7 @@ import {
 import { getHttpApplicationProfile } from "../../utils/connection/httpApplicationProfiles";
 import { WebAutomationBridge } from "../../utils/recording/webAutomationBridge";
 import { totpApi } from "../totp/useTOTP";
+import type { RuntimeVaultTotpController } from "../security/useRuntimeVaultTotp";
 
 interface Options {
   connection: Connection | undefined;
@@ -28,6 +29,7 @@ interface Options {
   navigationKey: string;
   iframe: React.RefObject<HTMLIFrameElement | null>;
   getDocument: () => WebAutomationDocument | null;
+  vaultTotp?: RuntimeVaultTotpController;
 }
 const failure =
   "Automatic 2FA stopped. Use 2FA Codes manually or review the saved Application settings.";
@@ -50,7 +52,11 @@ const receipt = (connection: Connection) =>
     port: connection.port,
     mfa: connection.httpAutoMfa,
     profile: connection.httpApplication,
-    authenticators: connection.totpConfigs,
+    credentialSource: connection.credentialSource,
+    authenticators:
+      connection.credentialSource?.kind === "vault"
+        ? undefined
+        : connection.totpConfigs,
   });
 
 /** First-party, explicitly opted-in OTP only. Unsolicited page events never
@@ -69,7 +75,7 @@ export function useWebAutoMfa(options: Options) {
   const [retry, setRetry] = useState(0);
   const retryRef = useRef(false);
   retryRef.current = canRetry;
-  const identity = `${options.ownerDatabaseId ?? ""}:${options.availability?.generation ?? ""}:${options.navigationKey}:${options.settingsReady}:${options.blocked}`;
+  const identity = `${options.ownerDatabaseId ?? ""}:${options.availability?.generation ?? ""}:${options.navigationKey}:${options.settingsReady}:${options.blocked}:${options.vaultTotp?.scopeKey ?? ""}`;
   const previous = useRef({ identity, connection: options.connection });
   if (
     previous.current.identity !== identity ||
@@ -173,6 +179,8 @@ export function useWebAutoMfa(options: Options) {
         (item) => item.id === config.totpConfigId,
       ) ?? [];
     const authenticator = entries.length === 1 ? entries[0] : null;
+    const vault = connection.credentialSource?.kind === "vault";
+    const vaultTotp = vault ? options.vaultTotp : undefined;
     const manager = DatabaseManager.getInstance();
     let target: DatabaseDataTarget | null;
     try {
@@ -204,6 +212,14 @@ export function useWebAutoMfa(options: Options) {
       )
         throw new Error(failure);
       target.assertAccessible();
+      if (
+        vault &&
+        (!vaultTotp?.available ||
+          live.vaultTotp?.scopeKey !== vaultTotp.scopeKey ||
+          connection.credentialSource?.kind !== "vault" ||
+          connection.credentialSource.totpId !== config.totpConfigId)
+      )
+        throw new Error(failure);
       const upstream = new URL(live.currentUrl);
       const local = new URL(doc.url);
       if (
@@ -219,20 +235,22 @@ export function useWebAutoMfa(options: Options) {
     try {
       valid();
       if (
-        !authenticator ||
+        (!vault && !authenticator) ||
         !challenge ||
         !target?.readCurrent ||
         !target.verifyCurrent ||
-        typeof authenticator.secret !== "string" ||
-        !authenticator.secret ||
-        authenticator.secret.length > 4096 ||
-        !["sha1", "sha256", "sha512"].includes(authenticator.algorithm) ||
-        !Number.isInteger(authenticator.digits) ||
-        authenticator.digits < 6 ||
-        authenticator.digits > 8 ||
-        !Number.isInteger(authenticator.period) ||
-        authenticator.period < 1 ||
-        authenticator.period > 3600
+        (!vault &&
+          (!authenticator ||
+            typeof authenticator.secret !== "string" ||
+            !authenticator.secret ||
+            authenticator.secret.length > 4096 ||
+            !["sha1", "sha256", "sha512"].includes(authenticator.algorithm) ||
+            !Number.isInteger(authenticator.digits) ||
+            authenticator.digits < 6 ||
+            authenticator.digits > 8 ||
+            !Number.isInteger(authenticator.period) ||
+            authenticator.period < 1 ||
+            authenticator.period > 3600))
       )
         throw new Error(failure);
     } catch {
@@ -298,27 +316,40 @@ export function useWebAutoMfa(options: Options) {
       let code = "";
       try {
         await persisted();
-        const started = Date.now();
-        const expires =
-          (Math.floor(started / (authenticator.period * 1000)) + 1) *
-          authenticator.period *
-          1000;
-        // Avoid delivering a code at the end of its time window; explicit retry is safe before submission.
-        if (expires - started < 3000) throw new Error(failure);
-        code = await totpApi.computeCode(
-          authenticator.secret,
-          authenticator.algorithm.toUpperCase() as TotpAlgorithm,
-          authenticator.digits,
-          authenticator.period,
-        );
+        let expires: number;
+        let assertCodeCurrent: (() => void) | undefined;
+        if (vault) {
+          const generated = await vaultTotp!.generate(config.totpConfigId!);
+          generated.assertCurrent();
+          code = generated.code;
+          expires = generated.expires;
+          assertCodeCurrent = generated.assertCurrent;
+        } else {
+          if (!authenticator) throw new Error(failure);
+          const started = Date.now();
+          expires =
+            (Math.floor(started / (authenticator.period * 1000)) + 1) *
+            authenticator.period *
+            1000;
+          if (expires - started < 3000) throw new Error(failure);
+          code = await totpApi.computeCode(
+            authenticator.secret,
+            authenticator.algorithm.toUpperCase() as TotpAlgorithm,
+            authenticator.digits,
+            authenticator.period,
+          );
+        }
         valid();
         await persisted();
         if (
           Date.now() >= expires - 1000 ||
-          !new RegExp(`^\\d{${authenticator.digits}}$`).test(code)
+          !(vault
+            ? /^\d{6}(?:\d{2})?$/.test(code)
+            : new RegExp(`^\\d{${authenticator!.digits}}$`).test(code))
         )
           throw new Error(failure);
         valid();
+        assertCodeCurrent?.();
         sent.current.add(attemptKey);
         setCanRetry(false);
         await bridge.request("totpSubmit", { nonce, code, expires });

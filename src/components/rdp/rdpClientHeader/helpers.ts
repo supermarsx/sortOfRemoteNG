@@ -43,6 +43,7 @@ export interface RDPClientHeaderProps {
   serverCertValidation?: "validate" | "warn" | "ignore";
   onUpdateServerCertValidation: (mode: "validate" | "warn" | "ignore") => void;
   totpConfigs?: TOTPConfig[];
+  vaultTotp?: import("../../../hooks/security/useRuntimeVaultTotp").RuntimeVaultTotpController;
   onUpdateTotpConfigs: (configs: TOTPConfig[]) => void;
   totpUnavailableReason?: string;
   handleAutoTypeTOTP?: (code: string) => void;

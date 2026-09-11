@@ -1,6 +1,6 @@
 import { createRef } from "react";
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ErrorPage } from "../../src/components/protocol/webBrowser/ERROR_BASE";
@@ -246,7 +246,7 @@ describe("embedded web failure recovery screen", () => {
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation: none;[\s\S]*?transform: none;[\s\S]*?width: 100%;[\s\S]*?opacity: 1;/,
     );
   });
-  it("opens bounded history menus, jumps directly, and exposes Stop loading in the toolbar", () => {
+  it("opens bounded history menus, jumps directly, and exposes Stop loading in the toolbar", async () => {
     const jump = vi.fn();
     const stop = vi.fn();
     const mgr = manager({
@@ -266,6 +266,7 @@ describe("embedded web failure recovery screen", () => {
       } as WebBrowserMgr["displayRecorder"],
       proxySessionIdRef: { current: "fixture" },
       totpConfigs: [],
+      totpBtnRef: createRef<HTMLDivElement>(),
       automation: {
         darkMode: {
           scopeKey: "fixture",
@@ -285,7 +286,7 @@ describe("embedded web failure recovery screen", () => {
         // deliberately absent from this isolated toolbar fixture.
       } as unknown as WebBrowserMgr["automation"],
     });
-    render(<NavigationBar mgr={mgr} />);
+    const view = render(<NavigationBar mgr={mgr} />);
     const extension = screen.getByRole("button", {
       name: "Dark-mode extension",
     });
@@ -316,6 +317,48 @@ describe("embedded web failure recovery screen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Forward history" }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
+    const retry = vi.fn();
+    const vaultTotp = {
+      scopeKey: "vault-scope",
+      available: true,
+      unavailableReason: "",
+      load: vi.fn(async () => []),
+      generate: vi.fn(),
+    };
+    const vaultManager = {
+      ...mgr,
+      showTotpPanel: true,
+      connection: {
+        id: "saved",
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      } as WebBrowserMgr["connection"],
+      vaultTotp,
+      autoMfa: {
+        status: "Waiting for the selected 2FA challenge…",
+        canRetry: false,
+        retry,
+      },
+    };
+    await act(async () => view.rerender(<NavigationBar mgr={vaultManager} />));
+    const check = await screen.findByRole("button", {
+      name: "Check for 2FA challenge again",
+    });
+    expect(check).toBeDisabled();
+    expect(retry).not.toHaveBeenCalled();
+    view.rerender(
+      <NavigationBar
+        mgr={{
+          ...vaultManager,
+          autoMfa: { ...vaultManager.autoMfa, canRetry: true },
+        }}
+      />,
+    );
+    fireEvent.click(check);
+    expect(retry).toHaveBeenCalledOnce();
+    expect(vaultTotp.generate).not.toHaveBeenCalled();
   });
   it("never puts a delayed spinner over a trust prompt or error", () => {
     const mgr = manager({ isLoading: true, showLoadingIndicator: true });

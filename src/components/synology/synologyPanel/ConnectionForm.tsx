@@ -135,7 +135,7 @@ const ConnectionForm: React.FC<
                 className={inputClass}
                 value={mgr.username}
                 onChange={(e) => mgr.setUsername(e.target.value)}
-                disabled={disabled}
+                disabled={disabled || mgr.credentialsLocked}
               />
             </label>
             <label
@@ -150,7 +150,7 @@ const ConnectionForm: React.FC<
                 className={inputClass}
                 value={mgr.password}
                 onChange={(e) => mgr.setPassword(e.target.value)}
-                disabled={disabled}
+                disabled={disabled || mgr.credentialsLocked}
               />
             </label>
             <label className="flex items-center gap-2 text-sm">
@@ -175,8 +175,8 @@ const ConnectionForm: React.FC<
               disabled={
                 disabled ||
                 !mgr.host.trim() ||
-                !mgr.username.trim() ||
-                !mgr.password
+                (!mgr.credentialsLocked &&
+                  (!mgr.username.trim() || !mgr.password))
               }
             >
               <LogIn className="h-4 w-4" />
