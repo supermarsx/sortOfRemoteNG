@@ -3,6 +3,29 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { resolveWindowsOpenSslEnvironment } from "../../scripts/lib/windows-openssl-env.mjs";
 import { rustTargetFromArgs } from "../../scripts/stage-windows-native-runtime.mjs";
+import { buildNativeChildEnvironment } from "../../scripts/lib/native-child-env.mjs";
+
+test("shared child environment preserves explicit libraries, missing matching archives and Unix builds", () => {
+  const env = Object.freeze({
+    OPENSSL_LIB_DIR: "custom/lib",
+    OPENSSL_LIBS: "ssl:crypto",
+    PATH: "existing",
+  });
+  for (const options of [
+    { platform: "win32", exists: (file) => file.endsWith(".lib") },
+    { platform: "win32", exists: () => false },
+    { platform: "linux", exists: () => true },
+    { platform: "darwin", exists: () => true },
+  ]) {
+    const result = buildNativeChildEnvironment({
+      baseEnv: env,
+      argv: ["--target=aarch64-pc-windows-msvc"],
+      ...options,
+    });
+    assert.deepEqual(result, env);
+    assert.notEqual(result, env);
+  }
+});
 
 test("selects existing architecture/CRT vendor static libs without mutating process configuration", () => {
   const env = { OPENSSL_LIB_DIR: "vendor/lib" };

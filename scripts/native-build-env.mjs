@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 // Runs a command with native Windows build helpers first on PATH.
 //
-// `openssl-src` rejects Cygwin/MSYS Perl when building MSVC targets. Several
-// Rust crates in this workspace intentionally use vendored OpenSSL on Windows,
-// so local npm scripts need to prefer Strawberry Perl when it is installed.
+// Preserve optional vendored/native toolchain support without requiring OpenSSL
+// for Windows builds. If a vendored MSVC build is selected, `openssl-src` rejects
+// Cygwin/MSYS Perl; prefer installed Strawberry Perl and normalize only explicitly
+// configured OpenSSL library directories, exclusively in the child environment.
 
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
-import { resolveWindowsOpenSslEnvironment } from "./lib/windows-openssl-env.mjs";
+import {
+  buildNativeChildEnvironment,
+  nativeWindowsPathPrefix,
+} from "./lib/native-child-env.mjs";
 import {
   rustTargetFromArgs,
   stageWindowsNativeRuntime,
@@ -36,28 +40,8 @@ if (args.length === 0) {
   process.exit(2);
 }
 
-function nativeWindowsPathPrefix() {
-  if (process.platform !== "win32") return [];
-
-  const candidates = ["C:\\Strawberry\\perl\\bin", "C:\\Strawberry\\c\\bin"];
-
-  return candidates.filter((entry) => existsSync(entry));
-}
-
-const env = { ...process.env };
-Object.assign(
-  env,
-  resolveWindowsOpenSslEnvironment({
-    ...env,
-    CARGO_BUILD_TARGET: rustTargetFromArgs(args, env),
-  }),
-);
+const env = buildNativeChildEnvironment({ argv: args });
 const prefix = nativeWindowsPathPrefix();
-if (prefix.length > 0) {
-  const existingPath = env.Path ?? env.PATH ?? "";
-  env.PATH = `${prefix.join(";")};${existingPath}`;
-  env.Path = env.PATH;
-}
 
 function selectDynamicFeatureSet(featureSet) {
   const featuresIndex = args.indexOf("--features");

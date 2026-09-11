@@ -17,6 +17,7 @@ import {
 } from "./dev-port.mjs";
 import { stageVendorArtifact } from "./stage-opkssh-vendor.mjs";
 import { stageFileViewerHost } from "./stage-file-viewer-host.mjs";
+import { buildNativeChildEnvironment } from "./lib/native-child-env.mjs";
 
 const require = createRequire(import.meta.url);
 const tauriConfigPath = fileURLToPath(
@@ -64,6 +65,7 @@ export function buildTauriLaunchPlan({
   passthrough = [],
   baseEnv = process.env,
   securityOverride,
+  nativeEnvironmentOptions,
 } = {}) {
   const port = parseDevPort(portValue);
   const devUrl = `http://localhost:${port}`;
@@ -77,7 +79,11 @@ export function buildTauriLaunchPlan({
     port,
     devUrl,
     env: {
-      ...baseEnv,
+      ...buildNativeChildEnvironment({
+        ...nativeEnvironmentOptions,
+        baseEnv,
+        argv: passthrough,
+      }),
       SORNG_DEV_PORT: String(port),
       SORNG_DEV_PORT_RESOLVED: "1",
       SORNG_TAURI_MANAGED_DEV: "1",
@@ -104,15 +110,21 @@ export function prepareTauriDevOpkssh(
   });
 }
 
-export async function main(passthrough = process.argv.slice(2)) {
-  const log = (message) => console.log(`[tauri-dev] ${message}`);
+export async function main(
+  passthrough = process.argv.slice(2),
+  dependencies = {},
+) {
+  const host = dependencies.process ?? process;
+  const baseEnv = dependencies.env ?? host.env;
+  const log =
+    dependencies.log ?? ((message) => console.log(`[tauri-dev] ${message}`));
   const preferred = parseDevPort(
-    process.env.SORNG_DEV_PORT ?? DEFAULT_PORT,
+    baseEnv.SORNG_DEV_PORT ?? DEFAULT_PORT,
     "SORNG_DEV_PORT",
   );
 
-  assertNoManagedDevLock();
-  const selected = await resolveDevPort({
+  (dependencies.assertNoManagedDevLock ?? assertNoManagedDevLock)();
+  const selected = await (dependencies.resolveDevPort ?? resolveDevPort)({
     preferred,
     fixed: false,
     log,
@@ -120,6 +132,8 @@ export async function main(passthrough = process.argv.slice(2)) {
   const plan = buildTauriLaunchPlan({
     port: selected.port,
     passthrough,
+    baseEnv,
+    nativeEnvironmentOptions: dependencies.nativeEnvironmentOptions,
   });
 
   log(`dev server will use port ${plan.port} (${selected.action})`);
@@ -130,31 +144,44 @@ export async function main(passthrough = process.argv.slice(2)) {
   log(
     "Checking the embedded OPKSSH runtime before native launch; explicit CLI-only opt-out uses SORNG_OPKSSH_VENDOR_DISABLE_BRIDGE=1.",
   );
-  prepareTauriDevOpkssh(passthrough, plan.env, log);
-  stageFileViewerHost({ argv: passthrough, env: plan.env, log });
+  (dependencies.prepareTauriDevOpkssh ?? prepareTauriDevOpkssh)(
+    passthrough,
+    plan.env,
+    log,
+  );
+  (dependencies.stageFileViewerHost ?? stageFileViewerHost)({
+    argv: passthrough,
+    env: plan.env,
+    log,
+  });
 
   const tauriBin = require.resolve("@tauri-apps/cli/tauri.js");
-  const child = spawn(process.execPath, [tauriBin, ...plan.tauriArgs], {
-    stdio: "inherit",
-    env: plan.env,
-    shell: false,
-  });
+  const child = (dependencies.spawn ?? spawn)(
+    host.execPath,
+    [tauriBin, ...plan.tauriArgs],
+    {
+      stdio: "inherit",
+      env: plan.env,
+      shell: false,
+    },
+  );
 
   const forward = (signal) => {
     if (!child.killed) child.kill(signal);
   };
-  process.on("SIGINT", () => forward("SIGINT"));
-  process.on("SIGTERM", () => forward("SIGTERM"));
+  host.on("SIGINT", () => forward("SIGINT"));
+  host.on("SIGTERM", () => forward("SIGTERM"));
   child.on("exit", (code, signal) => {
-    if (signal) process.kill(process.pid, signal);
-    else process.exit(code ?? 0);
+    if (signal) host.kill(host.pid, signal);
+    else host.exit(code ?? 0);
   });
   child.on("error", (error) => {
     console.error(
       `[tauri-dev] failed to launch Tauri: ${error?.stack || error}`,
     );
-    process.exit(1);
+    host.exit(1);
   });
+  return child;
 }
 
 function isDirectExecution() {

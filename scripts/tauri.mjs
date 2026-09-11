@@ -13,9 +13,9 @@ export function routeTauriArguments(args) {
     : { managed: false, args: [...args] };
 }
 
-export async function main(args = process.argv.slice(2)) {
+export async function main(args = process.argv.slice(2), managedDependencies) {
   const route = routeTauriArguments(args);
-  if (route.managed) return managedDev(route.args);
+  if (route.managed) return managedDev(route.args, managedDependencies);
   const cli = createRequire(import.meta.url).resolve(
     "@tauri-apps/cli/tauri.js",
   );
