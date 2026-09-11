@@ -1,6 +1,11 @@
+import type {
+  DatabaseVaultArchive,
+  VaultArchiveImportResult,
+} from "./vaultArchive";
+
 /** Absence means legacy connection-local credentials, never a global vault. */
 export type ConnectionCredentialSource =
-  { kind: "local" } | { kind: "vault"; credentialId: string };
+  { kind: "local" } | { kind: "vault"; credentialId: string; totpId?: string };
 
 export interface VaultTotpFacet {
   id: string;
@@ -80,7 +85,7 @@ export type DatabaseCredentialChange =
   | { operation: "put"; entry: DatabaseCredentialEntry }
   | { operation: "delete"; id: string };
 
-/** A managed, unlocked owning database is mandatory. No global/legacy fallback. */
+/** An unlocked owning database with verified encrypted storage is mandatory. */
 export interface DatabaseCredentialVaultApi {
   scope: DatabaseCredentialScope | null;
   changeRevision: number;
@@ -96,4 +101,24 @@ export interface DatabaseCredentialVaultApi {
     snapshot: DatabaseCredentialSnapshot,
     changes: readonly DatabaseCredentialChange[],
   ): Promise<void>;
+  /** Explicit private export; callers must encrypt before writing a file. */
+  exportArchive?(
+    snapshot: DatabaseCredentialSnapshot,
+    credentialIds: readonly string[],
+    connectionIds: readonly string[],
+  ): Promise<DatabaseVaultArchive>;
+  archiveConnections?(snapshot: DatabaseCredentialSnapshot): Promise<
+    {
+      id: string;
+      name: string;
+      protocol: string;
+      hostname: string;
+      credentialId: string;
+    }[]
+  >;
+  /** Append remapped credentials and links together in one durable transaction. */
+  importArchive?(
+    snapshot: DatabaseCredentialSnapshot,
+    archive: DatabaseVaultArchive,
+  ): Promise<VaultArchiveImportResult>;
 }

@@ -26,7 +26,7 @@ export const FACET_LABELS: Record<DatabaseCredentialFacet, string> = {
 };
 
 const failureMessage =
-  "The credential vault could not be read or saved. Keep your draft, unlock and reload the owning database, then retry. No fallback store was used.";
+  "The credential vault could not be read or saved. Keep your draft, unlock and reload the owning database, then retry. Protect the current database or enable unlocked app-wide encryption for connection data in Security settings. No fallback store was used.";
 
 /** One owner-keyed editor lifetime. Secret values are never included in list rows. */
 export function useDatabaseCredentialVault(api: DatabaseCredentialVaultApi) {

@@ -1,5 +1,13 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { KeyRound, Plus, RefreshCw, Search, ShieldAlert } from "lucide-react";
+import {
+  KeyRound,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Upload,
+  Download,
+} from "lucide-react";
 import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
 import type {
   DatabaseCredentialSnapshot,
@@ -12,6 +20,9 @@ import {
 } from "../../hooks/security/useDatabaseCredentialVault";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import CredentialEntryForm from "./databaseCredentialVault/CredentialEntryForm";
+const VaultArchiveDialog = React.lazy(
+  () => import("./databaseCredentialVault/VaultArchiveDialog"),
+);
 
 interface Props {
   onDirtyChange?: (value: boolean) => void;
@@ -24,6 +35,11 @@ function VaultWorkspace({
   onBusyChange,
 }: Props & { api: DatabaseCredentialVaultApi }) {
   const mgr = useDatabaseCredentialVault(api);
+  const [archive, setArchive] = useState<{
+    mode: "import" | "export";
+    snapshot: DatabaseCredentialSnapshot;
+  } | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(0);
   const [review, setReview] = useState<{
@@ -39,11 +55,11 @@ function VaultWorkspace({
     return () => onDirtyChange?.(false);
   }, [mgr.dirty, onDirtyChange]);
   useEffect(() => {
-    onBusyChange?.(mgr.busy);
+    onBusyChange?.(mgr.busy || archiveBusy);
     return () => onBusyChange?.(false);
-  }, [mgr.busy, onBusyChange]);
+  }, [mgr.busy, archiveBusy, onBusyChange]);
   const request = (action: () => void) => {
-    if (mgr.busy) return;
+    if (mgr.busy || archiveBusy) return;
     if (mgr.dirty) {
       const next = {
         id: crypto.randomUUID(),
@@ -86,6 +102,39 @@ function VaultWorkspace({
           credentials
         </span>
         <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={mgr.busy || mgr.loading || !mgr.snapshot || archiveBusy}
+            onClick={() =>
+              request(() => {
+                mgr.discard();
+                setArchive({ mode: "import", snapshot: mgr.snapshot! });
+              })
+            }
+          >
+            <Upload size={14} />
+            Import archive
+          </button>
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={
+              mgr.busy ||
+              mgr.loading ||
+              !mgr.snapshot?.entries.length ||
+              archiveBusy
+            }
+            onClick={() =>
+              request(() => {
+                mgr.discard();
+                setArchive({ mode: "export", snapshot: mgr.snapshot! });
+              })
+            }
+          >
+            <Download size={14} />
+            Export archive
+          </button>
           <button
             type="button"
             className="sor-btn sor-btn-secondary"
@@ -249,6 +298,25 @@ function VaultWorkspace({
           </>
         )}
       </div>
+      {archive && (
+        <React.Suspense
+          fallback={
+            <p role="status" className="p-4">
+              Loading encrypted archive controls…
+            </p>
+          }
+        >
+          <VaultArchiveDialog
+            key={`${credentialVaultScopeKey(api)}:${archive.snapshot.receipt}`}
+            api={api}
+            snapshot={archive.snapshot}
+            mode={archive.mode}
+            onClose={() => setArchive(null)}
+            onImported={mgr.reload}
+            onBusyChange={setArchiveBusy}
+          />
+        </React.Suspense>
+      )}
       <ConfirmDialog
         isOpen={!!review}
         title={
@@ -287,9 +355,10 @@ export default function DatabaseCredentialVault(props: Props) {
           Database credential vault unavailable
         </h2>
         <p>
-          Open and unlock the owning database. Vault credentials require native
-          managed protection (Settings → Security → Current database); no global
-          or plaintext fallback is used.
+          Open and unlock the owning database. Protect it in Settings → Security
+          → Current database, or enable unlocked app-wide encryption for
+          connection data. No plaintext or unrelated global vault fallback is
+          used.
         </p>
       </section>
     );

@@ -345,10 +345,18 @@ export function normalizeConnectionCredentialSource(
   value: unknown,
 ): ConnectionCredentialSource | undefined {
   if (value === undefined) return undefined;
-  const row = object(value, ["kind"], ["credentialId"]);
-  if (row.kind === "local" && !hasOwn(row, "credentialId"))
+  const row = object(value, ["kind"], ["credentialId", "totpId"]);
+  if (
+    row.kind === "local" &&
+    !hasOwn(row, "credentialId") &&
+    !hasOwn(row, "totpId")
+  )
     return { kind: "local" };
   if (row.kind === "vault")
-    return { kind: "vault", credentialId: id(row.credentialId) };
+    return {
+      kind: "vault",
+      credentialId: id(row.credentialId),
+      ...(hasOwn(row, "totpId") ? { totpId: id(row.totpId) } : {}),
+    };
   return invalid();
 }

@@ -57,6 +57,11 @@ import {
   selectDatabaseCredentialFacets,
 } from "../utils/security/databaseCredentialVault";
 import { AutomationLibraryAccessError } from "../utils/recording/automationLibraryAccess";
+import {
+  normalizeDatabaseVaultArchive,
+  prepareVaultArchiveConnection,
+  prepareVaultArchiveImport,
+} from "../utils/security/vaultArchive";
 import { getInvoke } from "../utils/tauri/invoke";
 import {
   ConnectionState,
@@ -469,6 +474,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         scope: DatabaseCredentialScope;
         data: DatabaseCredentialVault;
         target: DatabaseDataTarget;
+        connectionRevision: number;
       }
     >(),
   );
@@ -1823,10 +1829,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     void recycleAccessGeneration;
     let scope: DatabaseCredentialScope | null = null;
     try {
-      if (
-        !recycleLoading &&
-        databaseManager.getCurrentDatabase()?.protectionFormat === "sorng-db"
-      ) {
+      if (!recycleLoading && databaseManager.getCurrentDatabase()) {
         const current = captureRecycleScope();
         scope = {
           databaseId: current.databaseId,
@@ -1864,7 +1867,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       assertScope(expected);
       if (!(await getInvoke()))
         throw new Error(
-          "The credential vault requires the native desktop app and a managed protected database. No plaintext fallback was created.",
+          "The credential vault requires the native desktop app and encrypted database storage. No plaintext fallback was created.",
         );
       assertScope(expected);
       const target = activeDatabaseTargetRef.current;
@@ -1876,19 +1879,23 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         expected.databaseId,
       );
       assertScope(expected);
-      if (status.kind !== "managed")
+      if (
+        status.kind !== "managed" &&
+        status.globalEncryptionProtected !== true
+      )
         throw new Error(
-          "Protect the current database with managed protection first (Settings → Security → Current database).",
+          "Protect this database in Settings → Security → Current database, or enable global Connections encryption and encrypt its existing file. Merely unlocking the global key is not sufficient.",
         );
       if (
-        !status.unlocked ||
-        !status.securityRevision ||
+        typeof status.securityRevision !== "string" ||
         status.securityRevision !==
-          databaseManager.getCurrentDatabase()?.securityRevision ||
+          (databaseManager.getCurrentDatabase()?.securityRevision ?? "") ||
+        (status.kind === "managed" &&
+          (!status.unlocked || !status.securityRevision)) ||
         target !== activeDatabaseTargetRef.current
       )
         throw new Error(
-          "The managed database lease changed. Unlock and reload before using its credential vault.",
+          "The protected database lease changed. Unlock and reload before using its credential vault.",
         );
       target.assertAccessible();
       return target;
@@ -1961,7 +1968,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             vaultReviewsRef.current.keys().next().value!,
           );
         const receipt = crypto.randomUUID();
-        vaultReviewsRef.current.set(receipt, { scope: expected, data, target });
+        vaultReviewsRef.current.set(receipt, {
+          scope: expected,
+          data,
+          target,
+          connectionRevision: dirtyRevisionRef.current,
+        });
         return {
           scope: { ...expected },
           revision: data.revision,
@@ -1981,6 +1993,166 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             "The selected vault credential is unavailable. Select a credential from this database.",
           );
         return selectDatabaseCredentialFacets(entry, requested);
+      },
+      async archiveConnections(snapshot) {
+        const captured = { ...snapshot, scope: { ...snapshot.scope } };
+        const prior = reviewed(captured);
+        await verify(prior.scope);
+        reviewed(captured);
+        if (prior.connectionRevision !== dirtyRevisionRef.current)
+          throw new Error(
+            "Connections changed. Reload the vault before reviewing an export.",
+          );
+        return connectionsRef.current.flatMap((connection) =>
+          !connection.isGroup && connection.credentialSource?.kind === "vault"
+            ? [
+                {
+                  id: connection.id,
+                  name: connection.name,
+                  protocol: connection.protocol,
+                  hostname: connection.hostname,
+                  credentialId: connection.credentialSource.credentialId,
+                },
+              ]
+            : [],
+        );
+      },
+      async exportArchive(snapshot, credentialIds, connectionIds) {
+        const captured = { ...snapshot, scope: { ...snapshot.scope } };
+        const credentials = new Set(credentialIds),
+          connections = new Set(connectionIds);
+        if (
+          credentials.size !== credentialIds.length ||
+          connections.size !== connectionIds.length
+        )
+          throw new Error("Review each export item only once.");
+        const prior = reviewed(captured);
+        await verify(prior.scope);
+        const current = reviewed(captured);
+        if (prior.connectionRevision !== dirtyRevisionRef.current)
+          throw new Error(
+            "Connections changed. Reload the vault before exporting.",
+          );
+        const selected = connectionsRef.current.filter((row) =>
+          connections.has(row.id),
+        );
+        const entries = current.data.entries.filter((row) =>
+          credentials.has(row.id),
+        );
+        if (
+          selected.length !== connections.size ||
+          entries.length !== credentials.size
+        )
+          throw new Error(
+            "Some export items are unavailable. Reload and review the selection.",
+          );
+        return normalizeDatabaseVaultArchive({
+          format: "sorng-vault-archive",
+          version: 1,
+          createdAt: new Date().toISOString(),
+          credentials: entries,
+          connections: selected.map(prepareVaultArchiveConnection),
+        });
+      },
+      async importArchive(snapshot, archive) {
+        const captured = { ...snapshot, scope: { ...snapshot.scope } };
+        const incoming = normalizeDatabaseVaultArchive(archive);
+        const prior = reviewed(captured);
+        if (
+          vaultBusyRef.current ||
+          documentsBusyRef.current ||
+          automationBusyRef.current ||
+          recycleBusyRef.current
+        )
+          throw new Error(
+            "Another private database edit is pending. Wait and review the import again.",
+          );
+        vaultBusyRef.current = true;
+        try {
+          const target = await verify(prior.scope);
+          const current = reviewed(captured);
+          const before = buildStorageSnapshot();
+          const proposed = prepareVaultArchiveImport(
+            before.connections,
+            current.data,
+            incoming,
+          );
+          const added = proposed.connections
+            .slice(before.connections.length)
+            .map(normalizeLoadedConnection);
+          const data = {
+            ...before,
+            connections: [...before.connections, ...added],
+            credentialVault: proposed.credentialVault,
+          };
+          const write = (async () => {
+            try {
+              await target.save(data);
+              assertScope(prior.scope);
+              if (target !== activeDatabaseTargetRef.current)
+                throw new Error("The owning database changed during import.");
+              // save() verifies durable readback. Publish both halves together;
+              // any concurrent ordinary connection edits remain in the live tree.
+              const ids = new Set(connectionsRef.current.map((row) => row.id));
+              if (added.some((row) => ids.has(row.id)))
+                throw new Error(
+                  "A concurrent connection ID conflicts with the imported archive.",
+                );
+              loadedStorageRef.current = {
+                ...loadedStorageRef.current!,
+                credentialVault: proposed.credentialVault,
+              };
+              const merged = [...connectionsRef.current, ...added];
+              connectionsRef.current = merged;
+              stateRef.current = { ...stateRef.current, connections: merged };
+              for (const row of added) {
+                try {
+                  activateConnectionNotes(row.id);
+                } catch {
+                  /* Notes remain independently guarded. */
+                }
+              }
+              baseDispatch({ type: "SET_CONNECTIONS", payload: merged });
+              vaultReviewsRef.current.clear();
+              setVaultChangeRevision((value) => value + 1);
+            } catch {
+              if (
+                prior.scope.generation === loadGenerationRef.current &&
+                target === activeDatabaseTargetRef.current
+              )
+                vaultFaultRef.current = true;
+              vaultReviewsRef.current.clear();
+              throw new Error(
+                "Vault import could not be verified. Reload the database before retrying; no automatic retry was made.",
+              );
+            }
+          })();
+          saveLoopRef.current = write;
+          try {
+            await write;
+          } finally {
+            if (saveLoopRef.current === write) saveLoopRef.current = null;
+          }
+          let warning: string | undefined;
+          if (dirtyRevisionRef.current > persistedRevisionRef.current) {
+            try {
+              await flushPendingSave();
+            } catch {
+              // The archive pair was already committed and published above.
+              // Keep the ordinary save fault/draft intact without inviting a
+              // duplicate import as a retry for that separate failed autosave.
+              warning =
+                "The archive was imported, but pending connection edits could not be saved. Keep your draft and resolve the database save error; do not repeat this import.";
+            }
+          }
+          return {
+            credentialCount: proposed.credentialCount,
+            connectionCount: proposed.connectionCount,
+            ...(warning ? { warning } : {}),
+          };
+        } finally {
+          vaultBusyRef.current = false;
+        }
       },
       async compareAndSwap(snapshot, changes) {
         const captured = { ...snapshot, scope: { ...snapshot.scope } };

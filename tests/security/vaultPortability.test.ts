@@ -21,6 +21,13 @@ describe("vault portability guard", () => {
     expect(() => assertPortableCredentialSources(connections)).not.toThrow();
     expect(connections).toEqual(before);
   });
+  it("directs vault archives to the dedicated encrypted import instead of accepting an empty generic import", () => {
+    for (const format of ["sorng-vault-encrypted", "sorng-vault-archive"])
+      expect(() =>
+        assertNoVaultImport({ format, version: 1, payload: "ciphertext" }),
+      ).toThrow(VAULT_PORTABILITY_MESSAGE);
+    expect(VAULT_PORTABILITY_MESSAGE).toContain("password-encrypted archive");
+  });
 
   it.each([
     connection.credentialSource,

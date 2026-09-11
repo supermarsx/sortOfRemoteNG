@@ -1770,6 +1770,10 @@ export class DatabaseManager {
     includePasswords: boolean,
     trustRecords?: TrustExportDocument | null,
   ): DatabaseExportSnapshot {
+    // Generic database JSON cannot carry the vault's dependency closure. Do not
+    // emit orphan credential IDs (or activate ignored local credentials by
+    // dropping them); the reviewed encrypted vault archive owns this workflow.
+    assertNoVaultImport(data);
     const automationLibrary =
       data.automationLibrary === undefined
         ? undefined

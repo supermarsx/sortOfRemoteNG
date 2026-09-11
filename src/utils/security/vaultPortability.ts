@@ -1,5 +1,5 @@
 export const VAULT_PORTABILITY_MESSAGE =
-  "Importing or copying selected database-vault credentials is not supported yet. Choose connection-local credentials explicitly in the source connection, or duplicate the entire protected database. No connections or vault credentials were copied.";
+  "This format cannot carry database-vault credentials or their references safely. Use the password-encrypted archive in Database credential vault → Export archive, including the linked connections, or duplicate the entire protected database. No connections or vault credentials were copied.";
 
 export class VaultPortabilityError extends Error {
   constructor() {
@@ -41,6 +41,11 @@ export function assertNoVaultImport(payload: unknown): void {
       return;
     }
     if (!record(value)) return;
+    if (
+      value.format === "sorng-vault-encrypted" ||
+      value.format === "sorng-vault-archive"
+    )
+      throw new VaultPortabilityError();
     // Even an empty, null, or malformed declared vault must not be silently lost.
     if ("credentialVault" in value) throw new VaultPortabilityError();
     if (Array.isArray(value.connections))

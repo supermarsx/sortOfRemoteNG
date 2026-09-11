@@ -91,6 +91,32 @@ describe("full database Recycle Bin portability", () => {
     vi.restoreAllMocks();
   });
 
+  it.each(["live", "archived", "declared-vault"])(
+    "refuses incomplete generic exports with %s vault data before producing a file payload",
+    async (location) => {
+      const data = fixture();
+      const source = {
+        kind: "vault" as const,
+        credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      };
+      if (location === "live") data.connections[0].credentialSource = source;
+      else if (location === "archived")
+        data.recycleBin!.entries[0].connection.credentialSource = source;
+      else data.credentialVault = { version: 1, revision: 0, entries: [] };
+      await manager.saveDatabaseData(id, data);
+      const before = await manager.loadDatabaseData(id);
+      for (const includePasswords of [false, true]) {
+        await expect(
+          manager.exportDatabase(id, includePasswords),
+        ).rejects.toThrow(/password-encrypted archive/);
+        await expect(
+          manager.readExportableDatabaseSnapshot(id, includePasswords),
+        ).rejects.toThrow(/password-encrypted archive/);
+      }
+      expect(await manager.loadDatabaseData(id)).toEqual(before);
+    },
+  );
+
   it("redacts nested archived secrets and secret-like names while remaining importable", async () => {
     const json = await manager.exportDatabase(id, false);
     const exported = JSON.parse(json) as StorageData;
