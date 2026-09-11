@@ -61,6 +61,8 @@ beforeEach(() => {
     "Worker",
     "SharedWorker",
     "RTCPeerConnection",
+    "webkitRTCPeerConnection",
+    "mozRTCPeerConnection",
     "WebTransport",
   ]) {
     vi.stubGlobal(
@@ -89,6 +91,168 @@ function start(value = config()) {
 }
 
 describe("proxy routing compatibility client (not native egress proof)", () => {
+  const rtcNames = [
+    "RTCPeerConnection",
+    "webkitRTCPeerConnection",
+    "mozRTCPeerConnection",
+  ];
+  function optionalAddressProbe(host: Record<string, unknown>) {
+    const addresses: string[] = [];
+    const Peer = host.webkitRTCPeerConnection || host.mozRTCPeerConnection;
+    if (Peer)
+      new (Peer as new (options: unknown) => unknown)({ iceServers: [] });
+    const local = addresses.length === 1 ? addresses[0] : "";
+    return { local, preferHttpsWan: local === "" };
+  }
+  function isolatedHost() {
+    const host = Object.create(window) as Window & Record<string, unknown>;
+    Object.defineProperties(host, {
+      addEventListener: { value: window.addEventListener.bind(window) },
+      removeEventListener: { value: window.removeEventListener.bind(window) },
+    });
+    return host;
+  }
+  function installInHost(host: Window & Record<string, unknown>) {
+    const factory = window.eval(
+      `(function(window){${source}\nreturn installWebNetworkClient;})`,
+    );
+    controller = factory(host)(config(), report);
+  }
+  it("makes all RTC feature checks unavailable and skips optional local-IP discovery", () => {
+    const control = vi.fn(function () {
+      throw new DOMException("Blocked", "SecurityError");
+    });
+    expect(() =>
+      optionalAddressProbe({ webkitRTCPeerConnection: control }),
+    ).toThrow();
+    expect(control).toHaveBeenCalledOnce();
+    start();
+    for (const name of rtcNames) {
+      expect(
+        (window as unknown as Record<string, unknown>)[name],
+      ).toBeUndefined();
+      expect(name in window).toBe(false);
+    }
+    expect(
+      optionalAddressProbe(window as unknown as Record<string, unknown>),
+    ).toEqual({ local: "", preferHttpsWan: true });
+    expect(constructed).toHaveLength(0);
+    expect(report).not.toHaveBeenCalled();
+  });
+  it("keeps RTC unavailable on pagehide/BFCache and restores only at explicit cleanup", () => {
+    const original = rtcNames.map((name) =>
+      Object.getOwnPropertyDescriptor(window, name),
+    );
+    start();
+    window.dispatchEvent(new Event("pagehide"));
+    window.dispatchEvent(
+      new PageTransitionEvent("pageshow", { persisted: true }),
+    );
+    for (const name of rtcNames) expect(name in window).toBe(false);
+    controller!.dispose();
+    rtcNames.forEach((name, index) =>
+      expect(Object.getOwnPropertyDescriptor(window, name)).toEqual(
+        original[index],
+      ),
+    );
+    controller = undefined;
+  });
+  it("does not overwrite a page replacement after deleting an RTC global", () => {
+    start();
+    Object.defineProperty(window, "webkitRTCPeerConnection", {
+      configurable: true,
+      value: undefined,
+    });
+    const replacement = Object.getOwnPropertyDescriptor(
+      window,
+      "webkitRTCPeerConnection",
+    );
+    controller!.dispose();
+    controller = undefined;
+    expect(
+      Object.getOwnPropertyDescriptor(window, "webkitRTCPeerConnection"),
+    ).toEqual(replacement);
+  });
+  it("shadows inherited RTC constructors and preserves a replaced mask descriptor", () => {
+    const host = isolatedHost();
+    installInHost(host);
+    for (const name of rtcNames) {
+      expect(host[name]).toBeUndefined();
+      expect(
+        Object.getOwnPropertyDescriptor(host, name)?.value,
+      ).toBeUndefined();
+    }
+    const get = () => undefined;
+    Object.defineProperty(host, "webkitRTCPeerConnection", {
+      configurable: true,
+      get,
+    });
+    controller!.dispose();
+    controller = undefined;
+    expect(
+      Object.getOwnPropertyDescriptor(host, "webkitRTCPeerConnection")?.get,
+    ).toBe(get);
+    expect(
+      Object.getOwnPropertyDescriptor(host, "RTCPeerConnection"),
+    ).toBeUndefined();
+  });
+  it("masks a nonconfigurable writable RTC value without changing its flags", () => {
+    const host = isolatedHost();
+    const original = vi.fn();
+    Object.defineProperty(host, "RTCPeerConnection", {
+      value: original,
+      writable: true,
+      configurable: false,
+    });
+    const descriptor = Object.getOwnPropertyDescriptor(
+      host,
+      "RTCPeerConnection",
+    );
+    installInHost(host);
+    expect(host.RTCPeerConnection).toBeUndefined();
+    expect(
+      Object.getOwnPropertyDescriptor(host, "RTCPeerConnection")?.configurable,
+    ).toBe(false);
+    controller!.dispose();
+    controller = undefined;
+    expect(Object.getOwnPropertyDescriptor(host, "RTCPeerConnection")).toEqual(
+      descriptor,
+    );
+    expect(original).not.toHaveBeenCalled();
+  });
+  it("reports immutable RTC host limits without invoking a peer or aborting other routing", async () => {
+    const host = isolatedHost();
+    const original = vi.fn();
+    Object.defineProperty(host, "RTCPeerConnection", {
+      value: original,
+      writable: false,
+      configurable: false,
+    });
+    expect(() => installInHost(host)).not.toThrow();
+    expect(host.RTCPeerConnection).toBe(original);
+    expect(original).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "compatibility",
+        reason: "unavailable-interceptor",
+      }),
+    );
+    await host.fetch(`${upstream}/safe`);
+    expect(fetch).toHaveBeenCalledWith(`${proxy}/safe`, undefined);
+    await expect(
+      host.fetch("https://foreign.example/private"),
+    ).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("does not create RTC globals when native aliases are already absent", () => {
+    rtcNames.forEach((name) => Reflect.deleteProperty(window, name));
+    start();
+    rtcNames.forEach((name) => expect(name in window).toBe(false));
+    expect(report).not.toHaveBeenCalled();
+    controller!.dispose();
+    controller = undefined;
+    rtcNames.forEach((name) => expect(name in window).toBe(false));
+  });
   const fontUrl =
     "https://synostatic.synology.com/font/inter/inter-w400-1.woff2";
   const fontPath =

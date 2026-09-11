@@ -339,12 +339,54 @@ function installWebNetworkClient(configuration, reportBlocked) {
   wrapConstructor("EventSource", "eventsource");
   wrapConstructor("WebSocket", "websocket");
   [
-    "Worker",
-    "SharedWorker",
     "RTCPeerConnection",
     "webkitRTCPeerConnection",
-    "WebTransport",
+    "mozRTCPeerConnection",
   ].forEach(function (name) {
+    // Optional browser feature detection must see an unavailable API, not a
+    // truthy constructor which throws when a vendor probes local addresses.
+    // This remains compatibility handling, never a native WebRTC firewall.
+    var original = Object.getOwnPropertyDescriptor(window, name);
+    try {
+      if (original?.configurable) Reflect.deleteProperty(window, name);
+      if (window[name] !== undefined) {
+        var remaining = Object.getOwnPropertyDescriptor(window, name);
+        if (remaining && !remaining.configurable) {
+          Object.defineProperty(window, name, { value: undefined });
+        } else {
+          // Deleting an own property can expose an inherited constructor.
+          Object.defineProperty(window, name, {
+            configurable: true,
+            writable: true,
+            value: undefined,
+          });
+        }
+      }
+      if (window[name] !== undefined)
+        throw new TypeError("RTC capability could not be masked");
+      var masked = Object.getOwnPropertyDescriptor(window, name);
+      restores.push(function () {
+        var current = Object.getOwnPropertyDescriptor(window, name);
+        var stillOwned = masked
+          ? current &&
+            current.value === undefined &&
+            current.get === masked.get &&
+            current.set === masked.set &&
+            current.configurable === masked.configurable &&
+            current.writable === masked.writable &&
+            current.enumerable === masked.enumerable
+          : !current && window[name] === undefined;
+        if (!stillOwned) return;
+        if (original) Object.defineProperty(window, name, original);
+        else Reflect.deleteProperty(window, name);
+      });
+    } catch (_) {
+      // An immutable native host cannot be masked by this JS layer. Preserve
+      // the other routing hooks and report the known containment limitation.
+      blocked("compatibility", "unavailable-interceptor");
+    }
+  });
+  ["Worker", "SharedWorker", "WebTransport"].forEach(function (name) {
     if (typeof window[name] === "function")
       replace(window, name, function () {
         throw blocked(name, "unsupported-network-context");

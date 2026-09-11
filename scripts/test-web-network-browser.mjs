@@ -97,12 +97,33 @@ const server = createServer(async (request, response) => {
     response.end(`<!doctype html><html><head><title>Synthetic proxy fixture</title><link rel="stylesheet" href="/rewritten-font.css"><script>window.onerror=function(message){fetch('/result',{method:'POST',body:JSON.stringify([{name:'page startup',ok:false,error:String(message)}])});};</script></head><body><script>
 const originalFetch = window.fetch.bind(window);
 const OriginalFontFace=window.FontFace;
+// Never call a native peer. Replace only its constructor entry points with a
+// counting tripwire, retaining actual host property flags for the mask proof.
+let constructedPeers=0;
+const rtcNames=['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection'];
+const nativeRtcDescriptors=rtcNames.map(name=>({name,descriptor:Object.getOwnPropertyDescriptor(window,name)}));
+if(!nativeRtcDescriptors.some(item=>item.name==='RTCPeerConnection'&&item.descriptor))throw Error('Expected the installed browser RTC host descriptor');
+for(const name of rtcNames){
+ const descriptor=Object.getOwnPropertyDescriptor(window,name);
+ if(descriptor&&!descriptor.configurable&&!descriptor.writable)throw Error('Immutable RTC host cannot run this synthetic tripwire');
+ Object.defineProperty(window,name,{...descriptor,configurable:descriptor?.configurable??true,writable:descriptor?.writable??true,value:function(){constructedPeers++;throw Error('RTC constructor tripwire');}});
+}
 ${source}
 const reports=[];
 installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push(report);});
 (async function(){
  const results=[];
  async function check(name,run){try{await Promise.race([run(),new Promise((_,reject)=>setTimeout(()=>reject(Error('Case timed out')),5000))]);results.push({name,ok:true});}catch(error){results.push({name,ok:false,error:String(error)});}}
+ await check('RTC optional discovery sees unavailable APIs without constructing peers',async()=>{
+   for(const name of rtcNames){if(window[name]||typeof window[name]==='function'||name in window)throw Error('RTC capability still advertised');}
+   const addresses=[];const Peer=window.webkitRTCPeerConnection||window.mozRTCPeerConnection;
+   if(Peer)new Peer({iceServers:[]});
+   const local=addresses.length===1?addresses[0]:'';
+   const preferHttpsWan=local===''&&true;
+   if(local!==''||!preferHttpsWan||constructedPeers!==0)throw Error('Optional discovery did not preserve HTTPS path');
+   if(reports.some(r=>r.reason==='unsupported-network-context'))throw Error('Mask invented a blocked request');
+   if(preferHttpsWan){const response=await fetch('https://source.example/rtc-https-fallback');if(!response.ok)throw Error('HTTPS fallback fetch failed');}
+ });
  await check('FontFace uses exact routed font and document.fonts',async()=>{
    const face=new FontFace('FontFaceFixture','url("${fontUrl}") format("woff2")',{weight:'400'});
    document.fonts.add(face); await face.load();
@@ -179,6 +200,12 @@ installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push
    const pending=fetch(new Request('https://source.example/aborted',{method:'POST',body,duplex:'half',signal:signal.signal}));
    signal.abort();let rejected=false;try{await pending;}catch(_){rejected=true;}
    if(!rejected||!cancelled)throw Error('Abort did not cancel body');
+ });
+ await check('RTC masking persists through pagehide and cached return',async()=>{
+   window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true}));
+   window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));
+   for(const name of rtcNames){if(window[name]||name in window)throw Error('RTC restored on cached return');}
+   if(constructedPeers!==0)throw Error('RTC native tripwire invoked');
  });
  await originalFetch('/result',{method:'POST',body:JSON.stringify(results)});
  document.body.textContent=JSON.stringify(results);
@@ -282,6 +309,7 @@ try {
       .filter((item) => item.method !== "WEBSOCKET")
       .map(({ url, method, body }) => ({ url, method, body })),
     [
+      { url: "/rtc-https-fallback", method: "GET", body: "" },
       { url: "/string", method: "POST", body: "string-body" },
       { url: "/stream", method: "POST", body: "stream-body" },
       { url: "/override", method: "PUT", body: "override-body" },

@@ -92,6 +92,19 @@ depending on foreign services report blocked resources or remain incomplete.
 Workers, SharedWorkers, service-worker registration, WebRTC, and WebTransport
 are not supported by this embedded routing slice. Worker creation is blocked
 by response policy, and the document client refuses unsupported constructors.
+The three RTC constructor aliases (`RTCPeerConnection`,
+`webkitRTCPeerConnection`, and `mozRTCPeerConnection`) are presented as
+unavailable where the host permits masking them. A truthy throwing replacement
+would incorrectly advertise support and crash optional feature detection.
+QuickConnect, for example, checks the prefixed aliases before using ICE host
+candidates for optional same-subnet discovery; their absence lets that probe
+stay empty while its normal HTTPS WAN/relay branches remain available. No RTC
+transport, HTTP origin, or certificate trust is approved by this behavior.
+
+If a native host property cannot be masked, the bridge reports an unavailable
+interceptor. That advisory error is not a containment mechanism, and throwing
+an exception alone cannot stop parser-initiated networking. This compatibility
+limitation must not be interpreted as a safe direct-connection fallback.
 JavaScript wrappers are compatibility controls that a page can tamper with;
 they do not prove containment of WebRTC, every alternate realm, speculative
 engine traffic, or other browser-internal connections. No process-wide egress
@@ -155,3 +168,15 @@ the compatibility bridge in installed headless Edge using synthetic endpoints.
 This is not a native-proxy or whole-engine containment test. The ambient-proxy
 regression above changes proxy environment variables only in an isolated test
 child process, never in the application or the shared test process.
+
+The optional RTC probe was checked against published QuickConnect webpack
+module 411 in
+[`connect_lib.da3fae9c5d057ef58d3a.bundle.js`](https://quickconnect.to/connect_lib.da3fae9c5d057ef58d3a.bundle.js)
+(SHA-256 `96313fa8483c84482196c16c8bef073da181564849769f16ae56f51ff81383cd`,
+anonymous source inspection on 2026-09-11). An isolated VM executed that module
+without the application entrypoint or network APIs: the truthy blocked stub
+threw during construction; absent aliases made zero RTC calls, returned no
+local addresses, and retained its HTTPS WAN branch for synthetic inputs.
+Committed tests use a minimal synthetic equivalent rather than copying the
+vendor module. This is source/branch evidence, not a live NAS login or proof
+that every WAN/relay endpoint is permitted by the separate proxy policy.
