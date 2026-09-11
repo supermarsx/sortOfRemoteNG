@@ -200,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "winauth"))]
     fn parsing_sspi_authentication() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;IntegratedSecurity=SSPI;";
         let jdbc: JdbcConfig = test_str.parse()?;
@@ -222,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "winauth"))]
     fn parsing_windows_authentication() -> crate::Result<()> {
         let test_str =
             "jdbc:sqlserver://my-server.com:4200;uid=Musti;pwd=Naukio;IntegratedSecurity=SSPI;";

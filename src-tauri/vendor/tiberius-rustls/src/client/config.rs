@@ -310,7 +310,7 @@ pub(crate) trait ConfigString {
                 (None, None) => Ok(AuthMethod::Integrated),
                 _ => Ok(AuthMethod::windows(user.unwrap_or(""), pw.unwrap_or(""))),
             },
-            #[cfg(feature = "integrated-auth-gssapi")]
+            #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
             Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => {
                 Ok(AuthMethod::Integrated)
             }

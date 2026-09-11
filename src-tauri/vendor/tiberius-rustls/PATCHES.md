@@ -1,4 +1,4 @@
-# Local Tiberius TLS patch
+# Local Tiberius compatibility patches
 
 Base: crates.io `tiberius` **0.12.3**, upstream commit
 `c34fab2e14c52ab74519d073d7a7b65bd023fc1a` (retained `.cargo_vcs_info.json`).
@@ -6,7 +6,7 @@ Published `.crate` SHA-256:
 `a1446cb4198848d1562301a3340424b4f425ef79f35ef9ee034769a9dd92c10d`.
 Upstream: <https://github.com/prisma/tiberius>. MIT and Apache-2.0 license
 texts are retained unchanged. Other upstream source is unchanged except
-the TLS adapter and cosmetic normalization described below. The registry `.cargo-ok` marker and upstream
+the TLS adapter, authentication feature gates and cosmetic normalization described below. The registry `.cargo-ok` marker and upstream
 development `Cargo.lock` are omitted; the application workspace lock is authoritative.
 
 The retained `docker/certs/customCA.key` and `docker/certs/server.key` files
@@ -46,7 +46,36 @@ Supported protocol versions use Rustls safe defaults (TLS 1.2/1.3), with no
 fallback to obsolete TLS or plaintext.
 
 `Cargo.toml.orig` is retained as provenance, not the active manifest. No TDS,
-authentication, query, packet, or session implementation was changed.
+query, packet, or authentication/session behavior was changed.
+
+## Integrated-authentication helper feature gates
+
+The upstream Windows helper gates check only `windows`, even though their
+callers require the optional `winauth` feature. This produces five dead-code
+warnings in the application's SQL-authentication build. The helpers and their
+conditional import now use the exact union of their existing consumers:
+`all(windows, feature = "winauth")` or
+`all(unix, feature = "integrated-auth-gssapi")`.
+
+This additional patch changes only availability predicates in:
+
+- `src/client/connection.rs`: `TokenSspi` import and `Connection::flush_sspi`.
+- `src/tds/codec/login.rs`: `LoginMessage::integrated_security`.
+- `src/tds/codec/token/token_sspi.rs`: `TokenSspi::new`.
+- `src/tds/context.rs`: `Context::spn`.
+- `src/tds/stream/token.rs`: `TokenStream::flush_sspi`.
+- `src/client/config.rs`: the GSSAPI connection-string branch requires Unix,
+  matching the `AuthMethod::Integrated` variant and its existing caller.
+- `src/client/config/ado_net.rs` and `src/client/config/jdbc.rs`: four Windows
+  authentication parser tests require both Windows and `winauth`, matching
+  the optional authentication APIs they test.
+
+Windows authentication and Unix GSSAPI retain these helpers whenever their
+existing features are enabled. SQL authentication does not enable either
+optional backend merely to silence a warning. The SSPI token type, decoder,
+received-token variant and wire payload handling remain available regardless
+of authentication features. No functionality was deleted and no new
+`allow(dead_code)` or global warning suppression was added.
 
 ## Maintenance and acceptance
 
@@ -56,12 +85,17 @@ upstream release supports the current TLS stack. Rebase only after comparing
 these files and rerunning:
 
 ```text
+node ../scripts/native-build-env.mjs cargo rustc -p tiberius --lib --locked --offline --target-dir ../.artifacts/cargo-synology -- -D warnings
 node ../scripts/native-build-env.mjs cargo test -p sorng-mssql --locked --target-dir ../.artifacts/cargo-synology
 node ../scripts/native-build-env.mjs cargo clippy -p sorng-mssql --all-targets --locked --target-dir ../.artifacts/cargo-synology -- -D warnings
 node --test tests/tooling/nativeTlsBackends.node-test.mjs
+node --test tests/tooling/tiberiusAuthFeatures.node-test.mjs
 ```
 
 Cargo commands run from `src-tauri`; Node tooling tests run from the repo root.
+The direct driver gate uses the application's selected dependency features and
+treats warnings in Tiberius itself as errors; dependency warning caps in a
+consumer-only check are not a substitute.
 The SQL Server tests use synthetic loopback TDS prelogin and real TLS to prove
 verified CA success, untrusted/wrong-host/invalid-CA refusal, explicit bypass,
 provider independence, and no authenticated SQL session publication after a
