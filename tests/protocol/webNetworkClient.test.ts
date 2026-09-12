@@ -16,6 +16,15 @@ const config = () => ({
   proxyOrigin: proxy,
   mappings: [] as Array<{ upstreamOrigin: string; proxyOrigin: string }>,
 });
+interface ClientConfiguration extends ReturnType<typeof config> {
+  fontAssets?: Array<{ upstreamUrl: string; proxyUrl: string }>;
+  synologyQuickConnect?: {
+    version: number;
+    navigationOrigins: string[];
+    redirectEndpoint: string;
+    rpc?: { upstreamUrl: string; proxyUrl: string };
+  };
+}
 interface Controller {
   mapUrl(value: unknown, kind: string, local?: boolean): string;
   dispose(): void;
@@ -29,6 +38,7 @@ let report: ReturnType<typeof vi.fn<(value: unknown) => void>>;
 let fetch: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let beacon: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let xhrOpen: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
+let xhrHeader: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let constructed: Array<{ kind: string; args: unknown[] }>;
 const RealRequest = globalThis.Request;
 
@@ -39,6 +49,7 @@ beforeEach(() => {
   fetch = vi.fn().mockResolvedValue({ ok: true });
   beacon = vi.fn().mockReturnValue(true);
   xhrOpen = vi.fn();
+  xhrHeader = vi.fn();
   constructed = [];
   vi.stubGlobal("fetch", fetch);
   vi.stubGlobal("Request", RealRequest);
@@ -47,6 +58,9 @@ beforeEach(() => {
     class {
       open(...args: unknown[]) {
         xhrOpen(...args);
+      }
+      setRequestHeader(...args: unknown[]) {
+        xhrHeader(...args);
       }
     },
   );
@@ -86,11 +100,215 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
 });
-function start(value = config()) {
+function start(value: ClientConfiguration = config()) {
   return (controller = install(value, report));
 }
 
 describe("proxy routing compatibility client (not native egress proof)", () => {
+  const controlUrl = "https://global.quickconnect.to/Serv.php";
+  const controlProxy = proxy + "/__sortofremoteng_quickconnect_control_v1";
+  const redirectProxy = proxy + "/__sortofremoteng_quickconnect_redirect_v1";
+  const quickConfig = () => ({
+    ...config(),
+    synologyQuickConnect: {
+      version: 1,
+      navigationOrigins: [
+        "http://example-nas.quickconnect.to",
+        "https://global.quickconnect.to",
+        "https://www.quickconnect.to",
+      ],
+      redirectEndpoint: redirectProxy,
+      rpc: { upstreamUrl: controlUrl, proxyUrl: controlProxy },
+    },
+  });
+  it("rejects forged capability paths and keeps navigation-only capability free of RPC authority", async () => {
+    for (const change of [
+      { version: 2 },
+      { navigationOrigins: ["https://attacker.invalid"] },
+      { redirectEndpoint: proxy + "/wrong" },
+      {
+        rpc: {
+          upstreamUrl: "https://www.quickconnect.to/Serv.php",
+          proxyUrl: controlProxy,
+        },
+      },
+      {
+        rpc: {
+          upstreamUrl: controlUrl,
+          proxyUrl: otherProxy + "/__sortofremoteng_quickconnect_control_v1",
+        },
+      },
+    ]) {
+      const input = quickConfig();
+      expect(() =>
+        install(
+          {
+            ...input,
+            synologyQuickConnect: { ...input.synologyQuickConnect, ...change },
+          },
+          report,
+        ),
+      ).toThrow("Invalid QuickConnect");
+    }
+    const input = quickConfig();
+    const { rpc: _rpc, ...navigationOnly } = input.synologyQuickConnect;
+    start({ ...input, synologyQuickConnect: navigationOnly });
+    await expect(window.fetch(controlUrl, { method: "POST" })).rejects.toThrow(
+      "origin-not-approved",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(() => {
+      document.createElement("a").href = "https://www.quickconnect.to/";
+    }).not.toThrow();
+  });
+  it.each(["a", "area"])(
+    "preserves permitted %s URL parsing and routes only its click to native review",
+    (tag) => {
+      start(quickConfig());
+      const link = document.createElement(tag) as HTMLAnchorElement;
+      const destination =
+        "https://www.quickconnect.to/portal/?token=private#fragment";
+      link.href = destination;
+      expect(link.href).toBe(destination);
+      expect(link.hostname).toBe("www.quickconnect.to");
+      expect(report).not.toHaveBeenCalled();
+      document.body.append(link);
+      const clicked = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      link.addEventListener("click", (event) => event.preventDefault());
+      link.dispatchEvent(clicked);
+      const routed = new URL(link.href);
+      expect(routed.origin + routed.pathname).toBe(redirectProxy);
+      expect(routed.searchParams.get("destination")).toBe(destination);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(report).not.toHaveBeenCalled();
+    },
+  );
+  it("also routes parser-created permitted links but does not grant resource or form authority", () => {
+    start(quickConfig());
+    document.body.innerHTML =
+      '<a href="https://global.quickconnect.to/">Portal</a>';
+    const link = document.querySelector("a")!;
+    link.addEventListener("click", (event) => event.preventDefault());
+    link.click();
+    expect(link.href.startsWith(redirectProxy + "?destination=")).toBe(true);
+    for (const kind of [
+      "resource",
+      "css",
+      "form",
+      "beacon",
+      "websocket",
+      "eventsource",
+    ])
+      expect(() =>
+        controller!.mapUrl("https://www.quickconnect.to/", kind),
+      ).toThrow();
+    expect(() => {
+      document.createElement("a").href =
+        "https://user:private@www.quickconnect.to/";
+    }).toThrow();
+    expect(JSON.stringify(report.mock.calls)).not.toContain("private");
+  });
+  it("routes only the exact discovery POST with an immutable document header and untouched body", async () => {
+    start(quickConfig());
+    const body = '[{"command":"get_server_info"}]';
+    const options = {
+      method: "POST",
+      body,
+      credentials: "include" as const,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Sorng-QuickConnect-Document": "999",
+      },
+    };
+    await window.fetch(controlUrl, options);
+    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(controlProxy);
+    expect(init.body).toBe(body);
+    expect(init.credentials).toBe("omit");
+    expect(new Headers(init.headers).get("X-Sorng-QuickConnect-Document")).toBe(
+      "3",
+    );
+    expect(options.headers["X-Sorng-QuickConnect-Document"]).toBe("999");
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", controlUrl, true);
+    expect(xhrOpen).toHaveBeenCalledWith("POST", controlProxy, true);
+    expect(xhrHeader).toHaveBeenCalledWith(
+      "X-Sorng-QuickConnect-Document",
+      "3",
+    );
+    expect(report).not.toHaveBeenCalled();
+  });
+  it("preserves Request input and init overrides while adding the RPC document fence", async () => {
+    start(quickConfig());
+    const input = new Request(controlUrl, { method: "POST", body: "original" });
+    await window.fetch(input, {
+      body: "override",
+      headers: { "Content-Type": "application/json" },
+    });
+    const routed = fetch.mock.calls[0][0] as Request;
+    expect(routed.url).toBe(controlProxy);
+    expect(await routed.text()).toBe("override");
+    expect(routed.headers.get("X-Sorng-QuickConnect-Document")).toBe("3");
+    expect(routed.credentials).toBe("omit");
+  });
+  it.each(["GET", "PUT", "DELETE"])(
+    "denies %s on the POST-only control capability",
+    async (method) => {
+      start(quickConfig());
+      await expect(window.fetch(controlUrl, { method })).rejects.toThrow(
+        "quickconnect-control-method",
+      );
+      expect(() => new XMLHttpRequest().open(method, controlUrl)).toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(xhrOpen).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    "https://global.quickconnect.to/",
+    "https://global.quickconnect.to/Serv.php?token=private",
+    "https://global.quickconnect.to/serv.php",
+    "https://www.quickconnect.to/Serv.php",
+    "http://global.quickconnect.to/Serv.php",
+    "https://global.quickconnect.to.attacker.invalid/Serv.php",
+  ])("does not broaden the discovery route to %s", async (url) => {
+    start(quickConfig());
+    await expect(
+      window.fetch(url, { method: "POST", body: "private" }),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(JSON.stringify(report.mock.calls)).not.toContain("private");
+  });
+  it("keeps copied capabilities immutable, revokes them on pagehide and leaves missing capabilities absent", async () => {
+    const config = quickConfig();
+    start(config);
+    config.synologyQuickConnect.rpc.proxyUrl = "https://attacker.invalid/";
+    config.synologyQuickConnect.navigationOrigins.push(
+      "https://attacker.invalid",
+    );
+    await window.fetch(controlUrl, { method: "POST" });
+    expect(fetch.mock.calls[0][0]).toBe(controlProxy);
+    expect(() =>
+      controller!.mapUrl("https://attacker.invalid", "navigation"),
+    ).toThrow();
+    window.dispatchEvent(new Event("pagehide"));
+    await expect(window.fetch(controlUrl, { method: "POST" })).rejects.toThrow(
+      "document-closed",
+    );
+    expect(() => {
+      document.createElement("a").href = "https://www.quickconnect.to/";
+    }).toThrow();
+    controller!.dispose();
+    start();
+    await expect(window.fetch(controlUrl, { method: "POST" })).rejects.toThrow(
+      "origin-not-approved",
+    );
+    expect(() => {
+      document.createElement("a").href = "https://www.quickconnect.to/";
+    }).toThrow();
+  });
   const rtcNames = [
     "RTCPeerConnection",
     "webkitRTCPeerConnection",

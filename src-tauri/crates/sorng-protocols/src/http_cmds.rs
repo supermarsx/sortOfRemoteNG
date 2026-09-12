@@ -471,12 +471,13 @@ pub async fn start_basic_auth_proxy(
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
     let network = Arc::new(
-        ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_font_route(
+        ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_public_routes(
             upstream_proxy_url
                 .as_deref()
                 .map(validate_upstream_proxy)
                 .transpose()?,
             &min_tls,
+            &proxy_policy,
         ),
     );
 
@@ -905,12 +906,13 @@ pub async fn restart_proxy_session(
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
     let network = Arc::new(
-        ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_font_route(
+        ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_public_routes(
             upstream_proxy_url
                 .as_deref()
                 .map(validate_upstream_proxy)
                 .transpose()?,
             &min_tls,
+            &proxy_policy,
         ),
     );
 

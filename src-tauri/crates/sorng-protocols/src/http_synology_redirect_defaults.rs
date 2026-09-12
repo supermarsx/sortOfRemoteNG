@@ -45,7 +45,7 @@ fn regional_label(label: &str) -> bool {
 }
 
 impl SynologyQuickConnectDefaults {
-    fn origins(&self) -> Result<Vec<String>, &'static str> {
+    pub(super) fn origins(&self) -> Result<Vec<String>, &'static str> {
         let invalid = "Invalid Synology QuickConnect redirect defaults.";
         if self.version != 1 || self.original_origin.len() > 2048 {
             return Err(invalid);
@@ -88,6 +88,15 @@ impl SynologyQuickConnectDefaults {
             }
         }
         Ok(destinations)
+    }
+
+    pub(super) fn nas_alias(&self) -> Option<String> {
+        let origins = self.origins().ok()?;
+        let alias = origins
+            .first()?
+            .strip_prefix("http://")?
+            .strip_suffix(".quickconnect.to")?;
+        Some(alias.to_string())
     }
 
     pub fn validate(&self, current_target: &Url) -> Result<(), String> {

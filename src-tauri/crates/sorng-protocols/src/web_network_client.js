@@ -10,6 +10,9 @@ function installWebNetworkClient(configuration, reportBlocked) {
     rootLocation = location.href,
     routes = new Map(),
     fontAssets = new Map(),
+    navigationOrigins = new Set(),
+    quickConnectRpc = null,
+    redirectEndpoint = null,
     proxies = new Set(),
     reports = new Set(),
     restores = [],
@@ -88,6 +91,49 @@ function installWebNetworkClient(configuration, reportBlocked) {
       throw new TypeError("Invalid font asset configuration");
     fontAssets.set(entry.upstreamUrl, entry.proxyUrl);
   });
+  // Closed native capabilities, not a foreign-origin route. The control
+  // endpoint independently validates discovery commands and never forwards
+  // source authentication, cookies, arbitrary headers or arbitrary URLs.
+  if (configuration.synologyQuickConnect !== undefined) {
+    var quickConnect = configuration.synologyQuickConnect;
+    if (
+      !quickConnect ||
+      quickConnect.version !== 1 ||
+      !Array.isArray(quickConnect.navigationOrigins) ||
+      quickConnect.navigationOrigins.length > 3 ||
+      quickConnect.redirectEndpoint !==
+        proxyOrigin + "/__sortofremoteng_quickconnect_redirect_v1"
+    )
+      throw new TypeError("Invalid QuickConnect capability configuration");
+    quickConnect.navigationOrigins.forEach(function (value) {
+      var canonical = origin(value, false);
+      if (
+        navigationOrigins.has(canonical) ||
+        (canonical !== "https://global.quickconnect.to" &&
+          canonical !== "https://www.quickconnect.to" &&
+          !/^http:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.quickconnect\.to$/.test(
+            canonical,
+          ))
+      )
+        throw new TypeError("Invalid QuickConnect capability configuration");
+      navigationOrigins.add(canonical);
+    });
+    redirectEndpoint = quickConnect.redirectEndpoint;
+    if (quickConnect.rpc !== undefined) {
+      if (
+        !quickConnect.rpc ||
+        quickConnect.rpc.upstreamUrl !==
+          "https://global.quickconnect.to/Serv.php" ||
+        quickConnect.rpc.proxyUrl !==
+          proxyOrigin + "/__sortofremoteng_quickconnect_control_v1"
+      )
+        throw new TypeError("Invalid QuickConnect capability configuration");
+      quickConnectRpc = {
+        upstreamUrl: quickConnect.rpc.upstreamUrl,
+        proxyUrl: quickConnect.rpc.proxyUrl,
+      };
+    }
+  }
 
   function blocked(kind, reason, destination) {
     var key = kind + ":" + reason + ":" + (destination || "");
@@ -124,7 +170,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
       "SecurityError",
     );
   }
-  function mapUrl(value, kind, localData, method) {
+  function mapUrl(value, kind, localData, method, navigationReference) {
     if (!active) throw blocked(kind, "document-closed");
     var target;
     try {
@@ -138,6 +184,26 @@ function installWebNetworkClient(configuration, reportBlocked) {
     }
     if (target.username || target.password)
       throw blocked(kind, "url-credentials");
+    if (
+      quickConnectRpc &&
+      target.href === quickConnectRpc.upstreamUrl &&
+      (kind === "fetch" || kind === "xhr")
+    ) {
+      if (String(method).toUpperCase() !== "POST")
+        throw blocked(kind, "quickconnect-control-method", target.origin);
+      return quickConnectRpc.proxyUrl;
+    }
+    if (kind === "navigation" && navigationOrigins.has(target.origin)) {
+      if (target.href.length > 4096) throw blocked(kind, "invalid-url");
+      // Setting href does not send a request. Preserve anchor-based URL
+      // parsing; the capture click handler performs the actual handoff.
+      if (navigationReference) return target.href;
+      if (target.origin !== sourceOrigin) {
+        var reviewUrl = new NativeURL(redirectEndpoint);
+        reviewUrl.searchParams.set("destination", target.href);
+        return reviewUrl.href;
+      }
+    }
     if (fontAssets.has(target.href)) {
       if (kind === "font" || kind === "css") return fontAssets.get(target.href);
       if (kind === "fetch" || kind === "xhr") {
@@ -268,6 +334,15 @@ function installWebNetworkClient(configuration, reportBlocked) {
     }
   }
   if (typeof nativeFetch === "function") {
+    function controlRequestOptions(url, options) {
+      if (!quickConnectRpc || url !== quickConnectRpc.proxyUrl) return options;
+      var headers = new Headers(options?.headers);
+      headers.set("X-Sorng-QuickConnect-Document", String(sequence));
+      return Object.assign({}, options, {
+        headers: headers,
+        credentials: "omit",
+      });
+    }
     replace(window, "fetch", function (input, init) {
       try {
         if (NativeRequest && input instanceof NativeRequest) {
@@ -292,6 +367,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
               keepalive: input.keepalive,
               signal: input.signal,
             };
+            requestOptions = controlRequestOptions(url, requestOptions);
             // Chromium refuses streaming uploads over this HTTP/1.1 mediator.
             // Bounded buffering preserves Request bodies, never a direct fallback.
             return requestBody(input).then(function (body) {
@@ -307,7 +383,10 @@ function installWebNetworkClient(configuration, reportBlocked) {
               ]);
             });
           }
-        } else input = mapUrl(input, "fetch", false, init?.method ?? "GET");
+        } else {
+          input = mapUrl(input, "fetch", false, init?.method ?? "GET");
+          init = controlRequestOptions(input, init);
+        }
         return Reflect.apply(nativeFetch, window, [input, init]);
       } catch (error) {
         return Promise.reject(error);
@@ -316,11 +395,23 @@ function installWebNetworkClient(configuration, reportBlocked) {
   }
   if (window.XMLHttpRequest) {
     var xhrPrototype = window.XMLHttpRequest.prototype,
-      nativeOpen = xhrPrototype.open;
+      nativeOpen = xhrPrototype.open,
+      nativeSetRequestHeader = xhrPrototype.setRequestHeader;
     replace(xhrPrototype, "open", function () {
       var args = Array.prototype.slice.call(arguments);
       args[1] = mapUrl(args[1], "xhr", false, args[0]);
-      return Reflect.apply(nativeOpen, this, args);
+      var control = quickConnectRpc && args[1] === quickConnectRpc.proxyUrl;
+      if (control && (args[3] || args[4]))
+        throw blocked("xhr", "url-credentials");
+      if (control && typeof nativeSetRequestHeader !== "function")
+        throw blocked("xhr", "unavailable-interceptor");
+      var result = Reflect.apply(nativeOpen, this, args);
+      if (control)
+        Reflect.apply(nativeSetRequestHeader, this, [
+          "X-Sorng-QuickConnect-Document",
+          String(sequence),
+        ]);
+      return result;
     });
   }
   if (typeof navigator.sendBeacon === "function") {
@@ -438,14 +529,18 @@ function installWebNetworkClient(configuration, reportBlocked) {
       return "about:blank";
     return mapUrl(
       value,
-      element.tagName === "FORM" || name.toLowerCase() === "formaction"
-        ? "form"
-        : element.tagName === "LINK" &&
-            element.getAttribute("rel")?.toLowerCase() === "preload" &&
-            element.getAttribute("as")?.toLowerCase() === "font"
-          ? "font"
-          : "resource",
+      /^(A|AREA)$/.test(element.tagName)
+        ? "navigation"
+        : element.tagName === "FORM" || name.toLowerCase() === "formaction"
+          ? "form"
+          : element.tagName === "LINK" &&
+              element.getAttribute("rel")?.toLowerCase() === "preload" &&
+              element.getAttribute("as")?.toLowerCase() === "font"
+            ? "font"
+            : "resource",
       /^(IMG|SOURCE|AUDIO|VIDEO)$/.test(element.tagName),
+      undefined,
+      /^(A|AREA)$/.test(element.tagName),
     );
   }
   var nativeSetAttribute = Element.prototype.setAttribute;
@@ -711,6 +806,8 @@ function installWebNetworkClient(configuration, reportBlocked) {
     });
     routes.clear();
     fontAssets.clear();
+    navigationOrigins.clear();
+    quickConnectRpc = null;
     proxies.clear();
   }
   function restored(event) {

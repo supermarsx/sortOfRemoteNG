@@ -76,16 +76,49 @@ are not inherited by the destination.
 Each hop still uses a one-use native redirect receipt and a fresh protected
 proxy session, with HTTPS trust checked independently. There is no direct
 browser fallback, native cross-origin follow, wildcard QuickConnect grant or
-additional subresource permission. Changing the original source, opting out,
+general subresource permission. Changing the original source, opting out,
 or invalidating the document cancels stale default receipts. Disabling defaults
 does not delete explicitly trusted destinations; those remain subject to the
 general redirect policy. The derived runtime origin context is not saved or
 imported as connection policy.
 
+### Initial QuickConnect discovery
+
+The same checkbox also permits one closed, anonymous discovery operation for
+a recognized original NAS alias: **POST
+`https://global.quickconnect.to/Serv.php`**. This is an API request made before
+the website chooses its next page, not a redirect. Merely trusting a redirect
+destination does not authorize this API.
+
+The document client maps this exact, query-free URL to a reserved endpoint on
+the session's protected loopback proxy. Native validation accepts only the
+two-entry `get_server_info` JSON request for `mainapp_https` then
+`mainapp_http`, with both `serverID` values matching the original alias,
+`version: 1`, both stop flags false, and `is_gofile: false`. Both path values
+must match and be a bounded single safe segment. Custom DSM hosts, reserved
+portal names and unrecognized/deeper aliases do not gain discovery access.
+
+The separate native client uses verified OS-root/hostname TLS and the
+configured HTTP(S) proxy. It never carries the NAS login, cookies, custom
+headers, query additions, client certificate, certificate pin or disabled
+certificate checks. It follows no upstream redirects and has no direct retry.
+The response is bounded JSON, not an executable page or arbitrary resource;
+the only retained provider metadata is a validated `X-QC-CLIENT-IP` address.
+Requests require the protected origin and current primary-document identity;
+navigation, opt-out and session closure invalidate their authority.
+
+This does **not** approve response-selected control servers, other `/Serv.php`
+commands such as `request_tunnel`, long-poll wakeup endpoints, direct/LAN
+ping-pong probes, or a general `www.quickconnect.to` API. Those requests still
+need distinct reviewed routing and may prevent a complete QuickConnect
+connection. The public homepage's normal alias navigation is separate from
+initial discovery. No live NAS or complete relay-login compatibility is claimed.
+
 ## Foreign origins and unsupported traffic
 
 Third-party origins are currently **blocked, not transparently proxied**, except
-for the closed public-font capability below.
+for the closed initial QuickConnect discovery operation above and public-font
+capability below.
 This includes a CDN or API that an otherwise trusted page references. A trusted
 redirect destination is not automatically an approved subresource origin or
 TLS identity. Supporting such origins requires a separate origin mapping and

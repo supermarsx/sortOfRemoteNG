@@ -34,7 +34,7 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
         variant="form"
         label="Use Synology default redirect destinations"
         checked={enabled}
-        description="On by default. These exact destinations allow anonymous handoffs even when general cross-origin and downgrade review are off. Require HTTPS upstream still blocks HTTP. Saved-login forwarding always needs separate approval."
+        description="On by default. Allows anonymous handoffs to these exact destinations and, for a recognized original NAS alias, initial discovery through the app proxy at https://global.quickconnect.to/Serv.php. Require HTTPS upstream still blocks HTTP. Saved-login forwarding always needs separate approval."
         onChange={(useDefaultRedirectDestinations) =>
           mgr.setFormData((previous) => {
             try {
@@ -91,9 +91,11 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
         This list is derived from the original connection, not saved as
         individual trust entries. Disabling it does not remove destinations you
         explicitly trusted below or in Trust Center; those follow the general
-        redirect policy. No cookies, passwords, extra resource origins or
-        certificate exceptions are granted. Save the connection to retain this
-        preference.
+        redirect policy. Only the initial get_server_info discovery POST is
+        included; other APIs, tunnel requests, wakeup calls and NAS address
+        probes need separate routing. No cookies, passwords, general resource
+        origins or certificate exceptions are granted. Save the connection to
+        retain this preference.
       </p>
     </section>
   );

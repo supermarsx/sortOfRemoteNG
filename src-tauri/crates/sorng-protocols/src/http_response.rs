@@ -337,6 +337,7 @@ pub(super) fn inject_readiness(
     sequence: u64,
     source_origin: &str,
     proxy_origin: &str,
+    policy: &super::HttpProxyPolicy,
 ) -> String {
     if sequence == 0 || sequence > 9_007_199_254_740_991 {
         return html.to_string();
@@ -367,7 +368,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
         automation_client = include_str!("web_automation_client.js"),
         dark_mode_client = include_str!("web_dark_mode_client.js"),
         network_client =
-            super::network::bootstrap(session_id, sequence, source_origin, proxy_origin),
+            super::network::bootstrap(session_id, sequence, source_origin, proxy_origin, policy),
     );
     let insertion = early_script_insertion(html);
     format!("{}{}{}", &html[..insertion], script, &html[insertion..])
@@ -799,6 +800,7 @@ mod tests {
                 1,
                 "https://device.test",
                 "http://p0123456789abcdef0123456789abcdef.localhost:43123",
+                &super::super::HttpProxyPolicy::default(),
             );
             assert!(result.starts_with("<!DOCTYPE html>"));
             assert!(result.contains("proxy_dom_ready"));

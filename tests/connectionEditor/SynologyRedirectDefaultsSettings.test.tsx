@@ -42,6 +42,14 @@ describe("Synology default redirect controls", () => {
   it("shows exact derived defaults without writing draft trust, policy or credentials", () => {
     render(<Fixture />);
     expect(checkbox()).toBeChecked();
+    expect(checkbox()).toHaveAccessibleName(
+      /initial discovery through the app proxy at https:\/\/global\.quickconnect\.to\/Serv\.php/,
+    );
+    expect(
+      screen.getByText(
+        /Only the initial get_server_info discovery POST is included/,
+      ),
+    ).toBeInTheDocument();
     const list = screen.getByRole("list", {
       name: "Synology default redirect destinations",
     });

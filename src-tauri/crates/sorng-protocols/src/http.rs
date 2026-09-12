@@ -25,6 +25,8 @@ mod proxy_response;
 mod proxy_response_tests;
 #[path = "http_quickconnect.rs"]
 mod quickconnect;
+#[path = "http_quickconnect_control.rs"]
+mod quickconnect_control;
 #[cfg(test)]
 #[path = "http_request_log_tests.rs"]
 mod request_log_tests;
@@ -1434,6 +1436,9 @@ pub async fn axum_proxy_handler(
     use axum::http::{Response, StatusCode};
 
     let method = req.method().clone();
+    if req.uri().path().starts_with(quickconnect_control::PATH) {
+        return quickconnect_control::handle(state, req).await;
+    }
     if req.uri().path().starts_with("/__sortofremoteng_assets_v1/") {
         // Closed public binary capability: never send this reserved path,
         // browser credentials or source query policies to the NAS.
@@ -1932,6 +1937,7 @@ pub async fn axum_proxy_handler(
                     document_sequence,
                     &state.target_origin,
                     &state.proxy_origin,
+                    &state.proxy_policy,
                 )
                 .into_bytes();
             }

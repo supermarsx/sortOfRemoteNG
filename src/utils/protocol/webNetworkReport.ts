@@ -24,6 +24,7 @@ const reasons = new Set([
   "origin-not-approved",
   "policy-blocked-resource",
   "font-read-only",
+  "quickconnect-control-method",
   "unsupported-network-context",
   "unsupported-scheme",
   "invalid-url",

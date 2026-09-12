@@ -34,6 +34,19 @@ const fontBytes = await readFile(
 const fontUrl = "https://synostatic.synology.com/font/inter/inter-w400-1.woff2";
 const fontPath =
   "/__sortofremoteng_assets_v1/synology-inter/inter-w400-1.woff2";
+const controlPath = "/__sortofremoteng_quickconnect_control_v1";
+const controlBody = JSON.stringify(
+  ["mainapp_https", "mainapp_http"].map((id) => ({
+    version: 1,
+    command: "get_server_info",
+    stop_when_error: false,
+    stop_when_success: false,
+    id,
+    serverID: "example-nas",
+    is_gofile: false,
+    path: "",
+  })),
+);
 const profile = await mkdtemp(path.join(tmpdir(), "sorng-network-smoke-"));
 let fontRequests = 0;
 let directBytes = 0;
@@ -87,6 +100,18 @@ const server = createServer(async (request, response) => {
       proxyOrigin: origin,
       mappings: [],
       fontAssets: [{ upstreamUrl: fontUrl, proxyUrl: origin + fontPath }],
+      synologyQuickConnect: {
+        version: 1,
+        navigationOrigins: [
+          "https://global.quickconnect.to",
+          "https://www.quickconnect.to",
+        ],
+        redirectEndpoint: origin + "/__sortofremoteng_quickconnect_redirect_v1",
+        rpc: {
+          upstreamUrl: "https://global.quickconnect.to/Serv.php",
+          proxyUrl: origin + controlPath,
+        },
+      },
     };
     response.writeHead(200, {
       "Content-Type": "text/html",
@@ -129,6 +154,25 @@ installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push
    document.fonts.add(face); await face.load();
    const loaded=await document.fonts.load('16px FontFaceFixture','Fixture');
    if(face.status!=='loaded'||loaded.length!==1)throw Error('FontFace did not load');
+ });
+ await check('QuickConnect anchor parser keeps original authority until click',async()=>{
+   const before=reports.length;
+   const anchor=document.createElement('a');anchor.href='https://www.quickconnect.to/portal/';
+   if(anchor.hostname!=='www.quickconnect.to'||anchor.protocol!=='https:')throw Error('Anchor parser changed');
+   document.body.append(anchor);anchor.addEventListener('click',event=>event.preventDefault());anchor.click();
+   const routed=new URL(anchor.href);
+   if(routed.origin!==location.origin||routed.pathname!=='/__sortofremoteng_quickconnect_redirect_v1'||routed.searchParams.get('destination')!=='https://www.quickconnect.to/portal/')throw Error('Receipt route mismatch');
+   if(reports.length!==before)throw Error('Permitted reference reported as network request');
+ });
+ await check('QuickConnect fetch POST uses protected route and document header',async()=>{
+   const body=${JSON.stringify(controlBody)};
+   const response=await fetch('https://global.quickconnect.to/Serv.php',{method:'POST',body,credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}});
+   if(await response.text()!==body)throw Error('Discovery body changed');
+ });
+ await check('QuickConnect XHR POST uses protected route and document header',async()=>{
+   const body=${JSON.stringify(controlBody)};
+   const response=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','https://global.quickconnect.to/Serv.php',true);xhr.withCredentials=true;xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded; charset=UTF-8');xhr.onload=()=>xhr.status===200?resolve(xhr.responseText):reject(Error('Discovery status'));xhr.onerror=()=>reject(Error('Discovery network'));xhr.send(body);});
+   if(response!==body)throw Error('Discovery XHR body changed');
  });
  await check('dynamic CSS font routes before load',async()=>{
    const style=document.createElement('style');document.head.append(style);
@@ -234,6 +278,9 @@ installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push
     method: request.method,
     body,
     fixture: request.headers["x-fixture"],
+    ...(request.url === controlPath
+      ? { document: request.headers["x-sorng-quickconnect-document"] }
+      : {}),
   });
   response.writeHead(200, { "Content-Type": "text/plain" }).end(body);
 });
@@ -268,7 +315,7 @@ try {
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
-      `--host-resolver-rules=MAP synostatic.synology.com 127.0.0.1:${tripwire.address().port}`,
+      `--host-resolver-rules=MAP synostatic.synology.com 127.0.0.1:${tripwire.address().port}, MAP global.quickconnect.to 127.0.0.1:${tripwire.address().port}, MAP www.quickconnect.to 127.0.0.1:${tripwire.address().port}`,
       `--user-data-dir=${profile}`,
       "--remote-debugging-port=0",
       origin + "/",
@@ -299,7 +346,17 @@ try {
     fontRequests >= 1,
     "Actual font bytes must be served by the local route",
   );
-  assert.equal(directBytes, 0, "No direct CDN tripwire traffic is permitted");
+  assert.equal(
+    directBytes,
+    0,
+    "No direct CDN or QuickConnect tripwire traffic is permitted",
+  );
+  assert.deepEqual(
+    received
+      .filter((item) => item.url === controlPath)
+      .map((item) => item.document),
+    ["7", "7"],
+  );
   assert.ok(
     results.every((item) => item.ok),
     "Browser Request/stream acceptance failed; never fall back to a direct request.",
@@ -310,6 +367,8 @@ try {
       .map(({ url, method, body }) => ({ url, method, body })),
     [
       { url: "/rtc-https-fallback", method: "GET", body: "" },
+      { url: controlPath, method: "POST", body: controlBody },
+      { url: controlPath, method: "POST", body: controlBody },
       { url: "/string", method: "POST", body: "string-body" },
       { url: "/stream", method: "POST", body: "stream-body" },
       { url: "/override", method: "PUT", body: "override-body" },

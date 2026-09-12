@@ -25,6 +25,18 @@ fn known_source(origin: &str) -> Option<reqwest::Url> {
         .then_some(source)
 }
 
+fn authorized_source(state: &AxumProxyState) -> Option<reqwest::Url> {
+    known_source(&state.target_origin).or_else(|| {
+        let source = reqwest::Url::parse(&state.target_origin).ok()?;
+        state
+            .proxy_policy
+            .synology_quick_connect_defaults
+            .as_ref()?;
+        state.proxy_policy.validate(&source).ok()?;
+        Some(source)
+    })
+}
+
 fn decode_destination(query: Option<&str>) -> Option<reqwest::Url> {
     let query = query?;
     if query.len() > PREFIX.len() + 3 * MAX_DESTINATION_BYTES || query.contains('&') {
@@ -82,7 +94,7 @@ fn policy_response(
         .map(|theme| theme.clone())
         .unwrap_or_default();
     // Never echo the reserved query: it can contain a vendor's session URL.
-    let source = known_source(&state.target_origin)
+    let source = authorized_source(state)
         .map(|url| url.to_string())
         .unwrap_or_else(|| "https://quickconnect.to/".into());
     crate::themed_errors::themed_error_response(
@@ -123,7 +135,7 @@ pub(super) fn handle(
         && proxy_response::is_document_request(headers, None);
     let empty_body = !headers.contains_key("transfer-encoding")
         && header("content-length").is_none_or(|length| length == "0");
-    let Some(source) = known_source(&state.target_origin) else {
+    let Some(source) = authorized_source(state) else {
         return policy_response(state, ProxyErrorKind::BadRequest);
     };
     if method != Method::GET

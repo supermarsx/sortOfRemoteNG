@@ -4,6 +4,8 @@
 mod font_asset_tests;
 #[path = "http_network_tests.rs"]
 mod network_tests;
+#[path = "http_quickconnect_control_tests.rs"]
+mod quickconnect_control_tests;
 #[path = "http_quickconnect_tests.rs"]
 mod quickconnect_tests;
 #[path = "http_redirect_tests.rs"]

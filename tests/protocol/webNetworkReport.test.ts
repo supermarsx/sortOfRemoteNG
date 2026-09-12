@@ -24,6 +24,23 @@ const report = {
   origin: "https://cdn.example",
 };
 describe("untrusted page network report boundary", () => {
+  it("accepts a fenced fixed QuickConnect method reason without including page-supplied body details", () => {
+    expect(
+      parseWebNetworkReport(
+        {
+          ...report,
+          reason: "quickconnect-control-method",
+          origin: "https://global.quickconnect.to",
+          body: "private-server-id",
+        },
+        document,
+      ),
+    ).toEqual({
+      kind: "fetch",
+      reason: "quickconnect-control-method",
+      origin: "https://global.quickconnect.to",
+    });
+  });
   it("accepts a fenced font category without exporting path or page errors", () => {
     expect(
       parseWebNetworkReport(

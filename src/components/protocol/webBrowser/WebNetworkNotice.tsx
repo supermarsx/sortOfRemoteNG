@@ -62,9 +62,10 @@ export default function WebNetworkNotice({
           </p>
         )}
         <p className="mt-2">
-          Other destinations are not yet approved or routed through this
-          session. Workers, WebRTC and WebTransport are unsupported here. The
-          page may be incomplete; no destination is approved by this notice.
+          Redirect approval is separate from background-request routing. A
+          permitted destination can still have requests without a supported
+          proxy route. Workers, WebRTC and WebTransport are unsupported here.
+          The page may be incomplete; no destination is approved by this notice.
         </p>
         <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto">
           {reports.map((report) => (
@@ -79,14 +80,16 @@ export default function WebNetworkNotice({
               {report.kind === "font"
                 ? "Font request blocked; only explicitly routed font assets can load"
                 : report.reason === "origin-not-approved"
-                  ? "Destination not yet approved/routed"
-                  : report.reason === "document-expired"
-                    ? "Reload to establish a fresh session document"
-                    : report.reason === "unsupported-network-context"
-                      ? `Unsupported ${report.kind} request`
-                      : report.reason === "request-body-too-large"
-                        ? "Retargeted Request uploads are limited to 16 MiB; nothing was sent"
-                        : "Request cannot use this session's routing policy"}
+                  ? `No route for this request (${report.kind})`
+                  : report.reason === "quickconnect-control-method"
+                    ? "Only the reviewed QuickConnect discovery POST can use this control route"
+                    : report.reason === "document-expired"
+                      ? "Reload to establish a fresh session document"
+                      : report.reason === "unsupported-network-context"
+                        ? `Unsupported ${report.kind} request`
+                        : report.reason === "request-body-too-large"
+                          ? "Retargeted Request uploads are limited to 16 MiB; nothing was sent"
+                          : "Request cannot use this session's routing policy"}
             </li>
           ))}
         </ul>

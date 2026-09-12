@@ -54,10 +54,35 @@ describe("compact website network notice", () => {
     );
     expect(screen.getByText("https://cdn.example")).toBeInTheDocument();
     expect(
-      screen.getByText(/Destination not yet approved\/routed/),
+      screen.getByText(/No route for this request \(fetch\)/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Unsupported Worker request/)).toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+  it("distinguishes navigation permission from unsupported background discovery methods", () => {
+    render(
+      <WebNetworkNotice
+        guard={null}
+        reports={[
+          {
+            kind: "xhr",
+            reason: "quickconnect-control-method",
+            origin: "https://global.quickconnect.to",
+          },
+        ]}
+        onReload={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Review 1 network restriction"));
+    expect(
+      screen.getByText(
+        /Redirect approval is separate from background-request routing/,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Only the reviewed QuickConnect discovery POST/),
+    ).toBeVisible();
+    expect(screen.queryByText(/Destination not yet approved/)).toBeNull();
   });
   it("shows native protection limits even without blocked reports", () => {
     render(

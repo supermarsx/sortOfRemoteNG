@@ -17,6 +17,8 @@ pub struct ProxyNetworkState {
     proxy_origin: Option<String>,
     pub(super) sockets: Arc<Semaphore>,
     pub(super) font_assets: Option<super::font_assets::ReviewedFontAssets>,
+    pub(super) quickconnect_control:
+        Option<super::quickconnect_control::ReviewedQuickConnectControl>,
 }
 
 pub struct ProxyNetworkServerGuard(Arc<ProxyNetworkState>);
@@ -36,6 +38,7 @@ impl Default for ProxyNetworkState {
             proxy_origin: None,
             sockets: Arc::new(Semaphore::new(16)),
             font_assets: None,
+            quickconnect_control: None,
         }
     }
 }
@@ -55,15 +58,25 @@ impl ProxyNetworkState {
         self.active.load(Ordering::Acquire)
     }
 
-    pub fn with_reviewed_font_route(
+    pub fn with_reviewed_public_routes(
         mut self,
         proxy: Option<reqwest::Proxy>,
         min_tls: &str,
+        policy: &HttpProxyPolicy,
     ) -> Self {
         // Public typography is optional: a root-store/client setup failure
         // leaves this route unavailable (503), never disables source browsing
         // and never substitutes the source's possibly pinned/unverified TLS.
-        self.font_assets = super::font_assets::ReviewedFontAssets::new(proxy, min_tls).ok();
+        self.font_assets = super::font_assets::ReviewedFontAssets::new(proxy.clone(), min_tls).ok();
+        if policy
+            .synology_quick_connect_defaults
+            .as_ref()
+            .and_then(|defaults| defaults.nas_alias())
+            .is_some()
+        {
+            self.quickconnect_control =
+                super::quickconnect_control::ReviewedQuickConnectControl::new(proxy, min_tls).ok();
+        }
         self
     }
 
@@ -85,6 +98,9 @@ impl ProxyNetworkState {
         self.sockets.close();
         if let Some(fonts) = &self.font_assets {
             fonts.revoke();
+        }
+        if let Some(control) = &self.quickconnect_control {
+            control.revoke();
         }
         self.document.send_modify(|_| {});
     }
@@ -241,18 +257,25 @@ pub(super) fn bootstrap(
     sequence: u64,
     source_origin: &str,
     proxy_origin: &str,
+    policy: &HttpProxyPolicy,
 ) -> String {
-    let json = serde_json::json!({
+    let mut config = serde_json::json!({
         "version": 1, "sessionId": session_id, "documentSequence": sequence,
         "sourceOrigin": source_origin, "proxyOrigin": proxy_origin, "mappings": [],
         "fontAssets": super::font_assets::manifest(proxy_origin)
-    })
-    .to_string()
-    .replace('<', "\\u003c")
-    .replace('>', "\\u003e")
-    .replace('&', "\\u0026")
-    .replace('\u{2028}', "\\u2028")
-    .replace('\u{2029}', "\\u2029");
+    });
+    if let Some(capability) =
+        super::quickconnect_control::manifest(policy, source_origin, proxy_origin)
+    {
+        config["synologyQuickConnect"] = capability;
+    }
+    let json = config
+        .to_string()
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
     format!(
         "{}\ninstallWebNetworkClient({},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}});",
         include_str!("web_network_client.js"), json
