@@ -5,6 +5,9 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+#[path = "webview_http_observations.rs"]
+pub mod http_observations;
+
 // 0 = not installed yet, 1 = installed, 2 = failed. Unsupported platforms are
 // reported separately and do not pretend that a Windows callback exists.
 static FRAME_GUARD: AtomicU8 = AtomicU8::new(0);
@@ -25,6 +28,8 @@ pub struct FrameGuardStatus {
     pub platform: &'static str,
     pub frame_navigation: &'static str,
     pub all_network_requests_mediated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_observations: Option<http_observations::HttpObservations>,
 }
 
 pub fn frame_guard_status() -> FrameGuardStatus {
@@ -40,6 +45,12 @@ pub fn frame_guard_status() -> FrameGuardStatus {
             "unsupported"
         },
         all_network_requests_mediated: false,
+        http_observations: if cfg!(target_os = "windows") && FRAME_GUARD.load(Ordering::SeqCst) == 1
+        {
+            http_observations::snapshot()
+        } else {
+            None
+        },
     }
 }
 

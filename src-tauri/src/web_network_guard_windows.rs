@@ -15,7 +15,7 @@ pub struct InstalledGuard {
     popup: Option<i64>,
     external: Option<i64>,
     resource: Option<i64>,
-    document_filter: bool,
+    resource_filter: bool,
 }
 
 impl Drop for InstalledGuard {
@@ -24,11 +24,11 @@ impl Drop for InstalledGuard {
             if let Some(token) = self.resource.take() {
                 let _ = self.core.remove_WebResourceRequested(token);
             }
-            if self.document_filter {
+            if self.resource_filter {
                 if let Ok(core) = self.core.cast::<ICoreWebView2_22>() {
                     let _ = core.RemoveWebResourceRequestedFilterWithRequestSourceKinds(
                         &HSTRING::from("*"),
-                        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+                        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
                         COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
                     );
                 }
@@ -61,23 +61,23 @@ pub fn install(
         popup: None,
         external: None,
         resource: None,
-        document_filter: false,
+        resource_filter: false,
     };
     let mut token = 0;
     let on_failure = failed.clone();
     let stop = core.clone();
     unsafe {
         // The older FrameNavigationStarting event can be too late to prevent
-        // HTTP transmission. This synchronous DOCUMENT filter is authoritative
-        // for document requests and includes cross-origin/nested frames. Do not
+        // HTTP transmission. This filter observes all resource categories, but
+        // enforcement remains DOCUMENT-only, including nested frames. Do not
         // use the deprecated filter that misses cross-origin iframes.
         core.cast::<ICoreWebView2_22>()?
             .AddWebResourceRequestedFilterWithRequestSourceKinds(
                 &HSTRING::from("*"),
-                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
                 COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
             )?;
-        installed.document_filter = true;
+        installed.resource_filter = true;
         let environment = environment.clone();
         let resource_failed = failed.clone();
         let resource_stop = core.clone();
@@ -86,16 +86,30 @@ pub fn install(
                 let args = args.ok_or_else(windows61::core::Error::from_win32)?;
                 let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL;
                 args.ResourceContext(&mut context)?;
-                // Other filters installed by Tauri may also raise this event.
-                // Leave shell fetches/static resources/custom IPC untouched.
-                if context != COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT { return Ok(()); }
-                let allowed = (|| {
+                let uri = (|| {
                     let request = args.Request().ok()?;
                     let mut uri = PWSTR::null();
                     request.Uri(&mut uri).ok()?;
-                    Some(allows_document(&take_pwstr(uri)))
-                })().unwrap_or(false);
-                if !allowed {
+                    Some(take_pwstr(uri))
+                })();
+                let blocked = context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT
+                    && !uri.as_deref().is_some_and(|uri| allows_document(uri));
+                // Best-effort global diagnostics have no frame/session identity.
+                // Never read body/headers or mutate a non-document request.
+                if let Some(uri) = uri {
+                    let method = (|| {
+                        let request = args.Request().ok()?;
+                        let mut method = PWSTR::null();
+                        request.Method(&mut method).ok()?;
+                        Some(take_pwstr(method))
+                    })().unwrap_or_default();
+                    let mut source = COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_NONE;
+                    if let Ok(args2) = args.cast::<ICoreWebView2WebResourceRequestedEventArgs2>() {
+                        let _ = args2.RequestedSourceKind(&mut source);
+                    }
+                    super::webview_origins::http_observations::record(&uri, &method, context.0, source.0, blocked);
+                }
+                if blocked {
                     let response = environment.CreateWebResourceResponse(None, 403,
                         &HSTRING::from("Blocked by application navigation policy"),
                         &HSTRING::from("Content-Length: 0\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'"))?;

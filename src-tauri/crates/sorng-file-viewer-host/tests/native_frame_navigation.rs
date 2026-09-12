@@ -48,6 +48,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sink_connections = Arc::new(AtomicUsize::new(0));
     let sink_observations = Arc::new(Mutex::new(Vec::new()));
     let requests = Arc::new(Mutex::new(Vec::new()));
+    // Reuse an installed redistributable font, never a download or user asset.
+    let font = Arc::new(std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../node_modules/next/dist/next-devtools/server/font/geist-latin.woff2"),
+    )?);
     let server = {
         let stopped = stopped.clone();
         let sink_requests = sink_requests.clone();
@@ -69,6 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let requests = requests.clone();
                         let proxy_origin = proxy_origin.clone();
                         let sink_origin = sink_origin.clone();
+                        let font = font.clone();
                         handlers.push(std::thread::spawn(move || {
                         let mut bytes = [0; 8192];
                         let mut size = 0;
@@ -104,18 +110,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ));
                         }
                         if !bytes[..size].windows(4).any(|chunk| chunk == b"\r\n\r\n")
-                            || method != "GET" || !matches!(version, "HTTP/1.1" | "HTTP/1.0")
+                            || !matches!(method, "GET" | "POST") || !matches!(version, "HTTP/1.1" | "HTTP/1.0")
                             || !path.starts_with('/') { return; }
                         if !forbidden { requests.lock().unwrap().push(path.to_string()); }
+                        if path.starts_with("/observation-") {
+                            let (mime, body): (&str, &[u8]) = if path.starts_with("/observation-font") {
+                                ("font/woff2", font.as_slice())
+                            } else if path.starts_with("/observation-style") {
+                                ("text/css", b"@font-face{font-family:Fixture;src:url('/observation-font')}#font-proof{font-family:Fixture}")
+                            } else if path.starts_with("/observation-script") {
+                                ("application/javascript", b"window.observationScriptLoaded=true;")
+                            } else if path.starts_with("/observation-image") {
+                                ("image/svg+xml", b"<svg xmlns='http://www.w3.org/2000/svg' width='1' height='1'/>")
+                            } else { ("text/plain", b"fixture response") };
+                            let _ = socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", body.len()).as_bytes());
+                            let _ = socket.write_all(body);
+                            return;
+                        }
                         let (status, extra, body) = match path {
-                            "/" => ("200 OK", String::new(), format!(r#"<!doctype html><html><body>
+                            "/" => ("200 OK", String::new(), format!(r#"<!doctype html><html><head>
+<link rel="stylesheet" href="/observation-style"><script src="/observation-script"></script></head><body>
+<span id="font-proof">Font proof</span><img src="/observation-image">
 <iframe src="{sink_origin}/parser"></iframe>
-<iframe src="{proxy_origin}/nested"></iframe>
 <iframe src="{proxy_origin}/redirect"></iframe>
 <iframe src="{proxy_origin}/meta"></iframe>
 <iframe src="{proxy_origin}/control"></iframe>
 <script>var f=document.createElement('iframe');f.src='{sink_origin}/dynamic';document.body.append(f);
 var print=document.createElement('iframe');print.srcdoc='<p>Local print content</p>';print.sandbox='allow-same-origin allow-modals';document.body.append(print);</script>
+<script>fetch('http://localhost:{root_port}/observation-fetch?privateQuery=fixture-secret');
+var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixture-secret');xhr.send('fixture-secret-body');</script>
 </body></html>"#)),
                             "/self-source" => ("200 OK", String::new(), format!("<script>location.assign('{sink_origin}/self-navigation')</script>")),
                             "/nested" => ("200 OK", String::new(), format!("<iframe src='{proxy_origin}/nested-inner'></iframe>")),
@@ -197,6 +220,7 @@ var print=document.createElement('iframe');print.srcdoc='<p>Local print content<
     let started = Instant::now();
     let mut revoked = false;
     let mut self_started = false;
+    let mut nested_started = false;
     let mut complete = false;
     events.run_return(|event, _, flow| {
         *flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(20));
@@ -207,9 +231,23 @@ var print=document.createElement('iframe');print.srcdoc='<p>Local print content<
                 self_started = true;
                 webview.evaluate_script(&format!("var sourceSelfNavigation=document.createElement('iframe');sourceSelfNavigation.src='{proxy_origin}/self-source';document.body.append(sourceSelfNavigation);")).unwrap();
             }
+            // Start the nested case after the previous explicit source reached
+            // the server, not amid parser siblings cancelled during bootstrap.
+            if !nested_started && requests.lock().unwrap().iter().any(|path| path == "/self-source") {
+                nested_started = true;
+                webview.evaluate_script(&format!("var sourceNestedNavigation=document.createElement('iframe');sourceNestedNavigation.src='{proxy_origin}/nested';document.body.append(sourceNestedNavigation);")).unwrap();
+            }
             let all_attempts_observed = ["/parser", "/dynamic", "/self-navigation", "/nested-navigation", "/redirect-destination", "/meta-destination"]
                 .iter().all(|path| denied.lock().unwrap().iter().any(|url| url.ends_with(path)));
-            if !revoked && all_attempts_observed && requests.lock().unwrap().iter().any(|path| path == "/control") {
+            let resources_observed = webview_origins::http_observations::snapshot().is_some_and(|snapshot| {
+                ["xhr", "stylesheet", "font", "image", "script"].iter()
+                    .all(|kind| snapshot.recent.iter().any(|row| row.resource_kind == *kind))
+                    && snapshot.recent.iter().any(|row|
+                        row.origin == format!("http://localhost:{root_port}")
+                        && row.method == "GET"
+                        && matches!(row.resource_kind, "xhr" | "fetch"))
+            });
+            if !revoked && all_attempts_observed && resources_observed && requests.lock().unwrap().iter().any(|path| path == "/control") {
                 lease.revoke();
                 revoked = true;
                 webview.evaluate_script(&format!("var revoked=document.createElement('iframe');revoked.src='{proxy_origin}/revoked';document.body.append(revoked);")).unwrap();
@@ -232,6 +270,12 @@ var print=document.createElement('iframe');print.srcdoc='<p>Local print content<
         .iter()
         .any(|path| path == "/revoked");
     println!("Native frame fixture outcome: complete={complete}, handler_failed={failed}, sink_requests={sink_requests}, sink_tcp_connections={}, revoked_request={revoked_request}, observations={:?}, allowed_requests={:?}, denied={:?}", sink_connections.load(Ordering::SeqCst), sink_observations.lock().unwrap(), requests.lock().unwrap(), denied.lock().unwrap());
+    if let Some(snapshot) = webview_origins::http_observations::snapshot() {
+        println!(
+            "Native HTTP safe snapshot before cleanup: {}",
+            serde_json::to_string(&snapshot)?
+        );
+    }
     drop(installed_guard);
     unsafe {
         webview.controller().Close()?;
@@ -240,19 +284,36 @@ var print=document.createElement('iframe');print.srcdoc='<p>Local print content<
     drop(webview);
     drop(window);
     drop(context);
-    drop(events);
     // Only this test's freshly allocated path is removed; no broad profile or
     // browser process cleanup. WebView2 may release its file handles shortly
     // after Close even though all COM handlers/controllers are already dropped.
     let profile_path = profile.keep();
     let cleanup_deadline = Instant::now() + Duration::from_secs(5);
-    loop {
+    let cleanup_error = loop {
         match std::fs::remove_dir_all(&profile_path) {
-            Ok(()) => break,
-            Err(error) if Instant::now() >= cleanup_deadline => return Err(error.into()),
-            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+            Ok(()) => break None,
+            Err(error) if Instant::now() >= cleanup_deadline => {
+                eprintln!(
+                    "Fixture-owned profile retained after controller Close: {} ({error})",
+                    profile_path.display()
+                );
+                break Some(error);
+            }
+            Err(_) => {
+                // Closing a WebView is asynchronous. Keep pumping this fixture's
+                // STA instead of sleeping with its final COM callbacks blocked.
+                let until = Instant::now() + Duration::from_millis(100);
+                events.run_return(|_, _, flow| {
+                    *flow = if Instant::now() >= until {
+                        ControlFlow::Exit
+                    } else {
+                        ControlFlow::WaitUntil(until)
+                    };
+                });
+            }
         }
-    }
+    };
+    drop(events);
     assert!(!failed, "Native event handler failed");
     assert!(
         complete,
@@ -261,6 +322,32 @@ var print=document.createElement('iframe');print.srcdoc='<p>Local print content<
     );
     assert_eq!(sink_requests, 0, "A blocked destination received a request");
     assert!(!revoked_request);
+    let observations = webview_origins::http_observations::snapshot().unwrap();
+    assert_eq!(observations.scope, "application");
+    for kind in ["xhr", "stylesheet", "font", "image", "script"] {
+        assert!(
+            observations
+                .recent
+                .iter()
+                .any(|row| row.resource_kind == kind),
+            "Missing native {kind} observation"
+        );
+    }
+    assert!(observations
+        .recent
+        .iter()
+        .any(|row| row.method == "POST" && row.resource_kind == "xhr"));
+    assert!(observations.recent.iter().any(|row| row.origin
+        == format!("http://localhost:{root_port}")
+        && row.method == "GET"
+        && matches!(row.resource_kind, "xhr" | "fetch")
+        && !row.document_blocked));
+    assert!(observations.document_blocked > 0);
+    let diagnostic = serde_json::to_string(&observations)?;
+    assert!(!diagnostic.contains("fixture-secret"));
+    assert!(!diagnostic.contains("observation-"));
+    assert!(!diagnostic.contains("privateQuery"));
+    println!("Native HTTP observation: distinct POST XHR and cross-origin GET fetch workloads observed, plus stylesheet/font/image/script; this runtime can classify fetch as xhr. Cross-origin fetch unchanged; snapshot contains only canonical origins and fixed native categories.");
     assert!(
         requests
             .lock()
@@ -270,5 +357,8 @@ var print=document.createElement('iframe');print.srcdoc='<p>Local print content<
         "The self-navigation source was never delivered"
     );
     println!("Windows native frame guard: parser, dynamic, self, nested, HTTP redirect, meta-refresh and revoked-origin navigation denied; zero sink HTTP bytes; allowed frame and local print preserved. This fixture reports speculative TCP separately and does not claim all-network egress containment.");
+    if let Some(error) = cleanup_error {
+        return Err(error.into());
+    }
     Ok(())
 }
