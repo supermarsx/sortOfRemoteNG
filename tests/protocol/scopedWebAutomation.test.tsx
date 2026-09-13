@@ -228,6 +228,25 @@ function mount() {
   };
 }
 describe("scope-qualified website automation runtime", () => {
+  it("keeps the verified database library ready when the separate app-wide store fails", async () => {
+    h.load.mockRejectedValue("app macros encryption key unavailable");
+    const view = mount();
+    await waitFor(() =>
+      expect(view.result.current.availableDatabaseScope).toEqual(scope),
+    );
+    await waitFor(() =>
+      expect(view.result.current.error).toMatch(
+        /app-wide library's encryption/,
+      ),
+    );
+    expect(view.result.current.libraryReady).toBe(true);
+    expect(view.result.current.recordingUnavailableReason).toBeNull();
+    expect(
+      h.request.mock.calls.filter(([kind]) =>
+        ["script", "step", "record-start"].includes(kind),
+      ),
+    ).toHaveLength(0);
+  });
   it("compiles persisted TypeScript locally and sends only emitted JavaScript after confirmation", async () => {
     const view = mount();
     const typed: BrowserScript = {

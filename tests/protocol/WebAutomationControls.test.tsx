@@ -211,6 +211,76 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("mounted website automation controls and ownership", () => {
+  it("shows loading as a neutral status, then clears it when the library becomes ready", async () => {
+    let finish!: (value: { value: WebAutomationLibrary }) => void;
+    boundary.load.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<Fixture />);
+    expect(screen.getByText("Loading website macro library…")).not.toHaveClass(
+      "text-warning",
+    );
+    expect(screen.queryByText(/Unlock its storage/)).toBeNull();
+    expect(current.libraryReady).toBe(false);
+    await act(async () => finish({ value: library }));
+    expect(current.libraryReady).toBe(true);
+    expect(current.recordingUnavailableReason).toBeNull();
+    expect(screen.queryByText("Loading website macro library…")).toBeNull();
+  });
+  it("preserves a safe specific storage failure and offers explicit reload without replay", async () => {
+    boundary.load.mockRejectedValue(
+      "conflicting storage variants at C:\\private\\secret-library.json token=private-value",
+    );
+    render(<Fixture />);
+    await waitFor(() =>
+      expect(current.error).toMatch(
+        /conflicting storage variants or recovery data/,
+      ),
+    );
+    expect(current.recordingUnavailableReason).toBe(current.error);
+    expect(
+      screen.getByText("Website automation needs attention"),
+    ).toBeVisible();
+    fireEvent.click(screen.getByText("Website automation needs attention"));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /conflicting storage variants/,
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent(
+      /private-value|secret-library/,
+    );
+    const calls = boundary.load.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Reload library" }));
+    await waitFor(() => expect(boundary.load).toHaveBeenCalledTimes(calls + 1));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Reload library" }),
+      ).toBeEnabled(),
+    );
+    expect(current.libraryReady).toBe(false);
+    expect(boundary.save).not.toHaveBeenCalled();
+    expect(boundary.update).not.toHaveBeenCalled();
+    boundary.load.mockResolvedValue({ value: library });
+    fireEvent.click(screen.getByRole("button", { name: "Reload library" }));
+    await waitFor(() => expect(current.libraryReady).toBe(true));
+    expect(screen.queryByText("Website automation needs attention")).toBeNull();
+  });
+  it("keeps revoked owner access denied and exposes an explicit retry instead of hiding it behind loading", async () => {
+    await mount();
+    act(() => {
+      boundary.accessible = false;
+      for (const listener of boundary.listeners)
+        listener({ status: "suspended" });
+    });
+    expect(current.libraryReady).toBe(false);
+    expect(current.recordingUnavailableReason).toMatch(/locked|revoked/);
+    fireEvent.click(screen.getByRole("button", { name: "Reload library" }));
+    await waitFor(() => expect(current.error).toMatch(/locked/));
+    expect(current.libraryReady).toBe(false);
+    expect(sent("record-start")).toHaveLength(0);
+  });
   it("opens assignment filtered by kind without running, saving or changing permissions", async () => {
     const macro = {
       kind: "macro" as const,

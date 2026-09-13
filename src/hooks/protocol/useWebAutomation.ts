@@ -29,6 +29,10 @@ import {
   webAutomationStore,
 } from "../../utils/recording/webAutomationLibrary";
 import { WebAutomationBridge } from "../../utils/recording/webAutomationBridge";
+import {
+  AutomationLibraryAccessError,
+  automationLibraryDiagnostic,
+} from "../../utils/recording/automationLibraryAccess";
 import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
 import { getInvoke } from "../../utils/tauri/invoke";
 import { ENCRYPTION_EVENT_LOCKED } from "../../types/encryption/encryption";
@@ -110,6 +114,7 @@ export function useWebAutomation(options: Options) {
   );
   const [libraryReady, setLibraryReady] = useState(false),
     [error, setError] = useState<string | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(false);
   const [databaseLibrary, setDatabaseLibrary] = useState<{
     access: string;
     scope: string;
@@ -243,11 +248,18 @@ export function useWebAutomation(options: Options) {
     const read = ++readGeneration.current;
     if (!latest.current.settingsReady || !latest.current.scopeKey) return;
     setError(null);
+    setLibraryLoading(true);
     try {
       const checkOwner = captureWebAutomationAccess(
         latest.current.ownerDatabaseId,
       );
-      const result = await webAutomationStore.load();
+      const result = await webAutomationStore
+        .load()
+        .catch((failure: unknown) => {
+          throw new AutomationLibraryAccessError(
+            automationLibraryDiagnostic(failure),
+          );
+        });
       if (
         !mounted.current ||
         epoch.current !== captured ||
@@ -270,6 +282,13 @@ export function useWebAutomation(options: Options) {
         setLibraryReady(false);
         setError(message(failure));
       }
+    } finally {
+      if (
+        mounted.current &&
+        epoch.current === captured &&
+        read === readGeneration.current
+      )
+        setLibraryLoading(false);
     }
   }, [assertAccess]);
 
@@ -387,6 +406,7 @@ export function useWebAutomation(options: Options) {
       setLibrary(EMPTY_WEB_AUTOMATION_LIBRARY);
       setDatabaseLibrary(null);
       setLibraryReady(false);
+      setLibraryLoading(false);
       setRecordedSteps([]);
       return;
     }
@@ -414,10 +434,14 @@ export function useWebAutomation(options: Options) {
       epoch.current++;
       revoked.current = true;
       loaded.current = false;
+      setError(
+        "Website library access was revoked. Unlock its storage, then reload the library.",
+      );
       cancel();
       bridge.cancel(true);
       setOpen(false);
       setLibraryReady(false);
+      setLibraryLoading(false);
       setLibrary(EMPTY_WEB_AUTOMATION_LIBRARY);
       setDatabaseLibrary(null);
       setRecordedSteps([]);
@@ -495,15 +519,20 @@ export function useWebAutomation(options: Options) {
   const recordingUnavailableReason = (() => {
     const problem = recordingConfigurationProblem();
     if (problem) return problem;
+    if (revoked.current)
+      return "Website library access was revoked. Unlock its storage, then reload the library.";
     if (
-      (!(libraryReady && libraryScope === accessKey) &&
-        !(
-          databaseLibrary?.access === accessKey &&
-          databaseLibrary.scope === databaseScopeKey
-        )) ||
-      revoked.current
+      !(libraryReady && libraryScope === accessKey) &&
+      !(
+        databaseLibrary?.access === accessKey &&
+        databaseLibrary.scope === databaseScopeKey
+      )
     )
-      return "The native website macro library is unavailable. Unlock its storage and reload the library.";
+      return libraryLoading
+        ? "Loading website macro library…"
+        : (error ??
+            databaseLibraryError ??
+            "Website macro library is not ready. Reload the library.");
     if (options.blocked || !options.getDocument())
       return "Wait for the current page to become ready and complete any certificate review.";
     if (busy) return "Wait for the current website action or save to finish.";
