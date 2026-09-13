@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { TrustCenterRow } from "../../hooks/security/useTrustCenter";
+import { FormField } from "../ui/forms/FormField";
+import { TextInput } from "../ui/forms/TextInput";
+import { Textarea } from "../ui/forms/Textarea";
 import {
   Modal,
   ModalBody,
@@ -23,8 +26,7 @@ export default function TrustIdentityMetadataDialog({
   const [tags, setTags] = useState(row.record.tags?.join(", ") ?? "");
   const [description, setDescription] = useState(row.record.description ?? "");
   const [attempted, setAttempted] = useState(false);
-  const field =
-    "mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary";
+  const fieldId = useId();
   return (
     <Modal
       isOpen
@@ -38,7 +40,7 @@ export default function TrustIdentityMetadataDialog({
         title="Tags and description"
         onClose={busy ? undefined : onClose}
       />
-      <ModalBody className="space-y-4">
+      <ModalBody className="space-y-4 px-5 py-4 text-[var(--color-text)]">
         <p className="break-all text-sm">
           {row.record.host} · {row.record.type.toUpperCase()}
         </p>
@@ -47,29 +49,28 @@ export default function TrustIdentityMetadataDialog({
           verification policy. These notes are searchable and included in trust
           exports; do not enter passwords or private keys.
         </p>
-        <label className="block text-sm">
-          Tags
-          <input
+        <FormField label="Tags" htmlFor={`${fieldId}-tags`}>
+          <TextInput
+            id={`${fieldId}-tags`}
             aria-label="Identity metadata tags"
-            className={field}
             value={tags}
-            onChange={(event) => setTags(event.target.value)}
+            onChange={setTags}
             disabled={busy}
             placeholder="production, office"
           />
-        </label>
-        <label className="block text-sm">
-          Description
-          <textarea
+        </FormField>
+        <FormField label="Description" htmlFor={`${fieldId}-description`}>
+          <Textarea
+            id={`${fieldId}-description`}
             aria-label="Identity description"
-            className={`${field} min-h-28 resize-y`}
+            className="min-h-28 resize-y"
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={setDescription}
             disabled={busy}
             maxLength={4096}
             placeholder="Purpose, owner or verification notes"
           />
-        </label>
+        </FormField>
         <p className="text-xs text-[var(--color-textMuted)]">
           Comma-separated tags; description up to 4096 UTF-8 bytes. Clearing a
           field removes that metadata.

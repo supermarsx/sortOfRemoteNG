@@ -319,6 +319,16 @@ describe("dedicated Trust Center", () => {
       const dialog = screen.getByRole("dialog", {
         name: "Edit identity tags and description",
       });
+      expect(dialog.querySelector(".sor-modal-body")).toHaveClass(
+        "px-5",
+        "py-4",
+      );
+      expect(
+        within(dialog).getByLabelText("Identity metadata tags"),
+      ).toHaveClass("sor-form-input");
+      expect(within(dialog).getByLabelText("Identity description")).toHaveClass(
+        "sor-form-textarea",
+      );
       fireEvent.change(
         within(dialog).getByLabelText("Identity metadata tags"),
         { target: { value: "production, office, production" } },
