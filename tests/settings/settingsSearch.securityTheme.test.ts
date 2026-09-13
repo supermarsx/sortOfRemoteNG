@@ -232,7 +232,9 @@ describe("trust search", () => {
     expect(search("Trust Center").length).toBeGreaterThan(0);
     expect(
       matchSettingsEntries(SETTINGS_SEARCH_INDEX, "Trust Center").every(
-        (e) => e.section === "trust",
+        (e) =>
+          e.section === "trust" ||
+          (e.section === "layout" && e.key === "showTrustCenterIcon"),
       ),
     ).toBe(true);
   });

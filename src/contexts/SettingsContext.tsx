@@ -19,6 +19,7 @@ import {
   defaultExportSecuritySettings,
 } from "../types/settings/settings";
 import { SettingsManager } from "../utils/settings/settingsManager";
+import { normalizeWebsiteDarkModeSettings } from "../utils/connection/websiteDarkMode";
 import { DEFAULT_PASSWORD_POLICY } from "../types/security/passwordPolicy";
 import { DEFAULT_NAS_FILE_VIEWERS } from "../types/settings/nasFileViewers";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../components/ui/display/loadingElement/defaults";
@@ -219,6 +220,7 @@ export const defaultSettings: GlobalSettings = {
     defaultExportFormat: "har" as const,
   },
   showRecordingManagerIcon: true,
+  websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
   sessionQuickActions: {
     sshEnabled: true,
     httpEnabled: true,
