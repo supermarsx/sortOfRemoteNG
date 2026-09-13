@@ -1622,19 +1622,14 @@ export const useSessionManager = () => {
       });
     }
 
-    // Global "confirm before closing an active tab" check —
-    // applies to any connected session regardless of protocol.
-    if (
+    // These settings require confirmation of the same close action, not two
+    // independent approvals. Let the protocol-specific outcome choose the one
+    // prompt (especially RDP's preserve-versus-disconnect distinction).
+    const confirmActive =
       settings.confirmCloseActiveTab &&
       !authoritativeSession &&
       session.id === activeSessionIdRef.current &&
-      session.status === "connected"
-    ) {
-      const confirmed = await showConfirm(
-        `Close the active session "${session.name}"?`,
-      );
-      if (!confirmed) return false;
-    }
+      session.status === "connected";
 
     // RDP sessions use their own close policy instead of the generic warnOnClose.
     // Per-connection override takes precedence over the global setting.
@@ -1676,7 +1671,7 @@ export const useSessionManager = () => {
             connection?.warnOnClose,
             settings.warnOnClose,
           );
-          if (shouldWarn) {
+          if (shouldWarn || confirmActive) {
             const confirmed = await showConfirm(
               "Disconnect this RDP session? The remote session will be ended.",
             );
@@ -1684,20 +1679,37 @@ export const useSessionManager = () => {
           }
           disconnectRdpBackend = true;
         } else {
+          if (
+            confirmActive &&
+            !(await showConfirm(
+              "Close this RDP tab? The session will keep running in the background — you can reattach later from the RDP Sessions panel.",
+            ))
+          )
+            return false;
           preserveRdpBackend = true;
         }
       }
     } else {
-      // Non-RDP protocols: original warnOnClose flow
+      // Either close-warning setting is sufficient; one acceptance covers both.
       const shouldWarn = resolveConnectionWarnOnClose(
         connection?.warnOnClose,
         settings.warnOnClose,
       );
-      if (shouldWarn && !authoritativeSession && !abandoned) {
-        const confirmed = await showConfirm(t("dialogs.confirmClose"));
+      if (
+        (shouldWarn || confirmActive) &&
+        !authoritativeSession &&
+        !abandoned
+      ) {
+        const confirmed = await showConfirm(
+          confirmActive
+            ? `Close the active session "${session.name}"?`
+            : t("dialogs.confirmClose"),
+        );
         if (!confirmed) return false;
       }
     }
+
+    if (!isCurrentCloseAttempt(attempt)) return false;
 
     if (preserveRdpBackend) {
       return runBoundedSessionCleanup(attempt, async () => {

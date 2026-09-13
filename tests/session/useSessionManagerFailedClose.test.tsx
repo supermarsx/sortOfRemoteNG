@@ -149,6 +149,7 @@ vi.mock("../../src/hooks/integrations/IntegrationSessionLifecycle", () => ({
 }));
 
 import { useSessionManager } from "../../src/hooks/session/useSessionManager";
+import { useCloseTabShortcut } from "../../src/hooks/session/useCloseTabShortcut";
 import { registerSynologySession } from "../../src/utils/session/synologySessionLifecycle";
 import { registerDocumentDraft } from "../../src/utils/documents/documentDrafts";
 import { registerCredentialVaultDraft } from "../../src/utils/security/credentialVaultDrafts";
@@ -352,8 +353,10 @@ describe("handleSessionClose — sessions with no live transport", () => {
     expect(result.current.confirmDialog?.props.message).toContain(
       "NAS session",
     );
-    act(() => result.current.confirmDialog?.props.onCancel());
-    await expect(closing).resolves.toBe(false);
+    await act(async () => {
+      result.current.confirmDialog?.props.onCancel();
+      await expect(closing).resolves.toBe(false);
+    });
     expect(cleanup).not.toHaveBeenCalled();
     expect(removeDispatched(session.id)).toBe(false);
     act(() => {
@@ -1279,6 +1282,310 @@ describe("handleSessionClose — sessions with no live transport", () => {
 
     expect(outcome).toBe(true);
     expect(result.current.activeSessionId).toBe(other.id);
+  });
+});
+
+describe("handleSessionClose — one policy confirmation per close action", () => {
+  it.each([
+    {
+      protocol: "https",
+      active: true,
+      activeSetting: true,
+      globalWarn: true,
+      override: undefined,
+      prompt: true,
+    },
+    {
+      protocol: "http",
+      active: true,
+      activeSetting: true,
+      globalWarn: true,
+      override: undefined,
+      prompt: true,
+    },
+    {
+      protocol: "ssh",
+      active: true,
+      activeSetting: true,
+      globalWarn: true,
+      override: undefined,
+      prompt: true,
+    },
+    {
+      protocol: "https",
+      active: true,
+      activeSetting: false,
+      globalWarn: true,
+      override: undefined,
+      prompt: true,
+    },
+    {
+      protocol: "https",
+      active: true,
+      activeSetting: true,
+      globalWarn: false,
+      override: false,
+      prompt: true,
+    },
+    {
+      protocol: "https",
+      active: true,
+      activeSetting: false,
+      globalWarn: false,
+      override: true,
+      prompt: true,
+    },
+    {
+      protocol: "https",
+      active: true,
+      activeSetting: false,
+      globalWarn: true,
+      override: false,
+      prompt: false,
+    },
+    {
+      protocol: "https",
+      active: true,
+      activeSetting: false,
+      globalWarn: false,
+      override: undefined,
+      prompt: false,
+    },
+    {
+      protocol: "https",
+      active: false,
+      activeSetting: true,
+      globalWarn: false,
+      override: false,
+      prompt: false,
+    },
+    {
+      protocol: "https",
+      active: false,
+      activeSetting: true,
+      globalWarn: true,
+      override: undefined,
+      prompt: true,
+    },
+  ] as const)(
+    "honors active/global/per-connection settings once: %j",
+    async (scenario) => {
+      mocks.settings.confirmCloseActiveTab = scenario.activeSetting;
+      mocks.settings.warnOnClose = scenario.globalWarn;
+      const connection = makeConnection("website-close", {
+        protocol: scenario.protocol,
+        warnOnClose: scenario.override,
+      });
+      const session = makeSession("redirect-close", connection.id, {
+        protocol: scenario.protocol,
+        status: "connected",
+        name: "Redirect — example-nas.quickconnect.to",
+      });
+      seed([connection], [session]);
+      const { result } = renderHook(() => useSessionManager());
+      if (scenario.active)
+        act(() => result.current.setActiveSessionId(session.id));
+      let closing!: Promise<boolean>;
+      act(() => {
+        closing = result.current.handleSessionClose(session.id);
+      });
+      if (scenario.prompt) {
+        expect(result.current.confirmDialog?.props.onCancel).toBeTypeOf(
+          "function",
+        );
+        expect(removeDispatched(session.id)).toBe(false);
+        expect(mocks.beginEnding).not.toHaveBeenCalled();
+        expect(mocks.executeScriptsForTrigger).not.toHaveBeenCalled();
+        if (scenario.active && scenario.activeSetting)
+          expect(result.current.confirmDialog?.props.message).toContain(
+            session.name,
+          );
+        act(() => result.current.confirmDialog?.props.onConfirm());
+      } else expect(result.current.confirmDialog).toBeNull();
+      // A second policy prompt would leave this exact close promise pending.
+      expect(await closeOrPending(() => closing)).toBe(true);
+      expect(result.current.confirmDialog).toBeNull();
+      expect(
+        mocks.dispatch.mock.calls.filter(
+          ([action]) =>
+            action.type === "REMOVE_SESSION" && action.payload === session.id,
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("cancelling the single redirect close leaves the active tab and lifecycle intact, then allows a fresh attempt", async () => {
+    const connection = makeConnection("website-cancel", { protocol: "https" });
+    const session = makeSession("redirect-cancel", connection.id, {
+      protocol: "https",
+      status: "connected",
+      name: "Redirect — example-nas.quickconnect.to",
+    });
+    seed([connection], [session]);
+    const { result } = renderHook(() => useSessionManager());
+    act(() => result.current.setActiveSessionId(session.id));
+    let closing!: Promise<boolean>;
+    let duplicate!: Promise<boolean>;
+    act(() => {
+      closing = result.current.handleSessionClose(session.id);
+      duplicate = result.current.handleSessionClose(session.id);
+    });
+    expect(duplicate).toBe(closing);
+    await act(async () => {
+      result.current.confirmDialog?.props.onCancel();
+      expect(await closing).toBe(false);
+    });
+    expect(result.current.activeSessionId).toBe(session.id);
+    expect(sessions()).toEqual([session]);
+    expect(mocks.beginEnding).not.toHaveBeenCalled();
+    expect(mocks.executeScriptsForTrigger).not.toHaveBeenCalled();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(result.current.confirmDialog).toBeNull();
+    act(() => {
+      closing = result.current.handleSessionClose(session.id);
+    });
+    act(() => result.current.confirmDialog?.props.onConfirm());
+    expect(await closeOrPending(() => closing)).toBe(true);
+    expect(result.current.confirmDialog).toBeNull();
+  });
+
+  it.each([
+    { policy: "ask", active: true, warn: true, prompt: true },
+    { policy: "ask", active: false, warn: false, prompt: true },
+    { policy: "disconnect", active: true, warn: true, prompt: true },
+    { policy: "disconnect", active: true, warn: false, prompt: true },
+    { policy: "disconnect", active: false, warn: false, prompt: false },
+    { policy: "detach", active: true, warn: true, prompt: true },
+    { policy: "detach", active: false, warn: true, prompt: false },
+  ] as const)(
+    "keeps one RDP outcome-specific confirmation: %j",
+    async (scenario) => {
+      mocks.settings.rdpSessionClosePolicy = scenario.policy;
+      mocks.settings.warnOnClose = scenario.warn;
+      const connection = makeConnection("rdp-one-prompt", { protocol: "rdp" });
+      const session = makeSession("rdp-one-prompt-session", connection.id, {
+        protocol: "rdp",
+        status: "connected",
+        backendSessionId: "rdp-native",
+      });
+      seed([connection], [session]);
+      const { result } = renderHook(() => useSessionManager());
+      if (scenario.active)
+        act(() => result.current.setActiveSessionId(session.id));
+      let closing!: Promise<boolean>;
+      act(() => {
+        closing = result.current.handleSessionClose(session.id);
+      });
+      if (scenario.prompt) {
+        expect(result.current.confirmDialog?.props.message).toContain(
+          scenario.policy === "disconnect"
+            ? "remote session will be ended"
+            : "keep running in the background",
+        );
+        expect(mocks.invoke).not.toHaveBeenCalled();
+        act(() => result.current.confirmDialog?.props.onConfirm());
+      } else expect(result.current.confirmDialog).toBeNull();
+      expect(await closeOrPending(() => closing)).toBe(true);
+      expect(result.current.confirmDialog).toBeNull();
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        scenario.policy === "disconnect"
+          ? "disconnect_rdp"
+          : "detach_rdp_session",
+        { sessionId: "rdp-native" },
+      );
+      expect(invokedCommands()).not.toContain(
+        scenario.policy === "disconnect"
+          ? "detach_rdp_session"
+          : "disconnect_rdp",
+      );
+    },
+  );
+
+  it("honors an explicit RDP policy override and cancellation without disconnecting or detaching", async () => {
+    const connection = makeConnection("rdp-override", {
+      protocol: "rdp",
+      rdpSettings: {
+        advanced: { sessionClosePolicy: "disconnect" },
+      } as Connection["rdpSettings"],
+    });
+    const session = makeSession("rdp-override-session", connection.id, {
+      protocol: "rdp",
+      status: "connected",
+      backendSessionId: "rdp-native",
+    });
+    seed([connection], [session]);
+    const { result } = renderHook(() => useSessionManager());
+    act(() => result.current.setActiveSessionId(session.id));
+    let closing!: Promise<boolean>;
+    act(() => {
+      closing = result.current.handleSessionClose(session.id);
+    });
+    expect(result.current.confirmDialog?.props.message).toContain(
+      "remote session will be ended",
+    );
+    await act(async () => {
+      result.current.confirmDialog?.props.onCancel();
+      expect(await closing).toBe(false);
+    });
+    expect(sessions()).toEqual([session]);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.beginEnding).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+W uses the same single-confirmation close policy", async () => {
+    const connection = makeConnection("website-shortcut", {
+      protocol: "https",
+    });
+    const session = makeSession("website-shortcut-session", connection.id, {
+      protocol: "https",
+      status: "connected",
+    });
+    seed([connection], [session]);
+    const { result } = renderHook(() => {
+      const manager = useSessionManager();
+      useCloseTabShortcut(
+        mocks.holder.state.sessions,
+        manager.activeSessionId,
+        manager.handleSessionClose,
+      );
+      return manager;
+    });
+    act(() => result.current.setActiveSessionId(session.id));
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "w",
+          ctrlKey: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(result.current.confirmDialog?.props.message).toContain(session.name);
+    const closing = result.current.handleSessionClose(session.id);
+    act(() => result.current.confirmDialog?.props.onConfirm());
+    expect(await closeOrPending(() => closing)).toBe(true);
+    expect(result.current.confirmDialog).toBeNull();
+    expect(removeDispatched(session.id)).toBe(true);
+  });
+
+  it("an authoritative already-approved website close does not ask again", async () => {
+    const connection = makeConnection("website-authoritative", {
+      protocol: "https",
+    });
+    const session = makeSession(
+      "website-authoritative-session",
+      connection.id,
+      { protocol: "https", status: "connected" },
+    );
+    seed([connection], [session]);
+    const { result } = renderHook(() => useSessionManager());
+    act(() => result.current.setActiveSessionId(session.id));
+    expect(
+      await closeOrPending(() =>
+        result.current.handleSessionClose(session.id, session),
+      ),
+    ).toBe(true);
+    expect(result.current.confirmDialog).toBeNull();
   });
 });
 
