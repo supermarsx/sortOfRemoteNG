@@ -1,4 +1,10 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  within,
+  waitFor,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { YubiKeyManager } from "../../src/components/ssh/YubiKeyManager";
 
@@ -36,6 +42,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 // Hook mock matching the exact return shape of useYubiKey
 const makeHookReturn = () => ({
+  readiness: "ready" as "ready" | "detecting" | "unavailable" | "error",
   devices: [] as any[],
   selectedDevice: null as any,
   pivSlots: [] as any[],
@@ -151,12 +158,139 @@ describe("YubiKeyManager", () => {
   });
 
   describe("Basic Rendering", () => {
+    it("distinguishes missing ykman from no devices and exposes explicit recovery", () => {
+      hookReturn.readiness = "unavailable";
+      renderComponent();
+      expect(
+        screen.getByText(/Install the external YubiKey Manager/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Insert a YubiKey")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Retry detection" }));
+      expect(hookReturn.listDevices).toHaveBeenCalledOnce();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open Configuration" }),
+      );
+      expect(hookReturn.setActiveTab).toHaveBeenCalledWith("config");
+      expect(hookReturn.factoryResetAll).not.toHaveBeenCalled();
+    });
+
+    it("renders themed searchable sortable device rows with native interface fields", () => {
+      hookReturn.devices = [
+        {
+          serial: 2,
+          device_name: "Zeta Key",
+          firmware_version: "5.4",
+          usb_interfaces_enabled: ["Fido"],
+          nfc_interfaces_enabled: [],
+          form_factor: "UsbAKeychain",
+        },
+        {
+          serial: 1,
+          device_name: "Alpha Key",
+          firmware_version: "5.7",
+          usb_interfaces_enabled: ["Ccid"],
+          nfc_interfaces_enabled: [],
+          form_factor: "UsbCKeychain",
+        },
+      ];
+      renderComponent();
+      const table = screen.getByRole("table");
+      expect(within(table).getAllByRole("row")[1]).toHaveTextContent(
+        "Alpha Key",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Serial" }));
+      expect(within(table).getAllByRole("row")[1]).toHaveTextContent(
+        "Zeta Key",
+      );
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Search hardware keys" }),
+        { target: { value: "5.7" } },
+      );
+      expect(within(table).getAllByRole("row")).toHaveLength(2);
+      expect(within(table).queryByText("Zeta Key")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Select YubiKey 1" }));
+      expect(hookReturn.getDeviceInfo).toHaveBeenCalledWith(1);
+      fireEvent.click(screen.getByRole("button", { name: "Wait for Device" }));
+      expect(hookReturn.waitForDevice).toHaveBeenCalledWith(30_000);
+      expect(screen.getByRole("button", { name: "Refresh" })).toHaveClass(
+        "sor-btn-secondary",
+      );
+    });
+
+    it("keeps the destructive confirmation but disables it if an operation starts", () => {
+      hookReturn.selectedDevice = { serial: 1 };
+      const view = renderComponent();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Factory Reset All" }),
+      );
+      expect(hookReturn.factoryResetAll).not.toHaveBeenCalled();
+      hookReturn.loading = true;
+      view.rerender(<YubiKeyManager isOpen onClose={vi.fn()} />);
+      expect(
+        screen.getByRole("button", { name: "Yes, proceed" }),
+      ).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "Yes, proceed" }));
+      expect(hookReturn.factoryResetAll).not.toHaveBeenCalled();
+    });
+
+    it("clears an old key's destructive confirmation when selection changes", () => {
+      hookReturn.selectedDevice = { serial: 1 };
+      const view = renderComponent();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Factory Reset All" }),
+      );
+      hookReturn.selectedDevice = { serial: 2 };
+      view.rerender(<YubiKeyManager isOpen onClose={vi.fn()} />);
+      expect(
+        screen.queryByRole("button", { name: "Yes, proceed" }),
+      ).not.toBeInTheDocument();
+      expect(hookReturn.factoryResetAll).not.toHaveBeenCalled();
+    });
+
+    it("saves a path only explicitly, with blank meaning native PATH search", async () => {
+      hookReturn.activeTab = "config";
+      hookReturn.readiness = "unavailable";
+      hookReturn.config = { ykman_path: "old-path", poll_interval_ms: 5000 };
+      hookReturn.updateConfig.mockResolvedValue(true);
+      renderComponent();
+      const path = screen.getByRole("textbox", {
+        name: "ykman executable path",
+      });
+      fireEvent.change(path, { target: { value: "new-path" } });
+      expect(hookReturn.updateConfig).not.toHaveBeenCalled();
+      fireEvent.change(path, { target: { value: "" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save path" }));
+      await waitFor(() =>
+        expect(hookReturn.updateConfig).toHaveBeenCalledWith({
+          ykman_path: null,
+          poll_interval_ms: 5000,
+        }),
+      );
+      expect(hookReturn.setInterfaces).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Lock" })).toBeDisabled();
+    });
+
+    it("keeps application forms disabled without a selected key", () => {
+      hookReturn.activeTab = "piv";
+      renderComponent();
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
+      expect(screen.getByText(/Select a detected device/)).toBeInTheDocument();
+    });
+
+    it("targets the native long OTP slot without falling back to short", () => {
+      hookReturn.activeTab = "otp";
+      hookReturn.selectedDevice = { serial: 1 };
+      hookReturn.otpSlots = [{ configured: false }, { configured: true }];
+      renderComponent();
+      const deletes = screen.getAllByRole("button", { name: "Delete" });
+      fireEvent.click(deletes[1]);
+      fireEvent.click(screen.getByRole("button", { name: "Yes, proceed" }));
+      expect(hookReturn.otpDeleteSlot).toHaveBeenCalledWith(1, "Long");
+    });
     it("should not render when isOpen is false", () => {
       renderComponent({ isOpen: false });
       // t("yubikey.title", "YubiKey Manager") -> "YubiKey Manager"
-      expect(
-        screen.queryByText("YubiKey Manager"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("YubiKey Manager")).not.toBeInTheDocument();
     });
 
     it("should render when isOpen is true", () => {
@@ -214,7 +348,7 @@ describe("YubiKeyManager", () => {
       renderComponent();
       // Modal portals to document.body; look for the spinner there.
       expect(
-        document.body.querySelector(".sor-yk-loading .animate-spin"),
+        screen.getByRole("status").querySelector(".animate-spin"),
       ).toBeTruthy();
     });
 
@@ -224,9 +358,7 @@ describe("YubiKeyManager", () => {
         error: "Failed to detect YubiKey",
       };
       renderComponent();
-      expect(
-        screen.getByText("Failed to detect YubiKey"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Failed to detect YubiKey")).toBeInTheDocument();
     });
   });
 

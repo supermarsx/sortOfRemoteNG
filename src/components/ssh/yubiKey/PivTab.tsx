@@ -57,7 +57,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.fetchPivCerts(serial)}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+            className="sor-btn sor-btn-secondary flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50"
           >
             <RefreshCw
               className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
@@ -68,11 +68,22 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {PIV_SLOTS.map(({ slot, name, icon }) => {
-            const info = mgr.pivSlots.find((s) => s.slot === slot);
+            const info = mgr.pivSlots.find(
+              (s) =>
+                s.slot === slot ||
+                (
+                  {
+                    Authentication: "9a",
+                    Signature: "9c",
+                    KeyManagement: "9d",
+                    CardAuthentication: "9e",
+                  } as Record<string, string>
+                )[s.slot] === slot,
+            );
             return (
               <div
                 key={slot}
-                className="bg-card border border-border rounded-lg p-3 space-y-2"
+                className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 space-y-2"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -87,49 +98,49 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       label={t("yubikey.piv.key", "Key")}
                     />
                     <StatusBadge
-                      status={info?.has_cert ? "success" : "error"}
+                      status={info?.has_certificate ? "success" : "error"}
                       label={t("yubikey.piv.cert", "Cert")}
                     />
                   </div>
                 </div>
 
                 {info?.algorithm && (
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-[var(--color-textSecondary)]">
                     {t("yubikey.piv.algorithm", "Algorithm")}: {info.algorithm}
                   </div>
                 )}
 
                 {info?.certificate && (
-                  <div className="text-xs space-y-0.5 bg-muted/50 p-2 rounded">
+                  <div className="text-xs space-y-0.5 bg-[var(--color-surfaceHover)] p-2 rounded">
                     <div>
-                      <span className="text-muted-foreground">
+                      <span className="text-[var(--color-textSecondary)]">
                         {t("yubikey.piv.subject", "Subject")}:
                       </span>{" "}
                       {info.certificate.subject}
                     </div>
                     <div>
-                      <span className="text-muted-foreground">
+                      <span className="text-[var(--color-textSecondary)]">
                         {t("yubikey.piv.issuer", "Issuer")}:
                       </span>{" "}
                       {info.certificate.issuer}
                     </div>
                     <div className="flex gap-3">
                       <span>
-                        <span className="text-muted-foreground">
+                        <span className="text-[var(--color-textSecondary)]">
                           {t("yubikey.piv.notBefore", "From")}:
                         </span>{" "}
                         {info.certificate.not_before}
                       </span>
                       <span>
-                        <span className="text-muted-foreground">
+                        <span className="text-[var(--color-textSecondary)]">
                           {t("yubikey.piv.notAfter", "To")}:
                         </span>{" "}
                         {info.certificate.not_after}
                       </span>
                     </div>
-                    {info.certificate.fingerprint && (
-                      <div className="font-mono text-[10px] truncate text-muted-foreground">
-                        {info.certificate.fingerprint}
+                    {info.certificate.fingerprint_sha256 && (
+                      <div className="font-mono text-[10px] truncate text-[var(--color-textSecondary)]">
+                        {info.certificate.fingerprint_sha256}
                       </div>
                     )}
                   </div>
@@ -147,7 +158,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       )
                     }
                     disabled={mgr.loading}
-                    className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
+                    className="sor-btn sor-btn-secondary px-2 py-0.5 text-[10px] rounded disabled:opacity-50"
                   >
                     {t("yubikey.piv.genKey", "Gen Key")}
                   </button>
@@ -161,7 +172,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       )
                     }
                     disabled={mgr.loading}
-                    className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
+                    className="sor-btn sor-btn-secondary px-2 py-0.5 text-[10px] rounded disabled:opacity-50"
                   >
                     {t("yubikey.piv.selfSign", "Self-Sign")}
                   </button>
@@ -174,14 +185,14 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       )
                     }
                     disabled={mgr.loading}
-                    className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
+                    className="sor-btn sor-btn-secondary px-2 py-0.5 text-[10px] rounded disabled:opacity-50"
                   >
                     {t("yubikey.piv.csr", "CSR")}
                   </button>
                   <button
                     onClick={() => mgr.pivExportCert(serial, slot as never)}
-                    disabled={mgr.loading || !info?.has_cert}
-                    className="px-2 py-0.5 text-[10px] bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+                    disabled={mgr.loading || !info?.has_certificate}
+                    className="sor-btn sor-btn-secondary px-2 py-0.5 text-[10px] rounded disabled:opacity-50"
                   >
                     <Download className="w-3 h-3 inline mr-0.5" />
                     {t("yubikey.piv.exportCert", "Export")}
@@ -189,22 +200,22 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   <button
                     onClick={() => mgr.pivAttest(serial, slot as never)}
                     disabled={mgr.loading || !info?.has_key}
-                    className="px-2 py-0.5 text-[10px] bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+                    className="sor-btn sor-btn-secondary px-2 py-0.5 text-[10px] rounded disabled:opacity-50"
                   >
                     <Award className="w-3 h-3 inline mr-0.5" />
                     {t("yubikey.piv.attest", "Attest")}
                   </button>
                   <button
                     onClick={() => mgr.pivDeleteCert(serial, slot as never)}
-                    disabled={mgr.loading || !info?.has_cert}
-                    className="px-2 py-0.5 text-[10px] bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
+                    disabled={mgr.loading || !info?.has_certificate}
+                    className="sor-btn sor-btn-danger px-2 py-0.5 text-[10px] rounded disabled:opacity-50"
                   >
                     {t("yubikey.piv.delCert", "Del Cert")}
                   </button>
                   <button
                     onClick={() => mgr.pivDeleteKey(serial, slot as never)}
                     disabled={mgr.loading || !info?.has_key}
-                    className="px-2 py-0.5 text-[10px] bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
+                    className="sor-btn sor-btn-danger px-2 py-0.5 text-[10px] rounded disabled:opacity-50"
                   >
                     {t("yubikey.piv.delKey", "Del Key")}
                   </button>
@@ -216,7 +227,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
 
       {/* PIN Management */}
-      <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 space-y-4">
         <h3 className="text-sm font-medium flex items-center gap-2">
           <Lock className="w-4 h-4" />
           {t("yubikey.piv.pinMgmt", "PIN Management")}
@@ -229,14 +240,14 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               {t("yubikey.piv.pinRetries", "PIN attempts")}:{" "}
               <span
                 className={
-                  (mgr.pivPinStatus.pin_retries ?? 0) <= 1
+                  (mgr.pivPinStatus.pin_attempts_remaining ?? 0) <= 1
                     ? "text-error font-bold"
-                    : (mgr.pivPinStatus.pin_retries ?? 0) <= 3
+                    : (mgr.pivPinStatus.pin_attempts_remaining ?? 0) <= 3
                       ? "text-warning"
                       : "text-success"
                 }
               >
-                {mgr.pivPinStatus.pin_retries}
+                {mgr.pivPinStatus.pin_attempts_remaining}
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -244,23 +255,23 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               {t("yubikey.piv.pukRetries", "PUK attempts")}:{" "}
               <span
                 className={
-                  (mgr.pivPinStatus.puk_retries ?? 0) <= 1
+                  (mgr.pivPinStatus.puk_attempts_remaining ?? 0) <= 1
                     ? "text-error font-bold"
-                    : (mgr.pivPinStatus.puk_retries ?? 0) <= 3
+                    : (mgr.pivPinStatus.puk_attempts_remaining ?? 0) <= 3
                       ? "text-warning"
                       : "text-success"
                 }
               >
-                {mgr.pivPinStatus.puk_retries}
+                {mgr.pivPinStatus.puk_attempts_remaining}
               </span>
             </div>
-            {mgr.pivPinStatus.default_pin && (
+            {mgr.pivPinStatus.pin_is_default && (
               <span className="flex items-center gap-1 text-warning">
                 <AlertTriangle className="w-3 h-3" />
                 {t("yubikey.piv.defaultPin", "Default PIN in use!")}
               </span>
             )}
-            {mgr.pivPinStatus.default_puk && (
+            {mgr.pivPinStatus.puk_is_default && (
               <span className="flex items-center gap-1 text-warning">
                 <AlertTriangle className="w-3 h-3" />
                 {t("yubikey.piv.defaultPuk", "Default PUK in use!")}
@@ -297,7 +308,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 setPinForm({ oldPin: "", newPin: "" });
               }}
               disabled={!pinForm.oldPin || !pinForm.newPin || mgr.loading}
-              className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+              className="sor-btn sor-btn-primary px-3 py-1.5 text-xs rounded disabled:opacity-50"
             >
               {t("yubikey.piv.changePin", "Change PIN")}
             </button>
@@ -330,7 +341,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 setPukForm({ oldPuk: "", newPuk: "" });
               }}
               disabled={!pukForm.oldPuk || !pukForm.newPuk || mgr.loading}
-              className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+              className="sor-btn sor-btn-primary px-3 py-1.5 text-xs rounded disabled:opacity-50"
             >
               {t("yubikey.piv.changePuk", "Change PUK")}
             </button>
@@ -369,7 +380,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 setMgmtForm({ current: "", newKey: "" });
               }}
               disabled={!mgmtForm.current || !mgmtForm.newKey || mgr.loading}
-              className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+              className="sor-btn sor-btn-primary px-3 py-1.5 text-xs rounded disabled:opacity-50"
             >
               {t("yubikey.piv.changeMgmt", "Change Management Key")}
             </button>
@@ -402,7 +413,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 setUnblockForm({ puk: "", newPin: "" });
               }}
               disabled={!unblockForm.puk || !unblockForm.newPin || mgr.loading}
-              className="px-3 py-1.5 text-xs bg-warning text-[var(--color-text)] rounded hover:bg-warning/90 disabled:opacity-50"
+              className="sor-btn sor-btn-secondary px-3 py-1.5 text-xs rounded disabled:opacity-50"
             >
               {t("yubikey.piv.unblockPin", "Unblock PIN")}
             </button>
@@ -412,7 +423,7 @@ export const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           onClick={() => mgr.pivGetPinStatus(serial)}
           disabled={mgr.loading}
-          className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80"
+          className="sor-btn sor-btn-secondary flex items-center gap-1 px-2 py-1 text-xs rounded"
         >
           <RefreshCw className="w-3 h-3" />
           {t("yubikey.piv.refreshPinStatus", "Refresh Status")}

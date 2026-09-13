@@ -1,190 +1,231 @@
-import React from "react";
-import {
-  RefreshCw,
-  Lock,
-  Usb,
-  Nfc,
-  Smartphone,
-  Clock,
-  Timer,
-  HardDrive,
-  Cpu,
-} from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { RefreshCw, Clock, Usb, Search, ArrowUpDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { StatusBadge } from "../../ui/display";
 import { EmptyState } from "../../ui/display";
 import { InterfaceBadge } from "./helpers";
 import type { Mgr } from "./types";
 
 export const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
-
-  if (mgr.devices.length === 0) {
-    return (
-      <div className="sor-yk-devices space-y-4">
-        <EmptyState
-          icon={Usb}
-          message={t("yubikey.devices.empty", "Insert a YubiKey")}
-          hint={t(
-            "yubikey.devices.emptyDesc",
-            "No YubiKey devices detected. Insert a YubiKey to get started.",
-          )}
-        />
-        <div className="flex gap-2 justify-center">
-          <button
-            onClick={() => mgr.listDevices()}
-            disabled={mgr.loading}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${mgr.loading ? "animate-spin" : ""}`}
-            />
-            {t("yubikey.devices.refresh", "Refresh")}
-          </button>
-          <button
-            onClick={() => mgr.waitForDevice(30)}
-            disabled={mgr.loading}
-            className="flex items-center gap-2 px-4 py-2 bg-muted text-foreground rounded-md hover:bg-muted/80 disabled:opacity-50"
-          >
-            <Clock className="w-4 h-4" />
-            {t("yubikey.devices.waitFor", "Wait for Device")}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"serial" | "device_name">("serial");
+  const [descending, setDescending] = useState(false);
+  const rows = useMemo(
+    () =>
+      mgr.devices
+        .filter((device) =>
+          [
+            device.device_name,
+            device.serial,
+            device.firmware_version,
+            device.form_factor,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(search.toLowerCase()),
+        )
+        .slice()
+        .sort((a, b) => {
+          const order =
+            sort === "serial"
+              ? a.serial - b.serial
+              : a.device_name.localeCompare(b.device_name);
+          return descending ? -order : order;
+        }),
+    [mgr.devices, search, sort, descending],
+  );
+  const changeSort = (field: typeof sort) => {
+    if (sort === field) setDescending(!descending);
+    else {
+      setSort(field);
+      setDescending(false);
+    }
+  };
   return (
-    <div className="sor-yk-devices space-y-4">
-      <div className="flex justify-between items-center">
+    <div className="sor-yk-devices space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium">
           {t("yubikey.devices.detected", "Detected Devices")} (
           {mgr.devices.length})
         </h3>
         <div className="flex gap-2">
           <button
-            onClick={() => mgr.listDevices()}
+            type="button"
+            onClick={() => void mgr.listDevices()}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+            className="sor-btn sor-btn-secondary text-xs"
           >
-            <RefreshCw
-              className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className="h-3.5 w-3.5" />
             {t("yubikey.devices.refresh", "Refresh")}
           </button>
           <button
-            onClick={() => mgr.waitForDevice(30)}
+            type="button"
+            onClick={() => void mgr.waitForDevice(30_000)}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+            className="sor-btn sor-btn-secondary text-xs"
           >
-            <Clock className="w-3 h-3" />
+            <Clock className="h-3.5 w-3.5" />
             {t("yubikey.devices.waitFor", "Wait for Device")}
           </button>
         </div>
       </div>
-
-      <div className="grid gap-3">
-        {mgr.devices.map((dev) => {
-          const isActive = mgr.selectedDevice?.serial === dev.serial;
-          return (
-            <button
-              key={dev.serial}
-              onClick={() => mgr.getDeviceInfo(dev.serial)}
-              className={`w-full text-left bg-card border rounded-lg p-4 transition-colors ${
-                isActive
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/50"
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <HardDrive className="w-5 h-5 text-primary" />
-                  <span className="font-medium text-sm">
-                    {t("yubikey.devices.serial", "Serial")}: {dev.serial}
-                  </span>
-                </div>
-                {isActive && (
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                    {t("yubikey.devices.active", "Active")}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                <Cpu className="w-3 h-3" />
-                {t("yubikey.devices.firmware", "Firmware")}:{" "}
-                {dev.firmware_version}
-                {dev.form_factor && (
-                  <span className="ml-2 flex items-center gap-1">
-                    <Smartphone className="w-3 h-3" />
-                    {dev.form_factor}
-                  </span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1 mb-2">
-                <span className="text-[10px] text-muted-foreground mr-1">
-                  USB:
-                </span>
-                <InterfaceBadge
-                  label="OTP"
-                  active={dev.usb_interfaces?.includes("OTP") ?? false}
-                />
-                <InterfaceBadge
-                  label="FIDO"
-                  active={dev.usb_interfaces?.includes("FIDO") ?? false}
-                />
-                <InterfaceBadge
-                  label="CCID"
-                  active={dev.usb_interfaces?.includes("CCID") ?? false}
-                />
-                {dev.nfc_interfaces && (
-                  <>
-                    <span className="text-[10px] text-muted-foreground ml-2 mr-1">
-                      NFC:
-                    </span>
-                    <InterfaceBadge
-                      label="OTP"
-                      active={dev.nfc_interfaces.includes("OTP")}
-                    />
-                    <InterfaceBadge
-                      label="FIDO"
-                      active={dev.nfc_interfaces.includes("FIDO")}
-                    />
-                    <InterfaceBadge
-                      label="CCID"
-                      active={dev.nfc_interfaces.includes("CCID")}
-                    />
-                  </>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                {dev.is_fips && (
-                  <StatusBadge status="success" label={t("yubikey.devices.fips", "FIPS")} />
-                )}
-                {dev.config_locked && (
-                  <span className="flex items-center gap-1 text-warning">
-                    <Lock className="w-3 h-3" />
-                    {t("yubikey.devices.configLocked", "Config Locked")}
-                  </span>
-                )}
-                {dev.has_nfc && (
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Nfc className="w-3 h-3" />
-                    {t("yubikey.devices.nfc", "NFC")}
-                  </span>
-                )}
-                {dev.auto_eject_timeout != null &&
-                  dev.auto_eject_timeout > 0 && (
-                    <span className="flex items-center gap-1 text-muted-foreground">
-                      <Timer className="w-3 h-3" />
-                      {t("yubikey.devices.autoEject", "Auto-eject")}:{" "}
-                      {dev.auto_eject_timeout}s
-                    </span>
-                  )}
-              </div>
-            </button>
-          );
-        })}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[var(--color-textSecondary)]" />
+        <input
+          aria-label="Search hardware keys"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search model, serial or firmware…"
+          className="sor-form-input w-full pl-9"
+        />
       </div>
+      {mgr.devices.length === 0 ? (
+        <EmptyState
+          icon={Usb}
+          message={t("yubikey.devices.empty", "Insert a YubiKey")}
+          hint={t(
+            "yubikey.devices.emptyDesc",
+            "YubiKey Manager is ready, but no keys are connected. Insert a key and refresh devices.",
+          )}
+        />
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]">
+              <tr>
+                <th
+                  className="px-3 py-2"
+                  aria-sort={
+                    sort === "device_name"
+                      ? descending
+                        ? "descending"
+                        : "ascending"
+                      : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-1"
+                    onClick={() => changeSort("device_name")}
+                  >
+                    Device
+                    <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+                <th
+                  className="px-3 py-2"
+                  aria-sort={
+                    sort === "serial"
+                      ? descending
+                        ? "descending"
+                        : "ascending"
+                      : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="flex items-center gap-1"
+                    onClick={() => changeSort("serial")}
+                  >
+                    Serial
+                    <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+                <th className="px-3 py-2">Firmware / form factor</th>
+                <th className="px-3 py-2">Interfaces</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {rows.map((dev) => (
+                <tr
+                  key={dev.serial}
+                  className={
+                    mgr.selectedDevice?.serial === dev.serial
+                      ? "bg-primary/10"
+                      : "hover:bg-[var(--color-surfaceHover)]"
+                  }
+                >
+                  <td className="px-3 py-3 font-medium">
+                    {dev.device_name || "YubiKey"}
+                  </td>
+                  <td className="px-3 py-3 font-mono">{dev.serial}</td>
+                  <td className="px-3 py-3">
+                    {dev.firmware_version}
+                    <span className="block text-[var(--color-textSecondary)]">
+                      {dev.form_factor}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      <span>USB</span>
+                      {["Otp", "Fido", "Ccid"].map((iface) => (
+                        <InterfaceBadge
+                          key={iface}
+                          label={iface.toUpperCase()}
+                          active={
+                            dev.usb_interfaces_enabled?.some(
+                              (value) => value === iface,
+                            ) ?? false
+                          }
+                        />
+                      ))}
+                    </div>
+                    {dev.has_nfc && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <span>NFC</span>
+                        {dev.nfc_interfaces_enabled?.map((iface) => (
+                          <InterfaceBadge
+                            key={iface}
+                            label={iface.toUpperCase()}
+                            active
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-3">
+                    {mgr.selectedDevice?.serial === dev.serial && (
+                      <span className="mr-2 text-primary">Active</span>
+                    )}
+                    {dev.is_fips && <span className="mr-2">FIPS</span>}
+                    {dev.config_locked && <span>Config Locked</span>}
+                    {dev.auto_eject_timeout > 0 && (
+                      <span className="block">
+                        Auto-eject: {dev.auto_eject_timeout}s
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      type="button"
+                      disabled={mgr.loading}
+                      className="sor-btn sor-btn-secondary text-xs"
+                      aria-label={`Select YubiKey ${dev.serial}`}
+                      onClick={() => void mgr.getDeviceInfo(dev.serial)}
+                    >
+                      Select
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="p-6 text-center text-[var(--color-textSecondary)]"
+                  >
+                    No hardware keys match your search.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

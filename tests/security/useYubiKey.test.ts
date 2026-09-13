@@ -63,7 +63,9 @@ describe("useYubiKey", () => {
     });
 
     expect(result.current.selectedDevice).toEqual(device);
-    expect(invoke).toHaveBeenCalledWith("yk_get_device_info", { serial: 99999 });
+    expect(invoke).toHaveBeenCalledWith("yk_get_device_info", {
+      serial: 99999,
+    });
   });
 
   // ── PIV ───────────────────────────────────────────────────────────
@@ -108,7 +110,7 @@ describe("useYubiKey", () => {
     expect(invoke).toHaveBeenCalledWith("yk_piv_generate_key", {
       serial: 12345,
       slot: "9a",
-      algorithm: "RSA2048",
+      algo: "RSA2048",
       pinPolicy: "Default",
       touchPolicy: "Default",
     });
@@ -191,9 +193,12 @@ describe("useYubiKey", () => {
   });
 
   it("oathCalculateAll stores codes", async () => {
-    const codes = { "github:user": { code: "123456", validFrom: 0, validTo: 30 } };
+    const codes = {
+      "github:user": { code: "123456", validFrom: 0, validTo: 30 },
+    };
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-      if (cmd === "yk_oath_calculate_all") return codes;
+      if (cmd === "yk_oath_calculate_all")
+        return [[{ credential_id: "github:user" }, codes["github:user"]]];
       return [];
     });
 
@@ -213,7 +218,12 @@ describe("useYubiKey", () => {
     const { result } = renderHook(() => useYubiKey());
 
     await act(async () => {
-      await result.current.otpConfigureChalResp(12345, 1 as any, "hmac-key", true);
+      await result.current.otpConfigureChalResp(
+        12345,
+        1 as any,
+        "hmac-key",
+        true,
+      );
     });
 
     expect(invoke).toHaveBeenCalledWith("yk_otp_configure_chalresp", {
@@ -241,7 +251,7 @@ describe("useYubiKey", () => {
     });
 
     expect(res).toBeUndefined();
-    expect(result.current.error).toBe("Device not found");
+    expect(result.current.error).toContain("The YubiKey operation failed.");
     expect(result.current.loading).toBe(false);
   });
 
@@ -257,7 +267,7 @@ describe("useYubiKey", () => {
       await result.current.getDeviceInfo(1);
     });
 
-    expect(result.current.error).toBe("fail");
+    expect(result.current.error).toContain("The YubiKey operation failed.");
 
     act(() => {
       result.current.clearError();

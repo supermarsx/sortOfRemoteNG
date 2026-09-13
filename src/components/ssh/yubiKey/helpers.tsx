@@ -17,16 +17,18 @@ export const DangerConfirm: React.FC<{
         </span>
         <button
           onClick={() => {
+            if (disabled) return;
             onConfirm();
             setConfirming(false);
           }}
-          className="px-2 py-1 text-xs bg-error text-[var(--color-text)] rounded hover:bg-error/90"
+          disabled={disabled}
+          className="sor-btn sor-btn-danger px-2 py-1 text-xs rounded"
         >
           {t("yubikey.confirmYes", "Yes, proceed")}
         </button>
         <button
           onClick={() => setConfirming(false)}
-          className="px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80"
+          className="sor-btn sor-btn-secondary px-2 py-1 text-xs rounded"
         >
           {t("common.cancel", "Cancel")}
         </button>
@@ -37,7 +39,7 @@ export const DangerConfirm: React.FC<{
     <button
       onClick={() => setConfirming(true)}
       disabled={disabled}
-      className="flex items-center gap-1 px-3 py-1.5 text-xs bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
+      className="sor-btn sor-btn-danger flex items-center gap-1 px-3 py-1.5 text-xs rounded disabled:opacity-50"
     >
       <AlertTriangle className="w-3 h-3" />
       {label}
@@ -51,7 +53,9 @@ export const InterfaceBadge: React.FC<{ label: string; active: boolean }> = ({
 }) => (
   <span
     className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-      active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+      active
+        ? "bg-primary/10 text-primary"
+        : "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
     }`}
   >
     {label}

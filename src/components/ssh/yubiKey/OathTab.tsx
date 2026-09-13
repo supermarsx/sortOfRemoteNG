@@ -45,7 +45,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.fetchOathAccounts(serial)}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+            className="sor-btn sor-btn-secondary flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50"
           >
             <RefreshCw
               className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
@@ -55,7 +55,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.oathCalculateAll(serial)}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
+            className="sor-btn sor-btn-secondary flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50"
           >
             <RefreshCw className="w-3 h-3" />
             {t("yubikey.oath.calcAll", "Calculate All")}
@@ -80,7 +80,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             return (
               <div
                 key={`${acct.credential_id}-${idx}`}
-                className="bg-card border border-border rounded-lg p-3 space-y-2"
+                className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 space-y-2"
               >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
@@ -90,7 +90,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                           {acct.issuer}
                         </span>
                       )}
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-[var(--color-textSecondary)]">
                         {acct.name}
                       </span>
                     </div>
@@ -104,14 +104,14 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       >
                         {acct.oath_type}
                       </span>
-                      <span className="px-1.5 py-0.5 bg-muted rounded text-[10px] text-muted-foreground">
+                      <span className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px] text-[var(--color-textSecondary)]">
                         {acct.algorithm}
                       </span>
-                      <span className="px-1.5 py-0.5 bg-muted rounded text-[10px] text-muted-foreground">
+                      <span className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px] text-[var(--color-textSecondary)]">
                         {acct.digits}d
                       </span>
                       {acct.oath_type === "Totp" && (
-                        <span className="px-1.5 py-0.5 bg-muted rounded text-[10px] text-muted-foreground">
+                        <span className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px] text-[var(--color-textSecondary)]">
                           {acct.period}s
                         </span>
                       )}
@@ -128,7 +128,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                         mgr.oathCalculate(serial, acct.credential_id)
                       }
                       disabled={mgr.loading}
-                      className="px-2 py-1 text-xs bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
+                      className="sor-btn sor-btn-secondary px-2 py-1 text-xs rounded disabled:opacity-50"
                     >
                       {t("yubikey.oath.calculate", "Calc")}
                     </button>
@@ -137,19 +137,19 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                         mgr.oathDeleteAccount(serial, acct.credential_id)
                       }
                       disabled={mgr.loading}
-                      className="p-1 text-error hover:bg-error/10 rounded disabled:opacity-50"
+                      className="sor-btn sor-btn-danger p-1 rounded disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
                 {code && (
-                  <div className="flex items-center gap-2 bg-muted/50 rounded p-2">
+                  <div className="flex items-center gap-2 bg-[var(--color-surfaceHover)] rounded p-2">
                     <span className="text-lg font-mono font-bold tracking-wider">
                       {code.code}
                     </span>
                     {code.valid_to && (
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <span className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {Math.max(
                           0,
@@ -160,7 +160,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     )}
                     <button
                       onClick={() => navigator.clipboard.writeText(code.code)}
-                      className="p-0.5 text-muted-foreground hover:text-foreground"
+                      className="sor-btn sor-btn-secondary p-0.5"
                     >
                       <Copy className="w-3 h-3" />
                     </button>
@@ -173,7 +173,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       )}
 
       {/* Add Account Form */}
-      <div className="bg-card border border-border rounded-lg p-4 space-y-3">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-medium flex items-center gap-2">
           <Plus className="w-4 h-4" />
           {t("yubikey.oath.addAccount", "Add Account")}
@@ -208,7 +208,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
           <button
             onClick={() => setShowSecret(!showSecret)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            className="sor-btn sor-btn-secondary absolute right-2 top-1/2 -translate-y-1/2"
           >
             {showSecret ? (
               <EyeOff className="w-3 h-3" />
@@ -220,9 +220,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="grid grid-cols-4 gap-2">
           <Select
             value={addForm.type}
-            onChange={(v) =>
-              setAddForm((f) => ({ ...f, type: v }))
-            }
+            onChange={(v) => setAddForm((f) => ({ ...f, type: v }))}
             variant="form-sm"
             options={[
               { value: "TOTP", label: "TOTP" },
@@ -231,9 +229,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
           <Select
             value={addForm.algorithm}
-            onChange={(v) =>
-              setAddForm((f) => ({ ...f, algorithm: v }))
-            }
+            onChange={(v) => setAddForm((f) => ({ ...f, algorithm: v }))}
             variant="form-sm"
             options={[
               { value: "SHA1", label: "SHA1" },
@@ -300,7 +296,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               });
             }}
             disabled={!addForm.name || !addForm.secret || mgr.loading}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+            className="sor-btn sor-btn-primary flex items-center gap-1 px-3 py-1.5 text-xs rounded disabled:opacity-50"
           >
             <Plus className="w-3 h-3" />
             {t("yubikey.oath.add", "Add")}
@@ -309,7 +305,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
 
       {/* OATH Password */}
-      <div className="bg-card border border-border rounded-lg p-4 space-y-2">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 space-y-2">
         <h3 className="text-xs font-medium">
           {t("yubikey.oath.password", "OATH Applet Password")}
         </h3>
@@ -326,7 +322,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               setOathPw("");
             }}
             disabled={!oathPw || mgr.loading}
-            className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+            className="sor-btn sor-btn-primary px-3 py-1.5 text-xs rounded disabled:opacity-50"
           >
             {t("yubikey.oath.setPassword", "Set")}
           </button>

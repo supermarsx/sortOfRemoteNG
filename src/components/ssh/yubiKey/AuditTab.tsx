@@ -1,10 +1,5 @@
 import React from "react";
-import {
-  Trash2,
-  Download,
-  Activity,
-  RefreshCw,
-} from "lucide-react";
+import { Trash2, Download, Activity, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "../../ui/display";
 import type { Mgr } from "./types";
@@ -23,7 +18,7 @@ export const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.fetchAuditLog(100)}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+            className="sor-btn sor-btn-secondary flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50"
           >
             <RefreshCw
               className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
@@ -33,7 +28,7 @@ export const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.exportAudit()}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+            className="sor-btn sor-btn-secondary flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50"
           >
             <Download className="w-3 h-3" />
             {t("yubikey.audit.export", "Export")}
@@ -41,7 +36,7 @@ export const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.clearAudit()}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
+            className="sor-btn sor-btn-danger flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50"
           >
             <Trash2 className="w-3 h-3" />
             {t("yubikey.audit.clear", "Clear")}
@@ -63,7 +58,7 @@ export const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {mgr.auditEntries.map((entry, idx) => (
             <div
               key={entry.timestamp + idx}
-              className="flex items-start gap-2 p-2 bg-card border border-border rounded text-xs"
+              className="flex items-start gap-2 p-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs"
             >
               <span
                 className={`w-2 h-2 mt-1 rounded-full flex-shrink-0 ${
@@ -75,17 +70,17 @@ export const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   <span className="inline-flex items-center gap-1">
                     <span className="font-medium">{entry.action}</span>
                     {entry.serial && (
-                      <span className="text-muted-foreground">
+                      <span className="text-[var(--color-textSecondary)]">
                         #{entry.serial}
                       </span>
                     )}
                   </span>
-                  <span className="text-muted-foreground">
+                  <span className="text-[var(--color-textSecondary)]">
                     {new Date(entry.timestamp).toLocaleTimeString()}
                   </span>
                 </div>
                 {entry.details && (
-                  <div className="text-muted-foreground truncate">
+                  <div className="text-[var(--color-textSecondary)] truncate">
                     {entry.details}
                   </div>
                 )}

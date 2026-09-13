@@ -28,28 +28,28 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
     <div className="sor-yk-fido2 space-y-6">
       {/* Device Info */}
       {mgr.fido2Info && (
-        <div className="bg-card border border-border rounded-lg p-4 space-y-3">
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
           <h3 className="text-sm font-medium flex items-center gap-2">
             <Fingerprint className="w-4 h-4" />
             {t("yubikey.fido2.deviceInfo", "FIDO2 Device Info")}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
             <div>
-              <span className="text-muted-foreground">
+              <span className="text-[var(--color-textSecondary)]">
                 {t("yubikey.fido2.version", "Version")}:
               </span>{" "}
-              {mgr.fido2Info.version}
+              {mgr.fido2Info.versions.join(", ")}
             </div>
             <div className="font-mono">
-              <span className="text-muted-foreground">AAGUID:</span>{" "}
+              <span className="text-[var(--color-textSecondary)]">AAGUID:</span>{" "}
               {mgr.fido2Info.aaguid}
             </div>
-            {mgr.fido2Info.max_creds_remaining != null && (
+            {mgr.fido2Info.remaining_discoverable_credentials != null && (
               <div>
-                <span className="text-muted-foreground">
+                <span className="text-[var(--color-textSecondary)]">
                   {t("yubikey.fido2.maxCreds", "Max Creds Remaining")}:
                 </span>{" "}
-                {mgr.fido2Info.max_creds_remaining}
+                {mgr.fido2Info.remaining_discoverable_credentials}
               </div>
             )}
           </div>
@@ -58,7 +58,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               {mgr.fido2Info.extensions.map((ext) => (
                 <span
                   key={ext}
-                  className="px-1.5 py-0.5 bg-muted rounded text-[10px] text-muted-foreground"
+                  className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px] text-[var(--color-textSecondary)]"
                 >
                   {ext}
                 </span>
@@ -69,7 +69,11 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {mgr.fido2Info.options && (
             <div className="flex flex-wrap gap-2 text-xs">
               {Object.entries(mgr.fido2Info.options).map(([key, val]) => (
-                <StatusBadge key={key} status={val ? "success" : "error"} label={key} />
+                <StatusBadge
+                  key={key}
+                  status={val ? "success" : "error"}
+                  label={key}
+                />
               ))}
             </div>
           )}
@@ -79,14 +83,14 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <button
         onClick={() => mgr.fetchFido2Info(serial)}
         disabled={mgr.loading}
-        className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+        className="sor-btn sor-btn-secondary flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50"
       >
         <RefreshCw className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`} />
         {t("yubikey.fido2.refreshInfo", "Refresh Info")}
       </button>
 
       {/* PIN Status */}
-      <div className="bg-card border border-border rounded-lg p-4 space-y-3">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-medium flex items-center gap-2">
           <Lock className="w-4 h-4" />
           {t("yubikey.fido2.pinStatus", "PIN Status")}
@@ -94,17 +98,17 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         {mgr.fido2PinStatus ? (
           <div className="flex flex-wrap gap-3 text-xs">
             <StatusBadge
-              status={mgr.fido2PinStatus.is_set ? "success" : "error"}
+              status={mgr.fido2PinStatus.pin_set ? "success" : "error"}
               label={
-                mgr.fido2PinStatus.is_set
+                mgr.fido2PinStatus.pin_set
                   ? t("yubikey.fido2.pinSet", "PIN Set")
                   : t("yubikey.fido2.pinNotSet", "PIN Not Set")
               }
             />
-            {mgr.fido2PinStatus.retries != null && (
+            {mgr.fido2PinStatus.pin_retries != null && (
               <span>
                 {t("yubikey.fido2.retries", "Retries")}:{" "}
-                {mgr.fido2PinStatus.retries}
+                {mgr.fido2PinStatus.pin_retries}
               </span>
             )}
             {mgr.fido2PinStatus.force_change && (
@@ -118,7 +122,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.fido2GetPinStatus(serial)}
             disabled={mgr.loading}
-            className="text-xs text-primary hover:underline"
+            className="sor-btn sor-btn-secondary text-xs hover:underline"
           >
             {t("yubikey.fido2.checkPin", "Check PIN status")}
           </button>
@@ -143,7 +147,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   setNewPinInput("");
                 }}
                 disabled={!newPinInput || mgr.loading}
-                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                className="sor-btn sor-btn-primary px-3 py-1.5 text-xs rounded disabled:opacity-50"
               >
                 {t("yubikey.fido2.setPin", "Set PIN")}
               </button>
@@ -172,7 +176,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   setNewPinInput("");
                 }}
                 disabled={!oldPinInput || !newPinInput || mgr.loading}
-                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                className="sor-btn sor-btn-primary px-3 py-1.5 text-xs rounded disabled:opacity-50"
               >
                 {t("yubikey.fido2.changePin", "Change PIN")}
               </button>
@@ -198,7 +202,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <button
               onClick={() => mgr.fetchFido2Credentials(serial, pinInput)}
               disabled={!pinInput || mgr.loading}
-              className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+              className="sor-btn sor-btn-secondary flex items-center gap-1 px-2 py-1 text-xs rounded disabled:opacity-50"
             >
               <RefreshCw className="w-3 h-3" />
               {t("yubikey.fido2.list", "List")}
@@ -220,11 +224,11 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {mgr.fido2Credentials.map((cred) => (
               <div
                 key={cred.credential_id}
-                className="flex items-center justify-between bg-card border border-border rounded p-2 text-xs"
+                className="flex items-center justify-between bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-2 text-xs"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <Globe className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <Globe className="w-3 h-3 text-[var(--color-textSecondary)] flex-shrink-0" />
                     <span className="font-medium truncate">{cred.rp_id}</span>
                     {cred.discoverable && (
                       <span className="px-1 py-0.5 bg-success/10 text-success rounded text-[10px]">
@@ -232,7 +236,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       </span>
                     )}
                   </div>
-                  <div className="text-muted-foreground truncate ml-5">
+                  <div className="text-[var(--color-textSecondary)] truncate ml-5">
                     {cred.user_name}
                     {cred.creation_time && (
                       <span className="ml-2">
@@ -251,7 +255,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     )
                   }
                   disabled={!pinInput || mgr.loading}
-                  className="flex-shrink-0 p-1 text-error hover:bg-error/10 rounded disabled:opacity-50"
+                  className="sor-btn sor-btn-danger flex-shrink-0 p-1 rounded disabled:opacity-50"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -266,7 +270,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           onClick={() => mgr.fido2ToggleAlwaysUv(serial, true, pinInput)}
           disabled={!pinInput || mgr.loading}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+          className="sor-btn sor-btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs rounded disabled:opacity-50"
         >
           <ShieldCheck className="w-3 h-3" />
           {t("yubikey.fido2.enableUV", "Enable Always-UV")}
@@ -274,7 +278,7 @@ export const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           onClick={() => mgr.fido2ToggleAlwaysUv(serial, false, pinInput)}
           disabled={!pinInput || mgr.loading}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
+          className="sor-btn sor-btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs rounded disabled:opacity-50"
         >
           <Unlock className="w-3 h-3" />
           {t("yubikey.fido2.disableUV", "Disable Always-UV")}
