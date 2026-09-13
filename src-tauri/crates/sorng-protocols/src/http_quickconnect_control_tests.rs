@@ -570,6 +570,7 @@ async fn discovery_manifest_stays_closed_and_custom_dsm_navigation_uses_existing
     assert!(value.get("rpc").is_none());
     assert!(value.get("regionalNavigation").is_none());
     let proxy = fixture(None, source, settings).await;
+    *proxy.state.last_error.lock().unwrap() = Some("unrelated previous failure".into());
     let response = client()
         .get(format!(
             "{}{}",
@@ -588,10 +589,21 @@ async fn discovery_manifest_stays_closed_and_custom_dsm_navigation_uses_existing
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
     let body = response.text().await.unwrap();
     assert!(body.contains("\"kind\":\"redirect_review\""));
+    assert!(body.contains("Preparing destination handoff"));
     assert!(!body.contains("private-token"));
     assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 1);
     assert_eq!(proxy.state.error_count.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        proxy.state.last_error.lock().unwrap().as_deref(),
+        Some("unrelated previous failure")
+    );
+    let manager = proxy.state.global_sessions.lock().unwrap();
+    assert!(manager
+        .redirect_reviews
+        .contains_key(&proxy.state.session_id));
+    assert_eq!(manager.request_log.back().unwrap().status, 202);
+    assert!(manager.request_log.back().unwrap().error.is_none());
 }

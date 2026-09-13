@@ -1,7 +1,7 @@
 //! Closed anonymous QuickConnect discovery and tunnel-setup RPCs. No arbitrary
 //! URLs or inherited website credentials. The closed provider-control namespace
-//! is authorized by original-NAS defaults; only verified discovery replies may
-//! enroll direct NAS probes in a private document registry.
+//! and fixed same-NAS probe operation are authorized by original-NAS defaults.
+//! Every exchange still requires the current native document lease.
 #[path = "http_quickconnect_discovered.rs"]
 mod discovered;
 use super::AxumProxyState;
@@ -33,7 +33,6 @@ pub(super) enum Diagnostic {
     SourceScope,
     Unavailable,
     RequestLimit,
-    DestinationNotDiscovered,
     BodyLimit,
     UnsupportedBody,
     StaleDocument,
@@ -50,7 +49,6 @@ impl Diagnostic {
             Self::SourceScope => "quickconnect_source_scope",
             Self::Unavailable => "quickconnect_verified_route_unavailable",
             Self::RequestLimit => "quickconnect_request_limit",
-            Self::DestinationNotDiscovered => "quickconnect_destination_not_discovered",
             Self::BodyLimit => "quickconnect_body_limit",
             Self::UnsupportedBody => "quickconnect_unsupported_body",
             Self::StaleDocument => "quickconnect_stale_document",
@@ -61,23 +59,10 @@ impl Diagnostic {
     }
 }
 
-struct LearningTicket<'a> {
-    registry: &'a std::sync::Mutex<discovered::Registry>,
-    ticket: discovered::Ticket,
-}
-impl Drop for LearningTicket<'_> {
-    fn drop(&mut self) {
-        if let Ok(mut registry) = self.registry.lock() {
-            registry.finish(self.ticket);
-        }
-    }
-}
-
 pub(super) struct ReviewedQuickConnectControl {
     client: reqwest::Client,
     requests: Semaphore,
     downloads: Semaphore,
-    discovered: std::sync::Mutex<discovered::Registry>,
 }
 impl ReviewedQuickConnectControl {
     pub(super) fn new(proxy: Option<reqwest::Proxy>, min_tls: &str) -> Result<Self, String> {
@@ -126,7 +111,6 @@ impl ReviewedQuickConnectControl {
             client,
             requests: Semaphore::new(8),
             downloads: Semaphore::new(2),
-            discovered: Default::default(),
         }
     }
     #[cfg(test)]
@@ -136,9 +120,6 @@ impl ReviewedQuickConnectControl {
     pub(super) fn revoke(&self) {
         self.requests.close();
         self.downloads.close();
-        if let Ok(mut registry) = self.discovered.lock() {
-            registry.revoke();
-        }
     }
 }
 
@@ -254,7 +235,6 @@ fn refusal(status: StatusCode, message: &'static str, diagnostic: Diagnostic) ->
 
 struct Exchange<'a> {
     state: &'a AxumProxyState,
-    sequence: u64,
     alias: &'a str,
     url: reqwest::Url,
     route: discovered::Route,
@@ -279,27 +259,6 @@ async fn exchange(
         .acquire()
         .await
         .map_err(|_| "QuickConnect discovery ended.")?;
-    if exchange.route == discovered::Route::Probe
-        && !control.discovered.lock().is_ok_and(|registry| {
-            registry.allows(exchange.sequence, exchange.alias, &exchange.url)
-                == Some(exchange.route)
-        })
-    {
-        return Err("QuickConnect destination is not approved for this document.");
-    }
-    let ticket = if exchange.operation == Operation::Discovery {
-        Some(LearningTicket {
-            registry: &control.discovered,
-            ticket: control
-                .discovered
-                .lock()
-                .map_err(|_| "QuickConnect discovery is unavailable.")?
-                .begin(exchange.sequence, exchange.alias)
-                .ok_or("QuickConnect discovery is stale.")?,
-        })
-    } else {
-        None
-    };
     let request = match exchange.route {
         discovered::Route::Control => control
             .client
@@ -377,25 +336,6 @@ async fn exchange(
         serde_json::to_vec(&json).map_err(|_| "QuickConnect discovery JSON is unavailable.")?;
     if bytes.len() > MAX_RESPONSE {
         return Err("QuickConnect discovery response is too large.");
-    }
-    if status.is_success()
-        && exchange
-            .state
-            .network
-            .document_is_current(exchange.sequence)
-    {
-        if let Some(ticket) = ticket {
-            if let Ok(mut registry) = control.discovered.lock() {
-                if exchange
-                    .state
-                    .network
-                    .document_is_current(exchange.sequence)
-                    && !registry.learn(ticket.ticket, &json)
-                {
-                    return Err("QuickConnect discovery response is no longer current.");
-                }
-            }
-        }
     }
     let mut builder = Response::builder()
         .status(status.as_u16())
@@ -598,27 +538,17 @@ pub(super) async fn handle(
                         ));
                     }
                 }
-                // The exact anonymous provider-control namespace and closed
-                // original-alias body are the defaults capability. sites[] is
-                // not an exhaustive regional allowlist. Direct NAS probes,
-                // unlike control POSTs, still need a verified discovery grant.
-                if route == discovered::Route::Probe
-                    && !control.discovered.lock().is_ok_and(|registry| {
-                        registry.allows(sequence, &alias, &destination) == Some(route)
-                    })
-                {
-                    return Ok(refusal(
-                        StatusCode::FORBIDDEN,
-                        "QuickConnect destination is not approved for this document.",
-                        Diagnostic::DestinationNotDiscovered,
-                    ));
-                }
+                // Defaults authorize the closed original-alias control body
+                // and fixed anonymous same-NAS pingpong GET. Vendor discovery
+                // may be cached or precede this new proxy/document, so response
+                // enrollment is not authority. classify(), source defaults and
+                // while_document retain URL, owner and lifetime boundaries;
+                // probe TLS, upstream CORS and ezid are checked independently.
                 approved.store(true, std::sync::atomic::Ordering::Relaxed);
                 exchange(
                     control,
                     Exchange {
                         state: &state,
-                        sequence,
                         alias: &alias,
                         url: destination,
                         route,

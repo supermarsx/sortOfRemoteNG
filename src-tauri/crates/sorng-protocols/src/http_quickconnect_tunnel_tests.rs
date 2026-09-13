@@ -20,16 +20,26 @@ fn sent_body(request: &str) -> serde_json::Value {
 
 async fn successful_tunnel(cold: bool) {
     for id in ["mainapp_https", "mainapp_http"] {
-        // Deliberately discovery-shaped fields in the tunnel reply must not
-        // create new NAS probe grants. Control permission is namespace-bound,
-        // not a grant learned from an allegedly exhaustive sites list.
+        // Reply fields cannot expand the fixed, original-alias capability.
+        // Neither control nor probe permission depends on vendor discovery
+        // state surviving a document change or a fresh proxy handoff.
         let mut reply = smartdns();
         reply[0]["sites"] = serde_json::json!(["unlearned.quickconnect.to"]);
+        reply[0]["smartdns"]["host"] = "other-nas.direct.quickconnect.to".into();
+        reply[0]["service"]["port"] = 8443.into();
         reply[0]["errno"] = 0.into();
         reply[0]["privateReply"] = "private-response-field".into();
         let expected_reply = reply.clone();
         let server = scripted_peer(
             Arc::new(move |request| {
+                if request.starts_with("GET ") {
+                    return (
+                        200,
+                        pong(),
+                        "Access-Control-Allow-Origin: *\r\n".into(),
+                        Duration::ZERO,
+                    );
+                }
                 let body = if sent_body(request)[0]["command"] == "get_server_info" {
                     b"[]".to_vec()
                 } else {
@@ -137,17 +147,46 @@ async fn successful_tunnel(cold: bool) {
         ] {
             assert!(!encoded.contains(hidden), "{hidden}");
         }
-        // Discovery-shaped tunnel response JSON is passed back, not enrolled.
-        assert_eq!(
-            routed(&proxy, PROBE, false).send().await.unwrap().status(),
-            403
-        );
+        // The tunnel response does not schedule extra traffic or authorize
+        // another NAS, port, API path, or query, even when its fields name one.
+        for destination in [
+            PROBE.replace("test-nas.direct", "other-nas.direct"),
+            PROBE.replace(":5001", ":8443"),
+            PROBE.replace("/webman/pingpong.cgi", "/webapi/auth.cgi"),
+            format!("{PROBE}&sid=private-query"),
+        ] {
+            assert_eq!(
+                routed(&proxy, &destination, false)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                400
+            );
+        }
         assert_eq!(server.seen.lock().unwrap().len(), if cold { 2 } else { 4 });
+
+        // An explicit request to the approved probe works even though the
+        // response above advertises a different host/port and no discovery
+        // response enrolled this target.
+        let probe = routed(&proxy, PROBE, false).send().await.unwrap();
+        assert_eq!(probe.status(), 200);
+        assert_eq!(
+            probe.json::<serde_json::Value>().await.unwrap(),
+            serde_json::from_slice::<serde_json::Value>(&pong()).unwrap()
+        );
+        let seen = server.seen.lock().unwrap();
+        assert_eq!(seen.len(), if cold { 4 } else { 6 });
+        assert!(seen[seen.len() - 2].starts_with("CONNECT test-nas.direct.quickconnect.to:5001 "));
+        assert!(seen
+            .last()
+            .unwrap()
+            .starts_with("GET /webman/pingpong.cgi?action=cors&quickconnect=true HTTP/1.1\r\n"));
     }
 }
 
 #[tokio::test]
-async fn tunnel_after_no_sites_regional_discovery_supports_both_services_without_learning_reply() {
+async fn tunnel_after_no_sites_regional_discovery_keeps_reply_fields_out_of_probe_authority() {
     successful_tunnel(false).await;
 }
 
@@ -385,7 +424,7 @@ async fn tunnel_requires_enabled_original_owner_current_document_and_verified_ro
 }
 
 #[tokio::test]
-async fn tunnel_provider_errors_are_not_retried_and_do_not_learn_routes() {
+async fn tunnel_provider_errors_are_not_retried_and_do_not_follow_response_routes() {
     for (status, body, extra, expected) in [
         (
             403,

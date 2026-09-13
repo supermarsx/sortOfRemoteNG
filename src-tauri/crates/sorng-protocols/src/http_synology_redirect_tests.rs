@@ -345,6 +345,7 @@ async fn synology_default_chain_issues_sequential_redacted_receipts_without_netw
         )
         .await;
         register(&fixture);
+        *fixture.state.last_error.lock().unwrap() = Some("unrelated previous failure".into());
         let target = format!("{destination}/dsm/login?private-token=hidden#fragment");
         let response = client()
             .get(format!("{}{}", fixture.base, quickconnect::PATH))
@@ -357,9 +358,12 @@ async fn synology_default_chain_issues_sequential_redacted_receipts_without_netw
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
         let body = response.text().await.unwrap();
         assert!(body.contains("\"kind\":\"redirect_review\""));
+        assert!(body.contains("Preparing destination handoff"));
+        assert!(body.contains("\"status\":202"));
+        assert!(!body.contains("Review redirect destination"));
         assert!(!body.contains("private-token"));
         let mut manager = fixture.state.global_sessions.lock().unwrap();
         let receipt = manager
@@ -388,8 +392,12 @@ async fn synology_default_chain_issues_sequential_redacted_receipts_without_netw
         assert_eq!(fixture.state.request_count.load(Ordering::SeqCst), 1);
         assert_eq!(fixture.state.error_count.load(Ordering::SeqCst), 0);
         let entry = manager.request_log.back().unwrap();
-        assert_eq!(entry.status, 403);
+        assert_eq!(entry.status, 202);
         assert!(entry.error.is_none());
+        assert_eq!(
+            fixture.state.last_error.lock().unwrap().as_deref(),
+            Some("unrelated previous failure")
+        );
         assert_eq!(
             entry.url,
             format!("{}{}", fixture.state.proxy_origin, quickconnect::PATH)
@@ -397,4 +405,158 @@ async fn synology_default_chain_issues_sequential_redacted_receipts_without_netw
     }
     assert_eq!(hits.load(Ordering::SeqCst), 0);
     tripwire.abort();
+}
+
+#[tokio::test]
+async fn actual_upstream_redirect_defaults_are_pending_without_erasing_real_failures() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = requests.clone();
+    // This is an explicit synthetic HTTP proxy. An accidental destination
+    // connection would reach this same tripwire as CONNECT, never public DNS.
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            axum::Router::new().fallback(
+                move |method: axum::http::Method, uri: axum::http::Uri| {
+                    let captured = captured.clone();
+                    async move {
+                        captured
+                            .lock()
+                            .unwrap()
+                            .push((method.clone(), uri.to_string()));
+                        if method == axum::http::Method::CONNECT {
+                            return Response::builder().status(502).body(Body::empty()).unwrap();
+                        }
+                        if uri.path() == "/denied" {
+                            return Response::builder()
+                                .status(403)
+                                .body(Body::from("Actual upstream denial"))
+                                .unwrap();
+                        }
+                        Response::builder()
+                            .status(302)
+                            .header(
+                                "Location",
+                                "https://www.quickconnect.to/login?private-session=hidden",
+                            )
+                            .body(Body::empty())
+                            .unwrap()
+                    }
+                },
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    let original = "http://nas.custom.invalid:5000";
+    for (policy, status, receipt_expected) in [
+        (defaults(original), StatusCode::ACCEPTED, true),
+        (
+            HttpProxyPolicy {
+                allow_cross_origin_redirects: true,
+                ..Default::default()
+            },
+            StatusCode::FORBIDDEN,
+            true,
+        ),
+        (HttpProxyPolicy::default(), StatusCode::FORBIDDEN, false),
+    ] {
+        let transport = reqwest::Client::builder()
+            .no_proxy()
+            .proxy(reqwest::Proxy::all(format!("http://{address}")).unwrap())
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let fixture = proxy_with_policy(
+            format!("{original}/"),
+            transport,
+            UpstreamAuthMode::None,
+            policy,
+            HashMap::new(),
+        )
+        .await;
+        register(&fixture);
+        *fixture.state.last_error.lock().unwrap() = Some("unrelated previous failure".into());
+        let before = requests.lock().unwrap().len();
+        let response = fetch(&fixture, "/review").await;
+        assert_eq!(response.status(), status);
+        let html = response.text().await.unwrap();
+        assert_eq!(
+            html.contains("Preparing destination handoff"),
+            status == StatusCode::ACCEPTED
+        );
+        assert_eq!(
+            html.contains("\"kind\":\"redirect_review\""),
+            receipt_expected
+        );
+        assert!(!html.contains("private-session"));
+        assert_eq!(
+            requests.lock().unwrap().len(),
+            before + 1,
+            "no destination follow before receipt consumption"
+        );
+        assert_eq!(
+            fixture.state.error_count.load(Ordering::SeqCst),
+            u64::from(!receipt_expected)
+        );
+        {
+            let mut manager = fixture.state.global_sessions.lock().unwrap();
+            let log = manager.request_log.back().unwrap();
+            assert_eq!(log.status, status.as_u16());
+            assert_eq!(log.error.is_none(), receipt_expected);
+            if receipt_expected {
+                assert_eq!(
+                    fixture.state.last_error.lock().unwrap().as_deref(),
+                    Some("unrelated previous failure")
+                );
+                let receipt = manager
+                    .review_redirect(&fixture.state.session_id, None)
+                    .unwrap();
+                assert_eq!(receipt.destination_url, "https://www.quickconnect.to/login");
+                assert!(receipt.removed_query);
+                assert!(manager
+                    .review_redirect(&fixture.state.session_id, Some(&receipt.receipt_id))
+                    .is_some());
+                assert!(manager
+                    .review_redirect(&fixture.state.session_id, Some(&receipt.receipt_id))
+                    .is_none());
+            } else {
+                assert!(manager
+                    .review_redirect(&fixture.state.session_id, None)
+                    .is_none());
+            }
+        }
+        let errors = fixture.state.error_count.load(Ordering::SeqCst);
+        let denied = fetch(&fixture, "/denied").await;
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        let denied_html = denied.text().await.unwrap();
+        assert!(denied_html.contains("\"kind\":\"http_status\""));
+        assert!(denied_html.contains("\"status\":403"));
+        assert!(denied_html.contains("Actual upstream denial"));
+        assert!(!denied_html.contains("\"kind\":\"redirect_review\""));
+        assert!(!denied_html.contains("Preparing destination handoff"));
+        assert_eq!(fixture.state.error_count.load(Ordering::SeqCst), errors + 1);
+        assert!(fixture
+            .state
+            .global_sessions
+            .lock()
+            .unwrap()
+            .request_log
+            .back()
+            .unwrap()
+            .error
+            .is_some());
+        assert_ne!(
+            fixture.state.last_error.lock().unwrap().as_deref(),
+            Some("unrelated previous failure")
+        );
+    }
+    assert!(requests
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|(method, _)| method == axum::http::Method::GET));
+    server.abort();
 }

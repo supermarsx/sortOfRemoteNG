@@ -1,5 +1,7 @@
-//! Synthetic verified control replies enroll exact routes; no NAS, provider
+//! Synthetic bounded default control/probe routes; no NAS, provider
 //! API, OS trust store or user credentials are accessed.
+#[path = "http_quickconnect_probe_defaults_tests.rs"]
+mod probe_defaults_tests;
 #[path = "http_quickconnect_tunnel_tests.rs"]
 mod tunnel_tests;
 use super::*;
@@ -137,8 +139,7 @@ async fn verified_regional_to_browser_shaped_anonymous_probe_routes_and_logs_exa
 }
 
 #[tokio::test]
-async fn discovered_routes_refuse_unlearned_aliases_unsafe_headers_methods_queries_and_stale_documents(
-) {
+async fn default_routes_refuse_other_aliases_unsafe_headers_methods_queries_and_stale_documents() {
     let server = peer(200, smartdns().to_string().into_bytes(), "", false, false).await;
     let proxy = fixture(
         Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
@@ -240,11 +241,11 @@ async fn discovered_routes_refuse_unlearned_aliases_unsafe_headers_methods_queri
     }
     proxy.state.network.document_issued(2, false);
     proxy.state.network.activate_document(2).unwrap();
-    let mut next_document = routed(&proxy, PROBE, false).build().unwrap();
-    next_document
-        .headers_mut()
-        .insert(control::DOCUMENT_HEADER, "2".parse().unwrap());
-    assert_eq!(client().execute(next_document).await.unwrap().status(), 403);
+    // The old immutable marker cannot use a fresh document's capability.
+    assert_eq!(
+        routed(&proxy, PROBE, false).send().await.unwrap().status(),
+        502
+    );
     let optout = fixture(
         Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
         ORIGINAL,
@@ -259,8 +260,8 @@ async fn discovered_routes_refuse_unlearned_aliases_unsafe_headers_methods_queri
 }
 
 #[tokio::test]
-async fn concurrent_verified_replies_union_even_when_later_request_fails_and_old_document_cannot_reuse(
-) {
+async fn concurrent_discovery_results_do_not_change_default_probe_permission_or_old_document_fence()
+{
     for second_status in [200, 500] {
         let calls = Arc::new(AtomicU64::new(0));
         let call_count = calls.clone();
@@ -335,23 +336,20 @@ async fn concurrent_verified_replies_union_even_when_later_request_fails_and_old
                 .unwrap()
                 .status()
                 .as_u16(),
-            if second_status == 200 { 200 } else { 403 }
+            200
         );
         proxy.state.network.document_issued(2, false);
         proxy.state.network.activate_document(2).unwrap();
         let before = server.seen.lock().unwrap().len();
-        let mut next_document = routed(&proxy, &first_probe, false).build().unwrap();
-        next_document
-            .headers_mut()
-            .insert(control::DOCUMENT_HEADER, "2".parse().unwrap());
+        let old_document = routed(&proxy, &first_probe, false).build().unwrap();
         assert_eq!(
             client()
-                .execute(next_document)
+                .execute(old_document)
                 .await
                 .unwrap()
                 .status()
                 .as_u16(),
-            403
+            502
         );
         assert_eq!(server.seen.lock().unwrap().len(), before);
     }
@@ -497,7 +495,7 @@ async fn document_replacement_and_session_close_cancel_inflight_and_queued_probe
 }
 
 #[tokio::test]
-async fn provider_control_needs_no_sites_but_invalid_bodies_and_cold_probes_never_send() {
+async fn provider_control_needs_no_sites_but_invalid_control_and_probe_bodies_never_send() {
     let server = peer(
         200,
         br#"[{"sites":["advertised.quickconnect.to"]}]"#.to_vec(),
@@ -530,12 +528,17 @@ async fn provider_control_needs_no_sites_but_invalid_bodies_and_cold_probes_neve
         );
     }
     assert_eq!(
-        routed(&proxy, PROBE, false).send().await.unwrap().status(),
-        403
+        routed(&proxy, PROBE, false)
+            .body("private-probe-body")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
     );
     assert!(
         server.seen.lock().unwrap().is_empty(),
-        "invalid body or cold GET cannot contact any upstream"
+        "invalid control or GET body cannot contact any upstream"
     );
     assert_eq!(
         routed(&proxy, REGIONAL, true)
@@ -574,7 +577,7 @@ async fn provider_control_needs_no_sites_but_invalid_bodies_and_cold_probes_neve
     );
     assert_eq!(
         log[1].error.as_deref(),
-        Some("HTTP 403 [quickconnect_destination_not_discovered]")
+        Some("HTTP 400 [quickconnect_unsupported_body]")
     );
     assert!(log
         .iter()

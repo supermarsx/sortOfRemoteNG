@@ -14,6 +14,49 @@ const PREFIX: &str = "destination=";
 #[derive(Clone, Copy)]
 pub(super) struct ReviewPending;
 
+/// Presentation only, after the caller has recorded a real receipt. This does
+/// not consume that receipt or authorize any destination connection.
+pub(super) fn default_handoff(state: &AxumProxyState, destination: &reqwest::Url) -> bool {
+    (!state.proxy_policy.https_only || destination.scheme() == "https")
+        && state
+            .proxy_policy
+            .synology_quick_connect_defaults
+            .as_ref()
+            .is_some_and(|defaults| defaults.permits(&state.target_origin, destination))
+}
+
+pub(super) fn pending_response(state: &AxumProxyState, source: &str) -> Response<Body> {
+    let theme = state
+        .theme
+        .read()
+        .map(|theme| theme.clone())
+        .unwrap_or_default();
+    let title = "Preparing destination handoff";
+    let detail = "The destination matches this connection's Synology defaults. Waiting for the app to finish certificate and connection checks. Any additional approval is shown in the app; no destination request or login transfer has been authorized by this page.";
+    let bridge = crate::themed_errors::proxy_failure_bridge_script(
+        &state.session_id,
+        "redirect_review",
+        202,
+        title,
+        source,
+        detail,
+        detail,
+    );
+    let html = format!(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} — sortOfRemoteNG</title><style>{theme_css}
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--proxy-bg);color:var(--proxy-text);font:16px system-ui,sans-serif}}main{{max-width:36rem;padding:2rem}}h1{{font-size:1.3rem}}p{{line-height:1.6;color:var(--proxy-text-2)}}</style></head><body><main role="status"><h1>{title}</h1><p>{detail}</p></main>{bridge}</body></html>"#,
+        theme_css = theme.css_block()
+    );
+    Response::builder()
+        .status(StatusCode::ACCEPTED)
+        .extension(ReviewPending)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .header("X-Content-Type-Options", "nosniff")
+        .body(Body::from(html))
+        .expect("static pending handoff response")
+}
+
 fn known_source(origin: &str) -> Option<reqwest::Url> {
     let source = reqwest::Url::parse(origin).ok()?;
     let host = source.host_str()?;
@@ -161,6 +204,9 @@ pub(super) fn handle(
         return policy_response(state, ProxyErrorKind::BadRequest);
     }
     let kind = if redirect::record(state, &destination, document_sequence, navigation_token) {
+        if default_handoff(state, &destination) {
+            return pending_response(state, source.as_str());
+        }
         ProxyErrorKind::RedirectReview
     } else if source.scheme() == "https" && destination.scheme() == "http" {
         ProxyErrorKind::InsecureRedirect

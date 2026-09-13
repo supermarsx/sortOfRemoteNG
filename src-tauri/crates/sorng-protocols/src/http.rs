@@ -2119,6 +2119,9 @@ pub async fn axum_proxy_handler(
                 } else {
                     false
                 };
+            let default_handoff = redirect_review_available
+                && matches!(&e, upstream::UpstreamError::CrossOriginRedirect(destination)
+                    if quickconnect::default_handoff(&state, destination));
             // 502. Categorize the reqwest error, then render a page
             // whose layout, palette, and iconography match the app's
             // own error views (GenericErrorView / FeatureErrorBoundary).
@@ -2159,12 +2162,19 @@ pub async fn axum_proxy_handler(
                     format!("Upstream request failed ({}): {}", kind.code(), kind.hint())
                 }
             };
-            let themed_status = kind.status().as_u16();
+            let themed_status = if default_handoff {
+                202
+            } else {
+                kind.status().as_u16()
+            };
+            let recorded_error = (!redirect_review_available).then(|| err_msg.clone());
 
             state.request_count.fetch_add(1, Ordering::Relaxed);
-            state.error_count.fetch_add(1, Ordering::Relaxed);
-            if let Ok(mut le) = state.last_error.lock() {
-                *le = Some(err_msg.clone());
+            if !redirect_review_available {
+                state.error_count.fetch_add(1, Ordering::Relaxed);
+                if let Ok(mut le) = state.last_error.lock() {
+                    *le = Some(err_msg.clone());
+                }
             }
 
             if let Ok(mut mgr) = state.global_sessions.lock() {
@@ -2178,7 +2188,7 @@ pub async fn axum_proxy_handler(
                     // recoverable from this status (4xx vs 5xx) plus
                     // last_error for richer hints.
                     status: themed_status,
-                    error: Some(err_msg.clone()),
+                    error: recorded_error.clone(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 });
             }
@@ -2202,12 +2212,15 @@ pub async fn axum_proxy_handler(
                         response_body_size: 0,
                         content_type: None,
                         duration_ms: req_start.elapsed().as_millis() as u64,
-                        error: Some(err_msg.clone()),
+                        error: recorded_error,
                     });
                 }
             }
 
             // P7: snapshot theme tokens for this render.
+            if default_handoff {
+                return quickconnect::pending_response(&state, &full_url);
+            }
             let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
             crate::themed_errors::themed_error_response(
                 kind,
