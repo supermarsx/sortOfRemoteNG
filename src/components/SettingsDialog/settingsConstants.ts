@@ -26,6 +26,7 @@ import {
   BrainCircuit,
   RefreshCw,
   LucideIcon,
+  Database,
 } from "lucide-react";
 import { DEFAULT_PASSWORD_POLICY } from "../../types/security/passwordPolicy";
 import {
@@ -73,6 +74,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
 
   // ── Security ──
   { id: "security", labelKey: "settings.security", icon: Shield },
+  { id: "currentDatabase", labelKey: "Current Database", icon: Database },
   { id: "trust", labelKey: "Trust Center", icon: Fingerprint },
   { id: "performance", labelKey: "settings.performance", icon: Zap },
 
@@ -148,6 +150,7 @@ export const SETTINGS_TAB_ID_LIST = [
   "theme",
   "updater",
   "security",
+  "currentDatabase",
   "trust",
   "performance",
   "rdpDefaults",

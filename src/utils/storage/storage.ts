@@ -37,6 +37,8 @@ export interface StorageData {
   connections: Connection[];
   settings: Record<string, unknown>;
   timestamp: number;
+  /** Portable preferences of this database, never application-wide settings. */
+  databaseSettings?: import("../../types/settings/databaseSettings").DatabaseSettings;
   /** Tab group definitions persisted alongside the collection's connections. */
   tabGroups?: import("../../types/connection/connection").TabGroup[];
   /** Deleted connections and retention are protected by this database's envelope. */

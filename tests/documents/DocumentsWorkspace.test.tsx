@@ -22,9 +22,14 @@ import type {
 } from "../../src/types/documents/document";
 import { getDocumentDraft } from "../../src/utils/documents/documentDrafts";
 import { fixture } from "./fixtures";
+import type { DatabaseDocumentType } from "../../src/types/settings/databaseSettings";
+import { normalizeDatabaseDocuments } from "../../src/utils/documents/validation";
+import { DOCUMENT_TYPE_OPTIONS } from "../../src/utils/documents/documentTypePolicy";
 
 const mock = vi.hoisted(() => ({
   ready: true,
+  policyReady: true,
+  disabledTypes: [] as DatabaseDocumentType[],
   store: undefined as DatabaseDocumentStore | undefined,
   connections: [] as Connection[],
   sheets: new Map<string, SpreadsheetEditorProps>(),
@@ -40,6 +45,16 @@ const mock = vi.hoisted(() => ({
     update: vi.fn(),
     remove: vi.fn(),
   },
+}));
+vi.mock("../../src/hooks/settings/useCurrentDatabaseSettings", () => ({
+  useCurrentDatabaseSettings: () => ({
+    settings: mock.policyReady
+      ? { version: 1, documentTypes: { disabled: mock.disabledTypes } }
+      : null,
+    scope: mock.policyReady ? mock.store?.scope : null,
+    loading: !mock.policyReady,
+    error: null,
+  }),
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
@@ -149,6 +164,8 @@ let saved: DatabaseDocuments;
 beforeEach(() => {
   vi.clearAllMocks();
   mock.ready = true;
+  mock.policyReady = true;
+  mock.disabledTypes = [];
   mock.sheets.clear();
   mock.open.mockReset().mockResolvedValue(null);
   mock.save.mockReset().mockResolvedValue(null);
@@ -301,6 +318,10 @@ describe("protected document workspace integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Browse" }));
     expect(screen.getByTestId("documents-browser")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    fireEvent.change(await screen.findByLabelText("Document name"), {
+      target: { value: "Untitled document" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create document" }));
     expect(
       await screen.findByDisplayValue("Untitled document"),
     ).toBeInTheDocument();
@@ -357,6 +378,10 @@ describe("protected document workspace integration", () => {
   it("consumes a creation request once across draft edits and rerenders, without saving automatically", async () => {
     const create = { databaseId: "db-a", requestId: "new-once", create: true };
     const view = show(create);
+    fireEvent.change(await screen.findByLabelText("Document name"), {
+      target: { value: "Untitled document" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create document" }));
     await screen.findByDisplayValue("Untitled document");
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "New private draft" },
@@ -620,5 +645,211 @@ describe("protected document workspace integration", () => {
     view.unmount();
     expect(getDocumentDraft("workspace-tab")).toBeUndefined();
     expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
+
+  it("filters tickets by text, status, priority and tag, with counts and clear filters", async () => {
+    saved = normalizeDatabaseDocuments({
+      ...saved,
+      tickets: [
+        {
+          id: "first",
+          title: "Replace switch",
+          description: "Rack twelve",
+          status: "open",
+          priority: "high",
+          tags: ["Network"],
+          references: [],
+        },
+        {
+          id: "second",
+          title: "Archive report",
+          description: "Monthly",
+          status: "closed",
+          priority: "low",
+          tags: ["Office"],
+          references: [],
+        },
+      ],
+    });
+    show();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "Service desk" }));
+    expect(screen.getByText("2 of 2 tickets")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Search documents and records"), {
+      target: { value: "TWELVE" },
+    });
+    expect(screen.getByText("1 of 2 tickets")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Filter ticket status" }),
+    );
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Open" }));
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Filter ticket priority" }),
+    );
+    fireEvent.mouseDown(screen.getByRole("option", { name: "High" }));
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Filter ticket tag" }),
+    );
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Office" }));
+    expect(screen.getByText("0 of 2 tickets")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("2 of 2 tickets")).toBeInTheDocument();
+    expect(saved.tickets).toHaveLength(2);
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
+
+  it("adds/removes tags as protected drafts and reloads saved ticket tags", async () => {
+    saved = normalizeDatabaseDocuments({
+      ...saved,
+      tickets: [
+        {
+          id: "first",
+          title: "Replace switch",
+          description: "",
+          status: "open",
+          priority: "high",
+          references: [],
+        },
+      ],
+    });
+    show();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "Service desk" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Replace switch" }),
+    );
+    fireEvent.change(screen.getByLabelText("Tags"), {
+      target: { value: " Network " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add tag" }));
+    expect(
+      screen.getByRole("button", { name: "Remove tag Network" }),
+    ).toBeInTheDocument();
+    expect(saved.tickets[0].tags).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saved.tickets[0].tags).toEqual(["Network"]));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove tag Network" }));
+    expect(saved.tickets[0].tags).toEqual(["Network"]);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saved.tickets[0].tags).toEqual([]));
+  });
+
+  it("clears ticket filters and unsubmitted tags on owner-generation changes", async () => {
+    saved = normalizeDatabaseDocuments({
+      ...saved,
+      tickets: [
+        {
+          id: "first",
+          title: "Replace switch",
+          description: "",
+          status: "open",
+          priority: "high",
+          references: [],
+        },
+      ],
+    });
+    const view = show();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "Service desk" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Replace switch" }),
+    );
+    fireEvent.change(screen.getByLabelText("Tags"), {
+      target: { value: "PRIVATE_TAG_DRAFT" },
+    });
+    fireEvent.change(screen.getByLabelText("Search documents and records"), {
+      target: { value: "no match" },
+    });
+    mock.store!.scope = { databaseId: "db-a", generation: 2 };
+    view.rerender(
+      <DocumentsWorkspace sessionId="workspace-tab" request={request} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Search documents and records")).toHaveValue(
+        "",
+      ),
+    );
+    expect(
+      screen.queryByDisplayValue("PRIVATE_TAG_DRAFT"),
+    ).not.toBeInTheDocument();
+    expect(saved.tickets[0].tags).toEqual([]);
+  });
+
+  it("opens and cancels the creation dialog without adding a draft or saving", async () => {
+    show();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    fireEvent.change(screen.getByLabelText("Document name"), {
+      target: { value: "Unsubmitted" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      screen.queryByRole("button", { name: "Open Unsubmitted" }),
+    ).not.toBeInTheDocument();
+    expect(getDocumentDraft("workspace-tab")?.dirty).toBe(false);
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
+
+  it("uses bounded themed tag suggestions and clears unsubmitted text when selecting another record", async () => {
+    saved = normalizeDatabaseDocuments({
+      ...saved,
+      tickets: [
+        {
+          id: "first",
+          title: "First ticket",
+          description: "",
+          status: "open",
+          priority: "high",
+          references: [],
+          tags: ["Network", "Office", "Printer", "WiFi", "Laptop", "Server"],
+        },
+        {
+          id: "second",
+          title: "Second ticket",
+          description: "",
+          status: "open",
+          priority: "normal",
+          references: [],
+        },
+      ],
+    });
+    show();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "Service desk" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Second ticket" }));
+    const suggestions = screen.getByLabelText("Suggested tags");
+    expect(within(suggestions).getAllByRole("button")).toHaveLength(5);
+    expect(document.querySelector("datalist")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Use tag Network" }));
+    expect(
+      screen.getByRole("button", { name: "Remove tag Network" }),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Tags"), {
+      target: { value: "Unsubmitted" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open First ticket" }));
+    expect(screen.getByLabelText("Tags")).toHaveValue("");
+    expect(saved.tickets[1].tags).toEqual([]);
+  });
+
+  it("blocks creation while policy is unavailable or all document types are disabled, but keeps existing documents", async () => {
+    mock.policyReady = false;
+    const view = show();
+    await loaded();
+    expect(screen.getByRole("button", { name: "New document" })).toBeDisabled();
+    mock.policyReady = true;
+    mock.disabledTypes = DOCUMENT_TYPE_OPTIONS.filter(
+      (entry) => entry.type !== "person" && entry.type !== "ticket",
+    ).map((entry) => entry.type);
+    view.rerender(
+      <DocumentsWorkspace sessionId="workspace-tab" request={request} />,
+    );
+    expect(screen.getByRole("button", { name: "New document" })).toBeDisabled();
+    expect(screen.getByDisplayValue("Inventory")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Service desk" }));
+    expect(screen.getByRole("button", { name: "New ticket" })).toBeEnabled();
   });
 });

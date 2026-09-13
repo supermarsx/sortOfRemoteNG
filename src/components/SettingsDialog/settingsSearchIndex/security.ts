@@ -37,25 +37,6 @@ const CREDSSP_TAGS = [
 
 export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
-    key: "databaseCredentialVault",
-    label: "Database credential vault",
-    description:
-      "Manage reusable credentials in this protected database; usernames, passwords, private keys, TOTP and non-portable social/passkey metadata.",
-    tags: [
-      "vault",
-      "credential",
-      "database",
-      "password",
-      "private key",
-      "totp",
-      "passkey",
-      "social",
-      "reusable",
-    ],
-    section: "security",
-    sectionLabel: "Security",
-  },
-  {
     key: "passwordPolicy",
     label: "Local password policy",
     description:
@@ -92,24 +73,6 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Security",
   },
   {
-    key: "currentDatabaseRecycleBin",
-    label: "Current database recycle bin",
-    description:
-      "Keep deleted connections for 15 days, choose custom retention, or keep indefinitely in the current database only. Review permanent deletion before shortening retention.",
-    tags: [
-      "database",
-      "recycle bin",
-      "trash",
-      "deleted",
-      "retention",
-      "restore",
-      "days",
-      "forever",
-    ],
-    section: "security",
-    sectionLabel: "Security",
-  },
-  {
     key: "allowSshExternalLinks",
     label: "Allow opening links from SSH sessions",
     description:
@@ -130,24 +93,6 @@ export const SECURITY_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "clickable urls",
       "open url",
       "terminal links",
-    ],
-    section: "security",
-    sectionLabel: "Security",
-  },
-  {
-    key: "currentDatabaseSecurity",
-    label: "Current database password",
-    description:
-      "Enable, change, remove, lock or unlock the separate current database password without changing global security settings.",
-    tags: [
-      "database",
-      "collection",
-      "password",
-      "encrypt",
-      "lock",
-      "unlock",
-      "current",
-      "per database",
     ],
     section: "security",
     sectionLabel: "Security",

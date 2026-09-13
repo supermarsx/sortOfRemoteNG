@@ -122,6 +122,7 @@ export interface ConnectionContextType {
   recycleBin?: ConnectionRecycleBinApi;
   automationLibrary?: import("../types/recording/automationLibrary").DatabaseAutomationApi;
   documents?: import("../types/documents/document").DatabaseDocumentStore;
+  databaseSettings?: import("../types/settings/databaseSettings").DatabaseSettingsApi;
   credentialVault?: import("../types/security/databaseCredentialVault").DatabaseCredentialVaultApi;
 }
 

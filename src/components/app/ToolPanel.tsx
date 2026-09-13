@@ -444,7 +444,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           request={documentsRequest}
           onOpenConnection={onReconnect}
           onOpenSecurity={
-            onOpenSettings ? () => onOpenSettings("security") : undefined
+            onOpenSettings ? () => onOpenSettings("currentDatabase") : undefined
           }
         />
       </FeatureErrorBoundary>

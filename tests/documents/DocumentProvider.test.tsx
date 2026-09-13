@@ -7,6 +7,7 @@ import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
 import { useConnections } from "../../src/contexts/useConnections";
 import { emptyDatabaseDocuments } from "../../src/utils/documents/validation";
 import { fixture } from "./fixtures";
+import { normalizeDatabaseSettings } from "../../src/utils/documents/documentTypePolicy";
 const mock = vi.hoisted(() => ({
   owner: "db-a",
   locked: false,
@@ -119,6 +120,167 @@ async function mount() {
   return hook;
 }
 describe("native managed database document persistence", () => {
+  it("saves database-only preferences, preserves disabled existing documents and normal connection autosave, then reloads them", async () => {
+    mock.saved!.documents = fixture();
+    const view = await mount();
+    const api = view.result.current.databaseSettings!,
+      scope = api.scope!;
+    expect(scope).toEqual(view.result.current.documents!.scope);
+    const defaults = await api.read(scope);
+    expect(defaults).toEqual(normalizeDatabaseSettings(undefined));
+    const policy = {
+      version: 1 as const,
+      documentTypes: { disabled: ["credential" as const] },
+    };
+    await act(async () => {
+      await api.compareAndSwap(scope, defaults, policy);
+    });
+    expect(mock.saved!.databaseSettings).toEqual(policy);
+    expect(mock.saved!.settings).toEqual({ retained: true });
+    expect(mock.saved!.documents).toEqual(fixture());
+    await act(async () => {
+      await view.result.current.dispatchAndFlush({
+        type: "UPDATE_CONNECTION",
+        payload: { ...mock.saved!.connections[0], name: "ordinary edit" },
+      });
+    });
+    expect(mock.saved!.databaseSettings).toEqual(policy);
+    await act(async () => {
+      await view.result.current.loadData("db-a");
+    });
+    const fresh = view.result.current.databaseSettings!;
+    expect(await fresh.read(fresh.scope!)).toEqual(policy);
+    await expect(api.compareAndSwap(scope, policy, defaults)).rejects.toThrow(
+      /changed/,
+    );
+  });
+  it("enforces disabled new imports/blocks while allowing edits and removal of old disabled records", async () => {
+    mock.saved!.documents = fixture();
+    mock.saved!.databaseSettings = {
+      version: 1,
+      documentTypes: { disabled: ["credential"] },
+    };
+    const view = await mount();
+    const api = view.result.current.documents!,
+      scope = api.scope!;
+    const original = await api.read(scope);
+    const imported = structuredClone(original);
+    imported.revision++;
+    imported.documents.push({
+      ...structuredClone(original.documents[0]),
+      id: "import",
+    });
+    await expect(api.compareAndSwap(scope, original, imported)).rejects.toThrow(
+      /disabled for new content/,
+    );
+    expect(mock.save).not.toHaveBeenCalled();
+    const edit = structuredClone(original);
+    edit.revision++;
+    edit.documents[0].name = "Edited retained content";
+    await act(async () => {
+      await api.compareAndSwap(scope, original, edit);
+    });
+    expect((await api.read(scope)).documents[0].name).toBe(
+      "Edited retained content",
+    );
+    const removed = { ...edit, revision: edit.revision + 1, documents: [] };
+    await act(async () => {
+      await api.compareAndSwap(scope, edit, removed);
+    });
+    expect(mock.saved!.databaseSettings!.documentTypes.disabled).toEqual([
+      "credential",
+    ]);
+  });
+  it("rejects stale settings reviews, unavailable native storage and owner revocation without writes", async () => {
+    const view = await mount();
+    const api = view.result.current.databaseSettings!,
+      scope = api.scope!;
+    const defaults = await api.read(scope);
+    const policy = {
+      version: 1 as const,
+      documentTypes: { disabled: ["note" as const] },
+    };
+    mock.desktop = false;
+    await expect(api.compareAndSwap(scope, defaults, policy)).rejects.toThrow(
+      /native desktop/,
+    );
+    mock.desktop = true;
+    await expect(api.compareAndSwap(scope, policy, defaults)).rejects.toThrow(
+      /changed since/,
+    );
+    await expect(api.read({ ...scope, databaseId: "db-b" })).rejects.toThrow(
+      /owning/,
+    );
+    act(() => {
+      mock.locked = true;
+      mock.access?.({ databaseId: "db-a", status: "suspended" });
+    });
+    mock.locked = false;
+    await expect(api.compareAndSwap(scope, defaults, policy)).rejects.toThrow(
+      /owning|changed|unlock/,
+    );
+    expect(mock.save).not.toHaveBeenCalled();
+  });
+  it("does not publish or replay an unverified preference write, and blocks later document edits until reload", async () => {
+    const view = await mount();
+    const api = view.result.current.databaseSettings!,
+      scope = api.scope!;
+    const defaults = await api.read(scope);
+    mock.save.mockRejectedValueOnce(new Error("Synthetic write refusal"));
+    await expect(
+      api.compareAndSwap(scope, defaults, {
+        version: 1,
+        documentTypes: { disabled: ["note"] },
+      }),
+    ).rejects.toThrow(/refusal/);
+    expect(mock.saved!.databaseSettings).toBeUndefined();
+    await expect(api.read(scope)).rejects.toThrow(/could not be verified/);
+    await expect(
+      view.result.current.documents!.compareAndSwap(
+        scope,
+        emptyDatabaseDocuments(),
+        { ...fixture(), revision: 1 },
+      ),
+    ).rejects.toThrow(/settings write could not be verified/);
+    expect(mock.save).toHaveBeenCalledOnce();
+  });
+  it("blocks competing document creation while a preference write is pending, then applies the new preference", async () => {
+    const view = await mount();
+    const api = view.result.current.databaseSettings!,
+      scope = api.scope!;
+    const defaults = await api.read(scope);
+    let finish!: () => void;
+    mock.save.mockImplementationOnce(async (data: StorageData) => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      mock.saved = structuredClone(data);
+    });
+    const write = api.compareAndSwap(scope, defaults, {
+      version: 1,
+      documentTypes: { disabled: ["credential"] },
+    });
+    await waitFor(() => expect(mock.save).toHaveBeenCalledOnce());
+    await expect(
+      view.result.current.documents!.compareAndSwap(
+        scope,
+        emptyDatabaseDocuments(),
+        { ...fixture(), revision: 1 },
+      ),
+    ).rejects.toThrow(/edit is pending/);
+    await act(async () => {
+      finish();
+      await write;
+    });
+    await expect(
+      view.result.current.documents!.compareAndSwap(
+        scope,
+        emptyDatabaseDocuments(),
+        { ...fixture(), revision: 1 },
+      ),
+    ).rejects.toThrow(/disabled for new content/);
+    expect(mock.save).toHaveBeenCalledOnce();
+  });
   it("keeps documents private and publishes only after durable save while preserving normal autosave", async () => {
     const { result } = await mount();
     const api = result.current.documents!,

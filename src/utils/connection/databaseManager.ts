@@ -38,6 +38,7 @@ import {
 } from "../../components/ImportExport/exportSecurity";
 import { normalizeDatabaseAutomationLibrary } from "../recording/automationLibraryValidation";
 import { normalizeDatabaseDocuments } from "../documents/validation";
+import { normalizeDatabaseSettings } from "../documents/documentTypePolicy";
 import { verifyDocumentAttachments } from "../documents/documentAttachments";
 import { containsLikelySecretText } from "../storage/appDataJsonStore";
 import type {
@@ -379,6 +380,7 @@ export interface DatabaseExportSnapshot {
   colorTags: StorageData["colorTags"];
   recycleBin?: StorageData["recycleBin"];
   automationLibrary?: StorageData["automationLibrary"];
+  databaseSettings?: StorageData["databaseSettings"];
   /**
    * Trust Center records belonging to the exported database (t62 / D6).
    *
@@ -1803,6 +1805,11 @@ export class DatabaseManager {
         ),
       ),
       settings: data.settings ?? {},
+      ...(data.databaseSettings === undefined
+        ? {}
+        : {
+            databaseSettings: normalizeDatabaseSettings(data.databaseSettings),
+          }),
       tabGroups: data.tabGroups ?? [],
       colorTags: data.colorTags ?? {},
       ...(automationLibrary ? { automationLibrary } : {}),
@@ -2109,6 +2116,8 @@ export class DatabaseManager {
     contentExpectation?: { expectedData: unknown },
   ): Promise<void> {
     assertNoSynologyRedirectRuntimeContext(data);
+    if (data.databaseSettings !== undefined)
+      normalizeDatabaseSettings(data.databaseSettings);
     // Capture before ANY await; a later read must not bless an older writer.
     const expectedData = contentExpectation
       ? contentExpectation.expectedData
@@ -2234,6 +2243,10 @@ export class DatabaseManager {
       return;
     }
 
+    if (data.databaseSettings !== undefined)
+      throw new Error(
+        "Database-owned settings require native database storage. No browser fallback was written.",
+      );
     // ── Browser / pre-Tauri fallback (P5 will retire this branch). ──
     const key = `mremote-database-${collectionId}`;
     const legacyKey = `mremote-collection-${collectionId}`;
@@ -2945,6 +2958,13 @@ export class DatabaseManager {
     const importedData: StorageData = {
       connections,
       settings: parsed?.settings ?? {},
+      ...(parsed?.databaseSettings === undefined
+        ? {}
+        : {
+            databaseSettings: normalizeDatabaseSettings(
+              parsed.databaseSettings,
+            ),
+          }),
       timestamp: Date.now(),
       ...(parsed?.automationLibrary === undefined
         ? {}

@@ -16,6 +16,7 @@ import {
 import { generateId } from "../../utils/core/id";
 import { Select } from "../ui/forms";
 import styles from "./documents.module.css";
+import { initialDocumentBlock } from "../../utils/documents/documentBlocks";
 
 const RichTextEditor = dynamic(() => import("./RichTextEditor"), {
   ssr: false,
@@ -32,6 +33,8 @@ export interface DocumentBlockEditorProps {
   attachments: DocumentAttachment[];
   documentKey: string;
   readOnly?: boolean;
+  /** Creation policy only: existing blocks remain visible and editable. */
+  enabledTypes?: readonly DocumentBlock["type"][];
   onAttach?: (file: File) => Promise<DocumentAttachment | null>;
   onReference?: (reference: DocumentReference) => void;
   onChooseReference?: () => Promise<DocumentReference | null>;
@@ -57,87 +60,6 @@ const LABELS: Record<DocumentBlock["type"], string> = {
   reference: "Reference",
   spreadsheet: "Spreadsheet",
 };
-function initialBlock(type: DocumentBlock["type"]): DocumentBlock {
-  const id = generateId();
-  switch (type) {
-    case "rich-text":
-      return {
-        id,
-        type,
-        content: { type: "doc", content: [{ type: "paragraph" }] },
-      };
-    case "markdown":
-    case "mermaid":
-    case "note":
-      return {
-        id,
-        type,
-        text:
-          type === "mermaid" ? "flowchart LR\n  A[Start] --> B[Finish]" : "",
-      };
-    case "wifi":
-      return {
-        id,
-        type,
-        ssid: "",
-        password: "",
-        authentication: "WPA",
-        hidden: false,
-      };
-    case "secret":
-      return { id, type, label: "Secret", value: "" };
-    case "credential":
-      return {
-        id,
-        type,
-        label: "Credential",
-        username: "",
-        password: "",
-        url: "",
-        notes: "",
-      };
-    case "email-account":
-      return { id, type, address: "", username: "", password: "", tls: true };
-    case "identity":
-      return {
-        id,
-        type,
-        documentType: "",
-        holderName: "",
-        idNumber: "",
-        country: "",
-        issueDate: "",
-        expiryDate: "",
-        attachmentIds: [],
-      };
-    case "email":
-      return { id, type, address: "", label: "" };
-    case "spreadsheet":
-      return {
-        id,
-        type,
-        workbook: {
-          version: 1,
-          styles: {},
-          validations: {},
-          sheets: [
-            {
-              id: generateId(),
-              name: "Sheet 1",
-              rows: 100,
-              columns: 26,
-              cells: {},
-              merges: [],
-              rowMetadata: {},
-              columnMetadata: {},
-            },
-          ],
-        },
-      };
-    default:
-      throw new Error("Select the target before creating this block.");
-  }
-}
 function documentBlocksValid(
   blocks: DocumentBlock[],
   attachments: DocumentAttachment[],
@@ -203,6 +125,13 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
       ),
     );
   const append = (block: DocumentBlock) => {
+    if (
+      latest.current.enabledTypes &&
+      !latest.current.enabledTypes.includes(block.type)
+    ) {
+      setError("This block type is disabled for new content in this database.");
+      return;
+    }
     if (latest.current.blocks.length >= DOCUMENT_LIMITS.blocksPerDocument) {
       setError("A document can contain at most 256 blocks.");
       return;
@@ -284,6 +213,9 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
               options={Object.entries(LABELS).map(([value, label]) => ({
                 value,
                 label,
+                disabled:
+                  props.enabledTypes !== undefined &&
+                  !props.enabledTypes.includes(value as DocumentBlock["type"]),
               }))}
             />
           </div>
@@ -292,6 +224,8 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
             className="sor-btn sor-btn-primary"
             disabled={
               busy ||
+              (props.enabledTypes !== undefined &&
+                !props.enabledTypes.includes(kind)) ||
               props.blocks.length >= 256 ||
               (kind === "attachment" && !props.onAttach) ||
               (kind === "reference" && !props.onChooseReference) ||
@@ -300,7 +234,7 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
             onClick={() => {
               if (kind === "attachment") input.current?.click();
               else if (kind === "reference") void chooseReference();
-              else append(initialBlock(kind));
+              else append(initialDocumentBlock(kind));
             }}
           >
             Add block

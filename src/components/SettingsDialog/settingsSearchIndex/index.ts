@@ -7,6 +7,7 @@ import { LAYOUT_SEARCH_ENTRIES } from "./layout";
 import { THEME_SEARCH_ENTRIES } from "./theme";
 import { UPDATER_SEARCH_ENTRIES } from "./updater";
 import { SECURITY_SEARCH_ENTRIES } from "./security";
+import { CURRENT_DATABASE_SEARCH_ENTRIES } from "./currentDatabase";
 import { TRUST_SEARCH_ENTRIES } from "./trust";
 import { PERFORMANCE_SEARCH_ENTRIES } from "./performance";
 import { RDP_DEFAULTS_SEARCH_ENTRIES } from "./rdpDefaults";
@@ -37,6 +38,7 @@ export { LAYOUT_SEARCH_ENTRIES } from "./layout";
 export { THEME_SEARCH_ENTRIES } from "./theme";
 export { UPDATER_SEARCH_ENTRIES } from "./updater";
 export { SECURITY_SEARCH_ENTRIES } from "./security";
+export { CURRENT_DATABASE_SEARCH_ENTRIES } from "./currentDatabase";
 export { TRUST_SEARCH_ENTRIES } from "./trust";
 export { PERFORMANCE_SEARCH_ENTRIES } from "./performance";
 export { RDP_DEFAULTS_SEARCH_ENTRIES } from "./rdpDefaults";
@@ -74,6 +76,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   ...THEME_SEARCH_ENTRIES,
   ...UPDATER_SEARCH_ENTRIES,
   ...SECURITY_SEARCH_ENTRIES,
+  ...CURRENT_DATABASE_SEARCH_ENTRIES,
   ...TRUST_SEARCH_ENTRIES,
   ...PERFORMANCE_SEARCH_ENTRIES,
   ...RDP_DEFAULTS_SEARCH_ENTRIES,

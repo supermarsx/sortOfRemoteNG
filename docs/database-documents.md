@@ -19,7 +19,20 @@ a different database. Open Documents again for that other database. Documents,
 attachments, people and tickets remain scoped to their original database.
 
 Right-click a folder and choose **New document** or browse that folder's
-documents. The Documents workspace also has People and Tickets sections for
+documents. The creation dialog lets you choose a name, icon, folder and starting
+layout; cancelling does not create a record, and Create adds an unsaved draft.
+Database-specific document-type settings restrict new layouts, blocks and imports,
+without removing or hiding existing content. Blank creates an empty container and
+requires at least one enabled block type.
+
+Settings → Current Database → Document types controls the 13 block types plus
+People and Tickets for that database. Legacy databases enable all 15 by default.
+The preference travels with database backups and imports, not with global app
+settings. Disabling a type limits creation, adding blocks and imports; existing
+records can still be read, edited, exported or deleted. These content preferences
+do not replace the required encryption protection.
+
+The Documents workspace also has People and Tickets sections for
 simple local service records. These are database-owned records, not a separate
 cloud service. Open the owning database in the desktop app with at least one
 verified protection layer: either unlocked managed database protection or active
@@ -72,3 +85,11 @@ are not executable document blocks.
 People and Tickets provide basic local records and links only. They do not
 provision operating-system accounts, synchronize an external ITSM platform or
 execute actions just because a document contains a connection reference.
+
+People and tickets support up to 32 tags of 64 UTF-8 bytes each. Tags are trimmed
+and deduplicated without case sensitivity, saved with the protected database, and
+preserved in protected document archives. Suggestions come only from the current
+database. Service Desk combines text, status, priority and exact-tag filters with
+matching counts and Clear filters; these filters do not remove records and reset
+when the owning database changes. Document search still uses metadata rather than
+searching private document blocks.

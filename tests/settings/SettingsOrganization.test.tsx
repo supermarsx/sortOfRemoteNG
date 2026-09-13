@@ -169,9 +169,13 @@ describe("Settings organization", () => {
     const view = render(
       <SettingsTabContent onClose={vi.fn()} initialTab="bots" />,
     );
-    const trigger = await screen.findByRole("button", {
-      name: "Telegram bots",
-    });
+    // The dedicated panel is expanded; its title is a heading, not the old
+    // Behavior-tab accordion toggle. Its original bot controls remain visible.
+    expect(
+      await screen.findByRole("heading", {
+        name: "Telegram bots",
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("settings-tab-bots")).toHaveTextContent("Bots");
     expect(
       view.container.querySelector('[data-setting-key="telegram.bots"]'),
@@ -179,7 +183,6 @@ describe("Settings organization", () => {
     expect(
       screen.queryByRole("button", { name: /reset/i }),
     ).not.toBeInTheDocument();
-    fireEvent.click(trigger);
     expect(
       await screen.findByPlaceholderText("alerts-bot"),
     ).toBeInTheDocument();

@@ -21,6 +21,7 @@ import { BackupStatusPopup } from "../../src/components/sync/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "../../src/components/sync/CloudSyncStatusPopup";
 import { SyncBackupStatusBar } from "../../src/components/sync/SyncBackupStatusBar";
 import { ToastProvider } from "../../src/contexts/ToastContext";
+import * as settingsContext from "../../src/contexts/SettingsContext";
 
 /* ═══════════════════════════════════════════════════════════════
    Settings deep-link (t79)
@@ -97,6 +98,10 @@ vi.mock("../../src/components/SettingsDialog/sections/ThemeSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-theme" />,
 }));
+vi.mock(
+  "../../src/components/SettingsDialog/sections/CurrentDatabaseSettings",
+  () => ({ default: () => <div data-testid="section-current-database" /> }),
+);
 
 beforeAll(() => {
   mocks.settingsManager.loadSettings.mockResolvedValue({});
@@ -136,6 +141,39 @@ describe("settings tab id list", () => {
 });
 
 describe("SettingsDialog deep link", () => {
+  it("does not show a misleading global Save on the database-owned tab even when global manual Save is enabled", async () => {
+    const context = vi.spyOn(settingsContext, "useSettings").mockReturnValue({
+      settings: { settingsDialog: { autoSave: false, showSaveButton: true } },
+      settingsReady: true,
+    } as ReturnType<typeof settingsContext.useSettings>);
+    try {
+      renderDialog({
+        isOpen: true,
+        onClose: () => {},
+        initialTab: "currentDatabase",
+      });
+      await screen.findByTestId("section-current-database");
+      expect(
+        screen.queryByRole("button", { name: "Save" }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("settings-tab-general"));
+      expect(
+        await screen.findByRole("button", { name: "Save" }),
+      ).toBeInTheDocument();
+    } finally {
+      context.mockRestore();
+    }
+  });
+  it("opens the dedicated database section by canonical deep link", async () => {
+    renderDialog({
+      isOpen: true,
+      onClose: () => {},
+      initialTab: "currentDatabase",
+    });
+    expect(
+      await screen.findByTestId("section-current-database"),
+    ).toBeInTheDocument();
+  });
   it("opens on the requested tab", async () => {
     renderDialog({ isOpen: true, onClose: () => {}, initialTab: "backup" });
 

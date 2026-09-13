@@ -5,6 +5,7 @@ import type { SecurityToolCallbacks } from "../../../../hooks/security/useSecuri
 
 export interface SecuritySettingsProps
   extends DatabaseSecurityCallbacks, SecurityToolCallbacks {
+  onOpenCurrentDatabase?: () => void;
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
   handleBenchmark: () => void;

@@ -78,6 +78,12 @@ const FILE_TAB_OVERRIDES: Record<string, string> = {
   "RecordingSettings.tsx": "recording",
   "RecoverySettings.tsx": "recovery",
   "SecuritySettings.tsx": "security",
+  "CurrentDatabaseSettings.tsx": "currentDatabase",
+  // These reusable controls retain their import paths, but now render only in
+  // CurrentDatabaseSettings. This is a topology mapping, not a drift exemption.
+  "security/CurrentDatabaseSecuritySection.tsx": "currentDatabase",
+  "security/ConnectionRecycleBinSection.tsx": "currentDatabase",
+  "security/DatabaseCredentialVaultSection.tsx": "currentDatabase",
   "SSHTerminalSettings.tsx": "sshTerminal",
   "StartupSettings.tsx": "startup",
   "ThemeSettings.tsx": "theme",
@@ -124,6 +130,7 @@ function sectionFiles(): string[] {
 
 /** `null` when the file is not mapped — asserted against, never skipped. */
 function tabForFile(relative: string): string | null {
+  if (FILE_TAB_OVERRIDES[relative]) return FILE_TAB_OVERRIDES[relative];
   const segments = relative.split("/");
   if (segments.length > 1) return DIR_TAB_MAP[segments[0]] ?? null;
   return FILE_TAB_OVERRIDES[segments[0]] ?? null;

@@ -2,6 +2,7 @@ import type {
   DatabaseDocuments,
   DocumentReference,
 } from "../../types/documents/document";
+import { normalizeServiceDeskTags } from "./serviceDesk";
 
 export const DOCUMENT_LIMITS = {
   documents: 1000,
@@ -781,24 +782,50 @@ export function normalizeDatabaseDocuments(value: unknown): DatabaseDocuments {
     for (const value of entries) {
       const item =
         category === "people"
-          ? record(value, [
-              "id",
-              "name",
-              "email",
-              "phone",
-              "organization",
-              "notes",
-              "references",
-            ])
-          : record(value, [
-              "id",
-              "title",
-              "status",
-              "priority",
-              "description",
-              "references",
-            ]);
+          ? record(
+              value,
+              [
+                "id",
+                "name",
+                "email",
+                "phone",
+                "organization",
+                "notes",
+                "references",
+                "tags",
+              ],
+              [
+                "id",
+                "name",
+                "email",
+                "phone",
+                "organization",
+                "notes",
+                "references",
+              ],
+            )
+          : record(
+              value,
+              [
+                "id",
+                "title",
+                "status",
+                "priority",
+                "description",
+                "references",
+                "tags",
+              ],
+              [
+                "id",
+                "title",
+                "status",
+                "priority",
+                "description",
+                "references",
+              ],
+            );
       id(item.id);
+      normalizeServiceDeskTags(item.tags);
       if (category === "people") {
         text(item.name, 256, false);
         text(item.email, 320);
@@ -815,5 +842,8 @@ export function normalizeDatabaseDocuments(value: unknown): DatabaseDocuments {
         validateDocumentReference(ref);
     }
   }
-  return JSON.parse(encoded) as DatabaseDocuments;
+  const normalized = JSON.parse(encoded) as DatabaseDocuments;
+  for (const entry of [...normalized.people, ...normalized.tickets])
+    entry.tags = normalizeServiceDeskTags(entry.tags);
+  return normalized;
 }

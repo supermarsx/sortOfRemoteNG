@@ -15,6 +15,7 @@ import {
   Users,
   Ticket,
   Printer,
+  X,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useDocumentsWorkspace } from "../../hooks/documents/useDocumentsWorkspace";
@@ -59,6 +60,22 @@ import {
 } from "../ui/overlays/Modal";
 import DocumentReferencePicker from "./DocumentReferencePicker";
 import DocumentBlockEditor from "./DocumentBlockEditor";
+import ServiceDeskTags from "./ServiceDeskTags";
+import {
+  serviceDeskTagSuggestions,
+  ticketMatchesFilters,
+  type TicketFilters,
+} from "../../utils/documents/serviceDesk";
+import styles from "./documents.module.css";
+import CreateDocumentDialog from "./CreateDocumentDialog";
+import { useCurrentDatabaseSettings } from "../../hooks/settings/useCurrentDatabaseSettings";
+import {
+  DOCUMENT_TYPE_OPTIONS,
+  assertDocumentTypesAllowedForChange,
+  isDocumentTypeEnabled,
+} from "../../utils/documents/documentTypePolicy";
+import type { DatabaseDocumentType } from "../../types/settings/databaseSettings";
+import type { DocumentBlock } from "../../types/documents/document";
 
 const SpreadsheetEditor = dynamic(() => import("./SpreadsheetEditor"), {
   ssr: false,
@@ -105,11 +122,42 @@ export default function DocumentsWorkspace({
   );
   const allValid = valid && Object.values(sheetValidity).every(Boolean);
   const workspace = useDocumentsWorkspace(request.databaseId, !allValid);
+  const typePolicy = useCurrentDatabaseSettings();
   const { data } = workspace;
+  const policyReady =
+    !typePolicy.loading &&
+    !!typePolicy.settings &&
+    !!typePolicy.scope &&
+    !!workspace.scope &&
+    typePolicy.scope.databaseId === workspace.scope.databaseId &&
+    typePolicy.scope.generation === workspace.scope.generation;
+  const enabledTypes = DOCUMENT_TYPE_OPTIONS.filter(
+    (option) =>
+      option.type !== "person" &&
+      option.type !== "ticket" &&
+      policyReady &&
+      isDocumentTypeEnabled(typePolicy.settings!, option.type),
+  ).map((option) => option.type as DocumentBlock["type"]);
+  const [createKey, setCreateKey] = useState<string | null>(null);
+  const [createParent, setCreateParent] = useState<string | null>(null);
+  const latestPolicy = useRef({
+    settings: typePolicy.settings,
+    ready: policyReady,
+    data,
+  });
+  latestPolicy.current = {
+    settings: typePolicy.settings,
+    ready: policyReady,
+    data,
+  };
   const [section, setSection] = useState<Section>("documents");
   const [selectedId, setSelectedId] = useState("");
   const [folder, setFolder] = useState(request.parentFolderId ?? "*");
   const [query, setQuery] = useState("");
+  const [ticketStatus, setTicketStatus] = useState<TicketFilters["status"]>("");
+  const [ticketPriority, setTicketPriority] =
+    useState<TicketFilters["priority"]>("");
+  const [ticketTag, setTicketTag] = useState("");
   const [browsePage, setBrowsePage] = useState(0);
   const [focusReference, setFocusReference] =
     useState<Extract<DocumentReference, { kind: "cell" }>>();
@@ -199,12 +247,8 @@ export default function DocumentsWorkspace({
         folders.some((item) => item.id === request.parentFolderId)
           ? request.parentFolderId
           : null;
-      const entry = createEmptyDocument("Untitled document", parent);
-      workspace.update((previous) => ({
-        ...previous,
-        documents: [...previous.documents, entry],
-      }));
-      setSelectedId(entry.id);
+      setCreateParent(parent);
+      setCreateKey(workspace.accessKey);
     } else setSelectedId(request.documentId ?? "");
   }, [data, request, workspace, folders, allValid]);
 
@@ -212,6 +256,62 @@ export default function DocumentsWorkspace({
     setSheetValidity({});
     setValid(true);
   }, [workspace.accessKey, selectedId]);
+  useEffect(() => {
+    setQuery("");
+    setTicketStatus("");
+    setTicketPriority("");
+    setTicketTag("");
+    setBrowsePage(0);
+    setCreateKey(null);
+  }, [workspace.accessKey]);
+
+  const clearFilters = () => {
+    setQuery("");
+    setTicketStatus("");
+    setTicketPriority("");
+    setTicketTag("");
+    setBrowsePage(0);
+  };
+  const requireType = (type: DatabaseDocumentType) => {
+    const current = latestPolicy.current;
+    if (!current.ready || !current.settings)
+      throw new Error(
+        "Wait for this database’s document-type settings to load, or retry in Current Database settings.",
+      );
+    if (!isDocumentTypeEnabled(current.settings, type))
+      throw new Error(
+        "This type is disabled for new content in this database. Enable it in Settings → Current Database → Document types. Existing records remain available.",
+      );
+  };
+  const assertAllowed = (next: DatabaseDocuments) => {
+    const current = latestPolicy.current;
+    if (!current.ready || !current.settings || !current.data)
+      throw new Error(
+        "The owning database’s document-type settings are unavailable. Reload before adding content.",
+      );
+    assertDocumentTypesAllowedForChange(current.settings, current.data, next);
+  };
+  const createDocument = (entry: DatabaseDocument) => {
+    if (!createKey || !active(createKey) || busy || !allValid || !data) return;
+    const next = normalizeDatabaseDocuments({
+      ...data,
+      documents: [...data.documents, entry],
+    });
+    assertAllowed(next);
+    if (
+      entry.parentFolderId &&
+      !folders.some((item) => item.id === entry.parentFolderId)
+    )
+      throw new Error(
+        "The selected folder is no longer available in this database.",
+      );
+    workspace.update(() => next);
+    setSelectedId(entry.id);
+    setSection("documents");
+    setFolder(entry.parentFolderId ?? "*");
+    clearFilters();
+    setCreateKey(null);
+  };
 
   const pickReference = useCallback(
     () =>
@@ -275,7 +375,7 @@ export default function DocumentsWorkspace({
           : "documents",
     );
     setFolder("*");
-    setQuery("");
+    clearFilters();
     setSelectedId(reference.id);
     setFocusReference(reference.kind === "cell" ? reference : undefined);
   };
@@ -301,6 +401,32 @@ export default function DocumentsWorkspace({
   };
   const updateDocument = (patch: Partial<DatabaseDocument>) => {
     if (!currentDocument) return;
+    if (
+      patch.blocks &&
+      data &&
+      patch.blocks.some(
+        (block) =>
+          !currentDocument.blocks.some(
+            (old) => old.id === block.id && old.type === block.type,
+          ),
+      )
+    ) {
+      try {
+        assertAllowed({
+          ...data,
+          documents: data.documents.map((entry) =>
+            entry.id === currentDocument.id ? { ...entry, ...patch } : entry,
+          ),
+        });
+      } catch (cause) {
+        setIoError(
+          cause instanceof Error
+            ? cause.message
+            : "The block could not be added.",
+        );
+        return;
+      }
+    }
     workspace.update((previous) =>
       pruneAttachments({
         ...previous,
@@ -329,16 +455,18 @@ export default function DocumentsWorkspace({
   const add = () => {
     const id = generateId();
     if (section === "documents") {
-      const entry = createEmptyDocument(
-        "Untitled document",
+      setCreateParent(
         folders.some((item) => item.id === folder) ? folder : null,
       );
-      workspace.update((previous) => ({
-        ...previous,
-        documents: [...previous.documents, entry],
-      }));
-      setSelectedId(entry.id);
+      setCreateKey(workspace.accessKey);
+      return;
     } else if (section === "people") {
+      try {
+        requireType("person");
+      } catch (cause) {
+        setIoError((cause as Error).message);
+        return;
+      }
       workspace.update((previous) => ({
         ...previous,
         people: [
@@ -351,11 +479,18 @@ export default function DocumentsWorkspace({
             organization: "",
             notes: "",
             references: [],
+            tags: [],
           },
         ],
       }));
       setSelectedId(id);
     } else {
+      try {
+        requireType("ticket");
+      } catch (cause) {
+        setIoError((cause as Error).message);
+        return;
+      }
       workspace.update((previous) => ({
         ...previous,
         tickets: [
@@ -367,12 +502,13 @@ export default function DocumentsWorkspace({
             priority: "normal",
             description: "",
             references: [],
+            tags: [],
           },
         ],
       }));
       setSelectedId(id);
     }
-    setQuery("");
+    clearFilters();
   };
   const remove = () =>
     setConfirm({
@@ -393,6 +529,7 @@ export default function DocumentsWorkspace({
       },
     });
   const attach = async (file: File): Promise<DocumentAttachment | null> => {
+    requireType("attachment");
     const key = access.current;
     if (!active(key) || file.size > DOCUMENT_LIMITS.attachmentBytes)
       throw new Error("Choose a supported attachment up to 4 MB.");
@@ -402,6 +539,7 @@ export default function DocumentsWorkspace({
       file.type as DocumentAttachment["mimeType"],
     );
     if (!active(key)) return null;
+    requireType("attachment");
     workspace.update((previous) => ({
       ...previous,
       attachments: [...previous.attachments, attachment],
@@ -582,6 +720,7 @@ export default function DocumentsWorkspace({
           ? [...data.attachments, attachment]
           : data.attachments,
       });
+      assertAllowed(next);
       workspace.update(() => next);
       setSection("documents");
       setSelectedId(doc.id);
@@ -646,6 +785,8 @@ export default function DocumentsWorkspace({
           .map((entry) => ({
             id: entry.id,
             label: entry.name,
+            tags: [] as string[],
+            search: entry.name,
             detail: entry.parentFolderId
               ? (folders.find((item) => item.id === entry.parentFolderId)
                   ?.name ?? "Unavailable folder")
@@ -656,19 +797,39 @@ export default function DocumentsWorkspace({
             id: entry.id,
             label: entry.name,
             detail: entry.organization || entry.email,
+            tags: entry.tags ?? [],
+            search: `${entry.name} ${entry.organization} ${entry.email} ${entry.phone} ${entry.notes} ${(entry.tags ?? []).join(" ")}`,
           }))
-        : data.tickets.map((entry) => ({
-            id: entry.id,
-            label: entry.title,
-            detail: `${entry.status} · ${entry.priority}`,
-          }));
+        : data.tickets
+            .filter((entry) =>
+              ticketMatchesFilters(entry, {
+                text: query,
+                status: ticketStatus,
+                priority: ticketPriority,
+                tag: ticketTag,
+              }),
+            )
+            .map((entry) => ({
+              id: entry.id,
+              label: entry.title,
+              detail: `${entry.status} · ${entry.priority}`,
+              tags: entry.tags ?? [],
+              search: `${entry.title} ${entry.description} ${(entry.tags ?? []).join(" ")}`,
+            }));
   const visible = records
-    .filter((entry) =>
-      `${entry.label} ${entry.detail}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
+    .filter(
+      (entry) =>
+        section === "tickets" ||
+        `${entry.search} ${entry.detail}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
     )
     .sort((a, b) => a.label.localeCompare(b.label));
+  const ticketTags = serviceDeskTagSuggestions(data.tickets);
+  const tagSuggestions = serviceDeskTagSuggestions([
+    ...data.people,
+    ...data.tickets,
+  ]);
   const lastBrowsePage = Math.max(0, Math.ceil(visible.length / 50) - 1);
   const currentBrowsePage = Math.min(browsePage, lastBrowsePage);
   const browseRows = visible.slice(
@@ -778,6 +939,25 @@ export default function DocumentsWorkspace({
           )}
         </div>
       )}
+      {(!policyReady || typePolicy.error) && (
+        <p
+          role={typePolicy.error ? "alert" : "status"}
+          className="px-4 py-2 text-xs text-[var(--color-textMuted)]"
+        >
+          {typePolicy.error ||
+            "Loading this database’s document-type settings…"}{" "}
+          Existing records remain visible.
+          {typePolicy.error && (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary ml-2"
+              onClick={() => void typePolicy.reload()}
+            >
+              Retry settings
+            </button>
+          )}
+        </p>
+      )}
       <nav
         className="flex gap-1 border-b border-[var(--color-border)] px-3 py-2"
         aria-label="Document workspace sections"
@@ -819,7 +999,9 @@ export default function DocumentsWorkspace({
               placeholder={
                 section === "documents"
                   ? "Search names and folders"
-                  : "Search records"
+                  : section === "tickets"
+                    ? "Search tickets and tags"
+                    : "Search people and tags"
               }
               value={query}
               onChange={(event) => {
@@ -846,9 +1028,84 @@ export default function DocumentsWorkspace({
               ]}
             />
           )}
+          {section === "tickets" && (
+            <div className={styles.ticketFilters} aria-label="Ticket filters">
+              <Select
+                label="Filter ticket status"
+                variant="form-sm"
+                value={ticketStatus}
+                onChange={(value) => {
+                  setTicketStatus(value as TicketFilters["status"]);
+                  setBrowsePage(0);
+                }}
+                options={[
+                  { value: "", label: "All statuses" },
+                  { value: "open", label: "Open" },
+                  { value: "in-progress", label: "In progress" },
+                  { value: "resolved", label: "Resolved" },
+                  { value: "closed", label: "Closed" },
+                ]}
+              />
+              <Select
+                label="Filter ticket priority"
+                variant="form-sm"
+                value={ticketPriority}
+                onChange={(value) => {
+                  setTicketPriority(value as TicketFilters["priority"]);
+                  setBrowsePage(0);
+                }}
+                options={[
+                  { value: "", label: "All priorities" },
+                  { value: "low", label: "Low" },
+                  { value: "normal", label: "Normal" },
+                  { value: "high", label: "High" },
+                  { value: "urgent", label: "Urgent" },
+                ]}
+              />
+              <Select
+                label="Filter ticket tag"
+                variant="form-sm"
+                searchable
+                value={ticketTag}
+                onChange={(value) => {
+                  setTicketTag(value);
+                  setBrowsePage(0);
+                }}
+                options={[
+                  { value: "", label: "All tags" },
+                  ...ticketTags.map((tag) => ({ value: tag, label: tag })),
+                ]}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <span role="status">
+                  {visible.length} of {data.tickets.length} tickets
+                </span>
+                {(query || ticketStatus || ticketPriority || ticketTag) && (
+                  <button
+                    type="button"
+                    className="sor-btn sor-btn-secondary"
+                    onClick={clearFilters}
+                  >
+                    <X size={12} />
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <button
             className="sor-btn sor-btn-secondary"
-            disabled={busy || !allValid}
+            disabled={
+              busy ||
+              !allValid ||
+              !policyReady ||
+              (section === "documents" && enabledTypes.length === 0) ||
+              (section !== "documents" &&
+                !isDocumentTypeEnabled(
+                  typePolicy.settings!,
+                  section === "people" ? "person" : "ticket",
+                ))
+            }
             onClick={add}
           >
             <Plus size={14} />
@@ -880,12 +1137,26 @@ export default function DocumentsWorkspace({
                 <span className="block truncate text-xs text-[var(--color-textMuted)]">
                   {entry.detail}
                 </span>
+                {!!entry.tags.length && (
+                  <span className={`${styles.tags} mt-1`}>
+                    {entry.tags.slice(0, 3).map((tag) => (
+                      <span key={tag} className={styles.tag}>
+                        {tag}
+                      </span>
+                    ))}
+                    {entry.tags.length > 3 && (
+                      <span className={styles.tag}>
+                        +{entry.tags.length - 3}
+                      </span>
+                    )}
+                  </span>
+                )}
               </button>
             ))}
             {!visible.length && (
               <p className="p-2 text-sm text-[var(--color-textMuted)]">
-                {records.length
-                  ? "No matching records. Clear the search or choose another folder."
+                {(section === "tickets" ? data.tickets.length : records.length)
+                  ? "No matching records. Clear the search or filters."
                   : "No records in this view. Add a record or import a document."}
               </p>
             )}
@@ -1019,6 +1290,7 @@ export default function DocumentsWorkspace({
                     </details>
                   </div>
                   <DocumentBlockEditor
+                    enabledTypes={enabledTypes}
                     key={`${workspace.accessKey}:${currentDocument.id}`}
                     documentKey={`${workspace.accessKey}:${currentDocument.id}`}
                     blocks={currentDocument.blocks}
@@ -1125,6 +1397,13 @@ export default function DocumentsWorkspace({
                     These are local contact records, not operating-system or
                     remote application accounts.
                   </p>
+                  <ServiceDeskTags
+                    key={`${workspace.accessKey}:${currentPerson.id}`}
+                    tags={currentPerson.tags ?? []}
+                    suggestions={tagSuggestions}
+                    disabled={busy}
+                    onChange={(tags) => updatePerson({ tags })}
+                  />
                 </>
               )}
               {section === "tickets" && currentTicket && (
@@ -1142,7 +1421,7 @@ export default function DocumentsWorkspace({
                   </label>
                   <div className="flex flex-wrap gap-3">
                     <Select
-                      aria-label="Ticket status"
+                      label="Ticket status"
                       value={currentTicket.status}
                       disabled={busy}
                       onChange={(value) =>
@@ -1158,7 +1437,7 @@ export default function DocumentsWorkspace({
                       ]}
                     />
                     <Select
-                      aria-label="Ticket priority"
+                      label="Ticket priority"
                       value={currentTicket.priority}
                       disabled={busy}
                       onChange={(value) =>
@@ -1185,6 +1464,13 @@ export default function DocumentsWorkspace({
                       }
                     />
                   </label>
+                  <ServiceDeskTags
+                    key={`${workspace.accessKey}:${currentTicket.id}`}
+                    tags={currentTicket.tags ?? []}
+                    suggestions={tagSuggestions}
+                    disabled={busy}
+                    onChange={(tags) => updateTicket({ tags })}
+                  />
                 </>
               )}
               {section !== "documents" && references && (
@@ -1345,6 +1631,18 @@ export default function DocumentsWorkspace({
           onClose={finishReference}
         />
       )}
+      {createKey === workspace.accessKey && createKey && (
+        <CreateDocumentDialog
+          key={createKey}
+          isOpen
+          onClose={() => setCreateKey(null)}
+          onCreate={createDocument}
+          folders={folders}
+          initialParentFolderId={createParent}
+          disabled={busy || !allValid || !policyReady}
+          enabledTypes={enabledTypes}
+        />
+      )}
       {confirm && (
         <ConfirmDialog
           isOpen
@@ -1435,6 +1733,7 @@ export default function DocumentsWorkspace({
                         ? folder
                         : null,
                     );
+                    assertAllowed(next);
                     workspace.update(() => next);
                     closeArchive();
                   } catch (cause) {

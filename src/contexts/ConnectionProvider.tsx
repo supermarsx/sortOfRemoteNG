@@ -44,6 +44,11 @@ import type {
 } from "../types/documents/document";
 import { normalizeDatabaseDocuments } from "../utils/documents/validation";
 import { verifyDocumentAttachments } from "../utils/documents/documentAttachments";
+import type { DatabaseSettingsApi } from "../types/settings/databaseSettings";
+import {
+  normalizeDatabaseSettings,
+  assertDocumentTypesAllowedForChange,
+} from "../utils/documents/documentTypePolicy";
 import type {
   DatabaseCredentialScope,
   DatabaseCredentialSnapshot,
@@ -465,6 +470,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const automationFaultRef = useRef(false);
   const documentsBusyRef = useRef(false);
   const documentsFaultRef = useRef(false);
+  const databaseSettingsBusyRef = useRef(false);
+  const databaseSettingsFaultRef = useRef(false);
+  const [databaseSettingsChangeRevision, setDatabaseSettingsChangeRevision] =
+    useState(0);
   const vaultBusyRef = useRef(false);
   const vaultFaultRef = useRef(false);
   const vaultReviewsRef = useRef(
@@ -607,6 +616,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           loadedStorageRef.current = null;
           automationFaultRef.current = false;
           documentsFaultRef.current = false;
+          databaseSettingsFaultRef.current = false;
           vaultFaultRef.current = false;
           vaultReviewsRef.current.clear();
           recycleReviewsRef.current.clear();
@@ -932,6 +942,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     if (saveLoopRef.current) return saveLoopRef.current;
+    if (databaseSettingsFaultRef.current)
+      throw new Error(
+        "A database settings write could not be verified. Reload the database before any further edit; existing data was not reset.",
+      );
     if (
       !hasLoadedRef.current ||
       !activeDatabaseTargetRef.current ||
@@ -1110,6 +1124,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           loadedStorageRef.current = data;
           automationFaultRef.current = false;
           documentsFaultRef.current = false;
+          databaseSettingsFaultRef.current = false;
+          setDatabaseSettingsChangeRevision((value) => value + 1);
           vaultFaultRef.current = false;
           vaultReviewsRef.current.clear();
           setVaultChangeRevision((value) => value + 1);
@@ -1209,6 +1225,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       scope = { ...scope };
       if (
         recycleBusyRef.current ||
+        databaseSettingsBusyRef.current ||
         documentsBusyRef.current ||
         vaultBusyRef.current
       )
@@ -1317,6 +1334,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         : undefined;
       if (
         recycleBusyRef.current ||
+        databaseSettingsBusyRef.current ||
         documentsBusyRef.current ||
         vaultBusyRef.current
       )
@@ -1422,6 +1440,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     const expire = () => {
       if (
         recycleBusyRef.current ||
+        databaseSettingsBusyRef.current ||
         documentsBusyRef.current ||
         vaultBusyRef.current
       )
@@ -1587,6 +1606,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           );
         if (
           automationBusyRef.current ||
+          databaseSettingsBusyRef.current ||
           documentsBusyRef.current ||
           vaultBusyRef.current
         )
@@ -1659,6 +1679,139 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     automationChangeRevision,
   ]);
 
+  const databaseSettings = useMemo<DatabaseSettingsApi>(() => {
+    void recycleAccessGeneration;
+    let scope: DatabaseSettingsApi["scope"] = null;
+    try {
+      if (!recycleLoading && databaseManager.getCurrentDatabase()) {
+        const current = captureRecycleScope();
+        scope = {
+          databaseId: current.databaseId,
+          generation: current.generation,
+        };
+      }
+    } catch {
+      /* Closed/loading/suspended databases publish no preference receipt. */
+    }
+    const assertScope = (
+      expected: NonNullable<DatabaseSettingsApi["scope"]>,
+    ) => {
+      if (!mountedRef.current)
+        throw new Error("Database settings are no longer open.");
+      assertAutomationScope(expected);
+      if (databaseSettingsFaultRef.current)
+        throw new Error(
+          "The database settings write could not be verified. Reload the database before retrying.",
+        );
+      activeDatabaseTargetRef.current?.assertAccessible?.();
+    };
+    const requireTarget = async (
+      expected: NonNullable<DatabaseSettingsApi["scope"]>,
+    ) => {
+      assertScope(expected);
+      if (!(await getInvoke()))
+        throw new Error(
+          "Current database settings require the native desktop app. No application-wide or browser fallback was written.",
+        );
+      assertScope(expected);
+      const target = activeDatabaseTargetRef.current;
+      if (!target?.assertAccessible || !target.verifyCurrent)
+        throw new Error("Reopen the database before changing its settings.");
+      target.assertAccessible();
+      return target;
+    };
+    return {
+      scope,
+      changeRevision: databaseSettingsChangeRevision,
+      async read(requested) {
+        const expected = { ...requested };
+        await requireTarget(expected);
+        await flushPendingSave();
+        const target = await requireTarget(expected);
+        await target.verifyCurrent!();
+        assertScope(expected);
+        if (target !== activeDatabaseTargetRef.current)
+          throw new Error("The owning database changed. Reload its settings.");
+        return normalizeDatabaseSettings(
+          loadedStorageRef.current?.databaseSettings,
+        );
+      },
+      async compareAndSwap(requested, expectedData, replacement) {
+        const expected = { ...requested };
+        const reviewed = normalizeDatabaseSettings(expectedData);
+        const proposed = normalizeDatabaseSettings(replacement);
+        assertScope(expected);
+        if (
+          databaseSettingsBusyRef.current ||
+          documentsBusyRef.current ||
+          automationBusyRef.current ||
+          vaultBusyRef.current ||
+          recycleBusyRef.current
+        )
+          throw new Error(
+            "Another database edit is pending. Wait and reload its settings before saving.",
+          );
+        databaseSettingsBusyRef.current = true;
+        try {
+          await requireTarget(expected);
+          await flushPendingSave();
+          const target = await requireTarget(expected);
+          await target.verifyCurrent!();
+          assertScope(expected);
+          const current = normalizeDatabaseSettings(
+            loadedStorageRef.current?.databaseSettings,
+          );
+          if (JSON.stringify(current) !== JSON.stringify(reviewed))
+            throw new Error(
+              "Database settings changed since this review. Reload before saving.",
+            );
+          // Includes current documents unchanged, even when their types are now disabled.
+          const snapshot = {
+            ...buildStorageSnapshot(),
+            databaseSettings: proposed,
+          };
+          const write = (async () => {
+            try {
+              await target.save(snapshot);
+              assertScope(expected);
+              loadedStorageRef.current = {
+                ...loadedStorageRef.current!,
+                databaseSettings: proposed,
+              };
+              setDatabaseSettingsChangeRevision((value) => value + 1);
+            } catch (error) {
+              if (
+                expected.generation === loadGenerationRef.current &&
+                target === activeDatabaseTargetRef.current
+              )
+                databaseSettingsFaultRef.current = true;
+              throw error;
+            }
+          })();
+          saveLoopRef.current = write;
+          try {
+            await write;
+          } finally {
+            if (saveLoopRef.current === write) saveLoopRef.current = null;
+          }
+          if (dirtyRevisionRef.current > persistedRevisionRef.current)
+            await flushPendingSave();
+        } finally {
+          databaseSettingsBusyRef.current = false;
+        }
+      },
+    };
+  }, [
+    recycleAccessGeneration,
+    recycleLoading,
+    databaseManager,
+    captureRecycleScope,
+    assertAutomationScope,
+    flushPendingSave,
+    buildStorageSnapshot,
+    databaseSettingsChangeRevision,
+  ]);
+
   // Debounced auto-save: coalesces rapid connection changes into a single write.
   const documents = useMemo<DatabaseDocumentStore>(() => {
     void recycleAccessGeneration;
@@ -1718,7 +1871,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         assertScope(expected);
         throw new Error(
-          "Database protection could not be verified. Unlock the applicable global at-rest encryption key or the managed database in Settings → Security, then reopen the owning database and retry. No document data was exposed.",
+          "Database protection could not be verified. Unlock applicable global at-rest encryption in Settings → Security or managed protection in Settings → Current Database, then reopen the owning database and retry. No document data was exposed.",
         );
       }
       assertScope(expected);
@@ -1728,7 +1881,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         status.globalEncryptionProtected !== true
       )
         throw new Error(
-          "Documents need one verified protection layer: unlock managed protection in Settings → Security → Current database, or enable global Connections encryption and encrypt this database's existing file. Unlocking a global key alone does not protect an unencrypted file.",
+          "Documents need one verified protection layer: unlock managed protection in Settings → Current Database, or enable global Connections encryption in Settings → Security and encrypt this database's existing file. Unlocking a global key alone does not protect an unencrypted file.",
         );
       if (
         typeof status.securityRevision !== "string" ||
@@ -1773,6 +1926,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         assertScope(expected);
         if (
           documentsBusyRef.current ||
+          databaseSettingsBusyRef.current ||
           automationBusyRef.current ||
           vaultBusyRef.current ||
           recycleBusyRef.current
@@ -1792,6 +1946,13 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             throw new Error(
               "Documents changed since this review. Reload before saving.",
             );
+          assertDocumentTypesAllowedForChange(
+            normalizeDatabaseSettings(
+              loadedStorageRef.current?.databaseSettings,
+            ),
+            current,
+            proposed,
+          );
           await verifyDocumentAttachments(proposed, current);
           assertScope(expected);
           target = await requireProtected(expected);
@@ -2075,6 +2236,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         const prior = reviewed(captured);
         if (
           vaultBusyRef.current ||
+          databaseSettingsBusyRef.current ||
           documentsBusyRef.current ||
           automationBusyRef.current ||
           recycleBusyRef.current
@@ -2175,6 +2337,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         const proposed = applyDatabaseCredentialChanges(prior.data, changes);
         if (
           vaultBusyRef.current ||
+          databaseSettingsBusyRef.current ||
           documentsBusyRef.current ||
           automationBusyRef.current ||
           recycleBusyRef.current
@@ -2305,6 +2468,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       recycleBin,
       automationLibrary,
       documents,
+      databaseSettings,
       credentialVault,
       databaseAvailability,
     }),
@@ -2320,6 +2484,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       recycleBin,
       automationLibrary,
       documents,
+      databaseSettings,
       credentialVault,
       databaseAvailability,
     ],

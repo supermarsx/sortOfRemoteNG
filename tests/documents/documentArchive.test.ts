@@ -59,6 +59,7 @@ async function linkedFixture(): Promise<DatabaseDocuments> {
     organization: "",
     notes: "",
     references: structuredClone(refs),
+    tags: [],
   });
   data.tickets.push({
     id: "ticket",
@@ -67,6 +68,7 @@ async function linkedFixture(): Promise<DatabaseDocuments> {
     priority: "normal",
     description: "",
     references: structuredClone(refs),
+    tags: [],
   });
   data.documents[0].blocks.push(
     ...refs.map((reference, index) => ({

@@ -196,6 +196,8 @@ export interface DocumentPerson {
   organization: string;
   notes: string;
   references: DocumentReference[];
+  /** Missing in legacy libraries; normalized to an empty list. */
+  tags?: string[];
 }
 export interface DocumentTicket {
   id: string;
@@ -204,6 +206,8 @@ export interface DocumentTicket {
   priority: "low" | "normal" | "high" | "urgent";
   description: string;
   references: DocumentReference[];
+  /** Missing in legacy libraries; normalized to an empty list. */
+  tags?: string[];
 }
 export interface DatabaseDocuments {
   version: 1;

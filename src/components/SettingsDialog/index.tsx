@@ -13,6 +13,7 @@ import LanguageSettings from "./sections/LanguageSettings";
 import ThemeSettings from "./sections/ThemeSettings";
 import LayoutSettings from "./sections/LayoutSettings";
 import SecuritySettings from "./sections/SecuritySettings";
+import CurrentDatabaseSettings from "./sections/CurrentDatabaseSettings";
 import type { DatabaseSecurityCallbacks } from "./sections/security/CurrentDatabaseSecuritySection";
 import PerformanceSettings from "./sections/PerformanceSettings";
 import ProxySettings from "./sections/ProxySettings";
@@ -218,7 +219,11 @@ const ContentPanel: React.FC<
             updateSettings={u}
             handleBenchmark={mgr.handleBenchmark}
             isBenchmarking={mgr.isBenchmarking}
+            onOpenCurrentDatabase={() => mgr.setActiveTab("currentDatabase")}
           />
+        )}
+        {mgr.activeTab === "currentDatabase" && (
+          <CurrentDatabaseSettings {...securityCallbacks} />
         )}
         {mgr.activeTab === "trust" && (
           <TrustVerificationSettings
@@ -297,6 +302,7 @@ const ContentPanel: React.FC<
       {(() => {
         const saveRequired =
           mgr.activeTab !== "recovery" &&
+          mgr.activeTab !== "currentDatabase" &&
           (!mgr.dialogConfig.autoSave || mgr.dialogConfig.showSaveButton);
         const showReset =
           mgr.hasScrolledToBottom &&

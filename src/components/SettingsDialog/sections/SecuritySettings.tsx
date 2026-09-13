@@ -14,19 +14,13 @@ import TerminalLinksSection from "./security/TerminalLinksSection";
 import SSHKeyGenSection from "./security/SSHKeyGenSection";
 import TOTPDefaultsSection from "./security/TOTPDefaultsSection";
 import type { SecuritySettingsProps } from "./security/types";
-import CurrentDatabaseSecuritySection from "./security/CurrentDatabaseSecuritySection";
-import ConnectionRecycleBinSection from "./security/ConnectionRecycleBinSection";
 import YubiKeySecuritySection from "./security/YubiKeySecuritySection";
 import PasswordPolicySection from "./security/PasswordPolicySection";
-import DatabaseCredentialVaultSection from "./security/DatabaseCredentialVaultSection";
 
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   settings,
   updateSettings,
-  onDatabaseSelect,
-  onDatabaseClose,
-  onBeforeCurrentLock,
-  onOpenCredentialVault,
+  onOpenCurrentDatabase,
   onOpenHardwareKeys,
 }) => {
   const mgr = useSecuritySettings(settings, updateSettings);
@@ -36,17 +30,28 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       <SectionHeading
         icon={<Shield className="w-5 h-5 text-primary" />}
         title="Security"
-        description="Global master-key protection, separate database passwords, and application-wide security policies."
+        description="Global master-key protection and application-wide security policies. Database-owned controls are in Current Database."
       />
 
       <EncryptionAtRestSection />
-      <CurrentDatabaseSecuritySection
-        onDatabaseSelect={onDatabaseSelect}
-        onDatabaseClose={onDatabaseClose}
-        onBeforeCurrentLock={onBeforeCurrentLock}
-      />
-      <ConnectionRecycleBinSection />
-      <DatabaseCredentialVaultSection onOpen={onOpenCredentialVault} />
+      <section className="sor-settings-card space-y-2">
+        <h3 className="text-sm font-medium">
+          Database-specific settings moved
+        </h3>
+        <p className="text-sm text-[var(--color-textSecondary)]">
+          Current database protection, document types, recycle-bin retention and
+          credentials now have their own settings section. Global at-rest
+          protection above is unchanged.
+        </p>
+        <button
+          type="button"
+          className="sor-btn sor-btn-secondary"
+          onClick={onOpenCurrentDatabase}
+          disabled={!onOpenCurrentDatabase}
+        >
+          Open Current Database settings
+        </button>
+      </section>
       <h3 className="text-sm font-medium">
         Global policies, export defaults, and key tools
       </h3>
