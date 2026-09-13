@@ -121,8 +121,9 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
         mainapp_https or mainapp_http, and exact same-NAS pingpong reachability
         GETs. Control POSTs are limited to HTTPS port 443 at
         &lt;single-label&gt;.quickconnect.to/Serv.php with the original NAS
-        alias and current document. Direct probes still require targets learned
-        from verified discovery responses. Relay setup is sent once, never to
+        alias and current document. Direct probes are limited to this NAS's
+        direct HTTPS endpoints on ports 5001/5002 and the exact pingpong GET;
+        discovery is not a prerequisite. Relay setup is sent once, never to
         global. Other APIs, relay subresources and wakeup calls need separate
         routing. No cookies, passwords, arbitrary destinations or certificate
         exceptions are granted. Save the connection to retain this preference.

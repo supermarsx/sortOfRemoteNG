@@ -115,7 +115,23 @@ does not delete explicitly trusted destinations; those remain subject to the
 general redirect policy. The derived runtime origin context is not saved or
 imported as connection policy.
 
-### QuickConnect discovery, learned probes and bounded tunnel setup
+An issued default-destination handoff uses a neutral HTTP 202 pending response,
+not an access-denied warning. The app validates the native receipt and current
+consent before showing “Continuing to approved destination”. This is not a TLS
+or login approval: configured saved-login forwarding still opens manual review.
+Receipt checking and automatic continuation each have a 15-second total waiting
+deadline. Missing, expired or changed authority restores review/retry controls;
+late replies cannot launch a destination. Other review requests and actual policy
+refusals retain their existing responses.
+
+The proxy tracks the active session and its cookie jar. Same-session requests
+can reuse that jar; cross-origin handoffs intentionally create a fresh anonymous
+client and do not transfer the previous website's cookies or login. The “proxy
+keepalive” health check tests the local proxy listener and can restart a dead
+proxy when configured. Transport TCP keepalive is not a DSM login heartbeat;
+neither mechanism prevents a remote application session from expiring.
+
+### QuickConnect discovery, same-NAS probes and bounded tunnel setup
 
 The same checkbox also permits a closed, anonymous initial discovery operation for
 a recognized original NAS alias: **POST
@@ -125,7 +141,7 @@ destination does not authorize this API.
 
 When the selected website is the exact HTTPS global portal, its relative
 `/Serv.php` URL and the equivalent already-rewritten local URL use that same
-discovery endpoint. This preserves native response learning after a portal
+discovery endpoint. This preserves the bounded discovery route after a portal
 handoff; it does not reinterpret `/Serv.php` on another website or accept extra
 paths, query parameters or fragments as discovery requests.
 
@@ -155,26 +171,20 @@ the exact validated operation for the original alias/current document; a host
 matching that namespace is not itself proof that it is a regional server.
 It does not authorize other paths, methods, resources or credential forwarding.
 
-Only successful verified **discovery** replies can enroll direct probes in a
-private native registry for the **same original alias and current document**.
-`smartdns.host`, `smartdns.lan` and `smartdns.lanv6` may supply same-NAS direct
-hosts matching the namespace above. Only explicitly returned
-`service.port`/`service.ext_port` values of 5001 or 5002 can enroll the exact
-bodyless HTTPS GET `/webman/pingpong.cgi?action=cors&quickconnect=true`.
-A different nonempty `server.pingpong_path` is not substituted or relayed.
-
-The registry retains at most 32 exact probe URLs.
-Independent one-use learning tickets are bounded to eight; concurrent valid
-responses for the same document can add routes without discarding each other's
-results. Navigation or session revocation prevents old tickets and grants from
-being reused. Returned opaque `serverID` fields are not assumed to equal the
-requested NAS alias. The request's validated original alias remains authority.
+The same default preference permits the exact bodyless HTTPS GET
+`/webman/pingpong.cgi?action=cors&quickconnect=true` at
+`<alias>.direct.quickconnect.to:5001` or `:5002`, optionally with one valid DNS
+label before the original alias. It does not depend on a prior discovery reply
+or a transient learned-route registry. Other aliases, paths, queries, methods,
+HTTP and ports remain refused. A returned `server.pingpong_path` cannot expand
+the route. Original-source policy and current primary-document identity remain
+mandatory; navigation, opt-out and session revocation invalidate old requests.
 
 A cached provider control host can be the page's first request. Its bounded
 operation is sent directly through the configured proxy after validation;
 there is no synthesized global warm-up, control-host learning prerequisite or
-automatic replay. A direct GET probe without a current discovered grant
-remains refused before contacting that host.
+automatic replay. Discovery and tunnel responses do not grant additional
+origins or probe permissions.
 
 For an authorized regional control endpoint, the same checkbox also permits a
 single-element JSON array containing exactly eight `request_tunnel` fields:
@@ -197,8 +207,9 @@ subresources or wake-up commands are supported; those retain their separate
 routing and trust requirements.
 
 Handled discovery failures include fixed, secret-free diagnostic codes in the
-bounded proxy request log. For example, `quickconnect_destination_not_discovered`
-means a direct probe has no current grant, `quickconnect_stale_document` means document authority
+bounded proxy request log. Older builds reported `quickconnect_destination_not_discovered`
+when a probe was absent from the former learned-route registry. Current exact
+same-NAS probes do not require that registry. `quickconnect_stale_document` means document authority
 ended, and `quickconnect_upstream_status` preserves a provider's HTTP error.
 A validated but uncontacted candidate is labelled **Attempted**, with only its
 canonical origin and operation, without implying that the server was contacted.
@@ -210,16 +221,16 @@ origin. It requires one `Access-Control-Allow-Origin` value permitting that
 source or anonymous `*`, and JSON `ezid` equal to the vendor's MD5-of-alias
 correlation value before returning the response to the same-proxy page. That
 correlation is **not** certificate verification or authentication. Browser GETs
-without `Origin` are accepted only on the discovered route with exact
+without `Origin` are accepted only on the protected probe route with exact
 same-origin Fetch Metadata, protected Host and the current document header;
 a present mismatched or malformed Origin is still refused.
 
 These routes share limits of 4 KiB per request, 256 KiB per response, two
 simultaneous exchanges, eight admitted requests, a 15-second network deadline
 and a 20-second overall deadline. All still use the separate verified,
-credential-free client described above. Learning a probe does not authorize
-general resources, grant a TLS exception or forward a login; the separately
-enabled direct **navigation** pattern does not itself enroll a probe URL.
+credential-free client described above. The probe capability does not authorize
+general resources, grant a TLS exception or forward a login; direct
+**navigation** still uses a separate one-use handoff receipt.
 Clearing the default-destinations checkbox removes both built-in navigation
 and discovery authority; independently saved redirect trust remains separate.
 
@@ -233,7 +244,7 @@ compatibility is claimed.
 ## Foreign origins and unsupported traffic
 
 Third-party origins are currently **blocked, not transparently proxied**, except
-for the closed initial/learned QuickConnect routes above and public-font
+for the closed QuickConnect control/probe routes above and public-font
 capability below.
 This includes a CDN or API that an otherwise trusted page references. A trusted
 redirect destination is not automatically an approved subresource origin or
@@ -354,7 +365,7 @@ revokes its exact origin, so a stale manager entry cannot provide a usable
 unauthenticated loopback replacement URL.
 
 Protection details also show the page routing module's **v4 acknowledgement**
-for fixed QuickConnect navigation, initial discovery, learned probes and
+for fixed QuickConnect navigation, initial discovery, same-NAS probes and
 same-NAS direct/regional navigation. Its five boolean capabilities are compared with
 the current connection after the existing primary-document identity checks.
 A missing/older acknowledgement or a settings mismatch is diagnostic guidance,

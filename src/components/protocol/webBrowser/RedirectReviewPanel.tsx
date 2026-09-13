@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { useHttpRedirectReview } from "../../../hooks/protocol/useHttpRedirectReview";
 import { CheckboxField } from "../../ui/forms";
+import progressStyles from "./NavigationProgress.module.css";
 
 type ReviewManager = Pick<
   ReturnType<typeof useHttpRedirectReview>,
@@ -26,6 +27,7 @@ type ReviewManager = Pick<
     rememberingDestination?: boolean;
     rememberDestination?: () => Promise<void>;
     trustNotice?: string;
+    continuingAutomatically?: boolean;
   };
 
 /** Redirect review belongs to the browser viewport, never a global modal. */
@@ -58,6 +60,26 @@ export default function RedirectReviewPanel({
       });
   };
   if (!review && !error) return null;
+  if (review && !error && manager.continuingAutomatically) {
+    return (
+      <section
+        role="region"
+        aria-label="Redirect continuation"
+        aria-busy="true"
+        className="relative h-full bg-[var(--color-background)] text-[var(--color-text)]"
+      >
+        <div className={progressStyles.track} aria-hidden="true">
+          <span className={progressStyles.segment} />
+        </div>
+        <p
+          role="status"
+          className="p-5 text-sm text-[var(--color-textSecondary)]"
+        >
+          Continuing to approved destination…
+        </p>
+      </section>
+    );
+  }
   const insecure = review?.destinationUrl.startsWith("http:") === true;
   const downgrade = insecure && review?.sourceOrigin.startsWith("https:");
   let destinationOrigin: string | null = null;

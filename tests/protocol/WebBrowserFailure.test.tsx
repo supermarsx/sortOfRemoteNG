@@ -51,6 +51,30 @@ function manager(overrides: Partial<WebBrowserMgr> = {}): WebBrowserMgr {
 }
 
 describe("proxy failure bridge validation", () => {
+  it("accepts 202 only for a fenced redirect pending message", () => {
+    const payload = {
+      type: "sorng_proxy_failure",
+      ...failure,
+      kind: "redirect_review",
+      status: 202,
+    };
+    expect(
+      parseProxyFailurePayload(payload, failure.sessionId, failure.url)?.status,
+    ).toBe(202);
+    for (const changed of [
+      { kind: "http_status" },
+      { status: 200 },
+      { sessionId: "stale" },
+      { url: "https://other.invalid/" },
+    ])
+      expect(
+        parseProxyFailurePayload(
+          { ...payload, ...changed },
+          failure.sessionId,
+          failure.url,
+        ),
+      ).toBeNull();
+  });
   it("accepts only a known failure for the active session and target URL", () => {
     const payload = { type: "sorng_proxy_failure", ...failure };
     expect(
@@ -114,6 +138,26 @@ describe("proxy failure bridge validation", () => {
 });
 
 describe("embedded web failure recovery screen", () => {
+  it("presents an issued default handoff as neutral pending, with a review/retry fallback", () => {
+    render(
+      <ErrorPage
+        mgr={manager({
+          navigationFailure: {
+            ...failure,
+            kind: "redirect_review",
+            status: 202,
+            title: "Preparing destination handoff",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Checking the current redirect permission",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("HTTP 202")).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+  });
   it("presents the proxy's redirect pause as review, not a NAS HTTP 403, and can reopen its review", () => {
     const offer = vi.fn();
     const mgr = manager({
@@ -125,6 +169,7 @@ describe("embedded web failure recovery screen", () => {
         reason: "Review the destination in the browser dialog.",
       },
       redirectReview: {
+        continuingAutomatically: false,
         review: null,
         busy: false,
         error: "",
@@ -164,6 +209,7 @@ describe("embedded web failure recovery screen", () => {
   it("renders redirect review inside the page without a modal and keeps the source iframe inert", () => {
     const mgr = manager({
       redirectReview: {
+        continuingAutomatically: false,
         review: {
           receiptId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
           sessionId: "s",

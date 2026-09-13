@@ -55,6 +55,35 @@ interface Pending {
   trust: TrustInspection | null;
 }
 export const MAX_HTTP_REDIRECT_HANDOFFS = 5;
+export const HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS = 15_000;
+
+/** A deadline bounds waiting, not native cancellation. Late results cannot launch. */
+function attemptDeadline() {
+  const ends = performance.now() + HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS;
+  return async <T>(operation: () => Promise<T>): Promise<T> => {
+    const remaining = ends - performance.now();
+    if (remaining <= 0) throw new Error("Redirect attempt expired");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        operation(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Redirect attempt expired")),
+            remaining,
+          );
+        }),
+      ]);
+      // After suspend or a blocked event loop, an overdue promise microtask can
+      // run before its timer. It must not resurrect an expired handoff.
+      if (performance.now() >= ends)
+        throw new Error("Redirect attempt expired");
+      return result;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+}
 
 export function useHttpRedirectReview(options: Options) {
   // Successful connection bookkeeping arrives on a delayed timer. It must not
@@ -174,6 +203,7 @@ export function useHttpRedirectReview(options: Options) {
     };
     offering.current = request;
     const token = ++action.current;
+    const withinDeadline = attemptDeadline();
     try {
       const assertOwner = captureSessionDatabaseAccess(captured.session);
       const assertTransportCurrent = () => {
@@ -210,10 +240,12 @@ export function useHttpRedirectReview(options: Options) {
           throw new Error("The redirect's database or network route changed.");
       };
       assertCurrent();
-      const value = await invoke<unknown>("review_proxy_redirect", {
-        sessionId: id,
-        receiptId: null,
-      });
+      const value = await withinDeadline(() =>
+        invoke<unknown>("review_proxy_redirect", {
+          sessionId: id,
+          receiptId: null,
+        }),
+      );
       assertCurrent();
       if (token !== action.current || captured.proxySessionId() !== id) return;
       const receipt = parseHttpRedirectReview(
@@ -228,7 +260,7 @@ export function useHttpRedirectReview(options: Options) {
         (receipt.navigationToken !== null &&
           receipt.navigationToken !== captured.navigationToken())
       ) {
-        if (request.userInitiated)
+        if (request.userInitiated || (!receipt && request.reportError))
           setError(
             "No current redirect destination is available. Reload the source page and review its next redirect.",
           );
@@ -247,7 +279,9 @@ export function useHttpRedirectReview(options: Options) {
       let trust: TrustInspection | null = null;
       if (captured.trust) {
         try {
-          trust = await captured.trust.inspect(receipt, assertCurrent);
+          trust = await withinDeadline(() =>
+            captured.trust!.inspect(receipt, assertCurrent),
+          );
           trust.assertCurrent();
         } catch {
           trust = null;
@@ -320,6 +354,9 @@ export function useHttpRedirectReview(options: Options) {
     accepting.current = true;
     const token = ++action.current;
     const captured = latest.current.options;
+    const withinDeadline = automatic
+      ? attemptDeadline()
+      : <T>(operation: () => Promise<T>) => operation();
     setBusy(true);
     setError("");
     try {
@@ -347,9 +384,8 @@ export function useHttpRedirectReview(options: Options) {
           throw new Error();
         // Read persisted consent again immediately before consuming the receipt.
         // An optimistic editor update or failed flush is never authorization.
-        receipt.trust = await captured.trust.inspect(
-          receipt.review,
-          receipt.assertCurrent,
+        receipt.trust = await withinDeadline(() =>
+          captured.trust!.inspect(receipt.review, receipt.assertCurrent),
         );
         receipt.trust.assertCurrent();
         if (!canAutomaticallyContinue(captured, receipt)) throw new Error();
@@ -360,10 +396,12 @@ export function useHttpRedirectReview(options: Options) {
       )
         throw new Error();
       const consumed = parseHttpRedirectReview(
-        await invoke<unknown>("review_proxy_redirect", {
-          sessionId: receipt.review.sessionId,
-          receiptId: receipt.review.receiptId,
-        }),
+        await withinDeadline(() =>
+          invoke<unknown>("review_proxy_redirect", {
+            sessionId: receipt.review.sessionId,
+            receiptId: receipt.review.receiptId,
+          }),
+        ),
         receipt.review.sessionId,
         captured.sourceOrigin,
         captured.effectivePolicy ?? captured.connection.httpProxyPolicy,
@@ -399,7 +437,7 @@ export function useHttpRedirectReview(options: Options) {
           receipt.trust.assertLaunchCurrent();
         }
       };
-      await captured.stopSource(receipt.review.sessionId);
+      await withinDeadline(() => captured.stopSource(receipt.review.sessionId));
       assertLaunchCurrent();
       if (token !== action.current) return;
       registerRuntimeConnection(connection, {
@@ -536,6 +574,11 @@ export function useHttpRedirectReview(options: Options) {
       review,
     ),
     review: review && pending.current?.signature === signature ? review : null,
+    continuingAutomatically:
+      !!review &&
+      !error &&
+      pending.current?.signature === signature &&
+      canAutomaticallyContinue(options, pending.current),
     busy: busy || rememberingDestination,
     error,
     trustNotice,

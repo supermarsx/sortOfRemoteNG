@@ -201,7 +201,7 @@ export function parseProxyFailurePayload(
     !PROXY_FAILURE_KINDS.has(kind) ||
     typeof status !== "number" ||
     !Number.isSafeInteger(status) ||
-    status < 400 ||
+    (status < 400 && !(kind === "redirect_review" && status === 202)) ||
     status > 599 ||
     !title ||
     !url ||

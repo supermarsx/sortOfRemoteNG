@@ -1,6 +1,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useHttpRedirectReview } from "../../src/hooks/protocol/useHttpRedirectReview";
+import {
+  HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS,
+  useHttpRedirectReview,
+} from "../../src/hooks/protocol/useHttpRedirectReview";
 import {
   OPEN_RUNTIME_CONNECTION_EVENT,
   useRuntimeConnectionLaunch,
@@ -153,6 +156,101 @@ beforeEach(() => {
 });
 
 describe("persisted trusted redirect continuation", () => {
+  it("rejects an overdue stop completion even before the suspended timer can fire", async () => {
+    let clock = 0;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      const view = fixture();
+      view.stopSource.mockImplementation(async () => {
+        clock += HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS + 1;
+      });
+      await act(() => view.result.current.offer());
+      expect(view.stopSource).toHaveBeenCalledOnce();
+      expect(view.continueInTab).not.toHaveBeenCalled();
+      expect(view.result.current.continuingAutomatically).toBe(false);
+      expect(view.result.current.error).toContain("No destination was opened");
+      view.unmount();
+    } finally {
+      now.mockRestore();
+    }
+  });
+  it.each(["inspect", "consume"] as const)(
+    "expires a stalled automatic %s without accepting its late completion",
+    async (stage) => {
+      vi.useFakeTimers();
+      try {
+        const view = fixture();
+        let finish: (() => void) | undefined;
+        if (stage === "inspect") {
+          const inspect = view.inspect.getMockImplementation()!;
+          view.inspect
+            .mockImplementationOnce(inspect)
+            .mockImplementationOnce(async (...args) => {
+              await new Promise<void>((resolve) => {
+                finish = resolve;
+              });
+              return inspect(...args);
+            });
+        } else {
+          h.invoke.mockImplementation(async (_command, args) => {
+            if (args.receiptId)
+              await new Promise<void>((resolve) => {
+                finish = resolve;
+              });
+            return receipt;
+          });
+        }
+        await act(() => view.result.current.offer());
+        expect(view.result.current.continuingAutomatically).toBe(true);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS);
+        });
+        expect(view.result.current.continuingAutomatically).toBe(false);
+        expect(view.result.current.busy).toBe(false);
+        expect(view.result.current.error).toContain(
+          "No destination was opened",
+        );
+        expect(view.result.current.review).toEqual(receipt);
+        await act(async () => {
+          finish!();
+        });
+        expect(view.stopSource).not.toHaveBeenCalled();
+        expect(view.continueInTab).not.toHaveBeenCalled();
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it("bounds the entire offer deadline and falls back to manual review on stalled consent inspection", async () => {
+    vi.useFakeTimers();
+    try {
+      const view = fixture();
+      h.invoke.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+        return receipt;
+      });
+      view.inspect.mockImplementation(() => new Promise(() => {}));
+      let offering!: Promise<void>;
+      await act(async () => {
+        offering = view.result.current.offer();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+        await offering;
+      });
+      expect(view.result.current.review).toEqual(receipt);
+      expect(view.result.current.continuingAutomatically).toBe(false);
+      expect(view.result.current.trustNotice).toContain(
+        "could not be verified",
+      );
+      expect(view.continueInTab).not.toHaveBeenCalled();
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("does not reopen a stale review when navigation changes during a destination save", async () => {
     const view = fixture({ trusted: false });
     let generation = 1;
@@ -271,6 +369,7 @@ describe("persisted trusted redirect continuation", () => {
       },
     });
     await act(() => authView.result.current.offer());
+    expect(authView.result.current.continuingAutomatically).toBe(false);
     expect(authView.result.current.review).toEqual(receipt);
     expect(authView.stopSource).not.toHaveBeenCalled();
   });

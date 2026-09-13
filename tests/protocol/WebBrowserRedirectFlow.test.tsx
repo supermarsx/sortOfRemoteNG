@@ -505,6 +505,7 @@ function redirect(
   iframe: HTMLIFrameElement,
   destination: string,
   postMessage = true,
+  status = 403,
 ) {
   const proxy = proxies[proxies.length - 1]!;
   const review: HttpRedirectReview = {
@@ -535,7 +536,7 @@ function redirect(
             version: 1,
             sessionId: proxy.session_id,
             kind: "redirect_review",
-            status: 403,
+            status,
             title: "redirect_review_required",
             url: failedUrl.toString(),
             reason: "Legacy native reason",
@@ -548,6 +549,38 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  it("offers retry instead of indefinite pending progress when a reported 202 has no native receipt", async () => {
+    h.connections = [
+      {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+      },
+    ];
+    const view = await mounted();
+    const invoke = h.invoke.getMockImplementation()!;
+    h.invoke.mockImplementation(async (command, args) =>
+      command === "review_proxy_redirect" ? null : invoke(command, args),
+    );
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://example-nas.de2.quickconnect.to/",
+      true,
+      202,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Redirect review" }),
+      ).toHaveTextContent("No current redirect destination"),
+    );
+    expect(
+      screen.getByRole("button", { name: "Reload source page" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("region", { name: "Redirect continuation" }),
+    ).toBeNull();
+    expect(proxies).toHaveLength(1);
+  });
   it("automatically returns from the portal through selected-NAS regions without changing the original owner or alias", async () => {
     h.connections = [
       {
@@ -557,12 +590,34 @@ describe("actual website redirect review integration", () => {
       },
     ];
     const view = await mounted();
+    const invoke = h.invoke.getMockImplementation()!;
+    let resume: (() => void) | undefined;
+    h.invoke.mockImplementation(async (command, args) => {
+      if (command === "review_proxy_redirect" && args.receiptId)
+        await new Promise<void>((resolve) => {
+          resume = resolve;
+        });
+      return invoke(command, args);
+    });
     for (const [index, destination] of [
       "https://global.quickconnect.to/",
       "https://example-nas.de2.quickconnect.to/",
       "https://example-nas.fr3.quickconnect.to/",
     ].entries()) {
-      redirect(view.container.querySelector("iframe")!, destination);
+      redirect(view.container.querySelector("iframe")!, destination, true, 202);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("region", { name: "Redirect continuation" }),
+        ).toBeVisible(),
+      );
+      expect(
+        screen.queryByRole("region", { name: "Redirect review" }),
+      ).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(proxies).toHaveLength(index + 1);
+      await act(async () => {
+        resume!();
+      });
       await waitFor(() => expect(proxies).toHaveLength(index + 2));
       await waitFor(() =>
         expect(view.container.querySelector("iframe")?.src).toContain(
@@ -591,6 +646,47 @@ describe("actual website redirect review integration", () => {
       ),
     ).toHaveLength(4);
     expect(h.connections[0].hostname).toBe("example-nas.fr3.quickconnect.to");
+  });
+  it("restores actionable review when an approved default receipt cannot be consumed", async () => {
+    h.connections = [
+      {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+      },
+    ];
+    const view = await mounted();
+    const invoke = h.invoke.getMockImplementation()!;
+    let fail: (() => void) | undefined;
+    h.invoke.mockImplementation(async (command, args) => {
+      if (command === "review_proxy_redirect" && args.receiptId)
+        await new Promise<void>((_resolve, reject) => {
+          fail = () => reject(new Error("Synthetic expired receipt"));
+        });
+      return invoke(command, args);
+    });
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://example-nas.de2.quickconnect.to/",
+      true,
+      202,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Redirect continuation" }),
+      ).toBeVisible(),
+    );
+    await act(async () => {
+      fail!();
+    });
+    expect(
+      screen.getByRole("region", { name: "Redirect review" }),
+    ).toHaveTextContent("No destination was opened");
+    expect(
+      screen.queryByRole("region", { name: "Redirect continuation" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: /Reload/ })).toBeEnabled();
+    expect(proxies).toHaveLength(1);
   });
   it("retains original context through regional to HTTPS alias and portal with Require HTTPS enabled", async () => {
     h.connections = [

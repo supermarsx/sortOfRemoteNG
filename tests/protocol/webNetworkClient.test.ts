@@ -260,7 +260,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     expect(report).not.toHaveBeenCalled();
   });
   it.each(["/Serv.php", proxy + "/Serv.php"])(
-    "keeps source-global discovery %s on the learning route after URL rewriting",
+    "keeps source-global discovery %s on the protected control route after URL rewriting",
     async (destination) => {
       start({
         ...discoveryConfig(),
@@ -340,7 +340,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       "https://example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
     ],
   ])(
-    "routes candidate %s %s only to native grant validation with document fencing",
+    "routes candidate %s %s only to native request validation with document fencing",
     async (method, destination) => {
       start(discoveryConfig());
       const response = { status: 403, ok: false };
@@ -366,7 +366,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       expect(report).not.toHaveBeenCalled();
     },
   );
-  it("keeps explicit direct-navigation permission separate from native-learned probe candidates", () => {
+  it("keeps explicit direct-navigation permission separate from closed same-NAS probe candidates", () => {
     const input = discoveryConfig();
     const { directNavigation: _direct, ...candidateOnly } =
       input.synologyQuickConnect;

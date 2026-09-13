@@ -6,6 +6,7 @@ import type {
 } from "../../../hooks/protocol/useWebBrowser";
 
 import React from "react";
+import progressStyles from "./NavigationProgress.module.css";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -137,7 +138,7 @@ function presentationFor(
         tone: "warning",
         suggestions: [
           "Reviewed redirects are enabled. Open the destination review on this page to continue in this tab or open an anonymous tab.",
-          "Synology and other reverse proxies can use several addresses. Each new origin gets its own review and HTTPS trust check; a bounded chain prevents endless redirects.",
+          "Approved anonymous destinations can continue automatically. Other destinations and saved login forwarding require review; each HTTPS destination still gets its own certificate check.",
           "Cookies and submitted forms are not replayed across origins. Saved login forwarding and plaintext HTTP each require their separate configured permissions and approval.",
         ],
       };
@@ -232,6 +233,39 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   };
   const failure = mgr.navigationFailure ?? fallbackFailure;
   const isRedirectReview = failure.kind === "redirect_review";
+  const isPending = isRedirectReview && failure.status === 202;
+  if (isPending) {
+    return (
+      <section className="relative h-full bg-[var(--color-background)] text-[var(--color-text)]">
+        <div className={progressStyles.track} aria-hidden="true">
+          <span className={progressStyles.segment} />
+        </div>
+        <div className="space-y-3 p-5 text-sm">
+          <p role="status">
+            Preparing destination handoff. Checking the current redirect
+            permission…
+          </p>
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            HTTPS certificate checks and any saved-login approval still apply.
+          </p>
+          <div className="flex gap-3">
+            {mgr.redirectReview && (
+              <button
+                className={ERROR_SECONDARY}
+                disabled={mgr.redirectReview.busy}
+                onClick={() => void mgr.redirectReview.offer(true)}
+              >
+                Review destination
+              </button>
+            )}
+            <button className={ERROR_SECONDARY} onClick={mgr.handleRefresh}>
+              Retry
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
   const reason = isRedirectReview
     ? "The internal proxy paused a redirect for your review. This is not an access-denied response from the destination. Review the next address on this page; another review may follow if the website redirects again."
     : failure.reason;
