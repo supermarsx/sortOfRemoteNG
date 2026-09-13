@@ -237,6 +237,7 @@ export default function CurrentDatabaseSecuritySection(
                 {current === target.id && (
                   <button
                     type="button"
+                    className="sor-btn-secondary-sm"
                     disabled={busy || !callbacks.onBeforeCurrentLock}
                     onClick={() => void run("lock")}
                   >
@@ -273,6 +274,7 @@ export default function CurrentDatabaseSecuritySection(
                 <div className="flex flex-wrap gap-3 text-xs">
                   <button
                     type="button"
+                    className="sor-btn-primary-sm"
                     disabled={
                       busy ||
                       newPassword.length < 4 ||
@@ -287,6 +289,7 @@ export default function CurrentDatabaseSecuritySection(
                   </button>
                   <button
                     type="button"
+                    className="sor-btn-secondary-sm"
                     disabled={busy || !callbacks.onBeforeCurrentLock}
                     onClick={() => void run("lock")}
                   >
@@ -297,6 +300,7 @@ export default function CurrentDatabaseSecuritySection(
                   {target.isEncrypted && (
                     <button
                       type="button"
+                      className="sor-btn-danger-sm"
                       disabled={busy || !password}
                       onClick={() => setConfirmRemove(true)}
                     >
@@ -323,6 +327,7 @@ export default function CurrentDatabaseSecuritySection(
             ) : (
               <button
                 type="button"
+                className="sor-btn-primary-sm"
                 disabled={busy || !callbacks.onDatabaseSelect}
                 onClick={() =>
                   target.isEncrypted ? setShowUnlock(true) : void run("open")

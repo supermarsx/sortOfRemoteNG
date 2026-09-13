@@ -76,6 +76,40 @@ function passwords() {
   });
 }
 describe("Current database security", () => {
+  it("themes password and close actions while preserving validation and host guards", () => {
+    fixture.current = { ...database, isEncrypted: false };
+    render(<CurrentDatabaseSecuritySection />);
+    const enable = screen.getByRole("button", {
+      name: "Enable database password",
+    });
+    const close = screen.getByRole("button", {
+      name: "Close current database",
+    });
+    expect(enable).toHaveClass("sor-btn-primary-sm");
+    expect(close).toHaveClass("sor-btn-secondary-sm");
+    expect(enable).toBeDisabled();
+    expect(close).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("New database password"), {
+      target: { value: "new-password" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm database password"), {
+      target: { value: "new-password" },
+    });
+    expect(enable).toBeEnabled();
+    expect(close).toBeDisabled();
+  });
+  it("uses matching themed variants for protected database actions", () => {
+    render(<CurrentDatabaseSecuritySection />);
+    expect(
+      screen.getByRole("button", { name: "Change database password" }),
+    ).toHaveClass("sor-btn-primary-sm");
+    expect(
+      screen.getByRole("button", { name: "Lock current database" }),
+    ).toHaveClass("sor-btn-secondary-sm");
+    expect(
+      screen.getByRole("button", { name: "Remove database password" }),
+    ).toHaveClass("sor-btn-danger-sm");
+  });
   it("reopens a closed unencrypted target without requesting a database password", async () => {
     fixture.current = { ...database, isEncrypted: false };
     fixture.manager.getDatabase.mockResolvedValue({
@@ -96,6 +130,9 @@ describe("Current database security", () => {
       screen.getByRole("button", { name: "Close current database" }),
     );
     await screen.findByRole("button", { name: "Open this database" });
+    expect(
+      screen.getByRole("button", { name: "Open this database" }),
+    ).toHaveClass("sor-btn-primary-sm");
     expect(screen.queryByLabelText("Database password")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Open this database" }));
     await waitFor(() => expect(open).toHaveBeenCalledWith("a", undefined));
