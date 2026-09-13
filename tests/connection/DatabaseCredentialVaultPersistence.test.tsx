@@ -200,6 +200,80 @@ const archive = (): DatabaseVaultArchive => ({
   ],
 });
 
+describe("connection-backed inventory through the actual Provider", () => {
+  it.each(["managed", "global"])(
+    "uses %s protection, follows connection edits without duplicating secrets, and revokes on lock",
+    async (protection) => {
+      if (protection === "global") {
+        mock.managed = false;
+        mock.status.mockResolvedValue({
+          kind: "none",
+          unlocked: true,
+          securityRevision: "revision",
+          globalEncryptionProtected: true,
+        });
+      }
+      const edit = vi.fn();
+      const hook = renderHook(() => useConnections(), {
+        wrapper: ({ children }) => (
+          <ConnectionProvider>
+            {children}
+            <DatabaseCredentialVault onEditConnection={edit} />
+          </ConnectionProvider>
+        ),
+      });
+      await act(() => hook.result.current.loadData("db-a"));
+      await screen.findByRole("button", {
+        name: "Edit credentials in connection before",
+      });
+      expect(mock.status).toHaveBeenCalledWith("db-a");
+      expect(mock.verify).toHaveBeenCalled();
+      expect(mock.save).not.toHaveBeenCalled();
+      expect(mock.saved!.credentialVault).toBeUndefined();
+      expect(document.body.innerHTML).not.toContain(
+        "CONNECTION_LOCAL_UNTOUCHED",
+      );
+      const current = {
+        ...hook.result.current.state.connections[0],
+        name: "Changed connection",
+        password: "NEW_CONNECTION_SECRET",
+      };
+      await act(() =>
+        hook.result.current.dispatchAndFlush({
+          type: "UPDATE_CONNECTION",
+          payload: current,
+        }),
+      );
+      const button = await screen.findByRole("button", {
+        name: "Edit credentials in connection Changed connection",
+      });
+      expect(mock.saved!.connections[0].password).toBe("NEW_CONNECTION_SECRET");
+      expect(mock.saved!.credentialVault).toBeUndefined();
+      const writes = mock.save.mock.calls.length;
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(edit).toHaveBeenCalledExactlyOnceWith(current),
+      );
+      expect(mock.save).toHaveBeenCalledTimes(writes);
+      expect(document.body.innerHTML).not.toContain("NEW_CONNECTION_SECRET");
+      const pending = deferred<void>();
+      mock.verify.mockImplementationOnce(() => pending.promise);
+      edit.mockClear();
+      fireEvent.click(button);
+      act(() => {
+        mock.locked = true;
+        mock.access!({ databaseId: "db-a", status: "suspended" });
+      });
+      await act(async () => {
+        pending.resolve();
+      });
+      expect(edit).not.toHaveBeenCalled();
+      expect(screen.queryByText("Changed connection")).not.toBeInTheDocument();
+      expect(hook.result.current.credentialVault!.scope).toBeNull();
+    },
+  );
+});
+
 describe("native verified protection for documents", () => {
   it.each(["managed", "none", "legacy-password"])(
     "reads and durably saves documents with the %s protection path",

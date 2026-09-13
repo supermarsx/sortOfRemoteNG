@@ -474,6 +474,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         <DatabaseCredentialVault
           key={databaseMountKey}
           sessionId={session.id}
+          onEditConnection={onEditConnection}
         />
       </FeatureErrorBoundary>
     );
