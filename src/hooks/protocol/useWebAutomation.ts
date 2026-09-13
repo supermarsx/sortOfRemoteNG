@@ -153,6 +153,7 @@ export function useWebAutomation(options: Options) {
   const savingRef = useRef(false);
   const [libraryScope, setLibraryScope] = useState("");
   const readGeneration = useRef(0);
+  const libraryRead = useRef<AbortController | null>(null);
   const databaseReadGeneration = useRef(0);
   // Access revocation changes the operation epoch, but Provider can retain an
   // optimistic dirty connection. Its failed-save receipt therefore survives
@@ -228,6 +229,7 @@ export function useWebAutomation(options: Options) {
   if (previousAccess.current !== accessKey) {
     previousAccess.current = accessKey;
     epoch.current++;
+    libraryRead.current?.abort();
     loaded.current = false;
   }
   const assertAccess = useCallback((captured: number) => {
@@ -246,7 +248,10 @@ export function useWebAutomation(options: Options) {
   const reload = useCallback(async () => {
     const captured = epoch.current;
     const read = ++readGeneration.current;
+    libraryRead.current?.abort();
     if (!latest.current.settingsReady || !latest.current.scopeKey) return;
+    const controller = new AbortController();
+    libraryRead.current = controller;
     setError(null);
     setLibraryLoading(true);
     try {
@@ -254,7 +259,24 @@ export function useWebAutomation(options: Options) {
         latest.current.ownerDatabaseId,
       );
       const result = await webAutomationStore
-        .load()
+        .load({
+          signal: controller.signal,
+          assertCurrent: () => {
+            if (
+              !mounted.current ||
+              epoch.current !== captured ||
+              read !== readGeneration.current ||
+              !latest.current.settingsReady ||
+              !latest.current.scopeKey
+            )
+              throw new Error(
+                "Library access changed. Reload before continuing.",
+              );
+            // The captured owner lease prevents close/reopen ABA, even when
+            // the same database ID and a new unlocked lease are current.
+            checkOwner();
+          },
+        })
         .catch((failure: unknown) => {
           throw new AutomationLibraryAccessError(
             automationLibraryDiagnostic(failure),
@@ -283,6 +305,7 @@ export function useWebAutomation(options: Options) {
         setError(message(failure));
       }
     } finally {
+      if (libraryRead.current === controller) libraryRead.current = null;
       if (
         mounted.current &&
         epoch.current === captured &&
@@ -432,6 +455,7 @@ export function useWebAutomation(options: Options) {
     window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
     const revoke = () => {
       epoch.current++;
+      libraryRead.current?.abort();
       revoked.current = true;
       loaded.current = false;
       setError(
@@ -468,6 +492,7 @@ export function useWebAutomation(options: Options) {
       // This is a monotonic invalidation counter, not a captured DOM ref.
       // eslint-disable-next-line react-hooks/exhaustive-deps
       epoch.current++;
+      libraryRead.current?.abort();
       cancel();
       bridge.cancel(true);
       offDatabase();

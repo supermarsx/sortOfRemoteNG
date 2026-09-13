@@ -1,5 +1,10 @@
 import { getInvoke, type TauriInvoke } from "../tauri/invoke";
 import { IndexedDbService } from "./indexedDbService";
+import {
+  assertMacroLibraryReadAccess,
+  readMacroLibraryWhenReady,
+  type MacroLibraryReadAccess,
+} from "./macroLibraryReadRecovery";
 
 export const APP_DATA_STORE_CHANGED_EVENT = "sorng-app-data-store-changed";
 
@@ -83,12 +88,24 @@ export class AppDataJsonStore<T> {
     return invoke;
   }
 
-  async load(): Promise<DurableLoadResult<T>> {
+  /** Optional recovery applies only to the first, pre-mutation macro read. */
+  async load(access?: MacroLibraryReadAccess): Promise<DurableLoadResult<T>> {
     return enqueue(this.key, async () => {
+      assertMacroLibraryReadAccess(access);
       const invoke = await this.backend();
-      const durableRaw = await this.readRaw(invoke);
+      assertMacroLibraryReadAccess(access);
+      const durableRaw =
+        access && invoke && this.storageBackend === "macro-library"
+          ? await readMacroLibraryWhenReady(invoke, this.key, access)
+          : await this.readRaw(invoke);
+      assertMacroLibraryReadAccess(access);
       if (durableRaw !== null) {
-        const normalized = await this.normalizeDurable(invoke, durableRaw);
+        const normalized = await this.normalizeDurable(
+          invoke,
+          durableRaw,
+          access,
+        );
+        assertMacroLibraryReadAccess(access);
         this.removeLegacy();
         return normalized;
       }
@@ -101,14 +118,21 @@ export class AppDataJsonStore<T> {
       );
       const replacement = JSON.stringify(sanitized.value);
       const committed = await this.compareAndSwap(invoke, null, replacement);
+      assertMacroLibraryReadAccess(access);
       if (!committed) {
         const concurrentRaw = await this.readRaw(invoke);
+        assertMacroLibraryReadAccess(access);
         if (concurrentRaw === null) {
           throw new Error(
             `Concurrent migration for "${this.key}" did not produce durable data`,
           );
         }
-        const concurrent = await this.normalizeDurable(invoke, concurrentRaw);
+        const concurrent = await this.normalizeDurable(
+          invoke,
+          concurrentRaw,
+          access,
+        );
+        assertMacroLibraryReadAccess(access);
         this.removeLegacy();
         return concurrent;
       }
@@ -174,19 +198,24 @@ export class AppDataJsonStore<T> {
   private async normalizeDurable(
     invoke: TauriInvoke | null,
     initialRaw: string,
+    access?: MacroLibraryReadAccess,
   ): Promise<DurableLoadResult<T>> {
     let raw = initialRaw;
     for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
+      assertMacroLibraryReadAccess(access);
       const sanitized = this.sanitizeValue(parseJson(this.key, raw));
       const replacement = JSON.stringify(sanitized.value);
       if (!sanitized.changed && replacement === raw) {
         return { value: sanitized.value, sanitized: false };
       }
       if (await this.compareAndSwap(invoke, raw, replacement)) {
+        assertMacroLibraryReadAccess(access);
         emitChanged(this.key);
         return { value: sanitized.value, sanitized: true };
       }
+      assertMacroLibraryReadAccess(access);
       const concurrentRaw = await this.readRaw(invoke);
+      assertMacroLibraryReadAccess(access);
       if (concurrentRaw === null) {
         throw new Error(
           `Stored data for "${this.key}" disappeared during read`,

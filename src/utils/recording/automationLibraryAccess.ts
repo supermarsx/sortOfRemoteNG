@@ -1,4 +1,5 @@
 import type { AutomationLibraryDiagnostic } from "../../types/recording/automationLibrary";
+import { isMacroLibraryReadBusy } from "../storage/macroLibraryReadRecovery";
 
 export class AutomationLibraryAccessError extends Error {
   constructor(readonly diagnostic: AutomationLibraryDiagnostic) {
@@ -12,6 +13,13 @@ export function automationLibraryDiagnostic(
   error: unknown,
 ): AutomationLibraryDiagnostic {
   if (error instanceof AutomationLibraryAccessError) return error.diagnostic;
+  if (isMacroLibraryReadBusy(error))
+    return {
+      code: "storage-unavailable",
+      message:
+        "The app-wide library is waiting for an encryption storage transition to finish. Reload the library after it completes. Existing data was not reset.",
+      retryable: true,
+    };
   const reason =
     error instanceof Error
       ? error.message
