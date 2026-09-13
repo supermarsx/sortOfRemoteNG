@@ -12,6 +12,12 @@ pub use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
+#[path = "http_tls_ca.rs"]
+mod tls_ca;
+pub use tls_ca::{
+    build_ca_pinned_tls_config, consume_ca_inspection_proof, CaValidationStatus, TlsCaValidation,
+};
+
 #[path = "http_proxy_transport.rs"]
 mod proxy_transport;
 pub use proxy_transport::fetch_tls_certificate_info;
@@ -263,17 +269,22 @@ pub fn normalize_cert_fingerprint(fingerprint: &str) -> String {
         .collect()
 }
 
-pub fn build_pinned_tls_config(fingerprint: String) -> Result<rustls::ClientConfig, String> {
+fn validate_cert_fingerprint(fingerprint: &str) -> Result<(), String> {
     let value = fingerprint.trim();
     let value = value.strip_prefix("SHA256:").unwrap_or(value);
     if fingerprint.len() > 256
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() || byte == b':' || byte.is_ascii_whitespace())
-        || normalize_cert_fingerprint(&fingerprint).len() != 64
+        || normalize_cert_fingerprint(fingerprint).len() != 64
     {
         return Err("Accepted TLS certificate fingerprint must be a SHA-256 hex digest".into());
     }
+    Ok(())
+}
+
+pub fn build_pinned_tls_config(fingerprint: String) -> Result<rustls::ClientConfig, String> {
+    validate_cert_fingerprint(&fingerprint)?;
     rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(PinnedCertificateVerification::new(fingerprint)))
@@ -601,6 +612,10 @@ pub struct BasicAuthProxyConfig {
     /// instead of disabling certificate verification for the whole session.
     #[serde(default)]
     pub accepted_cert_fingerprint: Option<String>,
+    /// CA-auto admission keeps full native chain/name/time checks in addition
+    /// to binding the real connection to the exact inspected leaf.
+    #[serde(default)]
+    pub require_ca_verification: bool,
     /// Minimum TLS version for outbound requests ("1.0", "1.1", "1.2", "1.3").
     /// Defaults to "1.2".  SSL 3.0 is NOT supported by the TLS backend.
     #[serde(default = "default_min_tls_version")]
@@ -945,6 +960,7 @@ pub struct ProxySessionEntry {
     pub verify_ssl: bool,
     /// Optional SHA-256 leaf certificate fingerprint pinned for this session.
     pub accepted_cert_fingerprint: Option<String>,
+    pub require_ca_verification: bool,
     pub request_count: Arc<AtomicU64>,
     pub error_count: Arc<AtomicU64>,
     pub last_error: Arc<std::sync::Mutex<Option<String>>>,

@@ -53,6 +53,7 @@ fn register(proxy: &FixtureProxy) {
             min_tls_version: "1.2".into(),
             verify_ssl: true,
             accepted_cert_fingerprint: None,
+            require_ca_verification: false,
             request_count: state.request_count.clone(),
             error_count: state.error_count.clone(),
             last_error: state.last_error.clone(),

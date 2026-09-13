@@ -91,6 +91,11 @@ fn endpoint(value: &str) -> Result<Endpoint, String> {
     Ok(Endpoint { host, port })
 }
 
+pub(super) fn endpoint_authority(value: &str) -> Result<(String, u16), String> {
+    let value = endpoint(value)?;
+    Ok((value.host, value.port))
+}
+
 fn host_for(endpoint: &Endpoint, connection: Option<&str>) -> String {
     if let Some(connection) = connection {
         format!(

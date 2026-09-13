@@ -80,6 +80,8 @@ fn proxy_client_builder(
     accepted_cert_fingerprint: Option<&str>,
     min_tls: &str,
     upstream_proxy_url: Option<&str>,
+    require_ca_verification: bool,
+    ca_target_host: Option<&str>,
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         // Route ownership is explicit. Ambient process proxy variables must
@@ -105,7 +107,17 @@ fn proxy_client_builder(
         builder = builder.proxy(validate_upstream_proxy(proxy_url)?);
     }
 
-    if let Some(fingerprint) = accepted_cert_fingerprint {
+    if require_ca_verification {
+        let fingerprint = accepted_cert_fingerprint
+            .ok_or("CA-verified HTTPS admission requires the inspected certificate fingerprint")?;
+        builder = builder.use_preconfigured_tls(build_ca_pinned_tls_config(
+            fingerprint.into(),
+            min_tls,
+            ca_target_host
+                .ok_or("CA-verified admission requires the inspected target authority")?,
+            upstream_proxy_url,
+        )?);
+    } else if let Some(fingerprint) = accepted_cert_fingerprint {
         // Some(pin) is an explicit identity requirement, never an invitation
         // to fall back to unverified TLS when the supplied pin is malformed.
         builder = builder.use_preconfigured_tls(build_pinned_tls_config(fingerprint.into())?);
@@ -424,6 +436,9 @@ pub async fn start_basic_auth_proxy(
 ) -> Result<ProxyMediatorResponse, String> {
     crate::http::webview_origins::require_frame_guard_ready()?;
     let validated_target = validate_proxy_target_url(&config.target_url)?;
+    if config.require_ca_verification && validated_target.scheme() != "https" {
+        return Err("CA verification admission is only supported for HTTPS targets".into());
+    }
     let proxy_policy = config.proxy_policy.clone().unwrap_or_default();
     validate_reviewed_login_config(&config)?;
     proxy_policy.validate(&validated_target)?;
@@ -459,6 +474,8 @@ pub async fn start_basic_auth_proxy(
         accepted_cert_fingerprint.as_deref(),
         &min_tls,
         upstream_proxy_url.as_deref(),
+        config.require_ca_verification,
+        validated_target.host_str(),
     )?;
 
     // Bind to a random free port.
@@ -595,6 +612,7 @@ pub async fn start_basic_auth_proxy(
                 min_tls_version: min_tls,
                 verify_ssl,
                 accepted_cert_fingerprint: config.accepted_cert_fingerprint.clone(),
+                require_ca_verification: config.require_ca_verification,
                 request_count,
                 error_count,
                 last_error,
@@ -853,6 +871,7 @@ pub async fn restart_proxy_session(
         connection_id,
         verify_ssl,
         accepted_cert_fingerprint,
+        require_ca_verification,
         min_tls,
     ) = {
         let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
@@ -872,6 +891,7 @@ pub async fn restart_proxy_session(
             entry.connection_id.clone(),
             entry.verify_ssl,
             entry.accepted_cert_fingerprint.clone(),
+            entry.require_ca_verification,
             entry.min_tls_version.clone(),
         )
     };
@@ -889,11 +909,14 @@ pub async fn restart_proxy_session(
     }
 
     // Build a fresh reqwest client.
+    let validated_target = validate_proxy_target_url(&target_url)?;
     let client = proxy_client_builder(
         verify_ssl,
         accepted_cert_fingerprint.as_deref(),
         &min_tls,
         upstream_proxy_url.as_deref(),
+        require_ca_verification,
+        validated_target.host_str(),
     )?;
 
     // Bind to a new random free port.
@@ -1019,6 +1042,7 @@ pub async fn restart_proxy_session(
                 min_tls_version: min_tls,
                 verify_ssl,
                 accepted_cert_fingerprint,
+                require_ca_verification,
                 request_count,
                 error_count,
                 last_error,
@@ -1035,8 +1059,8 @@ pub async fn restart_proxy_session(
 }
 
 /// Fetch the TLS certificate presented by a remote server.
-/// Connects using rustls with verification disabled so we can inspect
-/// self-signed / untrusted certificates as well.
+/// Captures self-signed/untrusted chains for manual review, while separately
+/// recording real CA validation and checking TLS handshake signatures.
 #[tauri::command]
 pub async fn get_tls_certificate_info(
     host: String,
@@ -1756,7 +1780,7 @@ mod http_authentication_diagnostic_tests {
                 .await
                 .unwrap();
             assert_eq!(ambient, "ambient-proxy");
-            let direct = proxy_client_builder(true, None, "1.2", None)
+            let direct = proxy_client_builder(true, None, "1.2", None, false, None)
                 .unwrap()
                 .get(&target)
                 .timeout(std::time::Duration::from_secs(3))
@@ -1839,19 +1863,21 @@ mod http_authentication_diagnostic_tests {
                 &format!("{}z", "f".repeat(64)),
                 &format!("{}\0", "f".repeat(64)),
             ] {
-                let error = proxy_client_builder(verify, Some(malformed), "1.2", None)
+                let error = proxy_client_builder(verify, Some(malformed), "1.2", None, false, None)
                     .expect_err("bad explicit pin rejected");
                 assert_eq!(
                     error,
                     "Accepted TLS certificate fingerprint must be a SHA-256 hex digest"
                 );
             }
-            assert!(proxy_client_builder(verify, None, "1.2", None).is_ok());
+            assert!(proxy_client_builder(verify, None, "1.2", None, false, None).is_ok());
             for valid in [
                 "ab".repeat(32),
                 format!("SHA256:{}", vec!["AB"; 32].join(":")),
             ] {
-                assert!(proxy_client_builder(verify, Some(&valid), "1.2", None).is_ok());
+                assert!(
+                    proxy_client_builder(verify, Some(&valid), "1.2", None, false, None).is_ok()
+                );
             }
         }
     }
@@ -1942,7 +1968,8 @@ mod http_authentication_diagnostic_tests {
             .unwrap();
         let pin = hex::encode(Sha256::digest(&der));
         let proxy_url = format!("http://127.0.0.1:{port}");
-        let client = proxy_client_builder(false, Some(&pin), "1.2", Some(&proxy_url)).unwrap();
+        let client =
+            proxy_client_builder(false, Some(&pin), "1.2", Some(&proxy_url), false, None).unwrap();
         let response = client
             .get("https://device.invalid/")
             .basic_auth("fixture-user", Some("fixture-password"))
@@ -1951,8 +1978,15 @@ mod http_authentication_diagnostic_tests {
             .unwrap();
         assert_eq!(response.status().as_u16(), 401);
         let wrong_pin = "0".repeat(64);
-        let client =
-            proxy_client_builder(false, Some(&wrong_pin), "1.2", Some(&proxy_url)).unwrap();
+        let client = proxy_client_builder(
+            false,
+            Some(&wrong_pin),
+            "1.2",
+            Some(&proxy_url),
+            false,
+            None,
+        )
+        .unwrap();
         assert!(client
             .get("https://device.invalid/")
             .basic_auth("fixture-user", Some("fixture-password"))

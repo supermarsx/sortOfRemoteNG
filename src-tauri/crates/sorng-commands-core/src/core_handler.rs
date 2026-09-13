@@ -142,6 +142,7 @@ pub fn is_command(command: &str) -> bool {
             | "encryption_release_artifact_preview"
             | "encryption_recover_artifact_transition"
             | "trust_verify_identity"
+            | "verify_https_certificate_trust"
             | "trust_store_identity"
             | "trust_store_identity_with_reason"
             | "trust_remove_identity"
@@ -1506,6 +1507,7 @@ define_command_group!(
         artifact_encryption_commands::encryption_recover_artifact_transition,
         // Trust store commands
         trust_store_commands::trust_verify_identity,
+        https_trust_commands::verify_https_certificate_trust,
         trust_store_commands::trust_apply_reviewed_batch,
         trust_store_commands::trust_store_identity,
         trust_store_commands::trust_store_identity_with_reason,

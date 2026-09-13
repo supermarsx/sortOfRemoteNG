@@ -48,3 +48,7 @@ url = "2"
 # `http.rs` — emits `proxy-credentials-applied` so the frontend can
 # offer to persist creds the user typed into the inline login form.
 tauri = { workspace = true }
+
+[dev-dependencies]
+# Synthetic local CA/leaf fixtures only; no OS trust installation or public hosts.
+rcgen = "0.12"

@@ -96,6 +96,8 @@ mod etcd_commands;
 mod ftp_commands;
 #[path = "../../../src/http_commands.rs"]
 mod http_commands;
+#[path = "../../../src/https_trust_commands.rs"]
+mod https_trust_commands;
 #[path = "../../../src/ikev2_commands.rs"]
 mod ikev2_commands;
 #[path = "../../../src/ipsec_commands.rs"]

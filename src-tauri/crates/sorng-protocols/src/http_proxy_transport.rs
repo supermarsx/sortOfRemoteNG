@@ -176,14 +176,28 @@ async fn inspect_certificate(
     port: u16,
     proxy_url: Option<&str>,
 ) -> Result<TlsCertificateInfo, String> {
+    inspect_certificate_with_roots(host, port, proxy_url, super::native_root_store()).await
+}
+
+// Root injection is Rust-internal for synthetic fixtures, never an IPC option.
+pub(super) async fn inspect_certificate_with_roots(
+    host: &str,
+    port: u16,
+    proxy_url: Option<&str>,
+    roots: Result<rustls::RootCertStore, String>,
+) -> Result<TlsCertificateInfo, String> {
     let socket = open_certificate_socket(host, port, proxy_url).await?;
-    let connector = tokio_rustls::TlsConnector::from(build_tls_config(false)?);
+    let (config, verification) = super::tls_ca::inspection_tls_config(roots)?;
+    let connector = tokio_rustls::TlsConnector::from(config);
     let host = host.trim_start_matches('[').trim_end_matches(']');
     let tls = connector
         .connect(tls_server_name(host)?, socket)
         .await
         .map_err(|_| "Target certificate TLS handshake failed".to_string())?;
-    capture_peer_certificate_chain(tls.get_ref().1.peer_certificates().unwrap_or_default())
+    let mut info =
+        capture_peer_certificate_chain(tls.get_ref().1.peer_certificates().unwrap_or_default())?;
+    info.ca_validation = verification.completed(host, port, proxy_url, &info.fingerprint)?;
+    Ok(info)
 }
 
 #[cfg(test)]

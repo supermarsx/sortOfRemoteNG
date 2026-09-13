@@ -36,6 +36,8 @@ pub use force_delete::{ForceDeleteContext, ForceDeletePreview, ForceDeleteResult
 #[path = "trust_scope.rs"]
 mod scope;
 pub use scope::{ReviewedTrustScopeTarget, TrustScopeDecision};
+#[path = "trust_https.rs"]
+mod https;
 
 const MAX_TRUST_STORE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TRUST_RECORDS: usize = 10_000;

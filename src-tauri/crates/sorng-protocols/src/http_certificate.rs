@@ -100,6 +100,9 @@ pub struct TlsCertificateCapture {
 /// Full live inspection is separate from the minimal persisted approval identity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TlsCertificateInfo {
+    /// Native verification evidence from the live TLS handshake, not parsing.
+    #[serde(default)]
+    pub ca_validation: super::TlsCaValidation,
     pub fingerprint: String,
     pub subject: Option<String>,
     pub issuer: Option<String>,
@@ -468,6 +471,7 @@ pub fn capture_peer_certificate_chain(
         })
         .collect();
     let info = TlsCertificateInfo {
+        ca_validation: super::TlsCaValidation::default(),
         fingerprint: leaf.fingerprint.clone(),
         subject: Some(leaf.subject.clone()),
         issuer: Some(leaf.issuer.clone()),
