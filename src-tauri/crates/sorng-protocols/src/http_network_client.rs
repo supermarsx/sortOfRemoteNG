@@ -188,6 +188,21 @@ impl ProxyNetworkState {
         self.is_active() && sequence > 0 && *self.document.borrow() == sequence
     }
 
+    /// Serialize a short synchronous native-state operation against document
+    /// selection. Never await while holding this guard or acquire it from an
+    /// attempt/cookie-store lock: lock order is document, then attempt/store.
+    pub(super) fn with_current_document<T>(
+        &self,
+        sequence: u64,
+        operation: impl FnOnce() -> T,
+    ) -> Result<T, &'static str> {
+        let current = self.document.borrow();
+        if !self.is_active() || sequence == 0 || *current != sequence {
+            return Err("The proxy document is no longer active.");
+        }
+        Ok(operation())
+    }
+
     pub(super) async fn while_document<T>(
         &self,
         sequence: u64,

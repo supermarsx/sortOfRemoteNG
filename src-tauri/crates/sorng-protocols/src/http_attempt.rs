@@ -6,6 +6,7 @@ use reqwest::{
     header::{HeaderMap, HeaderValue, COOKIE},
     Url,
 };
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{
@@ -41,6 +42,7 @@ struct AttemptState {
     origins: HashMap<String, OriginState>,
     connectors: HashMap<String, (u8, u32)>,
     http_cycle: Option<HttpRedirectCycle>,
+    provider_cookies: super::quickconnect_control::ProviderControlCookies,
 }
 
 /// Native-only classified receipt evidence, never a route/trust grant.
@@ -109,6 +111,113 @@ impl AttemptSession {
     }
     pub fn cookie_store(&self) -> Arc<AttemptCookieStore> {
         Arc::new(AttemptCookieStore(self.clone()))
+    }
+    pub(super) fn provider_control_cookie_header(
+        &self,
+        alias: &str,
+        url: &Url,
+    ) -> Result<Option<HeaderValue>, &'static str> {
+        let mut state = self.attempt.state.lock().map_err(|_| UNAVAILABLE)?;
+        if !self.current(&state) || self.attempt.defaults.nas_alias().as_deref() != Some(alias) {
+            return Err(UNAVAILABLE);
+        }
+        state.provider_cookies.request_header(alias, url)
+    }
+    pub(super) fn store_provider_control_cookies(
+        &self,
+        alias: &str,
+        url: &Url,
+        headers: &HeaderMap,
+    ) -> Result<usize, &'static str> {
+        let mut state = self.attempt.state.lock().map_err(|_| UNAVAILABLE)?;
+        if !self.current(&state) || self.attempt.defaults.nas_alias().as_deref() != Some(alias) {
+            return Err(UNAVAILABLE);
+        }
+        state.provider_cookies.store_response(alias, url, headers)
+    }
+    /// Opaque loop-progress evidence, not a cookie header or an authority grant.
+    /// Jar maps and browser headers can enumerate unchanged cookies differently.
+    /// Sort distinct names while retaining duplicate-name order and native scope;
+    /// expiry renewal alone is not session progress. Never log this digest.
+    pub(super) fn cookie_state_fingerprint(&self, url: &Url, browser: &[&str]) -> Option<[u8; 32]> {
+        let state = self.attempt.state.lock().ok()?;
+        if !self.current(&state) || url.origin().ascii_serialization() != self.origin {
+            return None;
+        }
+        let mut bytes = 0usize;
+        let mut pairs = Vec::new();
+        for header in browser {
+            bytes = bytes.checked_add(header.len())?;
+            if bytes > 80 * 1024 {
+                return None;
+            }
+            for pair in header.split(';').filter(|pair| !pair.trim().is_empty()) {
+                let (name, value) = pair.trim().split_once('=')?;
+                if name.is_empty()
+                    || name.len() > 256
+                    || !name.bytes().all(|byte| cookie_octet(byte) && byte != b'=')
+                    || !value.bytes().all(cookie_octet)
+                {
+                    return None;
+                }
+                pairs.push((name, value));
+                if pairs.len() > 256 {
+                    return None;
+                }
+            }
+        }
+        // Stable sort: two same-name browser cookies may represent different
+        // paths, and their order can affect which session the server chooses.
+        pairs.sort_by(|left, right| left.0.cmp(right.0));
+        let mut cookies = Vec::new();
+        for cookie in state.origins.get(&self.origin)?.cookies.matches(url) {
+            let (domain_kind, domain) = match &cookie.domain {
+                cookie_store::CookieDomain::HostOnly(domain) => (0u8, domain.as_str()),
+                cookie_store::CookieDomain::Suffix(domain) => (1, domain.as_str()),
+                cookie_store::CookieDomain::NotPresent => (2, ""),
+                cookie_store::CookieDomain::Empty => (3, ""),
+            };
+            let path: &str = &cookie.path;
+            bytes = bytes.checked_add(
+                domain.len() + path.len() + cookie.name().len() + cookie.value().len(),
+            )?;
+            if bytes > 80 * 1024 || cookies.len() + pairs.len() >= 256 {
+                return None;
+            }
+            cookies.push((
+                domain_kind,
+                domain,
+                path,
+                cookie.name(),
+                cookie.value(),
+                cookie.secure().unwrap_or(false),
+                cookie.http_only().unwrap_or(false),
+            ));
+        }
+        cookies.sort_unstable();
+        let mut digest = Sha256::new();
+        let mut field = |value: &[u8]| {
+            digest.update((value.len() as u64).to_be_bytes());
+            digest.update(value);
+        };
+        field(b"browser");
+        field(&(pairs.len() as u64).to_be_bytes());
+        for (name, value) in pairs {
+            field(name.as_bytes());
+            field(value.as_bytes());
+        }
+        field(b"native");
+        field(&(cookies.len() as u64).to_be_bytes());
+        for (kind, domain, path, name, value, secure, http_only) in cookies {
+            field(&[kind, u8::from(secure), u8::from(http_only)]);
+            field(domain.as_bytes());
+            field(path.as_bytes());
+            field(name.as_bytes());
+            field(value.as_bytes());
+        }
+        field(b"provider-control");
+        field(&state.provider_cookies.progress_fingerprint());
+        Some(digest.finalize().into())
     }
     pub fn merged_request_cookies(&self, url: &Url, browser: &[&str]) -> Option<HeaderValue> {
         if url.origin().ascii_serialization() != self.origin || !self.is_current() {
@@ -458,12 +567,14 @@ impl CookieStore for AttemptCookieStore {
         if !self.0.current(&state) || url.origin().ascii_serialization() != self.0.origin {
             return None;
         }
-        let value = state
-            .origins
-            .get(&self.0.origin)?
-            .cookies
-            .get_request_values(url)
-            .map(|(name, value)| format!("{name}={value}"))
+        let mut cookies = state.origins.get(&self.0.origin)?.cookies.matches(url);
+        // RFC cookie path precedence matters when a site has multiple SIDs.
+        // Preserve every match; this does not invent a domain/creation-time
+        // ordering for equal paths (the maintained jar exposes no such order).
+        cookies.sort_by_key(|cookie| std::cmp::Reverse(cookie.path.len()));
+        let value = cookies
+            .iter()
+            .map(|cookie| format!("{}={}", cookie.name(), cookie.value()))
             .collect::<Vec<_>>()
             .join("; ");
         if value.is_empty() {
@@ -491,6 +602,7 @@ fn end(state: &mut AttemptState) {
     state.origins.clear();
     state.connectors.clear();
     state.http_cycle = None;
+    state.provider_cookies.clear();
 }
 impl AttemptRegistry {
     pub fn restart(
@@ -691,6 +803,7 @@ impl AttemptRegistry {
                 origins: HashMap::new(),
                 connectors: HashMap::new(),
                 http_cycle: None,
+                provider_cookies: Default::default(),
             }),
         });
         let session = {

@@ -151,10 +151,21 @@ async fn four_stalled_direct_probes_cannot_starve_control_tunnel_or_regional_rel
         7,
         "no replay, fallback or extra control request"
     );
+    let mut controls = 0;
     for request in requests.iter().filter(|line| !line.starts_with("CONNECT ")) {
         let lower = request.to_ascii_lowercase();
         assert!(!lower.contains("authorization:"));
-        assert!(!lower.contains("cookie:"));
+        let cookie = request.lines().find_map(|line| {
+            line.split_once(':')
+                .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+                .map(|(_, value)| value.trim())
+        });
+        if request.starts_with("POST ") {
+            assert_eq!(cookie, (controls > 0).then_some("upstream-secret=blocked"));
+            controls += 1;
+        } else {
+            assert!(cookie.is_none(), "probes remain anonymous");
+        }
         assert!(!lower.contains("source-private"));
     }
 }

@@ -1578,7 +1578,6 @@ fn http_cycle_edge(
     headers: &[(String, String)],
     sequence: u64,
 ) -> Option<attempt::HttpRedirectEdge> {
-    use reqwest::cookie::CookieStore;
     if !redirect::cycle_context_is_anonymous(state)
         || !state.network.document_is_current(sequence)
         || !matches!(
@@ -1599,23 +1598,12 @@ fn http_cycle_edge(
         // Opaque, volatile change detection only. Consent/routing cookies do
         // not disable the guard; changed login/session state starts a new count.
         // Neither cookie values nor this digest are serialized or logged.
-        let jar = attempt.cookie_store().cookies(&redirect.response_url);
-        let mut digest = Sha256::new();
-        let mut bytes = 0usize;
-        for value in headers
+        let browser: Vec<_> = headers
             .iter()
             .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
-            .map(|(_, value)| value.as_bytes())
-            .chain(jar.iter().map(|value| value.as_bytes()))
-        {
-            bytes = bytes.saturating_add(value.len());
-            if bytes > 80 * 1024 {
-                return None;
-            }
-            digest.update((value.len() as u64).to_be_bytes());
-            digest.update(value);
-        }
-        *fingerprint = digest.finalize().into();
+            .map(|(_, value)| value.as_str())
+            .collect();
+        *fingerprint = attempt.cookie_state_fingerprint(&redirect.response_url, &browser)?;
     }
     Some(edge)
 }
@@ -2171,7 +2159,7 @@ pub async fn axum_proxy_handler(
                 && status_code.is_success()
                 && proxy_response::is_html(content_type.as_deref())
                 && state.document_sequence.load(Ordering::SeqCst) == document_sequence
-                && state.network.is_active()
+                && state.network.document_is_current(document_sequence)
             {
                 if let Some(attempt) = &state.attempt {
                     attempt.document_landed(&response_url, document_sequence);

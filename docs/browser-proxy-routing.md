@@ -160,6 +160,9 @@ browser's Cookie header does not contain the missing path/domain information.
 This is not complete browser cookie-scope virtualization: even one browser-only
 cookie does not reveal its original scope, and projecting same-name/same-path
 cookies from different upstream Domain scopes can collapse that distinction.
+The native website jar sends matching cookies longest-path-first while
+preserving same-name duplicates; ordering between equal-path cookies with
+different domains or creation times remains unspecified.
 
 This volatile continuity uses a one-use native ticket from a consumed redirect
 receipt, an explicit source-session transfer, and exact destination/path, route
@@ -190,10 +193,20 @@ and increasing the redirect allowance does not repair the handoff.
 For the anonymous, root-only regional → HTTP alias → HTTPS alias → same
 regional circuit, native receipt consumption tracks both HTTP and vendor-script
 handoffs. A third unchanged regional restart stops with
-`quickconnect_redirect_loop`. Cookie-state changes reset the circuit count;
-cookie values and the in-memory comparison digest are never logged. Non-root
+`quickconnect_redirect_loop`. Changes to the regional website's cookie state
+or the attempt's separate provider-control cookie state reset the circuit
+count. Comparison ignores ordering between distinct browser cookie names and
+expiry renewal, but preserves ordering between same-name browser cookies.
+Native cookie scope and attributes remain part of the comparison. Cookie values
+and the in-memory comparison digest are never logged, and provider cookies are
+not copied into the website jar. This is bounded cookie-state evidence, not proof
+that all provider session state is unchanged. Non-root
 and authenticated flows are excluded, and a vendor handoff needs evidence of
-the current primary root document. This is a bounded stop, not a claim that the
+the current successful primary root document, rechecked when its receipt is
+read and consumed. Child-frame requests made before the handoff, including
+marked children, neither replace that evidence nor break it merely by advancing
+the request sequence. Pending receipts still expire or become stale when their
+own request/primary-document checks change. This is a bounded stop, not a claim that the
 underlying relay problem has been repaired or that sign-in succeeded.
 
 The “proxy
@@ -224,13 +237,37 @@ must match and be a bounded single safe segment. Custom DSM hosts, reserved
 portal names and unrecognized/deeper aliases do not gain discovery access.
 
 The separate native client uses verified OS-root/hostname TLS and the
-configured HTTP(S) proxy. It never carries the NAS login, cookies, custom
+configured HTTP(S) proxy. It never carries the NAS login, website/browser cookies, custom
 headers, query additions, client certificate, certificate pin or disabled
 certificate checks. It follows no upstream redirects and has no direct retry.
 The response is bounded JSON, not an executable page or arbitrary resource;
-the only retained provider response header is a validated `X-QC-CLIENT-IP` address.
+the only provider response header exposed to the page is a validated
+`X-QC-CLIENT-IP` address.
 Requests require the protected origin and current primary-document identity;
 navigation, opt-out and session closure invalidate their authority.
+
+Discovery and tunnel control POSTs have a separate, volatile native cookie
+store. A validated provider response can retain cookies for later control
+requests to that **exact HTTPS origin**, bound to the original NAS alias. Even
+a provider cookie with `Domain=quickconnect.to` is not sent to another provider
+origin, a NAS page or a probe. This store never imports browser cookies, shares
+the website cookie jar, exposes `Set-Cookie` to the page, or copies cookie
+values into diagnostics. Direct and regional probes remain anonymous: they
+neither send nor retain these cookies.
+
+Cookie updates are committed only after a bounded, non-redirect JSON response
+passes validation, while both the issuing document and attempt generation are
+still current. Prefix, issuer-domain/public-suffix, path, expiry and deletion
+rules apply. Limits are eight provider origins per store and 32 cookies/16 KiB
+per origin; a response is limited to 32 cookie headers/16 KiB, with at most
+4 KiB per header. Over-limit updates do not partially replace retained state.
+The store survives a valid consumed handoff within the same native attempt,
+but closing, clearing or ending that attempt discards it; failed or expired
+continuations cannot restore it. Without an attempt, cookies remain local to
+that proxy session and are cleared on revocation. A new document must obtain
+fresh request authority even when the attempt retains provider cookies.
+This bounded compatibility support is not browser-wide cookie sharing and is
+not evidence that a live QuickConnect relay or login loop has been resolved.
 
 For a recognized original NAS alias, the default setting explicitly permits
 closed control POSTs at `https://<single-label>.quickconnect.to/Serv.php`,

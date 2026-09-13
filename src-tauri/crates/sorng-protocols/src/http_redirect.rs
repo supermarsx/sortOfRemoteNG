@@ -29,11 +29,22 @@ pub(super) struct PendingRedirect {
     created: Instant,
     state: std::sync::Weak<AxumProxyState>,
     http_cycle_edge: Option<super::attempt::HttpRedirectEdge>,
+    // Vendor navigation belongs to the selected successful primary root, not
+    // the numerically previous request (which may be a nested frame).
+    http_cycle_primary: Option<u64>,
 }
 impl PendingRedirect {
     fn current(&self) -> bool {
         self.created.elapsed() < Duration::from_secs(120)
             && self.sequence.load(Ordering::SeqCst) == self.review.document_sequence
+            && self.http_cycle_primary.is_none_or(|sequence| {
+                self.state.upgrade().is_some_and(|state| {
+                    state.network.document_is_current(sequence)
+                        && state.attempt.as_ref().is_some_and(|attempt| {
+                            attempt.root_document_sequence() == Some(sequence)
+                        })
+                })
+            })
     }
 }
 
@@ -88,16 +99,16 @@ pub(super) fn record_vendor(
     // This entry point is the verified vendor navigation adapter, not an HTTP
     // response. It can upgrade/finish a previously observed HTTP circuit, never
     // arm it. The provider also performs the HTTP-to-HTTPS alias upgrade in JS.
+    let primary = state
+        .attempt
+        .as_ref()
+        .and_then(|attempt| attempt.root_document_sequence())
+        .filter(|sequence| state.network.document_is_current(*sequence));
     let edge = state
         .attempt
         .as_ref()
         .filter(|_| cycle_context_is_anonymous(state))
-        .filter(|attempt| {
-            attempt.root_document_sequence().is_some_and(|sequence| {
-                state.network.document_is_current(sequence)
-                    && sequence.checked_add(1) == Some(document_sequence)
-            })
-        })
+        .filter(|_| primary.is_some())
         .filter(|_| !headers.contains_key("authorization"))
         .filter(|_| {
             let referers: Vec<_> = headers.get_all("referer").iter().collect();
@@ -133,12 +144,14 @@ pub(super) fn record_vendor(
                     | super::attempt::HttpRedirectEdge::RegionalReturn(_)
             )
         });
-    record_with_edge(
+    let http_cycle_primary = edge.as_ref().and(primary);
+    record_evidence(
         state,
         destination,
         document_sequence,
         navigation_token,
         edge,
+        http_cycle_primary,
     )
 }
 
@@ -159,6 +172,24 @@ pub(super) fn record_with_edge(
     document_sequence: u64,
     navigation_token: Option<String>,
     http_cycle_edge: Option<super::attempt::HttpRedirectEdge>,
+) -> bool {
+    record_evidence(
+        state,
+        destination,
+        document_sequence,
+        navigation_token,
+        http_cycle_edge,
+        None,
+    )
+}
+
+fn record_evidence(
+    state: &Arc<AxumProxyState>,
+    destination: &reqwest::Url,
+    document_sequence: u64,
+    navigation_token: Option<String>,
+    http_cycle_edge: Option<super::attempt::HttpRedirectEdge>,
+    http_cycle_primary: Option<u64>,
 ) -> bool {
     if !destination_allowed(&state.proxy_policy, &state.target_origin, destination)
         || document_sequence == 0
@@ -197,6 +228,7 @@ pub(super) fn record_with_edge(
             created: Instant::now(),
             state: Arc::downgrade(state),
             http_cycle_edge,
+            http_cycle_primary,
         },
     );
     true
@@ -314,6 +346,7 @@ mod tests {
             created: Instant::now(),
             state: std::sync::Weak::new(),
             http_cycle_edge: None,
+            http_cycle_primary: None,
         };
         assert!(pending.current());
         sequence.store(2, Ordering::SeqCst);

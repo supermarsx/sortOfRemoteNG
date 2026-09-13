@@ -17,6 +17,16 @@ pub(super) enum UpstreamError {
     Deadline,
 }
 
+/// Shared parsing only: consumers must independently bind origin, purpose and
+/// lifetime. This never reads a website jar or projects cookies to a browser.
+pub(super) fn validated_response_cookie(
+    header: &reqwest::header::HeaderValue,
+    issuer: &reqwest::Url,
+) -> Result<Option<cookie_store::Cookie<'static>>, &'static str> {
+    RedirectCookieOverlay::parsed_cookie(header, issuer)
+        .map_err(|_| "Provider cookie updates exceed the supported limits.")
+}
+
 /// Only response-derived updates from this request's exact origin. Keeping
 /// expired cookies as scoped tombstones prevents an incoming browser SID from
 /// resurrecting a cookie deleted by an intermediate redirect response.

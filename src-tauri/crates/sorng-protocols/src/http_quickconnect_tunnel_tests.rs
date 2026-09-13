@@ -105,12 +105,11 @@ async fn successful_tunnel(cold: bool) {
                 assert_eq!(sent_body(&seen[1]), payload());
             }
             assert_eq!(sent_body(seen.last().unwrap()), tunnel_body(id));
-            for request in seen.iter().skip(1).step_by(2) {
+            for (index, request) in seen.iter().skip(1).step_by(2).enumerate() {
                 assert!(request.starts_with("POST /Serv.php HTTP/1.1\r\n"));
                 let lower = request.to_ascii_lowercase();
                 for forbidden in [
                     "authorization:",
-                    "cookie:",
                     "origin:",
                     "referer:",
                     "source-private",
@@ -122,6 +121,12 @@ async fn successful_tunnel(cold: bool) {
                 ] {
                     assert!(!lower.contains(forbidden), "{forbidden}");
                 }
+                let cookie = request.lines().find_map(|line| {
+                    line.split_once(':')
+                        .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+                        .map(|(_, value)| value.trim())
+                });
+                assert_eq!(cookie, (index > 0).then_some("upstream-secret=blocked"));
             }
         }
         let log = proxy

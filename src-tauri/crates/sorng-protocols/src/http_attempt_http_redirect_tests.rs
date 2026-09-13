@@ -7,7 +7,18 @@ const PLAIN_ALIAS: &str = "http://example.quickconnect.to/";
 trait Io: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Io for T {}
 
-async fn cycle_peer(http_upgrade: bool) -> Peer {
+struct CyclePeer {
+    peer: Peer,
+    certificate: Vec<u8>,
+}
+impl std::ops::Deref for CyclePeer {
+    type Target = Peer;
+    fn deref(&self) -> &Peer {
+        &self.peer
+    }
+}
+
+async fn cycle_peer(http_upgrade: bool) -> CyclePeer {
     let certificate = rcgen::generate_simple_self_signed(vec![
         "example.quickconnect.to".into(),
         "example.fr3.quickconnect.to".into(),
@@ -76,7 +87,10 @@ async fn cycle_peer(http_upgrade: bool) -> Peer {
                     extra = format!("Location: {PLAIN_ALIAS}?private-token=never-copy#private-fragment\r\n");
                 } else if regional && path == "/" {
                     status = 302;
-                    extra = format!("Location: {PLAIN_ALIAS}\r\n");
+                    // Repeated unchanged Set-Cookie rebuilds the maintained
+                    // jar's maps. The actual client below uses cookie_provider,
+                    // as production does; map order must not mean progress.
+                    extra = format!("Location: {PLAIN_ALIAS}\r\nSet-Cookie: consent=stable-provider-choice; Path=/; Secure\r\nSet-Cookie: route=stable-route; Path=/; Secure\r\nSet-Cookie: preference=stable-preference; Path=/; Secure\r\n");
                 } else if plain && http_upgrade && path == "/" {
                     status = 308;
                     extra = format!("Location: {ALIAS}\r\n");
@@ -88,17 +102,20 @@ async fn cycle_peer(http_upgrade: bool) -> Peer {
             });
         }
     });
-    Peer {
-        proxy_url,
-        client: transport,
-        requests,
-        body_gate: Arc::new(tokio::sync::Semaphore::new(0)),
-        task,
+    CyclePeer {
+        certificate: der,
+        peer: Peer {
+            proxy_url,
+            client: transport,
+            requests,
+            body_gate: Arc::new(tokio::sync::Semaphore::new(0)),
+            task,
+        },
     }
 }
 
 async fn open(
-    peer: &Peer,
+    peer: &CyclePeer,
     manager: ProxySessionManagerState,
     target: &str,
     previous: Option<&FixtureProxy>,
@@ -133,6 +150,15 @@ async fn open(
     };
     let template = attempt_proxy(peer, target, &id, session).await;
     let mut state = (*template.state).clone();
+    state.client = reqwest::Client::builder()
+        .no_proxy()
+        .proxy(reqwest::Proxy::all(&peer.proxy_url).unwrap())
+        .add_root_certificate(reqwest::Certificate::from_der(&peer.certificate).unwrap())
+        .cookie_provider(state.attempt.as_ref().unwrap().cookie_store())
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
     state.global_sessions = manager;
     let mut network = ProxyNetworkState::default();
     network.quickconnect_control = Some(
@@ -209,11 +235,12 @@ async fn vendor(proxy: &FixtureProxy, target: &str) {
 }
 
 async fn return_via_aliases(
-    peer: &Peer,
+    peer: &CyclePeer,
     manager: ProxySessionManagerState,
     regional: &FixtureProxy,
     http_upgrade: bool,
     alias_path: &str,
+    child_document: bool,
 ) -> FixtureProxy {
     let plain = open(peer, manager.clone(), PLAIN_ALIAS, Some(regional)).await;
     let response = request(&plain, alias_path, true, "document")
@@ -266,6 +293,31 @@ async fn return_via_aliases(
         .await
         .unwrap();
     assert_eq!(probe.status(), StatusCode::OK);
+    if child_document {
+        // Child issuance consumes global sequence 2, but the approved root
+        // remains primary 1. A marker on a child cannot select it either.
+        for marked in [false, true] {
+            assert_eq!(
+                request(&secure, "/child", marked, "iframe")
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::OK
+            );
+            assert!(secure.state.network.document_is_current(1));
+            assert_eq!(
+                secure
+                    .state
+                    .attempt
+                    .as_ref()
+                    .unwrap()
+                    .root_document_sequence(),
+                Some(1)
+            );
+        }
+        assert_eq!(secure.state.document_sequence.load(Ordering::SeqCst), 3);
+    }
     vendor(&secure, REGIONAL).await;
     open(peer, manager, REGIONAL, Some(&secure)).await
 }
@@ -322,11 +374,234 @@ async fn actual_mixed_vendor_http_circuit_allows_one_retry_then_stops_without_ne
                 assert_eq!(diagnostic.outcome, "continuing");
                 assert_eq!(regional.state.error_count.load(Ordering::SeqCst), 0);
                 regional =
-                    return_via_aliases(&peer, manager.clone(), &regional, http_upgrade, "/").await;
+                    return_via_aliases(&peer, manager.clone(), &regional, http_upgrade, "/", false)
+                        .await;
             }
         }
         assert_eq!(peer.requests.lock().unwrap().len(), 9);
     }
+}
+
+#[tokio::test]
+async fn cookie_state_is_canonical_but_preserves_real_changes_and_scope() {
+    use reqwest::{cookie::CookieStore, header::HeaderValue};
+    let peer = cycle_peer(false).await;
+    let regional = open(&peer, ProxySessionManager::new(), REGIONAL, None).await;
+    let attempt = regional.state.attempt.as_ref().unwrap();
+    let url = reqwest::Url::parse(REGIONAL).unwrap();
+    let jar = attempt.cookie_store();
+    let first = [
+        HeaderValue::from_static("route=one; Path=/; Secure; Max-Age=60"),
+        HeaderValue::from_static("consent=yes; Path=/; Secure"),
+        HeaderValue::from_static("same=outer; Path=/; Secure"),
+    ];
+    jar.set_cookies(&mut first.iter(), &url);
+    let browser_first = [
+        HeaderValue::from_static("theme=dark; same=first"),
+        HeaderValue::from_static("same=second; language=en"),
+    ];
+    let browser_second = [
+        HeaderValue::from_static("language=en; same=first"),
+        HeaderValue::from_static("same=second; theme=dark"),
+    ];
+    let values = |headers: &[HeaderValue]| {
+        headers
+            .iter()
+            .map(|header| header.to_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let one = values(&browser_first);
+    let two = values(&browser_second);
+    let one: Vec<_> = one.iter().map(String::as_str).collect();
+    let two: Vec<_> = two.iter().map(String::as_str).collect();
+    let original = attempt.cookie_state_fingerprint(&url, &one).unwrap();
+    // Deterministic ordering assertion, independent of randomized native maps.
+    assert_eq!(Some(original), attempt.cookie_state_fingerprint(&url, &two));
+    let reordered = [
+        first[2].clone(),
+        first[1].clone(),
+        HeaderValue::from_static("route=one; Path=/; Secure; Max-Age=600"),
+    ];
+    jar.set_cookies(&mut reordered.iter(), &url);
+    assert_eq!(Some(original), attempt.cookie_state_fingerprint(&url, &two));
+    assert_ne!(
+        Some(original),
+        attempt
+            .cookie_state_fingerprint(&url, &["theme=light; same=first; same=second; language=en"])
+    );
+    assert_ne!(
+        Some(original),
+        attempt.cookie_state_fingerprint(&url, &["theme=dark; same=first; language=en"])
+    );
+    assert_ne!(
+        Some(original),
+        attempt
+            .cookie_state_fingerprint(&url, &["theme=dark; same=second; same=first; language=en"])
+    );
+    let changed = [HeaderValue::from_static("route=two; Path=/; Secure")];
+    jar.set_cookies(&mut changed.iter(), &url);
+    assert_ne!(Some(original), attempt.cookie_state_fingerprint(&url, &one));
+    jar.set_cookies(&mut first.iter(), &url);
+    let nonmatching = [HeaderValue::from_static(
+        "account=private-scope; Path=/account; Secure",
+    )];
+    jar.set_cookies(&mut nonmatching.iter(), &url);
+    assert_eq!(Some(original), attempt.cookie_state_fingerprint(&url, &one));
+    assert!(attempt
+        .cookie_state_fingerprint(&reqwest::Url::parse(ALIAS).unwrap(), &one)
+        .is_none());
+    // Provider-only state is another progress domain, without entering the
+    // website jar or exposing either cookie value through diagnostics.
+    let control = reqwest::Url::parse("https://global.quickconnect.to/Serv.php").unwrap();
+    let mut provider = reqwest::header::HeaderMap::new();
+    provider.insert(
+        "set-cookie",
+        HeaderValue::from_static("provider-session=progress; Path=/; Secure"),
+    );
+    assert_eq!(
+        attempt
+            .store_provider_control_cookies("example", &control, &provider)
+            .unwrap(),
+        1
+    );
+    assert_ne!(Some(original), attempt.cookie_state_fingerprint(&url, &one));
+    assert!(!jar
+        .cookies(&url)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("provider-session"));
+    attempt.revoke();
+    assert!(attempt.cookie_state_fingerprint(&url, &one).is_none());
+}
+
+#[tokio::test]
+async fn website_cookie_provider_preserves_duplicate_names_longest_path_first() {
+    use reqwest::{cookie::CookieStore, header::HeaderValue};
+    let peer = cycle_peer(false).await;
+    let regional = open(&peer, ProxySessionManager::new(), REGIONAL, None).await;
+    let attempt = regional.state.attempt.as_ref().unwrap();
+    let root = reqwest::Url::parse(REGIONAL).unwrap();
+    let nested = root.join("webman/index.cgi").unwrap();
+    let jar = attempt.cookie_store();
+    for reverse in [false, true] {
+        let mut values = [
+            HeaderValue::from_static("sid=root-session; Path=/; Secure"),
+            HeaderValue::from_static("sid=dsm-session; Path=/webman; Secure"),
+        ];
+        if reverse {
+            values.reverse();
+        }
+        jar.set_cookies(&mut values.iter(), &root);
+        assert_eq!(
+            jar.cookies(&nested).unwrap(),
+            "sid=dsm-session; sid=root-session"
+        );
+        assert_eq!(
+            attempt.merged_request_cookies(&nested, &[]).unwrap(),
+            "sid=dsm-session; sid=root-session"
+        );
+        assert_eq!(jar.cookies(&root).unwrap(), "sid=root-session");
+    }
+}
+
+#[tokio::test]
+async fn nested_documents_preserve_primary_cycle_with_real_cookie_provider() {
+    let peer = cycle_peer(false).await;
+    let manager = ProxySessionManager::new();
+    let mut regional = open(&peer, manager.clone(), REGIONAL, None).await;
+    for circuit in 0..3 {
+        let response = request(&regional, "/", true, "document")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            if circuit == 2 {
+                StatusCode::LOOP_DETECTED
+            } else {
+                StatusCode::ACCEPTED
+            }
+        );
+        if circuit < 2 {
+            regional =
+                return_via_aliases(&peer, manager.clone(), &regional, false, "/", true).await;
+        }
+    }
+    assert!(manager
+        .lock()
+        .unwrap()
+        .review_redirect(&regional.state.session_id, None)
+        .is_none());
+    let requests = peer.requests.lock().unwrap();
+    assert_eq!(requests.len(), 13);
+    // The source client really retained Set-Cookie across native handoffs;
+    // anonymous probe requests still use their independent cookie-free client.
+    let retained: Vec<_> = requests
+        .iter()
+        .filter(|request| request.contains("route=stable-route"))
+        .collect();
+    assert_eq!(retained.len(), 2);
+    assert!(retained.iter().all(|request| request
+        .to_ascii_lowercase()
+        .contains("host: example.fr3.quickconnect.to")));
+    assert!(requests
+        .iter()
+        .filter(|request| request.starts_with("GET /webman/pingpong.cgi"))
+        .all(|request| !request.to_ascii_lowercase().contains("cookie:")));
+}
+
+#[tokio::test]
+async fn replacing_primary_invalidates_vendor_receipt_even_without_new_request_sequence() {
+    let peer = cycle_peer(false).await;
+    let manager = ProxySessionManager::new();
+    let secure = open(&peer, manager.clone(), ALIAS, None).await;
+    assert_eq!(
+        request(&secure, "/", true, "document")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        request(&secure, "/account", true, "iframe")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert!(secure.state.network.document_is_current(1));
+    assert_eq!(
+        secure
+            .state
+            .attempt
+            .as_ref()
+            .unwrap()
+            .root_document_sequence(),
+        Some(1)
+    );
+    vendor(&secure, REGIONAL).await;
+    let receipt = manager
+        .lock()
+        .unwrap()
+        .review_redirect(&secure.state.session_id, None)
+        .unwrap();
+    assert_eq!(receipt.document_sequence, 3);
+    assert!(secure.state.network.activate_document(2).unwrap());
+    assert_eq!(secure.state.document_sequence.load(Ordering::SeqCst), 3);
+    assert!(manager
+        .lock()
+        .unwrap()
+        .review_redirect(&secure.state.session_id, Some(&receipt.receipt_id))
+        .is_none());
+    assert!(secure.state.network.activate_document(1).is_err());
+    assert!(manager
+        .lock()
+        .unwrap()
+        .review_redirect(&secure.state.session_id, None)
+        .is_none());
 }
 
 #[tokio::test]
@@ -354,6 +629,7 @@ async fn changing_cookie_state_or_nonroot_vendor_page_does_not_trigger_exact_roo
                     &regional,
                     false,
                     if nonroot { "/account" } else { "/" },
+                    false,
                 )
                 .await;
             }

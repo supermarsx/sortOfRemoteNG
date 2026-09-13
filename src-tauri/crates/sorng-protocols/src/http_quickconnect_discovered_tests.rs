@@ -1,5 +1,7 @@
 //! Synthetic bounded default control/probe routes; no NAS, provider
 //! API, OS trust store or user credentials are accessed.
+#[path = "http_quickconnect_control_cookie_tests.rs"]
+mod control_cookie_tests;
 #[path = "http_quickconnect_probe_defaults_tests.rs"]
 mod probe_defaults_tests;
 #[path = "http_quickconnect_relay_probe_tests.rs"]

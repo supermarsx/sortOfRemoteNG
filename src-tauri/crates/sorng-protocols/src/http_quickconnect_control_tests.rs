@@ -210,7 +210,7 @@ async fn discovery_posts_only_validated_anonymous_json_through_configured_connec
     }
     let seen = server.seen.lock().unwrap();
     assert_eq!(seen.len(), 4);
-    for pair in seen.chunks_exact(2) {
+    for (index, pair) in seen.chunks_exact(2).enumerate() {
         assert!(pair[0].starts_with("CONNECT global.quickconnect.to:443 "));
         assert!(pair[0]
             .to_ascii_lowercase()
@@ -224,7 +224,6 @@ async fn discovery_posts_only_validated_anonymous_json_through_configured_connec
         let lower = pair[1].to_ascii_lowercase();
         for forbidden in [
             "authorization:",
-            "cookie:",
             "origin:",
             "referer:",
             "source-private",
@@ -235,6 +234,12 @@ async fn discovery_posts_only_validated_anonymous_json_through_configured_connec
         ] {
             assert!(!lower.contains(forbidden), "{forbidden}");
         }
+        let cookie = pair[1].lines().find_map(|line| {
+            line.split_once(':')
+                .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+                .map(|(_, value)| value.trim())
+        });
+        assert_eq!(cookie, (index > 0).then_some("upstream-secret=blocked"));
     }
     assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 2);
     assert_eq!(proxy.state.error_count.load(Ordering::SeqCst), 0);

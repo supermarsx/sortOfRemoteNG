@@ -2,6 +2,8 @@
 //! URLs or inherited website credentials. The closed provider-control namespace
 //! and fixed same-NAS probe operation are authorized by original-NAS defaults.
 //! Every exchange still requires the current native document lease.
+#[path = "http_quickconnect_cookies.rs"]
+mod cookies;
 #[path = "http_quickconnect_discovered.rs"]
 mod discovered;
 #[path = "http_quickconnect_probe_identities.rs"]
@@ -9,6 +11,7 @@ mod probe_identities;
 use super::AxumProxyState;
 use axum::body::Body;
 use axum::http::{Method, Response, StatusCode};
+pub(super) use cookies::ProviderControlCookies;
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
@@ -250,6 +253,7 @@ impl ExchangeLane {
 
 pub(super) struct ReviewedQuickConnectControl {
     client: reqwest::Client,
+    local_cookies: Mutex<ProviderControlCookies>,
     control: LaneLimits,
     direct_probes: LaneLimits,
     relay_probes: LaneLimits,
@@ -300,6 +304,7 @@ impl ReviewedQuickConnectControl {
     fn from_client(client: reqwest::Client) -> Self {
         Self {
             client,
+            local_cookies: Mutex::new(ProviderControlCookies::default()),
             control: LaneLimits::new(4, 2),
             direct_probes: LaneLimits::new(8, 4),
             relay_probes: LaneLimits::new(4, 1),
@@ -311,6 +316,9 @@ impl ReviewedQuickConnectControl {
         Self::from_client(client)
     }
     pub(super) fn revoke(&self) {
+        if let Ok(mut cookies) = self.local_cookies.lock() {
+            cookies.clear();
+        }
         self.control.close();
         self.direct_probes.close();
         self.relay_probes.close();
@@ -533,7 +541,7 @@ async fn exchange(
     let request = match exchange.route {
         discovered::Route::Control => control
             .client
-            .post(exchange.url)
+            .post(exchange.url.clone())
             .header(
                 "Content-Type",
                 "application/x-www-form-urlencoded; charset=UTF-8",
@@ -541,8 +549,33 @@ async fn exchange(
             .body(exchange.body),
         discovered::Route::Probe => control
             .client
-            .get(exchange.url)
+            .get(exchange.url.clone())
             .header("Origin", &exchange.state.target_origin),
+    };
+    let request = if exchange.route == discovered::Route::Control {
+        let cookie = exchange
+            .state
+            .network
+            .with_current_document(exchange.sequence, || {
+                if let Some(attempt) = &exchange.state.attempt {
+                    attempt.provider_control_cookie_header(exchange.alias, &exchange.url)
+                } else {
+                    control
+                        .local_cookies
+                        .lock()
+                        .map_err(|_| "Provider cookie state is unavailable.")?
+                        .request_header(exchange.alias, &exchange.url)
+                }
+            })
+            .map_err(|detail| (Diagnostic::StaleDocument, detail))?
+            .map_err(|detail| (Diagnostic::Unavailable, detail))?;
+        if let Some(cookie) = cookie {
+            request.header(reqwest::header::COOKIE, cookie)
+        } else {
+            request
+        }
+    } else {
+        request
     };
     let mut response = request
         .header("Accept", "application/json")
@@ -563,6 +596,11 @@ async fn exchange(
             "QuickConnect exchange redirects are not followed.",
         ));
     }
+    let cookie_headers = if exchange.route == discovered::Route::Control {
+        cookies::capture(response.headers()).map_err(|detail| (Diagnostic::ResponseSize, detail))?
+    } else {
+        reqwest::header::HeaderMap::new()
+    };
     if !(200..600).contains(&status.as_u16()) {
         return Err((
             Diagnostic::UpstreamStatus,
@@ -664,6 +702,28 @@ async fn exchange(
             Diagnostic::ResponseSize,
             "QuickConnect response exceeds its size limit.",
         ));
+    }
+    if exchange.route == discovered::Route::Control {
+        exchange
+            .state
+            .network
+            .with_current_document(exchange.sequence, || {
+                if let Some(attempt) = &exchange.state.attempt {
+                    attempt.store_provider_control_cookies(
+                        exchange.alias,
+                        &exchange.url,
+                        &cookie_headers,
+                    )
+                } else {
+                    control
+                        .local_cookies
+                        .lock()
+                        .map_err(|_| "Provider cookie state is unavailable.")?
+                        .store_response(exchange.alias, &exchange.url, &cookie_headers)
+                }
+            })
+            .map_err(|detail| (Diagnostic::StaleDocument, detail))?
+            .map_err(|detail| (Diagnostic::Unavailable, detail))?;
     }
     if status.is_success()
         && exchange.route == discovered::Route::Control
