@@ -26,7 +26,12 @@ import {
   getStatusColor,
   getMethodColor,
   ManagerTab,
+  type ProxyRequestLogEntry,
 } from "../../hooks/network/useInternalProxyManager";
+import {
+  parseProxyLogDiagnostic,
+  proxyDiagnosticLabels,
+} from "../../utils/network/proxyLogDiagnostic";
 import { Checkbox } from "../ui/forms";
 import { CopyLatestProxyLogButton } from "./CopyLatestProxyLogButton";
 import {
@@ -189,16 +194,11 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
  * across the app's expandable-row surfaces.
  */
 const LogRow: React.FC<{
-  entry: {
-    session_id: string;
-    method: string;
-    url: string;
-    status: number;
-    error?: string | null;
-    timestamp: string;
-  };
+  entry: ProxyRequestLogEntry;
 }> = ({ entry }) => {
   const [expanded, setExpanded] = useState(false);
+  const diagnostic = parseProxyLogDiagnostic(entry.diagnostic);
+  const labels = diagnostic ? proxyDiagnosticLabels(diagnostic) : null;
   // Track which field was most recently copied so the matching
   // button shows the green checkmark. One state value covers all
   // buttons in this row since only one copy can flash at a time.
@@ -224,8 +224,20 @@ const LogRow: React.FC<{
         >
           {entry.method}
         </span>
-        <span className="flex-1 text-xs text-[var(--color-textSecondary)] truncate min-w-0">
-          {entry.url}
+        <span className="flex-1 text-xs text-[var(--color-textSecondary)] min-w-0">
+          <span className="block truncate">{entry.url}</span>
+          {diagnostic && labels && (
+            <span
+              className="block truncate text-[10px] text-[var(--color-textMuted)]"
+              title={`${labels.phase} · ${labels.stage} · ${labels.outcome} · ${diagnostic.durationMs} ms${diagnostic.attemptId ? ` · Attempt ${diagnostic.attemptId}` : ""}`}
+            >
+              {labels.phase} · {labels.outcome} · {diagnostic.durationMs} ms
+              {diagnostic.attemptId
+                ? ` · Attempt ${diagnostic.attemptId.slice(0, 8)}`
+                : ""}
+              {diagnostic.hop !== undefined ? ` · Hop ${diagnostic.hop}` : ""}
+            </span>
+          )}
         </span>
         <span
           className={`text-[10px] font-mono font-semibold w-10 text-right flex-shrink-0 ${getStatusColor(entry.status)}`}
@@ -246,6 +258,75 @@ const LogRow: React.FC<{
       </button>
       {expanded && (
         <div className="px-3 pb-3 border-t border-[var(--color-border)] space-y-2 text-xs">
+          {diagnostic && labels && (
+            <section
+              aria-label="Request diagnostics"
+              className="space-y-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 mt-3"
+            >
+              <p className="font-medium">
+                {labels.phase} · {labels.outcome}
+              </p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[var(--color-textSecondary)]">
+                <dt>Stage</dt>
+                <dd>{labels.stage}</dd>
+                <dt>Elapsed</dt>
+                <dd>{diagnostic.durationMs} ms</dd>
+                {labels.lane && (
+                  <>
+                    <dt>Transport lane</dt>
+                    <dd>{labels.lane}</dd>
+                  </>
+                )}
+                {diagnostic.queueMs !== undefined && (
+                  <>
+                    <dt>Queue wait</dt>
+                    <dd>{diagnostic.queueMs} ms</dd>
+                  </>
+                )}
+                {diagnostic.activeMs !== undefined && (
+                  <>
+                    <dt>Active exchange</dt>
+                    <dd>{diagnostic.activeMs} ms</dd>
+                  </>
+                )}
+                {diagnostic.upstreamStatus !== undefined && (
+                  <>
+                    <dt>Upstream HTTP</dt>
+                    <dd>{diagnostic.upstreamStatus}</dd>
+                  </>
+                )}
+                {diagnostic.attemptId && (
+                  <>
+                    <dt>Attempt</dt>
+                    <dd className="break-all font-mono">
+                      {diagnostic.attemptId}
+                    </dd>
+                  </>
+                )}
+                {diagnostic.hop !== undefined && (
+                  <>
+                    <dt>Handoff count</dt>
+                    <dd>{diagnostic.hop}</dd>
+                  </>
+                )}
+                <dt>Diagnostic</dt>
+                <dd className="break-all font-mono">{diagnostic.code}</dd>
+              </dl>
+              <p>{labels.explanation}</p>
+              {labels.candidate && (
+                <p className="text-[var(--color-textMuted)]">
+                  This is one candidate route, not the final connection result.
+                  A failed candidate can be expected while QuickConnect tries
+                  another route.
+                </p>
+              )}
+              <p className="text-[var(--color-textMuted)]">
+                Timing covers the logged operation through this stage, not full
+                page readiness or successful sign-in. Matching attempt IDs
+                connect entries across proxy handoffs.
+              </p>
+            </section>
+          )}
           <LogDetailField
             label="URL"
             value={entry.url}

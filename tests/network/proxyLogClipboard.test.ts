@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { proxyLogClipboard } from "../../src/utils/network/proxyLogClipboard";
 import type { ProxyRequestLogEntry } from "../../src/hooks/network/useInternalProxyManager";
+import type { ProxyLogDiagnostic } from "../../src/utils/network/proxyLogDiagnostic";
 
 const entry = (id: number): ProxyRequestLogEntry => ({
   id: String(id),
@@ -12,6 +13,70 @@ const entry = (id: number): ProxyRequestLogEntry => ({
   error: null,
 });
 describe("safe retained proxy log clipboard snapshot", () => {
+  it("correlates validated native attempt IDs across proxy sessions and includes safe timings/stages", () => {
+    const detail: ProxyLogDiagnostic = {
+      phase: "quickconnect_direct_probe",
+      lane: "direct_probe",
+      stage: "queue",
+      outcome: "timed_out",
+      code: "quickconnect_queue_timeout",
+      durationMs: 10,
+      queueMs: 10,
+      activeMs: 0,
+      attemptId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      hop: 0,
+    };
+    const result = proxyLogClipboard([
+      {
+        ...entry(3),
+        session_id: "other",
+        diagnostic: {
+          ...detail,
+          attemptId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        },
+      },
+      {
+        ...entry(2),
+        session_id: "new-proxy",
+        diagnostic: { ...detail, hop: 1, upstreamStatus: 503 },
+      },
+      { ...entry(1), session_id: "old-proxy", diagnostic: detail },
+    ]);
+    const rows = result.text.split("\n").filter((line) => /^\d+\./.test(line));
+    expect(rows[0]).toContain("session-1");
+    expect(rows[1]).toContain("session-2");
+    expect(rows[0]).toContain("attempt-1");
+    expect(rows[1]).toContain("attempt-1");
+    expect(rows[2]).toContain("attempt-2");
+    expect(rows[1]).toContain("hop=1");
+    expect(rows[1]).toContain("upstreamHTTP=503");
+    expect(rows[0]).toContain("stage=Waiting for capacity");
+    expect(rows[0]).toContain(
+      "durationMs=10 | [quickconnect_queue_timeout] | lane=direct_probe | queueMs=10 | activeMs=0",
+    );
+    expect(result.text).toContain(
+      "candidate result only; not the final connection result",
+    );
+    expect(result.text).not.toContain("aaaaaaaa-");
+  });
+  it("does not copy malformed metadata or use its attempt identifier for grouping", () => {
+    const supplied = [
+      {
+        ...entry(1),
+        diagnostic: {
+          phase: "private-phase",
+          attemptId: "private-token",
+          headers: { Cookie: "private-cookie" },
+        },
+      },
+    ];
+    const result = proxyLogClipboard(
+      supplied as unknown as ProxyRequestLogEntry[],
+    );
+    expect(result.text).not.toContain("private-");
+    expect(result.text).not.toContain("attempt-1");
+    expect(result.text).toContain("sequence=1");
+  });
   it.each([0, 4, 1000, 1200])(
     "copies at most the newest 1000 of %s in chronological order without mutation",
     (size) => {

@@ -1,4 +1,9 @@
 import type { ProxyRequestLogEntry } from "../../hooks/network/useInternalProxyManager";
+import {
+  parseProxyLogDiagnostic,
+  proxyDiagnosticLabels,
+  PROXY_DIAGNOSTIC_EXPLANATIONS,
+} from "./proxyLogDiagnostic";
 
 export const PROXY_LOG_COPY_LIMIT = 1000;
 const METHODS = new Set([
@@ -13,23 +18,7 @@ const METHODS = new Set([
   "TRACE",
   "OTHER",
 ]);
-const CODES = new Set([
-  "quickconnect_request_authority",
-  "quickconnect_unsupported_request",
-  "quickconnect_defaults_disabled",
-  "quickconnect_source_scope",
-  "quickconnect_verified_route_unavailable",
-  "quickconnect_request_limit",
-  "quickconnect_body_limit",
-  "quickconnect_unsupported_body",
-  "quickconnect_stale_document",
-  "quickconnect_verified_exchange_failed",
-  "quickconnect_timeout",
-  "quickconnect_upstream_status",
-  // Retained entries may come from an older native module.
-  "quickconnect_destination_not_discovered",
-  "websocket_handshake",
-]);
+const CODES = new Set(Object.keys(PROXY_DIAGNOSTIC_EXPLANATIONS));
 const ROUTES: Readonly<Record<string, string>> = {
   "/__sortofremoteng_quickconnect_control_v1": "QuickConnect discovery",
   "/__sortofremoteng_quickconnect_discovered_v1":
@@ -71,6 +60,7 @@ export function proxyLogClipboard(entries: readonly ProxyRequestLogEntry[]): {
 } {
   const selected = entries.slice(0, PROXY_LOG_COPY_LIMIT).reverse();
   const sessions = new Map<string, number>();
+  const attempts = new Map<string, number>();
   const lines = selected.map((entry, index) => {
     if (!sessions.has(entry.session_id))
       sessions.set(entry.session_id, sessions.size + 1);
@@ -98,7 +88,34 @@ export function proxyLogClipboard(entries: readonly ProxyRequestLogEntry[]): {
         ? /^HTTP \d{3} \[([a-z_]+)\]$/.exec(entry.error)?.[1]
         : undefined;
     const route = destination(entry.url);
-    return `${index + 1}. sequence=${sequence} | ${timestamp} | session-${sessions.get(entry.session_id)} | ${METHODS.has(entry.method) ? entry.method : "OTHER"} | HTTP ${status} | ${route.origin} | ${route.category}${diagnostic && CODES.has(diagnostic) ? ` | [${diagnostic}]` : ""}`;
+    const detail = parseProxyLogDiagnostic(entry.diagnostic);
+    const metadata: string[] = [];
+    if (detail) {
+      const labels = proxyDiagnosticLabels(detail);
+      metadata.push(
+        `phase=${labels.phase}`,
+        `stage=${labels.stage}`,
+        `outcome=${labels.outcome}`,
+        `durationMs=${detail.durationMs}`,
+        `[${detail.code}]`,
+      );
+      if (detail.lane) metadata.push(`lane=${detail.lane}`);
+      if (detail.queueMs !== undefined)
+        metadata.push(`queueMs=${detail.queueMs}`);
+      if (detail.activeMs !== undefined)
+        metadata.push(`activeMs=${detail.activeMs}`);
+      if (detail.upstreamStatus !== undefined)
+        metadata.push(`upstreamHTTP=${detail.upstreamStatus}`);
+      if (detail.attemptId) {
+        if (!attempts.has(detail.attemptId))
+          attempts.set(detail.attemptId, attempts.size + 1);
+        metadata.push(`attempt-${attempts.get(detail.attemptId)}`);
+      }
+      if (detail.hop !== undefined) metadata.push(`hop=${detail.hop}`);
+      if (labels.candidate)
+        metadata.push("candidate result only; not the final connection result");
+    }
+    return `${index + 1}. sequence=${sequence} | ${timestamp} | session-${sessions.get(entry.session_id)} | ${METHODS.has(entry.method) ? entry.method : "OTHER"} | HTTP ${status} | ${route.origin} | ${route.category}${!detail && diagnostic && CODES.has(diagnostic) ? ` | [${diagnostic}]` : ""}${metadata.length ? ` | ${metadata.join(" | ")}` : ""}`;
   });
   return {
     count: selected.length,
@@ -106,7 +123,7 @@ export function proxyLogClipboard(entries: readonly ProxyRequestLogEntry[]): {
       `Internal proxy log — latest ${selected.length} of ${entries.length} retained entries (maximum ${PROXY_LOG_COPY_LIMIT}).`,
       "Order: oldest to newest within this snapshot; all retained sessions, independent of the visible page.",
       "Privacy: URL paths, queries, fragments, userinfo, headers, bodies and free-form errors omitted. Only known diagnostic codes and route categories retained; unknown is not classified as a document.",
-      "Session labels are local to this copy. Request duration is unavailable in this log. HTTP status records the proxy response, not proof of successful website sign-in.",
+      "Session and attempt labels are local to this copy. Matching attempt labels identify native-correlated operations across proxy handoffs; they are not inferred from origins or times. Request duration is unavailable for entries without structured diagnostics. Durations cover the logged operation through its stage, not full page readiness. HTTP status records the proxy response, not proof of successful website sign-in.",
       "",
       ...lines,
     ].join("\n"),

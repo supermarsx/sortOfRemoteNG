@@ -136,8 +136,34 @@ late replies cannot launch a destination. Other review requests and actual polic
 refusals retain their existing responses.
 
 The proxy tracks the active session and its cookie jar. Same-session requests
-can reuse that jar; cross-origin handoffs intentionally create a fresh anonymous
-client and do not transfer the previous website's cookies or login. The “proxy
+can reuse that jar. A QuickConnect attempt also retains bounded **exact-origin**
+state across approved anonymous handoffs: returning to the same HTTPS origin
+can recover its own server cookies and four provider route hints (`previous`,
+`previous_verify_type`, `tunnel`, `client_ext_ip`). The destination never receives
+another origin's cookies. Different currently approved TLS identities discard
+the corresponding origin's retained jar; each destination still gets a newly
+verified transport. Discovery/probe identity proofs remain document-scoped.
+
+This volatile continuity uses a one-use native ticket from a consumed redirect
+receipt, an explicit source-session transfer, and exact destination/path, route
+and original-policy checks. The ticket is not a saved/exported connection field.
+It expires after 120 seconds; close, clear-session, cancelled handoff and failed
+start discard it. A logical attempt is bounded to twenty handoffs. Server jars
+are limited to 128 cookies/64 KiB per origin; only the four named JavaScript
+hints are restored to a fresh loopback origin. Browser storage as a whole is not
+copied. **Open anonymously in a new tab** always starts without this retained
+state. Explicit saved-login forwarding also starts a fresh attempt instead of
+silently combining these permissions. Frontend database ownership checks remain
+required; this mechanism is not a separate native database-authorization layer.
+
+A marked primary regional page that serves the recognized versioned connector
+on three separate handoffs stops with `quickconnect_connector_restart`, instead
+of cycling indefinitely. Ordinary repeated login URLs, duplicate requests and
+child frames do not count. Reaching DSM application HTML under `/webman/` clears
+that connector-cycle history. This guard diagnoses non-convergence; it does not
+claim to detect authentication success or every possible provider loop.
+
+The “proxy
 keepalive” health check tests the local proxy listener and can restart a dead
 proxy when configured. Transport TCP keepalive is not a DSM login heartbeat;
 neither mechanism prevents a remote application session from expiring.
@@ -249,9 +275,19 @@ without `Origin` are accepted only on the protected probe route with exact
 same-origin Fetch Metadata, protected Host and the current document header;
 a present mismatched or malformed Origin is still refused.
 
-These routes share limits of 4 KiB per request, 256 KiB per response, two
-simultaneous exchanges, eight admitted requests, a 15-second network deadline
-and a 20-second overall deadline. All still use the separate verified,
+These routes keep the 4 KiB request and 256 KiB response limits, but use separate
+capacity so slow direct candidates cannot delay discovery or relay setup:
+
+| Work                     | Active / admitted | Queue limit | Network limit | Overall limit |
+| ------------------------ | ----------------- | ----------- | ------------- | ------------- |
+| Discovery / tunnel setup | 2 / 4             | 2 seconds   | 25 seconds    | 29 seconds    |
+| Direct NAS probes        | 4 / 8             | 1 second    | 4 seconds     | 5 seconds     |
+| Regional relay probes    | 1 / 4             | 1 second    | 12 seconds    | 14 seconds    |
+
+The network deadline includes connection/TLS and response reading. A failed
+direct candidate does not cancel independent relay work. No automatic replay
+is added; stale documents cancel their own queued/active exchanges. All still
+use the separate verified,
 credential-free client described above. The probe capability does not authorize
 general resources, grant a TLS exception or forward a login; direct
 **navigation** still uses a separate one-use handoff receipt.
@@ -264,6 +300,29 @@ unsupported. Those requests still need distinct reviewed routing and may
 prevent a complete QuickConnect connection. The public homepage's normal alias
 navigation is separate from discovery. No live NAS or complete relay-login
 compatibility is claimed.
+
+## Reading the proxy log
+
+Expand a request to see its phase, stage, outcome and total duration. Where
+available, queue time, active exchange time and the received upstream status
+are shown separately. A log-safe attempt identifier and hop number join
+QuickConnect handoffs across changing proxy session IDs. They are not reusable
+continuation tickets. Ordinary HTTP entries are updated after body reading, so
+a decoding failure is not left labelled as a successful response.
+
+QuickConnect errors distinguish capacity/queue limits, connection failure, TLS
+failure, exchange timeout, incomplete reads, redirects, CORS validation,
+encoding/size/JSON errors and NAS identity mismatch. A candidate probe failure
+is not proof that the whole connection failed; an HTTP 200 is not proof of
+sign-in. Unknown transport failures remain explicitly unknown rather than
+being guessed from sensitive raw exception text.
+
+**Copy last 1,000** includes this structured diagnostic information with stable
+per-copy attempt aliases. It excludes request paths, query strings, headers,
+bodies, cookies, credentials and continuation tickets. Older entries without
+the new metadata remain readable. These native proxy exchange results are
+separate from the application-wide WebView observation snapshot, which cannot
+prove response success or full browser-network interception.
 
 ## Foreign origins and unsupported traffic
 

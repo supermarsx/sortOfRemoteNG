@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import type { ProxyLogDiagnostic } from "../../utils/network/proxyLogDiagnostic";
 import {
   sameSessionSnapshot,
   useVisibleSessionRefresh,
@@ -30,6 +31,8 @@ export interface ProxyRequestLogEntry {
   status: number;
   error: string | null;
   timestamp: string;
+  /** Optional native-owned bounded diagnostics; older log entries omit this. */
+  diagnostic?: ProxyLogDiagnostic;
 }
 
 export type ManagerTab = "sessions" | "logs" | "stats";
