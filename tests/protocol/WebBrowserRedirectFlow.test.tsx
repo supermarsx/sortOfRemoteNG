@@ -888,6 +888,8 @@ describe("actual website redirect review integration", () => {
       );
       expect(starts).toHaveLength(4);
       for (const [, args] of starts)
+        expect(args.config.redirect_profile).toBe("synology");
+      for (const [, args] of starts)
         expect(args.config.proxy_policy).toMatchObject({
           allowCrossOriginRedirects: false,
           allowHttpDowngradeRedirects: false,
@@ -1468,7 +1470,7 @@ describe("actual website redirect review integration", () => {
         await screen.findByRole("button", { name: "Continue in this tab" }),
       ).toBeVisible();
       expect(
-        screen.getByText(new RegExp(`^Redirect ${hop} of 5 maximum`)),
+        screen.getByText(new RegExp(`^Redirect ${hop} of 20 maximum`)),
       ).toBeVisible();
       fireEvent.click(
         screen.getByRole("button", { name: "Continue in this tab" }),

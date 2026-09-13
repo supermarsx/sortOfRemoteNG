@@ -158,6 +158,65 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     destinationUrl,
   });
   it.each([true, false])(
+    "keeps the Synology budget with defaults off through an unrelated manual hop (saved=%s)",
+    (isSaved) => {
+      const initial: Connection = {
+        ...qc(),
+        synologySettings: {
+          version: 1,
+          useHttps: true,
+          useDefaultRedirectDestinations: false,
+        },
+      };
+      const view = fixture(initial, isSaved);
+      expect(view.result.current.defaults).toBeUndefined();
+      expect(view.result.current.redirectBudget?.profile).toBe("synology");
+      const original = view.result.current.defaultSource;
+      const target = {
+        ...source,
+        id: "ephemeral",
+        hostname: "foreign.invalid",
+      };
+      registerRuntimeConnection(target, {
+        initialUrl: "https://foreign.invalid/",
+        redirectHops: 7,
+        assertCurrent: vi.fn(),
+        synologyRedirectSource: original,
+      });
+      view.rerender({
+        connection: target,
+        session: { ...session, connectionId: target.id },
+      });
+      expect(view.result.current.defaults).toBeUndefined();
+      expect(view.result.current.redirectBudget?.profile).toBe("synology");
+      const budget = view.result.current.redirectBudget!;
+      expect(() => budget.assertCurrent()).not.toThrow();
+      if (isSaved) {
+        view.context.state.connections = [
+          { ...initial, hostname: "changed.invalid" },
+        ];
+        expect(() => budget.assertCurrent()).toThrow();
+      }
+      view.changeLease();
+      expect(() => budget.assertCurrent()).toThrow();
+    },
+  );
+  it("does not learn a Synology budget from a later destination without original provenance", () => {
+    const view = fixture(source);
+    expect(view.result.current.redirectBudget).toBeUndefined();
+    const target = { ...qc(), id: "later" };
+    registerRuntimeConnection(target, {
+      initialUrl: "https://example-nas.fr3.quickconnect.to/",
+      redirectHops: 1,
+      assertCurrent: vi.fn(),
+    });
+    view.rerender({
+      connection: target,
+      session: { ...session, connectionId: target.id },
+    });
+    expect(view.result.current.redirectBudget).toBeUndefined();
+  });
+  it.each([true, false])(
     "uses exact defaults from the original source across a %s saved chain",
     async (isSaved) => {
       const initial = qc();

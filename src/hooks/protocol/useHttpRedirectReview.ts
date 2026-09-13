@@ -25,6 +25,11 @@ import {
   type HttpRedirectReview,
 } from "../../utils/protocol/httpRedirectReview";
 import type { EffectiveHttpProxyPolicy } from "../../utils/protocol/synologyRedirectDefaults";
+import {
+  assertHttpRedirectDepth,
+  httpRedirectHandoffLimit,
+  type HttpRedirectBudget,
+} from "../../utils/protocol/httpRedirectBudget";
 
 interface Options {
   connection?: Connection;
@@ -35,6 +40,7 @@ interface Options {
   enabled: boolean;
   /** Runtime-only exact defaults; never copied onto a saved connection. */
   effectivePolicy?: EffectiveHttpProxyPolicy;
+  redirectBudget?: HttpRedirectBudget;
   generation: () => number;
   proxySessionId: () => string;
   navigationToken: () => string | null;
@@ -47,6 +53,7 @@ type TrustInspection = Awaited<
   ReturnType<NonNullable<Options["trust"]>["inspect"]>
 >;
 interface Pending {
+  depth: number;
   review: HttpRedirectReview;
   assertCurrent: () => void;
   assertLaunchCurrent: () => void;
@@ -103,6 +110,7 @@ export function useHttpRedirectReview(options: Options) {
     options.route,
     options.enabled,
     options.effectivePolicy,
+    options.redirectBudget?.profile,
     options.trust?.revision,
   ]);
   // Saving an explicitly reviewed origin changes only the local consent list.
@@ -117,6 +125,7 @@ export function useHttpRedirectReview(options: Options) {
     options.route,
     options.enabled,
     options.effectivePolicy,
+    options.redirectBudget?.profile,
   ]);
   const latest = useRef({ options, signature, transportSignature });
   latest.current = { options, signature, transportSignature };
@@ -266,11 +275,12 @@ export function useHttpRedirectReview(options: Options) {
           );
         return;
       }
-      const depth =
-        getRuntimeWebNavigation(captured.connection.id)?.redirectHops ?? 0;
-      if (depth >= MAX_HTTP_REDIRECT_HANDOFFS) {
+      const navigation = getRuntimeWebNavigation(captured.connection.id);
+      const depth = navigation ? navigation.redirectHops : 0;
+      const limit = httpRedirectHandoffLimit(captured.redirectBudget);
+      if (!Number.isSafeInteger(depth) || depth < 0 || depth >= limit) {
         setError(
-          "Five redirect handoffs have already been reviewed. Open the intended destination as a separate connection; no redirect loop was followed.",
+          `${limit === 20 ? "Twenty" : "Five"} redirect handoffs are the limit for this chain. Its count is exhausted or invalid. Open the intended destination as a separate connection; no redirect loop was followed.`,
         );
         return;
       }
@@ -293,6 +303,7 @@ export function useHttpRedirectReview(options: Options) {
       assertCurrent();
       if (token !== action.current) return;
       pending.current = {
+        depth,
         review: receipt,
         assertCurrent,
         assertLaunchCurrent,
@@ -374,6 +385,27 @@ export function useHttpRedirectReview(options: Options) {
       )
         throw new Error();
       receipt.assertCurrent();
+      const sourceNavigation = getRuntimeWebNavigation(
+        captured.connection?.id ?? "",
+      );
+      const depth = sourceNavigation ? sourceNavigation.redirectHops : 0;
+      const assertBudgetCurrent = () => {
+        assertHttpRedirectDepth(
+          depth,
+          httpRedirectHandoffLimit(captured.redirectBudget),
+        );
+        if (depth !== receipt.depth) throw new Error();
+      };
+      const assertSourceBudgetCurrent = () => {
+        assertBudgetCurrent();
+        const current = getRuntimeWebNavigation(captured.connection?.id ?? "");
+        if (
+          current !== sourceNavigation ||
+          (current ? current.redirectHops : 0) !== depth
+        )
+          throw new Error();
+      };
+      assertBudgetCurrent();
       if (automatic) {
         if (
           !captured.trust ||
@@ -395,6 +427,7 @@ export function useHttpRedirectReview(options: Options) {
         !captured.connection
       )
         throw new Error();
+      assertSourceBudgetCurrent();
       const consumed = parseHttpRedirectReview(
         await withinDeadline(() =>
           invoke<unknown>("review_proxy_redirect", {
@@ -430,6 +463,7 @@ export function useHttpRedirectReview(options: Options) {
           );
       const assertLaunchCurrent = () => {
         receipt.assertLaunchCurrent();
+        assertBudgetCurrent();
         // The expected source stop invalidates receipt transport, not the
         // original database lease or the persisted destination permission.
         if (automatic) {
@@ -437,21 +471,20 @@ export function useHttpRedirectReview(options: Options) {
           receipt.trust.assertLaunchCurrent();
         }
       };
+      const synologyRedirectSource =
+        receipt.trust?.synologySource ??
+        captured.trust?.defaultSource ??
+        sourceNavigation?.synologyRedirectSource;
+      assertSourceBudgetCurrent();
       await withinDeadline(() => captured.stopSource(receipt.review.sessionId));
       assertLaunchCurrent();
       if (token !== action.current) return;
       registerRuntimeConnection(connection, {
         initialUrl: consumed.destinationUrl,
-        redirectHops:
-          (getRuntimeWebNavigation(captured.connection.id)?.redirectHops ?? 0) +
-          1,
+        redirectHops: depth + 1,
         assertCurrent: assertLaunchCurrent,
         trustedRedirectSource: receipt.trust?.provenance ?? undefined,
-        synologyRedirectSource:
-          receipt.trust?.synologySource ??
-          captured.trust?.defaultSource ??
-          getRuntimeWebNavigation(captured.connection.id)
-            ?.synologyRedirectSource,
+        synologyRedirectSource,
       });
       try {
         assertLaunchCurrent();
@@ -562,13 +595,17 @@ export function useHttpRedirectReview(options: Options) {
     )
       void actionsRef.current.accept("current", false, false, true);
   }, [review, signature]);
+  const maxRedirectHops =
+    options.redirectBudget?.profile === "synology"
+      ? 20
+      : MAX_HTTP_REDIRECT_HANDOFFS;
   return {
     redirectStep: Math.min(
       (getRuntimeWebNavigation(options.connection?.id ?? "")?.redirectHops ??
         0) + 1,
-      MAX_HTTP_REDIRECT_HANDOFFS,
+      maxRedirectHops,
     ),
-    maxRedirectHops: MAX_HTTP_REDIRECT_HANDOFFS,
+    maxRedirectHops,
     authentication: redirectAuthenticationAvailability(
       options.connection,
       review,

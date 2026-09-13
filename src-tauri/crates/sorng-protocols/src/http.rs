@@ -578,6 +578,22 @@ impl UpstreamAuthMode {
     }
 }
 
+/// Runtime browser compatibility budget, never destination or TLS permission.
+/// The renderer retains the original application's owner/identity provenance;
+/// this closed value changes only the bounded same-origin redirect count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowserRedirectProfile {
+    Synology,
+}
+
+pub fn same_origin_redirect_limit(profile: Option<BrowserRedirectProfile>) -> usize {
+    match profile {
+        Some(BrowserRedirectProfile::Synology) => 20,
+        None => 10,
+    }
+}
+
 /// Configuration for the authenticated loopback proxy mediator.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct BasicAuthProxyConfig {
@@ -594,6 +610,10 @@ pub struct BasicAuthProxyConfig {
     pub upstream_auth_mode: UpstreamAuthMode,
     #[serde(default)]
     pub proxy_policy: Option<HttpProxyPolicy>,
+    /// Runtime-only original application profile; omitted legacy callers keep
+    /// the ordinary ten-redirect same-origin limit.
+    #[serde(default)]
+    pub redirect_profile: Option<BrowserRedirectProfile>,
     #[serde(default)]
     pub custom_headers: HashMap<String, String>,
     /// Optional app-level HTTP(S) proxy used by the mediator for outbound
@@ -684,7 +704,7 @@ pub struct HttpAutoLoginSelectors {
 mod upstream_auth_mode_tests {
     use super::{
         collect_upstream_headers, permits_upstream_retry, proxy_request_headers_are_authorized,
-        BasicAuthProxyConfig, UpstreamAuthMode,
+        same_origin_redirect_limit, BasicAuthProxyConfig, BrowserRedirectProfile, UpstreamAuthMode,
     };
 
     #[test]
@@ -825,6 +845,46 @@ mod upstream_auth_mode_tests {
     }
 
     #[test]
+    fn redirect_profile_is_closed_optional_runtime_budget_not_auth_or_destination_permission() {
+        let legacy =
+            serde_json::json!({"target_url":"https://device.test/", "username":"", "password":""});
+        let decoded: BasicAuthProxyConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(decoded.redirect_profile, None);
+        assert_eq!(same_origin_redirect_limit(decoded.redirect_profile), 10);
+        for (value, expected) in [
+            (serde_json::Value::Null, None),
+            (
+                serde_json::json!("synology"),
+                Some(BrowserRedirectProfile::Synology),
+            ),
+        ] {
+            let mut config = legacy.clone();
+            config["redirect_profile"] = value;
+            let decoded: BasicAuthProxyConfig = serde_json::from_value(config).unwrap();
+            assert_eq!(decoded.redirect_profile, expected);
+            assert_eq!(
+                same_origin_redirect_limit(decoded.redirect_profile),
+                if expected.is_some() { 20 } else { 10 }
+            );
+            assert_eq!(decoded.upstream_auth_mode, UpstreamAuthMode::Basic);
+            assert!(decoded.verify_ssl);
+            assert!(decoded.proxy_policy.is_none());
+            assert!(!decoded.http_auto_login);
+        }
+        for value in [
+            serde_json::json!("other"),
+            serde_json::json!("Synology"),
+            serde_json::json!(20),
+            serde_json::json!(true),
+            serde_json::json!({"synology":20}),
+        ] {
+            let mut config = legacy.clone();
+            config["redirect_profile"] = value;
+            assert!(serde_json::from_value::<BasicAuthProxyConfig>(config).is_err());
+        }
+    }
+
+    #[test]
     fn pfsense_v1_mode_emits_the_exact_api_authorization_value() {
         let mode: UpstreamAuthMode = serde_json::from_str(r#""pfSenseV1""#)
             .expect("documented pfSense auth mode should deserialize");
@@ -948,6 +1008,7 @@ pub struct ProxySessionEntry {
     pub password: String,
     pub upstream_auth_mode: UpstreamAuthMode,
     pub proxy_policy: HttpProxyPolicy,
+    pub redirect_profile: Option<BrowserRedirectProfile>,
     pub custom_headers: HashMap<String, String>,
     pub upstream_proxy_url: Option<String>,
     pub target_origin: String,
@@ -1207,6 +1268,7 @@ pub struct AxumProxyState {
     pub password: Arc<std::sync::RwLock<String>>,
     pub upstream_auth_mode: UpstreamAuthMode,
     pub proxy_policy: HttpProxyPolicy,
+    pub redirect_profile: Option<BrowserRedirectProfile>,
     pub custom_headers: HashMap<String, String>,
     pub pending_nonce: Arc<std::sync::RwLock<Option<String>>>,
     /// P7: live snapshot of the frontend's `:root --color-*` tokens.
@@ -2156,7 +2218,7 @@ pub async fn axum_proxy_handler(
             let err_msg = match e {
                 upstream::UpstreamError::Policy(message) => message.to_string(),
                 upstream::UpstreamError::CrossOriginRedirect(_) => kind.hint().to_string(),
-                upstream::UpstreamError::RedirectLoop => "The upstream exceeded ten redirects in one navigation. Review the destination and reverse-proxy configuration; no further request was sent.".to_string(),
+                upstream::UpstreamError::RedirectLoop => format!("The upstream exceeded {} redirects in one navigation. Review the destination and reverse-proxy configuration; no further request was sent.", same_origin_redirect_limit(state.redirect_profile)),
                 upstream::UpstreamError::Deadline => "The complete upstream request timed out while negotiating authentication or redirects.".to_string(),
                 upstream::UpstreamError::Transport(_) => {
                     format!("Upstream request failed ({}): {}", kind.code(), kind.hint())

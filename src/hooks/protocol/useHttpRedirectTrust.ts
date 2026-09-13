@@ -186,6 +186,43 @@ export function useHttpRedirectTrust(
     // handoff; never reinterpret a later portal as a new original NAS source.
     defaultSource = inheritedDefault;
   }
+  // Eligibility belongs to the original source, not a later redirect host or
+  // the defaults checkbox. This lease changes only the loop bound, never trust.
+  const budgetSource = defaultSource;
+  const latestBudgetSource = useRef(budgetSource);
+  latestBudgetSource.current = budgetSource;
+  const assertBudgetCurrent = () => {
+    const current = latest.current;
+    const availability = current.context.databaseAvailability;
+    if (
+      !budgetSource ||
+      latestBudgetSource.current !== budgetSource ||
+      availability?.status !== "ready" ||
+      availability.databaseId !== current.session.ownerDatabaseId ||
+      availability.databaseId !== budgetSource.databaseId
+    )
+      throw new Error(UNAVAILABLE);
+    budgetSource.assertOwner();
+    if (budgetSource.savedConnectionId) {
+      const original = current.context.state.connections.find(
+        (item) => item.id === budgetSource.savedConnectionId,
+      );
+      if (!original) throw new Error(UNAVAILABLE);
+      budgetSource.assertIdentity(original);
+    }
+  };
+  let redirectBudget:
+    | import("../../utils/protocol/httpRedirectBudget").HttpRedirectBudget
+    | undefined;
+  try {
+    assertBudgetCurrent();
+    redirectBudget = {
+      profile: "synology",
+      assertCurrent: assertBudgetCurrent,
+    };
+  } catch {
+    // Invalid original provenance never upgrades an ordinary website's limit.
+  }
   const latestDefaults = useRef({ defaults, source: defaultSource });
   latestDefaults.current = { defaults, source: defaultSource };
   let canRemember = false;
@@ -566,5 +603,6 @@ export function useHttpRedirectTrust(
     remember,
     defaults,
     defaultSource,
+    ...(redirectBudget ? { redirectBudget } : {}),
   };
 }

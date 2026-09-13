@@ -80,6 +80,27 @@ async fn proxy_with_policy_and_network(
     custom_headers: HashMap<String, String>,
     network: Arc<ProxyNetworkState>,
 ) -> FixtureProxy {
+    proxy_with_redirect_profile(
+        target,
+        client,
+        auth_mode,
+        policy,
+        custom_headers,
+        network,
+        None,
+    )
+    .await
+}
+
+async fn proxy_with_redirect_profile(
+    target: String,
+    client: reqwest::Client,
+    auth_mode: UpstreamAuthMode,
+    policy: HttpProxyPolicy,
+    custom_headers: HashMap<String, String>,
+    network: Arc<ProxyNetworkState>,
+    redirect_profile: Option<BrowserRedirectProfile>,
+) -> FixtureProxy {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let authority = format!("p{TOKEN}.localhost:{port}");
@@ -96,6 +117,7 @@ async fn proxy_with_policy_and_network(
         password: Arc::new(std::sync::RwLock::new(String::new())),
         upstream_auth_mode: auth_mode,
         proxy_policy: policy,
+        redirect_profile,
         custom_headers,
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(
@@ -197,6 +219,7 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
             password: "synthetic-master-password".into(),
             upstream_auth_mode: mode,
             proxy_policy: Default::default(),
+            redirect_profile: state.redirect_profile,
             custom_headers: HashMap::new(),
             upstream_proxy_url: None,
             target_origin: state.target_origin.clone(),

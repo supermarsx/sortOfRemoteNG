@@ -6,6 +6,7 @@ import {
   getRuntimeWebNavigation,
   registerRuntimeConnection,
   resolveRuntimeConnection,
+  releaseRuntimeConnection,
 } from "../../src/utils/session/runtimeConnectionRegistry";
 import { OPEN_RUNTIME_CONNECTION_EVENT } from "../../src/hooks/session/useRuntimeConnectionLaunch";
 import type {
@@ -64,7 +65,7 @@ const receipt = {
   documentSequence: 1,
   removedQuery: true,
 };
-function fixture(enabled = true) {
+function fixture(enabled = true, synology = false) {
   let generation = 1,
     proxy = "proxy",
     navigationToken = "a".repeat(32);
@@ -79,6 +80,14 @@ function fixture(enabled = true) {
     accessKey: "db-a:1",
     route: undefined,
     enabled,
+    redirectBudget: synology
+      ? {
+          profile: "synology" as const,
+          assertCurrent: () => {
+            if (h.locked) throw new Error("locked");
+          },
+        }
+      : undefined,
     generation: () => generation,
     proxySessionId: () => proxy,
     navigationToken: () => navigationToken,
@@ -112,6 +121,118 @@ beforeEach(() => {
   h.invoke.mockResolvedValue(receipt);
 });
 describe("reviewed anonymous redirect handoff", () => {
+  it.each(["current", "anonymous"] as const)(
+    "retains the twentieth Synology handoff through source cleanup for %s launch",
+    async (destination) => {
+      const provenance = {
+        originalOrigin: "https://example.quickconnect.to",
+        enabled: false,
+        databaseId: "db-a",
+        assertOwner: () => {},
+        assertIdentity: () => {},
+      };
+      registerRuntimeConnection(source, {
+        initialUrl: receipt.sourceOrigin,
+        redirectHops: 19,
+        assertCurrent: () => {},
+        synologyRedirectSource: provenance,
+      });
+      const view = fixture(true, true);
+      view.stopSource.mockImplementation(async () => {
+        releaseRuntimeConnection(source.id);
+      });
+      const launched = vi.fn();
+      window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launched);
+      try {
+        expect(view.result.current.maxRedirectHops).toBe(20);
+        expect(view.result.current.redirectStep).toBe(20);
+        await act(() => view.result.current.offer());
+        await act(() => view.result.current.accept(destination));
+        const target =
+          destination === "current"
+            ? (view.continueInTab.mock.calls[0][0] as Connection)
+            : (
+                launched.mock.calls[0][0] as CustomEvent<{
+                  connection: Connection;
+                }>
+              ).detail.connection;
+        expect(getRuntimeWebNavigation(target.id)).toMatchObject({
+          redirectHops: 20,
+          synologyRedirectSource: provenance,
+        });
+        expect(target.basicAuthPassword).toBeUndefined();
+        expect(view.stopSource).toHaveBeenCalledOnce();
+      } finally {
+        window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launched);
+      }
+    },
+  );
+  it.each([20, 21, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "refuses Synology exhausted or malformed depth %s without consumption",
+    async (depth) => {
+      registerRuntimeConnection(source, {
+        initialUrl: receipt.sourceOrigin,
+        redirectHops: depth,
+        assertCurrent: () => {},
+      });
+      const view = fixture(true, true);
+      await act(() => view.result.current.offer());
+      expect(view.result.current.review).toBeNull();
+      expect(view.result.current.error).toContain("Twenty redirect");
+      await act(() => view.result.current.accept("current"));
+      expect(h.invoke).toHaveBeenCalledTimes(1);
+      expect(view.stopSource).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects a changed counter between review and consumption", async () => {
+    registerRuntimeConnection(source, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 19,
+      assertCurrent: () => {},
+    });
+    const view = fixture(true, true);
+    await act(() => view.result.current.offer());
+    registerRuntimeConnection(source, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 20,
+      assertCurrent: () => {},
+    });
+    await act(() => view.result.current.accept("current"));
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+    expect(view.stopSource).not.toHaveBeenCalled();
+  });
+  it("rejects registry replacement while native receipt consumption is pending", async () => {
+    registerRuntimeConnection(source, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 19,
+      assertCurrent: () => {},
+    });
+    const view = fixture(true, true);
+    await act(() => view.result.current.offer());
+    let resolve!: (value: typeof receipt) => void;
+    h.invoke.mockImplementationOnce(
+      () =>
+        new Promise<typeof receipt>((done) => {
+          resolve = done;
+        }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.accept("current");
+    });
+    registerRuntimeConnection(source, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 20,
+      assertCurrent: () => {},
+    });
+    await act(async () => {
+      resolve(receipt);
+      await pending;
+    });
+    expect(view.stopSource).not.toHaveBeenCalled();
+    expect(view.continueInTab).not.toHaveBeenCalled();
+    expect(view.result.current.error).toContain("expired or access changed");
+  });
   it("carries only an explicitly enabled login in the current tab and refuses it for anonymous mode", async () => {
     const view = fixture();
     view.rerender({

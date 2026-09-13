@@ -14,6 +14,7 @@ fn register(proxy: &FixtureProxy) {
             password: String::new(),
             upstream_auth_mode: state.upstream_auth_mode,
             proxy_policy: state.proxy_policy.clone(),
+            redirect_profile: state.redirect_profile,
             custom_headers: HashMap::new(),
             upstream_proxy_url: None,
             target_origin: state.target_origin.clone(),
@@ -742,6 +743,15 @@ async fn quickconnect_style_chain_requires_each_review_and_never_carries_source_
 
 #[tokio::test]
 async fn same_origin_chains_allow_ten_hops_but_bound_loops_with_the_correct_failure_kind() {
+    assert_same_origin_redirect_budget(None, 10).await;
+}
+
+#[tokio::test]
+async fn synology_same_origin_chains_allow_twenty_hops_but_refuse_twenty_first_and_loops() {
+    assert_same_origin_redirect_budget(Some(BrowserRedirectProfile::Synology), 20).await;
+}
+
+async fn assert_same_origin_redirect_budget(profile: Option<BrowserRedirectProfile>, limit: usize) {
     let hits = Arc::new(AtomicU64::new(0));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}/", listener.local_addr().unwrap());
@@ -775,24 +785,117 @@ async fn same_origin_chains_allow_ten_hops_but_bound_loops_with_the_correct_fail
         .await
         .unwrap();
     });
-    let fixture = proxy(origin, client()).await;
+    let fixture = proxy_with_redirect_profile(
+        origin,
+        client(),
+        UpstreamAuthMode::None,
+        HttpProxyPolicy::default(),
+        HashMap::new(),
+        Arc::new(ProxyNetworkState::default()),
+        profile,
+    )
+    .await;
     for (path, expected, expected_hits) in [
-        ("/chain/2/0", StatusCode::OK, 3),
-        ("/chain/10/0", StatusCode::OK, 11),
-        ("/chain/11/0", StatusCode::LOOP_DETECTED, 11),
-        ("/loop", StatusCode::LOOP_DETECTED, 11),
+        ("/chain/2/0".to_string(), StatusCode::OK, 3),
+        (format!("/chain/{limit}/0"), StatusCode::OK, limit + 1),
+        (
+            format!("/chain/{}/0", limit + 1),
+            StatusCode::LOOP_DETECTED,
+            limit + 1,
+        ),
+        ("/loop".to_string(), StatusCode::LOOP_DETECTED, limit + 1),
     ] {
         hits.store(0, Ordering::SeqCst);
-        let response = fetch(&fixture, path).await;
+        let response = fetch(&fixture, &path).await;
         assert_eq!(response.status(), expected);
         let body = response.text().await.unwrap();
         if expected == StatusCode::LOOP_DETECTED {
             assert!(body.contains("redirect_loop"));
-            assert!(body.contains("ten redirects"));
+            assert!(body.contains(&format!("{limit} redirects")));
         } else {
             assert_eq!(body, "Reached login");
         }
-        assert_eq!(hits.load(Ordering::SeqCst), expected_hits);
+        assert_eq!(hits.load(Ordering::SeqCst), expected_hits as u64);
     }
     server.abort();
+}
+
+#[tokio::test]
+async fn synology_budget_never_grants_cross_origin_or_websocket_redirects() {
+    let foreign = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let location = format!("http://{}/foreign", foreign.local_addr().unwrap());
+    let foreign_hits = Arc::new(AtomicU64::new(0));
+    let count = foreign_hits.clone();
+    let foreign_server = tokio::spawn(async move {
+        axum::serve(
+            foreign,
+            axum::Router::new().fallback(move || {
+                count.fetch_add(1, Ordering::SeqCst);
+                async { "unexpected foreign request" }
+            }),
+        )
+        .await
+        .unwrap();
+    });
+    let source = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let source_origin = format!("http://{}", source.local_addr().unwrap());
+    let source_hits = Arc::new(AtomicU64::new(0));
+    let count = source_hits.clone();
+    let source_server = tokio::spawn(async move {
+        axum::serve(
+            source,
+            axum::Router::new().fallback(move || {
+                count.fetch_add(1, Ordering::SeqCst);
+                let location = location.clone();
+                async move {
+                    Response::builder()
+                        .status(302)
+                        .header("Location", location)
+                        .body(Body::empty())
+                        .unwrap()
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    });
+    let proxy = proxy_with_redirect_profile(
+        format!("{source_origin}/"),
+        client(),
+        UpstreamAuthMode::Basic,
+        HttpProxyPolicy::default(),
+        HashMap::new(),
+        Arc::new(ProxyNetworkState::default()),
+        Some(BrowserRedirectProfile::Synology),
+    )
+    .await;
+    *proxy.state.username.write().unwrap() = "private-user".into();
+    *proxy.state.password.write().unwrap() = "private-password".into();
+    let result = fetch(&proxy, "/").await;
+    assert_eq!(result.status(), StatusCode::FORBIDDEN);
+    assert!(result
+        .text()
+        .await
+        .unwrap()
+        .contains("cross_origin_redirect"));
+    assert!(matches!(
+        super::super::upstream::send_websocket(
+            &proxy.state,
+            &format!("{source_origin}/socket"),
+            &[]
+        )
+        .await,
+        Err(super::super::upstream::UpstreamError::Policy(_))
+    ));
+    assert_eq!(source_hits.load(Ordering::SeqCst), 2);
+    assert_eq!(foreign_hits.load(Ordering::SeqCst), 0);
+    assert!(proxy
+        .state
+        .global_sessions
+        .lock()
+        .unwrap()
+        .redirect_reviews
+        .is_empty());
+    source_server.abort();
+    foreign_server.abort();
 }

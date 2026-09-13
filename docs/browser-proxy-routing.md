@@ -115,6 +115,17 @@ does not delete explicitly trusted destinations; those remain subject to the
 general redirect policy. The derived runtime origin context is not saved or
 imported as connection policy.
 
+Synology DSM and recognized QuickConnect website connections permit up to
+20 reviewed cross-origin handoffs in the original navigation chain. Their
+native HTTP requests also permit up to 20 same-origin redirects; the existing
+overall request deadline is unchanged. Ordinary websites retain five reviewed
+handoffs and ten same-origin redirects. The Synology budget follows the original
+connection's live owner/identity provenance, not a later destination's name,
+and survives an anonymous handoff or proxy restart without forwarding a login.
+Turning off default destination approval does not change this budget: each
+destination still needs its normal approval, and the twenty-first redirect is
+refused. WebSocket and Synology API redirect refusals are unchanged.
+
 An issued default-destination handoff uses a neutral HTTP 202 pending response,
 not an access-denied warning. The app validates the native receipt and current
 consent before showing “Continuing to approved destination”. This is not a TLS

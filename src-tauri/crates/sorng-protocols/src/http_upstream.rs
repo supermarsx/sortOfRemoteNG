@@ -61,7 +61,8 @@ async fn send_inner(
         state.username.read().map(|g| g.clone()).unwrap_or_default(),
         state.password.read().map(|g| g.clone()).unwrap_or_default(),
     );
-    for redirect in 0..=10 {
+    let redirect_limit = super::same_origin_redirect_limit(state.redirect_profile);
+    for redirect in 0..=redirect_limit {
         if url.origin().ascii_serialization() != state.target_origin
             || !url.username().is_empty()
             || url.password().is_some()
@@ -136,7 +137,7 @@ async fn send_inner(
         if websocket {
             return Err(UpstreamError::Policy("A WebSocket handshake cannot follow redirects. Review the endpoint before reconnecting."));
         }
-        if redirect == 10 {
+        if redirect == redirect_limit {
             return Err(UpstreamError::RedirectLoop);
         }
         let location = response

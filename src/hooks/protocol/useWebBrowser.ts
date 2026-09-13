@@ -440,6 +440,8 @@ export function useWebBrowser(session: ConnectionSession) {
   reviewedFlowScopeRef.current = reviewedFlowScope;
   const reviewedFlowStartedRef = useRef<string | null>(null);
   const synologyRedirectOriginalOrigin = redirectTrust.defaults?.originalOrigin;
+  const redirectBudgetRef = useRef(redirectTrust.redirectBudget);
+  redirectBudgetRef.current = redirectTrust.redirectBudget;
   const proxyOptions = useMemo(() => {
     try {
       const policy = withSynologyRedirectDefaults(
@@ -517,6 +519,7 @@ export function useWebBrowser(session: ConnectionSession) {
     session.protocol === "https" ? httpsPolicyKey : null,
     connection?.httpProxyPolicy,
     redirectTrust.defaults,
+    redirectTrust.redirectBudget?.profile,
     connection?.httpHeaders,
     connection?.httpFormAutomation,
     connection ? runtimeCredentialTargetKey(connection) : null,
@@ -1327,6 +1330,7 @@ export function useWebBrowser(session: ConnectionSession) {
       proxyOptions.policy?.allowCrossOriginRedirects === true ||
       !!proxyOptions.policy?.synologyQuickConnectDefaults,
     effectivePolicy: proxyOptions.policy ?? undefined,
+    redirectBudget: redirectTrust.redirectBudget,
     generation: () => navGenRef.current,
     proxySessionId: () => proxySessionIdRef.current,
     navigationToken: () => pendingFrameRef.current?.token ?? null,
@@ -1598,6 +1602,8 @@ export function useWebBrowser(session: ConnectionSession) {
           await stopProxy();
           if (gen !== navGenRef.current) return;
           assertReviewedFlow();
+          const redirectBudget = redirectBudgetRef.current;
+          redirectBudget?.assertCurrent();
           const response = await invoke<ProxyMediatorResponse>(
             "start_basic_auth_proxy",
             {
@@ -1616,6 +1622,7 @@ export function useWebBrowser(session: ConnectionSession) {
                   : {}),
                 local_port: 0,
                 proxy_policy: proxyOptions.policy,
+                redirect_profile: redirectBudget?.profile ?? null,
                 custom_headers: proxyOptions.headers,
                 http_form_automation: proxyOptions.form,
                 // CA/hostname verification and explicit trust are separate.
