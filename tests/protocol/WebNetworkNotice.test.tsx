@@ -27,6 +27,59 @@ vi.mock(
 );
 afterEach(cleanup);
 describe("compact website network notice", () => {
+  it("keeps routine guidance collapsed and neutral, and collapses old source diagnostics on handoff", async () => {
+    const props = {
+      reports: [],
+      guard: {
+        platform: "windows",
+        frameNavigation: "enforced" as const,
+        allNetworkRequestsMediated: false as const,
+      },
+      onReload: vi.fn(),
+    };
+    const view = render(
+      <WebNetworkNotice
+        {...props}
+        proxyOrigin="http://first.localhost:43123"
+      />,
+    );
+    const region = screen.getByRole("region", {
+      name: "Website network restrictions",
+    });
+    expect(region).not.toHaveClass("bg-warning/5");
+    expect(
+      screen.getByText(/Browser-wide network interception is not yet enforced/),
+    ).not.toBeVisible();
+    fireEvent.click(screen.getByText("Protection details"));
+    await waitFor(() =>
+      expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+        "data-active",
+        "true",
+      ),
+    );
+    view.rerender(
+      <WebNetworkNotice
+        {...props}
+        proxyOrigin="http://second.localhost:43124"
+      />,
+    );
+    expect(
+      screen.getByText(/Browser-wide network interception is not yet enforced/),
+    ).not.toBeVisible();
+    expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    view.rerender(
+      <WebNetworkNotice
+        {...props}
+        proxyOrigin="http://first.localhost:43123"
+      />,
+    );
+    expect(
+      screen.getByText(/Browser-wide network interception is not yet enforced/),
+    ).not.toBeVisible();
+  });
   it("only activates native observation snapshots while Windows details are expanded", async () => {
     const view = render(
       <WebNetworkNotice

@@ -558,6 +558,13 @@ describe("HTTPS certificate and native trust stages", () => {
       screen.getByText(/Signing in there does not sign in this tab/),
     ).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open Cloudflare in system browser" }),
+    ).not.toBeVisible();
+    fireEvent.click(screen.getByText("Cloudflare · Sign-in & 2FA help"));
+    expect(
+      screen.getByText(/Signing in there does not sign in this tab/),
+    ).toBeVisible();
     await act(async () =>
       browser.navigateToUrl(
         "https://dash.cloudflare.com/account/security?challenge=ephemeral#code",
@@ -615,6 +622,7 @@ describe("HTTPS certificate and native trust stages", () => {
       expect(
         screen.getByText(/YubiKey and other WebAuthn security keys/),
       ).toBeInTheDocument();
+      fireEvent.click(screen.getByText(`${label} · Sign-in & 2FA help`));
       fireEvent.click(
         screen.getByRole("button", { name: `Open ${label} in system browser` }),
       );
