@@ -16,6 +16,13 @@ import {
 } from "../../src/utils/connection/websiteDarkMode";
 import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../src/types/connection/sessionQuickActions";
 import { useWebsiteDarkMode } from "../../src/hooks/protocol/useWebsiteDarkMode";
+import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
+import {
+  registerRuntimeConnection,
+  releaseRuntimeConnection,
+  clearRuntimeConnectionsForTests,
+} from "../../src/utils/session/runtimeConnectionRegistry";
+import { httpRedirectTrustIdentity } from "../../src/utils/protocol/httpRedirectTrustIdentity";
 
 const db = vi.hoisted(() => ({
   id: "a",
@@ -128,6 +135,7 @@ function mount(
   };
 }
 beforeEach(() => {
+  clearRuntimeConnectionsForTests();
   db.id = "a";
   db.generation = 1;
   db.locked = false;
@@ -152,6 +160,169 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("durable website appearance lifecycle", () => {
+  it("keeps malformed runtime appearance unavailable without throwing during render", () => {
+    const invalid = {
+      ...connection,
+      httpAutomation: {
+        ...connection.httpAutomation!,
+        darkMode: { version: 99 },
+      },
+    } as unknown as Connection;
+    const hook = mount({ connection: invalid });
+    expect(hook.result.current.available).toBe(false);
+    expect(hook.result.current.enabled).toBe(false);
+    expect(db.read).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+  it("does not carry an old saved-source error into a different unsaved page", async () => {
+    db.read.mockRejectedValueOnce(
+      new Error("Former source could not be verified"),
+    );
+    const hook = mount();
+    await waitFor(() =>
+      expect(hook.result.current.error).toBe(
+        "Former source could not be verified",
+      ),
+    );
+    hook.change({ connection: { ...connection, id: "unsaved-next" } });
+    expect(hook.result.current.error).toBeNull();
+    expect(hook.result.current.unavailableReason).toMatch(
+      /Save the original website/,
+    );
+    expect(hook.result.current.available).toBe(false);
+  });
+
+  it("ignores only visual appearance in redirect source proof, retaining security and other automation fields", () => {
+    const original = httpRedirectTrustIdentity(connection);
+    expect(
+      httpRedirectTrustIdentity({
+        ...connection,
+        httpAutomation: {
+          ...connection.httpAutomation!,
+          forceDark: true,
+          darkMode: normalizeWebsiteDarkModeConfig(undefined),
+        },
+      }),
+    ).toBe(original);
+    for (const patch of [
+      { hostname: "other.example.test" },
+      { port: 8443 },
+      { protocol: "http" as const },
+      { password: "different-fixture" },
+      { username: "different-user" },
+      { httpHeaders: { Authorization: "different-fixture" } },
+      { httpsTrustPolicy: "strict" as const },
+      {
+        httpAutomation: {
+          ...connection.httpAutomation!,
+          scriptInjectionEnabled:
+            !connection.httpAutomation!.scriptInjectionEnabled,
+        },
+      },
+      {
+        httpAutomation: {
+          ...connection.httpAutomation!,
+          interactionMacrosEnabled:
+            !connection.httpAutomation!.interactionMacrosEnabled,
+        },
+      },
+      {
+        synologySettings: {
+          version: 1 as const,
+          useHttps: true,
+          useDefaultRedirectDestinations: false,
+        },
+      },
+    ])
+      expect(httpRedirectTrustIdentity({ ...connection, ...patch })).not.toBe(
+        original,
+      );
+  });
+  it("saves redirected-page appearance only to the original saved connection, without enabling macros or scripts", async () => {
+    const identity = httpRedirectTrustIdentity(connection);
+    const runtime = {
+      ...connection,
+      id: "ephemeral",
+      hostname: "destination.example.test",
+    };
+    registerRuntimeConnection(runtime, {
+      initialUrl: "https://destination.example.test/",
+      redirectHops: 1,
+      assertCurrent: () => undefined,
+      trustedRedirectSource: {
+        databaseId: "a",
+        savedConnectionId: connection.id,
+        originalOrigin: "https://site.example.test",
+        assertOwner: () => {
+          if (db.id !== "a" || db.locked) throw new Error("Owner changed");
+        },
+        assertIdentity: (value) => {
+          if (httpRedirectTrustIdentity(value) !== identity)
+            throw new Error("Source changed");
+        },
+      },
+    });
+    const before = structuredClone(connection.httpAutomation);
+    const hook = mount({ connection: runtime });
+    await waitFor(() => expect(hook.result.current.available).toBe(true));
+    await act(async () => {
+      expect(await hook.result.current.setEnabled(true)).toBe(true);
+    });
+    expect(update).toHaveBeenCalledOnce();
+    expect(update.mock.calls[0][0].id).toBe("same");
+    expect(update.mock.calls[0][0].hostname).toBe("site.example.test");
+    expect(db.rows[0].httpAutomation).toMatchObject({
+      ...before,
+      forceDark: true,
+    });
+    // Model the Provider publishing the saved original row, not a new runtime ID.
+    hook.change({ connection: runtime });
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    expect(request).toHaveBeenLastCalledWith(
+      "dark",
+      expect.objectContaining({ enabled: true }),
+    );
+    releaseRuntimeConnection("ephemeral");
+    await act(async () => {
+      expect(await hook.result.current.setEnabled(false)).toBe(false);
+    });
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("does not invent a saved appearance source for an unsaved redirect", async () => {
+    const runtime = { ...connection, id: "ephemeral" };
+    registerRuntimeConnection(runtime, {
+      initialUrl: "https://site.example.test/",
+      redirectHops: 1,
+      assertCurrent: () => undefined,
+    });
+    const hook = mount({ connection: runtime });
+    expect(hook.result.current.available).toBe(false);
+    expect(hook.result.current.unavailableReason).toMatch(
+      /Save the original website/,
+    );
+    expect(db.read).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+  it("recognizes the same saved profile after Provider supplies optional protocol defaults", async () => {
+    connection.httpApplication = {
+      version: 1,
+      id: "synology-dsm",
+    } as Connection["httpApplication"];
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    connection = normalizeAdvancedProtocolConnection(connection);
+    currentRows = [connection];
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    expect(hook.result.current.available).toBe(true);
+    expect(hook.result.current.error).toBeNull();
+    expect(request).toHaveBeenLastCalledWith(
+      "dark",
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
   it("loads under StrictMode without a script library and never enables from global defaults", async () => {
     const hook = mount();
     await waitFor(() => expect(hook.result.current.available).toBe(true));
@@ -344,7 +515,9 @@ describe("durable website appearance lifecycle", () => {
     expect(hook.result.current.available).toBe(false);
     hook.change({ settings, connection: { ...connection, id: "unsaved" } });
     await waitFor(() =>
-      expect(hook.result.current.error).toMatch(/owning database/),
+      expect(hook.result.current.unavailableReason).toMatch(
+        /Save the original website/,
+      ),
     );
     expect(hook.result.current.available).toBe(false);
     hook.change({

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
 import type { Connection } from "../../types/connection/connection";
 import type { GlobalSettings } from "../../types/settings/settings";
@@ -23,6 +23,9 @@ import {
   normalizeWebsiteDarkModeSettings,
 } from "../../utils/connection/websiteDarkMode";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
+import { normalizeAdvancedProtocolConnection } from "../../utils/connection/normalizeAdvancedProtocolConnection";
+import { getRuntimeWebNavigation } from "../../utils/session/runtimeConnectionRegistry";
+import { httpRedirectConnectionOrigin } from "../../utils/protocol/httpRedirectTrustIdentity";
 
 export interface WebsiteDarkModeController {
   scopeKey: string;
@@ -31,6 +34,8 @@ export interface WebsiteDarkModeController {
   busy: boolean;
   error: string | null;
   unavailableReason: string;
+  /** Appearance is saved only to this original connection, never a runtime ID. */
+  savedConnectionName?: string;
   configuration: WebsiteDarkModeConfig;
   theme: WebsiteDarkTheme;
   defaultTheme: WebsiteDarkTheme;
@@ -60,6 +65,8 @@ const UNAVAILABLE =
   "Open and unlock this saved website's owning database to configure the dark-mode extension.";
 const SAVE_FAILED =
   "The dark-mode extension setting could not be confirmed saved. Retry after restoring database access.";
+const UNSAVED =
+  "Save the original website connection before configuring its dark-mode extension. This page is not a saved connection in the current database.";
 const changed = () =>
   new Error(
     "The website or its database changed. Review the extension settings again.",
@@ -73,7 +80,7 @@ function sourceIdentity(connection: Connection): string {
     connectionCount: _count,
     updatedAt: _updatedAt,
     ...source
-  } = connection;
+  } = normalizeAdvancedProtocolConnection(connection);
   const {
     forceDark: _enabled,
     darkMode: _theme,
@@ -101,13 +108,50 @@ export function useWebsiteDarkMode(
   options: Options,
 ): WebsiteDarkModeController {
   const context = useContext(ConnectionContext);
+  const runtimeConnection = options.connection;
+  const navigation = runtimeConnection
+    ? getRuntimeWebNavigation(runtimeConnection.id)
+    : undefined;
+  const provenance =
+    navigation?.trustedRedirectSource ?? navigation?.synologyRedirectSource;
+  let sourceProblem = "";
+  if (navigation) {
+    if (!provenance?.savedConnectionId) {
+      sourceProblem = UNSAVED;
+    } else {
+      try {
+        provenance.assertOwner();
+        if (provenance.databaseId !== options.ownerDatabaseId) throw changed();
+        const rows = context?.state.connections.filter(
+          (row) => row.id === provenance.savedConnectionId,
+        );
+        if (rows?.length !== 1) throw changed();
+        provenance.assertIdentity(rows[0]);
+        if (httpRedirectConnectionOrigin(rows[0]) !== provenance.originalOrigin)
+          throw changed();
+        options = { ...options, connection: rows[0] };
+      } catch {
+        sourceProblem =
+          "The original saved website changed or its database access expired. Reopen it before configuring this redirected page.";
+      }
+    }
+  } else if (
+    runtimeConnection &&
+    context?.databaseAvailability?.status === "ready" &&
+    context.databaseAvailability.databaseId === options.ownerDatabaseId &&
+    !context.state.connections.some((row) => row.id === runtimeConnection.id)
+  )
+    sourceProblem = UNSAVED;
   const latest = useRef({ options, context });
   latest.current = { options, context };
   const mounted = useRef(false);
   const lifetime = useRef(0);
   const writing = useRef(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failureState, setFailureState] = useState<{
+    scope: string;
+    message: string;
+  } | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [knownSavedScope, setKnownSavedScope] = useState<string | null>(null);
   const [verified, setVerified] = useState<{
@@ -121,8 +165,10 @@ export function useWebsiteDarkMode(
   let requestedEnabled = false,
     problem = "",
     source = "invalid",
+    runtimeSource = "invalid",
     appearanceKey = "invalid";
   try {
+    if (sourceProblem) throw new Error(sourceProblem);
     global = normalizeWebsiteDarkModeSettings(options.settings.websiteDarkMode);
     if (
       !options.connection ||
@@ -137,6 +183,9 @@ export function useWebsiteDarkMode(
     requestedEnabled = current.enabled;
     appearanceKey = stableJsonStringify(current);
     source = sourceIdentity(options.connection);
+    runtimeSource = runtimeConnection
+      ? sourceIdentity(runtimeConnection)
+      : "absent";
     if (!options.settingsReady) problem = "Wait for global settings to load.";
     else if (
       !normalizeSessionQuickActions(options.settings.sessionQuickActions)
@@ -162,7 +211,18 @@ export function useWebsiteDarkMode(
     options.ownerDatabaseId,
     options.scopeKey,
     source,
+    runtimeConnection?.id,
+    runtimeSource,
+    options.resetKey,
   ]);
+  // A former page/owner's failure must not be shown for the next source. This
+  // presentation scope is separate from the durable failed-save fences below.
+  const error = failureState?.scope === scope ? failureState.message : null;
+  const setError = useCallback(
+    (message: string | null) =>
+      setFailureState(message === null ? null : { scope, message }),
+    [scope],
+  );
   const revision = useRef({ scope, value: 0 });
   if (revision.current.scope !== scope)
     revision.current = { scope, value: revision.current.value + 1 };
@@ -199,6 +259,14 @@ export function useWebsiteDarkMode(
       throw new Error(UNAVAILABLE);
     const check = () => {
       target.assertAccessible!();
+      if (navigation) {
+        if (
+          !runtimeConnection ||
+          getRuntimeWebNavigation(runtimeConnection.id) !== navigation
+        )
+          throw changed();
+        provenance?.assertOwner();
+      }
       if (
         !mounted.current ||
         lifetime.current !== capturedLifetime ||
@@ -239,10 +307,14 @@ export function useWebsiteDarkMode(
           : undefined
         : latest.current.options.connection;
       if (!live || sourceIdentity(live) !== source) throw changed();
+      provenance?.assertIdentity(live);
       return live;
     };
     const read = async () => {
       check();
+      // readCurrent preserves the saved baseline. Both native database readers
+      // await the encryption coordinator (unlike the macro try-lock reader),
+      // so do not retry a whole database load or a revoked managed lease here.
       const snapshot = await target.readCurrent!();
       check();
       const matches = snapshot?.connections?.filter(
@@ -250,6 +322,9 @@ export function useWebsiteDarkMode(
       );
       if (matches?.length !== 1 || sourceIdentity(matches[0]) !== source)
         throw new Error(UNAVAILABLE);
+      provenance?.assertIdentity(
+        normalizeAdvancedProtocolConnection(matches[0]),
+      );
       liveConnection();
       return matches[0];
     };
@@ -353,6 +428,7 @@ export function useWebsiteDarkMode(
     options.settingsReady,
     options.navigationKey,
     options.resetKey,
+    setError,
   ]);
 
   const save = async (next: {
@@ -434,6 +510,8 @@ export function useWebsiteDarkMode(
       (knownSavedScope === scope
         ? ""
         : error || "Checking the saved website's database access…"),
+    savedConnectionName:
+      knownSavedScope === scope ? options.connection?.name : undefined,
     configuration,
     theme,
     defaultTheme: global.defaults,

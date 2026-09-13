@@ -2,6 +2,8 @@ import type { Connection } from "../../types/connection/connection";
 import { parseCanonicalWebAuthority } from "../connection/sanitizeHostname";
 import { normalizeHttpRedirectOrigin } from "./httpTrustedRedirectDestinations";
 import { stableJsonStringify } from "../core/stableJsonStringify";
+import { normalizeAdvancedProtocolConnection } from "../connection/normalizeAdvancedProtocolConnection";
+import { normalizeHttpAutomation } from "../connection/sessionQuickActions";
 
 export function httpRedirectConnectionOrigin(connection: Connection): string {
   if (!["http", "https"].includes(connection.protocol))
@@ -33,7 +35,17 @@ export function httpRedirectConnectionOrigin(connection: Connection): string {
  * New security fields participate automatically. Only presentation/bookkeeping
  * and the separately re-read trusted list are excluded. */
 export function httpRedirectTrustIdentity(connection: Connection): string {
-  const source: Record<string, unknown> = { ...connection };
+  const source: Record<string, unknown> = {
+    ...normalizeAdvancedProtocolConnection(connection),
+  };
+  // Appearance is not routing, authentication or script/macro consent. Editing
+  // only these visual settings must not invalidate a live saved-source lease.
+  const {
+    forceDark: _forceDark,
+    darkMode: _darkMode,
+    ...automation
+  } = normalizeHttpAutomation(connection.httpAutomation);
+  source.httpAutomation = automation;
   for (const key of [
     "httpTrustedRedirectDestinations",
     "lastConnected",

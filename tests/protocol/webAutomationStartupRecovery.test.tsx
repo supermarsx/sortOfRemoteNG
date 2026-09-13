@@ -1,4 +1,5 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
+import React, { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection } from "../../src/types/connection/connection";
 import type { GlobalSettings } from "../../src/types/settings/settings";
@@ -57,6 +58,11 @@ vi.mock("../../src/hooks/protocol/useWebsiteDarkMode", () => ({
 }));
 
 import { useWebAutomation } from "../../src/hooks/protocol/useWebAutomation";
+import {
+  ConnectionContext,
+  type ConnectionContextType,
+} from "../../src/contexts/ConnectionContextTypes";
+import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
 import {
   normalizeWebAutomationLibrary,
   WEB_AUTOMATION_STORE_KEY,
@@ -147,6 +153,45 @@ afterEach(async () => {
 });
 
 describe("website library startup with the real durable store", () => {
+  it("initializes the exact database library under StrictMode without a false pending-save error", async () => {
+    const read = vi.fn(async () => emptyDatabaseAutomationLibrary());
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <StrictMode>
+        <ConnectionContext.Provider
+          value={
+            {
+              automationLibrary: {
+                scope: { databaseId: "db-a", generation: 1 },
+                changeRevision: 0,
+                read,
+                compareAndSwap: vi.fn(),
+              },
+            } as unknown as ConnectionContextType
+          }
+        >
+          {children}
+        </ConnectionContext.Provider>
+      </StrictMode>
+    );
+    const view = renderHook(useWebAutomation, {
+      initialProps: options(),
+      wrapper,
+      reactStrictMode: true,
+    });
+    await tick();
+    expect(read).toHaveBeenCalled();
+    expect(view.result.current.availableDatabaseScope).toEqual({
+      kind: "database",
+      databaseId: "db-a",
+    });
+    expect(view.result.current.error).toBeNull();
+    expect(view.result.current.libraryReady).toBe(true);
+    expect(
+      h.invoke.mock.calls.every(
+        ([command]) => command === "read_macro_library",
+      ),
+    ).toBe(true);
+  });
   it.each([2, 4])(
     "recovers on read %i while the page is still loading, without an error or action replay",
     async (attempts) => {

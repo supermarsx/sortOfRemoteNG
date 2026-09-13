@@ -108,8 +108,10 @@ function AppearanceDialog({
         </div>
         <div className="flex items-center justify-between gap-4">
           <p className="text-sm text-[var(--color-textSecondary)]">
-            Saved for this connection. App defaults do not enable other
-            websites.
+            {controller.savedConnectionName
+              ? `Appearance changes are saved to “${controller.savedConnectionName}”.`
+              : "Appearance changes require a verified saved connection."}{" "}
+            App defaults do not enable other websites.
           </p>
           <button
             type="button"
@@ -120,11 +122,13 @@ function AppearanceDialog({
             {controller.enabled ? "Disable extension" : "Enable extension"}
           </button>
         </div>
-        {!controller.available && (
-          <p role="status" className="text-sm text-warning">
-            {controller.unavailableReason}
-          </p>
-        )}
+        {!controller.available &&
+          controller.unavailableReason !== controller.error &&
+          controller.unavailableReason !== failure && (
+            <p role="status" className="text-sm text-warning">
+              {controller.unavailableReason}
+            </p>
+          )}
         {(failure || controller.error) && (
           <p role="alert" className="text-sm text-error">
             {failure || controller.error}

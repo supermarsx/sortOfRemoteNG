@@ -173,6 +173,27 @@ describe("Dark-mode extension UI", () => {
       screen.getByText("Unlock the owning database first."),
     ).toHaveAttribute("role", "status");
   });
+  it("shows a shared unavailable error only once without claiming a setting was saved", () => {
+    render(
+      <WebsiteDarkModeControls
+        controller={controller({
+          available: false,
+          error: "Unlock the owning database first.",
+          unavailableReason: "Unlock the owning database first.",
+        })}
+      />,
+    );
+    open();
+    expect(
+      screen.getAllByText("Unlock the owning database first."),
+    ).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Unlock the owning database first.",
+    );
+    expect(
+      screen.queryByText(/Saved for this connection/),
+    ).not.toBeInTheDocument();
+  });
   it("rejects resource CSS before invoking persistence", async () => {
     const value = controller({
       configuration: {

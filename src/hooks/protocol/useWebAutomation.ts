@@ -199,7 +199,7 @@ export function useWebAutomation(options: Options) {
       }
       return !revoked.current &&
         current.settingsReady &&
-        (current.appearanceScopeKey ?? current.scopeKey) &&
+        current.scopeKey &&
         !current.blocked &&
         doc &&
         frame
@@ -207,6 +207,30 @@ export function useWebAutomation(options: Options) {
         : null;
     });
   const bridge = bridgeRef.current;
+  // Appearance has its own durable saved-source proof. A failed/revoked macro
+  // library must not disable that independently verified visual-only capability.
+  const appearanceBridgeRef = useRef<WebAutomationBridge | null>(null);
+  if (!appearanceBridgeRef.current)
+    appearanceBridgeRef.current = new WebAutomationBridge(() => {
+      const current = latest.current,
+        doc = current.getDocument(),
+        frame = current.iframe.current?.contentWindow;
+      try {
+        captureWebAutomationAccess(current.ownerDatabaseId)();
+      } catch {
+        return null;
+      }
+      return mounted.current &&
+        current.settingsReady &&
+        (current.appearanceScopeKey ?? current.scopeKey) &&
+        !current.blocked &&
+        doc &&
+        frame
+        ? { frame, document: doc }
+        : null;
+    });
+  const appearanceBridge = appearanceBridgeRef.current;
+  const [appearanceEpoch, setAppearanceEpoch] = useState(0);
   const cancel = useCallback(() => {
     operation.current++;
     recordingAttempt.current++;
@@ -380,6 +404,70 @@ export function useWebAutomation(options: Options) {
     }
   }, [readDatabase]);
   useEffect(() => {
+    mounted.current = true;
+    const receive = (event: MessageEvent) => {
+      bridge.handleMessage(event);
+      appearanceBridge.handleMessage(event);
+    };
+    const changed = (event: Event) => {
+      if ((event as CustomEvent).detail?.key === WEB_AUTOMATION_STORE_KEY)
+        void reload();
+    };
+    window.addEventListener("message", receive);
+    window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
+    const revoke = () => {
+      epoch.current++;
+      libraryRead.current?.abort();
+      revoked.current = true;
+      setAppearanceEpoch((value) => value + 1);
+      loaded.current = false;
+      setError(
+        "Website library access was revoked. Unlock its storage, then reload the library.",
+      );
+      cancel();
+      bridge.cancel(true);
+      appearanceBridge.cancel(true);
+      setOpen(false);
+      setLibraryReady(false);
+      setLibraryLoading(false);
+      setLibrary(EMPTY_WEB_AUTOMATION_LIBRARY);
+      setDatabaseLibrary(null);
+      setRecordedSteps([]);
+    };
+    const offDatabase = onDatabaseAccessChange((event) => {
+      if (event.status === "suspended") revoke();
+    });
+    let offNative: (() => void) | undefined,
+      disposed = false;
+    void getInvoke()
+      .then(async (invoke) => {
+        if (!invoke || disposed) return;
+        const { listen } = await import("@tauri-apps/api/event");
+        const off = await listen(ENCRYPTION_EVENT_LOCKED, revoke);
+        if (disposed) off();
+        else offNative = off;
+      })
+      .catch(() => {
+        /* Native library operations still fail closed if runtime is unavailable. */
+      });
+    return () => {
+      mounted.current = false;
+      disposed = true;
+      // This is a monotonic invalidation counter, not a captured DOM ref.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      epoch.current++;
+      libraryRead.current?.abort();
+      cancel();
+      bridge.cancel(true);
+      appearanceBridge.cancel(true);
+      offDatabase();
+      offNative?.();
+      window.removeEventListener("message", receive);
+      window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
+    };
+  }, [bridge, appearanceBridge, cancel, reload, setRecordedSteps]);
+
+  useEffect(() => {
     if (options.settingsReady && options.scopeKey) void reloadDatabase();
     else setDatabaseLibrary(null);
   }, [
@@ -425,6 +513,7 @@ export function useWebAutomation(options: Options) {
     if (!options.settingsReady || !options.scopeKey) {
       cancel();
       bridge.cancel(true);
+      appearanceBridge.cancel(true);
       setOpen(false);
       setLibrary(EMPTY_WEB_AUTOMATION_LIBRARY);
       setDatabaseLibrary(null);
@@ -441,78 +530,22 @@ export function useWebAutomation(options: Options) {
     cancel,
     reload,
     bridge,
+    appearanceBridge,
     setRecordedSteps,
   ]);
-
-  useEffect(() => {
-    mounted.current = true;
-    const receive = (event: MessageEvent) => bridge.handleMessage(event);
-    const changed = (event: Event) => {
-      if ((event as CustomEvent).detail?.key === WEB_AUTOMATION_STORE_KEY)
-        void reload();
-    };
-    window.addEventListener("message", receive);
-    window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
-    const revoke = () => {
-      epoch.current++;
-      libraryRead.current?.abort();
-      revoked.current = true;
-      loaded.current = false;
-      setError(
-        "Website library access was revoked. Unlock its storage, then reload the library.",
-      );
-      cancel();
-      bridge.cancel(true);
-      setOpen(false);
-      setLibraryReady(false);
-      setLibraryLoading(false);
-      setLibrary(EMPTY_WEB_AUTOMATION_LIBRARY);
-      setDatabaseLibrary(null);
-      setRecordedSteps([]);
-    };
-    const offDatabase = onDatabaseAccessChange((event) => {
-      if (event.status === "suspended") revoke();
-    });
-    let offNative: (() => void) | undefined,
-      disposed = false;
-    void getInvoke()
-      .then(async (invoke) => {
-        if (!invoke || disposed) return;
-        const { listen } = await import("@tauri-apps/api/event");
-        const off = await listen(ENCRYPTION_EVENT_LOCKED, revoke);
-        if (disposed) off();
-        else offNative = off;
-      })
-      .catch(() => {
-        /* Native library operations still fail closed if runtime is unavailable. */
-      });
-    return () => {
-      mounted.current = false;
-      disposed = true;
-      // This is a monotonic invalidation counter, not a captured DOM ref.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      epoch.current++;
-      libraryRead.current?.abort();
-      cancel();
-      bridge.cancel(true);
-      offDatabase();
-      offNative?.();
-      window.removeEventListener("message", receive);
-      window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
-    };
-  }, [bridge, cancel, reload, setRecordedSteps]);
 
   const executionKey = `${options.navigationKey}:${options.blocked}:${accessKey}:${JSON.stringify(permissions.value)}`;
   useEffect(() => {
     cancel();
     bridge.cancel(true);
-  }, [executionKey, cancel, bridge]);
+    appearanceBridge.cancel(true);
+  }, [executionKey, cancel, bridge, appearanceBridge]);
 
   const darkMode = useWebsiteDarkMode({
     ...options,
     scopeKey: options.appearanceScopeKey ?? options.scopeKey,
-    bridge,
-    resetKey: executionKey,
+    bridge: appearanceBridge,
+    resetKey: `${executionKey}:${appearanceEpoch}`,
   });
 
   // Consent is a connection setting, not an implicit command to the website.
