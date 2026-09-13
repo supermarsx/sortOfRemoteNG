@@ -23,6 +23,37 @@ import {
 import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
 import { TERMINAL_MACROS_STORE_KEY } from "../../utils/recording/terminalMacroPersistence";
 import * as macroService from "../../utils/recording/macroService";
+import {
+  AutomationLibraryAccessError,
+  automationLibraryDiagnostic,
+} from "../../utils/recording/automationLibraryAccess";
+import type { MacroLibraryReadAccess } from "../../utils/storage/macroLibraryReadRecovery";
+
+type LibrarySource =
+  "App-wide scripts" | "App-wide terminal macros" | "Owning database actions";
+async function readLibrary<T>(
+  source: LibrarySource,
+  read: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await read();
+  } catch (failure) {
+    const diagnostic = automationLibraryDiagnostic(failure);
+    // Database access is independent of app-wide encryption; never recommend
+    // unlocking a different store or expose a native path/script in an error.
+    const message =
+      source === "Owning database actions"
+        ? diagnostic.code === "invalid-library" ||
+          diagnostic.code === "recovery-required"
+          ? "This database's action library could not be validated. Review its storage recovery and retry. Existing records were retained."
+          : "Open and unlock this connection's owning database, then reload its action library. No app-wide substitute was used."
+        : diagnostic.message;
+    throw new AutomationLibraryAccessError({
+      ...diagnostic,
+      message: `${source} (${diagnostic.code}): ${message}`,
+    });
+  }
+}
 
 interface Options {
   session: ConnectionSession;
@@ -58,6 +89,8 @@ export function useSshQuickActions(options: Options) {
   const [query, setQuery] = useState("");
   const busyRef = useRef(false);
   const generation = useRef(0);
+  const mounted = useRef(false);
+  const libraryRead = useRef<AbortController | null>(null);
   const current = useRef({ context, options, settings });
   current.current = { context, options, settings };
   const enabled =
@@ -94,8 +127,10 @@ export function useSshQuickActions(options: Options) {
   }, [manager, ownerId]);
 
   useEffect(() => {
+    mounted.current = true;
     const changed = () => {
       generation.current++;
+      libraryRead.current?.abort();
       setLibrary([]);
       setAccessEpoch((value) => value + 1);
     };
@@ -103,8 +138,10 @@ export function useSshQuickActions(options: Options) {
     const stopAccess = manager.onDatabaseAccessChange?.(changed);
     const invalidate = () => {
       generation.current++;
+      libraryRead.current?.abort();
     };
     return () => {
+      mounted.current = false;
       invalidate();
       stopDatabase();
       stopAccess?.();
@@ -190,25 +227,51 @@ export function useSshQuickActions(options: Options) {
   const refresh = useCallback(async () => {
     void hasConnection;
     const captured = ++generation.current;
+    libraryRead.current?.abort();
+    if (!mounted.current) return;
     if (!enabled || options.active === false) {
       setLibrary([]);
       setLoading(false);
       return;
     }
+    const controller = new AbortController();
+    libraryRead.current = controller;
     setLoading(true);
-    setError(null);
     try {
       const { target } = assertOwner();
+      const session = current.current.options.session;
+      const access: MacroLibraryReadAccess = {
+        signal: controller.signal,
+        assertCurrent: () => {
+          if (
+            controller.signal.aborted ||
+            !mounted.current ||
+            captured !== generation.current ||
+            current.current.options.active === false ||
+            current.current.options.session.id !== session.id ||
+            current.current.options.session.connectionId !==
+              session.connectionId ||
+            current.current.options.session.ownerDatabaseId !== ownerId
+          )
+            throw new Error(
+              "Library access changed. Reload before continuing.",
+            );
+          target.assertAccessible?.();
+          assertOwner();
+        },
+      };
+      access.assertCurrent();
       const [scripts, macros, database] = await Promise.all([
-        managedScriptsStore.load(),
-        macroService.loadMacros(),
+        readLibrary("App-wide scripts", () => managedScriptsStore.load(access)),
+        readLibrary("App-wide terminal macros", () =>
+          macroService.loadMacros(access),
+        ),
         current.current.context.automationLibrary?.scope?.databaseId === ownerId
-          ? readDatabase(ownerId!)
+          ? readLibrary("Owning database actions", () => readDatabase(ownerId!))
           : Promise.resolve(null),
       ]);
       if (captured !== generation.current) return;
-      target.assertAccessible?.();
-      assertOwner();
+      access.assertCurrent();
       const items: SshQuickActionItem[] = [
         ...resolveManagedScripts(getDefaultScripts(), scripts.value).map(
           (script) => ({
@@ -252,15 +315,19 @@ export function useSshQuickActions(options: Options) {
         );
       }
       setLibrary(items);
+      setError(null);
     } catch (failure) {
       if (captured !== generation.current) return;
+      controller.abort();
       setLibrary([]);
       setError(
-        failure instanceof Error
-          ? failure.message
-          : "The protected action libraries could not be loaded. Unlock and retry.",
+        failure instanceof AutomationLibraryAccessError
+          ? failure.diagnostic.message
+          : "SSH action library access changed. Open and unlock the owning database, then reload. Existing data was not reset.",
       );
     } finally {
+      controller.abort();
+      if (libraryRead.current === controller) libraryRead.current = null;
       if (captured === generation.current) setLoading(false);
     }
   }, [
@@ -286,6 +353,7 @@ export function useSshQuickActions(options: Options) {
     window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
     const invalidate = () => {
       generation.current++;
+      libraryRead.current?.abort();
     };
     return () => {
       invalidate();

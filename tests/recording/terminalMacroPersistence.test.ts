@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { waitFor } from "@testing-library/react";
+import { APP_DATA_STORE_CHANGED_EVENT } from "../../src/utils/storage/appDataJsonStore";
 import { openDB } from "idb";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import type { TerminalMacro } from "../../src/types/recording/macroTypes";
@@ -67,6 +69,72 @@ describe("protected terminal macro library", () => {
       await IndexedDbService.getItemStrict(TERMINAL_MACROS_STORE_KEY),
     ).toBeNull();
     expect(await loadMacros()).toEqual([macro("old")]);
+  });
+
+  it("stops after an in-flight migration CAS when the caller lease is revoked, retaining committed bytes and both originals", async () => {
+    const original = [macro("old")];
+    await IndexedDbService.setItemStrict(legacyKey, original);
+    localStorage.setItem(legacyKey, JSON.stringify(original));
+    const implementation = bridge.invoke.getMockImplementation()!;
+    let release!: (value: boolean) => void;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      const value = await implementation(command, args);
+      if (command === "compare_and_swap_macro_library")
+        return new Promise<boolean>((resolve) => {
+          release = resolve;
+        });
+      return value;
+    });
+    const changed = vi.fn();
+    window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
+    const controller = new AbortController();
+    const result = loadMacros({
+      signal: controller.signal,
+      assertCurrent: () => {},
+    }).catch((error: unknown) => error);
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    controller.abort();
+    release(true);
+    expect(await result).toMatchObject({
+      message: expect.stringContaining("access changed"),
+    });
+    expect(JSON.parse(raw!).macros).toEqual(original);
+    expect(bridge.invoke.mock.calls.map(([command]) => command)).toEqual([
+      "read_macro_library",
+      "read_macro_library",
+      "compare_and_swap_macro_library",
+    ]);
+    expect(await IndexedDbService.getItemStrict(legacyKey)).toEqual(original);
+    expect(localStorage.getItem(legacyKey)).toBe(JSON.stringify(original));
+    expect(changed).not.toHaveBeenCalled();
+    window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
+  });
+
+  it("does not retry a post-write migration readback busy error or remove legacy data", async () => {
+    const original = [macro("old")];
+    await IndexedDbService.setItemStrict(legacyKey, original);
+    const implementation = bridge.invoke.getMockImplementation()!;
+    const busy =
+      "Storage error: encryption storage transition in progress; retry after it completes";
+    let reads = 0;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "read_macro_library" && ++reads === 4) throw busy;
+      return implementation(command, args);
+    });
+    await expect(
+      loadMacros({
+        signal: new AbortController().signal,
+        assertCurrent: () => {},
+      }),
+    ).rejects.toBe(busy);
+    expect(reads).toBe(4);
+    expect(
+      bridge.invoke.mock.calls.filter(
+        ([command]) => command === "compare_and_swap_macro_library",
+      ),
+    ).toHaveLength(1);
+    expect(JSON.parse(raw!).macros).toEqual(original);
+    expect(await IndexedDbService.getItemStrict(legacyKey)).toEqual(original);
   });
 
   it.each(["refusal", "readback", "source drift"])(

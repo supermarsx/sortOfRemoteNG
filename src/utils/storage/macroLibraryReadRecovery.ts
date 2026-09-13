@@ -10,10 +10,15 @@ export interface MacroLibraryReadAccess {
 // Do not broaden this to generic I/O errors or errors from a write command.
 const PRE_READ_BUSY =
   "Storage error: encryption storage transition in progress; retry after it completes";
+// Storage.load_data's coordinator guard is before app-data policy/file reads.
+const APP_DATA_PRE_READ_BUSY =
+  "encryption storage transition in progress; retry after it completes";
 const RETRY_DELAYS_MS = [100, 250, 500] as const;
 
 export const isMacroLibraryReadBusy = (error: unknown): boolean =>
   (error instanceof Error ? error.message : error) === PRE_READ_BUSY;
+export const isAppDataReadBusy = (error: unknown): boolean =>
+  (error instanceof Error ? error.message : error) === APP_DATA_PRE_READ_BUSY;
 
 export function assertMacroLibraryReadAccess(access?: MacroLibraryReadAccess) {
   if (access?.signal.aborted)
@@ -38,22 +43,43 @@ function pause(ms: number, access: MacroLibraryReadAccess): Promise<void> {
 }
 
 /** Retry only the initial native read, never a load, migration or CAS write. */
-export async function readMacroLibraryWhenReady(
+async function readWhenReady(
   invoke: TauriInvoke,
   key: string,
   access: MacroLibraryReadAccess,
+  command: "read_macro_library" | "read_app_data",
+  isPreReadBusy: (error: unknown) => boolean,
 ): Promise<string | null> {
   for (let attempt = 0; ; attempt++) {
     assertMacroLibraryReadAccess(access);
     try {
-      const raw = await invoke<string | null>("read_macro_library", { key });
+      const raw = await invoke<string | null>(command, { key });
       assertMacroLibraryReadAccess(access);
       return raw;
     } catch (error) {
       assertMacroLibraryReadAccess(access);
-      if (!isMacroLibraryReadBusy(error) || attempt >= RETRY_DELAYS_MS.length)
+      if (!isPreReadBusy(error) || attempt >= RETRY_DELAYS_MS.length)
         throw error;
     }
     await pause(RETRY_DELAYS_MS[attempt], access);
   }
 }
+
+export const readMacroLibraryWhenReady = (
+  invoke: TauriInvoke,
+  key: string,
+  access: MacroLibraryReadAccess,
+) =>
+  readWhenReady(
+    invoke,
+    key,
+    access,
+    "read_macro_library",
+    isMacroLibraryReadBusy,
+  );
+
+export const readAppDataWhenReady = (
+  invoke: TauriInvoke,
+  key: string,
+  access: MacroLibraryReadAccess,
+) => readWhenReady(invoke, key, access, "read_app_data", isAppDataReadBusy);

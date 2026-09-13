@@ -3,6 +3,7 @@ import { IndexedDbService } from "./indexedDbService";
 import {
   assertMacroLibraryReadAccess,
   readMacroLibraryWhenReady,
+  readAppDataWhenReady,
   type MacroLibraryReadAccess,
 } from "./macroLibraryReadRecovery";
 
@@ -88,15 +89,20 @@ export class AppDataJsonStore<T> {
     return invoke;
   }
 
-  /** Optional recovery applies only to the first, pre-mutation macro read. */
-  async load(access?: MacroLibraryReadAccess): Promise<DurableLoadResult<T>> {
+  /** Optional recovery applies only to the first, pre-mutation native read. */
+  async load(
+    access?: MacroLibraryReadAccess,
+    options: { recoverPreReadBusy?: boolean } = {},
+  ): Promise<DurableLoadResult<T>> {
     return enqueue(this.key, async () => {
       assertMacroLibraryReadAccess(access);
       const invoke = await this.backend();
       assertMacroLibraryReadAccess(access);
       const durableRaw =
-        access && invoke && this.storageBackend === "macro-library"
-          ? await readMacroLibraryWhenReady(invoke, this.key, access)
+        access && invoke && options.recoverPreReadBusy !== false
+          ? await (this.storageBackend === "macro-library"
+              ? readMacroLibraryWhenReady(invoke, this.key, access)
+              : readAppDataWhenReady(invoke, this.key, access))
           : await this.readRaw(invoke);
       assertMacroLibraryReadAccess(access);
       if (durableRaw !== null) {
@@ -167,22 +173,34 @@ export class AppDataJsonStore<T> {
   /** Apply a synchronous edit to the latest value, retrying only refused CAS writes. */
   async update(
     transform: (current: T | null) => T,
+    access?: MacroLibraryReadAccess,
   ): Promise<SanitizedValue<T>> {
     return enqueue(this.key, async () => {
+      assertMacroLibraryReadAccess(access);
       const invoke = await this.backend();
+      assertMacroLibraryReadAccess(access);
       for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
         const expected = await this.readRaw(invoke);
+        assertMacroLibraryReadAccess(access);
         const current =
           expected === null
             ? null
             : this.sanitizeValue(parseJson(this.key, expected)).value;
         const sanitized = this.sanitizeValue(transform(current));
         const replacement = JSON.stringify(sanitized.value);
-        if (!(await this.compareAndSwap(invoke, expected, replacement)))
-          continue;
+        assertMacroLibraryReadAccess(access);
+        const committed = await this.compareAndSwap(
+          invoke,
+          expected,
+          replacement,
+        );
+        assertMacroLibraryReadAccess(access);
+        if (!committed) continue;
         // A failed verification must never reapply the edit: the write may
         // already have committed or a different window may have advanced it.
-        if ((await this.readRaw(invoke)) !== replacement)
+        const verified = await this.readRaw(invoke);
+        assertMacroLibraryReadAccess(access);
+        if (verified !== replacement)
           throw new Error(
             "Library write could not be verified. Reload before retrying; legacy data was retained.",
           );

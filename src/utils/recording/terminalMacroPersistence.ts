@@ -9,6 +9,10 @@ import {
   type SanitizedValue,
 } from "../storage/appDataJsonStore";
 import { IndexedDbService } from "../storage/indexedDbService";
+import {
+  assertMacroLibraryReadAccess,
+  type MacroLibraryReadAccess,
+} from "../storage/macroLibraryReadRecovery";
 
 const LEGACY_KEY = "mremote-terminal-macros";
 export const TERMINAL_MACROS_STORE_KEY = "recording.terminal-macros";
@@ -138,9 +142,14 @@ async function digest(value: unknown): Promise<string> {
 }
 
 /** Verified create-if-absent migration; a later legacy writer cannot resurrect removed macros. */
-export async function loadTerminalMacros(): Promise<TerminalMacro[]> {
-  const durable = await terminalMacrosStore.load();
+export async function loadTerminalMacros(
+  access?: MacroLibraryReadAccess,
+): Promise<TerminalMacro[]> {
+  assertMacroLibraryReadAccess(access);
+  const durable = await terminalMacrosStore.load(access);
+  assertMacroLibraryReadAccess(access);
   const indexed = await IndexedDbService.getItemStrict<unknown>(LEGACY_KEY);
+  assertMacroLibraryReadAccess(access);
   const localRaw =
     typeof localStorage === "undefined"
       ? null
@@ -167,14 +176,16 @@ export async function loadTerminalMacros(): Promise<TerminalMacro[]> {
   if (durable.value && legacy === null) return durable.value.macros;
   const legacyMacros = legacy === null ? [] : validateTerminalMacros(legacy);
   const legacyDigest = legacy === null ? null : await digest(legacy);
+  assertMacroLibraryReadAccess(access);
   const verified =
     durable.value ??
     (
-      await terminalMacrosStore.update(
-        (current) =>
-          current ?? { version: 1, macros: legacyMacros, legacyDigest },
-      )
+      await terminalMacrosStore.update((current) => {
+        assertMacroLibraryReadAccess(access);
+        return current ?? { version: 1, macros: legacyMacros, legacyDigest };
+      }, access)
     ).value;
+  assertMacroLibraryReadAccess(access);
   if (legacy !== null) {
     if (verified.legacyDigest !== legacyDigest)
       throw new Error(
@@ -182,7 +193,10 @@ export async function loadTerminalMacros(): Promise<TerminalMacro[]> {
       );
     // Read-back succeeds before the first removal; native refusal/lock/drift
     // retains both old sources. The IndexedDB compare/delete is one transaction.
-    const readback = await terminalMacrosStore.load();
+    const readback = await terminalMacrosStore.load(access, {
+      recoverPreReadBusy: false,
+    });
+    assertMacroLibraryReadAccess(access);
     if (JSON.stringify(readback.value) !== JSON.stringify(verified))
       throw new Error(
         "Terminal macro migration could not be verified; originals were retained.",
@@ -195,6 +209,7 @@ export async function loadTerminalMacros(): Promise<TerminalMacro[]> {
         "Legacy terminal macros changed during migration; originals were retained.",
       );
     await IndexedDbService.transactItemsStrict([LEGACY_KEY], (values) => {
+      assertMacroLibraryReadAccess(access);
       if (JSON.stringify(values[LEGACY_KEY]) !== JSON.stringify(indexed))
         throw new Error(
           "Legacy terminal macros changed during migration; originals were retained.",
@@ -205,6 +220,7 @@ export async function loadTerminalMacros(): Promise<TerminalMacro[]> {
         result: undefined,
       };
     });
+    assertMacroLibraryReadAccess(access);
     if (localRaw !== null) {
       if (localStorage.getItem(LEGACY_KEY) !== localRaw)
         throw new Error(

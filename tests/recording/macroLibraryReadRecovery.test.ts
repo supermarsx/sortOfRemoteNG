@@ -11,6 +11,8 @@ import { automationLibraryDiagnostic } from "../../src/utils/recording/automatio
 // Exact pre-read RecordingError::StorageError from capture_storage_guard.
 const busy =
   "Storage error: encryption storage transition in progress; retry after it completes";
+const appBusy =
+  "encryption storage transition in progress; retry after it completes";
 const raw = JSON.stringify({ items: ["Existing item"] });
 let key = 0;
 const store = (backend: "macro-library" | "app-data" = "macro-library") =>
@@ -47,6 +49,38 @@ afterEach(() => {
 });
 
 describe("bounded native macro-library pre-read recovery", () => {
+  it("uses the app-data backend's exact bare pre-read error and rejects crossed backend spellings", async () => {
+    native.invoke.mockRejectedValueOnce(appBusy);
+    const result = settled(store("app-data").load(access()));
+    await vi.runAllTimersAsync();
+    expect((await result).error).toBeUndefined();
+    expect(native.invoke.mock.calls.map(([command]) => command)).toEqual([
+      "read_app_data",
+      "read_app_data",
+    ]);
+    native.invoke.mockClear().mockRejectedValue(appBusy);
+    await expect(store().load(access())).rejects.toBe(appBusy);
+    expect(native.invoke).toHaveBeenCalledTimes(1);
+    native.invoke.mockClear().mockRejectedValue(busy);
+    await expect(store("app-data").load(access())).rejects.toBe(busy);
+    expect(native.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["macro-library", "app-data"] as const)(
+    "can retain lease checks without retrying a later %s verification read",
+    async (backend) => {
+      const guard = access();
+      native.invoke.mockRejectedValue(
+        backend === "macro-library" ? busy : appBusy,
+      );
+      await expect(
+        store(backend).load(guard, { recoverPreReadBusy: false }),
+      ).rejects.toBe(backend === "macro-library" ? busy : appBusy);
+      expect(native.invoke).toHaveBeenCalledOnce();
+      expect(guard.assertCurrent).toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
   it.each([2, 4])(
     "recovers at read %i without any mutation or empty fallback",
     async (attempts) => {

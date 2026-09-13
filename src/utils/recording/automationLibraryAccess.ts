@@ -1,5 +1,8 @@
 import type { AutomationLibraryDiagnostic } from "../../types/recording/automationLibrary";
-import { isMacroLibraryReadBusy } from "../storage/macroLibraryReadRecovery";
+import {
+  isAppDataReadBusy,
+  isMacroLibraryReadBusy,
+} from "../storage/macroLibraryReadRecovery";
 
 export class AutomationLibraryAccessError extends Error {
   constructor(readonly diagnostic: AutomationLibraryDiagnostic) {
@@ -13,7 +16,7 @@ export function automationLibraryDiagnostic(
   error: unknown,
 ): AutomationLibraryDiagnostic {
   if (error instanceof AutomationLibraryAccessError) return error.diagnostic;
-  if (isMacroLibraryReadBusy(error))
+  if (isMacroLibraryReadBusy(error) || isAppDataReadBusy(error))
     return {
       code: "storage-unavailable",
       message:
@@ -37,7 +40,11 @@ export function automationLibraryDiagnostic(
         "The desktop library backend is unavailable. Restart the updated desktop app, then retry. No fallback library was created.",
       retryable: true,
     };
-  if (/conflicting.*variant|recovery|mixed.*variant/i.test(reason))
+  if (
+    /conflicting.*variant|recovery|mixed.*variant|legacy.*copies disagree/i.test(
+      reason,
+    )
+  )
     return {
       code: "recovery-required",
       message:

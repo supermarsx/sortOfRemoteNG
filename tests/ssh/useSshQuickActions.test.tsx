@@ -119,6 +119,54 @@ beforeEach(() => {
     });
 });
 describe("SSH connection favorites", () => {
+  it("names a failed database library without telling the user to unlock app-wide encryption", async () => {
+    fixture.databaseLibrary = {
+      scope: { databaseId: "db-a", generation: 1 },
+      changeRevision: 0,
+      read: vi.fn().mockRejectedValue("Database key unavailable SECRET_PATH"),
+      compareAndSwap: vi.fn(),
+    };
+    const view = setup();
+    await waitFor(() =>
+      expect(view.result.current.error).toContain("Owning database actions"),
+    );
+    expect(view.result.current.error).toContain("owning database");
+    expect(view.result.current.error).not.toContain("Unlock app encryption");
+    expect(view.result.current.error).not.toContain("SECRET_PATH");
+    expect(view.options.runScript).not.toHaveBeenCalled();
+    expect(fixture.save).not.toHaveBeenCalled();
+  });
+
+  it("retains the source failure during retry until all libraries are confirmed reloaded", async () => {
+    fixture.scripts.mockRejectedValueOnce("Unknown command read_app_data");
+    const view = setup();
+    await waitFor(() =>
+      expect(view.result.current.error).toContain(
+        "App-wide scripts (backend-unavailable)",
+      ),
+    );
+    const message = view.result.current.error;
+    let finish!: (value: { value: (typeof script)[] }) => void;
+    fixture.scripts.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let retry!: Promise<void>;
+    act(() => {
+      retry = view.result.current.refresh();
+    });
+    expect(view.result.current.error).toBe(message);
+    expect(view.result.current.loading).toBe(true);
+    await act(async () => {
+      finish({ value: [script] });
+      await retry;
+    });
+    expect(view.result.current.error).toBeNull();
+    expect(view.result.current.favorites[0].missing).toBe(false);
+  });
+
   it("keeps identical app/database favorites separate, refreshes durable DB changes, and never falls back", async () => {
     const db = emptyDatabaseAutomationLibrary();
     db.terminalScripts.customScripts = [

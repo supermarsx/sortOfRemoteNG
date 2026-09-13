@@ -186,6 +186,12 @@ export default function SshQuickActionsBar({
               moving a favorite never runs it. Removed library entries stay
               listed until you remove their reference.
             </p>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Compatible older libraries migrate automatically when their
+              protected storage is available. Locked, conflicting or invalid
+              data is retained for recovery, never replaced with an empty
+              library.
+            </p>
             {message && (
               <p role="alert" className="text-xs text-warning">
                 {message}

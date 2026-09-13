@@ -11,6 +11,7 @@ import {
   WebRecording,
 } from "../../types/recording/macroTypes";
 import { renderTerminalToGif, stripAnsi } from "./gifEncoder";
+import type { MacroLibraryReadAccess } from "../storage/macroLibraryReadRecovery";
 import {
   loadTerminalMacros,
   updateTerminalMacros,
@@ -87,8 +88,10 @@ function redactSavedWebRecording(saved: SavedWebRecording): SavedWebRecording {
 
 // ─── Macros ────────────────────────────────────────────────────────
 
-export async function loadMacros(): Promise<TerminalMacro[]> {
-  return loadTerminalMacros();
+export async function loadMacros(
+  access?: MacroLibraryReadAccess,
+): Promise<TerminalMacro[]> {
+  return loadTerminalMacros(access);
 }
 
 export async function saveMacros(
