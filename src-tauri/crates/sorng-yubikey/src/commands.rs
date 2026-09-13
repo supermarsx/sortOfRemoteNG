@@ -33,9 +33,7 @@ pub async fn yk_list_devices(
     state: State<'_, YubiKeyServiceState>,
 ) -> CmdResult<Vec<YubiKeyDevice>> {
     let mut svc = state.lock().await;
-    if !svc.ykman_detected {
-        let _ = svc.detect_ykman().await;
-    }
+    svc.ensure_ykman().await?;
     svc.list_devices().await
 }
 
@@ -45,7 +43,8 @@ pub async fn yk_get_device_info(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<YubiKeyDevice> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.get_device_info(serial).await
 }
 
@@ -55,7 +54,8 @@ pub async fn yk_wait_for_device(
     state: State<'_, YubiKeyServiceState>,
     timeout_ms: u64,
 ) -> CmdResult<Option<YubiKeyDevice>> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.wait_for_device(timeout_ms).await
 }
 
@@ -65,7 +65,8 @@ pub async fn yk_get_diagnostics(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<HashMap<String, String>> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.get_diagnostics(serial).await
 }
 
@@ -79,7 +80,8 @@ pub async fn yk_piv_list_certs(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<Vec<PivSlotInfo>> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_list_certificates(serial).await
 }
 
@@ -91,7 +93,8 @@ pub async fn yk_piv_get_slot(
     slot: String,
 ) -> CmdResult<PivSlotInfo> {
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_get_slot_info(serial, &piv_slot).await
 }
 
@@ -111,6 +114,7 @@ pub async fn yk_piv_generate_key(
     let tp = TouchPolicy::from_str_label(&touch_policy);
 
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_generate_key(serial, &piv_slot, &algorithm, &pp, &tp)
         .await
 }
@@ -126,6 +130,7 @@ pub async fn yk_piv_self_sign_cert(
 ) -> CmdResult<PivCertificate> {
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_self_sign_cert(serial, &piv_slot, &subject, valid_days)
         .await
 }
@@ -139,7 +144,8 @@ pub async fn yk_piv_generate_csr(
     params: CsrParams,
 ) -> CmdResult<String> {
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_generate_csr(serial, &piv_slot, &params).await
 }
 
@@ -153,6 +159,7 @@ pub async fn yk_piv_import_cert(
 ) -> CmdResult<bool> {
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_import_cert(serial, &piv_slot, &pem).await
 }
 
@@ -170,6 +177,7 @@ pub async fn yk_piv_import_key(
     let pp = PinPolicy::from_str_label(&pin_policy);
     let tp = TouchPolicy::from_str_label(&touch_policy);
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_import_key(serial, &piv_slot, &key_pem, &pp, &tp)
         .await
 }
@@ -182,7 +190,8 @@ pub async fn yk_piv_export_cert(
     slot: String,
 ) -> CmdResult<String> {
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_export_cert(serial, &piv_slot).await
 }
 
@@ -195,6 +204,7 @@ pub async fn yk_piv_delete_cert(
 ) -> CmdResult<bool> {
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_delete_cert(serial, &piv_slot).await
 }
 
@@ -207,6 +217,7 @@ pub async fn yk_piv_delete_key(
 ) -> CmdResult<bool> {
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_delete_key(serial, &piv_slot).await
 }
 
@@ -218,7 +229,8 @@ pub async fn yk_piv_attest(
     slot: String,
 ) -> CmdResult<AttestationResult> {
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_attest(serial, &piv_slot).await
 }
 
@@ -231,6 +243,7 @@ pub async fn yk_piv_change_pin(
     new_pin: String,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_change_pin(serial, &old_pin, &new_pin).await
 }
 
@@ -243,6 +256,7 @@ pub async fn yk_piv_change_puk(
     new_puk: String,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_change_puk(serial, &old_puk, &new_puk).await
 }
 
@@ -258,6 +272,7 @@ pub async fn yk_piv_change_mgmt_key(
 ) -> CmdResult<bool> {
     let kt = ManagementKeyType::from_str_label(&key_type);
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_change_management_key(serial, current.as_deref(), &new_key, &kt, protect)
         .await
 }
@@ -271,6 +286,7 @@ pub async fn yk_piv_unblock_pin(
     new_pin: String,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_unblock_pin(serial, &puk, &new_pin).await
 }
 
@@ -280,7 +296,8 @@ pub async fn yk_piv_get_pin_status(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<PivPinStatus> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_get_pin_status(serial).await
 }
 
@@ -291,6 +308,7 @@ pub async fn yk_piv_reset(
     serial: Option<u32>,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.piv_reset(serial).await
 }
 
@@ -306,6 +324,7 @@ pub async fn yk_piv_sign(
     let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let bytes = b64_decode(&data)?;
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     let sig = svc.piv_sign(serial, &piv_slot, &bytes, &algo).await?;
     Ok(b64_encode(&sig))
 }
@@ -320,7 +339,8 @@ pub async fn yk_fido2_info(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<Fido2DeviceInfo> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_info(serial).await
 }
 
@@ -331,7 +351,8 @@ pub async fn yk_fido2_list_credentials(
     serial: Option<u32>,
     pin: String,
 ) -> CmdResult<Vec<Fido2Credential>> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_list_credentials(serial, &pin).await
 }
 
@@ -344,6 +365,7 @@ pub async fn yk_fido2_delete_credential(
     pin: String,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_delete_credential(serial, &credential_id, &pin)
         .await
 }
@@ -356,6 +378,7 @@ pub async fn yk_fido2_set_pin(
     new_pin: String,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_set_pin(serial, &new_pin).await
 }
 
@@ -368,6 +391,7 @@ pub async fn yk_fido2_change_pin(
     new_pin: String,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_change_pin(serial, &old_pin, &new_pin).await
 }
 
@@ -377,7 +401,8 @@ pub async fn yk_fido2_pin_status(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<Fido2PinStatus> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_pin_status(serial).await
 }
 
@@ -388,6 +413,7 @@ pub async fn yk_fido2_reset(
     serial: Option<u32>,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_reset(serial).await
 }
 
@@ -399,7 +425,8 @@ pub async fn yk_fido2_toggle_always_uv(
     enable: bool,
     pin: String,
 ) -> CmdResult<bool> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_toggle_always_uv(serial, enable, &pin).await
 }
 
@@ -410,7 +437,8 @@ pub async fn yk_fido2_list_rps(
     serial: Option<u32>,
     pin: String,
 ) -> CmdResult<Vec<String>> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.fido2_list_rps(serial, &pin).await
 }
 
@@ -424,7 +452,8 @@ pub async fn yk_oath_list(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<Vec<OathAccount>> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.oath_list(serial).await
 }
 
@@ -446,6 +475,7 @@ pub async fn yk_oath_add(
     let ot = OathType::from_str_label(&oath_type);
     let oa = OathAlgorithm::from_str_label(&algo);
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.oath_add(
         serial, &issuer, &name, &secret, &ot, &oa, digits, period, touch,
     )
@@ -460,6 +490,7 @@ pub async fn yk_oath_delete(
     credential_id: String,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.oath_delete(serial, &credential_id).await
 }
 
@@ -472,7 +503,8 @@ pub async fn yk_oath_rename(
     new_issuer: String,
     new_name: String,
 ) -> CmdResult<bool> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.oath_rename(serial, &old_id, &new_issuer, &new_name)
         .await
 }
@@ -485,6 +517,7 @@ pub async fn yk_oath_calculate(
     credential_id: String,
 ) -> CmdResult<OathCode> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.oath_calculate(serial, &credential_id).await
 }
 
@@ -494,7 +527,8 @@ pub async fn yk_oath_calculate_all(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<Vec<(OathAccount, OathCode)>> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.oath_calculate_all(serial).await
 }
 
@@ -506,6 +540,7 @@ pub async fn yk_oath_set_password(
     password: String,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.oath_set_password(serial, &password).await
 }
 
@@ -516,6 +551,7 @@ pub async fn yk_oath_reset(
     serial: Option<u32>,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.oath_reset(serial).await
 }
 
@@ -529,7 +565,8 @@ pub async fn yk_otp_info(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<(OtpSlotConfig, OtpSlotConfig)> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.otp_info(serial).await
 }
 
@@ -545,6 +582,7 @@ pub async fn yk_otp_configure_yubico(
 ) -> CmdResult<bool> {
     let otp_slot = OtpSlot::from_str_label(&slot);
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.otp_configure_yubico(
         serial,
         &otp_slot,
@@ -566,6 +604,7 @@ pub async fn yk_otp_configure_chalresp(
 ) -> CmdResult<bool> {
     let otp_slot = OtpSlot::from_str_label(&slot);
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.otp_configure_chalresp(serial, &otp_slot, key.as_deref(), touch)
         .await
 }
@@ -581,6 +620,7 @@ pub async fn yk_otp_configure_static(
 ) -> CmdResult<bool> {
     let otp_slot = OtpSlot::from_str_label(&slot);
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.otp_configure_static(serial, &otp_slot, &password, &layout)
         .await
 }
@@ -596,6 +636,7 @@ pub async fn yk_otp_configure_hotp(
 ) -> CmdResult<bool> {
     let otp_slot = OtpSlot::from_str_label(&slot);
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.otp_configure_hotp(serial, &otp_slot, &key, digits)
         .await
 }
@@ -609,6 +650,7 @@ pub async fn yk_otp_delete(
 ) -> CmdResult<bool> {
     let otp_slot = OtpSlot::from_str_label(&slot);
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.otp_delete(serial, &otp_slot).await
 }
 
@@ -619,6 +661,7 @@ pub async fn yk_otp_swap(
     serial: Option<u32>,
 ) -> CmdResult<bool> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.otp_swap(serial).await
 }
 
@@ -642,7 +685,8 @@ pub async fn yk_config_set_interfaces(
         .iter()
         .filter_map(|s| YubiKeyInterface::from_str_label(s))
         .collect();
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.config_set_interfaces(serial, &usb_ifaces, &nfc_ifaces)
         .await
 }
@@ -654,7 +698,8 @@ pub async fn yk_config_lock(
     serial: Option<u32>,
     lock_code: String,
 ) -> CmdResult<bool> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.config_lock(serial, &lock_code).await
 }
 
@@ -665,7 +710,8 @@ pub async fn yk_config_unlock(
     serial: Option<u32>,
     lock_code: String,
 ) -> CmdResult<bool> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.config_unlock(serial, &lock_code).await
 }
 
@@ -727,6 +773,7 @@ pub async fn yk_factory_reset_all(
     serial: Option<u32>,
 ) -> CmdResult<HashMap<String, String>> {
     let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     let results = svc.factory_reset_all(serial).await?;
     // Flatten Result values to strings for JSON serialization
     let flat: HashMap<String, String> = results
@@ -749,6 +796,7 @@ pub async fn yk_export_report(
     state: State<'_, YubiKeyServiceState>,
     serial: Option<u32>,
 ) -> CmdResult<String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.ensure_ykman().await?;
     svc.export_report(serial).await
 }

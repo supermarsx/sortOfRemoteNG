@@ -36,12 +36,13 @@ const YKMAN_SEARCH_PATHS: &[&str] = &[
 /// Checks PATH first, then common install locations.
 pub async fn detect_ykman() -> Result<String, String> {
     // 1. Check PATH
-    let check = tokio::process::Command::new(if cfg!(windows) { "where" } else { "which" })
-        .arg("ykman")
-        .output()
-        .await;
+    let mut command = tokio::process::Command::new(if cfg!(windows) { "where" } else { "which" });
+    command.arg("ykman").stdin(Stdio::null()).kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let check = tokio::time::timeout(Duration::from_secs(10), command.output()).await;
 
-    if let Ok(output) = check {
+    if let Ok(Ok(output)) = check {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout)
                 .lines()
@@ -49,7 +50,11 @@ pub async fn detect_ykman() -> Result<String, String> {
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            if !path.is_empty() {
+            if !path.is_empty()
+                && tokio::fs::metadata(&path)
+                    .await
+                    .is_ok_and(|metadata| metadata.is_file())
+            {
                 info!("Found ykman on PATH: {}", path);
                 return Ok(path);
             }
@@ -58,13 +63,16 @@ pub async fn detect_ykman() -> Result<String, String> {
 
     // 2. Check common locations
     for candidate in YKMAN_SEARCH_PATHS {
-        if tokio::fs::metadata(candidate).await.is_ok() {
+        if tokio::fs::metadata(candidate)
+            .await
+            .is_ok_and(|metadata| metadata.is_file())
+        {
             info!("Found ykman at: {}", candidate);
             return Ok(candidate.to_string());
         }
     }
 
-    Err("ykman not found. Please install YubiKey Manager (ykman).".to_string())
+    Err("ykman_unavailable: YubiKey Manager (ykman) was not found. Install it or configure its executable path, then retry detection.".to_string())
 }
 
 /// Run a `ykman` command and return stdout.
@@ -172,6 +180,8 @@ async fn run_ykman_inner(
     }
 
     let mut cmd = tokio::process::Command::new(ykman);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
     // Target a specific device by serial
     if let Some(s) = serial {
@@ -267,12 +277,16 @@ async fn run_ykman_inner(
 
     if !status.success() {
         let failure_text = String::from_utf8_lossy(&stderr).to_ascii_lowercase();
+        let device_failure = classify_device_failure(&failure_text);
         let oath_password_required = args.first() == Some(&"oath")
             && (failure_text.contains("password")
                 || failure_text.contains("locked")
                 || failure_text.contains("authentication required"));
         stdout.fill(0);
         stderr.fill(0);
+        if let Some(message) = device_failure {
+            return Err(message.into());
+        }
         if oath_password_required {
             return Err(
                 "The OATH applet is password protected; this operation requires a protected \
@@ -290,6 +304,26 @@ async fn run_ykman_inner(
     let result = String::from_utf8_lossy(&stdout).to_string();
     stdout.fill(0);
     Ok(result)
+}
+
+fn classify_device_failure(lowercase_output: &str) -> Option<&'static str> {
+    if [
+        "permission denied",
+        "access is denied",
+        "insufficient permissions",
+    ]
+    .iter()
+    .any(|message| lowercase_output.contains(message))
+    {
+        Some("ykman_permission_denied: Device access was denied. Check USB permissions or whether another application is using the key.")
+    } else if ["no yubikey detected", "no yubikey found"]
+        .iter()
+        .any(|message| lowercase_output.contains(message))
+    {
+        Some("ykman_device_missing: No matching YubiKey is connected. Insert the intended key and refresh devices.")
+    } else {
+        None
+    }
 }
 
 /// List all connected YubiKey serial numbers.
@@ -447,6 +481,25 @@ pub async fn wait_for_device(ykman: &str, timeout_ms: u64) -> Option<YubiKeyDevi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn device_failure_categories_never_return_command_output() {
+        for text in [
+            "permission denied secret-pin",
+            "access is denied private-path",
+            "insufficient permissions secret",
+        ] {
+            let message = classify_device_failure(text).unwrap();
+            assert!(message.starts_with("ykman_permission_denied:"));
+            assert!(!message.contains("secret"));
+            assert!(!message.contains("private-path"));
+        }
+        assert!(classify_device_failure("no yubikey detected secret")
+            .unwrap()
+            .starts_with("ykman_device_missing:"));
+        assert!(classify_device_failure("no yubikey found").is_some());
+        assert_eq!(classify_device_failure("invalid pin secret"), None);
+    }
 
     #[test]
     fn test_parse_ykman_info_basic() {

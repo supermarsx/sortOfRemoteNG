@@ -42,14 +42,23 @@ impl YubiKeyService {
 
     /// Detect `ykman` on the system.
     pub async fn detect_ykman(&mut self) -> Result<String, String> {
+        self.ykman_detected = false;
+        self.ykman_path.clear();
         // Use explicit path if configured
         if let Some(ref path) = self.config.ykman_path {
-            if tokio::fs::metadata(path).await.is_ok() {
+            if path.trim().is_empty() {
+                return Err("ykman_unavailable: The configured executable path is empty. Clear it to search PATH or choose an installed ykman executable.".into());
+            }
+            if tokio::fs::metadata(path)
+                .await
+                .is_ok_and(|metadata| metadata.is_file())
+            {
                 self.ykman_path = path.clone();
                 self.ykman_detected = true;
                 info!("Using configured ykman at: {}", path);
                 return Ok(path.clone());
             }
+            return Err("ykman_unavailable: The configured ykman executable is unavailable. Correct its path in Hardware Keys configuration; no other executable was substituted.".into());
         }
 
         match crate::detect::detect_ykman().await {
@@ -66,10 +75,19 @@ impl YubiKeyService {
         }
     }
 
+    /// Called while the command facade holds the service mutex. Detection must
+    /// finish successfully before a CLI operation can access the executable.
+    pub async fn ensure_ykman(&mut self) -> Result<(), String> {
+        if !self.ykman_detected || self.ykman_path.is_empty() {
+            self.detect_ykman().await?;
+        }
+        Ok(())
+    }
+
     /// Ensure ykman is available.
     fn require_ykman(&self) -> Result<&str, String> {
         if !self.ykman_detected || self.ykman_path.is_empty() {
-            Err("ykman not detected. Call detect_ykman() first.".to_string())
+            Err("ykman_unavailable: YubiKey Manager has not been initialized. Retry hardware detection.".to_string())
         } else {
             Ok(&self.ykman_path)
         }
@@ -717,6 +735,11 @@ impl YubiKeyService {
     }
 
     pub fn update_config(&mut self, config: YubiKeyConfig) {
+        if self.config.ykman_path != config.ykman_path {
+            self.ykman_detected = false;
+            self.ykman_path.clear();
+            self.detected_devices.clear();
+        }
         self.config = config;
         self.audit.log_event(
             YubiKeyAuditAction::ConfigUpdate,
@@ -778,6 +801,62 @@ impl YubiKeyService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn configured_detection_is_cached_and_path_changes_invalidate_it() {
+        // Metadata-only validation; this executable is NEVER run as ykman.
+        let executable = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let mut svc = YubiKeyService::new();
+        let mut config = svc.get_config();
+        config.ykman_path = Some(executable.clone());
+        svc.update_config(config.clone());
+        svc.ensure_ykman().await.unwrap();
+        assert_eq!(svc.require_ykman().unwrap(), executable);
+        // An unchanged configuration does not invalidate successful detection.
+        svc.update_config(config.clone());
+        assert!(svc.ykman_detected);
+        svc.ensure_ykman().await.unwrap();
+        config.ykman_path = Some(
+            std::env::temp_dir()
+                .join(format!("sorng-missing-ykman-{}", uuid::Uuid::new_v4()))
+                .to_string_lossy()
+                .into_owned(),
+        );
+        svc.update_config(config);
+        assert!(!svc.ykman_detected);
+        assert!(svc.ykman_path.is_empty());
+        let error = svc.ensure_ykman().await.unwrap_err();
+        assert!(error.starts_with("ykman_unavailable:"));
+        assert!(error.contains("no other executable was substituted"));
+        assert!(!error.contains("sorng-missing-ykman"));
+        assert!(svc.require_ykman().is_err());
+    }
+
+    #[tokio::test]
+    async fn invalid_explicit_paths_fail_without_path_search_or_device_commands() {
+        for path in [
+            String::new(),
+            "   ".into(),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+        ] {
+            let mut svc = YubiKeyService::new();
+            let mut config = svc.get_config();
+            config.ykman_path = Some(path);
+            svc.update_config(config);
+            assert!(svc
+                .ensure_ykman()
+                .await
+                .unwrap_err()
+                .starts_with("ykman_unavailable:"));
+            assert!(!svc.ykman_detected);
+            // Recovery configuration and audit remain accessible without ykman.
+            assert!(svc.get_config().ykman_path.is_some());
+            assert!(svc.audit_export().is_ok());
+        }
+    }
 
     #[test]
     fn test_service_new() {
