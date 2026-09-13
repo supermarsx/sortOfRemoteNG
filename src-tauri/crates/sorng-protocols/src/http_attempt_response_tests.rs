@@ -1,5 +1,7 @@
 //! Real protected-handler regressions. All certificates, hosts, cookies and
 //! CONNECT traffic are synthetic and confined to a loopback listener.
+#[path = "http_attempt_http_redirect_tests.rs"]
+mod http_redirect_cycle_tests;
 use super::*;
 use serde_json::json;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -326,9 +328,17 @@ async fn protected_handler_fresh_upstream_cookie_value_and_deletion_override_cac
     assert!(values
         .iter()
         .any(|value| value == "previous=new-upstream; Path=/"));
-    assert!(values
-        .iter()
-        .any(|value| value == "tunnel=; Max-Age=0; Path=/"));
+    assert!(values.iter().any(|value| {
+        cookie_store::Cookie::parse(value.as_str(), &reqwest::Url::parse(ALIAS).unwrap()).is_ok_and(
+            |cookie| {
+                cookie.name() == "tunnel"
+                    && cookie.value().is_empty()
+                    && cookie.path() == Some("/")
+                    && cookie.max_age().map(|age| age.whole_seconds()) == Some(0)
+                    && cookie.is_expired()
+            },
+        )
+    }));
     assert!(!values
         .iter()
         .any(|value| value.contains("old-route") || value.contains("old-tunnel")));

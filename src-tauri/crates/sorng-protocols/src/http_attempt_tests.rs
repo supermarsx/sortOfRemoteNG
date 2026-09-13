@@ -1,6 +1,75 @@
 use super::*;
 use serde_json::json;
 
+#[test]
+fn http_cycle_evidence_counts_consumption_not_peeks_and_resets_on_progress_or_scope_change() {
+    const REGIONAL: &str = "https://example.fr3.quickconnect.to/";
+    const PLAIN: &str = "http://example.quickconnect.to/";
+    const SECURE: &str = "https://example.quickconnect.to/";
+    let mut registry = AttemptRegistry::default();
+    let mut current = start(&mut registry, &config(REGIONAL), "r0");
+    for circuit in 0..2 {
+        let exit = current
+            .http_redirect_edge(&Url::parse(REGIONAL).unwrap(), &Url::parse(PLAIN).unwrap())
+            .unwrap();
+        // Inspecting/issuing duplicate responses does not advance anything.
+        for _ in 0..8 {
+            assert!(!current.http_redirect_cycle_blocked(Some(&exit)));
+        }
+        current.consume_http_redirect(Some(&exit));
+        let plain = transfer(&mut registry, &current, PLAIN, &format!("p{circuit}"));
+        let upgrade = plain
+            .http_redirect_edge(&Url::parse(PLAIN).unwrap(), &Url::parse(SECURE).unwrap())
+            .unwrap();
+        plain.consume_http_redirect(Some(&upgrade));
+        let secure = transfer(&mut registry, &plain, SECURE, &format!("s{circuit}"));
+        let returning = secure
+            .http_redirect_edge(&Url::parse(SECURE).unwrap(), &Url::parse(REGIONAL).unwrap())
+            .unwrap();
+        secure.consume_http_redirect(Some(&returning));
+        current = transfer(
+            &mut registry,
+            &secure,
+            REGIONAL,
+            &format!("r{}", circuit + 1),
+        );
+        assert!(!secure.http_redirect_cycle_blocked(Some(&exit))); // Stale owner cannot block successor.
+    }
+    let exit = current
+        .http_redirect_edge(&Url::parse(REGIONAL).unwrap(), &Url::parse(PLAIN).unwrap())
+        .unwrap();
+    assert!(current.http_redirect_cycle_blocked(Some(&exit)));
+    let changed = HttpRedirectEdge::RegionalExit(REGIONAL.trim_end_matches('/').into(), [1; 32]);
+    assert!(!current.http_redirect_cycle_blocked(Some(&changed)));
+    current.consume_http_redirect(None); // An unrelated consumed handoff ends the exact circuit.
+    assert!(!current.http_redirect_cycle_blocked(Some(&exit)));
+    for (source, destination) in [
+        ("https://example.fr3.quickconnect.to/login", PLAIN),
+        (
+            "https://example.fr3.quickconnect.to/?session=private",
+            PLAIN,
+        ),
+        (REGIONAL, "http://example.quickconnect.to/?session=private"),
+        (REGIONAL, "http://other.quickconnect.to/"),
+        (REGIONAL, "http://example.quickconnect.to:8080/"),
+        (REGIONAL, "http://user:private@example.quickconnect.to/"),
+    ] {
+        assert!(current
+            .http_redirect_edge(
+                &Url::parse(source).unwrap(),
+                &Url::parse(destination).unwrap()
+            )
+            .is_none());
+    }
+    current.document_landed(&Url::parse(REGIONAL).unwrap(), 3);
+    assert_eq!(current.root_document_sequence(), Some(3));
+    current.document_landed(
+        &Url::parse("https://example.fr3.quickconnect.to/webman/").unwrap(),
+        4,
+    );
+    assert_eq!(current.root_document_sequence(), None);
+}
+
 fn config(target: &str) -> BasicAuthProxyConfig {
     serde_json::from_value(json!({
         "target_url": target, "username":"", "password":"", "connection_id":"fixture-owner",

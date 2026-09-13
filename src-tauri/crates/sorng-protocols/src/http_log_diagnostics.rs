@@ -2,6 +2,14 @@
 //! chain is serialized here; codes/stages come from closed native branches.
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RedirectPathCategory {
+    Root,
+    Dsm,
+    Other,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyLogDiagnostic {
@@ -23,6 +31,16 @@ pub struct ProxyLogDiagnostic {
     pub attempt_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hop: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirect_source_path: Option<RedirectPathCategory>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirect_target_path: Option<RedirectPathCategory>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirect_target_origin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirect_query_removed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub same_origin_redirects: Option<u32>,
 }
 
 pub(super) fn elapsed_ms(start: std::time::Instant) -> u64 {
@@ -49,7 +67,35 @@ impl ProxyLogDiagnostic {
             upstream_status: None,
             attempt_id: None,
             hop: None,
+            redirect_source_path: None,
+            redirect_target_path: None,
+            redirect_target_origin: None,
+            redirect_query_removed: None,
+            same_origin_redirects: None,
         }
+    }
+
+    pub(super) fn with_redirect(mut self, redirect: &super::upstream::CrossOriginRedirect) -> Self {
+        let category = |url: &reqwest::Url| match url.path() {
+            "/" => RedirectPathCategory::Root,
+            path if path == "/webman" || path.starts_with("/webman/") => RedirectPathCategory::Dsm,
+            _ => RedirectPathCategory::Other,
+        };
+        self.upstream_status = Some(redirect.status);
+        self.redirect_source_path = Some(category(&redirect.response_url));
+        self.redirect_target_path = Some(category(&redirect.destination));
+        let target = &redirect.destination;
+        if matches!(target.scheme(), "http" | "https")
+            && target.username().is_empty()
+            && target.password().is_none()
+            && target.port() != Some(0)
+            && target.host_str().is_some_and(|host| !host.ends_with('.'))
+        {
+            self.redirect_target_origin = Some(target.origin().ascii_serialization());
+        }
+        self.redirect_query_removed = Some(target.query().is_some() || target.fragment().is_some());
+        self.same_origin_redirects = Some(redirect.same_origin_redirects.min(20));
+        self
     }
 }
 

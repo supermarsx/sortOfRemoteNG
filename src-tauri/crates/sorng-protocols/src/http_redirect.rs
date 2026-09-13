@@ -28,6 +28,7 @@ pub(super) struct PendingRedirect {
     sequence: Arc<AtomicU64>,
     created: Instant,
     state: std::sync::Weak<AxumProxyState>,
+    http_cycle_edge: Option<super::attempt::HttpRedirectEdge>,
 }
 impl PendingRedirect {
     fn current(&self) -> bool {
@@ -61,11 +62,103 @@ fn destination_allowed(
         && destination.as_str().len() <= 4096
 }
 
+#[cfg(test)]
 pub(super) fn record(
     state: &Arc<AxumProxyState>,
     destination: &reqwest::Url,
     document_sequence: u64,
     navigation_token: Option<String>,
+) -> bool {
+    record_with_edge(
+        state,
+        destination,
+        document_sequence,
+        navigation_token,
+        None,
+    )
+}
+
+pub(super) fn record_vendor(
+    state: &Arc<AxumProxyState>,
+    destination: &reqwest::Url,
+    document_sequence: u64,
+    navigation_token: Option<String>,
+    headers: &axum::http::HeaderMap,
+) -> bool {
+    // This entry point is the verified vendor navigation adapter, not an HTTP
+    // response. It can upgrade/finish a previously observed HTTP circuit, never
+    // arm it. The provider also performs the HTTP-to-HTTPS alias upgrade in JS.
+    let edge = state
+        .attempt
+        .as_ref()
+        .filter(|_| cycle_context_is_anonymous(state))
+        .filter(|attempt| {
+            attempt.root_document_sequence().is_some_and(|sequence| {
+                state.network.document_is_current(sequence)
+                    && sequence.checked_add(1) == Some(document_sequence)
+            })
+        })
+        .filter(|_| !headers.contains_key("authorization"))
+        .filter(|_| {
+            let referers: Vec<_> = headers.get_all("referer").iter().collect();
+            match referers.as_slice() {
+                [] => true, // Native successful-root evidence is still mandatory.
+                [value] => value
+                    .to_str()
+                    .ok()
+                    .and_then(|value| reqwest::Url::parse(value).ok())
+                    .is_some_and(|url| {
+                        let path = match url.query() {
+                            Some(query) => format!("{}?{query}", url.path()),
+                            None => url.path().into(),
+                        };
+                        url.origin().ascii_serialization() == state.proxy_origin
+                            && url.username().is_empty()
+                            && url.password().is_none()
+                            && url.fragment().is_none()
+                            && super::proxy_response::navigation_request(&path).0 == "/"
+                    }),
+                _ => false,
+            }
+        })
+        .and_then(|attempt| {
+            reqwest::Url::parse(&format!("{}/", state.target_origin))
+                .ok()
+                .and_then(|source| attempt.http_redirect_edge(&source, destination))
+        })
+        .filter(|edge| {
+            matches!(
+                edge,
+                super::attempt::HttpRedirectEdge::AliasUpgrade
+                    | super::attempt::HttpRedirectEdge::RegionalReturn(_)
+            )
+        });
+    record_with_edge(
+        state,
+        destination,
+        document_sequence,
+        navigation_token,
+        edge,
+    )
+}
+
+pub(super) fn cycle_context_is_anonymous(state: &AxumProxyState) -> bool {
+    matches!(
+        state.upstream_auth_mode,
+        super::UpstreamAuthMode::None | super::UpstreamAuthMode::Basic
+    ) && !state.auto_login_armed.load(Ordering::SeqCst)
+        && state.username.read().is_ok_and(|value| value.is_empty())
+        && state.password.read().is_ok_and(|value| value.is_empty())
+        && state.custom_headers.is_empty()
+        && state.proxy_policy.query_parameters.is_empty()
+}
+
+pub(super) fn record_with_edge(
+    state: &Arc<AxumProxyState>,
+    destination: &reqwest::Url,
+    document_sequence: u64,
+    navigation_token: Option<String>,
+    http_cycle_edge: Option<super::attempt::HttpRedirectEdge>,
 ) -> bool {
     if !destination_allowed(&state.proxy_policy, &state.target_origin, destination)
         || document_sequence == 0
@@ -103,6 +196,7 @@ pub(super) fn record(
             sequence: state.document_sequence.clone(),
             created: Instant::now(),
             state: Arc::downgrade(state),
+            http_cycle_edge,
         },
     );
     true
@@ -162,6 +256,11 @@ impl ProxySessionManager {
             if !pending.current() {
                 return None;
             }
+            if state.attempt.as_ref().is_some_and(|attempt| {
+                attempt.http_redirect_cycle_blocked(pending.http_cycle_edge.as_ref())
+            }) {
+                return None;
+            }
             state.document_sequence.fetch_add(1, Ordering::SeqCst);
             state.auto_login_armed.store(false, Ordering::SeqCst);
             if let Ok(mut nonce) = state.auto_login_nonce.write() {
@@ -184,6 +283,7 @@ impl ProxySessionManager {
                             .prepare_transfer(attempt, &destination, &review.receipt_id)
                             .ok()?,
                     );
+                    attempt.consume_http_redirect(pending.http_cycle_edge.as_ref());
                 }
             }
             return Some(review);
@@ -213,6 +313,7 @@ mod tests {
             sequence: sequence.clone(),
             created: Instant::now(),
             state: std::sync::Weak::new(),
+            http_cycle_edge: None,
         };
         assert!(pending.current());
         sequence.store(2, Ordering::SeqCst);

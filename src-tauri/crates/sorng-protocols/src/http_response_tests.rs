@@ -14,6 +14,8 @@ mod quickconnect_control_tests;
 mod quickconnect_tests;
 #[path = "http_redirect_tests.rs"]
 mod redirect_tests;
+#[path = "http_upstream_cookie_tests.rs"]
+mod upstream_cookie_tests;
 
 use super::*;
 use axum::body::Body;

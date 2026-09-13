@@ -203,7 +203,13 @@ pub(super) fn handle(
     if destination.origin() == source.origin() {
         return policy_response(state, ProxyErrorKind::BadRequest);
     }
-    let kind = if redirect::record(state, &destination, document_sequence, navigation_token) {
+    let kind = if redirect::record_vendor(
+        state,
+        &destination,
+        document_sequence,
+        navigation_token,
+        headers,
+    ) {
         if default_handoff(state, &destination) {
             return pending_response(state, source.as_str());
         }

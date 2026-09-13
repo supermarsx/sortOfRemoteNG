@@ -7463,6 +7463,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "psl"
+version = "2.1.232"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62834e308cc83aea5e30cd8c80b8aa82cdb104a3240c7f210d4f68d46e29f308"
+dependencies = [
+ "psl-types",
+]
+
+[[package]]
 name = "psl-types"
 version = "2.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11978,6 +11987,7 @@ dependencies = [
  "hyper-util",
  "log",
  "md-5 0.10.6",
+ "psl",
  "rand 0.8.8",
  "rcgen",
  "regex",

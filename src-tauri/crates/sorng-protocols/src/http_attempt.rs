@@ -9,7 +9,7 @@ use reqwest::{
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -40,6 +40,27 @@ struct AttemptState {
     hops: u32,
     origins: HashMap<String, OriginState>,
     connectors: HashMap<String, (u8, u32)>,
+    http_cycle: Option<HttpRedirectCycle>,
+}
+
+/// Native-only classified receipt evidence, never a route/trust grant.
+#[derive(Clone)]
+pub(super) enum HttpRedirectEdge {
+    RegionalExit(String, [u8; 32]),
+    AliasUpgrade,
+    RegionalReturn(String),
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HttpCycleStage {
+    Exited,
+    Upgraded,
+    Returned,
+}
+struct HttpRedirectCycle {
+    regional_origin: String,
+    cookie_state: [u8; 32],
+    completed: u8,
+    stage: HttpCycleStage,
 }
 struct Attempt {
     id: String,
@@ -57,9 +78,24 @@ pub struct AttemptSession {
     origin: String,
     generation: u64,
     cache_seeded: Arc<AtomicBool>,
+    root_document: Arc<AtomicU64>,
 }
 
 impl AttemptSession {
+    pub(super) fn document_landed(&self, url: &Url, sequence: u64) {
+        if self.is_current() {
+            let root = url.origin().ascii_serialization() == self.origin
+                && url.path() == "/"
+                && url.query().is_none()
+                && url.fragment().is_none();
+            self.root_document
+                .store(if root { sequence } else { 0 }, Ordering::Release);
+        }
+    }
+    pub(super) fn root_document_sequence(&self) -> Option<u64> {
+        let sequence = self.root_document.load(Ordering::Acquire);
+        (self.is_current() && sequence != 0).then_some(sequence)
+    }
     pub fn is_current(&self) -> bool {
         self.attempt
             .state
@@ -144,6 +180,103 @@ impl AttemptSession {
         self.current(&state)
             .then(|| (self.attempt.id.clone(), state.hops))
     }
+    /// Classify only root, query-free connector handoffs for this original NAS.
+    /// The caller separately proves a primary, bodyless anonymous navigation.
+    pub(super) fn http_redirect_edge(
+        &self,
+        source: &Url,
+        destination: &Url,
+    ) -> Option<HttpRedirectEdge> {
+        let root = |url: &Url| {
+            url.path() == "/"
+                && url.query().is_none()
+                && url.fragment().is_none()
+                && url.username().is_empty()
+                && url.password().is_none()
+        };
+        if !self.is_current()
+            || !root(source)
+            || !root(destination)
+            || source.origin().ascii_serialization() != self.origin
+        {
+            return None;
+        }
+        let alias = self.attempt.defaults.nas_alias()?;
+        let plain = format!("http://{alias}.quickconnect.to");
+        let secure = format!("https://{alias}.quickconnect.to");
+        let target = destination.origin().ascii_serialization();
+        if regional_origin(&self.attempt.defaults, &self.origin) && target == plain {
+            Some(HttpRedirectEdge::RegionalExit(self.origin.clone(), [0; 32]))
+        } else if self.origin == plain && target == secure {
+            Some(HttpRedirectEdge::AliasUpgrade)
+        } else if self.origin == secure && regional_origin(&self.attempt.defaults, &target) {
+            Some(HttpRedirectEdge::RegionalReturn(target))
+        } else {
+            None
+        }
+    }
+    pub(super) fn http_redirect_cycle_blocked(&self, edge: Option<&HttpRedirectEdge>) -> bool {
+        let Ok(state) = self.attempt.state.lock() else {
+            return false;
+        };
+        self.current(&state)
+            && matches!((edge, &state.http_cycle),
+                (Some(HttpRedirectEdge::RegionalExit(origin, cookies)), Some(cycle))
+                if cycle.regional_origin == *origin && cycle.completed >= 2
+                    && cycle.cookie_state == *cookies
+                    && cycle.stage == HttpCycleStage::Returned)
+    }
+    /// Called only after one native receipt has been consumed and a continuation
+    /// ticket created. Duplicate/stale responses never advance this pattern.
+    pub(super) fn consume_http_redirect(&self, edge: Option<&HttpRedirectEdge>) {
+        let Ok(mut state) = self.attempt.state.lock() else {
+            return;
+        };
+        if !self.current(&state) {
+            return;
+        }
+        match edge {
+            Some(HttpRedirectEdge::RegionalExit(origin, cookies)) => {
+                let completed = state
+                    .http_cycle
+                    .as_ref()
+                    .filter(|cycle| {
+                        cycle.regional_origin == *origin
+                            && cycle.cookie_state == *cookies
+                            && cycle.stage == HttpCycleStage::Returned
+                    })
+                    .map_or(0, |cycle| cycle.completed);
+                state.http_cycle = Some(HttpRedirectCycle {
+                    regional_origin: origin.clone(),
+                    cookie_state: *cookies,
+                    completed,
+                    stage: HttpCycleStage::Exited,
+                });
+            }
+            Some(HttpRedirectEdge::AliasUpgrade) => {
+                if let Some(cycle) = state
+                    .http_cycle
+                    .as_mut()
+                    .filter(|cycle| cycle.stage == HttpCycleStage::Exited)
+                {
+                    cycle.stage = HttpCycleStage::Upgraded;
+                } else {
+                    state.http_cycle = None;
+                }
+            }
+            Some(HttpRedirectEdge::RegionalReturn(origin)) => {
+                if let Some(cycle) = state.http_cycle.as_mut().filter(|cycle| {
+                    cycle.stage == HttpCycleStage::Upgraded && cycle.regional_origin == *origin
+                }) {
+                    cycle.completed = cycle.completed.saturating_add(1);
+                    cycle.stage = HttpCycleStage::Returned;
+                } else {
+                    state.http_cycle = None;
+                }
+            }
+            None => state.http_cycle = None,
+        }
+    }
     /// The caller must have positively recognized the versioned connector HTML
     /// on the original alias's HTTPS regional origin. Ordinary login/URL revisits
     /// never invoke this method. Stop only the third unchanged connector restart.
@@ -176,6 +309,7 @@ impl AttemptSession {
         if let Ok(mut state) = self.attempt.state.lock() {
             if self.current(&state) && self.origin == origin {
                 state.connectors.clear();
+                state.http_cycle = None;
             }
         }
     }
@@ -356,6 +490,7 @@ fn end(state: &mut AttemptState) {
     state.active = None;
     state.origins.clear();
     state.connectors.clear();
+    state.http_cycle = None;
 }
 impl AttemptRegistry {
     pub fn restart(
@@ -377,6 +512,7 @@ impl AttemptRegistry {
             origin: source.origin.clone(),
             generation: state.generation,
             cache_seeded: Arc::new(AtomicBool::new(false)),
+            root_document: Arc::new(AtomicU64::new(0)),
         })
     }
     fn prune(&mut self) {
@@ -554,6 +690,7 @@ impl AttemptRegistry {
                 hops: 0,
                 origins: HashMap::new(),
                 connectors: HashMap::new(),
+                http_cycle: None,
             }),
         });
         let session = {
@@ -598,6 +735,7 @@ fn attach(
         origin,
         generation: state.generation,
         cache_seeded: Arc::new(AtomicBool::new(false)),
+        root_document: Arc::new(AtomicU64::new(0)),
     }
 }
 

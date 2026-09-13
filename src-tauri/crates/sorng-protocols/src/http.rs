@@ -1572,6 +1572,54 @@ fn session_diagnostic(
     diagnostic
 }
 
+fn http_cycle_edge(
+    state: &AxumProxyState,
+    redirect: &upstream::CrossOriginRedirect,
+    headers: &[(String, String)],
+    sequence: u64,
+) -> Option<attempt::HttpRedirectEdge> {
+    use reqwest::cookie::CookieStore;
+    if !redirect::cycle_context_is_anonymous(state)
+        || !state.network.document_is_current(sequence)
+        || !matches!(
+            redirect.method,
+            reqwest::Method::GET | reqwest::Method::HEAD
+        )
+        || redirect.same_origin_redirects != 0
+        || !quickconnect::default_handoff(state, &redirect.destination)
+        || headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+    {
+        return None;
+    }
+    let attempt = state.attempt.as_ref()?;
+    let mut edge = attempt.http_redirect_edge(&redirect.response_url, &redirect.destination)?;
+    if let attempt::HttpRedirectEdge::RegionalExit(_, fingerprint) = &mut edge {
+        // Opaque, volatile change detection only. Consent/routing cookies do
+        // not disable the guard; changed login/session state starts a new count.
+        // Neither cookie values nor this digest are serialized or logged.
+        let jar = attempt.cookie_store().cookies(&redirect.response_url);
+        let mut digest = Sha256::new();
+        let mut bytes = 0usize;
+        for value in headers
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+            .map(|(_, value)| value.as_bytes())
+            .chain(jar.iter().map(|value| value.as_bytes()))
+        {
+            bytes = bytes.saturating_add(value.len());
+            if bytes > 80 * 1024 {
+                return None;
+            }
+            digest.update((value.len() as u64).to_be_bytes());
+            digest.update(value);
+        }
+        *fingerprint = digest.finalize().into();
+    }
+    Some(edge)
+}
+
 fn observe_local_response(
     state: &AxumProxyState,
     method: &axum::http::Method,
@@ -2044,6 +2092,7 @@ pub async fn axum_proxy_handler(
                 );
             }
 
+            let response_url = resp.url().clone();
             let resp_hdrs = resp.headers().clone();
             let content_type = resp_hdrs
                 .get("content-type")
@@ -2125,6 +2174,7 @@ pub async fn axum_proxy_handler(
                 && state.network.is_active()
             {
                 if let Some(attempt) = &state.attempt {
+                    attempt.document_landed(&response_url, document_sequence);
                     if proxy_response::quickconnect_connector_document(
                         &String::from_utf8_lossy(&raw_bytes),
                         &state.target_origin,
@@ -2429,82 +2479,132 @@ pub async fn axum_proxy_handler(
         }
         Err(e) => {
             // P2: themed HTML error page in place of the plain-text
+            let cycle_edge = match &e {
+                upstream::UpstreamError::CrossOriginRedirect(redirect)
+                    if document_request
+                        && navigation_token.is_some()
+                        && matches!(method_str.as_str(), "GET" | "HEAD")
+                        && body_bytes.is_empty() =>
+                {
+                    http_cycle_edge(&state, redirect, &fwd_headers, document_sequence)
+                }
+                _ => None,
+            };
+            let cycle_blocked = state
+                .attempt
+                .as_ref()
+                .is_some_and(|attempt| attempt.http_redirect_cycle_blocked(cycle_edge.as_ref()));
             let redirect_review_available =
-                if let upstream::UpstreamError::CrossOriginRedirect(destination) = &e {
-                    document_request
+                if let upstream::UpstreamError::CrossOriginRedirect(redirect) = &e {
+                    !cycle_blocked
+                        && document_request
                         && matches!(method_str.as_str(), "GET" | "HEAD")
                         && body_bytes.is_empty()
-                        && redirect::record(
+                        && redirect::record_with_edge(
                             &state,
-                            destination,
+                            &redirect.destination,
                             document_sequence,
                             navigation_token.clone(),
+                            cycle_edge,
                         )
                 } else {
                     false
                 };
             let default_handoff = redirect_review_available
-                && matches!(&e, upstream::UpstreamError::CrossOriginRedirect(destination)
-                    if quickconnect::default_handoff(&state, destination));
+                && matches!(&e, upstream::UpstreamError::CrossOriginRedirect(redirect)
+                    if quickconnect::default_handoff(&state, &redirect.destination));
             // 502. Categorize the reqwest error, then render a page
             // whose layout, palette, and iconography match the app's
             // own error views (GenericErrorView / FeatureErrorBoundary).
-            let kind = match &e {
-                upstream::UpstreamError::Transport(error) => {
-                    crate::themed_errors::categorize_reqwest_error(error)
-                }
-                upstream::UpstreamError::Policy(_) => {
-                    crate::themed_errors::ProxyErrorKind::BadRequest
-                }
-                upstream::UpstreamError::RedirectLoop => {
-                    crate::themed_errors::ProxyErrorKind::RedirectLoop
-                }
-                upstream::UpstreamError::CrossOriginRedirect(destination) => {
-                    if redirect_review_available {
-                        crate::themed_errors::ProxyErrorKind::RedirectReview
-                    } else if state.target_url.starts_with("https:")
-                        && destination.scheme() == "http"
-                    {
-                        crate::themed_errors::ProxyErrorKind::InsecureRedirect
-                    } else {
-                        crate::themed_errors::ProxyErrorKind::CrossOriginRedirect
+            let kind = if cycle_blocked {
+                crate::themed_errors::ProxyErrorKind::RedirectLoop
+            } else {
+                match &e {
+                    upstream::UpstreamError::Transport(error) => {
+                        crate::themed_errors::categorize_reqwest_error(error)
+                    }
+                    upstream::UpstreamError::Policy(_) => {
+                        crate::themed_errors::ProxyErrorKind::BadRequest
+                    }
+                    upstream::UpstreamError::RedirectLoop => {
+                        crate::themed_errors::ProxyErrorKind::RedirectLoop
+                    }
+                    upstream::UpstreamError::CrossOriginRedirect(redirect) => {
+                        if redirect_review_available {
+                            crate::themed_errors::ProxyErrorKind::RedirectReview
+                        } else if state.target_url.starts_with("https:")
+                            && redirect.destination.scheme() == "http"
+                        {
+                            crate::themed_errors::ProxyErrorKind::InsecureRedirect
+                        } else {
+                            crate::themed_errors::ProxyErrorKind::CrossOriginRedirect
+                        }
+                    }
+                    upstream::UpstreamError::Deadline => {
+                        crate::themed_errors::ProxyErrorKind::Timeout
                     }
                 }
-                upstream::UpstreamError::Deadline => crate::themed_errors::ProxyErrorKind::Timeout,
             };
             // Never surface the raw reqwest error here. When an app-level
             // upstream proxy is configured its connector error may contain the
             // proxy authority or embedded credentials. The category and stable
             // hint retain actionable context without copying transport URLs or
             // secrets into themed pages, manager state, recordings, or logs.
-            let (diagnostic_stage, diagnostic_code, diagnostic_outcome) = match &e {
-                upstream::UpstreamError::Transport(error) if error.is_timeout() => {
-                    ("connect_tls", "http_timeout", "timed_out")
+            let (diagnostic_stage, diagnostic_code, diagnostic_outcome) = if cycle_blocked {
+                ("handoff", "quickconnect_redirect_loop", "failed")
+            } else {
+                match &e {
+                    upstream::UpstreamError::Transport(error) if error.is_timeout() => {
+                        ("connect_tls", "http_timeout", "timed_out")
+                    }
+                    upstream::UpstreamError::Transport(_) => {
+                        ("connect_tls", "http_transport_failed", "failed")
+                    }
+                    upstream::UpstreamError::Policy(_) => {
+                        ("validation", "http_policy_refused", "refused")
+                    }
+                    upstream::UpstreamError::RedirectLoop => {
+                        ("handoff", "http_redirect_loop", "failed")
+                    }
+                    upstream::UpstreamError::CrossOriginRedirect(_)
+                        if redirect_review_available =>
+                    {
+                        (
+                            "handoff",
+                            "http_redirect_review",
+                            if default_handoff {
+                                "continuing"
+                            } else {
+                                "review_required"
+                            },
+                        )
+                    }
+                    upstream::UpstreamError::CrossOriginRedirect(_) => {
+                        ("handoff", "http_policy_refused", "refused")
+                    }
+                    upstream::UpstreamError::Deadline => {
+                        ("connect_tls", "http_timeout", "timed_out")
+                    }
                 }
-                upstream::UpstreamError::Transport(_) => {
-                    ("connect_tls", "http_transport_failed", "failed")
-                }
-                upstream::UpstreamError::Policy(_) => {
-                    ("validation", "http_policy_refused", "refused")
-                }
-                upstream::UpstreamError::RedirectLoop => {
-                    ("handoff", "http_redirect_loop", "failed")
-                }
-                upstream::UpstreamError::CrossOriginRedirect(_) if redirect_review_available => (
-                    "handoff",
-                    "http_redirect_review",
-                    if default_handoff {
-                        "continuing"
-                    } else {
-                        "review_required"
-                    },
-                ),
-                upstream::UpstreamError::CrossOriginRedirect(_) => {
-                    ("handoff", "http_policy_refused", "refused")
-                }
-                upstream::UpstreamError::Deadline => ("connect_tls", "http_timeout", "timed_out"),
             };
-            let err_msg = match e {
+            let mut diagnostic = ProxyLogDiagnostic::new(
+                if cycle_blocked {
+                    "quickconnect_redirect"
+                } else {
+                    "http"
+                },
+                diagnostic_stage,
+                diagnostic_code,
+                diagnostic_outcome,
+                req_start,
+            );
+            if let upstream::UpstreamError::CrossOriginRedirect(redirect) = &e {
+                diagnostic = diagnostic.with_redirect(redirect);
+            }
+            let err_msg = if cycle_blocked {
+                "QuickConnect repeated the same regional-to-alias HTTP redirect circuit after one retry. No further destination was opened; the relay routing cause remains unresolved.".to_string()
+            } else {
+                match e {
                 upstream::UpstreamError::Policy(message) => message.to_string(),
                 upstream::UpstreamError::CrossOriginRedirect(_) => kind.hint().to_string(),
                 upstream::UpstreamError::RedirectLoop => format!("The upstream exceeded {} redirects in one navigation. Review the destination and reverse-proxy configuration; no further request was sent.", same_origin_redirect_limit(state.redirect_profile)),
@@ -2512,6 +2612,7 @@ pub async fn axum_proxy_handler(
                 upstream::UpstreamError::Transport(_) => {
                     format!("Upstream request failed ({}): {}", kind.code(), kind.hint())
                 }
+            }
             };
             let themed_status = if default_handoff {
                 202
@@ -2541,16 +2642,7 @@ pub async fn axum_proxy_handler(
                     status: themed_status,
                     error: recorded_error.clone(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
-                    diagnostic: Some(session_diagnostic(
-                        &state,
-                        ProxyLogDiagnostic::new(
-                            "http",
-                            diagnostic_stage,
-                            diagnostic_code,
-                            diagnostic_outcome,
-                            req_start,
-                        ),
-                    )),
+                    diagnostic: Some(session_diagnostic(&state, diagnostic)),
                 });
             }
 
