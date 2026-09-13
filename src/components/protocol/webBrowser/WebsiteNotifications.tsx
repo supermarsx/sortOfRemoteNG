@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Bell, X } from "lucide-react";
 import type { SectionProps } from "./types";
 import { PopoverSurface } from "../../ui/overlays/PopoverSurface";
 import ApplicationSignInNotice from "./ApplicationSignInNotice";
 import WebNetworkNotice from "./WebNetworkNotice";
 import WebAutomationNotice from "./WebAutomationNotice";
+import { synologyRedirectDefaultsForConnection } from "../../../utils/protocol/synologyRedirectDefaults";
 
 /** Local disclosure only. Closing it never clears reports or changes authority. */
 export default function WebsiteNotifications({
@@ -22,6 +23,7 @@ export default function WebsiteNotifications({
     | "openingApplicationExternal"
     | "handleOpenApplicationExternal"
   > & {
+    connection?: SectionProps["mgr"]["connection"];
     session: Pick<SectionProps["mgr"]["session"], "id" | "ownerDatabaseId">;
     automation: Pick<
       SectionProps["mgr"]["automation"],
@@ -41,6 +43,29 @@ export default function WebsiteNotifications({
   ]);
   const [selection, setSelection] = useState<string | null>(null);
   const open = selection === source;
+  const [popupTop, setPopupTop] = useState(60);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      if (anchor.current)
+        setPopupTop(
+          Math.max(
+            8,
+            Math.min(
+              anchor.current.getBoundingClientRect().bottom + 4,
+              window.innerHeight - 240,
+            ),
+          ),
+        );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open]);
   useEffect(() => {
     setSelection(null);
   }, [source]);
@@ -56,6 +81,45 @@ export default function WebsiteNotifications({
     anchor.current?.focus({ preventScroll: true });
   };
   const reports = mgr.webNetworkReports ?? [];
+  const quickConnectRelevant = (() => {
+    const routing = mgr.webNetworkRouting;
+    if (
+      routing &&
+      [
+        routing.quickConnectNavigation,
+        routing.quickConnectDiscovery,
+        routing.quickConnectDiscovered,
+        routing.quickConnectDirectNavigation,
+        routing.quickConnectRegionalNavigation,
+      ].some((value) => value === true)
+    )
+      return true;
+    if (
+      reports.some((report) =>
+        ["quickconnect-control-method", "quickconnect-probe-method"].includes(
+          report.reason,
+        ),
+      )
+    )
+      return true;
+    try {
+      if (
+        mgr.connection &&
+        synologyRedirectDefaultsForConnection(mgr.connection)
+      )
+        return true;
+      const current = new URL(mgr.currentUrl);
+      return (
+        ["http:", "https:"].includes(current.protocol) &&
+        !current.username &&
+        !current.password &&
+        (current.hostname === "quickconnect.to" ||
+          current.hostname.endsWith(".quickconnect.to"))
+      );
+    } catch {
+      return false;
+    }
+  })();
   const issues =
     reports.length +
     (mgr.webNetworkRouting && mgr.webNetworkRouting.status !== "current"
@@ -96,40 +160,76 @@ export default function WebsiteNotifications({
           anchorRef={anchor}
           onClose={close}
           align="end"
-          className="w-[28rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg shadow-xl"
+          offset={4}
+          className="sor-popover-panel sor-popover-panel-strong w-96 max-w-[calc(100vw-2rem)] overflow-y-auto"
+          style={{
+            top: popupTop,
+            maxHeight: `calc(100dvh - ${popupTop + 8}px)`,
+          }}
+          dataTestId="website-notifications-popover"
         >
           <div
             id={id}
             role="dialog"
             aria-label="Website notifications"
-            className="max-h-[min(70vh,32rem)] overflow-y-auto text-[var(--color-text)]"
+            className="text-[var(--color-text)]"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-3 py-2">
-              <h2 className="text-sm font-semibold">Website notifications</h2>
+            <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Bell
+                  size={16}
+                  className={
+                    issues
+                      ? "text-warning"
+                      : "text-[var(--color-textSecondary)]"
+                  }
+                  aria-hidden="true"
+                />
+                <h2 className="text-sm font-medium">Website notifications</h2>
+              </div>
               <button
                 ref={closeButton}
                 type="button"
-                className="sor-icon-btn-sm"
+                className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                 aria-label="Close website notifications"
                 onClick={close}
               >
-                <X size={16} />
+                <X size={14} />
               </button>
             </div>
-            <p className="px-3 py-2 text-xs text-[var(--color-textMuted)]">
-              {issues
-                ? `${issues} issue${issues === 1 ? "" : "s"} reported. Closing this panel does not dismiss them.`
-                : "No website issues reported. Routing limitations and sign-in help are available below."}
-            </p>
-            <WebAutomationNotice automation={mgr.automation} />
-            <WebNetworkNotice
-              reports={reports}
-              guard={mgr.webNetworkGuard ?? null}
-              routing={mgr.webNetworkRouting}
-              proxyOrigin={mgr.webProxyOrigin}
-              onReload={mgr.handleRefresh}
-            />
-            <ApplicationSignInNotice mgr={mgr} />
+            <div
+              className="p-4 space-y-3 text-xs text-[var(--color-textSecondary)]"
+              data-testid="website-notifications-content"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[var(--color-textMuted)]">
+                  Current website
+                </span>
+                <span
+                  className={`font-medium ${issues ? "text-warning" : "text-[var(--color-textSecondary)]"}`}
+                >
+                  {issues
+                    ? `${issues} issue${issues === 1 ? "" : "s"} reported`
+                    : "No issues reported"}
+                </span>
+              </div>
+              <WebAutomationNotice automation={mgr.automation} />
+              <WebNetworkNotice
+                reports={reports}
+                guard={mgr.webNetworkGuard ?? null}
+                routing={mgr.webNetworkRouting}
+                proxyOrigin={mgr.webProxyOrigin}
+                quickConnectRelevant={quickConnectRelevant}
+                onReload={mgr.handleRefresh}
+              />
+              <ApplicationSignInNotice mgr={mgr} />
+            </div>
+            <div className="border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-textMuted)]">
+              Closing this panel does not dismiss issues or change website
+              permissions.
+            </div>
           </div>
         </PopoverSurface>
       )}

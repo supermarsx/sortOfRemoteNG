@@ -12,15 +12,12 @@ export default function WebAutomationNotice({
   return (
     <section
       aria-label="Website automation issue"
-      className="border-b border-[var(--color-border)] px-3 py-3 text-xs"
+      className="rounded bg-[var(--color-background)] p-3 space-y-2 text-xs"
     >
       <h3 className="font-medium text-warning">
         Website automation needs attention
       </h3>
-      <p
-        role="alert"
-        className="mt-2 break-words text-[var(--color-textSecondary)]"
-      >
+      <p role="alert" className="break-words text-[var(--color-textSecondary)]">
         {automation.error}
       </p>
       <button

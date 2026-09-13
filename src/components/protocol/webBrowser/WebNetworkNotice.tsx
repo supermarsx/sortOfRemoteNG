@@ -6,18 +6,22 @@ import type {
 } from "../../../utils/protocol/webNetworkReport";
 import type { WebNetworkGuardStatus } from "../../../utils/protocol/webNetworkGuard";
 import NativeHttpObservations from "./NativeHttpObservations";
+import { WebsiteDiagnosticsCopyButton } from "./WebsiteDiagnosticsCopyButton";
+import { websiteDiagnosticsText } from "../../../utils/protocol/websiteDiagnosticsText";
 
 export default function WebNetworkNotice({
   reports,
   guard,
   routing,
   proxyOrigin,
+  quickConnectRelevant = false,
   onReload,
 }: {
   reports: readonly WebNetworkReport[];
   guard: WebNetworkGuardStatus | null;
   routing?: WebNetworkRoutingStatus | null;
   proxyOrigin?: string;
+  quickConnectRelevant?: boolean;
   onReload: () => void;
 }) {
   const [disclosure, setDisclosure] = useState({
@@ -25,8 +29,10 @@ export default function WebNetworkNotice({
     open: false,
   });
   const detailsOpen = disclosure.source === proxyOrigin && disclosure.open;
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   useEffect(() => {
     setDisclosure({ source: proxyOrigin, open: false });
+    setAdvancedOpen(false);
   }, [proxyOrigin]);
   if (!reports.length && !guard && !routing) return null;
   const expired = reports.some((report) =>
@@ -40,39 +46,56 @@ export default function WebNetworkNotice({
   return (
     <section
       aria-label="Website network restrictions"
-      className={`shrink-0 border-b px-3 py-1.5 text-xs ${attention ? "border-warning/30 bg-warning/5" : "border-[var(--color-border)] text-[var(--color-textSecondary)]"}`}
+      className="space-y-3 text-xs text-[var(--color-textSecondary)]"
     >
+      <h3 className="flex items-center gap-2 font-medium text-[var(--color-text)]">
+        <ShieldAlert
+          size={14}
+          aria-hidden="true"
+          className="text-[var(--color-textMuted)]"
+        />
+        Proxy routing
+        <span className="ml-auto font-normal text-[var(--color-textMuted)]">
+          Partial browser enforcement
+        </span>
+        <WebsiteDiagnosticsCopyButton
+          text={websiteDiagnosticsText(
+            reports,
+            guard,
+            routing,
+            quickConnectRelevant,
+          )}
+        />
+      </h3>
+      <p>Not every browser network channel is intercepted.</p>
+      {attention && (
+        <p className="rounded bg-[var(--color-background)] p-3 font-medium text-warning">
+          {expired
+            ? "This page needs to be reloaded"
+            : routing?.status === "missing"
+              ? "Page routing module is not confirmed"
+              : routing?.status === "mismatch"
+                ? "Page routing settings do not match this connection"
+                : reports.length
+                  ? "Some website requests were blocked"
+                  : "Native frame navigation protection is not ready."}
+        </p>
+      )}
       <details
         key={proxyOrigin}
         open={detailsOpen}
-        onToggle={(event) =>
-          setDisclosure({ source: proxyOrigin, open: event.currentTarget.open })
-        }
+        onToggle={(event) => {
+          setDisclosure({
+            source: proxyOrigin,
+            open: event.currentTarget.open,
+          });
+          if (!event.currentTarget.open) setAdvancedOpen(false);
+        }}
       >
-        <summary className="cursor-pointer">
-          <ShieldAlert
-            size={15}
-            className={`mx-1 inline-block align-text-bottom ${attention ? "text-warning" : ""}`}
-            aria-hidden="true"
-          />
-          <span className="font-medium">
-            {expired
-              ? "This page needs to be reloaded"
-              : routing?.status === "missing"
-                ? "Page routing module is not confirmed"
-                : routing?.status === "mismatch"
-                  ? "Page routing settings do not match this connection"
-                  : reports.length
-                    ? "Some website requests were blocked"
-                    : "Website proxy routing · partial browser enforcement"}
-          </span>
-          <span className="ml-2 text-[var(--color-textMuted)]">
-            {reports.length
-              ? `Review ${reports.length} network restriction${reports.length === 1 ? "" : "s"}`
-              : "Protection details"}
-          </span>
+        <summary className="cursor-pointer text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]">
+          Protection details
         </summary>
-        <div className="max-h-56 overflow-y-auto pr-1">
+        <div className="mt-3 space-y-3">
           {guard && (
             <p className="mt-2">
               {guard.frameNavigation === "enforced"
@@ -84,15 +107,64 @@ export default function WebNetworkNotice({
             </p>
           )}
           {routing && (
-            <p className="mt-2" data-testid="web-network-routing-status">
-              {routing.status === "missing"
-                ? "This page did not report the current routing module. It may come from an older desktop process. Restart the desktop application and reopen the website tab; refreshing the application UI alone does not update native proxy code."
-                : routing.status === "mismatch"
-                  ? "The page's routing capabilities differ from the current connection settings. Reopen this website from its saved connection after checking its default destinations and database access."
-                  : `Page routing module v4 reported. QuickConnect navigation: ${routing.quickConnectNavigation ? "available" : "off or unavailable for this source"}; discovery: ${routing.quickConnectDiscovery ? "available" : "off or unavailable for this source"}; same-NAS probe routes: ${routing.quickConnectDiscovered ? "available; native request validation still required" : "off or unavailable for this source"}; direct navigation: ${routing.quickConnectDirectNavigation ? "available" : "off or unavailable for this source"}; regional navigation: ${routing.quickConnectRegionalNavigation ? "available" : "off or unavailable for this source"}.`}{" "}
-              This is a page-module diagnostic, not proof that every request is
-              captured.
-            </p>
+            <div className="space-y-2" data-testid="web-network-routing-status">
+              {routing.status === "missing" ? (
+                "This page did not report the current routing module. It may come from an older desktop process. Restart the desktop application and reopen the website tab; refreshing the application UI alone does not update native proxy code."
+              ) : routing.status === "mismatch" ? (
+                "The page's routing capabilities differ from the current connection settings. Reopen this website from its saved connection after checking its default destinations and database access."
+              ) : (
+                <>
+                  <p className="text-[var(--color-textMuted)]">
+                    Page routing module v4 reported
+                  </p>
+                  {quickConnectRelevant && (
+                    <dl className="rounded bg-[var(--color-background)] p-3 space-y-2">
+                      {(
+                        [
+                          [
+                            "QuickConnect navigation",
+                            routing.quickConnectNavigation,
+                          ],
+                          ["Discovery", routing.quickConnectDiscovery],
+                          [
+                            "Same-NAS probe routes",
+                            routing.quickConnectDiscovered,
+                          ],
+                          [
+                            "Direct navigation",
+                            routing.quickConnectDirectNavigation,
+                          ],
+                          [
+                            "Regional navigation",
+                            routing.quickConnectRegionalNavigation,
+                          ],
+                        ] as const
+                      ).map(([label, available]) => (
+                        <div
+                          key={label}
+                          className="flex items-start justify-between gap-3"
+                        >
+                          <dt>{label}</dt>
+                          <dd className="shrink-0 text-[var(--color-textMuted)]">
+                            {available ? "Available" : "Off"}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {quickConnectRelevant && (
+                    <p className="text-[var(--color-textMuted)]">
+                      Off means off or unavailable for this source. Available
+                      routes still require native request validation.
+                    </p>
+                  )}
+                </>
+              )}
+              <p className="text-[var(--color-textMuted)]">
+                This is a page-module diagnostic, not proof that every request
+                is captured.
+              </p>
+            </div>
           )}
           <p className="mt-2">
             Redirect approval is separate from background-request routing. A
@@ -101,16 +173,15 @@ export default function WebNetworkNotice({
             The page may be incomplete; no destination is approved by this
             notice.
           </p>
-          <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+          <ul className="space-y-2">
             {reports.map((report) => (
               <li
                 key={`${report.kind}:${report.reason}:${report.origin}`}
-                className="break-all"
+                className="rounded bg-[var(--color-background)] p-3 break-words"
               >
-                <span className="font-medium">
+                <span className="block break-all font-mono text-[var(--color-textMuted)]">
                   {report.origin ?? "This page"}
                 </span>
-                {" — "}
                 {report.kind === "font"
                   ? "Font request blocked; only explicitly routed font assets can load"
                   : report.reason === "origin-not-approved"
@@ -140,10 +211,21 @@ export default function WebNetworkNotice({
               suppressed.
             </p>
           )}
-          <NativeHttpObservations
-            proxyOrigin={proxyOrigin}
-            active={detailsOpen && guard?.platform === "windows"}
-          />
+          {guard?.platform === "windows" && (
+            <details
+              open={detailsOpen && advancedOpen}
+              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]">
+                Advanced diagnostics
+              </summary>
+              <NativeHttpObservations
+                proxyOrigin={proxyOrigin}
+                active={detailsOpen && advancedOpen}
+                contained={false}
+              />
+            </details>
+          )}
         </div>
       </details>
       {expired && (

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
 import { Select } from "../../ui/forms";
+import { WebsiteDiagnosticsCopyButton } from "./WebsiteDiagnosticsCopyButton";
+import { nativeObservationsText } from "../../../utils/protocol/websiteDiagnosticsText";
 import { useSessionRenderActivity } from "../../../contexts/SessionRenderActivityContext";
 import { useSessionObservationActivity } from "../../../hooks/session/useSessionObservationActivity";
 import {
@@ -49,9 +51,12 @@ function observationRow(row: NativeHttpObservation, index: number) {
 export default function NativeHttpObservations({
   active,
   proxyOrigin,
+  contained = true,
 }: {
   active: boolean;
   proxyOrigin?: string;
+  /** The certificate-style notification popup owns its single scroll region. */
+  contained?: boolean;
 }) {
   const origin = canonicalOrigin(proxyOrigin);
   const { isActive } = useSessionRenderActivity();
@@ -137,10 +142,14 @@ export default function NativeHttpObservations({
       aria-label="Native WebView HTTP observations"
       className="mt-3 border-t border-[var(--color-border)] pt-2"
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">
           Native HTTP observations · all website tabs and application shell
         </span>
+        <WebsiteDiagnosticsCopyButton
+          text={nativeObservationsText(snapshot ?? null, filter, origin)}
+          disabled={!snapshot}
+        />
         <button
           type="button"
           className="sor-btn-secondary inline-flex items-center gap-1"
@@ -207,7 +216,7 @@ export default function NativeHttpObservations({
           </p>
           <ul
             aria-label="Filtered native observations"
-            className="mt-2 max-h-40 space-y-1 overflow-y-auto"
+            className={`mt-2 space-y-1 ${contained ? "max-h-40 overflow-y-auto" : ""}`}
           >
             {rows.map(observationRow)}
           </ul>
@@ -221,7 +230,7 @@ export default function NativeHttpObservations({
               </p>
               <ul
                 aria-label="Blocked documents outside filter"
-                className="mt-1 max-h-32 space-y-1 overflow-y-auto"
+                className={`mt-1 space-y-1 ${contained ? "max-h-32 overflow-y-auto" : ""}`}
               >
                 {blockedOutsideFilter.map(observationRow)}
               </ul>

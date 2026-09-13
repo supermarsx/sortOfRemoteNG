@@ -560,8 +560,7 @@ describe("HTTPS certificate and native trust stages", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Open Cloudflare in system browser" }),
-    ).not.toBeVisible();
-    fireEvent.click(screen.getByText("Cloudflare · Sign-in & 2FA help"));
+    ).toBeVisible();
     expect(
       screen.getByText(/Signing in there does not sign in this tab/),
     ).toBeVisible();

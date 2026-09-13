@@ -51,6 +51,11 @@ describe("compact website network notice", () => {
       screen.getByText(/Browser-wide network interception is not yet enforced/),
     ).not.toBeVisible();
     fireEvent.click(screen.getByText("Protection details"));
+    expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    fireEvent.click(screen.getByText("Advanced diagnostics"));
     await waitFor(() =>
       expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
         "data-active",
@@ -102,6 +107,11 @@ describe("compact website network notice", () => {
       "false",
     );
     fireEvent.click(screen.getByText("Protection details"));
+    expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    fireEvent.click(screen.getByText("Advanced diagnostics"));
     await waitFor(() =>
       expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
         "data-active",
@@ -127,12 +137,7 @@ describe("compact website network notice", () => {
       />,
     );
     fireEvent.click(screen.getByText("Protection details"));
-    await waitFor(() =>
-      expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
-        "data-active",
-        "false",
-      ),
-    );
+    expect(screen.queryByTestId("native-observation-activity")).toBeNull();
   });
   it.each(["missing", "mismatch", "current"] as const)(
     "explains %s module diagnostics without inventing a blocked request",
@@ -141,6 +146,7 @@ describe("compact website network notice", () => {
         <WebNetworkNotice
           reports={[]}
           guard={null}
+          quickConnectRelevant
           routing={{
             status,
             quickConnectNavigation: false,
@@ -192,7 +198,9 @@ describe("compact website network notice", () => {
     expect(
       screen.getByText(/A console SecurityError alone does not identify/),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Trust|Enable|Approve/ }),
+    ).not.toBeInTheDocument();
   });
   it("does not create a placeholder before a status or report exists", () => {
     const view = render(
@@ -224,7 +232,9 @@ describe("compact website network notice", () => {
       screen.getByText(/No route for this request \(fetch\)/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Unsupported Worker request/)).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Trust|Enable|Approve/ }),
+    ).not.toBeInTheDocument();
   });
   it("distinguishes navigation permission from unsupported background discovery methods", () => {
     render(
@@ -240,7 +250,7 @@ describe("compact website network notice", () => {
         onReload={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText("Review 1 network restriction"));
+    fireEvent.click(screen.getByText("Protection details"));
     expect(
       screen.getByText(
         /Redirect approval is separate from background-request routing/,

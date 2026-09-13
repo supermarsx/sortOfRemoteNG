@@ -72,6 +72,80 @@ async function open() {
   return dialog;
 }
 describe("website notifications popover", () => {
+  it.each([
+    "http://ordinary.example/page",
+    "https://ordinary.example/page",
+    "https://quickconnect.to.example/page",
+  ])(
+    "omits unrelated QuickConnect capability rows for %s",
+    async (currentUrl) => {
+      render(<WebsiteNotifications mgr={manager({ currentUrl })} />);
+      const dialog = await open();
+      fireEvent.click(within(dialog).getByText("Protection details"));
+      expect(dialog.textContent).not.toMatch(
+        /QuickConnect|Same-NAS|Regional navigation/,
+      );
+      expect(
+        within(dialog).getByText("Page routing module v4 reported"),
+      ).toBeVisible();
+      expect(screen.getByTestId("observation")).toHaveAttribute(
+        "data-active",
+        "false",
+      );
+    },
+  );
+  it.each([
+    "https://example-nas.fr3.quickconnect.to/",
+    "https://example-nas.direct.quickconnect.to:5001/",
+  ])(
+    "retains contextual capabilities for exact QuickConnect source %s",
+    async (currentUrl) => {
+      render(<WebsiteNotifications mgr={manager({ currentUrl })} />);
+      const dialog = await open();
+      fireEvent.click(within(dialog).getByText("Protection details"));
+      expect(within(dialog).getByText("QuickConnect navigation")).toBeVisible();
+    },
+  );
+  it("uses the certificate panel theme and one viewport-bounded scroll owner after expansion", async () => {
+    render(<WebsiteNotifications mgr={manager()} />);
+    const trigger = screen.getByRole("button", {
+      name: "Website notifications",
+    });
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({
+      x: 300,
+      y: 700,
+      left: 300,
+      right: 330,
+      top: 700,
+      bottom: 730,
+      width: 30,
+      height: 30,
+      toJSON: () => ({}),
+    });
+    const dialog = await open();
+    const panel = screen.getByTestId("website-notifications-popover");
+    expect(panel).toHaveClass(
+      "sor-popover-panel",
+      "sor-popover-panel-strong",
+      "w-96",
+      "overflow-y-auto",
+    );
+    expect(
+      within(dialog).getByTestId("website-notifications-content"),
+    ).toHaveClass("p-4", "space-y-3");
+    expect(
+      within(dialog).getByRole("heading", { level: 2 }).parentElement
+        ?.parentElement,
+    ).toHaveClass("px-4", "py-3");
+    fireEvent.click(within(dialog).getByText("Protection details"));
+    fireEvent.click(within(dialog).getByText("Advanced diagnostics"));
+    expect(panel.querySelectorAll('[class*="overflow-y-auto"]')).toHaveLength(
+      0,
+    );
+    const top = Math.max(8, Math.min(734, window.innerHeight - 240));
+    expect(panel.style.top).toBe(`${top}px`);
+    expect(panel.style.maxHeight).toBe(`calc(100dvh - ${top + 8}px)`);
+  });
   it("shows only a neutral toolbar icon until opened, with real guidance and no observation activity", async () => {
     render(<WebsiteNotifications mgr={manager()} />);
     const button = screen.getByRole("button", {
@@ -85,13 +159,18 @@ describe("website notifications popover", () => {
     const dialog = await open();
     expect(button).toHaveAttribute("aria-controls", dialog.id);
     expect(
-      within(dialog).getByText(/partial browser enforcement/),
+      within(dialog).getByText(/Partial browser enforcement/),
     ).toBeVisible();
     expect(screen.getByTestId("observation")).toHaveAttribute(
       "data-active",
       "false",
     );
     fireEvent.click(within(dialog).getByText("Protection details"));
+    expect(screen.getByTestId("observation")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    fireEvent.click(within(dialog).getByText("Advanced diagnostics"));
     await waitFor(() =>
       expect(screen.getByTestId("observation")).toHaveAttribute(
         "data-active",

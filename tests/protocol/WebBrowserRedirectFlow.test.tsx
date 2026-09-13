@@ -433,9 +433,7 @@ describe("mounted website network boundary", () => {
       send(report);
       send(report);
       expect(screen.getByText("https://blocked.example")).toBeInTheDocument();
-      expect(
-        screen.getByText("Review 1 network restriction"),
-      ).toBeInTheDocument();
+      expect(screen.getAllByText("https://blocked.example")).toHaveLength(1);
       if (change === "owner") {
         h.availabilityGeneration++;
         view.rerender(<Harness />);
