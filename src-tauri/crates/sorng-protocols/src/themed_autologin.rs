@@ -214,6 +214,14 @@ pub fn build_autologin_injection_from_slots(
 /// `&AxumProxyState` wrapper over [`build_autologin_injection_from_slots`] for
 /// the proxy handler's call site.
 pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64) -> Option<String> {
+    if let Some(attempt) = state
+        .attempt
+        .as_ref()
+        .filter(|attempt| attempt.uses_deferred_synology_login())
+    {
+        let nonce = attempt.deferred_login_nonce(&state.network, document_sequence)?;
+        return Some(autologin_client_script(&nonce, "null"));
+    }
     let injection = build_autologin_injection_from_slots(
         &state.auto_login_armed,
         &state.auto_login_nonce,
@@ -295,6 +303,29 @@ pub async fn autologin_cred_handler(
         .is_some_and(|options| options.validate().is_err())
     {
         return forbidden("invalid advanced form settings");
+    }
+    if let Some(attempt) = state
+        .attempt
+        .as_ref()
+        .filter(|attempt| attempt.uses_deferred_synology_login())
+    {
+        let sessions = match state.global_sessions.lock() {
+            Ok(sessions) => sessions,
+            Err(_) => return forbidden("saved Synology login session unavailable"),
+        };
+        if !sessions.sessions.contains_key(&state.session_id) {
+            return forbidden("saved Synology login session ended");
+        }
+        let reply =
+            attempt.dispense_deferred_login(&state.network, &query.nonce, query.phase.as_deref());
+        return match reply {
+            Ok(value) => Response::builder()
+                .header("Content-Type", "application/json; charset=utf-8")
+                .header("Cache-Control", "no-store")
+                .body(Body::from(value.to_string()))
+                .unwrap_or_else(|_| server_error("failed to build saved Synology login response")),
+            _ => forbidden("saved Synology login expired or its document changed"),
+        };
     }
     if matches!(
         state.upstream_auth_mode,

@@ -126,6 +126,8 @@ function fixture(
     trust: {
       defaults: undefined,
       defaultSource: undefined,
+      formLoginCurrent: false,
+      assertFormLoginCurrent: () => {},
       canRemember: true,
       unavailableReason: "",
       revision: "1",

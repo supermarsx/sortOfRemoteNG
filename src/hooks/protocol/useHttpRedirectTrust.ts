@@ -26,6 +26,7 @@ import {
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy";
 import { normalizeSynologySettings } from "../../types/protocols/synology";
+import { captureSynologyFormLoginLease } from "../../utils/protocol/synologyFormLoginLease";
 import {
   isSynologyDefaultRedirect,
   isSynologyDefaultRedirectOrigin,
@@ -92,7 +93,7 @@ export function useHttpRedirectTrust(
     connection?.id;
   const saved = context.state.connections.find((item) => item.id === savedId);
   let defaults: SynologyQuickConnectDefaults | undefined;
-  let defaultSource: SynologyRedirectSource | undefined;
+  let defaultSource: SynologyRedirectSource | undefined = inheritedDefault;
   try {
     const availability = context.databaseAvailability;
     if (
@@ -106,6 +107,10 @@ export function useHttpRedirectTrust(
           throw new Error();
         if (inheritedDefault.savedConnectionId) {
           if (!saved) throw new Error();
+          inheritedDefault.formLogin?.assertCurrent(
+            saved,
+            context.credentialVault,
+          );
           inheritedDefault.assertIdentity(saved);
           defaults = synologyRedirectDefaultsForConnection(saved);
         } else if (inheritedDefault.enabled) {
@@ -148,6 +153,12 @@ export function useHttpRedirectTrust(
             source.id,
             saved?.id ?? null,
             identity,
+            source.credentialSource?.kind === "vault"
+              ? [
+                  context.credentialVault?.scope,
+                  context.credentialVault?.changeRevision,
+                ]
+              : null,
           ]);
           if (defaultSourceRef.current?.key !== key) {
             defaultSourceRef.current = {
@@ -157,6 +168,12 @@ export function useHttpRedirectTrust(
                 enabled: settings.useDefaultRedirectDestinations !== false,
                 databaseId: availability.databaseId!,
                 savedConnectionId: saved?.id,
+                formLogin: saved
+                  ? captureSynologyFormLoginLease(
+                      source,
+                      context.credentialVault,
+                    )
+                  : undefined,
                 assertOwner: captureSessionDatabaseAccess(session),
                 assertIdentity: (current) => {
                   if (httpRedirectTrustIdentity(current) !== identity)
@@ -208,6 +225,10 @@ export function useHttpRedirectTrust(
         (item) => item.id === budgetSource.savedConnectionId,
       );
       if (!original) throw new Error(UNAVAILABLE);
+      budgetSource.formLogin?.assertCurrent(
+        original,
+        current.context.credentialVault,
+      );
       budgetSource.assertIdentity(original);
     }
   };
@@ -223,6 +244,11 @@ export function useHttpRedirectTrust(
   } catch {
     // Invalid original provenance never upgrades an ordinary website's limit.
   }
+  const assertFormLoginCurrent = () => {
+    if (!budgetSource?.formLogin) return;
+    assertBudgetCurrent();
+  };
+  const formLoginCurrent = !!budgetSource?.formLogin && !!redirectBudget;
   const latestDefaults = useRef({ defaults, source: defaultSource });
   latestDefaults.current = { defaults, source: defaultSource };
   let canRemember = false;
@@ -603,6 +629,8 @@ export function useHttpRedirectTrust(
     remember,
     defaults,
     defaultSource,
+    formLoginCurrent,
+    assertFormLoginCurrent,
     ...(redirectBudget ? { redirectBudget } : {}),
   };
 }

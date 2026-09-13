@@ -2,6 +2,7 @@ import type {
   Connection,
   ConnectionSession,
 } from "../../types/connection/connection";
+import type { DatabaseCredentialVaultApi } from "../../types/security/databaseCredentialVault";
 
 /**
  * Volatile connection definitions used by Quick Connect sessions.
@@ -29,6 +30,13 @@ export interface SynologyRedirectSource {
   savedConnectionId?: string;
   assertOwner: () => void;
   assertIdentity: (connection: Connection) => void;
+  /** Original saved login's revocation lease only. No secret or auth grant. */
+  formLogin?: {
+    assertCurrent: (
+      source: Connection,
+      vault: DatabaseCredentialVaultApi | undefined,
+    ) => void;
+  };
 }
 export interface RuntimeWebNavigation {
   initialUrl: string;

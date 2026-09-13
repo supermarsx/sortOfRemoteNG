@@ -1,0 +1,162 @@
+use super::*;
+
+const ALIAS: &str = "https://example.quickconnect.to/";
+const NAS: &str = "https://example.fr3.quickconnect.to/";
+
+fn config() -> BasicAuthProxyConfig {
+    serde_json::from_value(serde_json::json!({
+        "target_url":ALIAS, "username":"synthetic-user", "password":"synthetic-password",
+        "upstream_auth_mode":"synology-form", "http_auto_login":true,
+        "connection_id":"synthetic-owner", "redirect_profile":"synology"
+    }))
+    .unwrap()
+}
+
+fn defaults() -> SynologyQuickConnectDefaults {
+    SynologyQuickConnectDefaults {
+        version: 1,
+        original_origin: ALIAS.trim_end_matches('/').into(),
+    }
+}
+
+fn intent() -> DeferredSynologyLogin {
+    DeferredSynologyLogin::capture(&config(), &defaults(), &Url::parse(ALIAS).unwrap())
+        .unwrap()
+        .unwrap()
+}
+
+#[test]
+fn captures_only_original_explicit_staged_consent_and_bounded_credentials() {
+    for mode in [
+        UpstreamAuthMode::None,
+        UpstreamAuthMode::Basic,
+        UpstreamAuthMode::BitwardenForm,
+    ] {
+        let mut config = config();
+        config.upstream_auth_mode = mode;
+        assert!(
+            DeferredSynologyLogin::capture(&config, &defaults(), &Url::parse(ALIAS).unwrap())
+                .unwrap()
+                .is_none()
+        );
+    }
+    let mut manual = config();
+    manual.http_auto_login = false;
+    assert!(
+        DeferredSynologyLogin::capture(&manual, &defaults(), &Url::parse(ALIAS).unwrap())
+            .unwrap()
+            .is_none()
+    );
+    for mutation in 0..5 {
+        let mut config = config();
+        match mutation {
+            0 => config.username.clear(),
+            1 => config.password.clear(),
+            2 => config.password = "x".repeat(16 * 1024 + 1),
+            3 => config.continuation_id = Some("untrusted-ticket".into()),
+            _ => config.target_url = "http://example.quickconnect.to/".into(),
+        }
+        assert!(DeferredSynologyLogin::capture(
+            &config,
+            &defaults(),
+            &Url::parse(&config.target_url).unwrap()
+        )
+        .is_err());
+    }
+    assert!(
+        DeferredSynologyLogin::capture(&config(), &defaults(), &Url::parse(NAS).unwrap()).is_err()
+    );
+}
+
+#[test]
+fn proof_is_required_and_origin_capacity_and_login_paths_are_bounded() {
+    let mut intent = intent();
+    let target = Url::parse(NAS).unwrap();
+    assert!(!intent.bind("nas", 1, &target));
+    for index in 0..MAX_VERIFIED_ORIGINS {
+        intent.record_probe(format!("https://example.ab{index}.quickconnect.to"));
+    }
+    intent.record_probe(target.origin().ascii_serialization());
+    assert_eq!(intent.verified_origins.len(), MAX_VERIFIED_ORIGINS);
+    assert!(!intent.bind("nas", 1, &target));
+    let mut fresh = self::intent();
+    fresh.record_probe(target.origin().ascii_serialization());
+    assert!(!fresh.bind("nas", 0, &target));
+    assert!(!fresh.bind("nas", 1, &target.join("webapi/auth.cgi").unwrap()));
+    assert!(fresh.bind("nas", 1, &target.join("webman/index.cgi").unwrap()));
+}
+
+#[test]
+fn staged_single_use_grants_never_fall_back_to_combined_credentials() {
+    let mut intent = intent();
+    let target = Url::parse(NAS).unwrap();
+    intent.record_probe(target.origin().ascii_serialization());
+    assert!(intent.bind("nas", 7, &target));
+    let nonce = intent.nonce("nas", 7).unwrap();
+    assert!(intent.nonce("other", 7).is_none());
+    for (session, document, token, phase) in [
+        ("other", 7, nonce.as_str(), None),
+        ("nas", 8, nonce.as_str(), None),
+        ("nas", 7, "wrong", None),
+        ("nas", 7, nonce.as_str(), Some("password")),
+    ] {
+        assert!(intent.dispense(session, document, token, phase).is_err());
+    }
+    let account = intent.dispense("nas", 7, &nonce, None).unwrap();
+    assert_eq!(account["loginFlow"], "synology");
+    assert_eq!(account["username"], "synthetic-user");
+    assert!(account.get("password").is_none());
+    assert!(intent.username.is_none());
+    assert!(intent.dispense("nas", 7, &nonce, None).is_err());
+    let token = account["continuation"].as_str().unwrap();
+    let password = intent.dispense("nas", 7, token, Some("password")).unwrap();
+    assert_eq!(password["password"], "synthetic-password");
+    assert!(password.get("username").is_none());
+    assert!(intent.password.is_none());
+    assert!(intent.dispense("nas", 7, token, Some("password")).is_err());
+    assert!(!intent.bind("nas", 9, &target));
+}
+
+#[test]
+fn expiry_and_cancellation_erase_secrets_and_never_rearm() {
+    for pending in [true, false] {
+        let mut intent = intent();
+        let target = Url::parse(NAS).unwrap();
+        intent.record_probe(target.origin().ascii_serialization());
+        if pending {
+            intent.created = Instant::now() - INTENT_LIFETIME;
+        } else {
+            assert!(intent.bind("nas", 1, &target));
+            if let Phase::Account { issued, .. } = &mut intent.phase {
+                *issued = Instant::now() - STAGE_LIFETIME;
+            }
+        }
+        intent.expire();
+        assert!(intent.username.is_none() && intent.password.is_none());
+        assert!(matches!(intent.phase, Phase::Spent));
+        assert!(!intent.bind("nas", 1, &target));
+    }
+    let mut pending = intent();
+    pending.cancel_issued();
+    assert!(pending.password.is_some()); // Anonymous handoffs preserve pending intent.
+    let target = Url::parse(NAS).unwrap();
+    pending.record_probe(target.origin().ascii_serialization());
+    assert!(pending.bind("nas", 1, &target));
+    pending.cancel_issued();
+    assert!(pending.username.is_none() && pending.password.is_none());
+}
+
+#[test]
+fn original_explicit_nas_target_does_not_need_provider_probe_but_alias_does() {
+    let mut config = config();
+    config.target_url = NAS.into();
+    let defaults = SynologyQuickConnectDefaults {
+        version: 1,
+        original_origin: NAS.trim_end_matches('/').into(),
+    };
+    let target = Url::parse(NAS).unwrap();
+    let mut intent = DeferredSynologyLogin::capture(&config, &defaults, &target)
+        .unwrap()
+        .unwrap();
+    assert!(intent.bind("original-nas", 1, &target));
+}

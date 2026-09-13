@@ -83,6 +83,12 @@ pub(super) fn quickconnect_connector_document(
     if !regional {
         return false;
     }
+    quickconnect_connector_asset(text, &target)
+}
+
+/// Recognize the same executable publisher asset on an admitted NAS endpoint;
+/// unlike the cycle classifier, this is not restricted to regional hosts.
+pub(super) fn quickconnect_connector_asset(text: &str, target: &reqwest::Url) -> bool {
     // Tokenize comments and raw script elements before inspecting attributes:
     // a quoted example/comment containing the asset is not a connector page.
     static ELEMENT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();

@@ -19,6 +19,7 @@ import {
 } from "../../src/utils/session/runtimeConnectionRegistry";
 import { DEFAULT_HTTP_PROXY_POLICY } from "../../src/types/connection/httpProxyPolicy";
 import { withSynologyRedirectDefaults } from "../../src/utils/protocol/synologyRedirectDefaults";
+import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 
 const h = vi.hoisted(() => ({
   context: null as unknown,
@@ -77,13 +78,18 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-function fixture(saved: Connection = structuredClone(source), isSaved = true) {
+function fixture(
+  saved: Connection = structuredClone(source),
+  isSaved = true,
+  credentialVault?: DatabaseCredentialVaultApi,
+) {
   let databaseId = "db-a",
     epoch = 1;
   let persisted = { connections: isSaved ? [structuredClone(saved)] : [] };
   const readCurrent = vi.fn(async () => structuredClone(persisted));
   const flush = vi.fn(async (): Promise<void> => undefined);
   const context = {
+    credentialVault,
     state: { connections: isSaved ? [saved] : [] },
     databaseAvailability: { status: "ready", databaseId, generation: 1 },
     flushPendingSave: flush,
@@ -156,6 +162,143 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     ...review,
     sourceOrigin: origin,
     destinationUrl,
+  });
+  const formSource = (): Connection => ({
+    ...qc(),
+    httpApplication: { version: 1, id: "synology-dsm", loginMode: "form" },
+  });
+  function inheritForm(view: ReturnType<typeof fixture>) {
+    const original = view.result.current.defaultSource!;
+    const target = anonymousRedirectConnection(
+      view.context.state.connections[0],
+      qcReview(undefined, "https://example-nas.de2.quickconnect.to/"),
+      withSynologyRedirectDefaults(
+        DEFAULT_HTTP_PROXY_POLICY,
+        view.result.current.defaults,
+      ),
+    );
+    registerRuntimeConnection(target, {
+      initialUrl: "https://example-nas.de2.quickconnect.to/",
+      redirectHops: 1,
+      assertCurrent: () => {},
+      synologyRedirectSource: original,
+    });
+    view.rerender({
+      connection: target,
+      session: { ...session, connectionId: target.id },
+    });
+    return target;
+  }
+  it("retains only a form-login revocation lease across anonymous handoffs", () => {
+    const view = fixture(formSource());
+    expect(view.result.current.formLoginCurrent).toBe(true);
+    const target = inheritForm(view);
+    expect(target).not.toHaveProperty("httpApplication");
+    expect(target).not.toHaveProperty("basicAuthPassword");
+    expect(target.httpAutoLogin).toBe(false);
+    expect(view.result.current.formLoginCurrent).toBe(true);
+    expect(() => view.result.current.assertFormLoginCurrent()).not.toThrow();
+    expect(JSON.stringify(view.result.current.defaultSource)).not.toContain(
+      "private",
+    );
+  });
+  it.each(["password", "mode", "allowlist"])(
+    "revokes original %s edits and cannot re-arm via ABA",
+    (field) => {
+      const original = formSource();
+      const view = fixture(original);
+      const target = inheritForm(view);
+      view.context.state.connections = [
+        {
+          ...original,
+          ...(field === "password"
+            ? { basicAuthPassword: "changed" }
+            : field === "mode"
+              ? {
+                  httpApplication: {
+                    version: 1 as const,
+                    id: "synology-dsm" as const,
+                    loginMode: "manual" as const,
+                  },
+                }
+              : { httpTrustedRedirectDestinations: grant() }),
+        },
+      ];
+      view.rerender({
+        connection: target,
+        session: { ...session, connectionId: target.id },
+      });
+      expect(view.result.current.formLoginCurrent).toBe(false);
+      expect(() => view.result.current.assertFormLoginCurrent()).toThrow();
+      view.context.state.connections = [original];
+      view.rerender({
+        connection: target,
+        session: { ...session, connectionId: target.id },
+      });
+      expect(() => view.result.current.assertFormLoginCurrent()).toThrow();
+    },
+  );
+  it.each(["revision", "scope", "locked"])(
+    "revokes inherited vault %s without resolving destination credentials",
+    (change) => {
+      const vault: DatabaseCredentialVaultApi = {
+        scope: { databaseId: "db-a", generation: 8 },
+        changeRevision: 3,
+        list: vi.fn(),
+        resolve: vi.fn(),
+        compareAndSwap: vi.fn(),
+      };
+      const original = {
+        ...formSource(),
+        credentialSource: {
+          kind: "vault" as const,
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      };
+      const view = fixture(original, true, vault);
+      const target = inheritForm(view);
+      expect(view.result.current.formLoginCurrent).toBe(true);
+      view.context.credentialVault = {
+        ...vault,
+        ...(change === "revision"
+          ? { changeRevision: 4 }
+          : {
+              scope:
+                change === "locked"
+                  ? null
+                  : { databaseId: "db-a", generation: 9 },
+            }),
+      };
+      view.rerender({
+        connection: target,
+        session: { ...session, connectionId: target.id },
+      });
+      expect(() => view.result.current.assertFormLoginCurrent()).toThrow();
+      expect(view.result.current.formLoginCurrent).toBe(false);
+      expect(vault.resolve).not.toHaveBeenCalled();
+      expect(vault.list).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps the credential lease fail-closed while database availability is absent", () => {
+    const view = fixture(formSource());
+    const target = inheritForm(view);
+    view.context.databaseAvailability.status = "locked";
+    view.rerender({
+      connection: target,
+      session: { ...session, connectionId: target.id },
+    });
+    expect(view.result.current.defaultSource?.formLogin).toBeDefined();
+    expect(() => view.result.current.assertFormLoginCurrent()).toThrow();
+  });
+  it("does not create deferred login intent for unsaved or manual sources", () => {
+    const unsaved = fixture(formSource(), false);
+    expect(unsaved.result.current.defaultSource?.formLogin).toBeUndefined();
+    unsaved.unmount();
+    const manual = fixture({
+      ...formSource(),
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "manual" },
+    });
+    expect(manual.result.current.defaultSource?.formLogin).toBeUndefined();
   });
   it.each([true, false])(
     "keeps the Synology budget with defaults off through an unrelated manual hop (saved=%s)",

@@ -442,6 +442,10 @@ export function useWebBrowser(session: ConnectionSession) {
   const synologyRedirectOriginalOrigin = redirectTrust.defaults?.originalOrigin;
   const redirectBudgetRef = useRef(redirectTrust.redirectBudget);
   redirectBudgetRef.current = redirectTrust.redirectBudget;
+  const assertFormLoginCurrentRef = useRef(
+    redirectTrust.assertFormLoginCurrent,
+  );
+  assertFormLoginCurrentRef.current = redirectTrust.assertFormLoginCurrent;
   const proxyOptions = useMemo(() => {
     try {
       const policy = withSynologyRedirectDefaults(
@@ -520,6 +524,7 @@ export function useWebBrowser(session: ConnectionSession) {
     connection?.httpProxyPolicy,
     redirectTrust.defaults,
     redirectTrust.redirectBudget?.profile,
+    redirectTrust.formLoginCurrent,
     connection?.httpHeaders,
     connection?.httpFormAutomation,
     connection ? runtimeCredentialTargetKey(connection) : null,
@@ -1316,6 +1321,13 @@ export function useWebBrowser(session: ConnectionSession) {
       // Session may already be gone
     }
   }, []);
+  const cancelPendingContinuation = useCallback(() => {
+    const navigation = getRuntimeWebNavigation(session.connectionId);
+    const continuation = navigation?.nativeContinuation;
+    if (!continuation) return;
+    delete navigation!.nativeContinuation;
+    continuation.cancel();
+  }, [session.connectionId]);
 
   const redirectReview = useHttpRedirectReview({
     trust: redirectTrust,
@@ -1409,6 +1421,7 @@ export function useWebBrowser(session: ConnectionSession) {
     )
       return;
     reviewedFlowStartedRef.current = null;
+    cancelPendingContinuation();
     navGenRef.current += 1;
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
@@ -1423,7 +1436,13 @@ export function useWebBrowser(session: ConnectionSession) {
         "The owning database was locked, changed or closed. Reopen it and explicitly reload to start a new login attempt.",
       ),
     );
-  }, [reviewedFlowScope, stopProxy, applyNavigationFailure, clearFrame]);
+  }, [
+    reviewedFlowScope,
+    stopProxy,
+    applyNavigationFailure,
+    clearFrame,
+    cancelPendingContinuation,
+  ]);
 
   // ── Navigation ─────────────────────────────────────────────
   const navigateToUrl = useCallback(
@@ -1511,14 +1530,18 @@ export function useWebBrowser(session: ConnectionSession) {
           if (gen !== navGenRef.current)
             throw new Error("The website navigation was cancelled.");
         });
-        let assertReviewedFlow = () => {};
+        // Retain this attempt's lease: a later render changing to manual must
+        // not replace its post-await guard with a no-op.
+        const assertFormLease = assertFormLoginCurrentRef.current;
+        let assertReviewedFlow = () => assertFormLease?.();
         const unsupportedVault =
           connection && getVaultRuntimeUnsupportedMessage(connection);
         if (unsupportedVault) throw new Error(unsupportedVault);
         if (
           ["bitwarden", "synology"].includes(
             applicationAuth.login?.loginFlow ?? "",
-          )
+          ) ||
+          redirectTrust.defaultSource?.formLogin
         ) {
           const scope = reviewedFlowScopeRef.current;
           if (!scope)
@@ -1528,6 +1551,7 @@ export function useWebBrowser(session: ConnectionSession) {
           const assertLease = captureSessionDatabaseAccess(session);
           reviewedFlowStartedRef.current = scope;
           assertReviewedFlow = () => {
+            assertFormLease?.();
             assertLease();
             if (
               reviewedFlowScopeRef.current !== scope ||
@@ -1805,6 +1829,7 @@ export function useWebBrowser(session: ConnectionSession) {
       resolveVaultCredential,
       vaultSource,
       requireNetworkGuard,
+      redirectTrust.defaultSource?.formLogin,
     ],
   );
 
@@ -1830,6 +1855,7 @@ export function useWebBrowser(session: ConnectionSession) {
       sameHttpApplicationLogin(previous.auth.login, applicationAuth.login)
     )
       return;
+    cancelPendingContinuation();
     navGenRef.current += 1;
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
@@ -1853,6 +1879,7 @@ export function useWebBrowser(session: ConnectionSession) {
     stopProxy,
     applyNavigationFailure,
     clearFrame,
+    cancelPendingContinuation,
   ]);
 
   // Initial load

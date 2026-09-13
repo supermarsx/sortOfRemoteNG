@@ -7,6 +7,8 @@ mod vendor_referrer_document_tests;
 use super::*;
 use tokio::io::AsyncWrite;
 
+#[path = "http_quickconnect_deferred_login_tests.rs"]
+mod deferred_login_tests;
 #[path = "http_attempt_referrer_tests.rs"]
 mod referrer_tests;
 

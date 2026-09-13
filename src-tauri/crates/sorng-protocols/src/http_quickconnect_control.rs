@@ -806,6 +806,17 @@ async fn exchange(
             .probe_identities
             .learn(exchange.sequence, exchange.alias, &json);
     }
+    if status.is_success() && exchange.route == discovered::Route::Probe {
+        exchange
+            .state
+            .network
+            .with_current_document(exchange.sequence, || {
+                if let Some(attempt) = &exchange.state.attempt {
+                    attempt.record_deferred_login_probe(exchange.alias, &exchange.url);
+                }
+            })
+            .map_err(|detail| (Diagnostic::StaleDocument, detail))?;
+    }
     let mut builder = Response::builder()
         .status(status.as_u16())
         .extension(Diagnostic::UpstreamStatus)

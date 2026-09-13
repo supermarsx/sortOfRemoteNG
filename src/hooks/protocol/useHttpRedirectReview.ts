@@ -5,6 +5,7 @@ import type {
   ConnectionSession,
 } from "../../types/connection/connection";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
+import { resolveHttpApplicationLogin } from "../../utils/auth/httpApplicationLogin";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import type { useHttpRedirectTrust } from "./useHttpRedirectTrust";
 import {
@@ -501,6 +502,25 @@ export function useHttpRedirectReview(options: Options) {
         receipt.trust?.synologySource ??
         captured.trust?.defaultSource ??
         sourceNavigation?.synologyRedirectSource;
+      const sourceLogin = resolveHttpApplicationLogin(captured.connection);
+      if (
+        synologyRedirectSource &&
+        !synologyRedirectSource.savedConnectionId &&
+        sourceLogin.loginFlow === "synology" &&
+        sourceLogin.autoLogin
+      ) {
+        // Native may hold the original form intent, but an unsaved source has
+        // no durable credential-identity lease to revoke on later hops.
+        assertSourceBudgetCurrent();
+        await withinDeadline(() =>
+          captured.stopSource(receipt.review.sessionId),
+        );
+        if (live.current && token === action.current)
+          setError(
+            "Save and reopen the original Synology connection before continuing Automatic form login across redirects. The previous login session was stopped; no credentials were transferred.",
+          );
+        return;
+      }
       // Explicit credential forwarding is a separate flow, not anonymous
       // continuity. Ordinary stop below revokes any unclaimed native transfer.
       const transferContinuation =

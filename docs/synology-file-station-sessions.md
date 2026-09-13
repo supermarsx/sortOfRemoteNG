@@ -49,6 +49,20 @@ the username screen, selects “remember me,” or retries a rejected password.
 Advanced selector, timing, extra-field and fill-only overrides are not supported
 by this fixed staged flow. Other DSM layouts remain manual.
 
+For a **saved** QuickConnect connection using **Automatic form login**, the
+original login can resume once after an approved same-NAS HTTPS handoff. The
+native proxy waits for matching NAS identity evidence and a successful primary
+DSM login page before making that original form login available. QuickConnect
+portals remain anonymous: the redirected connection does not receive a copied
+password/profile, HTTP Authorization, or another origin's cookies. This is not
+general saved-login forwarding, automatic 2FA consent, or proof of sign-in.
+
+After updating the app, changing the original credentials or database/vault
+access, or letting the attempt expire, **close the tab and reopen the original
+saved connection**. Reloading the anonymous redirected tab does not recover
+the original login intent. An unsaved connection must first be saved and
+reopened before Automatic form login can continue across redirects.
+
 Authenticator codes can be entered manually. To opt into automatic codes, add
 the account's authenticator in the connection's 2FA settings, then select
 **Automatic 2FA → DSM 7 verification code**, choose that authenticator, enable

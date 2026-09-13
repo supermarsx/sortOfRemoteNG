@@ -147,6 +147,10 @@ impl SynologyQuickConnectDefaults {
             && same_nas
     }
 
+    pub(super) fn permits_nas_origin(&self, destination: &Url) -> bool {
+        self.permits_regional_origin(destination) || self.permits_direct_origin(destination)
+    }
+
     pub fn validate(&self, current_target: &Url) -> Result<(), String> {
         let destinations = self.origins().map_err(str::to_string)?;
         let current = current_target.origin().ascii_serialization();

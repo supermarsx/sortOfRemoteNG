@@ -106,6 +106,14 @@ a saved login. Configured login forwarding still requires its separate explicit
 approval. Source cookies, secret headers, query additions and certificate pins
 are not inherited by the destination.
 
+The saved Synology **Automatic form login** flow has a separate, one-use native
+intent: after a verified same-NAS HTTPS handoff and matching primary DSM login
+page, it can resume the original form login without sending it to a portal or
+copying credentials onto the anonymous connection. This does not enable general
+credential forwarding or share cookies across origins. See
+[DSM website sign-in](synology-file-station-sessions.md#dsm-website-sign-in)
+for the original-connection, expiry and reopen requirements.
+
 Each hop still uses a one-use native redirect receipt and a fresh protected
 proxy session, with HTTPS trust checked independently. There is no direct
 browser fallback, native cross-origin follow, blanket QuickConnect grant or

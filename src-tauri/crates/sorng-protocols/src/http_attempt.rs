@@ -1,5 +1,6 @@
 //! Volatile QuickConnect handoff state. Only consumed native receipts transfer
-//! ownership; no origin, cookie, credential or TLS permission is learned here.
+//! ownership; a receipt learns no credential/TLS permission. Separately retained
+//! original Synology form consent can authorize one admitted NAS login sequence.
 use super::{BasicAuthProxyConfig, BrowserRedirectProfile, HttpProxyPolicy, UpstreamAuthMode};
 use reqwest::{
     cookie::CookieStore,
@@ -43,6 +44,7 @@ struct AttemptState {
     connectors: HashMap<String, (u8, u32)>,
     http_cycle: Option<HttpRedirectCycle>,
     provider_cookies: super::quickconnect_control::ProviderControlCookies,
+    deferred_login: Option<super::synology_login::DeferredSynologyLogin>,
 }
 
 /// Native-only classified receipt evidence, never a route/trust grant.
@@ -70,6 +72,7 @@ struct Attempt {
     upstream_proxy: Option<String>,
     min_tls: String,
     policy: HttpProxyPolicy,
+    deferred_synology: bool,
     state: Mutex<AttemptState>,
 }
 
@@ -86,6 +89,146 @@ pub struct AttemptSession {
 }
 
 impl AttemptSession {
+    /// Native command/fixture seam: after capture, portal HTTP state contains
+    /// neither source credentials nor generic automatic-login authority.
+    #[doc(hidden)]
+    pub fn strip_deferred_login_config(&self, config: &mut BasicAuthProxyConfig) {
+        if self.attempt.deferred_synology {
+            use zeroize::Zeroize;
+            config.username.zeroize();
+            config.password.zeroize();
+            config.upstream_auth_mode = UpstreamAuthMode::None;
+            config.http_auto_login = false;
+        }
+    }
+
+    pub(crate) fn uses_deferred_synology_login(&self) -> bool {
+        self.attempt.deferred_synology
+    }
+
+    fn expire_login_after(&self, duration: Duration) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let weak = Arc::downgrade(&self.attempt);
+        runtime.spawn(async move {
+            tokio::time::sleep(duration).await;
+            if let Some(attempt) = weak.upgrade() {
+                if let Ok(mut state) = attempt.state.lock() {
+                    if let Some(login) = state.deferred_login.as_mut() {
+                        login.expire();
+                    }
+                }
+            }
+        });
+    }
+
+    // Caller holds the current native document lease after successful CORS,
+    // identity and HTTP-status validation; this adds only login-purpose proof.
+    pub(super) fn record_deferred_login_probe(&self, alias: &str, target: &Url) {
+        if self.attempt.defaults.nas_alias().as_deref() != Some(alias)
+            || !self.attempt.defaults.permits_nas_origin(target)
+        {
+            return;
+        }
+        if let Ok(mut state) = self.attempt.state.lock() {
+            if self.current(&state) {
+                if let Some(login) = state.deferred_login.as_mut() {
+                    login.record_probe(target.origin().ascii_serialization());
+                }
+            }
+        }
+    }
+
+    pub(super) fn bind_deferred_login_document(&self, target: &Url, sequence: u64) {
+        let bound = self.attempt.state.lock().ok().is_some_and(|mut state| {
+            let tls_admitted = state
+                .origins
+                .get(&self.origin)
+                .is_some_and(|origin| origin.tls_identity.0 || origin.tls_identity.1.is_some());
+            if !self.current(&state)
+                || !tls_admitted
+                || target.origin().ascii_serialization() != self.origin
+                || !self.attempt.defaults.permits_nas_origin(target)
+            {
+                return false;
+            }
+            state
+                .deferred_login
+                .as_mut()
+                .is_some_and(|login| login.bind(&self.session_id, sequence, target))
+        });
+        if bound {
+            self.expire_login_after(super::synology_login::STAGE_LIFETIME);
+        }
+    }
+
+    pub(crate) fn deferred_login_nonce(
+        &self,
+        network: &super::ProxyNetworkState,
+        sequence: u64,
+    ) -> Option<String> {
+        network
+            .with_current_document(sequence, || {
+                let mut state = self.attempt.state.lock().ok()?;
+                if !self.current(&state) {
+                    return None;
+                }
+                state
+                    .deferred_login
+                    .as_mut()?
+                    .nonce(&self.session_id, sequence)
+            })
+            .ok()
+            .flatten()
+    }
+
+    pub(crate) fn deferred_login_document(&self) -> Option<u64> {
+        let mut state = self.attempt.state.lock().ok()?;
+        if !self.current(&state) {
+            return None;
+        }
+        state.deferred_login.as_mut()?.document(&self.session_id)
+    }
+
+    pub(crate) fn dispense_deferred_login(
+        &self,
+        network: &super::ProxyNetworkState,
+        nonce: &str,
+        phase: Option<&str>,
+    ) -> Result<serde_json::Value, &'static str> {
+        let sequence = self.deferred_login_document().ok_or(UNAVAILABLE)?;
+        let guarded = network.with_current_document(sequence, || {
+            let mut state = self.attempt.state.lock().map_err(|_| UNAVAILABLE)?;
+            if !self.current(&state) {
+                return Err(UNAVAILABLE);
+            }
+            state.deferred_login.as_mut().ok_or(UNAVAILABLE)?.dispense(
+                &self.session_id,
+                sequence,
+                nonce,
+                phase,
+            )
+        });
+        let result = match guarded {
+            Ok(result) => result,
+            Err(_) => {
+                if let Ok(mut state) = self.attempt.state.lock() {
+                    if self.current(&state) {
+                        if let Some(login) = state.deferred_login.as_mut() {
+                            login.cancel_issued();
+                        }
+                    }
+                }
+                Err(UNAVAILABLE)
+            }
+        };
+        if result.is_ok() && phase.is_none() {
+            self.expire_login_after(super::synology_login::STAGE_LIFETIME);
+        }
+        result
+    }
+
     pub(super) fn bind_referrer_document(&self, network: &Arc<super::network::ProxyNetworkState>) {
         if self.is_current() {
             if let Ok(mut source) = self.referrer_document.lock() {
@@ -622,6 +765,7 @@ fn end(state: &mut AttemptState) {
     state.connectors.clear();
     state.http_cycle = None;
     state.provider_cookies.clear();
+    state.deferred_login = None;
 }
 impl AttemptRegistry {
     pub fn restart(
@@ -635,6 +779,7 @@ impl AttemptRegistry {
         }
         self.tickets
             .retain(|_, ticket| !Arc::ptr_eq(&ticket.source.attempt, &source.attempt));
+        state.deferred_login = None;
         state.generation += 1;
         state.active = Some(session_id.into());
         Ok(AttemptSession {
@@ -771,6 +916,9 @@ impl AttemptRegistry {
                 return Err(UNAVAILABLE.into());
             }
             state.active = None;
+            if let Some(login) = state.deferred_login.as_mut() {
+                login.cancel_issued();
+            }
             state.generation += 1;
             ticket.released = true;
         } else {
@@ -846,11 +994,14 @@ impl AttemptRegistry {
             return Ok(None);
         }
         defaults.validate(target)?;
+        let deferred_login =
+            super::synology_login::DeferredSynologyLogin::capture(config, &defaults, target)?;
         let attempt = Arc::new(Attempt {
             id: uuid::Uuid::new_v4().to_string(),
             defaults,
             upstream_proxy: config.upstream_proxy_url.clone(),
             min_tls: config.min_tls_version.clone(),
+            deferred_synology: deferred_login.is_some(),
             policy,
             state: Mutex::new(AttemptState {
                 active: None,
@@ -861,12 +1012,16 @@ impl AttemptRegistry {
                 connectors: HashMap::new(),
                 http_cycle: None,
                 provider_cookies: Default::default(),
+                deferred_login,
             }),
         });
         let session = {
             let mut state = attempt.state.lock().map_err(|_| UNAVAILABLE)?;
             attach(attempt.clone(), &mut state, config, target, session_id)
         };
+        if session.uses_deferred_synology_login() {
+            session.expire_login_after(super::synology_login::INTENT_LIFETIME);
+        }
         Ok(Some(session))
     }
 }

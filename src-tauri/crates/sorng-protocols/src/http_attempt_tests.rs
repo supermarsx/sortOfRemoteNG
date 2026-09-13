@@ -1,5 +1,7 @@
 use super::*;
 use serde_json::json;
+#[path = "http_attempt_deferred_login_tests.rs"]
+mod deferred_login_tests;
 #[path = "http_attempt_provider_cookie_tests.rs"]
 mod provider_cookie_tests;
 #[path = "http_attempt_referrer_state_tests.rs"]

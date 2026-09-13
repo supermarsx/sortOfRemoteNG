@@ -516,7 +516,7 @@ mod proxy_target_validation_tests {
 #[tauri::command]
 pub async fn start_basic_auth_proxy(
     app: tauri::AppHandle,
-    config: BasicAuthProxyConfig,
+    mut config: BasicAuthProxyConfig,
     _service: tauri::State<'_, HttpServiceState>,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
@@ -565,6 +565,9 @@ pub async fn start_basic_auth_proxy(
         .attempts
         .start(&config, &validated_target, &session_id)?;
     let mut attempt_guard = AttemptStartGuard(attempt.clone());
+    if let Some(attempt) = &attempt {
+        attempt.strip_deferred_login_config(&mut config);
+    }
 
     // Each browser tab owns its unique returned session_id. connection_id is
     // metadata, not an eviction key: opening another tab for a saved connection

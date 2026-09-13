@@ -176,6 +176,35 @@ describe("reviewed DSM website login", () => {
     await vi.advanceTimersByTimeAsync(30000);
     expect(submit).toHaveBeenCalledOnce();
   });
+  it("waits for the DSM SPA account panel after deferred activation without releasing its password early", async () => {
+    document.body.innerHTML = '<div id="dsm-loading">Loading DSM</div>';
+    const pending = begin();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(submit).not.toHaveBeenCalled();
+
+    showAccount();
+    const next = vi.fn();
+    document
+      .querySelector('[syno-id="account-panel-next-btn"]')!
+      .addEventListener("click", next);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(next).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(
+      (document.querySelector('[name="password"]') as HTMLInputElement).value,
+    ).toBe("");
+
+    showPassword();
+    await vi.advanceTimersByTimeAsync(0);
+    await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(submit).toHaveBeenCalledOnce();
+    expect(
+      (document.querySelector('[name="current-password"]') as HTMLInputElement)
+        .value,
+    ).toBe(password);
+  });
   it.each([
     "foreign-action",
     "wrong-user",

@@ -23,6 +23,10 @@ import {
 import type { HttpRedirectReview } from "../../src/utils/protocol/httpRedirectReview";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 import { mergeLocalSessionUpdate } from "../../src/utils/session/sessionLifecycle";
+import type {
+  DatabaseCredentialSnapshot,
+  DatabaseCredentialVaultApi,
+} from "../../src/types/security/databaseCredentialVault";
 
 const h = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -41,6 +45,7 @@ const h = vi.hoisted(() => ({
   settingsReady: true,
   locked: false,
   availabilityGeneration: 1,
+  vault: undefined as DatabaseCredentialVaultApi | undefined,
   networkGuardStatus: {
     platform: "windows",
     frameNavigation: "enforced",
@@ -72,6 +77,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
     dispatch: h.dispatch,
     dispatchAndFlush: h.dispatchAndFlush,
     flushPendingSave: h.flushPendingSave,
+    credentialVault: h.vault,
     databaseAvailability: {
       status: "ready",
       databaseId: "owned",
@@ -180,6 +186,7 @@ beforeEach(() => {
   h.failSave = false;
   h.failSaveAfterDispatch = false;
   h.runtimeStart = null;
+  h.vault = undefined;
   h.dispatch.mockReset();
   h.connections = [
     {
@@ -613,6 +620,125 @@ describe("actual website redirect review integration", () => {
       await waitFor(() => expect(resumeCertificate).toBeTypeOf("function"));
     return { view, resumeCertificate: () => resumeCertificate?.() };
   }
+
+  function automaticSource(vault = false) {
+    h.connections[0] = {
+      ...h.connections[0],
+      basicAuthUsername: "fixture-user",
+      basicAuthPassword: "fixture-password",
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "form" },
+      ...(vault
+        ? {
+            credentialSource: {
+              kind: "vault",
+              credentialId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            },
+          }
+        : {}),
+    };
+    if (vault)
+      h.vault = {
+        scope: { databaseId: "owned", generation: 7 },
+        changeRevision: 1,
+        list: vi.fn(async (): Promise<DatabaseCredentialSnapshot> => ({
+          scope: { databaseId: "owned", generation: 7 },
+          revision: 1,
+          receipt: "native-fixture",
+          entries: [
+            {
+              id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              name: "Fixture",
+              createdAt: "2026-09-10",
+              updatedAt: "2026-09-10",
+              availableFacets: ["username", "password"],
+            },
+          ],
+        })),
+        resolve: vi.fn(async () => ({
+          username: "vault-user",
+          password: "vault-password",
+        })),
+        compareAndSwap: vi.fn(),
+      };
+  }
+  it.each(["password", "vault"])(
+    "revokes original %s while the anonymous descendant is active",
+    async (change) => {
+      automaticSource(change === "vault");
+      const { view } = await mountContinuation();
+      await waitFor(() => expect(proxies).toHaveLength(2));
+      const starts = h.invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      );
+      expect(starts[1][1].config).toMatchObject({
+        username: "",
+        password: "",
+        http_auto_login: false,
+        continuation_id: continuationId,
+      });
+      if (change === "vault") {
+        expect(h.vault!.resolve).toHaveBeenCalledTimes(1);
+        h.vault = { ...h.vault!, changeRevision: 2 };
+      } else
+        h.connections = [{ ...h.connections[0], basicAuthPassword: "changed" }];
+      view.rerender(<Harness />);
+      await waitFor(() =>
+        expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+          sessionId: "proxy-2",
+        }),
+      );
+      expect(view.container.querySelector("iframe")).toBeNull();
+      expect(proxies).toHaveLength(2);
+    },
+  );
+  it("cancels the pending native capsule when original vault access changes during descendant TLS", async () => {
+    automaticSource(true);
+    const { view, resumeCertificate } = await mountContinuation(true);
+    h.vault = { ...h.vault!, changeRevision: 2 };
+    view.rerender(<Harness />);
+    await waitFor(() =>
+      expect(h.invoke).toHaveBeenCalledWith("cancel_proxy_continuation", {
+        continuationId,
+      }),
+    );
+    await act(async () => resumeCertificate());
+    expect(proxies).toHaveLength(1);
+    expect(h.vault.resolve).toHaveBeenCalledTimes(1);
+    expect(view.container.querySelector("iframe")).toBeNull();
+  });
+  it("stops a late native descendant start after the original form mode changes", async () => {
+    automaticSource();
+    const invoke = h.invoke.getMockImplementation()!;
+    let resumeStart: (() => void) | undefined;
+    h.invoke.mockImplementation(async (command, args) => {
+      const result = await invoke(command, args);
+      if (command === "start_basic_auth_proxy" && args.config.continuation_id)
+        await new Promise<void>((resolve) => {
+          resumeStart = resolve;
+        });
+      return result;
+    });
+    const { view } = await mountContinuation();
+    await waitFor(() => expect(resumeStart).toBeTypeOf("function"));
+    h.connections = [
+      {
+        ...h.connections[0],
+        httpApplication: {
+          version: 1,
+          id: "synology-dsm",
+          loginMode: "manual",
+        },
+      },
+    ];
+    view.rerender(<Harness />);
+    await act(async () => resumeStart!());
+    await waitFor(() =>
+      expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+        sessionId: "proxy-2",
+      }),
+    );
+    expect(view.container.querySelector("iframe")).toBeNull();
+  });
 
   it("redeems a pathful continuation exactly once with the full reviewed URL and anonymous startup", async () => {
     const { view } = await mountContinuation();

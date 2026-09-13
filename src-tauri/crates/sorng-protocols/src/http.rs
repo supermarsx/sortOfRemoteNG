@@ -56,6 +56,8 @@ mod http_digest;
 mod network;
 #[path = "http_redirect.rs"]
 mod redirect;
+#[path = "http_synology_login.rs"]
+mod synology_login;
 #[path = "http_synology_redirect_defaults.rs"]
 mod synology_redirect_defaults;
 #[path = "http_upstream.rs"]
@@ -2185,6 +2187,28 @@ pub async fn axum_proxy_handler(
                 );
                 if let Some(attempt) = &state.attempt {
                     attempt.bind_referrer_document(&state.network);
+                }
+            }
+
+            // Login is bound to the selected primary, not the global issuance
+            // counter: an unrelated child response cannot replace this grant.
+            if state
+                .attempt
+                .as_ref()
+                .is_some_and(|attempt| attempt.uses_deferred_synology_login())
+                && document_request
+                && navigation_token.is_some()
+                && status_code.is_success()
+                && proxy_response::is_html(content_type.as_deref())
+                && !proxy_response::quickconnect_connector_asset(
+                    &String::from_utf8_lossy(&raw_bytes),
+                    &response_url,
+                )
+            {
+                if let Some(attempt) = &state.attempt {
+                    let _ = state.network.with_current_document(document_sequence, || {
+                        attempt.bind_deferred_login_document(&response_url, document_sequence);
+                    });
                 }
             }
 

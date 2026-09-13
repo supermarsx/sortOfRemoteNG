@@ -121,6 +121,44 @@ beforeEach(() => {
   h.invoke.mockResolvedValue(receipt);
 });
 describe("reviewed anonymous redirect handoff", () => {
+  it("stops unsaved Synology form intent instead of transferring its native capsule", async () => {
+    const id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    const form: Connection = {
+      ...source,
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "form" },
+    };
+    registerRuntimeConnection(form, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 0,
+      assertCurrent: () => {},
+      synologyRedirectSource: {
+        originalOrigin: receipt.sourceOrigin,
+        enabled: true,
+        databaseId: "db-a",
+        assertOwner: () => {},
+        assertIdentity: () => {},
+      },
+    });
+    h.invoke.mockImplementation(async (command, input) =>
+      command === "review_proxy_redirect"
+        ? input.receiptId
+          ? { ...receipt, continuationId: id }
+          : receipt
+        : undefined,
+    );
+    const view = fixture(true, true);
+    view.rerender({ ...view.options, connection: form });
+    await act(() => view.result.current.offer());
+    await act(() => view.result.current.accept("current"));
+    expect(view.stopSource).toHaveBeenCalledExactlyOnceWith("proxy");
+    expect(view.continueInTab).not.toHaveBeenCalled();
+    expect(view.result.current.error).toContain(
+      "Save and reopen the original Synology connection",
+    );
+    expect(h.invoke).toHaveBeenCalledWith("cancel_proxy_continuation", {
+      continuationId: id,
+    });
+  });
   it("hands off the native one-use ticket only in volatile navigation and explicitly preserves it during stop", async () => {
     const id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
     registerRuntimeConnection(source, {
