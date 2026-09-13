@@ -1,5 +1,9 @@
 use super::http::*;
 
+#[cfg(test)]
+#[path = "http_quickconnect_live_diagnostic_tests.rs"]
+mod quickconnect_live_diagnostic_tests;
+
 /// Fetch a URL with credentials and custom configuration
 #[tauri::command]
 pub async fn http_fetch(
