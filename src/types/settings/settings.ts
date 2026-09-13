@@ -601,6 +601,8 @@ export interface GlobalSettings {
   trustPolicy: TrustPolicy;
   /** Default HTTPS certificate trust policy; `inherit` defers to `trustPolicy`. */
   httpsTrustPolicy: InheritableTrustPolicy;
+  /** HTTPS-only trusted-CA preference; explicit restrictive trust policies still win. */
+  httpsCaTrustMode: "system" | "review";
   /** Default non-HTTPS/RDP certificate trust policy; `inherit` defers to `trustPolicy`. */
   certificateTrustPolicy: InheritableTrustPolicy;
   /** @deprecated Use `httpsTrustPolicy` for HTTPS certificates; retained for persisted compatibility. */

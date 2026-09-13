@@ -101,6 +101,21 @@ export function validateCertificateInspection(
   info: NativeTlsCertificateInfo,
 ): NativeTlsCertificateInfo {
   object(info);
+  if (info.ca_validation !== undefined) {
+    const validation = object(info.ca_validation);
+    if (
+      Object.keys(validation).some(
+        (key) => !["status", "proof_id"].includes(key),
+      ) ||
+      typeof validation.status !== "string" ||
+      !["verified", "unverified", "unavailable"].includes(validation.status) ||
+      (validation.proof_id !== undefined &&
+        (validation.status !== "verified" ||
+          typeof validation.proof_id !== "string" ||
+          !/^[A-Za-z0-9_-]{16,256}$/.test(validation.proof_id)))
+    )
+      fail();
+  }
   if (new TextEncoder().encode(JSON.stringify(info)).length > 2 * 1024 * 1024)
     fail();
   if (info.details !== undefined) details(info.details);

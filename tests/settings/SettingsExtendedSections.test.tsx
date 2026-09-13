@@ -585,6 +585,33 @@ describe("Extended settings section centralization", () => {
     });
   });
 
+  it("changes only the HTTPS CA preference and explains restrictive inherited policy", async () => {
+    const updateSettings = vi.fn();
+    render(
+      <TrustVerificationSettings
+        settings={{
+          ...trustSettings,
+          trustPolicy: "strict",
+          httpsTrustPolicy: "inherit",
+          httpsCaTrustMode: "system",
+        }}
+        updateSettings={updateSettings}
+      />,
+    );
+    const row = document.querySelector(
+      '[data-setting-key="httpsCaTrustMode"]',
+    ) as HTMLElement;
+    expect(row).toHaveTextContent("CA acceptance is inactive");
+    expect(row).toHaveTextContent("SSH and RDP are unchanged");
+    fireEvent.click(within(row).getByRole("combobox"));
+    fireEvent.mouseDown(
+      await screen.findByRole("option", {
+        name: "Review new HTTPS certificates",
+      }),
+    );
+    expect(updateSettings).toHaveBeenCalledWith({ httpsCaTrustMode: "review" });
+  });
+
   it("opens dedicated identity management from the settings actions", () => {
     const onOpenTrustCenter = vi.fn();
     render(

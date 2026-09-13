@@ -153,6 +153,28 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
         </div>
 
         <div className="p-4 space-y-3">
+          {type === "https" &&
+            inspection?.host === host &&
+            inspection.port === port && (
+              <p
+                className="text-xs text-[var(--color-textSecondary)]"
+                data-testid="https-ca-inspection"
+              >
+                Native CA verification at inspection:{" "}
+                {inspection.certificate.ca_validation?.status === "verified"
+                  ? "verified"
+                  : inspection.certificate.ca_validation?.status ===
+                      "unverified"
+                    ? "not verified"
+                    : "unavailable"}
+                .
+                {inspection.certificate.capture?.captured_at
+                  ? ` Captured ${inspection.certificate.capture.captured_at}.`
+                  : " This is the current inspection snapshot."}{" "}
+                This is separate from the stored-trust badge and is not a saved
+                pin or user approval.
+              </p>
+            )}
           {/* Connection info */}
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <Globe

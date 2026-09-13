@@ -35,6 +35,10 @@ import { InfoTooltip } from "../../ui/InfoTooltip";
 import { ManagedDatabaseUnlockForm } from "../../encryption/ManagedDatabaseUnlockForm";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import { LegacyTrustForceDelete } from "./LegacyTrustForceDelete";
+import {
+  normalizeHttpsCaTrustMode,
+  validateHttpsCaTrustMode,
+} from "../../../utils/security/httpsCaTrust";
 
 type Mgr = ReturnType<typeof useTrustVerificationSettings>;
 
@@ -721,6 +725,11 @@ function effectivePolicyDescription(value: TrustPolicy): string {
 const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const rootPolicy = mgr.settings.trustPolicy ?? "tofu";
   const httpsPolicy = mgr.settings.httpsTrustPolicy ?? "inherit";
+  const effectiveHttpsPolicy = resolveEffectiveTrustPolicy(
+    undefined,
+    httpsPolicy,
+    rootPolicy,
+  );
   const certificatePolicy = mgr.settings.certificateTrustPolicy ?? "inherit";
   const sshPolicy = mgr.settings.sshTrustPolicy ?? "always-ask";
   const rdpPolicy = mgr.settings.rdpTrustPolicy ?? "inherit";
@@ -785,6 +794,27 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             })
           }
           infoTooltip="Policy for HTTPS server certificates seen by the embedded web browser and HTTP-based features."
+        />
+
+        <SettingsSelectRow
+          settingKey="httpsCaTrustMode"
+          icon={<Lock size={16} />}
+          label="HTTPS trusted-CA certificates"
+          description={`${effectiveHttpsPolicy === "always-trust" ? "This preference is inactive: Always Trust is a separate unsafe override. Choose TOFU or a restrictive HTTPS policy to use certificate verification. " : effectiveHttpsPolicy === "strict" || effectiveHttpsPolicy === "always-ask" ? "CA acceptance is inactive: the effective global HTTPS policy requires review. " : "New HTTPS certificates may be accepted after native CA and hostname verification. "}CA acceptance never overrides per-connection restrictions, saved pins, revocations or forgotten approvals. Existing approved pins do not prompt again. SSH and RDP are unchanged.`}
+          value={normalizeHttpsCaTrustMode(mgr.settings.httpsCaTrustMode)}
+          options={[
+            {
+              value: "system",
+              label: "Accept certificates verified by trusted CAs",
+            },
+            { value: "review", label: "Review new HTTPS certificates" },
+          ]}
+          onChange={(value) =>
+            mgr.updateSettings({
+              httpsCaTrustMode: validateHttpsCaTrustMode(value),
+            })
+          }
+          infoTooltip="CA acceptance applies only when the effective HTTPS policy permits it. It does not save a permanent leaf-certificate pin or bypass invalid certificates. Review mode requests approval for new certificates, not every session. Reload open website tabs after changing this preference."
         />
 
         <SettingsSelectRow

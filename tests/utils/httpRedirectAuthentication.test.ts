@@ -59,7 +59,7 @@ describe("reviewed redirect saved-login forwarding", () => {
     const result = authenticatedRedirectConnection(source, review, false);
     expect(result.basicAuthPassword).toBe("synthetic-password");
     expect(result.httpRedirectAuthentication?.mode).toBe("saved-login");
-    expect(result.httpsTrustPolicy).toBe("always-ask");
+    expect(result.httpsTrustPolicy).toBe("inherit");
     expect(JSON.stringify(result)).not.toContain("never-transfer");
     expect(source).toHaveProperty("credentialSource.kind", "local");
     expect(

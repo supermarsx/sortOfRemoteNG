@@ -189,7 +189,7 @@ describe("persisted trusted redirect continuation", () => {
     expect(JSON.stringify(target)).not.toContain("never-forward-this");
     expect(target).toMatchObject({
       httpVerifySsl: true,
-      httpsTrustPolicy: "always-ask",
+      httpsTrustPolicy: "inherit",
       httpAutoLogin: false,
     });
     expect(getRuntimeWebNavigation(target.id)?.trustedRedirectSource).toBe(
@@ -231,7 +231,7 @@ describe("persisted trusted redirect continuation", () => {
       expect(JSON.stringify(target)).not.toContain("never-forward-this");
       expect(target).toMatchObject({
         httpVerifySsl: true,
-        httpsTrustPolicy: "always-ask",
+        httpsTrustPolicy: "inherit",
         httpAutoLogin: false,
       });
     },

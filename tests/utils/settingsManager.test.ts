@@ -485,10 +485,34 @@ describe("SettingsManager loadSettings", () => {
 
     expect(settings.trustPolicy).toBe("tofu");
     expect(settings.httpsTrustPolicy).toBe("inherit");
+    expect(settings.httpsCaTrustMode).toBe("system");
     expect(settings.certificateTrustPolicy).toBe("inherit");
     expect(settings.rdpTrustPolicy).toBe("inherit");
     expect(settings.sshTrustPolicy).toBe("always-ask");
     expect(settings.tlsTrustPolicy).toBe("tofu");
+  });
+
+  it("persists the HTTPS CA preference and conservatively loads malformed values", async () => {
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+    await manager.saveSettings({ httpsCaTrustMode: "review" });
+    SettingsManager.resetInstance();
+    expect(
+      (await SettingsManager.getInstance().loadSettings()).httpsCaTrustMode,
+    ).toBe("review");
+    await expect(
+      SettingsManager.getInstance().saveSettings({
+        httpsCaTrustMode: "unsafe",
+      } as unknown as Partial<GlobalSettings>),
+    ).rejects.toThrow();
+    SettingsManager.resetInstance();
+    fakeStoredSettings = null;
+    seedStoredSettings({
+      httpsCaTrustMode: "unsafe",
+    } as unknown as Partial<GlobalSettings>);
+    expect(
+      (await SettingsManager.getInstance().loadSettings()).httpsCaTrustMode,
+    ).toBe("review");
   });
 
   it("backfills HTTPS trust policy from legacy TLS only when HTTPS is absent", async () => {

@@ -87,7 +87,7 @@ export interface TrustRecord {
 }
 
 export type TrustVerifyResult =
-  | { status: "trusted" }
+  | { status: "trusted"; caValidated?: true }
   | { status: "first-use"; identity: TrustIdentity; requiresApproval?: boolean }
   | {
       status: "mismatch";
@@ -1733,12 +1733,20 @@ function serializeMutation<T>(
   return tracked;
 }
 
+export interface HttpsTrustVerificationOptions {
+  caProofId?: string;
+  proxyUrl?: string;
+  caTrustMode: "system" | "review";
+  policy: TrustPolicy;
+}
+
 export async function verifyIdentity<T extends TrustRecordType>(
   host: string,
   port: number,
   type: T,
   received: TrustIdentityFor<T>,
   connectionId?: string,
+  https?: HttpsTrustVerificationOptions,
 ): Promise<TrustVerifyResult> {
   const generation = scopeGeneration;
   await ensureTrustStoreReady();
@@ -1755,13 +1763,16 @@ export async function verifyIdentity<T extends TrustRecordType>(
   const nativeHost =
     existing?.nativeHost ?? encodeNativeHost(host, port, connectionId);
   const nativeIdentity = toNativeIdentity(type, received);
+  if (https && type !== "https")
+    throw new Error("HTTPS CA verification cannot authorize another protocol.");
   try {
     const result = await invokeTrustNative<NativeTrustVerifyResult>(
-      "trust_verify_identity",
+      https ? "verify_https_certificate_trust" : "trust_verify_identity",
       {
         host: nativeHost,
         recordType: type,
         identity: nativeIdentity,
+        ...(https ?? {}),
         ...(databaseId ? { expectedDatabaseId: databaseId } : {}),
       },
     );
@@ -1770,6 +1781,16 @@ export async function verifyIdentity<T extends TrustRecordType>(
       throw new Error("Malformed native trust verification response");
     }
     switch (result.status) {
+      case "ca-trusted": {
+        if (
+          !https ||
+          https.caTrustMode !== "system" ||
+          https.policy !== "tofu" ||
+          !https.caProofId
+        )
+          throw new Error("Unexpected native HTTPS CA trust decision");
+        return { status: "trusted", caValidated: true };
+      }
       case "trusted": {
         // Certificate validity is a separate warning, not expiration of the
         // native exact-fingerprint approval. Native `expired` below is the

@@ -50,6 +50,11 @@ export interface NativeCertificateChainEntry {
   details?: CertificateDetails;
 }
 export interface NativeTlsCertificateInfo {
+  /** Advisory display plus opaque native-owned proof; never authorization by itself. */
+  ca_validation?: {
+    status: "verified" | "unverified" | "unavailable";
+    proof_id?: string;
+  };
   fingerprint: string;
   subject?: string | null;
   issuer?: string | null;

@@ -84,6 +84,10 @@ import type {
   NativeTlsCertificateInfo,
 } from "../../types/security/certificateInspection";
 import { validateCertificateInspection } from "../../utils/security/certificateInspection";
+import {
+  normalizeHttpsCaTrustMode,
+  constrainRedirectHttpsPolicy,
+} from "../../utils/security/httpsCaTrust";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -472,7 +476,45 @@ export function useWebBrowser(session: ConnectionSession) {
     applicationAuth.login?.upstreamAuthMode,
     synologyRedirectOriginalOrigin,
   ]);
+  const httpsRedirectNavigation = getRuntimeWebNavigation(session.connectionId);
+  const originalHttpsConnectionId =
+    httpsRedirectNavigation?.trustedRedirectSource?.savedConnectionId ??
+    httpsRedirectNavigation?.synologyRedirectSource?.savedConnectionId;
+  const originalHttpsConnection = originalHttpsConnectionId
+    ? state.connections.find((item) => item.id === originalHttpsConnectionId)
+    : undefined;
+  const httpsPolicy = constrainRedirectHttpsPolicy(
+    resolveEffectiveTrustPolicy(
+      connection?.httpsTrustPolicy,
+      settings.httpsTrustPolicy,
+      settings.trustPolicy,
+      connection?.tlsTrustPolicy ?? settings.tlsTrustPolicy ?? "always-ask",
+    ),
+    (httpsRedirectNavigation?.redirectHops ?? 0) > 0,
+    originalHttpsConnection?.httpsTrustPolicy,
+    originalHttpsConnection?.tlsTrustPolicy,
+  );
+  const httpsCaTrustMode =
+    settingsReady === true && httpsPolicy === "tofu"
+      ? normalizeHttpsCaTrustMode(settings.httpsCaTrustMode)
+      : "review";
+  const httpsPolicyKey = stableJsonStringify([
+    httpsCaTrustMode,
+    httpsPolicy,
+    connection?.httpsTrustPolicy,
+    connection?.tlsTrustPolicy,
+    settings.httpsTrustPolicy,
+    settings.trustPolicy,
+    settings.tlsTrustPolicy,
+    connection?.httpVerifySsl,
+    originalHttpsConnectionId,
+    originalHttpsConnection?.httpsTrustPolicy,
+    originalHttpsConnection?.tlsTrustPolicy,
+  ]);
+  const httpsPolicyKeyRef = useRef(httpsPolicyKey);
+  httpsPolicyKeyRef.current = httpsPolicyKey;
   const proxyInputs = stableJsonStringify([
+    session.protocol === "https" ? httpsPolicyKey : null,
     connection?.httpProxyPolicy,
     redirectTrust.defaults,
     connection?.httpHeaders,
@@ -602,6 +644,8 @@ export function useWebBrowser(session: ConnectionSession) {
     null,
   );
   const trustResolveRef = useRef<((accept: boolean) => void) | null>(null);
+  const trustPromptRef = useRef(trustPrompt);
+  trustPromptRef.current = trustPrompt;
   const certPopupRef = useRef<HTMLDivElement>(null);
 
   // ── Proxy tracking ─────────────────────────────────────────
@@ -846,6 +890,7 @@ export function useWebBrowser(session: ConnectionSession) {
    * verification for the whole session.
    */
   const acceptedCertFingerprintRef = useRef<string | null>(null);
+  const requireCaVerificationRef = useRef(false);
   const LOAD_TIMEOUT_MS = 30_000;
   const armNavigationDeadline = useCallback(
     (generation: number, url: string) => {
@@ -932,12 +977,9 @@ export function useWebBrowser(session: ConnectionSession) {
     async (proxyUrl?: string): Promise<boolean> => {
       if (session.protocol !== "https") return true;
       const port = connection?.port || 443;
-      const policy = resolveEffectiveTrustPolicy(
-        connection?.httpsTrustPolicy,
-        settings.httpsTrustPolicy,
-        settings.trustPolicy,
-        connection?.tlsTrustPolicy ?? settings.tlsTrustPolicy ?? "always-ask",
-      );
+      const policy = httpsPolicy;
+      const policyKey = httpsPolicyKey;
+      requireCaVerificationRef.current = false;
       // Capture the navigation generation BEFORE the async gap so we can
       // detect whether a newer navigation has superseded us after the
       // await completes (e.g. React StrictMode double-mount race).
@@ -952,7 +994,8 @@ export function useWebBrowser(session: ConnectionSession) {
           abort.signal.aborted ||
           !mountedRef.current ||
           genBefore !== navGenRef.current ||
-          ownerScope !== trustOwnerScopeRef.current
+          ownerScope !== trustOwnerScopeRef.current ||
+          policyKey !== httpsPolicyKeyRef.current
         )
           throw new DOMException("Trust verification cancelled", "AbortError");
         if (getGlobalHttpProxyUrl({ failClosed: true }) !== proxyUrl)
@@ -966,8 +1009,7 @@ export function useWebBrowser(session: ConnectionSession) {
           assertOwner ??= captureSessionDatabaseAccess(session);
         assertOwner?.();
       };
-      let stage: "inspection" | "identity" | "verification" | "persistence" =
-        "inspection";
+      let stage: "inspection" | "identity" | "verification" = "inspection";
 
       try {
         const info = await invoke<NativeTlsCertificateInfo>(
@@ -1040,7 +1082,22 @@ export function useWebBrowser(session: ConnectionSession) {
         stage = "verification";
         const result = await retryTransientTrustRead(
           () =>
-            verifyIdentity(normalizedHostname, port, "https", identity, connId),
+            verifyIdentity(
+              normalizedHostname,
+              port,
+              "https",
+              identity,
+              connId,
+              {
+                caTrustMode: httpsCaTrustMode,
+                policy,
+                proxyUrl,
+                ...(info.ca_validation?.status === "verified" &&
+                info.ca_validation.proof_id
+                  ? { caProofId: info.ca_validation.proof_id }
+                  : {}),
+              },
+            ),
           abort.signal,
           assertCurrent,
         );
@@ -1050,32 +1107,13 @@ export function useWebBrowser(session: ConnectionSession) {
           // The cert was previously accepted (this session or a prior one).
           // Pin the proxy to the same fingerprint.
           acceptedCertFingerprintRef.current = identity.fingerprint;
-          return true;
-        }
-        if (
-          result.status === "first-use" &&
-          policy === "tofu" &&
-          !result.requiresApproval
-        ) {
-          stage = "persistence";
-          await trustIdentity(
-            normalizedHostname,
-            port,
-            "https",
-            identity,
-            false,
-            connId,
-          );
-          if (genBefore !== navGenRef.current) return false;
-          assertCurrent(0);
-          // P6c: TOFU auto-trusted on first contact — same as above.
-          acceptedCertFingerprintRef.current = identity.fingerprint;
+          requireCaVerificationRef.current = result.caValidated === true;
           return true;
         }
         if (
           result.status === "mismatch" ||
           result.status === "expired" ||
-          (result.status === "first-use" && result.requiresApproval) ||
+          result.status === "first-use" ||
           policy === "always-ask" ||
           policy === "strict"
         ) {
@@ -1110,9 +1148,7 @@ export function useWebBrowser(session: ConnectionSession) {
               ? "Unable to inspect the HTTPS certificate"
               : stage === "identity"
                 ? "Invalid HTTPS certificate identity"
-                : stage === "persistence"
-                  ? "Unable to save the HTTPS trust decision"
-                  : "Unable to verify HTTPS trust",
+                : "Unable to verify HTTPS trust",
             activeNavigationUrlRef.current,
             stage === "inspection" || stage === "identity"
               ? "Certificate inspection or identity validation failed on the configured route. The connection was not opened without the trust check."
@@ -1132,18 +1168,27 @@ export function useWebBrowser(session: ConnectionSession) {
       session,
       normalizedHostname,
       connection,
-      settings.httpsTrustPolicy,
-      settings.trustPolicy,
-      settings.tlsTrustPolicy,
+      httpsPolicy,
+      httpsPolicyKey,
+      httpsCaTrustMode,
       applyNavigationFailure,
       certificateScope,
       cancelTrustRead,
     ],
   );
 
+  const trustPromptGeneration = navGenRef.current;
   const handleTrustAccept = useCallback(
     async (remember = true) => {
-      const generation = navGenRef.current;
+      const generation = trustPromptGeneration;
+      const current = () =>
+        mountedRef.current &&
+        !!trustPrompt &&
+        trustPromptRef.current === trustPrompt &&
+        !!trustResolveRef.current &&
+        generation === navGenRef.current &&
+        httpsPolicyKey === httpsPolicyKeyRef.current;
+      if (!current()) return;
       armNavigationDeadline(generation, activeNavigationUrlRef.current);
       if (trustPrompt && certIdentity && remember) {
         const port = connection?.port || 443;
@@ -1156,9 +1201,9 @@ export function useWebBrowser(session: ConnectionSession) {
             true,
             connection?.id,
           );
-          if (generation !== navGenRef.current) return;
+          if (!current()) return;
         } catch (err) {
-          if (generation !== navGenRef.current) return;
+          if (!current()) return;
           debugLog("WebBrowser", "Failed to persist HTTPS trust decision", {
             err,
           });
@@ -1181,6 +1226,8 @@ export function useWebBrowser(session: ConnectionSession) {
       // Retain the user's accepted fingerprint so the next `navigateToUrl`
       // can pass a cert pin to the proxy. The proxy must not disable TLS
       // validation for arbitrary certificates after this trust decision.
+      if (!current()) return;
+      requireCaVerificationRef.current = false;
       acceptedCertFingerprintRef.current = certIdentity?.fingerprint ?? null;
       setTrustPrompt(null);
       trustResolveRef.current?.(true);
@@ -1193,6 +1240,8 @@ export function useWebBrowser(session: ConnectionSession) {
       connection,
       applyNavigationFailure,
       armNavigationDeadline,
+      trustPromptGeneration,
+      httpsPolicyKey,
     ],
   );
 
@@ -1579,6 +1628,10 @@ export function useWebBrowser(session: ConnectionSession) {
                   urlObj.protocol === "https:"
                     ? acceptedCertFingerprintRef.current
                     : null,
+                ...(urlObj.protocol === "https:" &&
+                requireCaVerificationRef.current
+                  ? { require_ca_verification: true }
+                  : {}),
                 connection_id: connection?.id ?? "",
                 // If the app has a global HTTP(S) proxy, the loopback
                 // mediator owns that outbound hop. The iframe still talks only

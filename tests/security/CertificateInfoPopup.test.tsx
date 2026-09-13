@@ -2,6 +2,7 @@ import React from "react";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CertificateInfoPopup } from "../../src/components/security/CertificateInfoPopup";
+import type { CertificateInspection } from "../../src/types/security/certificateInspection";
 import type {
   CertIdentity,
   SshHostKeyIdentity,
@@ -41,6 +42,7 @@ const renderPopup = ({
   currentIdentity = sshIdentity,
   trustRecord,
   requiresApproval,
+  inspection,
 }: {
   type?: TrustRecordType;
   host?: string;
@@ -48,6 +50,7 @@ const renderPopup = ({
   currentIdentity?: CertIdentity | SshHostKeyIdentity;
   trustRecord?: TrustRecord;
   requiresApproval?: boolean;
+  inspection?: CertificateInspection;
 } = {}) => {
   const TestHarness: React.FC = () => {
     const [isOpen, setIsOpen] = React.useState(true);
@@ -66,6 +69,7 @@ const renderPopup = ({
             currentIdentity={currentIdentity}
             trustRecord={trustRecord}
             requiresApproval={requiresApproval}
+            inspection={inspection}
             triggerRef={triggerRef}
             onClose={() => setIsOpen(false)}
           />
@@ -78,6 +82,29 @@ const renderPopup = ({
 };
 
 describe("CertificateInfoPopup", () => {
+  it("shows native CA verification separately from unknown stored trust", () => {
+    renderPopup({
+      type: "https",
+      port: 443,
+      currentIdentity: certIdentity,
+      inspection: {
+        host: "example.com",
+        port: 443,
+        generation: 1,
+        certificate: {
+          fingerprint: certIdentity.fingerprint,
+          ca_validation: { status: "verified" },
+        },
+      },
+    });
+    expect(screen.getByTestId("https-ca-inspection")).toHaveTextContent(
+      "Native CA verification at inspection: verified",
+    );
+    expect(screen.getByTestId("https-ca-inspection")).toHaveTextContent(
+      "not a saved pin or user approval",
+    );
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+  });
   beforeEach(() => {
     localStorage.clear();
     trustStoreMocks.updateTrustRecordNickname.mockClear();

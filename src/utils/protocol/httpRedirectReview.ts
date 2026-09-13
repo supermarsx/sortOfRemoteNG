@@ -1,6 +1,7 @@
 import type { Connection } from "../../types/connection/connection";
 import { DEFAULT_HTTP_PROXY_POLICY } from "../../types/connection/httpProxyPolicy";
 import { generateId } from "../core/id";
+import { redirectHttpsTrustPolicy } from "../security/httpsCaTrust";
 import {
   isSynologyDefaultRedirect,
   type EffectiveHttpProxyPolicy,
@@ -99,7 +100,10 @@ export function anonymousRedirectConnection(
     createdAt: now,
     updatedAt: now,
     httpVerifySsl: true,
-    httpsTrustPolicy: "always-ask",
+    httpsTrustPolicy: redirectHttpsTrustPolicy(
+      source.httpsTrustPolicy,
+      source.tlsTrustPolicy,
+    ),
     httpAutoLogin: false,
     httpProxyPolicy: {
       ...DEFAULT_HTTP_PROXY_POLICY,

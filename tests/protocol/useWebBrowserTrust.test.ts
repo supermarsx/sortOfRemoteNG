@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   trust: vi.fn(),
   dispatch: vi.fn(),
   policy: "tofu",
+  caMode: "system",
   proxy: "http://proxy.fixture:8080",
   proxyInvalid: false,
   verifySsl: true,
@@ -70,7 +71,10 @@ vi.mock("../../src/contexts/useConnections", () => ({
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
   useSettings: () => ({
-    settings: { httpsTrustPolicy: mocks.policy },
+    settings: {
+      httpsTrustPolicy: mocks.policy,
+      httpsCaTrustMode: mocks.caMode,
+    },
     settingsReady: mocks.settingsReady,
   }),
 }));
@@ -146,6 +150,7 @@ describe("HTTPS certificate and native trust stages", () => {
   beforeEach(() => {
     clearRuntimeConnectionsForTests();
     mocks.policy = "tofu";
+    mocks.caMode = "system";
     mocks.proxyInvalid = false;
     mocks.proxy = "http://proxy.fixture:8080";
     mocks.verifySsl = true;
@@ -867,25 +872,205 @@ describe("HTTPS certificate and native trust stages", () => {
     );
   });
 
-  it("retains TOFU for genuinely unseen hosts without a fresh-approval requirement", async () => {
-    mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
-    const { result } = renderHook(() => useWebBrowser(session));
-    await waitFor(() =>
-      expect(
-        mocks.invoke.mock.calls.some(
-          ([name]) => name === "start_basic_auth_proxy",
-        ),
-      ).toBe(true),
+  it("opens a native CA-approved HTTPS peer with CA plus pin enforcement, not persistence", async () => {
+    mocks.settingsReady = true;
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "get_tls_certificate_info"
+        ? {
+            ...cert,
+            ca_validation: { status: "verified", proof_id: "a".repeat(32) },
+          }
+        : command === "start_basic_auth_proxy"
+          ? proxy
+          : undefined,
     );
-    expect(mocks.trust).toHaveBeenCalledWith(
+    mocks.verify.mockResolvedValue({ status: "trusted", caValidated: true });
+    const { result } = renderHook(() => useWebBrowser(ownedSession));
+    await waitFor(() => expect(proxyStarts()).toHaveLength(1));
+    expect(mocks.verify).toHaveBeenCalledWith(
       "10.10.10.2",
       443,
       "https",
       expect.objectContaining({ fingerprint: cert.fingerprint }),
-      false,
       "fixture",
+      {
+        caTrustMode: "system",
+        policy: "tofu",
+        caProofId: "a".repeat(32),
+        proxyUrl: mocks.proxy,
+      },
     );
+    expect(proxyStarts()[0][1].config).toMatchObject({
+      require_ca_verification: true,
+      accepted_cert_fingerprint: cert.fingerprint,
+      verify_ssl: true,
+    });
+    expect(mocks.trust).not.toHaveBeenCalled();
     expect(result.current.trustPrompt).toBeNull();
+  });
+
+  it.each(["system", "review"])(
+    "keeps unknown certificates manual in %s mode despite native first-use",
+    async (mode) => {
+      mocks.settingsReady = true;
+      mocks.caMode = mode;
+      mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
+      const { result } = renderHook(() => useWebBrowser(ownedSession));
+      await waitFor(() =>
+        expect(result.current.trustPrompt?.status).toBe("first-use"),
+      );
+      expect(proxyStarts()).toHaveLength(0);
+      expect(mocks.trust).not.toHaveBeenCalled();
+      expect(mocks.verify.mock.calls[0][5].caTrustMode).toBe(mode);
+    },
+  );
+
+  it.each(["mode", "policy"])(
+    "revokes deferred CA acceptance when HTTPS %s changes",
+    async (change) => {
+      mocks.settingsReady = true;
+      let resolve!: (value: { status: string; caValidated: true }) => void;
+      mocks.verify.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const { result, rerender } = renderHook(() =>
+        useWebBrowser(ownedSession),
+      );
+      await waitFor(() => expect(mocks.verify).toHaveBeenCalledTimes(1));
+      if (change === "mode") mocks.caMode = "review";
+      else mocks.credentialOverrides = { httpsTrustPolicy: "strict" };
+      rerender();
+      await act(async () => resolve({ status: "trusted", caValidated: true }));
+      expect(proxyStarts()).toHaveLength(0);
+      expect(mocks.trust).not.toHaveBeenCalled();
+      expect(result.current.navigationFailure?.kind).toBe("invalid_navigation");
+    },
+  );
+
+  it("does not let a retained earlier approval clear a later CA-enforced launch", async () => {
+    mocks.settingsReady = true;
+    mocks.verify.mockResolvedValueOnce({ status: "first-use", identity: cert });
+    const { result } = renderHook(() => useWebBrowser(ownedSession));
+    await waitFor(() => expect(result.current.trustPrompt).not.toBeNull());
+    const staleAccept = result.current.handleTrustAccept;
+    await act(async () => result.current.handleTrustReject());
+    mocks.verify.mockResolvedValue({ status: "trusted", caValidated: true });
+    await act(async () => result.current.navigateToUrl("https://10.10.10.2/"));
+    await act(async () => staleAccept(false));
+    expect(proxyStarts()).toHaveLength(1);
+    expect(proxyStarts()[0][1].config.require_ca_verification).toBe(true);
+    expect(mocks.trust).not.toHaveBeenCalled();
+  });
+
+  it.each(["unsafe-global", "source-tightened"] as const)(
+    "preserves restrictive trust on a redirected runtime: %s",
+    async (scenario) => {
+      mocks.settingsReady = true;
+      const target: Connection = {
+        id: "redirect-fixture",
+        name: "Redirect",
+        hostname: "destination.invalid",
+        protocol: "https",
+        port: 443,
+        isGroup: false,
+        createdAt: "2026-09-13",
+        updatedAt: "2026-09-13",
+        httpVerifySsl: true,
+        httpsTrustPolicy: "inherit",
+        httpAutoLogin: false,
+      };
+      registerRuntimeConnection(target, {
+        initialUrl: "https://destination.invalid/",
+        redirectHops: 1,
+        assertCurrent: () => {},
+        trustedRedirectSource: {
+          databaseId: "owner",
+          savedConnectionId: "fixture",
+          originalOrigin: "https://10.10.10.2",
+          assertOwner: () => {},
+          assertIdentity: () => {},
+        },
+      });
+      if (scenario === "unsafe-global") {
+        mocks.policy = "always-trust";
+        mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
+        const { result } = renderHook(() =>
+          useWebBrowser({
+            ...ownedSession,
+            connectionId: target.id,
+            hostname: target.hostname,
+          }),
+        );
+        await waitFor(() =>
+          expect(result.current.trustPrompt?.status).toBe("first-use"),
+        );
+        expect(mocks.verify.mock.calls[0][5].policy).toBe("always-ask");
+        expect(proxyStarts()).toHaveLength(0);
+      } else {
+        let finish!: (value: { status: string; caValidated: true }) => void;
+        mocks.verify.mockReturnValue(
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+        );
+        const { rerender } = renderHook(() =>
+          useWebBrowser({
+            ...ownedSession,
+            connectionId: target.id,
+            hostname: target.hostname,
+          }),
+        );
+        await waitFor(() => expect(mocks.verify).toHaveBeenCalledTimes(1));
+        mocks.credentialOverrides = { httpsTrustPolicy: "strict" };
+        rerender();
+        await act(async () => finish({ status: "trusted", caValidated: true }));
+        expect(proxyStarts()).toHaveLength(0);
+      }
+      expect(mocks.trust).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not request automatic CA trust before persisted preferences are ready", async () => {
+    mocks.settingsReady = false;
+    mocks.caMode = "system";
+    mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
+    const { result } = renderHook(() => useWebBrowser(ownedSession));
+    await waitFor(() =>
+      expect(result.current.trustPrompt?.status).toBe("first-use"),
+    );
+    expect(mocks.verify.mock.calls[0][5].caTrustMode).toBe("review");
+    expect(proxyStarts()).toHaveLength(0);
+    expect(mocks.trust).not.toHaveBeenCalled();
+  });
+
+  it("cancels pending CA admission when settings readiness is revoked", async () => {
+    mocks.settingsReady = true;
+    let finish!: (value: { status: string; caValidated: true }) => void;
+    mocks.verify.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { rerender } = renderHook(() => useWebBrowser(ownedSession));
+    await waitFor(() => expect(mocks.verify).toHaveBeenCalledTimes(1));
+    expect(mocks.verify.mock.calls[0][5].caTrustMode).toBe("system");
+    mocks.settingsReady = false;
+    rerender();
+    await act(async () => finish({ status: "trusted", caValidated: true }));
+    expect(proxyStarts()).toHaveLength(0);
+    expect(mocks.trust).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-pin unseen HTTPS certificates without native CA authority", async () => {
+    mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(result.current.trustPrompt?.status).toBe("first-use"),
+    );
+    expect(proxyStarts()).toHaveLength(0);
+    expect(mocks.trust).not.toHaveBeenCalled();
   });
 
   it("pins an explicit session-only acceptance without persisting an unchecked Remember decision", async () => {
@@ -939,6 +1124,7 @@ describe("HTTPS certificate and native trust stages", () => {
         ],
       }),
       "fixture",
+      { caTrustMode: "review", policy: "tofu", proxyUrl: mocks.proxy },
     );
     const config = mocks.invoke.mock.calls.find(
       ([name]) => name === "start_basic_auth_proxy",
@@ -1145,7 +1331,7 @@ describe("HTTPS certificate and native trust stages", () => {
     expect(proxyStarts()).toHaveLength(0);
   });
 
-  it("never retries a TOFU persistence failure even when it is transient", async () => {
+  it("does not attempt legacy TOFU persistence even when persistence would fail", async () => {
     vi.useFakeTimers();
     mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
     mocks.trust.mockRejectedValue(new TransientTrustStoreError());
@@ -1153,10 +1339,9 @@ describe("HTTPS certificate and native trust stages", () => {
     await act(async () => {});
     await act(async () => vi.advanceTimersByTimeAsync(3_000));
     expect(mocks.verify).toHaveBeenCalledTimes(1);
-    expect(mocks.trust).toHaveBeenCalledTimes(1);
-    expect(result.current.navigationFailure?.title).toBe(
-      "Unable to save the HTTPS trust decision",
-    );
+    expect(mocks.trust).not.toHaveBeenCalled();
+    expect(result.current.navigationFailure).toBeNull();
+    expect(result.current.trustPrompt?.status).toBe("first-use");
     expect(proxyStarts()).toHaveLength(0);
   });
 

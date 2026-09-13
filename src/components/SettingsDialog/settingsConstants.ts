@@ -345,6 +345,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   trust: [
     "trustPolicy",
     "httpsTrustPolicy",
+    "httpsCaTrustMode",
     "certificateTrustPolicy",
     "sshTrustPolicy",
     "rdpTrustPolicy",

@@ -91,6 +91,26 @@ export const TRUST_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Trust Center",
   },
   {
+    key: "httpsCaTrustMode",
+    label: "HTTPS trusted-CA certificates",
+    description:
+      "Accept newly encountered HTTPS certificates verified by trusted certificate authorities, or review new certificates manually. Explicit policies and saved pins still apply.",
+    tags: ["https", "certificate", "ca", "approval", "browser", "ssl"],
+    synonyms: [
+      "trusted certificate authority",
+      "certificate prompts",
+      "system trust",
+    ],
+    values: [
+      "system",
+      "review",
+      "Accept certificates verified by trusted CAs",
+      "Review new HTTPS certificates",
+    ],
+    section: "trust",
+    sectionLabel: "Trust Center",
+  },
+  {
     key: "sshTrustPolicy",
     label: "SSH Host Key Policy",
     description:

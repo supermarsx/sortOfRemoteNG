@@ -384,6 +384,7 @@ export const defaultSettings: GlobalSettings = {
   enableAutocomplete: false,
   trustPolicy: "tofu",
   httpsTrustPolicy: "inherit",
+  httpsCaTrustMode: "system",
   certificateTrustPolicy: "inherit",
   tlsTrustPolicy: "tofu",
   sshTrustPolicy: "always-ask",

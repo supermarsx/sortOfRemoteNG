@@ -35,6 +35,10 @@ import {
 import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../types/connection/sessionQuickActions";
 import { normalizeSessionQuickActions } from "../connection/sessionQuickActions";
 import { normalizeWebsiteDarkModeSettings } from "../connection/websiteDarkMode";
+import {
+  normalizeHttpsCaTrustMode,
+  validateHttpsCaTrustMode,
+} from "../security/httpsCaTrust";
 import { DEFAULT_PASSWORD_POLICY } from "../../types/security/passwordPolicy";
 import { normalizePasswordPolicy } from "../security/passwordPolicy";
 import {
@@ -686,6 +690,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   enableAutocomplete: false,
   trustPolicy: "tofu",
   httpsTrustPolicy: "inherit",
+  httpsCaTrustMode: "system",
   certificateTrustPolicy: "inherit",
   tlsTrustPolicy: "tofu",
   sshTrustPolicy: "always-ask",
@@ -1197,6 +1202,9 @@ export class SettingsManager {
         normalizedStored.httpsTrustPolicy ??
         normalizedStored.tlsTrustPolicy ??
         DEFAULT_SETTINGS.httpsTrustPolicy,
+      httpsCaTrustMode: normalizeHttpsCaTrustMode(
+        normalizedStored.httpsCaTrustMode,
+      ),
       certificateTrustPolicy:
         normalizedStored.certificateTrustPolicy ??
         DEFAULT_SETTINGS.certificateTrustPolicy,
@@ -1299,6 +1307,10 @@ export class SettingsManager {
     };
     if ("showDocumentsIcon" in safePatch)
       safePatch.showDocumentsIcon = safePatch.showDocumentsIcon !== false;
+    if ("httpsCaTrustMode" in safePatch)
+      safePatch.httpsCaTrustMode = validateHttpsCaTrustMode(
+        safePatch.httpsCaTrustMode,
+      );
     if ("passwordPolicy" in safePatch)
       safePatch.passwordPolicy = normalizePasswordPolicy(
         safePatch.passwordPolicy,

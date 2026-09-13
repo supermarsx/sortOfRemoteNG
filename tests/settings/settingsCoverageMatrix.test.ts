@@ -182,6 +182,7 @@ function sampleValueFor(
     exportPassword: "coverage-export-password",
     trustPolicy: "strict",
     httpsTrustPolicy: "always-trust",
+    httpsCaTrustMode: "review",
     certificateTrustPolicy: "strict",
     tlsTrustPolicy: "strict",
     sshTrustPolicy: "strict",

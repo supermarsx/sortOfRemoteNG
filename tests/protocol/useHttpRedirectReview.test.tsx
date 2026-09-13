@@ -133,7 +133,7 @@ describe("reviewed anonymous redirect handoff", () => {
     const target = view.continueInTab.mock.calls[0][0] as Connection;
     expect(target.basicAuthPassword).toBe("private-password");
     expect(target.httpAutoLogin).toBe(false);
-    expect(target.httpsTrustPolicy).toBe("always-ask");
+    expect(target.httpsTrustPolicy).toBe("inherit");
   });
   it("replaces the current tab with a registered credential-free target after verified stop", async () => {
     const launch = vi.fn();
@@ -155,7 +155,7 @@ describe("reviewed anonymous redirect handoff", () => {
     expect(target).toMatchObject({
       httpAutoLogin: false,
       httpVerifySsl: true,
-      httpsTrustPolicy: "always-ask",
+      httpsTrustPolicy: "inherit",
     });
     expect(JSON.stringify(target)).not.toContain("private-");
     expect(source.basicAuthPassword).toBe("private-password");

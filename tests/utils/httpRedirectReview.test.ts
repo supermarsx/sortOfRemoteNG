@@ -123,7 +123,7 @@ describe("redirect review boundary", () => {
       hostname: "target.invalid",
       port: 443,
       httpVerifySsl: true,
-      httpsTrustPolicy: "always-ask",
+      httpsTrustPolicy: "inherit",
       httpAutoLogin: false,
       proxyChainId: "route",
       httpProxyPolicy: {

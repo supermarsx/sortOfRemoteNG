@@ -175,6 +175,76 @@ describe("native-backed trustStore", () => {
     resetTrustStoreCacheForTests();
   });
 
+  it("uses the scoped native HTTPS proof command and never persists a CA decision", async () => {
+    await ensureTrustStoreReady();
+    const original = native.invoke.getMockImplementation()!;
+    native.invoke.mockImplementation(async (command, args) =>
+      command === "verify_https_certificate_trust"
+        ? { status: "ca-trusted" }
+        : original(command, args),
+    );
+    const options = {
+      caTrustMode: "system" as const,
+      policy: "tofu" as const,
+      caProofId: "a".repeat(32),
+      proxyUrl: "http://route.test:8080",
+    };
+    expect(
+      await verifyIdentity(
+        "fixture.test",
+        443,
+        "https",
+        makeTlsIdentity("aa"),
+        "connection-fixture",
+        options,
+      ),
+    ).toEqual({ status: "trusted", caValidated: true });
+    expect(native.invoke).toHaveBeenCalledWith(
+      "verify_https_certificate_trust",
+      expect.objectContaining({
+        ...options,
+        host: expect.stringContaining("connection-fixture"),
+        recordType: "https",
+      }),
+    );
+    expect(
+      native.invoke.mock.calls.some(([command]) =>
+        command.startsWith("trust_store_identity"),
+      ),
+    ).toBe(false);
+  });
+  it.each([
+    {
+      caTrustMode: "review" as const,
+      policy: "tofu" as const,
+      caProofId: "a".repeat(32),
+    },
+    {
+      caTrustMode: "system" as const,
+      policy: "strict" as const,
+      caProofId: "a".repeat(32),
+    },
+    {
+      caTrustMode: "system" as const,
+      policy: "always-ask" as const,
+      caProofId: "a".repeat(32),
+    },
+    { caTrustMode: "system" as const, policy: "tofu" as const },
+  ])("rejects an inconsistent native CA decision for %j", async (options) => {
+    await ensureTrustStoreReady();
+    native.invoke.mockResolvedValueOnce({ status: "ca-trusted" });
+    await expect(
+      verifyIdentity(
+        "fixture.test",
+        443,
+        "https",
+        makeTlsIdentity("aa"),
+        undefined,
+        options,
+      ),
+    ).rejects.toThrow();
+  });
+
   it.each([
     "encryption storage transition in progress; retry after it completes",
     "encryption key transition in progress",
