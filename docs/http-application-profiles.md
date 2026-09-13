@@ -41,7 +41,33 @@ Sign in on the website and enter its authenticator or email-code prompt yourself
 
 For security keys, Windows Hello, external SSO, or incompatible challenges, select **Open Cloudflare in system browser** in the session. This explicit action opens only the fixed public HTTPS dashboard address, with no saved credentials, proxy URL, or current-page query attached. The system browser uses separate cookies and its own network route and TLS policy, outside this app's proxy and Trust Center. Signing in there does not authenticate the embedded tab. Embedded/custom browsers have limited Cloudflare challenge support, so this preset does not promise a successful embedded login. See [supported browsers](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/).
 
-## Joomla administrator path
+## Joomla versions and administrator path
+
+Under **Protocol → Application**, choose **Joomla Administrator** and select
+**Joomla version**: auto-detect reviewed Joomla 3–6 forms (the default), or a
+specific major version. This selects the reviewed password-form controls, not
+server version discovery, an upgrade, or permission to submit credentials.
+Choose **Automatic form login** separately; selector overrides remain
+authoritative. An unmatched override does not fall back to another field.
+Changing the version stops the previous protected session; reload explicitly.
+
+- **Joomla 3 and 4.0–4.1:** the optional `secretkey` field shares the password
+  form. With automatic form login, the reviewed username/password can be filled,
+  but the client pauses before submission whenever that field is present, even
+  if it already contains a code. Enter the required code and select Log in
+  yourself. It never infers that the field is a TOTP provider.
+- **Joomla 4.2+, 5 and 6:** the password form is followed by the site's separate
+  captive MFA flow when required. Complete that challenge manually. The core
+  email and authenticator providers use overlapping controls, so this preset
+  does not offer automatic Joomla MFA. A code prompt or completed fill is not
+  proof of successful authentication.
+
+The latest official release checked on 13 September 2026 was **Joomla 6.1.3**
+(18 August 2026), alongside 5.4.8. See the [official release listing](https://downloads.joomla.org/us/cms/joomla6).
+Compatibility here means source-reviewed core templates and synthetic tests,
+not live acceptance of every installation. Old Joomla compatibility is not a
+recommendation to deploy an obsolete server. CAPTCHA, passkeys, SSO, security
+extensions and customized templates can still require manual sign-in.
 
 The **Joomla Administrator** preset opens `/administrator/` by default, not the
 public site root. Under **Protocol → Application → Administrator path**, enter
@@ -61,7 +87,11 @@ use it. Selecting a path never enables automatic login.
 Joomla's official guide calls this the website address “appended with
 /administrator” and notes that security extensions may require an alternative
 login URL. See [Logging in to Joomla](https://guide.joomla.org/user-content-management/getting-started/getting-started-logging-in-to-joomla)
-and the [Joomla 5.4 administrator form](https://github.com/joomla/joomla-cms/blob/5.4-dev/administrator/modules/mod_login/tmpl/default.php).
+and the reviewed administrator templates for [3.10.12](https://github.com/joomla/joomla-cms/blob/3.10.12/administrator/modules/mod_login/tmpl/default.php),
+[4.1.5](https://github.com/joomla/joomla-cms/blob/4.1.5/administrator/modules/mod_login/tmpl/default.php),
+[4.2.0](https://github.com/joomla/joomla-cms/blob/4.2.0/administrator/modules/mod_login/tmpl/default.php),
+[5.4](https://github.com/joomla/joomla-cms/blob/5.4-dev/administrator/modules/mod_login/tmpl/default.php)
+and [6.1.3](https://github.com/joomla/joomla-cms/blob/6.1.3/administrator/modules/mod_login/tmpl/default.php).
 
 ## Analytics, CMS and database administration
 

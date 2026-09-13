@@ -13,6 +13,8 @@ import {
   getHttpApplicationLoginModes,
   normalizeHttpApplicationSettings,
   isSafeHttpApplicationLoginPath,
+  getJoomlaLoginSelectors,
+  JOOMLA_VERSION_OPTIONS,
 } from "../../../utils/connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "../../../utils/auth/httpCredentials";
 import type { Mgr } from "./types";
@@ -38,6 +40,10 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
     mgr.formData.httpApplication,
   );
   const profile = settings ? getHttpApplicationProfile(settings.id) : undefined;
+  const reviewedSelectors =
+    profile?.id === "joomla"
+      ? getJoomlaLoginSelectors(settings?.joomlaVersion)
+      : profile?.selectors;
   const fileApi = isSynologyFileConnection(mgr.formData);
   const credentials = resolveHttpBasicCredentials({
     ...mgr.formData,
@@ -186,6 +192,38 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
           />
           {profile.id === "joomla" && (
             <div className="max-w-xl space-y-2">
+              <label
+                htmlFor="joomla-version"
+                className="block text-sm font-medium"
+              >
+                Joomla version
+              </label>
+              <div className="max-w-sm">
+                <Select
+                  id="joomla-version"
+                  value={settings?.joomlaVersion ?? "auto"}
+                  options={[...JOOMLA_VERSION_OPTIONS]}
+                  searchable
+                  variant="form"
+                  onChange={(value) => {
+                    const selected = JOOMLA_VERSION_OPTIONS.find(
+                      (option) => option.value === value,
+                    );
+                    if (!selected) return;
+                    updateSettings({ joomlaVersion: selected.value });
+                  }}
+                />
+              </div>
+              <p className="text-xs text-[var(--color-textMuted)]">
+                Joomla 3 and 4.0–4.1 can request a secret code on the password
+                form: saved username/password may be filled, but submission
+                pauses for you to enter the code and submit yourself. Joomla
+                4.2+, 5 and 6 use a separate captive MFA challenge after the
+                password step. A code prompt is not proof that the password
+                succeeded; email, authenticator and security-key methods remain
+                manual. Version selection does not enable login or MFA, and
+                selector overrides are preserved.
+              </p>
               <label
                 htmlFor="joomla-administrator-path"
                 className="block text-sm font-medium"
@@ -421,7 +459,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                   ) : (
                     <>
                       Leave blank for{" "}
-                      {profile.selectors
+                      {reviewedSelectors
                         ? "the reviewed application selectors"
                         : "generic detection"}
                       . An unmatched override never falls back to a different
@@ -453,7 +491,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                         placeholder={
                           profile.capability === "custom-form"
                             ? SELECTOR_EXAMPLES[key]
-                            : (profile.selectors?.[key] ?? "Auto-detect")
+                            : (reviewedSelectors?.[key] ?? "Auto-detect")
                         }
                         onChange={(event) =>
                           updateSelector(key, event.target.value)

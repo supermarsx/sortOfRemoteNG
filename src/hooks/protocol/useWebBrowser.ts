@@ -1741,6 +1741,8 @@ export function useWebBrowser(session: ConnectionSession) {
       previousInputs === proxyInputs &&
       previous.profile?.id === connection?.httpApplication?.id &&
       previous.profile?.loginPath === connection?.httpApplication?.loginPath &&
+      previous.profile?.joomlaVersion ===
+        connection?.httpApplication?.joomlaVersion &&
       previous.auth.error === applicationAuth.error &&
       sameHttpApplicationLogin(previous.auth.login, applicationAuth.login)
     )

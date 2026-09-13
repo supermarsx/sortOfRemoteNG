@@ -58,6 +58,37 @@ export const HTTP_APPLICATION_CATEGORIES = {
 export type HttpApplicationCategory = keyof typeof HTTP_APPLICATION_CATEGORIES;
 export const CLOUDFLARE_DASHBOARD_URL = "https://dash.cloudflare.com/";
 
+export const JOOMLA_VERSION_OPTIONS = [
+  { value: "auto", label: "Auto-detect reviewed Joomla 3–6 forms" },
+  { value: "3", label: "Joomla 3 — legacy administrator" },
+  { value: "4", label: "Joomla 4 — administrator" },
+  { value: "5", label: "Joomla 5 — administrator" },
+  { value: "6", label: "Joomla 6 — administrator" },
+] as const;
+
+const JOOMLA_LEGACY_SUBMIT =
+  'form#form-login button.login-button:not([type]), form#form-login button.login-button[type="submit"]';
+const JOOMLA_MODERN_SUBMIT =
+  'form#form-login button#btn-login-submit[type="submit"]';
+
+/** Template selection only; custom overrides still take precedence at resolution. */
+export function getJoomlaLoginSelectors(
+  version: HttpApplicationSettings["joomlaVersion"] = "auto",
+): Readonly<HttpAutoLoginSelectors> {
+  return {
+    usernameSelector:
+      'form#form-login input#mod-login-username[name="username"]',
+    passwordSelector:
+      'form#form-login input#mod-login-password[name="passwd"][type="password"]',
+    submitSelector:
+      version === "3"
+        ? JOOMLA_LEGACY_SUBMIT
+        : version === "auto"
+          ? `${JOOMLA_MODERN_SUBMIT}, ${JOOMLA_LEGACY_SUBMIT}`
+          : JOOMLA_MODERN_SUBMIT,
+  };
+}
+
 const generic = (
   id: string,
   label: string,
@@ -388,16 +419,10 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     category: "business",
     capability: "known-form",
     loginPath: "/administrator/",
-    // Joomla 5.4 administrator/modules/mod_login/tmpl/default.php.
-    selectors: {
-      usernameSelector:
-        'form#form-login input#mod-login-username[name="username"]',
-      passwordSelector:
-        'form#form-login input#mod-login-password[name="passwd"][type="password"]',
-      submitSelector: 'form#form-login button#btn-login-submit[type="submit"]',
-    },
+    // Reviewed Joomla 3.10, 4.1/4.2, 5.4 and 6.1 administrator mod_login forms.
+    selectors: getJoomlaLoginSelectors(),
     description:
-      "Reviewed Joomla administrator login at /administrator/. Configure an explicit administrator path for a subdirectory or custom entry slug. This does not rename Joomla's administrator directory or bypass security extensions. Complete the captive MFA challenge after the password step; custom templates, query-secret extensions, security keys and SSO may require manual sign-in.",
+      "Reviewed Joomla 3–6 administrator forms at /administrator/. Choose auto-detection or a version-specific form and an existing custom administrator path. This does not rename Joomla's directory or bypass security extensions. Legacy same-form codes and modern captive MFA remain explicit manual steps; custom templates, security keys and SSO may need manual sign-in.",
   },
   {
     id: "drupal",
@@ -618,6 +643,10 @@ export function normalizeHttpApplicationSettings(
   const loginPathValid =
     raw.loginPath === undefined ||
     (id === "joomla" && isSafeHttpApplicationLoginPath(raw.loginPath));
+  const joomlaVersionValid =
+    raw.joomlaVersion === undefined ||
+    (id === "joomla" &&
+      JOOMLA_VERSION_OPTIONS.some(({ value }) => value === raw.joomlaVersion));
   const valid =
     raw.version === 1 &&
     !!profile &&
@@ -625,6 +654,7 @@ export function normalizeHttpApplicationSettings(
     getHttpApplicationLoginModes(profile).includes(loginMode) &&
     realmValid &&
     loginPathValid &&
+    joomlaVersionValid &&
     raw.invalid !== true;
   return {
     version: 1,
@@ -635,6 +665,12 @@ export function normalizeHttpApplicationSettings(
       : {}),
     ...(loginPathValid && typeof raw.loginPath === "string"
       ? { loginPath: raw.loginPath }
+      : {}),
+    ...(joomlaVersionValid && raw.joomlaVersion !== undefined
+      ? {
+          joomlaVersion:
+            raw.joomlaVersion as HttpApplicationSettings["joomlaVersion"],
+        }
       : {}),
     ...(!valid ? { invalid: true as const } : {}),
   };

@@ -27,8 +27,9 @@
  *   5. NEVER log the credential. The creds object is dropped from JS reach after
  *      the single fill+submit (no module-scope retention).
  *
- * MFA/CAPTCHA pages have no fillable primary login form -> `no-form` no-op; the
- * page passes through to the admin untouched.
+ * Separate MFA/CAPTCHA pages have no fillable primary login form. Joomla's
+ * legacy combined password/second-factor form is filled but left for manual
+ * submission; a secretkey field does not identify the second-factor method.
  *
  * Dependency-free, framework-agnostic, IIFE — safe to inline verbatim.
  * ==========================================================================*/
@@ -423,6 +424,61 @@
     );
   }
 
+  function isJoomlaPasswordForm(target) {
+    return !!(
+      target.form &&
+      target.form.id === "form-login" &&
+      target.user &&
+      target.user.id === "mod-login-username" &&
+      target.user.name === "username" &&
+      target.pw.id === "mod-login-password" &&
+      target.pw.name === "passwd"
+    );
+  }
+
+  function hasJoomlaTwoFactorField(target) {
+    // Joomla 3 and 4.0/4.1 share this optional same-form field. Its presence
+    // does not identify TOTP versus another method (or this account's setup).
+    // Even a prefilled/hidden field stays manual; never send an unreviewed OTP.
+    return !!(
+      isJoomlaPasswordForm(target) &&
+      target.form.querySelector('input#mod-login-secretkey[name="secretkey"]')
+    );
+  }
+
+  function manualJoomlaMfa(target) {
+    var status = target.form.querySelector("[data-sorng-joomla-mfa-status]");
+    if (!status) {
+      status = target.pw.ownerDocument.createElement("p");
+      status.setAttribute("data-sorng-joomla-mfa-status", "");
+      status.setAttribute("role", "status");
+      target.form.appendChild(status);
+    }
+    status.textContent =
+      "Username and password filled. Complete Joomla's two-factor field if required, then select Log in.";
+    return {
+      ok: false,
+      reason: "manual-mfa-required",
+      userFilled: true,
+      pwFilled: true,
+    };
+  }
+
+  function joomlaSubmissionTarget(target) {
+    if (!isJoomlaPasswordForm(target)) return null;
+    var value = target.submit && target.submit.getAttribute("formtarget");
+    if (value == null) value = target.form.getAttribute("target");
+    if (value == null) {
+      var base = target.pw.ownerDocument.querySelector("base[target]");
+      value = base && base.getAttribute("target");
+    }
+    // Do not let a reviewed login leave its protected frame via a button,
+    // form or document-base browsing-context override. Empty means _self.
+    value = (value || "").toLowerCase();
+    if (value && value !== "_self") throw new Error("unsafe-form-target");
+    return value;
+  }
+
   // ------------------------------------------------------------------------
   // 4. ORCHESTRATION — single attempt, observable result, no cred retention
   // ------------------------------------------------------------------------
@@ -432,6 +488,20 @@
       return { ok: false, reason: "no-form" };
     }
     if (!(ov && ov.submit)) target.submit = findSubmitButton(target);
+    var joomlaCapture = null;
+    var joomlaOptions = { fields: [] };
+    var validate;
+    if (isJoomlaPasswordForm(target)) {
+      try {
+        joomlaCapture = captureTarget(target, joomlaOptions);
+        validate = function () {
+          return sameCapturedTarget(joomlaCapture, ov, joomlaOptions);
+        };
+      } catch (_) {
+        return { ok: false, reason: "form-changed-or-unsafe" };
+      }
+    }
+    var joomlaMfa = hasJoomlaTwoFactorField(target);
     // Do not automatically send credentials to an external form action, even
     // when a login-looking form was served by the intended upstream page.
     var destination = target.submit && target.submit.getAttribute("formaction");
@@ -449,14 +519,36 @@
         return { ok: false, reason: "unsafe-form-action" };
       }
     }
-    var userOk = target.user ? fillField(target.user, creds.username) : true;
-    var pwOk = fillField(target.pw, creds.password);
-    if (!pwOk) {
-      // Event-dispatch fill didn't stick — try keystroke fallback once.
-      typeField(target.pw, creds.password);
-      if (target.user) typeField(target.user, creds.username);
-      pwOk = target.pw.value === creds.password;
+    var userOk;
+    var pwOk;
+    try {
+      userOk = target.user
+        ? fillField(target.user, creds.username, validate)
+        : true;
+      pwOk = fillField(target.pw, creds.password, validate);
+      if (!pwOk) {
+        // Event-dispatch fill didn't stick — try keystroke fallback once.
+        typeField(target.pw, creds.password, validate);
+        if (target.user) typeField(target.user, creds.username, validate);
+        pwOk = target.pw.value === creds.password;
+      }
+    } catch (_) {
+      return { ok: false, reason: "form-changed-or-unsafe" };
     }
+    if (joomlaCapture !== null) {
+      try {
+        if (
+          !validate() ||
+          target.user.value !== creds.username ||
+          target.pw.value !== creds.password
+        )
+          return { ok: false, reason: "form-changed-or-unsafe" };
+      } catch (_) {
+        return { ok: false, reason: "form-changed-or-unsafe" };
+      }
+    }
+    if (joomlaMfa || hasJoomlaTwoFactorField(target))
+      return manualJoomlaMfa(target);
     var how = submitForm(target, ov);
     return {
       ok: true,
@@ -580,12 +672,17 @@
       action.password
     )
       throw new Error("unsafe-form-action");
+    var methodOverride = submit && submit.getAttribute("formmethod");
+    var joomla = isJoomlaPasswordForm(target);
     var method = (
-      (submit && submit.getAttribute("formmethod")) ||
-      (form && form.getAttribute("method")) ||
-      ""
+      joomla && methodOverride != null
+        ? methodOverride
+        : methodOverride || (form && form.getAttribute("method")) || ""
     ).toLowerCase();
-    if (method && method !== "post") throw new Error("unsafe-form-method");
+    // A present empty/invalid button formmethod means GET, not inheritance.
+    // Known Joomla forms require POST; retain existing handler-only SPA rules.
+    if (joomla ? method !== "post" : method && method !== "post")
+      throw new Error("unsafe-form-method");
     return JSON.stringify([
       action.href,
       method,
@@ -593,6 +690,7 @@
       form && form.getAttribute("action"),
       submit && submit.getAttribute("formaction"),
       submit && submit.getAttribute("href"),
+      joomlaSubmissionTarget(target),
       target.user && [
         target.user.id,
         target.user.name,
@@ -675,6 +773,7 @@
       target: target,
       document: target.pw.ownerDocument,
       fingerprint: targetFingerprint(target),
+      joomlaMfa: hasJoomlaTwoFactorField(target),
       extras: extras,
     };
   }
@@ -875,6 +974,10 @@
                 fail();
                 return;
               }
+              if (captured.joomlaMfa || hasJoomlaTwoFactorField(target)) {
+                finish(manualJoomlaMfa(target));
+                return;
+              }
               var via = guardedSubmit(target, ov);
               finish({
                 ok: true,
@@ -924,6 +1027,7 @@
             [
               "unsafe-form-action",
               "unsafe-form-method",
+              "unsafe-form-target",
               "invalid-extra-field",
             ].indexOf(error.message) >= 0
               ? error.message

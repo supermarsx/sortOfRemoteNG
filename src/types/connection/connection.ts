@@ -83,6 +83,8 @@ export interface HttpApplicationSettings {
   realm?: string;
   /** Joomla administrator entry pathname only; never a URL or query secret. */
   loginPath?: string;
+  /** Reviewed Joomla form generation; omitted means auto-detect, never MFA consent. */
+  joomlaVersion?: "auto" | "3" | "4" | "5" | "6";
   /** Preserves fail-closed status when imported profile metadata is malformed. */
   invalid?: true;
 }

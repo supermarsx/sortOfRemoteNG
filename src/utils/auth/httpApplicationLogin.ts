@@ -4,6 +4,7 @@ import type {
 } from "../../types/connection/connection";
 import {
   getHttpApplicationProfile,
+  getJoomlaLoginSelectors,
   normalizeHttpApplicationSettings,
 } from "../connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "./httpCredentials";
@@ -197,7 +198,9 @@ export function resolveHttpApplicationLogin(
     };
   }
   const selectors = {
-    ...profile.selectors,
+    ...(settings.id === "joomla"
+      ? getJoomlaLoginSelectors(settings.joomlaVersion)
+      : profile.selectors),
     ...normalizeHttpApplicationSelectors(connection.httpAutoLoginSelectors),
   };
   if (

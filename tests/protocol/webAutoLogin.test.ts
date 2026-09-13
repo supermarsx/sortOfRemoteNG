@@ -172,6 +172,43 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     },
   );
 
+  it("revokes Joomla version changes even when both versions use the same modern selectors", async () => {
+    connections.push({
+      id: "conn-1",
+      protocol: "http",
+      username: "fixture-user",
+      password: "fixture-password",
+      httpApplication: {
+        version: 1,
+        id: "joomla",
+        loginMode: "form",
+        joomlaVersion: "4",
+      },
+    });
+    const { rerender } = renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+    connections[0] = {
+      ...connections[0],
+      httpApplication: {
+        version: 1,
+        id: "joomla",
+        loginMode: "form",
+        joomlaVersion: "5",
+      },
+    };
+    rerender();
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+        sessionId: "proxy-1",
+      }),
+    );
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("maps httpAutoLogin + camelCase selectors to the snake_case config when armed", async () => {
     connections.push({
       id: "conn-1",

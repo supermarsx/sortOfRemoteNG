@@ -33,6 +33,51 @@ const value = () =>
   JSON.parse(screen.getByTestId("value").textContent!) as Partial<Connection>;
 
 describe("HTTP Application subtab", () => {
+  it("selects Joomla versions without changing path, overrides, authority or consent", () => {
+    render(
+      <Fixture
+        value={{
+          ...initial,
+          httpApplication: {
+            version: 1,
+            id: "joomla",
+            loginMode: "manual",
+            loginPath: "/staff-entry/",
+          },
+          httpAutoLoginSelectors: { submitSelector: "#custom" },
+        }}
+      />,
+    );
+    expect(screen.getByLabelText("Joomla version")).toHaveTextContent(
+      "Auto-detect",
+    );
+    for (const version of ["3", "4", "5", "6"]) {
+      choose(
+        "Joomla version",
+        version === "3"
+          ? "Joomla 3 — legacy administrator"
+          : `Joomla ${version} — administrator`,
+      );
+      expect(value()).toMatchObject({
+        ...initial,
+        httpApplication: {
+          version: 1,
+          id: "joomla",
+          loginMode: "manual",
+          loginPath: "/staff-entry/",
+          joomlaVersion: version,
+        },
+        httpAutoLoginSelectors: { submitSelector: "#custom" },
+      });
+      expect(value().httpAutoMfa?.enabled).not.toBe(true);
+    }
+    expect(
+      screen.getByText(/Joomla 3 and 4.0–4.1 can request/),
+    ).toHaveTextContent(/submission pauses/);
+    expect(
+      screen.getByText(/Joomla 3 and 4.0–4.1 can request/),
+    ).toHaveTextContent(/4.2\+, 5 and 6 use a separate/);
+  });
   it("edits Joomla's administrator entry path without changing authority or granting login", () => {
     render(<Fixture />);
     choose("Website application", "Joomla Administrator");
