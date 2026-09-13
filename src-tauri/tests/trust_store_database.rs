@@ -82,6 +82,7 @@ fn record(host: &str, record_type: &str, identity: Identity) -> TrustRecord {
         identity,
         user_approved: true,
         nickname: None,
+        description: None,
         history: vec![],
         host_policy: None,
         host_policy_config: None,

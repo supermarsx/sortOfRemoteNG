@@ -19,6 +19,10 @@ import {
   onCurrentDatabaseChange,
 } from "../../utils/connection/databaseManager";
 import { getInvoke } from "../../utils/tauri/invoke";
+import {
+  normalizeTrustMetadata,
+  validateTrustDescription,
+} from "../../utils/security/trustMetadata";
 
 export interface TrustCenterRow {
   id: string;
@@ -412,7 +416,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
       );
       assertCurrent(target);
       setMessage(
-        `Exported ${records.length} identities from ${target.databaseName}. No password or private-key credentials were included.`,
+        `Exported ${records.length} identities from ${target.databaseName}, including their tags and descriptions. Connection passwords and private-key fields were not exported.`,
       );
     } catch (e) {
       if (
@@ -462,6 +466,8 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
           "Select a valid version 1 trust identity export (1–10,000 records).",
         );
       const records: TrustExportRecord[] = document.records;
+      for (const record of records)
+        validateTrustDescription(record.description);
       if (
         new Set(records.map((row) => `${row.record_type}:${row.host}`)).size !==
           records.length ||
@@ -611,6 +617,97 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
       finish();
     }
   };
+  const metadataScopeKey = JSON.stringify([databaseId, generation.current]);
+  const saveMetadata = async (
+    row: TrustCenterRow,
+    tags: string[],
+    description: string,
+    expectedScopeKey: string,
+  ): Promise<boolean> => {
+    if (!begin()) return false;
+    // Freeze the reviewed record before any queued native/runtime await.
+    row = structuredClone(row);
+    let target: ReturnType<typeof capture> | undefined;
+    try {
+      target = capture();
+      assertCurrent(target);
+      if (
+        expectedScopeKey !==
+        JSON.stringify([target.databaseId, target.generation])
+      )
+        throw new Error(
+          "The metadata editor expired. Reopen it in the owning database.",
+        );
+      const metadata = normalizeTrustMetadata(tags, description);
+      if (!row.record.scopeDecision)
+        throw new Error(
+          "Reviewed security metadata is unavailable. Refresh before editing this identity.",
+        );
+      const invoke = await getInvoke();
+      if (!invoke)
+        throw new Error("Trust management requires the desktop app.");
+      assertCurrent(target);
+      const result = await invoke<{ updated: number }>(
+        "trust_apply_reviewed_batch",
+        {
+          databaseId: target.databaseId,
+          action: "metadata",
+          targets: [
+            {
+              host: getTrustRecordStorageKey(
+                row.record,
+                row.connectionId,
+              ).slice(row.record.type.length + 1),
+              recordType: row.record.type,
+              fingerprint: row.record.identity.fingerprint,
+            },
+          ],
+          metadata: {
+            expectedTags: [...(row.record.tags ?? [])],
+            expectedDescription: row.record.description ?? null,
+            expectedDecision: structuredClone(row.record.scopeDecision),
+            ...metadata,
+          },
+        },
+      );
+      assertCurrent(target);
+      if (result.updated !== 1)
+        throw new Error(
+          "Metadata save was not confirmed. Refresh before retrying.",
+        );
+      await refresh(false);
+      assertCurrent(target);
+      const updated = row.connectionId
+        ? getAllPerConnectionTrustRecords()
+            .find((group) => group.connectionId === row.connectionId)
+            ?.records.find(
+              (record) => rowKey(record, row.connectionId) === row.id,
+            )
+        : getAllTrustRecords().find((record) => rowKey(record) === row.id);
+      if (
+        !updated ||
+        updated.identity.fingerprint !== row.record.identity.fingerprint ||
+        JSON.stringify(updated.tags ?? []) !== JSON.stringify(metadata.tags) ||
+        (updated.description ?? null) !== metadata.description
+      )
+        throw new Error(
+          "Metadata was written but readback could not be confirmed. Refresh and review before saving again.",
+        );
+      setMessage(
+        "Identity tags and description saved. Trust and fingerprints are unchanged.",
+      );
+      return true;
+    } catch (e) {
+      if (
+        mounted.current &&
+        (!target || target.generation === generation.current)
+      )
+        setError(errorText(e));
+      return false;
+    } finally {
+      finish();
+    }
+  };
   const searchableRows = useMemo(
     () =>
       rows.map((row) => ({
@@ -618,6 +715,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
         text: [
           row.record.host,
           row.record.nickname,
+          row.record.description,
           row.connectionId,
           row.connectionId && connectionName?.(row.connectionId),
           row.record.type,
@@ -690,5 +788,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
     importFile,
     importKnownHosts,
     rename,
+    metadataScopeKey,
+    saveMetadata,
   };
 }

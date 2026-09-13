@@ -871,6 +871,7 @@ pub fn preview_known_hosts(path: Option<String>) -> Result<KnownHostsPreview, St
                 identity: host_key_trust::identity(&info),
                 user_approved: false,
                 nickname: None,
+                description: None,
                 history: vec![],
                 host_policy: None,
                 host_policy_config: None,

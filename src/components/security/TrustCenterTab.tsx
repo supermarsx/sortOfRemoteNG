@@ -12,6 +12,7 @@ import {
   X,
   Settings,
   ArrowRightLeft,
+  Tags,
 } from "lucide-react";
 import {
   useTrustCenter,
@@ -22,6 +23,7 @@ import ConfirmDialog from "../ui/dialogs/ConfirmDialog";
 import { TrustIdentityImportDialog } from "./TrustIdentityImportDialog";
 import { TrustIdentityScopeDialog } from "./TrustIdentityScopeDialog";
 import TrustIdentityInspector from "./TrustIdentityInspector";
+import TrustIdentityMetadataDialog from "./TrustIdentityMetadataDialog";
 import TrustedRedirectDestinationsPanel from "./TrustedRedirectDestinationsPanel";
 import { useConnections } from "../../contexts/useConnections";
 import type { TrustPolicy } from "../../utils/auth/trustStore";
@@ -85,6 +87,19 @@ export default function TrustCenterTab({
   const [policy, setPolicy] = useState<TrustPolicy | "inherit">("inherit");
   const [tags, setTags] = useState("");
   const [bulkTags, setBulkTags] = useState("");
+  const [metadataSelection, setMetadataSelection] = useState<{
+    row: TrustCenterRow;
+    scopeKey: string;
+  } | null>(null);
+  const metadata =
+    metadataSelection?.scopeKey === mgr.metadataScopeKey
+      ? metadataSelection
+      : null;
+  useEffect(() => {
+    setMetadataSelection((previous) =>
+      previous?.scopeKey === mgr.metadataScopeKey ? previous : null,
+    );
+  }, [mgr.metadataScopeKey]);
   const [page, setPage] = useState(0);
   useEffect(() => {
     // A click may already belong to the newly hydrated scope when this passive
@@ -210,7 +225,7 @@ export default function TrustCenterTab({
                 <input
                   type="search"
                   aria-label="Search trusted identities"
-                  placeholder="Search host, fingerprint, certificate, or connection"
+                  placeholder="Search host, fingerprint, tags, description, or connection"
                   className={`${field} w-full !pl-8`}
                   value={mgr.query}
                   onChange={(event) => mgr.setQuery(event.target.value)}
@@ -540,6 +555,22 @@ export default function TrustCenterTab({
                             {row.record.host}
                           </span>
                         )}
+                        {row.record.description && (
+                          <span
+                            className="block max-w-56 truncate text-xs text-[var(--color-textMuted)]"
+                            title={row.record.description}
+                          >
+                            {row.record.description}
+                          </span>
+                        )}
+                        {!!row.record.tags?.length && (
+                          <span
+                            className="block max-w-56 truncate text-xs text-[var(--color-textSecondary)]"
+                            title={row.record.tags.join(", ")}
+                          >
+                            {row.record.tags.join(" · ")}
+                          </span>
+                        )}
                       </td>
                       <td className="p-3">
                         {row.record.type.toUpperCase()}
@@ -565,6 +596,21 @@ export default function TrustCenterTab({
                       </td>
                       <td className="p-3">
                         <div className="flex gap-1">
+                          <button
+                            type="button"
+                            className={button}
+                            disabled={disabled}
+                            aria-label={`Edit tags and description for ${row.record.host}`}
+                            data-tooltip="Edit searchable tags and description without changing trust"
+                            onClick={() =>
+                              setMetadataSelection({
+                                row: structuredClone(row),
+                                scopeKey: mgr.metadataScopeKey,
+                              })
+                            }
+                          >
+                            <Tags size={14} aria-hidden="true" />
+                          </button>
                           <button
                             type="button"
                             className={button}
@@ -756,6 +802,23 @@ export default function TrustCenterTab({
                 Review tag replacement
               </button>
             </TrustIdentityInspector>
+          )}
+          {metadata && (
+            <TrustIdentityMetadataDialog
+              key={`${metadata.scopeKey}:${metadata.row.id}`}
+              row={metadata.row}
+              busy={mgr.busy}
+              error={mgr.error}
+              onClose={() => setMetadataSelection(null)}
+              onSave={(tags, description) =>
+                mgr.saveMetadata(
+                  metadata.row,
+                  tags,
+                  description,
+                  metadata.scopeKey,
+                )
+              }
+            />
           )}
           <ConfirmDialog
             isOpen={

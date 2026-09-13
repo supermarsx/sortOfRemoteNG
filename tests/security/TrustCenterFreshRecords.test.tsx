@@ -91,6 +91,60 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("fresh native Trust Center records", () => {
+  it.each([true, false])(
+    "requires native metadata readback before reporting save success (persisted=%s)",
+    async (persisted) => {
+      fixture.records[0].description = "Old description";
+      fixture.records[0].tags = ["old"];
+      const invoke = fixture.invoke.getMockImplementation()!;
+      fixture.invoke.mockImplementation(async (command, args) => {
+        if (
+          command === "trust_apply_reviewed_batch" &&
+          args.action === "metadata"
+        ) {
+          if (persisted)
+            fixture.records[0] = {
+              ...fixture.records[0],
+              tags: args.metadata.tags,
+              description: args.metadata.description,
+            };
+          return { updated: 1 };
+        }
+        return invoke(command, args);
+      });
+      const { result } = renderHook(() => useTrustCenter());
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.rows[0].record.description).toBe("Old description");
+      await act(async () => {
+        expect(
+          await result.current.saveMetadata(
+            result.current.rows[0],
+            ["office"],
+            "Verified owner note",
+            result.current.metadataScopeKey,
+          ),
+        ).toBe(persisted);
+      });
+      if (persisted) {
+        expect(
+          getStoredIdentity("device.test", 443, "https")?.description,
+        ).toBe("Verified owner note");
+        act(() => result.current.setQuery("verified owner"));
+        expect(result.current.visible).toHaveLength(1);
+        expect(result.current.message).toContain("tags and description saved");
+      } else {
+        expect(result.current.message).toBeNull();
+        expect(result.current.error).toContain(
+          "readback could not be confirmed",
+        );
+      }
+    },
+  );
+  it("rejects malformed native descriptions instead of silently dropping metadata", async () => {
+    fixture.records[0].description = "\0";
+    await expect(refreshTrustStoreRecords()).rejects.toThrow();
+    expect(getAllTrustRecords()).toEqual([]);
+  });
   it("does not expose a suppressed legacy identity while bootstrap awaits its final native read", async () => {
     fixture.records = [];
     localStorage.setItem(

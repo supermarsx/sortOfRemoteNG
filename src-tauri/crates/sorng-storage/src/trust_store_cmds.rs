@@ -319,8 +319,16 @@ pub async fn trust_apply_reviewed_batch(
     targets: Vec<ReviewedTrustTarget>,
     policy: Option<TrustPolicy>,
     tags: Option<Vec<String>>,
+    metadata: Option<ReviewedTrustMetadata>,
 ) -> Result<ReviewedTrustOutcome, String> {
-    runtime()?.apply_reviewed_batch(&database_id, action, targets, policy, tags)
+    runtime()?.apply_reviewed_batch_with_metadata(
+        &database_id,
+        action,
+        targets,
+        policy,
+        tags,
+        metadata,
+    )
 }
 
 /// Snapshot of the active trust database (`databaseId: null` when none).

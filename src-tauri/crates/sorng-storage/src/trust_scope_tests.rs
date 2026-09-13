@@ -198,6 +198,7 @@ async fn reviewed_scope_move_preserves_decisions_suppresses_replay_and_never_swi
     record.revoked = true;
     record.tags = vec!["retained".into()];
     record.nickname = Some("friendly".into());
+    record.description = Some("Scope changes preserve this operator note.".into());
     record.host_policy = Some(TrustPolicy::Strict);
     record.trust_expires = Some("2030-01-01T00:00:00Z".into());
     record

@@ -38,6 +38,9 @@ mod scope;
 pub use scope::{ReviewedTrustScopeTarget, TrustScopeDecision};
 #[path = "trust_https.rs"]
 mod https;
+#[path = "trust_metadata.rs"]
+mod metadata;
+pub use metadata::ReviewedTrustMetadata;
 
 const MAX_TRUST_STORE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TRUST_RECORDS: usize = 10_000;
@@ -274,6 +277,9 @@ pub struct TrustRecord {
     pub user_approved: bool,
     /// Optional user-assigned nickname / label
     pub nickname: Option<String>,
+    /// Optional plain-text description; never participates in trust decisions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Previous identities with rich metadata
     pub history: Vec<IdentityHistoryEntry>,
     /// Per-host trust policy override (None = use global)
@@ -744,6 +750,7 @@ impl TrustStoreService {
                 identity,
                 user_approved,
                 nickname,
+                description: None,
                 history,
                 host_policy: None,
                 host_policy_config: None,
@@ -1007,6 +1014,7 @@ pub enum ReviewedTrustAction {
     Reinstate,
     Policy,
     Tags,
+    Metadata,
 }
 
 #[derive(Serialize, Debug)]
@@ -1201,6 +1209,7 @@ fn trust_identity_in_data(
                 identity,
                 user_approved,
                 nickname: None,
+                description: None,
                 history: vec![],
                 host_policy: None,
                 host_policy_config: None,
@@ -1396,6 +1405,7 @@ fn validate_trust_store_data(data: &TrustStoreData) -> Result<(), String> {
         if record.stats.trust_score > 100 {
             return Err("invalid trust-store trust score".to_string());
         }
+        metadata::validate_description(record.description.as_deref())?;
     }
     Ok(())
 }
@@ -2172,7 +2182,35 @@ impl TrustRuntime {
         policy: Option<TrustPolicy>,
         tags: Option<Vec<String>>,
     ) -> Result<ReviewedTrustOutcome, String> {
+        self.apply_reviewed_batch_with_metadata(database_id, action, targets, policy, tags, None)
+    }
+
+    /// Existing reviewed transaction with an optional single-record metadata
+    /// replacement. No additional IPC or independent partial writes are needed.
+    pub fn apply_reviewed_batch_with_metadata(
+        &self,
+        database_id: &str,
+        action: ReviewedTrustAction,
+        targets: Vec<ReviewedTrustTarget>,
+        policy: Option<TrustPolicy>,
+        tags: Option<Vec<String>>,
+        metadata: Option<ReviewedTrustMetadata>,
+    ) -> Result<ReviewedTrustOutcome, String> {
         validate_database_id(database_id)?;
+        if matches!(action, ReviewedTrustAction::Metadata) {
+            if targets.len() != 1 || policy.is_some() || tags.is_some() {
+                return Err(
+                    "Metadata edits require exactly one reviewed identity and one metadata payload"
+                        .into(),
+                );
+            }
+            metadata
+                .as_ref()
+                .ok_or("Reviewed metadata is required")?
+                .validate()?;
+        } else if metadata.is_some() {
+            return Err("Metadata payload requires the metadata action".into());
+        }
         if targets.is_empty() || targets.len() > MAX_TRUST_RECORDS {
             return Err("Select between 1 and 10000 trust identities".into());
         }
@@ -2210,6 +2248,9 @@ impl TrustRuntime {
             })?;
             if TrustStoreService::identity_fingerprint(&record.identity) != target.fingerprint {
                 return Err("Trust identity changed; no batch changes were written".into());
+            }
+            if let Some(metadata) = &metadata {
+                metadata.check_current(record)?;
             }
         }
         if matches!(action, ReviewedTrustAction::Forget) {
@@ -2251,6 +2292,13 @@ impl TrustRuntime {
                     record.host_policy_config = None;
                 }
                 ReviewedTrustAction::Tags => record.tags = tags.clone(),
+                ReviewedTrustAction::Metadata => {
+                    let metadata = metadata
+                        .as_ref()
+                        .expect("metadata validated before mutation");
+                    record.tags = metadata.tags.clone();
+                    record.description = metadata.description.clone();
+                }
                 ReviewedTrustAction::Forget => unreachable!(),
             }
         }
@@ -2302,6 +2350,11 @@ impl TrustRuntime {
                 "unsupported trust export version {}",
                 document.version
             ));
+        }
+        // Reject malformed descriptions even if merge would skip an existing
+        // identity; import never silently accepts an out-of-contract payload.
+        for record in &document.records {
+            metadata::validate_description(record.description.as_deref())?;
         }
         let path = self.resolve_db(database_id)?;
         let _io = self.io_guard()?;
@@ -2535,6 +2588,7 @@ fn legacy_data_for_connections(
             identity,
             user_approved: true,
             nickname: None,
+            description: None,
             history: vec![],
             host_policy: None,
             host_policy_config: None,

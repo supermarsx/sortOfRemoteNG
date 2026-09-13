@@ -182,7 +182,7 @@ pub(super) fn effective_key(
 }
 
 /// Security decisions reviewed before changing a record's applicability.
-/// Deliberately excludes verification counters, history, nickname and tags.
+/// Deliberately excludes verification counters, history, nickname, tags and description.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrustScopeDecision {

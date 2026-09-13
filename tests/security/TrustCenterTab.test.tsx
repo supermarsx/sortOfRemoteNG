@@ -244,6 +244,194 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("dedicated Trust Center", () => {
+  it("preserves tags and descriptions through native identity export and reviewed import", async () => {
+    const exported = {
+      ...nativeRecord("alpha:443", "OLD-FP"),
+      tags: ["office"],
+      description: "Verified cabinet owner",
+    };
+    const invoke = fixture.invoke.getMockImplementation()!;
+    fixture.invoke.mockImplementation(async (command, args) =>
+      command === "trust_export_database"
+        ? { version: 1, records: [exported] }
+        : invoke(command, args),
+    );
+    fixture.read.mockResolvedValue(
+      JSON.stringify({ version: 1, records: [exported] }),
+    );
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Export all" }));
+    await waitFor(() => expect(fixture.write).toHaveBeenCalledOnce());
+    expect(JSON.parse(fixture.write.mock.calls[0][1]).records[0]).toEqual(
+      exported,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Import identities" }));
+    await screen.findByRole("button", { name: "Merge reviewed identities" });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /I reviewed these fingerprints/ }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Merge reviewed identities" }),
+    );
+    await waitFor(() =>
+      expect(fixture.invoke).toHaveBeenCalledWith(
+        "trust_import_database",
+        expect.objectContaining({
+          document: { version: 1, records: [exported] },
+        }),
+      ),
+    );
+  });
+  it.each(["https", "ssh"] as const)(
+    "edits searchable %s tags and description atomically without a trust warning",
+    async (type) => {
+      fixture.records = [
+        {
+          ...record("alpha:443"),
+          type,
+          tags: ["old"],
+          description: "Old note",
+        },
+      ];
+      const invoke = fixture.invoke.getMockImplementation()!;
+      fixture.invoke.mockImplementation(async (command, args) => {
+        if (
+          command === "trust_apply_reviewed_batch" &&
+          args.action === "metadata"
+        ) {
+          fixture.records = [
+            {
+              ...fixture.records[0],
+              tags: args.metadata.tags,
+              description: args.metadata.description ?? undefined,
+            },
+          ];
+          return { updated: 1 };
+        }
+        return invoke(command, args);
+      });
+      await mount();
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Edit tags and description for alpha:443",
+        }),
+      );
+      const dialog = screen.getByRole("dialog", {
+        name: "Edit identity tags and description",
+      });
+      fireEvent.change(
+        within(dialog).getByLabelText("Identity metadata tags"),
+        { target: { value: "production, office, production" } },
+      );
+      fireEvent.change(within(dialog).getByLabelText("Identity description"), {
+        target: { value: "Rack seven owner" },
+      });
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Save metadata" }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", {
+            name: "Edit identity tags and description",
+          }),
+        ).toBeNull(),
+      );
+      expect(fixture.invoke).toHaveBeenCalledWith(
+        "trust_apply_reviewed_batch",
+        expect.objectContaining({
+          databaseId: "db-a",
+          action: "metadata",
+          targets: [
+            expect.objectContaining({
+              recordType: type,
+              fingerprint: "FP-alpha:443",
+            }),
+          ],
+          metadata: {
+            expectedTags: ["old"],
+            expectedDescription: "Old note",
+            expectedDecision: record("alpha:443").scopeDecision,
+            tags: ["production", "office"],
+            description: "Rack seven owner",
+          },
+        }),
+      );
+      expect(
+        screen.getByText(/Identity tags and description saved/),
+      ).toBeVisible();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      fireEvent.change(screen.getByPlaceholderText(/Search/), {
+        target: { value: "rack seven" },
+      });
+      expect(
+        screen.getByRole("button", {
+          name: "Edit tags and description for alpha:443",
+        }),
+      ).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Inspect gateway:443" }),
+      ).toBeNull();
+    },
+  );
+  it("keeps the metadata draft on rejected stale-record save without a success message", async () => {
+    const invoke = fixture.invoke.getMockImplementation()!;
+    fixture.invoke.mockImplementation(async (command, args) => {
+      if (
+        command === "trust_apply_reviewed_batch" &&
+        args.action === "metadata"
+      )
+        throw new Error("Identity changed. Refresh and review metadata again.");
+      return invoke(command, args);
+    });
+    await mount();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit tags and description for alpha:443",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Identity description"), {
+      target: { value: "Keep this draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save metadata" }));
+    await waitFor(() =>
+      expect(screen.getByRole("dialog")).toHaveTextContent("Identity changed"),
+    );
+    expect(screen.getByLabelText("Identity description")).toHaveValue(
+      "Keep this draft",
+    );
+    expect(
+      screen.queryByText(/Identity tags and description saved/),
+    ).toBeNull();
+  });
+  it("discards a metadata editor across database ABA without submitting its draft", async () => {
+    await mount();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit tags and description for alpha:443",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Identity description"), {
+      target: { value: "Private old owner note" },
+    });
+    await act(async () => {
+      fixture.databaseId = "db-b";
+      fixture.changed?.();
+      fixture.databaseId = "db-a";
+      fixture.changed?.();
+    });
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Edit identity tags and description",
+      }),
+    ).toBeNull();
+    expect(
+      fixture.invoke.mock.calls.some(
+        ([command, args]) =>
+          command === "trust_apply_reviewed_batch" &&
+          args.action === "metadata",
+      ),
+    ).toBe(false);
+  });
   it("keeps redirect management independent of a certificate backend failure and shares one close action", async () => {
     fixture.hydrate.mockRejectedValue(
       new Error("Certificate backend unavailable"),

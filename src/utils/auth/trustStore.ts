@@ -9,6 +9,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { onCurrentDatabaseChange } from "../connection/databaseManager";
+import { validateTrustDescription } from "../security/trustMetadata";
 
 export type TrustPolicy = "tofu" | "always-ask" | "always-trust" | "strict";
 
@@ -77,6 +78,7 @@ export interface TrustRecord {
   identity: TrustIdentity;
   userApproved: boolean;
   nickname?: string;
+  description?: string;
   history?: TrustIdentity[];
   revoked?: boolean;
   hostPolicy?: TrustPolicy;
@@ -165,6 +167,7 @@ export interface TrustExportRecord {
   identity: Record<string, unknown>;
   user_approved: boolean;
   nickname?: string | null;
+  description?: string | null;
   history?: unknown[];
   host_policy?: NativeTrustPolicy | null;
   host_policy_config?: NativeTrustPolicyConfig | null;
@@ -176,9 +179,9 @@ export interface TrustExportRecord {
 }
 
 /**
- * Portable trust export for one database (t62 / D6). Contains public key
- * material only — fingerprints and PEM — so it carries no secrets and is not
- * subject to `redactConnectionSecrets`.
+ * Portable trust export for one database (t62 / D6). Key material is public
+ * (fingerprints and PEM), but user-entered labels/descriptions may be private.
+ * No connection passwords or private keys are included.
  */
 export interface TrustExportDocument {
   version: number;
@@ -332,6 +335,7 @@ interface NativeTrustRecord {
   user_approved: boolean;
   tags?: string[];
   nickname?: string | null;
+  description?: string | null;
   history: NativeHistoryEntry[];
   host_policy?: string | null;
   host_policy_config?: NativeTrustPolicyConfig | null;
@@ -1065,6 +1069,7 @@ function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {
       userApproved: nativeRecord.user_approved,
       scopeDecision: nativeScopeDecision(nativeRecord),
       nickname: boundedNativeString(nativeRecord.nickname, MAX_NICKNAME_LENGTH),
+      description: validateTrustDescription(nativeRecord.description),
       history: history.length > 0 ? history : undefined,
       revoked: nativeRecord.revoked === true,
       hostPolicy: VALID_TRUST_POLICIES.has(

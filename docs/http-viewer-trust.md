@@ -5,6 +5,22 @@ description: Understand certificate decisions, anonymous diagnostics, and authen
 permalink: /http-viewer-trust/
 ---
 
+## Organize saved certificates and SSH identities
+
+In the Trust Center's **Certificates & host keys** tab, use the tags icon beside
+an identity to **Edit tags and description**. Tags and descriptions are searchable;
+the table shows a short preview and a tooltip for the complete text. Save updates
+both fields together only if the original identity, security decision and prior
+metadata still match. It never approves a certificate, changes a fingerprint,
+reinstates a revoked identity or changes verification policy. A database switch
+closes the old editor; a rejected save retains its draft for review.
+
+Descriptions support up to 4096 UTF-8 bytes. Clearing a field removes that
+metadata. Existing display labels and reviewed bulk tag replacement remain
+available. Tags and descriptions travel with identity JSON imports/exports, so
+avoid putting passwords, private keys or other secrets in them. Redirect
+destinations use a separate model and do not have these metadata fields.
+
 ## HTTPS certificate approval preference
 
 Open **Settings → Trust Center → HTTPS trusted-CA certificates**:
