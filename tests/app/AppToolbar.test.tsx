@@ -95,6 +95,50 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("opens autonomous security tools from Management without a database and honors both visibility flags", () => {
+    const openCredentialVault = vi.fn(),
+      openHardwareKeys = vi.fn();
+    const props = makeProps();
+    const view = render(
+      <AppToolbar
+        {...props}
+        openCredentialVault={openCredentialVault}
+        openHardwareKeys={openHardwareKeys}
+      />,
+    );
+    const management = within(
+      screen.getByRole("group", { name: "Management" }),
+    );
+    const vault = management.getByRole("button", {
+      name: "Database Credential Vault",
+    });
+    const keys = management.getByRole("button", { name: "Hardware Keys" });
+    expect(vault).toBeEnabled();
+    expect(keys).toBeEnabled();
+    fireEvent.click(vault);
+    fireEvent.click(keys);
+    expect(openCredentialVault).toHaveBeenCalledOnce();
+    expect(openHardwareKeys).toHaveBeenCalledOnce();
+    expect(props.openSettings).not.toHaveBeenCalled();
+    view.rerender(
+      <AppToolbar
+        {...props}
+        openCredentialVault={openCredentialVault}
+        openHardwareKeys={openHardwareKeys}
+        appSettings={{
+          ...props.appSettings,
+          showCredentialVaultIcon: false,
+          showHardwareKeysIcon: false,
+        }}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Database Credential Vault" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Hardware Keys" }),
+    ).not.toBeInTheDocument();
+  });
   it("shows a configurable Documents action in Management even before a database is open", () => {
     const props = makeProps();
     const openDocuments = vi.fn();

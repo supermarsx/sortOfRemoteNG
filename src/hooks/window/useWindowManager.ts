@@ -7,10 +7,13 @@
  * detached window's current session data.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useContext, useEffect, useRef } from "react";
+import { ToastContext } from "../../contexts/ToastContext";
 import {
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
+  CREDENTIAL_VAULT_PROTOCOL,
+  CREDENTIAL_VAULT_WINDOW_MESSAGE,
 } from "../../components/app/toolSession";
 import { isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen as listenToEvent } from "@tauri-apps/api/event";
@@ -157,6 +160,19 @@ export function useWindowManager({
   const detachRef = useRef(handleSessionDetach);
   detachRef.current = handleSessionDetach;
 
+  const toastContext = useContext(ToastContext);
+  const toastRef = useRef(toastContext);
+  toastRef.current = toastContext;
+  const refuseVaultMove = useCallback(() => {
+    if (toastRef.current)
+      toastRef.current.toast.warning(CREDENTIAL_VAULT_WINDOW_MESSAGE);
+    else
+      window.dispatchEvent(
+        new CustomEvent("sorng:detach-refused", {
+          detail: { reason: CREDENTIAL_VAULT_WINDOW_MESSAGE },
+        }),
+      );
+  }, []);
   const registry = useRef<WindowRegistry>({
     windows: new Map<WindowId, WindowEntry>([
       [
@@ -329,6 +345,13 @@ export function useWindowManager({
     async (sessionId: string, targetWindow: WindowId, insertIndex?: number) => {
       const currentOwner = registry.current.sessionOwnership.get(sessionId);
       if (!currentOwner || currentOwner === targetWindow) return;
+      if (
+        sessionsRef.current.find((session) => session.id === sessionId)
+          ?.protocol === CREDENTIAL_VAULT_PROTOCOL
+      ) {
+        refuseVaultMove();
+        return;
+      }
 
       if (
         sessionsRef.current.find((session) => session.id === sessionId)
@@ -417,7 +440,7 @@ export function useWindowManager({
         }
       }
     },
-    [dispatch, setActiveSessionId, syncWindow],
+    [dispatch, setActiveSessionId, syncWindow, refuseVaultMove],
   );
 
   const handleReattachSession = useCallback(
@@ -428,6 +451,13 @@ export function useWindowManager({
       reattachOnly = false,
     ) => {
       // Move to main + update terminal buffer
+      if (
+        sessionsRef.current.find((item) => item.id === sessionId)?.protocol ===
+        CREDENTIAL_VAULT_PROTOCOL
+      ) {
+        refuseVaultMove();
+        return;
+      }
       const session =
         mergeLifecyclePatch(sessionId, lifecycle) ??
         sessionsRef.current.find((s) => s.id === sessionId);
@@ -489,7 +519,13 @@ export function useWindowManager({
       }
       setActiveSessionId(sessionId);
     },
-    [dispatch, mergeLifecyclePatch, setActiveSessionId, syncWindow],
+    [
+      dispatch,
+      mergeLifecyclePatch,
+      setActiveSessionId,
+      syncWindow,
+      refuseVaultMove,
+    ],
   );
 
   const handleDropOnWindow = useCallback(

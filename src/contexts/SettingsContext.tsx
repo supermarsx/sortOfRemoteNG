@@ -180,6 +180,8 @@ export const defaultSettings: GlobalSettings = {
   showImportExportIcon: true,
   showSettingsIcon: true,
   showTrustCenterIcon: true,
+  showCredentialVaultIcon: true,
+  showHardwareKeysIcon: true,
   showIconExplorerIcon: true,
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,

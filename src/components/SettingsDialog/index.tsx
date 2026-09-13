@@ -39,6 +39,7 @@ import DiagnosticsSettings from "./sections/DiagnosticsSettings";
 import AboutSettings from "./sections/AboutSettings";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { Modal } from "../ui/overlays/Modal";
+import type { SecurityToolCallbacks } from "../../hooks/security/useSecurityToolSession";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import {
   SETTINGS_TABS,
@@ -54,7 +55,8 @@ import {
    Types
    ═══════════════════════════════════════════════════════════════ */
 
-interface SettingsDialogProps extends DatabaseSecurityCallbacks {
+interface SettingsDialogProps
+  extends DatabaseSecurityCallbacks, SecurityToolCallbacks {
   onOpenTrustCenter?: () => void;
   isOpen: boolean;
   onClose: () => void;
@@ -173,7 +175,8 @@ const ContentPanel: React.FC<
   {
     mgr: SettingsDialogMgr;
     onOpenTrustCenter?: () => void;
-  } & DatabaseSecurityCallbacks
+  } & DatabaseSecurityCallbacks &
+    SecurityToolCallbacks
 > = ({ mgr, onOpenTrustCenter, ...securityCallbacks }) => {
   if (!mgr.settings) return null;
   const s = mgr.settings;
@@ -427,7 +430,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
    a session tab instead of a modal overlay.
    ═══════════════════════════════════════════════════════════════ */
 
-interface SettingsTabContentProps extends DatabaseSecurityCallbacks {
+interface SettingsTabContentProps
+  extends DatabaseSecurityCallbacks, SecurityToolCallbacks {
   onOpenTrustCenter?: () => void;
   onClose: () => void;
   /**

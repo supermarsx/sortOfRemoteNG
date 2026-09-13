@@ -363,6 +363,8 @@ export interface GlobalSettings {
   showImportExportIcon: boolean;
   showSettingsIcon: boolean;
   showTrustCenterIcon: boolean;
+  showCredentialVaultIcon: boolean;
+  showHardwareKeysIcon: boolean;
   showIconExplorerIcon: boolean;
   showPerformanceMonitorIcon: boolean;
   showActionLogIcon: boolean;

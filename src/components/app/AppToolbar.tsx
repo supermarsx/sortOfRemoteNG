@@ -14,6 +14,8 @@ import {
   ScreenShare,
   FlaskConical,
   Fingerprint,
+  KeyRound,
+  Usb,
   LayoutGrid,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -74,6 +76,8 @@ interface AppToolbarProps {
    */
   openSettings: (tab?: SettingsTabId) => void;
   openTrustCenter: () => void;
+  openCredentialVault?: () => void;
+  openHardwareKeys?: () => void;
   openIconExplorer?: () => void;
   openDocuments?: () => void;
   setRdpPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -115,6 +119,8 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   openImportExport,
   openSettings,
   openTrustCenter,
+  openCredentialVault,
+  openHardwareKeys,
   openIconExplorer,
   openDocuments,
   setRdpPanelOpen,
@@ -446,6 +452,31 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                 data-testid="toolbar-trust-center"
               >
                 <Fingerprint size={14} aria-hidden="true" />
+              </button>
+            )}
+            {openCredentialVault &&
+              (appSettings.showCredentialVaultIcon ?? true) && (
+                <button
+                  type="button"
+                  onClick={openCredentialVault}
+                  className="app-bar-button p-2"
+                  aria-label="Database Credential Vault"
+                  data-tooltip="Database Credential Vault"
+                  data-testid="toolbar-credential-vault"
+                >
+                  <KeyRound size={14} aria-hidden="true" />
+                </button>
+              )}
+            {openHardwareKeys && (appSettings.showHardwareKeysIcon ?? true) && (
+              <button
+                type="button"
+                onClick={openHardwareKeys}
+                className="app-bar-button p-2"
+                aria-label="Hardware Keys"
+                data-tooltip="Hardware Keys — YubiKey manager"
+                data-testid="toolbar-hardware-keys"
+              >
+                <Usb size={14} aria-hidden="true" />
               </button>
             )}
           </ToolbarGroup>

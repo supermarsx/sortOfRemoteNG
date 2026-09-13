@@ -16,6 +16,8 @@ import {
   FileStack,
   Settings,
   Fingerprint,
+  KeyRound,
+  Usb,
   Shield,
   Keyboard,
   Activity,
@@ -525,6 +527,22 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
               "settingsLayout.trustCenterIconTooltip",
               "Show the Trust Center icon to open or focus certificate and SSH host identity management",
             )}
+          />
+          <Toggle
+            checked={settings.showCredentialVaultIcon ?? true}
+            onChange={(v) => updateSettings({ showCredentialVaultIcon: v })}
+            icon={<KeyRound size={16} />}
+            label="Database Credential Vault"
+            settingKey="showCredentialVaultIcon"
+            infoTooltip="Show the toolbar shortcut to open or focus the database credential vault"
+          />
+          <Toggle
+            checked={settings.showHardwareKeysIcon ?? true}
+            onChange={(v) => updateSettings({ showHardwareKeysIcon: v })}
+            icon={<Usb size={16} />}
+            label="Hardware Keys"
+            settingKey="showHardwareKeysIcon"
+            infoTooltip="Show the toolbar shortcut to open or focus the YubiKey hardware-key manager"
           />
           <Toggle
             checked={settings.showShortcutManagerIcon}

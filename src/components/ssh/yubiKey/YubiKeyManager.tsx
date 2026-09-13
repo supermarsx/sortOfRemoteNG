@@ -45,14 +45,19 @@ const TabBar: React.FC<{
   );
 };
 
-export const YubiKeyManager: React.FC<YubiKeyManagerProps> = ({ isOpen, onClose }) => {
+export const YubiKeyManager: React.FC<YubiKeyManagerProps> = ({
+  isOpen,
+  onClose,
+  embedded = false,
+}) => {
   const { t } = useTranslation();
   const mgr = useYubiKey();
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} panelClassName="max-w-4xl">
+  const content = (
+    <>
       <ModalHeader
-        onClose={onClose}
+        onClose={embedded ? undefined : onClose}
+        showCloseButton={!embedded}
         title={
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary" />
@@ -82,7 +87,10 @@ export const YubiKeyManager: React.FC<YubiKeyManagerProps> = ({ isOpen, onClose 
           </div>
         )}
 
-        <TabBar active={mgr.activeTab} onChange={(tab) => mgr.setActiveTab(tab)} />
+        <TabBar
+          active={mgr.activeTab}
+          onChange={(tab) => mgr.setActiveTab(tab)}
+        />
 
         <div className="relative">
           {mgr.activeTab === "devices" && <DevicesTab mgr={mgr} />}
@@ -111,14 +119,30 @@ export const YubiKeyManager: React.FC<YubiKeyManagerProps> = ({ isOpen, onClose 
               disabled={mgr.loading || !mgr.selectedDevice}
             />
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-muted text-foreground rounded-md hover:bg-muted/80 transition-colors"
-          >
-            {t("common.close", "Close")}
-          </button>
+          {!embedded && (
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-muted text-foreground rounded-md hover:bg-muted/80 transition-colors"
+            >
+              {t("common.close", "Close")}
+            </button>
+          )}
         </div>
       </ModalFooter>
+    </>
+  );
+  if (embedded)
+    return (
+      <section
+        aria-label="Hardware keys"
+        className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--color-surface)] text-[var(--color-text)]"
+      >
+        {content}
+      </section>
+    );
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} panelClassName="max-w-4xl">
+      {content}
     </Modal>
   );
 };

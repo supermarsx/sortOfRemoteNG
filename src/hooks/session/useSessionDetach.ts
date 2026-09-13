@@ -17,6 +17,8 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 import {
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
+  CREDENTIAL_VAULT_PROTOCOL,
+  CREDENTIAL_VAULT_WINDOW_MESSAGE,
 } from "../../components/app/toolSession";
 
 const DETACHED_SESSION_STORAGE_PREFIX = "detached-session-";
@@ -167,6 +169,13 @@ export function useSessionDetach(
         }
       };
 
+      if (session.protocol === CREDENTIAL_VAULT_PROTOCOL) {
+        refuseDetach(
+          "Credential vault private drafts are window-local",
+          CREDENTIAL_VAULT_WINDOW_MESSAGE,
+        );
+        return;
+      }
       if (session.protocol === RDP_INTERNALS_PROTOCOL) {
         refuseDetach(
           "Internals is a window-local view",

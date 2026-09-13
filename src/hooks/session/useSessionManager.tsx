@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { getDocumentDraft } from "../../utils/documents/documentDrafts";
+import { getCredentialVaultDraft } from "../../utils/security/credentialVaultDrafts";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
@@ -1450,6 +1451,30 @@ export const useSessionManager = () => {
       isWinmgmtProtocol(session.protocol)
     ) {
       const documentDraft = getDocumentDraft(sessionId);
+      const vaultDraft = getCredentialVaultDraft(sessionId);
+      if (vaultDraft?.busy) {
+        await showAlert(
+          "A credential vault operation is still running. Wait for it to finish before closing this tab.",
+        );
+        return false;
+      }
+      if (vaultDraft?.dirty) {
+        if (
+          !(await showConfirm(
+            "Discard the unsaved credential changes and close this vault tab?",
+          ))
+        )
+          return false;
+        const latestVaultDraft = getCredentialVaultDraft(sessionId);
+        if (
+          !vaultDraft.isCurrent() ||
+          !latestVaultDraft ||
+          latestVaultDraft.busy ||
+          latestVaultDraft.scopeKey !== vaultDraft.scopeKey ||
+          latestVaultDraft.revision !== vaultDraft.revision
+        )
+          return false;
+      }
       if (documentDraft?.busy) {
         await showAlert(
           "A document operation is still running. Wait for it to finish before closing this tab.",

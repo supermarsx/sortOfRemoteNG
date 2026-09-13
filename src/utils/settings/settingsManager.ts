@@ -464,6 +464,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showImportExportIcon: true,
   showSettingsIcon: true,
   showTrustCenterIcon: true,
+  showCredentialVaultIcon: true,
+  showHardwareKeysIcon: true,
   showIconExplorerIcon: true,
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,
@@ -1165,6 +1167,9 @@ export class SettingsManager {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
       showDocumentsIcon: normalizedStored.showDocumentsIcon !== false,
+      showCredentialVaultIcon:
+        normalizedStored.showCredentialVaultIcon !== false,
+      showHardwareKeysIcon: normalizedStored.showHardwareKeysIcon !== false,
       nasFileViewers: normalizeNasFileViewers(normalizedStored.nasFileViewers),
       // Older preferences may contain only autoSave. Complete this nested
       // UI preference group before publishing a validated full snapshot;
@@ -1307,6 +1312,11 @@ export class SettingsManager {
     };
     if ("showDocumentsIcon" in safePatch)
       safePatch.showDocumentsIcon = safePatch.showDocumentsIcon !== false;
+    if ("showCredentialVaultIcon" in safePatch)
+      safePatch.showCredentialVaultIcon =
+        safePatch.showCredentialVaultIcon !== false;
+    if ("showHardwareKeysIcon" in safePatch)
+      safePatch.showHardwareKeysIcon = safePatch.showHardwareKeysIcon !== false;
     if ("httpsCaTrustMode" in safePatch)
       safePatch.httpsCaTrustMode = validateHttpsCaTrustMode(
         safePatch.httpsCaTrustMode,

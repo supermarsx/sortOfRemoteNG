@@ -1,27 +1,11 @@
-import React, { lazy, Suspense, useContext, useRef, useState } from "react";
 import { KeyRound } from "lucide-react";
-import { ConnectionContext } from "../../../../contexts/ConnectionContextTypes";
-import { credentialVaultScopeKey } from "../../../../hooks/security/useDatabaseCredentialVault";
-import { ConfirmDialog } from "../../../ui/dialogs/ConfirmDialog";
 
-const DatabaseCredentialVault = lazy(
-  () => import("../../../security/DatabaseCredentialVault"),
-);
-
-/** Private payloads are loaded only after an explicit management action. */
-export default function DatabaseCredentialVaultSection() {
-  const context = useContext(ConnectionContext),
-    key = credentialVaultScopeKey(context?.credentialVault);
-  const latest = useRef(key);
-  latest.current = key;
-  const [open, setOpen] = useState(false),
-    [dirty, setDirty] = useState(false),
-    [busy, setBusy] = useState(false);
-  const [review, setReview] = useState<{ id: string; key: string } | null>(
-      null,
-    ),
-    reviewRef = useRef(review);
-  reviewRef.current = review;
+/** Settings launches the same dedicated tool; it never mounts a second vault. */
+export default function DatabaseCredentialVaultSection({
+  onOpen,
+}: {
+  onOpen?: () => void;
+}) {
   return (
     <section
       data-setting-key="databaseCredentialVault"
@@ -36,62 +20,23 @@ export default function DatabaseCredentialVaultSection() {
         <button
           type="button"
           className="sor-btn sor-btn-secondary"
-          disabled={busy}
-          onClick={() => {
-            if (open && dirty) {
-              const next = { id: crypto.randomUUID(), key };
-              reviewRef.current = next;
-              setReview(next);
-            } else setOpen((value) => !value);
-          }}
+          disabled={!onOpen}
+          onClick={onOpen}
         >
-          {open ? "Close credential vault" : "Manage database credentials"}
+          Manage database credentials
         </button>
       </div>
       <p className="text-sm text-[var(--color-textSecondary)]">
-        Store reusable username/password, private-key and TOTP combinations in
-        the current protected database. Social sign-in and passkey bindings are
-        descriptive, non-portable metadata only.
+        Open the dedicated Database Credential Vault tab to manage reusable
+        username/password, private-key and TOTP combinations in the current
+        protected database. Social sign-in and passkey bindings are descriptive,
+        non-portable metadata only.
       </p>
-      {open && (
-        <div className="flex min-h-96 max-h-[70vh] flex-col overflow-hidden rounded border border-[var(--color-border)]">
-          <Suspense
-            fallback={
-              <p role="status" className="p-4 text-sm">
-                Loading credential vault…
-              </p>
-            }
-          >
-            <DatabaseCredentialVault
-              onDirtyChange={setDirty}
-              onBusyChange={setBusy}
-            />
-          </Suspense>
-        </div>
+      {!onOpen && (
+        <p className="text-xs text-[var(--color-textSecondary)]">
+          Open the credential vault from the main application toolbar.
+        </p>
       )}
-      <ConfirmDialog
-        isOpen={!!review && review.key === key}
-        title="Discard private draft"
-        message="Discard the unsaved credential changes and close this vault editor?"
-        confirmText="Discard changes"
-        confirmOnEnter={false}
-        onCancel={() => {
-          reviewRef.current = null;
-          setReview(null);
-        }}
-        onConfirm={() => {
-          if (
-            !review ||
-            reviewRef.current?.id !== review.id ||
-            latest.current !== review.key ||
-            busy
-          )
-            return;
-          reviewRef.current = null;
-          setReview(null);
-          setOpen(false);
-        }}
-      />
     </section>
   );
 }

@@ -23,6 +23,7 @@ import {
   normalizeDatabaseCredentialEntry,
 } from "../../src/utils/security/databaseCredentialVault";
 import DatabaseCredentialVault from "../../src/components/security/DatabaseCredentialVault";
+import { getCredentialVaultDraft } from "../../src/utils/security/credentialVaultDrafts";
 import CredentialSourceSection from "../../src/components/connectionEditor/CredentialSourceSection";
 import DatabaseCredentialVaultSection from "../../src/components/SettingsDialog/sections/security/DatabaseCredentialVaultSection";
 vi.mock("../../src/components/ui/dialogs/ConfirmDialog", () => ({
@@ -393,13 +394,23 @@ describe("vault picker and settings entry point", () => {
     );
     expect(other.list).not.toHaveBeenCalled();
   });
-  it("loads the settings manager only after explicit action and guards its dirty close", async () => {
+  it("launches the dedicated vault from Settings without mounting another secret editor", () => {
     const { api } = facade();
-    mount(api, <DatabaseCredentialVaultSection />);
+    const open = vi.fn();
+    mount(api, <DatabaseCredentialVaultSection onOpen={open} />);
     expect(api.list).not.toHaveBeenCalled();
     fireEvent.click(
       screen.getByRole("button", { name: "Manage database credentials" }),
     );
+    expect(open).toHaveBeenCalledOnce();
+    expect(api.list).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "New credential" }),
+    ).not.toBeInTheDocument();
+  });
+  it("registers only close metadata and advances revision for each private draft edit", async () => {
+    const { api } = facade();
+    const view = mount(api, <DatabaseCredentialVault sessionId="vault-tab" />);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "New credential" }),
@@ -407,19 +418,20 @@ describe("vault picker and settings entry point", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "New credential" }));
     fireEvent.change(screen.getByLabelText("Credential name"), {
-      target: { value: "Unsaved" },
+      target: { value: "SECRET_DRAFT_NAME" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Close credential vault" }),
+    const first = getCredentialVaultDraft("vault-tab")!;
+    expect(first.dirty).toBe(true);
+    expect(JSON.stringify(first)).not.toContain("SECRET_DRAFT_NAME");
+    fireEvent.change(screen.getByLabelText("Credential name"), {
+      target: { value: "SECOND_SECRET" },
+    });
+    expect(getCredentialVaultDraft("vault-tab")!.revision).toBeGreaterThan(
+      first.revision,
     );
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel review" }));
-    expect(screen.getByLabelText("Credential name")).toHaveValue("Unsaved");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Close credential vault" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Confirm review" }));
-    expect(screen.queryByLabelText("Credential name")).not.toBeInTheDocument();
+    view.unmount();
+    expect(first.isCurrent()).toBe(false);
+    expect(getCredentialVaultDraft("vault-tab")).toBeUndefined();
   });
   it("shows locked state without a current database instead of global credentials", () => {
     const { api } = facade([entry()]);

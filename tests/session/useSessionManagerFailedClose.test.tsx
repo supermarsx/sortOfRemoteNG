@@ -151,6 +151,7 @@ vi.mock("../../src/hooks/integrations/IntegrationSessionLifecycle", () => ({
 import { useSessionManager } from "../../src/hooks/session/useSessionManager";
 import { registerSynologySession } from "../../src/utils/session/synologySessionLifecycle";
 import { registerDocumentDraft } from "../../src/utils/documents/documentDrafts";
+import { registerCredentialVaultDraft } from "../../src/utils/security/credentialVaultDrafts";
 
 const makeConnection = (
   id: string,
@@ -233,6 +234,69 @@ beforeEach(() => {
 });
 
 describe("handleSessionClose — sessions with no live transport", () => {
+  it.each(["cancel", "confirm", "changed", "replaced", "busy"] as const)(
+    "preserves the vault close boundary for %s",
+    async (scenario) => {
+      const id = "vault-db-a";
+      seed(
+        [],
+        [
+          makeSession(id, "tool-credentialVault", {
+            protocol: "tool:credentialVault",
+            status: "connected",
+            ownerDatabaseId: "db-a",
+          }),
+        ],
+      );
+      const state = {
+        databaseId: "db-a",
+        scopeKey: "db-a:1",
+        dirty: true,
+        busy: scenario === "busy",
+        revision: 1,
+      };
+      let unregister = registerCredentialVaultDraft(id, () => ({ ...state }));
+      try {
+        const { result } = renderHook(() => useSessionManager());
+        let closing!: Promise<boolean>;
+        act(() => {
+          closing = result.current.handleSessionClose(id);
+        });
+        expect(removeDispatched(id)).toBe(false);
+        if (scenario === "busy") {
+          expect(result.current.confirmDialog?.props.message).toContain(
+            "still running",
+          );
+          await act(async () => {
+            result.current.confirmDialog?.props.onConfirm();
+            await closing;
+          });
+          expect(removeDispatched(id)).toBe(false);
+          return;
+        }
+        expect(result.current.confirmDialog?.props.message).toContain(
+          "unsaved credential",
+        );
+        if (scenario === "changed") state.revision++;
+        if (scenario === "replaced") {
+          unregister();
+          unregister = registerCredentialVaultDraft(id, () => ({
+            ...state,
+            scopeKey: "db-a:2",
+          }));
+        }
+        await act(async () => {
+          if (scenario === "cancel")
+            result.current.confirmDialog?.props.onCancel();
+          else result.current.confirmDialog?.props.onConfirm();
+          await closing;
+        });
+        expect(removeDispatched(id)).toBe(scenario === "confirm");
+      } finally {
+        unregister();
+      }
+    },
+  );
   it("does not silently discard a protected document draft when closing its tool tab", async () => {
     seed(
       [],

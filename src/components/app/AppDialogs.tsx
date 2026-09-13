@@ -40,6 +40,8 @@ interface AppDialogsProps {
   showQuickConnect: boolean;
   showSettings: boolean;
   onOpenTrustCenter?: () => void;
+  onOpenCredentialVault?: () => void;
+  onOpenHardwareKeys?: () => void;
   showDiagnostics: boolean;
   setShowDatabasePanel: (v: boolean) => void;
   setShowQuickConnect: (v: boolean) => void;
@@ -173,6 +175,22 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         )}
       >
         <SettingsDialog
+          onOpenCredentialVault={
+            props.onOpenCredentialVault
+              ? () => {
+                  setShowSettings(false);
+                  props.onOpenCredentialVault?.();
+                }
+              : undefined
+          }
+          onOpenHardwareKeys={
+            props.onOpenHardwareKeys
+              ? () => {
+                  setShowSettings(false);
+                  props.onOpenHardwareKeys?.();
+                }
+              : undefined
+          }
           onOpenTrustCenter={
             props.onOpenTrustCenter
               ? () => {

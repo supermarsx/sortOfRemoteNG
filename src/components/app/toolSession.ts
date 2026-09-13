@@ -12,6 +12,32 @@ export const RDP_INTERNALS_WINDOW_MESSAGE =
   "RDP Internals stays in the desktop viewer's window. Open it from the RDP desktop after moving that session.";
 export const RECORDING_PLAYER_PROTOCOL = "tool:recordingPlayer";
 export const TRUST_CENTER_PROTOCOL = "tool:trustCenter";
+export const CREDENTIAL_VAULT_PROTOCOL = "tool:credentialVault";
+export const CREDENTIAL_VAULT_WINDOW_MESSAGE =
+  "Database Credential Vault stays in the main window to protect private drafts. Open it from the main application toolbar or Settings → Security.";
+export const HARDWARE_KEYS_PROTOCOL = "tool:hardwareKeys";
+export type SecurityTool = "credentialVault" | "hardwareKeys";
+
+/** Tool windows carry no secrets. A vault stays bound to its original database. */
+export const createSecurityToolSession = (
+  tool: SecurityTool,
+  source?: ConnectionSession,
+  databaseId?: string,
+): ConnectionSession => ({
+  id: `${tool}-${generateId()}`,
+  connectionId: `tool-${tool}`,
+  name:
+    tool === "credentialVault" ? "Database Credential Vault" : "Hardware Keys",
+  status: "connected",
+  startTime: new Date(),
+  protocol: `tool:${tool}`,
+  hostname: "",
+  tabGroupId: source?.tabGroupId,
+  ...(tool === "credentialVault" && databaseId
+    ? { ownerDatabaseId: databaseId }
+    : {}),
+  ...(source?.layout?.isDetached ? { layout: { ...source.layout } } : {}),
+});
 export const ICON_EXPLORER_PROTOCOL = "tool:iconExplorer";
 export const CONNECTION_RECYCLE_BIN_PROTOCOL = "tool:connectionRecycleBin";
 

@@ -13,20 +13,19 @@ import { useYubiKey } from "../../../hooks/ssh/useYubiKey";
 export type Mgr = ReturnType<typeof useYubiKey>;
 
 export type YubiKeyTab =
-  | "devices"
-  | "piv"
-  | "fido2"
-  | "oath"
-  | "otp"
-  | "config"
-  | "audit";
+  "devices" | "piv" | "fido2" | "oath" | "otp" | "config" | "audit";
 
 export interface YubiKeyManagerProps {
   isOpen: boolean;
   onClose: () => void;
+  embedded?: boolean;
 }
 
-export const tabDefs: { id: YubiKeyTab; icon: React.ReactNode; labelKey: string }[] = [
+export const tabDefs: {
+  id: YubiKeyTab;
+  icon: React.ReactNode;
+  labelKey: string;
+}[] = [
   {
     id: "devices",
     icon: React.createElement(Usb, { className: "w-4 h-4" }),

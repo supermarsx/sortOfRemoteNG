@@ -20,11 +20,13 @@ import {
 } from "../../hooks/security/useDatabaseCredentialVault";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import CredentialEntryForm from "./databaseCredentialVault/CredentialEntryForm";
+import { registerCredentialVaultDraft } from "../../utils/security/credentialVaultDrafts";
 const VaultArchiveDialog = React.lazy(
   () => import("./databaseCredentialVault/VaultArchiveDialog"),
 );
 
 interface Props {
+  sessionId?: string;
   onDirtyChange?: (value: boolean) => void;
   onBusyChange?: (value: boolean) => void;
 }
@@ -33,6 +35,7 @@ function VaultWorkspace({
   api,
   onDirtyChange,
   onBusyChange,
+  sessionId,
 }: Props & { api: DatabaseCredentialVaultApi }) {
   const mgr = useDatabaseCredentialVault(api);
   const [archive, setArchive] = useState<{
@@ -40,6 +43,41 @@ function VaultWorkspace({
     snapshot: DatabaseCredentialSnapshot;
   } | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const draftVersion = useRef({
+    draft: mgr.draft,
+    busy: mgr.busy || archiveBusy,
+    revision: 0,
+  });
+  if (
+    draftVersion.current.draft !== mgr.draft ||
+    draftVersion.current.busy !== (mgr.busy || archiveBusy)
+  )
+    draftVersion.current = {
+      draft: mgr.draft,
+      busy: mgr.busy || archiveBusy,
+      revision: draftVersion.current.revision + 1,
+    };
+  const closeState = useRef({
+    databaseId: api.scope!.databaseId,
+    scopeKey: credentialVaultScopeKey(api),
+    dirty: mgr.dirty,
+    busy: mgr.busy || archiveBusy,
+    revision: draftVersion.current.revision,
+  });
+  closeState.current = {
+    databaseId: api.scope!.databaseId,
+    scopeKey: credentialVaultScopeKey(api),
+    dirty: mgr.dirty,
+    busy: mgr.busy || archiveBusy,
+    revision: draftVersion.current.revision,
+  };
+  useEffect(
+    () =>
+      sessionId
+        ? registerCredentialVaultDraft(sessionId, () => closeState.current)
+        : undefined,
+    [sessionId],
+  );
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(0);
   const [review, setReview] = useState<{

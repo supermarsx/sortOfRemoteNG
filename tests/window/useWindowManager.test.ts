@@ -4,7 +4,10 @@ import {
   createWindowSyncRevisionClock,
   useWindowManager,
 } from "../../src/hooks/window/useWindowManager";
-import { createRdpInternalsSession } from "../../src/components/app/toolSession";
+import {
+  createRdpInternalsSession,
+  createSecurityToolSession,
+} from "../../src/components/app/toolSession";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -1208,6 +1211,40 @@ describe("useWindowManager", () => {
     expect(
       result.current.registry.current.windows.get(target)?.sessionIds,
     ).toEqual([]);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+  it("refuses vault MOVE_SESSION and REATTACH_SESSION before lifecycle or ownership changes", async () => {
+    const tab = createSecurityToolSession("credentialVault", undefined, "db-a");
+    const dispatch = vi.fn();
+    const { result } = renderWindowManager({ sessions: [tab], dispatch });
+    const target = "detached-vault-test" as any;
+    act(() =>
+      result.current.registry.current.windows.set(target, {
+        windowId: target,
+        sessionIds: [],
+        createdAt: Date.now(),
+      }),
+    );
+    await waitFor(() =>
+      expect(mockWindowListeners.get("wm:command")).toBeTypeOf("function"),
+    );
+    await act(async () =>
+      mockWindowListeners.get("wm:command")!({
+        payload: {
+          type: "MOVE_SESSION",
+          sessionId: tab.id,
+          targetWindow: target,
+          sourceWindow: "main",
+        },
+      }),
+    );
+    expect(result.current.registry.current.sessionOwnership.get(tab.id)).toBe(
+      "main",
+    );
+    expect(
+      result.current.registry.current.windows.get(target)?.sessionIds,
+    ).toEqual([]);
+    act(() => result.current.reattachSession(tab.id));
     expect(dispatch).not.toHaveBeenCalled();
   });
 

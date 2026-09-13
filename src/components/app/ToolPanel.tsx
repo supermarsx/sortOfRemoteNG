@@ -15,11 +15,15 @@ import {
   RDP_INTERNALS_PROTOCOL,
   RECORDING_PLAYER_PROTOCOL,
   TRUST_CENTER_PROTOCOL,
+  CREDENTIAL_VAULT_PROTOCOL,
+  CREDENTIAL_VAULT_WINDOW_MESSAGE,
+  HARDWARE_KEYS_PROTOCOL,
   ICON_EXPLORER_PROTOCOL,
   CONNECTION_RECYCLE_BIN_PROTOCOL,
   createToolSession,
 } from "./toolSession";
 import { useTrustCenterSession } from "../../hooks/security/useTrustCenterSession";
+import { useSecurityToolSession } from "../../hooks/security/useSecurityToolSession";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { getToolDescriptor } from "./toolDescriptors";
 import EmptyState from "../ui/display/EmptyState";
@@ -38,6 +42,13 @@ const PerformanceMonitor = dynamic(
   { ssr: false },
 );
 const TrustCenterTab = dynamic(() => import("../security/TrustCenterTab"), {
+  ssr: false,
+});
+const DatabaseCredentialVault = dynamic(
+  () => import("../security/DatabaseCredentialVault"),
+  { ssr: false },
+);
+const HardwareKeysTab = dynamic(() => import("../security/HardwareKeysTab"), {
   ssr: false,
 });
 const IconExplorerTab = dynamic(() => import("../icons/IconExplorerTab"), {
@@ -244,9 +255,20 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   const { isActive } = useSessionRenderActivity();
   const toolKey = getToolKeyFromProtocol(session.protocol);
   const openTrustCenter = useTrustCenterSession(onActivateSession, session);
+  const openCredentialVault = useSecurityToolSession(
+    "credentialVault",
+    onActivateSession,
+    session,
+  );
+  const openHardwareKeys = useSecurityToolSession(
+    "hardwareKeys",
+    onActivateSession,
+    session,
+  );
   const databaseDependent =
     (toolKey !== null && getToolDescriptor(toolKey).access === "database") ||
     session.protocol === TRUST_CENTER_PROTOCOL ||
+    session.protocol === CREDENTIAL_VAULT_PROTOCOL ||
     session.protocol === DOCUMENTS_PROTOCOL ||
     session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL;
   const explicitOwner =
@@ -439,6 +461,28 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         }
       />
     );
+  if (session.protocol === CREDENTIAL_VAULT_PROTOCOL)
+    if (session.layout?.isDetached)
+      return (
+        <p role="status" className="p-6 text-sm">
+          {CREDENTIAL_VAULT_WINDOW_MESSAGE}
+        </p>
+      );
+  if (session.protocol === CREDENTIAL_VAULT_PROTOCOL)
+    return (
+      <FeatureErrorBoundary title="The credential vault could not be displayed">
+        <DatabaseCredentialVault
+          key={databaseMountKey}
+          sessionId={session.id}
+        />
+      </FeatureErrorBoundary>
+    );
+  if (session.protocol === HARDWARE_KEYS_PROTOCOL)
+    return (
+      <FeatureErrorBoundary title="The hardware-key manager could not be displayed">
+        <HardwareKeysTab />
+      </FeatureErrorBoundary>
+    );
   if (
     session.protocol === RECORDING_PLAYER_PROTOCOL &&
     session.recordingPlayer
@@ -513,6 +557,12 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       {toolKey === "settings" && (
         <SettingsTabContent
           onOpenTrustCenter={onActivateSession ? openTrustCenter : undefined}
+          onOpenCredentialVault={
+            onActivateSession && !session.layout?.isDetached
+              ? openCredentialVault
+              : undefined
+          }
+          onOpenHardwareKeys={onActivateSession ? openHardwareKeys : undefined}
           onDatabaseSelect={onDatabaseSelect}
           onDatabaseClose={onDatabaseClose}
           onBeforeCurrentLock={onBeforeCurrentLock}

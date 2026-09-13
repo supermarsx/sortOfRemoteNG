@@ -265,6 +265,30 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Layout",
   },
   {
+    key: "showCredentialVaultIcon",
+    label: "Database Credential Vault",
+    description:
+      "Show the toolbar shortcut to open or focus the database credential vault",
+    tags: ["toolbar", "icon", "credentials", "vault", "database"],
+    synonyms: [
+      "credential vault button",
+      "topbar vault",
+      "password manager icon",
+    ],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
+    key: "showHardwareKeysIcon",
+    label: "Hardware Keys",
+    description:
+      "Show the toolbar shortcut to open or focus the YubiKey hardware-key manager",
+    tags: ["toolbar", "icon", "yubikey", "hardware", "keys", "fido2"],
+    synonyms: ["hardware keys button", "topbar yubikey", "ykman icon"],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
     key: "showProxyMenuIcon",
     label: "Proxy / VPN Menu",
     labelKey: "settingsLayout.proxyVpnMenu",

@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useSessionDetach } from "../../src/hooks/session/useSessionDetach";
-import { createRdpInternalsSession } from "../../src/components/app/toolSession";
+import {
+  createRdpInternalsSession,
+  createSecurityToolSession,
+} from "../../src/components/app/toolSession";
 import { ToastContext } from "../../src/contexts/ToastContext";
 import React from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -215,6 +218,26 @@ describe("useSessionDetach", () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(registerWindow).not.toHaveBeenCalled();
     expect(localStorage.getItem(`detached-session-${tab.id}`)).toBeNull();
+  });
+  it("keeps the private vault in main with actionable guidance before unmount or handoff", async () => {
+    const tab = createSecurityToolSession("credentialVault", undefined, "db-a");
+    const refusal = vi.fn();
+    window.addEventListener(DETACH_REFUSED_EVENT, refusal);
+    try {
+      const { result, dispatch, registerWindow } = renderDetach({
+        sessions: [tab],
+      });
+      await act(async () => result.current.handleSessionDetach(tab.id));
+      expect(invoke).not.toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(registerWindow).not.toHaveBeenCalled();
+      expect(refusal).toHaveBeenCalledOnce();
+      expect((refusal.mock.calls[0][0] as CustomEvent).detail.reason).toContain(
+        "main application toolbar",
+      );
+    } finally {
+      window.removeEventListener(DETACH_REFUSED_EVENT, refusal);
+    }
   });
 
   it("persists only bounded opaque detached-session metadata", async () => {

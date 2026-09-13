@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import dynamic from "next/dynamic";
 import { useTrustCenterSession } from "./hooks/security/useTrustCenterSession";
+import { useSecurityToolSession } from "./hooks/security/useSecurityToolSession";
 import { useIconExplorerSession } from "./hooks/icons/useIconExplorerSession";
 import { useDocumentSession } from "./hooks/documents/useDocumentSession";
 import { Monitor, Zap, Plus, Database } from "lucide-react";
@@ -289,6 +290,14 @@ const AppContent: React.FC = () => {
   );
   useCloseTabShortcut(state.sessions, activeSessionId, handleSessionClose);
   const openTrustCenter = useTrustCenterSession(setActiveSessionId);
+  const openCredentialVault = useSecurityToolSession(
+    "credentialVault",
+    setActiveSessionId,
+  );
+  const openHardwareKeys = useSecurityToolSession(
+    "hardwareKeys",
+    setActiveSessionId,
+  );
   const openIconExplorer = useIconExplorerSession(setActiveSessionId);
   const openDocuments = useDocumentSession(setActiveSessionId);
   useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
@@ -1791,6 +1800,8 @@ const AppContent: React.FC = () => {
             }}
             openSettings={handleOpenSettings}
             openTrustCenter={openTrustCenter}
+            openCredentialVault={openCredentialVault}
+            openHardwareKeys={openHardwareKeys}
             openIconExplorer={openIconExplorer}
             openDocuments={() => openDocuments({ allowUnavailable: true })}
             setRdpPanelOpen={toolShowSetters.current.rdpSessions}
@@ -2000,6 +2011,8 @@ const AppContent: React.FC = () => {
 
         <AppDialogs
           onOpenTrustCenter={openTrustCenter}
+          onOpenCredentialVault={openCredentialVault}
+          onOpenHardwareKeys={openHardwareKeys}
           appSettings={appSettings}
           showDatabasePanel={showDatabasePanel}
           showQuickConnect={showQuickConnect}

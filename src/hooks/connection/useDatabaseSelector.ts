@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { hasPendingDocumentDraft } from "../../utils/documents/documentDrafts";
+import { hasPendingCredentialVaultDraft } from "../../utils/security/credentialVaultDrafts";
 import { ConnectionDatabase } from "../../types/connection/connection";
 import {
   defaultExportSecuritySettings,
@@ -140,10 +141,11 @@ export function useDatabaseSelector(
         if (
           currentOwner &&
           currentOwner !== database.id &&
-          hasPendingDocumentDraft(currentOwner)
+          (hasPendingDocumentDraft(currentOwner) ||
+            hasPendingCredentialVaultDraft(currentOwner))
         )
           throw new Error(
-            "Save or discard the changes in Documents before switching databases.",
+            "Save or discard the changes in Documents or the credential vault before switching databases.",
           );
         await onDatabaseSelect(database.id, password, notify);
         // Old embedding callbacks may resolve without reporting a real outcome.
@@ -603,10 +605,11 @@ export function useDatabaseSelector(
     if (
       currentDocumentOwner &&
       currentDocumentOwner !== collection.id &&
-      hasPendingDocumentDraft(currentDocumentOwner)
+      (hasPendingDocumentDraft(currentDocumentOwner) ||
+        hasPendingCredentialVaultDraft(currentDocumentOwner))
     ) {
       setError(
-        "Save or discard the changes in Documents before switching databases.",
+        "Save or discard the changes in Documents or the credential vault before switching databases.",
       );
       return;
     }
@@ -692,9 +695,13 @@ export function useDatabaseSelector(
       const currentId = databaseManager.getCurrentDatabase()?.id;
       const isCurrent = currentId === collection.id;
 
-      if (isCurrent && hasPendingDocumentDraft(collection.id)) {
+      if (
+        isCurrent &&
+        (hasPendingDocumentDraft(collection.id) ||
+          hasPendingCredentialVaultDraft(collection.id))
+      ) {
         setError(
-          "Save or discard the changes in Documents before closing this database.",
+          "Save or discard the changes in Documents or the credential vault before closing this database.",
         );
         return;
       }
@@ -719,9 +726,12 @@ export function useDatabaseSelector(
           return;
         }
         // A draft may have changed while the preceding async flush ran.
-        if (hasPendingDocumentDraft(collection.id)) {
+        if (
+          hasPendingDocumentDraft(collection.id) ||
+          hasPendingCredentialVaultDraft(collection.id)
+        ) {
           setError(
-            "Save or discard the changes in Documents before closing this database.",
+            "Save or discard the changes in Documents or the credential vault before closing this database.",
           );
           return;
         }

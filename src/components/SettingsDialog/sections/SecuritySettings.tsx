@@ -26,6 +26,8 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   onDatabaseSelect,
   onDatabaseClose,
   onBeforeCurrentLock,
+  onOpenCredentialVault,
+  onOpenHardwareKeys,
 }) => {
   const mgr = useSecuritySettings(settings, updateSettings);
 
@@ -44,7 +46,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         onBeforeCurrentLock={onBeforeCurrentLock}
       />
       <ConnectionRecycleBinSection />
-      <DatabaseCredentialVaultSection />
+      <DatabaseCredentialVaultSection onOpen={onOpenCredentialVault} />
       <h3 className="text-sm font-medium">
         Global policies, export defaults, and key tools
       </h3>
@@ -61,7 +63,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         mgr={mgr}
       />
       <SSHKeyGenSection mgr={mgr} />
-      <YubiKeySecuritySection />
+      <YubiKeySecuritySection onOpen={onOpenHardwareKeys} />
       <CollectionKeyGenSection mgr={mgr} />
       <CredSSPSection settings={settings} updateSettings={updateSettings} />
       <PasswordRevealSection
