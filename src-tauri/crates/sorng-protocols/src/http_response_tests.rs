@@ -1,5 +1,7 @@
 //! Actual protected Axum proxy route regressions; all endpoints and credentials
 //! are synthetic. No Tauri profile or desktop runtime is initialized.
+#[path = "http_attempt_response_tests.rs"]
+mod attempt_response_tests;
 #[path = "http_font_asset_tests.rs"]
 mod font_asset_tests;
 #[path = "http_local_observation_tests.rs"]
@@ -105,6 +107,7 @@ async fn proxy_with_redirect_profile(
     let port = listener.local_addr().unwrap().port();
     let authority = format!("p{TOKEN}.localhost:{port}");
     let state = Arc::new(AxumProxyState {
+        attempt: None,
         network,
         session_id: "synthetic-proxy-session".into(),
         connection_id: "fixture".into(),
@@ -213,6 +216,7 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
     state.global_sessions.lock().unwrap().sessions.insert(
         state.session_id.clone(),
         ProxySessionEntry {
+            attempt: state.attempt.clone(),
             network: state.network.clone(),
             target_url: state.target_url.clone(),
             username: "synthetic-user".into(),
@@ -1161,6 +1165,56 @@ fn navigation_marker_preserves_other_raw_query_and_never_accepts_ambiguous_token
         proxy_response::navigation_request("/legacy"),
         ("/legacy".into(), None)
     );
+}
+
+#[test]
+fn connector_restart_requires_executable_regional_provider_script() {
+    let defaults = SynologyQuickConnectDefaults {
+        version: 1,
+        original_origin: "https://fixture.quickconnect.to".into(),
+    };
+    let target = "https://fixture.fr3.quickconnect.to";
+    let script = "<script src='/connect_lib.da3fae9c5d057ef58d3a.bundle.js'></script>";
+    for html in [script.to_string(), format!("<html><head>{script}</head></html>"),
+        "<SCRIPT defer type='text/javascript' SRC='https://quickconnect.to/connect_lib.da3fae9c5d057ef58d3a.bundle.js'></SCRIPT>".into()] {
+        assert!(proxy_response::quickconnect_connector_document(&html, target, Some(&defaults)));
+    }
+    for html in [
+        format!("<!-- {script} -->"),
+        format!("<textarea>{script}</textarea>"),
+        format!("<template>{script}</template>"),
+        format!("<script>var example = {script:?};</script>"),
+        "<script data-example=\" src='/connect_lib.da3fae9c5d057ef58d3a.bundle.js'\"></script>"
+            .into(),
+        script.replace("<script ", "<script type='application/json' "),
+        script.replace("<script ", "<script nomodule "),
+        script.replace("<script ", "<script src='/ordinary.js' "),
+        script.replace(".bundle.js", ".bundle.js?example=1"),
+        script.replace("src='/", "src='https://unapproved.invalid/"),
+        "<html><form id='login'><input name='username'></form></html>".into(),
+    ] {
+        assert!(
+            !proxy_response::quickconnect_connector_document(&html, target, Some(&defaults)),
+            "{html}"
+        );
+    }
+    for target in [
+        "https://fixture.quickconnect.to",
+        "https://www.quickconnect.to",
+        "https://other.fr3.quickconnect.to",
+        "http://fixture.fr3.quickconnect.to",
+        "https://fixture.fr3.quickconnect.to:5001",
+        "https://fixture.fr3.quickconnect.to.attacker.invalid",
+    ] {
+        assert!(!proxy_response::quickconnect_connector_document(
+            script,
+            target,
+            Some(&defaults)
+        ));
+    }
+    assert!(!proxy_response::quickconnect_connector_document(
+        script, target, None
+    ));
 }
 
 /// Explicitly opt-in, anonymous GET only. Never reads a connection/profile or

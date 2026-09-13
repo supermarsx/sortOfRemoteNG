@@ -626,6 +626,7 @@ pub fn is_command(command: &str) -> bool {
             | "diagnose_http_connection"
             | "start_basic_auth_proxy"
             | "stop_basic_auth_proxy"
+            | "cancel_proxy_continuation"
             | "list_proxy_sessions"
             | "get_proxy_session_details"
             | "review_proxy_redirect"
@@ -2089,6 +2090,7 @@ define_command_group!(
         http_commands::diagnose_http_connection,
         http_commands::start_basic_auth_proxy,
         http_commands::stop_basic_auth_proxy,
+        http_commands::cancel_proxy_continuation,
         http_commands::list_proxy_sessions,
         http_commands::get_proxy_session_details,
         http_commands::review_proxy_redirect,

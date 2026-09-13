@@ -121,6 +121,153 @@ beforeEach(() => {
   h.invoke.mockResolvedValue(receipt);
 });
 describe("reviewed anonymous redirect handoff", () => {
+  it("hands off the native one-use ticket only in volatile navigation and explicitly preserves it during stop", async () => {
+    const id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    registerRuntimeConnection(source, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 0,
+      assertCurrent: () => {},
+      synologyRedirectSource: {
+        originalOrigin: receipt.sourceOrigin,
+        enabled: true,
+        databaseId: "db-a",
+        assertOwner: () => {},
+        assertIdentity: () => {},
+      },
+    });
+    h.invoke.mockImplementation(async (command, input) =>
+      command === "review_proxy_redirect"
+        ? input.receiptId
+          ? { ...receipt, continuationId: id }
+          : receipt
+        : undefined,
+    );
+    const view = fixture(true, true);
+    await act(() => view.result.current.offer());
+    await act(() => view.result.current.accept("current"));
+    const target = view.continueInTab.mock.calls[0][0] as Connection;
+    expect(view.stopSource).toHaveBeenCalledExactlyOnceWith("proxy", id);
+    expect(JSON.stringify(target)).not.toContain(id);
+    expect(getRuntimeWebNavigation(target.id)?.nativeContinuation?.id).toBe(id);
+    expect(getRuntimeWebNavigation(target.id)?.initialUrl).toBe(
+      receipt.destinationUrl,
+    );
+    releaseRuntimeConnection(target.id);
+    expect(h.invoke).toHaveBeenLastCalledWith("cancel_proxy_continuation", {
+      continuationId: id,
+    });
+  });
+  it("opens an anonymous tab without continuity and cancels the unused native ticket", async () => {
+    const id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    registerRuntimeConnection(source, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 0,
+      assertCurrent: () => {},
+      synologyRedirectSource: {
+        originalOrigin: receipt.sourceOrigin,
+        enabled: true,
+        databaseId: "db-a",
+        assertOwner: () => {},
+        assertIdentity: () => {},
+      },
+    });
+    h.invoke.mockImplementation(async (command, input) =>
+      command === "review_proxy_redirect"
+        ? input.receiptId
+          ? { ...receipt, continuationId: id }
+          : receipt
+        : undefined,
+    );
+    const view = fixture(true, true);
+    const launched = vi.fn();
+    window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launched);
+    try {
+      await act(() => view.result.current.offer());
+      await act(() => view.result.current.accept("anonymous"));
+      expect(view.stopSource).toHaveBeenCalledExactlyOnceWith("proxy");
+      expect(view.continueInTab).not.toHaveBeenCalled();
+      expect(launched).toHaveBeenCalledOnce();
+      const target = (
+        launched.mock.calls[0][0] as CustomEvent<{ connection: Connection }>
+      ).detail.connection;
+      expect(
+        getRuntimeWebNavigation(target.id)?.nativeContinuation,
+      ).toBeUndefined();
+      expect(JSON.stringify(target)).not.toContain(id);
+      expect(target.basicAuthUsername).toBeUndefined();
+      expect(target.basicAuthPassword).toBeUndefined();
+      expect(
+        h.invoke.mock.calls.filter(
+          ([command]) => command === "cancel_proxy_continuation",
+        ),
+      ).toEqual([["cancel_proxy_continuation", { continuationId: id }]]);
+    } finally {
+      window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launched);
+      view.unmount();
+    }
+  });
+  it.each(["owner", "stop"])(
+    "cancels a consumed ticket when %s fails without a destination",
+    async (failure) => {
+      const id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+      registerRuntimeConnection(source, {
+        initialUrl: receipt.sourceOrigin,
+        redirectHops: 0,
+        assertCurrent: () => {},
+        synologyRedirectSource: {
+          originalOrigin: receipt.sourceOrigin,
+          enabled: true,
+          databaseId: "db-a",
+          assertOwner: () => {},
+          assertIdentity: () => {},
+        },
+      });
+      h.invoke.mockImplementation(async (command, input) => {
+        if (command !== "review_proxy_redirect") return;
+        if (!input.receiptId) return receipt;
+        if (failure === "owner") h.locked = true;
+        return { ...receipt, continuationId: id };
+      });
+      const view = fixture(true, true);
+      if (failure === "stop")
+        view.stopSource.mockRejectedValue(new Error("stop failed"));
+      await act(() => view.result.current.offer());
+      await act(() => view.result.current.accept("current"));
+      expect(view.continueInTab).not.toHaveBeenCalled();
+      expect(h.invoke).toHaveBeenLastCalledWith("cancel_proxy_continuation", {
+        continuationId: id,
+      });
+    },
+  );
+  it("cancels a late consumed ticket after unmount rather than retaining private state until expiry", async () => {
+    const id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    let resolveConsume!: (value: unknown) => void;
+    h.invoke.mockImplementation(async (command, input) =>
+      command === "review_proxy_redirect"
+        ? input.receiptId
+          ? new Promise((resolve) => {
+              resolveConsume = resolve;
+            })
+          : receipt
+        : undefined,
+    );
+    const view = fixture();
+    await act(() => view.result.current.offer());
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.accept("current");
+    });
+    view.unmount();
+    await act(async () => {
+      resolveConsume({ ...receipt, continuationId: id });
+      await pending;
+    });
+    expect(view.stopSource).not.toHaveBeenCalled();
+    expect(view.continueInTab).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenLastCalledWith("cancel_proxy_continuation", {
+      continuationId: id,
+    });
+  });
   it.each(["current", "anonymous"] as const)(
     "retains the twentieth Synology handoff through source cleanup for %s launch",
     async (destination) => {

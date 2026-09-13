@@ -9,6 +9,7 @@ fn entry(index: usize) -> ProxyRequestLogEntry {
         status: 200,
         error: None,
         timestamp: "2026-01-01T00:00:00Z".into(),
+        diagnostic: None,
     }
 }
 

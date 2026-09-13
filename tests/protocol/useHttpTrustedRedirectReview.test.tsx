@@ -192,12 +192,18 @@ describe("persisted trusted redirect continuation", () => {
               return inspect(...args);
             });
         } else {
-          h.invoke.mockImplementation(async (_command, args) => {
+          h.invoke.mockImplementation(async (command, args) => {
+            if (command === "cancel_proxy_continuation") return;
             if (args.receiptId)
               await new Promise<void>((resolve) => {
                 finish = resolve;
               });
-            return receipt;
+            return args.receiptId
+              ? {
+                  ...receipt,
+                  continuationId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                }
+              : receipt;
           });
         }
         await act(() => view.result.current.offer());
@@ -216,6 +222,11 @@ describe("persisted trusted redirect continuation", () => {
         });
         expect(view.stopSource).not.toHaveBeenCalled();
         expect(view.continueInTab).not.toHaveBeenCalled();
+        if (stage === "consume")
+          expect(h.invoke).toHaveBeenLastCalledWith(
+            "cancel_proxy_continuation",
+            { continuationId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" },
+          );
         view.unmount();
       } finally {
         vi.useRealTimers();

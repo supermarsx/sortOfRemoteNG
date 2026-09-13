@@ -239,7 +239,11 @@ beforeEach(() => {
         }
         if (command === "review_proxy_redirect")
           return receipts.get(args.sessionId as string) ?? null;
-        if (command === "stop_basic_auth_proxy") return undefined;
+        if (
+          command === "stop_basic_auth_proxy" ||
+          command === "cancel_proxy_continuation"
+        )
+          return undefined;
         throw new Error(`Unexpected fixture command: ${command}`);
       },
     );
@@ -567,6 +571,154 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  const continuationId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const continuationDestination =
+    "https://example-nas.de2.quickconnect.to/webman/";
+
+  async function mountContinuation(holdCertificate = false) {
+    h.connections = [
+      {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+      },
+    ];
+    const view = await mounted();
+    const invoke = h.invoke.getMockImplementation()!;
+    let resumeCertificate: (() => void) | undefined;
+    let certificateHeld = false;
+    h.invoke.mockImplementation(async (command, args) => {
+      if (
+        command === "get_tls_certificate_info" &&
+        holdCertificate &&
+        !certificateHeld
+      ) {
+        certificateHeld = true;
+        await new Promise<void>((resolve) => {
+          resumeCertificate = resolve;
+        });
+      }
+      const result = await invoke(command, args);
+      return command === "review_proxy_redirect" && args.receiptId && result
+        ? { ...result, continuationId }
+        : result;
+    });
+    redirect(
+      view.container.querySelector("iframe")!,
+      continuationDestination,
+      true,
+      202,
+    );
+    if (holdCertificate)
+      await waitFor(() => expect(resumeCertificate).toBeTypeOf("function"));
+    return { view, resumeCertificate: () => resumeCertificate?.() };
+  }
+
+  it("redeems a pathful continuation exactly once with the full reviewed URL and anonymous startup", async () => {
+    const { view } = await mountContinuation();
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    const starts = h.invoke.mock.calls.filter(
+      ([command]) => command === "start_basic_auth_proxy",
+    );
+    expect(starts[1][1].config).toMatchObject({
+      target_url: continuationDestination,
+      continuation_id: continuationId,
+      username: "",
+      password: "",
+      http_auto_login: false,
+      accepted_cert_fingerprint: "AA:BB:CC",
+    });
+    expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: "proxy-1",
+      continuationId,
+    });
+    await waitFor(() =>
+      expect(
+        new URL(view.container.querySelector("iframe")!.src).pathname,
+      ).toBe("/webman/"),
+    );
+    expect(
+      getRuntimeWebNavigation(h.sessions[0].connectionId)?.nativeContinuation,
+    ).toBeUndefined();
+    expect(
+      starts.filter(
+        ([, args]) => args.config.continuation_id === continuationId,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("clears a continuation while TLS is pending before reopening without the previous session capability", async () => {
+    const { view, resumeCertificate } = await mountContinuation(true);
+    expect(proxies).toHaveLength(1);
+    expect(
+      getRuntimeWebNavigation(h.sessions[0].connectionId)?.nativeContinuation
+        ?.id,
+    ).toBe(continuationId);
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Clear session data" }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Clear and reopen" }));
+    });
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    await act(async () => {
+      resumeCertificate();
+    });
+    const starts = h.invoke.mock.calls.filter(
+      ([command]) => command === "start_basic_auth_proxy",
+    );
+    expect(starts).toHaveLength(2);
+    expect(starts[1][1].config).not.toHaveProperty("continuation_id");
+    expect(starts[1][1].config).toMatchObject({ username: "", password: "" });
+    const cancellation = h.invoke.mock.calls.findIndex(
+      ([command, args]) =>
+        command === "cancel_proxy_continuation" &&
+        args.continuationId === continuationId,
+    );
+    const freshStart = h.invoke.mock.calls.findIndex(
+      ([command, args]) =>
+        command === "start_basic_auth_proxy" && args === starts[1][1],
+    );
+    expect(cancellation).toBeGreaterThan(-1);
+    expect(cancellation).toBeLessThan(freshStart);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command, args]) =>
+          command === "cancel_proxy_continuation" &&
+          args.continuationId === continuationId,
+      ),
+    ).toHaveLength(1);
+    expect(
+      getRuntimeWebNavigation(h.sessions[0].connectionId)?.nativeContinuation,
+    ).toBeUndefined();
+    await waitFor(() =>
+      expect(view.container.querySelector("iframe")?.src).toContain(
+        proxies[1].proxy_url,
+      ),
+    );
+  });
+
+  it("does not redeem a continuation after its owning database changes during TLS inspection", async () => {
+    const { view, resumeCertificate } = await mountContinuation(true);
+    await act(async () => {
+      h.locked = true;
+      h.availabilityGeneration++;
+      view.rerender(<Harness />);
+    });
+    await act(async () => {
+      resumeCertificate();
+    });
+    expect(proxies).toHaveLength(1);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(1);
+    expect(view.container.querySelector("iframe")).toBeNull();
+  });
+
   it("offers retry instead of indefinite pending progress when a reported 202 has no native receipt", async () => {
     h.connections = [
       {

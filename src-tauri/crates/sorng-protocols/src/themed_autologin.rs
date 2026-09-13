@@ -728,6 +728,7 @@ mod tests {
             status: 200,
             error: None,
             timestamp: "t".into(),
+            diagnostic: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
         // Only metadata — the credential can't be here.

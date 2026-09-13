@@ -1334,9 +1334,12 @@ export function useWebBrowser(session: ConnectionSession) {
     generation: () => navGenRef.current,
     proxySessionId: () => proxySessionIdRef.current,
     navigationToken: () => pendingFrameRef.current?.token ?? null,
-    stopSource: async (id) => {
+    stopSource: async (id, continuationId) => {
       // Unlike generic best-effort cleanup, a handoff requires confirmed stop.
-      await invoke("stop_basic_auth_proxy", { sessionId: id });
+      await invoke("stop_basic_auth_proxy", {
+        sessionId: id,
+        ...(continuationId ? { continuationId } : {}),
+      });
       if (proxySessionIdRef.current === id) {
         proxySessionIdRef.current = "";
         proxyUrlRef.current = "";
@@ -1604,11 +1607,22 @@ export function useWebBrowser(session: ConnectionSession) {
           assertReviewedFlow();
           const redirectBudget = redirectBudgetRef.current;
           redirectBudget?.assertCurrent();
+          const runtimeNavigation = getRuntimeWebNavigation(
+            session.connectionId,
+          );
+          // The registry's assertCurrent is a source-mount launch guard. At
+          // destination startup the live destination/DB scope above and the
+          // original owner/security lease in redirectBudget are authoritative.
+          runtimeNavigation?.synologyRedirectSource?.assertOwner();
+          const continuation = runtimeNavigation?.nativeContinuation;
           const response = await invoke<ProxyMediatorResponse>(
             "start_basic_auth_proxy",
             {
               config: {
-                target_url: targetOrigin,
+                target_url: continuation
+                  ? runtimeNavigation!.initialUrl
+                  : targetOrigin,
+                ...(continuation ? { continuation_id: continuation.id } : {}),
                 // Empty strings when no auth — the backend treats
                 // (empty, empty) as "no credentials" and skips the
                 // basic_auth() call on every upstream request.
@@ -1675,7 +1689,16 @@ export function useWebBrowser(session: ConnectionSession) {
                 theme_tokens: readThemeTokens(),
               },
             },
-          );
+          ).catch((error: unknown) => {
+            continuation?.cancel();
+            throw error;
+          });
+          if (
+            continuation &&
+            runtimeNavigation?.nativeContinuation === continuation
+          ) {
+            delete runtimeNavigation.nativeContinuation;
+          }
           attemptLogin = null;
           if (gen !== navGenRef.current) {
             invoke("stop_basic_auth_proxy", {
@@ -2396,6 +2419,8 @@ export function useWebBrowser(session: ConnectionSession) {
     setShowClearSessionConfirm(false);
     const gen = ++navGenRef.current;
     const sid = proxySessionIdRef.current;
+    const runtimeNavigation = getRuntimeWebNavigation(session.connectionId);
+    const continuation = runtimeNavigation?.nativeContinuation;
     pendingFrameRef.current = null;
     currentDocumentRef.current = null;
     trustResolveRef.current?.(false);
@@ -2403,6 +2428,13 @@ export function useWebBrowser(session: ConnectionSession) {
     setTrustPrompt(null);
     clearFrame();
     try {
+      if (continuation) {
+        await invoke("cancel_proxy_continuation", {
+          continuationId: continuation.id,
+        });
+        if (runtimeNavigation?.nativeContinuation === continuation)
+          delete runtimeNavigation.nativeContinuation;
+      }
       if (sid) await invoke("stop_basic_auth_proxy", { sessionId: sid });
       if (!mountedRef.current || gen !== navGenRef.current) return;
       proxySessionIdRef.current = "";
@@ -2437,6 +2469,7 @@ export function useWebBrowser(session: ConnectionSession) {
     targetResolution.url,
     toast,
     clearFrame,
+    session.connectionId,
   ]);
 
   const canGoBack = historyIndex > 0;

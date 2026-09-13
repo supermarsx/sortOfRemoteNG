@@ -52,6 +52,99 @@ const QUICKCONNECT_RETRY_ASSIGN: &str = "window.location.href=n}}]),t}();e.defau
 const QUICKCONNECT_ERROR_ID: &str =
     r#"key:"getQuickConnectID",value:function(){return s.default.getHost().split(".")[0]}"#;
 
+/// Recognize the shipped connector on an original-NAS regional relay, not an
+/// arbitrary repeated URL/login page. This is only a non-convergence diagnostic;
+/// it never grants a route, cookie, credential or certificate permission.
+pub(super) fn quickconnect_connector_document(
+    text: &str,
+    target: &str,
+    defaults: Option<&super::SynologyQuickConnectDefaults>,
+) -> bool {
+    let Some(defaults) = defaults else {
+        return false;
+    };
+    let (Ok(target), Some(alias)) = (reqwest::Url::parse(target), defaults.nas_alias()) else {
+        return false;
+    };
+    if defaults.validate(&target).is_err() || target.scheme() != "https" || target.port().is_some()
+    {
+        return false;
+    }
+    let regional = target
+        .host_str()
+        .and_then(|host| host.strip_prefix(&format!("{alias}.")))
+        .and_then(|host| host.strip_suffix(".quickconnect.to"))
+        .is_some_and(|region| {
+            let bytes = region.as_bytes();
+            (3..=63).contains(&bytes.len())
+                && bytes[..2].iter().all(u8::is_ascii_lowercase)
+                && bytes[2..].iter().all(u8::is_ascii_digit)
+        });
+    if !regional {
+        return false;
+    }
+    // Tokenize comments and raw script elements before inspecting attributes:
+    // a quoted example/comment containing the asset is not a connector page.
+    static ELEMENT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static ATTRIBUTE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let elements = ELEMENT.get_or_init(|| regex::Regex::new(r#"(?is)<!--.*?-->|<(?:textarea|style|title|template)\b[^>]*>.*?</(?:textarea|style|title|template)\s*>|<script\b((?:"[^"]*"|'[^']*'|[^'">])*)>(.*?)</script\s*>"#).unwrap());
+    let attributes_pattern = ATTRIBUTE.get_or_init(|| {
+        regex::Regex::new(
+            r#"(?is)\s+([^\s'"=<>`/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s'"=<>`]+)))?"#,
+        )
+        .unwrap()
+    });
+    for element in elements.captures_iter(text) {
+        let Some(attributes) = element.get(1) else {
+            continue;
+        };
+        let mut src = None;
+        let mut executable = true;
+        let mut seen = std::collections::HashSet::new();
+        for attribute in attributes_pattern.captures_iter(attributes.as_str()) {
+            let name = attribute[1].to_ascii_lowercase();
+            // Ambiguous markup is not positive evidence of a connector.
+            if !seen.insert(name.clone()) {
+                executable = false;
+                break;
+            }
+            let value = (2..=4)
+                .find_map(|index| attribute.get(index))
+                .map(|v| v.as_str())
+                .unwrap_or("");
+            match name.as_str() {
+                "src" => src = Some(value),
+                "type" => {
+                    executable &= matches!(
+                        value.trim().to_ascii_lowercase().as_str(),
+                        "" | "text/javascript" | "application/javascript" | "module"
+                    )
+                }
+                "nomodule" => executable = false,
+                _ => {}
+            }
+        }
+        if !executable {
+            continue;
+        }
+        let Some(value) = src else { continue };
+        let Ok(asset) = target.join(value) else {
+            continue;
+        };
+        if asset.path() == "/connect_lib.da3fae9c5d057ef58d3a.bundle.js"
+            && asset.query().is_none()
+            && asset.fragment().is_none()
+            && asset.username().is_empty()
+            && asset.password().is_none()
+            && (asset.origin() == target.origin()
+                || asset.origin().ascii_serialization() == "https://quickconnect.to")
+        {
+            return true;
+        }
+    }
+    false
+}
+
 pub(super) fn repair_quickconnect_redirect(
     text: &str,
     request_url: &str,

@@ -17,6 +17,9 @@ pub struct ProxyRedirectReview {
     pub navigation_token: Option<String>,
     pub document_sequence: u64,
     pub removed_query: bool,
+    /// Returned only on consumption, never placed in website HTML/logs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation_id: Option<String>,
 }
 
 pub(super) struct PendingRedirect {
@@ -94,6 +97,7 @@ pub(super) fn record(
                 navigation_token,
                 document_sequence,
                 removed_query,
+                continuation_id: None,
             },
             defaults_context: state.proxy_policy.synology_quick_connect_defaults.clone(),
             sequence: state.document_sequence.clone(),
@@ -167,7 +171,22 @@ impl ProxySessionManager {
                 *nonce = None;
             }
             *continuation = None;
-            return Some(pending.review);
+            let mut review = pending.review;
+            if let Some(attempt) = &state.attempt {
+                let destination = reqwest::Url::parse(&review.destination_url).ok()?;
+                if pending
+                    .defaults_context
+                    .as_ref()
+                    .is_some_and(|defaults| defaults.permits(&review.source_origin, &destination))
+                {
+                    review.continuation_id = Some(
+                        self.attempts
+                            .prepare_transfer(attempt, &destination, &review.receipt_id)
+                            .ok()?,
+                    );
+                }
+            }
+            return Some(review);
         }
         Some(pending.review.clone())
     }
@@ -182,6 +201,7 @@ mod tests {
         let mut pending = PendingRedirect {
             review: ProxyRedirectReview {
                 receipt_id: "fixture".into(),
+                continuation_id: None,
                 session_id: "s".into(),
                 source_origin: "https://source.invalid".into(),
                 destination_url: "https://target.invalid/".into(),

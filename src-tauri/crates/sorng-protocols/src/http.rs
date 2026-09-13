@@ -22,6 +22,8 @@ pub use tls_ca::{
 mod proxy_transport;
 pub use proxy_transport::fetch_tls_certificate_info;
 
+#[path = "http_log_diagnostics.rs"]
+mod log_diagnostics;
 #[path = "http_proxy_policy.rs"]
 mod proxy_policy;
 #[path = "http_response.rs"]
@@ -33,6 +35,10 @@ mod proxy_response_tests;
 mod quickconnect;
 #[path = "http_quickconnect_control.rs"]
 mod quickconnect_control;
+pub use log_diagnostics::ProxyLogDiagnostic;
+#[path = "http_attempt.rs"]
+#[doc(hidden)]
+pub mod attempt;
 #[cfg(test)]
 #[path = "http_request_log_tests.rs"]
 mod request_log_tests;
@@ -614,6 +620,9 @@ pub struct BasicAuthProxyConfig {
     /// the ordinary ten-redirect same-origin limit.
     #[serde(default)]
     pub redirect_profile: Option<BrowserRedirectProfile>,
+    /// One-use native continuation, never a persisted setting or log identity.
+    #[serde(default)]
+    pub continuation_id: Option<String>,
     #[serde(default)]
     pub custom_headers: HashMap<String, String>,
     /// Optional app-level HTTP(S) proxy used by the mediator for outbound
@@ -993,6 +1002,8 @@ pub struct ProxyMediatorResponse {
 /// ICoreWebView2_22 for iframe support).
 /// Tracks active proxy mediator sessions so they can be stopped.
 pub struct ProxySessionManager {
+    #[doc(hidden)]
+    pub attempts: attempt::AttemptRegistry,
     pub sessions: HashMap<String, ProxySessionEntry>,
     /// Global request log (last N entries, ring buffer style).
     pub request_log: VecDeque<ProxyRequestLogEntry>,
@@ -1002,6 +1013,8 @@ pub struct ProxySessionManager {
 }
 
 pub struct ProxySessionEntry {
+    #[doc(hidden)]
+    pub attempt: Option<attempt::AttemptSession>,
     pub network: Arc<ProxyNetworkState>,
     pub target_url: String,
     pub username: String,
@@ -1041,6 +1054,8 @@ pub struct ProxyRequestLogEntry {
     pub status: u16,
     pub error: Option<String>,
     pub timestamp: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<ProxyLogDiagnostic>,
 }
 
 /// Detailed info about a single proxy session, returned to the frontend.
@@ -1060,6 +1075,7 @@ pub struct ProxySessionDetail {
 impl ProxySessionManager {
     pub fn new() -> Arc<std::sync::Mutex<Self>> {
         Arc::new(std::sync::Mutex::new(Self {
+            attempts: Default::default(),
             sessions: HashMap::new(),
             request_log: VecDeque::new(),
             request_log_capacity: 10_000,
@@ -1260,6 +1276,8 @@ mod recording_header_redaction_tests {
 /// toast).
 #[derive(Clone)]
 pub struct AxumProxyState {
+    #[doc(hidden)]
+    pub attempt: Option<attempt::AttemptSession>,
     pub network: Arc<ProxyNetworkState>,
     pub session_id: String,
     pub connection_id: String,
@@ -1422,7 +1440,12 @@ pub async fn enforce_proxy_access(
             .body(axum::body::Body::from("Forbidden"))
             .expect("static forbidden proxy response is valid");
     }
-    let mut response = if state.network.is_active() {
+    let mut response = if state.network.is_active()
+        && state
+            .attempt
+            .as_ref()
+            .is_none_or(|attempt| attempt.is_current())
+    {
         next.run(request).await
     } else {
         axum::http::Response::builder()
@@ -1503,6 +1526,7 @@ mod proxy_access_guard_tests {
 
 /// Closed local routes expose only their fixed category, never caller paths,
 /// destination queries, bodies, headers, or upstream response/error text.
+#[derive(Clone, Copy)]
 enum ObservedLocalRoute {
     Font,
     QuickConnectDiscovery,
@@ -1510,11 +1534,50 @@ enum ObservedLocalRoute {
     QuickConnectRedirect,
 }
 
+fn update_response_log(
+    state: &AxumProxyState,
+    entry_id: Option<&str>,
+    status: u16,
+    error: Option<String>,
+    diagnostic: ProxyLogDiagnostic,
+) {
+    let Some(entry_id) = entry_id else { return };
+    if let Ok(mut manager) = state.global_sessions.lock() {
+        // Cleared/evicted entries stay gone; completion must not recreate them.
+        if let Some(entry) = manager
+            .request_log
+            .iter_mut()
+            .rev()
+            .find(|entry| entry.id == entry_id)
+        {
+            entry.status = status;
+            entry.error = error;
+            entry.diagnostic = Some(session_diagnostic(state, diagnostic));
+        }
+    }
+}
+
+fn session_diagnostic(
+    state: &AxumProxyState,
+    mut diagnostic: ProxyLogDiagnostic,
+) -> ProxyLogDiagnostic {
+    if let Some((attempt_id, hop)) = state
+        .attempt
+        .as_ref()
+        .and_then(|attempt| attempt.diagnostic())
+    {
+        diagnostic.attempt_id = Some(attempt_id);
+        diagnostic.hop = Some(hop);
+    }
+    diagnostic
+}
+
 fn observe_local_response(
     state: &AxumProxyState,
     method: &axum::http::Method,
     route: ObservedLocalRoute,
     response: axum::response::Response,
+    started: std::time::Instant,
 ) -> axum::response::Response {
     let path = match route {
         ObservedLocalRoute::Font => font_assets::PREFIX,
@@ -1542,6 +1605,58 @@ fn observe_local_response(
             format!("HTTP {status}")
         }
     });
+    let phase = match route {
+        ObservedLocalRoute::Font => "font",
+        ObservedLocalRoute::QuickConnectRedirect => "quickconnect_redirect",
+        _ => "quickconnect_request",
+    };
+    let code = response
+        .extensions()
+        .get::<quickconnect_control::Diagnostic>()
+        .map(|value| value.code())
+        .unwrap_or(if matches!(route, ObservedLocalRoute::Font) {
+            "font_response"
+        } else if review_pending && status >= 400 {
+            "http_redirect_review"
+        } else if review_pending {
+            "quickconnect_redirect_pending"
+        } else if status >= 400 {
+            "http_policy_refused"
+        } else {
+            "http_response"
+        });
+    let mut diagnostic = ProxyLogDiagnostic::new(
+        phase,
+        if review_pending {
+            "handoff"
+        } else {
+            "complete"
+        },
+        code,
+        if review_pending && status >= 400 {
+            "review_required"
+        } else if review_pending {
+            "continuing"
+        } else if status >= 400 {
+            "failed"
+        } else {
+            "succeeded"
+        },
+        started,
+    );
+    if let Some(observation) = response
+        .extensions()
+        .get::<quickconnect_control::ExchangeObservation>()
+    {
+        diagnostic.phase = observation.phase.as_str().into();
+        diagnostic.stage = observation.stage.as_str().into();
+        diagnostic.outcome = observation.outcome.as_str().into();
+        diagnostic.duration_ms = observation.duration_ms;
+        diagnostic.lane = observation.lane.map(|lane| lane.as_str().into());
+        diagnostic.queue_ms = observation.queue_ms;
+        diagnostic.active_ms = observation.active_ms;
+        diagnostic.upstream_status = observation.upstream_status;
+    }
     state.request_count.fetch_add(1, Ordering::Relaxed);
     if error.is_some() {
         state.error_count.fetch_add(1, Ordering::Relaxed);
@@ -1565,6 +1680,7 @@ fn observe_local_response(
             status,
             error,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            diagnostic: Some(session_diagnostic(state, diagnostic)),
         });
     }
     response
@@ -1582,7 +1698,17 @@ pub async fn axum_proxy_handler(
     use axum::body::Body;
     use axum::http::{Response, StatusCode};
 
+    let req_start = std::time::Instant::now();
     let method = req.method().clone();
+    if proxy_request_headers_are_authorized(
+        req.headers(),
+        &state.proxy_authority,
+        &state.proxy_origin,
+    ) {
+        if let Some(attempt) = &state.attempt {
+            attempt.capture_route_cookies(req.headers());
+        }
+    }
     if req
         .uri()
         .path()
@@ -1594,6 +1720,7 @@ pub async fn axum_proxy_handler(
             &method,
             ObservedLocalRoute::QuickConnectDiscovered,
             response,
+            req_start,
         );
     }
     if req.uri().path().starts_with(quickconnect_control::PATH) {
@@ -1603,13 +1730,20 @@ pub async fn axum_proxy_handler(
             &method,
             ObservedLocalRoute::QuickConnectDiscovery,
             response,
+            req_start,
         );
     }
     if req.uri().path().starts_with("/__sortofremoteng_assets_v1/") {
         // Closed public binary capability: never send this reserved path,
         // browser credentials or source query policies to the NAS.
         let response = font_assets::handle(state.clone(), req).await;
-        return observe_local_response(&state, &method, ObservedLocalRoute::Font, response);
+        return observe_local_response(
+            &state,
+            &method,
+            ObservedLocalRoute::Font,
+            response,
+            req_start,
+        );
     }
     if websocket::is_upgrade_candidate(req.headers()) {
         return websocket::handle(state, req).await;
@@ -1685,6 +1819,7 @@ pub async fn axum_proxy_handler(
             &method,
             ObservedLocalRoute::QuickConnectRedirect,
             response,
+            req_start,
         );
     }
 
@@ -1769,7 +1904,6 @@ pub async fn axum_proxy_handler(
 
     // Only safe reads may retry. A timed-out login POST may already have been
     // processed upstream; repeating it could submit credentials twice.
-    let req_start = std::time::Instant::now();
     let result = match upstream::send(
         &state,
         &reqwest_method,
@@ -1819,8 +1953,21 @@ pub async fn axum_proxy_handler(
                 };
             }
 
-            // Log the request.
-            if let Ok(mut mgr) = state.global_sessions.lock() {
+            // First record headers, then advance this same entry once the body
+            // is validated. A decoding failure must not remain a successful 200.
+            let response_log_id = if let Ok(mut mgr) = state.global_sessions.lock() {
+                let mut diagnostic = ProxyLogDiagnostic::new(
+                    "http",
+                    "response_headers",
+                    "http_response",
+                    if status_u16 >= 400 {
+                        "http_error"
+                    } else {
+                        "succeeded"
+                    },
+                    req_start,
+                );
+                diagnostic.upstream_status = Some(status_u16);
                 mgr.record_request(ProxyRequestLogEntry {
                     id: String::new(),
                     session_id: state.session_id.clone(),
@@ -1833,8 +1980,12 @@ pub async fn axum_proxy_handler(
                         None
                     },
                     timestamp: chrono::Utc::now().to_rfc3339(),
+                    diagnostic: Some(session_diagnostic(&state, diagnostic)),
                 });
-            }
+                Some(mgr.next_request_log_id.to_string())
+            } else {
+                None
+            };
 
             // P3: intercept a Basic-Auth 401 challenge from the
             // upstream and swap it for a themed inline login form.
@@ -1920,6 +2071,19 @@ pub async fn axum_proxy_handler(
                     if let Ok(mut error) = state.last_error.lock() {
                         *error = Some(detail.to_string());
                     }
+                    update_response_log(
+                        &state,
+                        response_log_id.as_deref(),
+                        502,
+                        Some("HTTP 502 [http_response_invalid]".into()),
+                        ProxyLogDiagnostic::new(
+                            "http",
+                            "response_body",
+                            "http_response_invalid",
+                            "failed",
+                            req_start,
+                        ),
+                    );
                     let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
                     return crate::themed_errors::themed_error_response(
                         crate::themed_errors::ProxyErrorKind::Other,
@@ -1930,6 +2094,80 @@ pub async fn axum_proxy_handler(
                     );
                 }
             };
+            let mut completed_diagnostic = ProxyLogDiagnostic::new(
+                "http",
+                "complete",
+                "http_response",
+                if status_u16 >= 400 {
+                    "http_error"
+                } else {
+                    "succeeded"
+                },
+                req_start,
+            );
+            completed_diagnostic.upstream_status = Some(status_u16);
+            update_response_log(
+                &state,
+                response_log_id.as_deref(),
+                status_u16,
+                (status_u16 >= 400).then(|| format!("HTTP {status_u16}")),
+                completed_diagnostic,
+            );
+
+            // Only an explicitly marked primary navigation may advance the
+            // logical attempt's connector guard. Nested frames, XHR and late
+            // responses cannot consume this budget or reset a successor.
+            if document_request
+                && navigation_token.is_some()
+                && status_code.is_success()
+                && proxy_response::is_html(content_type.as_deref())
+                && state.document_sequence.load(Ordering::SeqCst) == document_sequence
+                && state.network.is_active()
+            {
+                if let Some(attempt) = &state.attempt {
+                    if proxy_response::quickconnect_connector_document(
+                        &String::from_utf8_lossy(&raw_bytes),
+                        &state.target_origin,
+                        state.proxy_policy.synology_quick_connect_defaults.as_ref(),
+                    ) {
+                        if let Err(detail) = attempt.record_connector(&state.target_origin) {
+                            state.error_count.fetch_add(1, Ordering::Relaxed);
+                            if let Ok(mut error) = state.last_error.lock() {
+                                *error = Some(detail.into());
+                            }
+                            update_response_log(
+                                &state,
+                                response_log_id.as_deref(),
+                                508,
+                                Some("HTTP 508 [quickconnect_connector_restart]".into()),
+                                ProxyLogDiagnostic::new(
+                                    "quickconnect_redirect",
+                                    "handoff",
+                                    "quickconnect_connector_restart",
+                                    "failed",
+                                    req_start,
+                                ),
+                            );
+                            let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
+                            return crate::themed_errors::themed_error_response(
+                                crate::themed_errors::ProxyErrorKind::RedirectLoop,
+                                &full_url,
+                                detail,
+                                &theme,
+                                &state.session_id,
+                            );
+                        }
+                    } else if path_and_query
+                        .split('?')
+                        .next()
+                        .is_some_and(|path| path.starts_with("/webman/"))
+                    {
+                        // A canonical/global bootstrap is not a DSM landing.
+                        // Reset only after actual DSM application HTML.
+                        attempt.connector_ready(&state.target_origin);
+                    }
+                }
+            }
 
             // ── P5: theme every other upstream 4xx/5xx ──
             //
@@ -2118,6 +2356,30 @@ pub async fn axum_proxy_handler(
             // Build response, stripping headers that block iframe display
             // or trigger browser auth prompts.
             let mut builder = Response::builder().status(status_u16);
+            if is_html {
+                if let Some(attempt) = &state.attempt {
+                    // Seed only the four provider route hints onto a new
+                    // loopback origin. A fresh upstream value/deletion wins.
+                    for cookie in attempt.route_cookie_headers() {
+                        let name = cookie
+                            .to_str()
+                            .ok()
+                            .and_then(|v| v.split_once('='))
+                            .map(|(n, _)| n);
+                        let overridden = resp_hdrs.get_all("set-cookie").iter().any(|value| {
+                            value
+                                .to_str()
+                                .ok()
+                                .and_then(|v| v.split_once('='))
+                                .map(|(n, _)| n.trim())
+                                == name
+                        });
+                        if !overridden {
+                            builder = builder.header("Set-Cookie", cookie);
+                        }
+                    }
+                }
+            }
             for (key, value) in resp_hdrs.iter() {
                 let k = key.as_str().to_lowercase();
                 if (is_rewritable && proxy_response::invalidated_header(&k))
@@ -2215,6 +2477,33 @@ pub async fn axum_proxy_handler(
             // proxy authority or embedded credentials. The category and stable
             // hint retain actionable context without copying transport URLs or
             // secrets into themed pages, manager state, recordings, or logs.
+            let (diagnostic_stage, diagnostic_code, diagnostic_outcome) = match &e {
+                upstream::UpstreamError::Transport(error) if error.is_timeout() => {
+                    ("connect_tls", "http_timeout", "timed_out")
+                }
+                upstream::UpstreamError::Transport(_) => {
+                    ("connect_tls", "http_transport_failed", "failed")
+                }
+                upstream::UpstreamError::Policy(_) => {
+                    ("validation", "http_policy_refused", "refused")
+                }
+                upstream::UpstreamError::RedirectLoop => {
+                    ("handoff", "http_redirect_loop", "failed")
+                }
+                upstream::UpstreamError::CrossOriginRedirect(_) if redirect_review_available => (
+                    "handoff",
+                    "http_redirect_review",
+                    if default_handoff {
+                        "continuing"
+                    } else {
+                        "review_required"
+                    },
+                ),
+                upstream::UpstreamError::CrossOriginRedirect(_) => {
+                    ("handoff", "http_policy_refused", "refused")
+                }
+                upstream::UpstreamError::Deadline => ("connect_tls", "http_timeout", "timed_out"),
+            };
             let err_msg = match e {
                 upstream::UpstreamError::Policy(message) => message.to_string(),
                 upstream::UpstreamError::CrossOriginRedirect(_) => kind.hint().to_string(),
@@ -2252,6 +2541,16 @@ pub async fn axum_proxy_handler(
                     status: themed_status,
                     error: recorded_error.clone(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
+                    diagnostic: Some(session_diagnostic(
+                        &state,
+                        ProxyLogDiagnostic::new(
+                            "http",
+                            diagnostic_stage,
+                            diagnostic_code,
+                            diagnostic_outcome,
+                            req_start,
+                        ),
+                    )),
                 });
             }
 

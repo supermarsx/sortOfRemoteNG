@@ -127,6 +127,7 @@ async fn local_observation_preserves_capacity_identity_and_expected_review_healt
             &axum::http::Method::GET,
             ObservedLocalRoute::QuickConnectRedirect,
             response,
+            std::time::Instant::now(),
         );
     }
     assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 3);
@@ -149,6 +150,9 @@ async fn local_observation_preserves_capacity_identity_and_expected_review_healt
         );
         assert_eq!(log[0].status, 403);
         assert!(log[0].error.is_none());
+        let diagnostic = log[0].diagnostic.as_ref().unwrap();
+        assert_eq!(diagnostic.code, "http_redirect_review");
+        assert_eq!(diagnostic.outcome, "review_required");
         manager.set_request_log_capacity(0).unwrap();
     }
     let _ = observe_local_response(
@@ -156,6 +160,7 @@ async fn local_observation_preserves_capacity_identity_and_expected_review_healt
         &axum::http::Method::POST,
         ObservedLocalRoute::QuickConnectDiscovery,
         Response::builder().status(503).body(Body::empty()).unwrap(),
+        std::time::Instant::now(),
     );
     assert!(proxy
         .state
@@ -178,6 +183,7 @@ async fn local_observation_preserves_capacity_identity_and_expected_review_healt
         &axum::http::Method::from_bytes(b"PRIVATE-TOKEN").unwrap(),
         ObservedLocalRoute::Font,
         Response::builder().status(200).body(Body::empty()).unwrap(),
+        std::time::Instant::now(),
     );
     let manager = proxy.state.global_sessions.lock().unwrap();
     let entry = manager.request_log.back().unwrap();

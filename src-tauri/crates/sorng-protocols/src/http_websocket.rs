@@ -111,6 +111,7 @@ pub(super) async fn handle(
 ) -> Response<Body> {
     // Handshakes are requests too, but socket URLs and subprotocols can contain
     // credentials. Record only a fixed category, never endpoints or frames.
+    let started = std::time::Instant::now();
     let method = if request.method() == Method::GET {
         "GET"
     } else {
@@ -135,6 +136,16 @@ pub(super) async fn handle(
             status,
             error,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            diagnostic: Some(super::session_diagnostic(
+                &state,
+                super::ProxyLogDiagnostic::new(
+                    "websocket",
+                    "complete",
+                    "websocket_handshake",
+                    if status == 101 { "succeeded" } else { "failed" },
+                    started,
+                ),
+            )),
         });
     }
     response

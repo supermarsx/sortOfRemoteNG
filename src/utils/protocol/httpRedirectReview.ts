@@ -15,6 +15,7 @@ export interface HttpRedirectReview {
   navigationToken: string | null;
   documentSequence: number;
   removedQuery: boolean;
+  continuationId?: string;
 }
 export function parseHttpRedirectReview(
   value: unknown,
@@ -34,6 +35,9 @@ export function parseHttpRedirectReview(
     !Number.isSafeInteger(candidate.documentSequence) ||
     Number(candidate.documentSequence) < 1 ||
     typeof candidate.removedQuery !== "boolean" ||
+    (candidate.continuationId !== undefined &&
+      (typeof candidate.continuationId !== "string" ||
+        !/^[a-f0-9-]{36}$/.test(candidate.continuationId))) ||
     (candidate.navigationToken !== null &&
       (typeof candidate.navigationToken !== "string" ||
         !/^[a-f0-9]{32}$/.test(candidate.navigationToken)))

@@ -27,6 +27,8 @@ sha2 = { workspace = true }
 md-5 = "0.10"
 socket2 = "0.6"
 reqwest = { workspace = true, features = ["cookies", "blocking"] }
+# Same maintained cookie parser used by reqwest; bounded per-origin attempt stores.
+cookie_store = { version = "0.22", default-features = false }
 regex = { workspace = true }
 rustls = { workspace = true }
 tokio-rustls = { workspace = true }

@@ -75,7 +75,19 @@ async fn send_inner(
             if websocket {
                 request = request.version(reqwest::Version::HTTP_11);
             }
+            let browser_cookies: Vec<_> = headers
+                .iter()
+                .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+                .map(|(_, value)| value.as_str())
+                .collect();
+            let merged_cookies = state
+                .attempt
+                .as_ref()
+                .and_then(|attempt| attempt.merged_request_cookies(&url, &browser_cookies));
             for (name, value) in headers {
+                if name.eq_ignore_ascii_case("cookie") && merged_cookies.is_some() {
+                    continue;
+                }
                 if body.is_empty()
                     && method == reqwest::Method::GET
                     && name.eq_ignore_ascii_case("content-type")
@@ -83,6 +95,9 @@ async fn send_inner(
                     continue;
                 }
                 request = request.header(name, value);
+            }
+            if let Some(cookies) = merged_cookies {
+                request = request.header(reqwest::header::COOKIE, cookies);
             }
             request = state
                 .upstream_auth_mode

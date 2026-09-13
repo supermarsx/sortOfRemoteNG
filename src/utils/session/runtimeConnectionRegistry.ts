@@ -38,6 +38,8 @@ export interface RuntimeWebNavigation {
   trustedRedirectSource?: TrustedRedirectSource;
   /** Volatile original-source lease; never learn a NAS alias from a later hop. */
   synologyRedirectSource?: SynologyRedirectSource;
+  /** Native-issued, one-use handoff; never saved or exposed to website frames. */
+  nativeContinuation?: { id: string; cancel: () => void };
 }
 const webNavigation = new Map<string, RuntimeWebNavigation>();
 
@@ -66,6 +68,7 @@ export function resolveRuntimeConnection(
 }
 
 export function releaseRuntimeConnection(connectionId: string): void {
+  webNavigation.get(connectionId)?.nativeContinuation?.cancel();
   runtimeConnections.delete(connectionId);
   webNavigation.delete(connectionId);
 }
@@ -90,6 +93,8 @@ export function releaseReplacedRuntimeConnection(
 }
 
 export function clearRuntimeConnectionsForTests(): void {
+  for (const navigation of webNavigation.values())
+    navigation.nativeContinuation?.cancel();
   runtimeConnections.clear();
   webNavigation.clear();
 }

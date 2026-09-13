@@ -17,10 +17,7 @@ test("desktop CSP permits the protected loopback mediator without arbitrary HTTP
   // CSP cannot express the token's hexadecimal pattern. Only localhost
   // subdomains are allowed here; the live hook separately requires the exact
   // p<32hex>.localhost origin returned by the backend.
-  assert.deepEqual(directives.get("frame-src"), [
-    "https:",
-    "http://*.localhost:*",
-  ]);
+  assert.deepEqual(directives.get("frame-src"), ["http://*.localhost:*"]);
   assert.ok(!directives.get("connect-src").includes("http://*.localhost:*"));
   assert.deepEqual(directives.get("object-src"), ["'none'"]);
   assert.deepEqual(directives.get("frame-ancestors"), ["'none'"]);

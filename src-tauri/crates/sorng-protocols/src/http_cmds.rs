@@ -75,6 +75,7 @@ pub async fn http_post(
     service.fetch(config).await
 }
 
+#[cfg(test)]
 fn proxy_client_builder(
     verify_ssl: bool,
     accepted_cert_fingerprint: Option<&str>,
@@ -82,6 +83,26 @@ fn proxy_client_builder(
     upstream_proxy_url: Option<&str>,
     require_ca_verification: bool,
     ca_target_host: Option<&str>,
+) -> Result<reqwest::Client, String> {
+    proxy_client_builder_with_cookies(
+        verify_ssl,
+        accepted_cert_fingerprint,
+        min_tls,
+        upstream_proxy_url,
+        require_ca_verification,
+        ca_target_host,
+        None,
+    )
+}
+
+fn proxy_client_builder_with_cookies(
+    verify_ssl: bool,
+    accepted_cert_fingerprint: Option<&str>,
+    min_tls: &str,
+    upstream_proxy_url: Option<&str>,
+    require_ca_verification: bool,
+    ca_target_host: Option<&str>,
+    cookies: Option<Arc<crate::http::attempt::AttemptCookieStore>>,
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         // Route ownership is explicit. Ambient process proxy variables must
@@ -102,6 +123,10 @@ fn proxy_client_builder(
         .redirect(reqwest::redirect::Policy::none())
         .min_tls_version(resolve_min_tls_version(min_tls))
         .cookie_store(true);
+
+    if let Some(cookies) = cookies {
+        builder = builder.cookie_provider(cookies);
+    }
 
     if let Some(proxy_url) = upstream_proxy_url {
         builder = builder.proxy(validate_upstream_proxy(proxy_url)?);
@@ -279,6 +304,34 @@ fn validate_proxy_target_url(target_url: &str) -> Result<reqwest::Url, String> {
         .map_err(|_| "Proxy target URL could not be canonicalized".to_string())
 }
 
+fn validate_proxy_start_target(target_url: &str, continuing: bool) -> Result<reqwest::Url, String> {
+    if !continuing {
+        return validate_proxy_target_url(target_url);
+    }
+    let error = || "The QuickConnect continuation entry URL is invalid".to_string();
+    if target_url.len() > 4096 {
+        return Err(error());
+    }
+    let parsed = reqwest::Url::parse(target_url).map_err(|_| error())?;
+    if parsed.as_str() != target_url || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(error());
+    }
+    let authority = target_url
+        .split_once("://")
+        .ok_or_else(error)?
+        .1
+        .split('/')
+        .next()
+        .ok_or_else(error)?;
+    let root = validate_proxy_target_url(&format!("{}://{authority}/", parsed.scheme()))?;
+    if root.origin() != parsed.origin() {
+        return Err(error());
+    }
+    // The full path is matched against the native one-use receipt before
+    // allocation. The forwarding base is independently the origin root.
+    Ok(parsed)
+}
+
 struct ProtectedProxyEndpoint {
     authority: String,
     origin: String,
@@ -301,8 +354,8 @@ fn protected_proxy_endpoint(local_port: u16) -> ProtectedProxyEndpoint {
 #[cfg(test)]
 mod proxy_target_validation_tests {
     use super::{
-        diagnostic_upstream_proxy, protected_proxy_endpoint, validate_proxy_target_url,
-        validate_upstream_proxy,
+        diagnostic_upstream_proxy, protected_proxy_endpoint, validate_proxy_start_target,
+        validate_proxy_target_url, validate_upstream_proxy,
     };
 
     #[test]
@@ -317,6 +370,35 @@ mod proxy_target_validation_tests {
                     .expect("safe authority should validate")
                     .as_str(),
                 expected
+            );
+        }
+    }
+
+    #[test]
+    fn continuation_entry_preserves_exact_path_but_never_widens_authority_admission() {
+        for target in [
+            "https://example.fr3.quickconnect.to/webman/",
+            "https://example.fr3.quickconnect.to/webman/encoded%20path/",
+        ] {
+            let entry = validate_proxy_start_target(target, true).unwrap();
+            assert_eq!(entry.as_str(), target);
+            let forwarding_base = format!("{}/", entry.origin().ascii_serialization());
+            assert_eq!(
+                format!("{}{}", forwarding_base.trim_end_matches('/'), entry.path()),
+                target
+            );
+            assert!(validate_proxy_start_target(target, false).is_err());
+        }
+        for target in [
+            "https://user:secret@example.fr3.quickconnect.to/webman/",
+            "https://example%2efr3.quickconnect.to/webman/",
+            "https://example.fr3.quickconnect.to:0/webman/",
+            "https://example.fr3.quickconnect.to/webman/?secret=x",
+            "https://example.fr3.quickconnect.to/webman/#private",
+        ] {
+            assert!(
+                validate_proxy_start_target(target, true).is_err(),
+                "{target}"
             );
         }
     }
@@ -434,8 +516,13 @@ pub async fn start_basic_auth_proxy(
     _service: tauri::State<'_, HttpServiceState>,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
+    let _pending_continuation = PendingContinuationGuard {
+        sessions: (*sessions).clone(),
+        id: config.continuation_id.clone(),
+    };
     crate::http::webview_origins::require_frame_guard_ready()?;
-    let validated_target = validate_proxy_target_url(&config.target_url)?;
+    let validated_target =
+        validate_proxy_start_target(&config.target_url, config.continuation_id.is_some())?;
     if config.require_ca_verification && validated_target.scheme() != "https" {
         return Err("CA verification admission is only supported for HTTPS targets".into());
     }
@@ -455,13 +542,25 @@ pub async fn start_basic_auth_proxy(
         return Err("pfSense v1 proxy authentication requires both key and secret".into());
     }
     let session_id = uuid::Uuid::new_v4().to_string();
-    let target_url = validated_target.as_str().to_string();
     let target_origin = validated_target.origin().ascii_serialization();
+    // The receipt claims the complete cleaned entry URL; the mediator's base
+    // remains the origin root because the iframe supplies the entry path.
+    let target_url = if config.continuation_id.is_some() {
+        format!("{target_origin}/")
+    } else {
+        validated_target.as_str().to_string()
+    };
     let verify_ssl = config.verify_ssl;
     let accepted_cert_fingerprint = config.accepted_cert_fingerprint.clone();
     let min_tls = config.min_tls_version.clone();
     let connection_id = config.connection_id.clone();
     let upstream_proxy_url = config.upstream_proxy_url.clone();
+    let attempt = sessions
+        .lock()
+        .map_err(|_| "Proxy continuation is unavailable")?
+        .attempts
+        .start(&config, &validated_target, &session_id)?;
+    let mut attempt_guard = AttemptStartGuard(attempt.clone());
 
     // Each browser tab owns its unique returned session_id. connection_id is
     // metadata, not an eviction key: opening another tab for a saved connection
@@ -469,13 +568,14 @@ pub async fn start_basic_auth_proxy(
 
     // Build an async reqwest client for this session with connection keep-alive
     // and reasonable timeouts to avoid stale-connection errors.
-    let client = proxy_client_builder(
+    let client = proxy_client_builder_with_cookies(
         verify_ssl,
         accepted_cert_fingerprint.as_deref(),
         &min_tls,
         upstream_proxy_url.as_deref(),
         config.require_ca_verification,
         validated_target.host_str(),
+        attempt.as_ref().map(|attempt| attempt.cookie_store()),
     )?;
 
     // Bind to a random free port.
@@ -515,6 +615,7 @@ pub async fn start_basic_auth_proxy(
         .map(crate::theme_tokens::ThemeTokens::sanitized)
         .unwrap_or_else(crate::theme_tokens::ThemeTokens::dark_default);
     let proxy_state = Arc::new(AxumProxyState {
+        attempt: attempt.clone(),
         network: network.clone(),
         session_id: session_id.clone(),
         connection_id: connection_id.clone(),
@@ -598,6 +699,7 @@ pub async fn start_basic_auth_proxy(
         mgr.sessions.insert(
             session_id.clone(),
             ProxySessionEntry {
+                attempt,
                 network,
                 target_url: target_url.clone(),
                 username: config.username.clone(),
@@ -623,6 +725,7 @@ pub async fn start_basic_auth_proxy(
         );
     }
 
+    attempt_guard.0 = None;
     Ok(ProxyMediatorResponse {
         local_port,
         session_id: session_id.clone(),
@@ -634,9 +737,19 @@ pub async fn start_basic_auth_proxy(
 #[tauri::command]
 pub fn stop_basic_auth_proxy(
     session_id: String,
+    continuation_id: Option<String>,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<(), String> {
     let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let attempt = mgr
+        .sessions
+        .get(&session_id)
+        .and_then(|entry| entry.attempt.clone());
+    if let Some(attempt) = attempt {
+        mgr.attempts.stop(&attempt, continuation_id.as_deref())?;
+    } else if continuation_id.is_some() {
+        return Err("The QuickConnect continuation is no longer available".into());
+    }
     if let Some(mut entry) = mgr.sessions.remove(&session_id) {
         entry.network.revoke();
         mgr.discard_redirect_review(&session_id);
@@ -676,7 +789,67 @@ pub fn review_proxy_redirect(
     let mut manager = sessions
         .lock()
         .map_err(|_| "Proxy navigation review is unavailable".to_string())?;
-    Ok(manager.review_redirect(&session_id, receipt_id.as_deref()))
+    let review = manager.review_redirect(&session_id, receipt_id.as_deref());
+    if let Some(id) = review
+        .as_ref()
+        .and_then(|review| review.continuation_id.clone())
+    {
+        let sessions = (*sessions).clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+            if let Ok(mut manager) = sessions.lock() {
+                cancel_owned_continuation(&mut manager, &id);
+            }
+        });
+    }
+    Ok(review)
+}
+
+/// Cancels only an opaque, unredeemed native handoff. Never starts a request.
+#[tauri::command]
+pub fn cancel_proxy_continuation(
+    continuation_id: String,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<(), String> {
+    let mut manager = sessions
+        .lock()
+        .map_err(|_| "Proxy continuation is unavailable")?;
+    cancel_owned_continuation(&mut manager, &continuation_id);
+    Ok(())
+}
+
+fn cancel_owned_continuation(manager: &mut ProxySessionManager, id: &str) {
+    if let Some(source_id) = manager.attempts.cancel(id) {
+        manager.discard_redirect_review(&source_id);
+        if let Some(mut entry) = manager.sessions.remove(&source_id) {
+            entry.network.revoke();
+            if let Some(shutdown) = entry.shutdown_tx.take() {
+                let _ = shutdown.send(());
+            }
+        }
+    }
+}
+
+struct AttemptStartGuard(Option<crate::http::attempt::AttemptSession>);
+impl Drop for AttemptStartGuard {
+    fn drop(&mut self) {
+        if let Some(attempt) = &self.0 {
+            attempt.revoke();
+        }
+    }
+}
+struct PendingContinuationGuard {
+    sessions: ProxySessionManagerState,
+    id: Option<String>,
+}
+impl Drop for PendingContinuationGuard {
+    fn drop(&mut self) {
+        if let Some(id) = &self.id {
+            if let Ok(mut manager) = self.sessions.lock() {
+                cancel_owned_continuation(&mut manager, id);
+            }
+        }
+    }
 }
 
 /// List all active proxy sessions.
@@ -772,7 +945,11 @@ pub fn stop_all_proxy_sessions(
     let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     let count = mgr.sessions.len() as u32;
     mgr.clear_redirect_reviews();
+    mgr.attempts.clear();
     for (_id, mut entry) in mgr.sessions.drain() {
+        if let Some(attempt) = &entry.attempt {
+            attempt.revoke();
+        }
         entry.network.revoke();
         if let Some(tx) = entry.shutdown_tx.take() {
             let _ = tx.send(());
@@ -876,6 +1053,7 @@ pub async fn restart_proxy_session(
         accepted_cert_fingerprint,
         require_ca_verification,
         min_tls,
+        previous_attempt,
     ) = {
         let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         let entry = mgr
@@ -897,8 +1075,22 @@ pub async fn restart_proxy_session(
             entry.accepted_cert_fingerprint.clone(),
             entry.require_ca_verification,
             entry.min_tls_version.clone(),
+            entry.attempt.clone(),
         )
     };
+
+    let new_session_id = uuid::Uuid::new_v4().to_string();
+    let attempt = previous_attempt
+        .as_ref()
+        .map(|source| {
+            sessions
+                .lock()
+                .map_err(|_| "Proxy continuation is unavailable".to_string())?
+                .attempts
+                .restart(source, &new_session_id)
+        })
+        .transpose()?;
+    let mut attempt_guard = AttemptStartGuard(attempt.clone());
 
     // Shut down the old axum server (may already be dead).
     {
@@ -912,15 +1104,16 @@ pub async fn restart_proxy_session(
         }
     }
 
-    // Build a fresh reqwest client.
+    // Build a fresh reqwest client; preserve only this exact-origin attempt jar.
     let validated_target = validate_proxy_target_url(&target_url)?;
-    let client = proxy_client_builder(
+    let client = proxy_client_builder_with_cookies(
         verify_ssl,
         accepted_cert_fingerprint.as_deref(),
         &min_tls,
         upstream_proxy_url.as_deref(),
         require_ca_verification,
         validated_target.host_str(),
+        attempt.as_ref().map(|attempt| attempt.cookie_store()),
     )?;
 
     // Bind to a new random free port.
@@ -943,12 +1136,12 @@ pub async fn restart_proxy_session(
         ),
     );
 
-    let new_session_id = uuid::Uuid::new_v4().to_string();
     let request_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
     let last_error: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
 
     let proxy_state = Arc::new(AxumProxyState {
+        attempt: attempt.clone(),
         network: network.clone(),
         session_id: new_session_id.clone(),
         connection_id: connection_id.clone(),
@@ -1032,6 +1225,7 @@ pub async fn restart_proxy_session(
         mgr.sessions.insert(
             new_session_id.clone(),
             ProxySessionEntry {
+                attempt,
                 network,
                 target_url,
                 username,
@@ -1057,6 +1251,7 @@ pub async fn restart_proxy_session(
         );
     }
 
+    attempt_guard.0 = None;
     Ok(ProxyMediatorResponse {
         local_port,
         session_id: new_session_id,

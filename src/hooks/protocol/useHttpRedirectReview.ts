@@ -44,7 +44,7 @@ interface Options {
   generation: () => number;
   proxySessionId: () => string;
   navigationToken: () => string | null;
-  stopSource: (sessionId: string) => Promise<void>;
+  stopSource: (sessionId: string, continuationId?: string) => Promise<void>;
   /** Replace only the tab's ephemeral target, never the saved connection. */
   continueInTab?: (connection: Connection) => void;
   trust?: ReturnType<typeof useHttpRedirectTrust>;
@@ -370,6 +370,9 @@ export function useHttpRedirectReview(options: Options) {
       : <T>(operation: () => Promise<T>) => operation();
     setBusy(true);
     setError("");
+    let nativeContinuation: { id: string; cancel: () => void } | undefined;
+    let continuationOwnedByRuntime = false;
+    let continuationFinished = false;
     try {
       if (destination !== "current" && destination !== "anonymous")
         throw new Error();
@@ -433,6 +436,27 @@ export function useHttpRedirectReview(options: Options) {
           invoke<unknown>("review_proxy_redirect", {
             sessionId: receipt.review.sessionId,
             receiptId: receipt.review.receiptId,
+          }).then((value) => {
+            const native = parseHttpRedirectReview(
+              value,
+              receipt.review.sessionId,
+              captured.sourceOrigin,
+              captured.effectivePolicy ?? captured.connection?.httpProxyPolicy,
+            );
+            if (native?.continuationId) {
+              const id = native.continuationId;
+              const transfer = {
+                id,
+                cancel: () => {
+                  void invoke("cancel_proxy_continuation", {
+                    continuationId: id,
+                  }).catch(() => {});
+                },
+              };
+              if (continuationFinished) transfer.cancel();
+              else nativeContinuation = transfer;
+            }
+            return value;
           }),
         ),
         receipt.review.sessionId,
@@ -441,10 +465,12 @@ export function useHttpRedirectReview(options: Options) {
       );
       receipt.assertCurrent();
       if (automatic) receipt.trust?.assertCurrent();
+      const consumedReceipt = consumed ? { ...consumed } : null;
+      if (consumedReceipt) delete consumedReceipt.continuationId;
       if (
         token !== action.current ||
         !consumed ||
-        JSON.stringify(consumed) !== JSON.stringify(receipt.review)
+        JSON.stringify(consumedReceipt) !== JSON.stringify(receipt.review)
       )
         throw new Error();
       // Validate the complete destination/login choice before stopping the
@@ -475,8 +501,23 @@ export function useHttpRedirectReview(options: Options) {
         receipt.trust?.synologySource ??
         captured.trust?.defaultSource ??
         sourceNavigation?.synologyRedirectSource;
+      // Explicit credential forwarding is a separate flow, not anonymous
+      // continuity. Ordinary stop below revokes any unclaimed native transfer.
+      const transferContinuation =
+        destination === "current" &&
+        !carrySavedLogin &&
+        synologyRedirectSource?.enabled
+          ? nativeContinuation
+          : undefined;
       assertSourceBudgetCurrent();
-      await withinDeadline(() => captured.stopSource(receipt.review.sessionId));
+      await withinDeadline(() =>
+        transferContinuation
+          ? captured.stopSource(
+              receipt.review.sessionId,
+              transferContinuation.id,
+            )
+          : captured.stopSource(receipt.review.sessionId),
+      );
       assertLaunchCurrent();
       if (token !== action.current) return;
       registerRuntimeConnection(connection, {
@@ -485,7 +526,9 @@ export function useHttpRedirectReview(options: Options) {
         assertCurrent: assertLaunchCurrent,
         trustedRedirectSource: receipt.trust?.provenance ?? undefined,
         synologyRedirectSource,
+        nativeContinuation: transferContinuation,
       });
+      continuationOwnedByRuntime = !!transferContinuation;
       try {
         assertLaunchCurrent();
         if (destination === "current") captured.continueInTab!(connection);
@@ -508,6 +551,8 @@ export function useHttpRedirectReview(options: Options) {
           "The redirect expired or access changed. No destination was opened. Retry the original navigation to review again.",
         );
     } finally {
+      continuationFinished = true;
+      if (!continuationOwnedByRuntime) nativeContinuation?.cancel();
       accepting.current = false;
       if (live.current && token === action.current) setBusy(false);
     }
