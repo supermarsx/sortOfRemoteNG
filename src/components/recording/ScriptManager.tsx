@@ -6,6 +6,7 @@ import ScriptList from "./scriptManager/ScriptList";
 import DetailPane from "./scriptManager/DetailPane";
 import WebsiteUserScriptsPanel from "./scriptManager/WebsiteUserScriptsPanel";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
+import { Select } from "../ui/forms";
 import type { WebsiteUserScriptsLibraryBinding } from "../../hooks/recording/useWebsiteUserScripts";
 import type { AutomationFamily } from "../../types/recording/automationLibrary";
 const RepositoryCatalogPanel = lazy(
@@ -142,14 +143,14 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--color-border)] px-4 py-2 text-xs">
         <label className="flex items-center gap-2">
           Library scope
-          <select
-            aria-label="Script library scope"
-            className="sor-form-input max-w-xs"
-            style={{ width: "auto" }}
+          <Select
+            label="Script library scope"
+            variant="form-sm"
+            className="w-auto max-w-xs"
             disabled={websiteBusy || catalogBusy || mgr.busy}
             value={mgr.scope.kind === "app" ? "app" : mgr.scope.databaseId}
-            onChange={(event) => {
-              const value = event.target.value;
+            onChange={(value) => {
+              if (websiteBusy || catalogBusy || mgr.busy) return;
               requestLeave(() => {
                 mgr.discardEdit();
                 mgr.changeScope(
@@ -159,20 +160,27 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
                 );
               });
             }}
-          >
-            <option value="app">App-wide</option>
-            {mgr.databaseScope && (
-              <option value={mgr.databaseScope.databaseId}>
-                Current database
-              </option>
-            )}
-            {mgr.scope.kind === "database" &&
-              mgr.databaseScope?.databaseId !== mgr.scope.databaseId && (
-                <option value={mgr.scope.databaseId}>
-                  Owning database (unavailable)
-                </option>
-              )}
-          </select>
+            options={[
+              { value: "app", label: "App-wide" },
+              ...(mgr.databaseScope
+                ? [
+                    {
+                      value: mgr.databaseScope.databaseId,
+                      label: "Current database",
+                    },
+                  ]
+                : []),
+              ...(mgr.scope.kind === "database" &&
+              mgr.databaseScope?.databaseId !== mgr.scope.databaseId
+                ? [
+                    {
+                      value: mgr.scope.databaseId,
+                      label: "Owning database (unavailable)",
+                    },
+                  ]
+                : []),
+            ]}
+          />
         </label>
         <span className="min-w-0 break-all text-[var(--color-textSecondary)]">
           {mgr.scope.kind === "app"
@@ -247,18 +255,21 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
             {catalogSource === "repository" && (
               <label className="flex items-center gap-2 text-xs">
                 Script kind
-                <select
-                  style={{ width: "auto" }}
-                  className="sor-form-input"
+                <Select
+                  label="Script kind"
+                  variant="form-sm"
+                  className="w-auto"
                   disabled={catalogBusy}
                   value={catalogFamily}
-                  onChange={(event) =>
-                    setCatalogFamily(event.target.value as AutomationFamily)
-                  }
-                >
-                  <option value="terminal-script">Terminal scripts</option>
-                  <option value="website-script">Website userscripts</option>
-                </select>
+                  onChange={(value) => {
+                    if (!catalogBusy)
+                      setCatalogFamily(value as AutomationFamily);
+                  }}
+                  options={[
+                    { value: "terminal-script", label: "Terminal scripts" },
+                    { value: "website-script", label: "Website userscripts" },
+                  ]}
+                />
               </label>
             )}
           </div>

@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { ChevronDown, ChevronUp, Copy, Plus, Save, Trash2 } from "lucide-react";
+import { Select } from "../ui/forms";
 import type {
   WebInteractionMacro,
   WebInteractionStep,
@@ -128,30 +129,34 @@ export function WebsiteMacroEditor({
             </div>
             <label className="block text-xs">
               Action {index + 1}
-              <select
+              <Select
+                label={`Action ${index + 1}`}
+                variant="form-sm"
                 value={item.kind}
-                className="sor-form-input ml-2 w-auto"
-                style={{ width: "auto" }}
-                onChange={(event) =>
+                className="mt-1 w-auto"
+                disabled={disabled}
+                onChange={(value) => {
+                  if (disabled) return;
                   update(
                     index,
-                    event.target.value === "check"
+                    value === "check"
                       ? {
                           kind: "check",
                           selector: item.selector,
                           checked: true,
                         }
                       : {
-                          kind: event.target.value as "click" | "fill",
+                          kind: value as "click" | "fill",
                           selector: item.selector,
                         },
-                  )
-                }
-              >
-                <option value="click">Click</option>
-                <option value="check">Set checkbox</option>
-                <option value="fill">Fill (prompt at replay)</option>
-              </select>
+                  );
+                }}
+                options={[
+                  { value: "click", label: "Click" },
+                  { value: "check", label: "Set checkbox" },
+                  { value: "fill", label: "Fill (prompt at replay)" },
+                ]}
+              />
             </label>
             <label className="block space-y-1 text-xs">
               Structural selector {index + 1}

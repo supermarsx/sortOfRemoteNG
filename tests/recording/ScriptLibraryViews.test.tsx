@@ -189,14 +189,16 @@ describe("default script catalog UI", () => {
     expect(screen.getByLabelText("Browse script platform")).toHaveClass(
       "max-w-56",
     );
-    expect(screen.getByLabelText("Browse script category")).toHaveStyle({
-      width: "auto",
-    });
+    expect(screen.getByLabelText("Browse script category")).toHaveClass(
+      "sor-select-trigger",
+      "w-auto",
+    );
     fireEvent.click(screen.getByLabelText("Browse script platform"));
     fireEvent.mouseDown(screen.getByRole("option", { name: "Windows" }));
-    fireEvent.change(screen.getByLabelText("Browse script category"), {
-      target: { value: "Packages / Windows" },
-    });
+    fireEvent.click(screen.getByLabelText("Browse script category"));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Packages / Windows" }),
+    );
     expect(
       screen.getByRole("checkbox", {
         name: "Select Installed Windows packages (winget)",
@@ -261,12 +263,13 @@ describe("website userscript library UI", () => {
   it("explicitly selects TypeScript and saves the original typed source and language without running it", async () => {
     render(<WebsiteUserScriptsPanel />);
     fireEvent.click(screen.getByRole("button", { name: "New website script" }));
-    expect(screen.getByLabelText("Website script language")).toHaveValue(
-      "javascript",
+    expect(screen.getByLabelText("Website script language")).toHaveTextContent(
+      "JavaScript",
     );
-    fireEvent.change(screen.getByLabelText("Website script language"), {
-      target: { value: "typescript" },
-    });
+    fireEvent.click(screen.getByLabelText("Website script language"));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "TypeScript (standalone)" }),
+    );
     fireEvent.change(screen.getByLabelText("Script name"), {
       target: { value: "Typed website" },
     });

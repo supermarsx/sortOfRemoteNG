@@ -199,23 +199,22 @@ export function DefaultScriptCatalog({
           ]}
         />
       ) : (
-        <select
-          aria-label={`Browse script ${label.toLowerCase()}`}
-          className="sor-form-input max-w-56"
-          style={{ width: "auto" }}
+        <Select
+          label={`Browse script ${label.toLowerCase()}`}
+          variant="form-sm"
+          className="w-auto max-w-56"
           value={value}
-          onChange={(event) => update(event.target.value)}
-        >
-          <option value="">
-            All{" "}
-            {label === "Category" ? "categories" : `${label.toLowerCase()}s`}
-          </option>
-          {options.map(([key, text]) => (
-            <option key={key} value={key}>
-              {text}
-            </option>
-          ))}
-        </select>
+          onChange={update}
+          searchable
+          searchPlaceholder={`Search ${label.toLowerCase()}…`}
+          options={[
+            {
+              value: "",
+              label: `All ${label === "Category" ? "categories" : `${label.toLowerCase()}s`}`,
+            },
+            ...options.map(([key, text]) => ({ value: key, label: text })),
+          ]}
+        />
       )}
     </label>
   );

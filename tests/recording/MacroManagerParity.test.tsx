@@ -149,10 +149,11 @@ describe("Macro Manager parity", () => {
     mount();
     await screen.findByRole("button", { name: /Saved sequence/ });
     expect(
-      screen.getByRole("combobox", { name: "Macro library scope" }).style.width,
-    ).toBe("auto");
-    expect(screen.getByRole("combobox", { name: "Category" }).style.width).toBe(
-      "auto",
+      screen.getByRole("combobox", { name: "Macro library scope" }),
+    ).toHaveClass("sor-select-trigger", "w-auto");
+    expect(screen.getByRole("combobox", { name: "Category" })).toHaveClass(
+      "sor-select-trigger",
+      "w-auto",
     );
     expect(
       within(screen.getByRole("region", { name: "Saved macros" }))
@@ -174,9 +175,11 @@ describe("Macro Manager parity", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
       target: { value: "Draft" },
     });
-    fireEvent.change(
+    fireEvent.click(
       screen.getByRole("combobox", { name: "Macro library scope" }),
-      { target: { value: "db-fixture" } },
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Current database" }),
     );
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(h.apply).not.toHaveBeenCalled();
@@ -188,6 +191,37 @@ describe("Macro Manager parity", () => {
       { kind: "database", databaseId: "db-fixture" },
       "terminal-macro",
     );
+  });
+  it("uses themed category, sort and browse-kind options without applying the library", async () => {
+    mount();
+    await screen.findByRole("button", { name: /Saved sequence/ });
+    expect(document.querySelector("select")).toBeNull();
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.change(screen.getByPlaceholderText("Search categories…"), {
+      target: { value: terminal.payload.category ?? "" },
+    });
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: terminal.payload.category! }),
+    );
+    expect(
+      screen.getByRole("button", { name: /Saved sequence/ }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Recently updated" }),
+    );
+    expect(screen.getByRole("combobox", { name: "Sort" })).toHaveTextContent(
+      "Recently updated",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Browse macros" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Macro kind" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Website interactions" }),
+    );
+    expect(
+      await screen.findByRole("region", { name: "Repository catalog fixture" }),
+    ).toHaveTextContent("website-macro");
+    expect(h.apply).not.toHaveBeenCalled();
   });
   it("edits website fill/check steps without any persisted input value control", async () => {
     mount();

@@ -13,6 +13,7 @@ import { useAutomationCatalog } from "../../../hooks/recording/useAutomationCata
 import ScriptCodeEditor from "../../ui/editor/ScriptCodeEditor";
 import { detectLanguage } from "../../../utils/recording/scriptSyntax";
 import AutomationSourceBadge from "./AutomationSourceBadge";
+import { Select } from "../../ui/forms";
 
 export interface RepositoryCatalogPanelProps {
   api: AutomationLibraryApi;
@@ -404,31 +405,35 @@ export default function RepositoryCatalogPanel(
                 {row.name} ·{" "}
                 {row.conflict ? "ID already exists" : "New source ID"}
               </span>
-              <select
-                className="sor-form-select-sm"
-                aria-label={`Import choice for ${row.name}`}
+              <Select
+                variant="form-sm"
+                label={`Import choice for ${row.name}`}
                 value={resolutions[row.id] ?? ""}
                 disabled={disabled}
-                onChange={(event) =>
+                onChange={(value) => {
+                  if (disabled) return;
                   setChoices((current) => ({
                     preview: previewKey,
                     values: {
                       ...(current.preview === previewKey ? current.values : {}),
-                      [row.id]: event.target
-                        .value as AutomationCatalogResolution,
+                      [row.id]: value as AutomationCatalogResolution,
                     },
-                  }))
-                }
-              >
-                <option value="">Choose action</option>
-                <option value="copy">Import independent copy</option>
-                <option value="skip">Skip</option>
-                {row.canReplace && (
-                  <option value="replace">
-                    Replace reviewed existing entry
-                  </option>
-                )}
-              </select>
+                  }));
+                }}
+                options={[
+                  { value: "", label: "Choose action" },
+                  { value: "copy", label: "Import independent copy" },
+                  { value: "skip", label: "Skip" },
+                  ...(row.canReplace
+                    ? [
+                        {
+                          value: "replace",
+                          label: "Replace reviewed existing entry",
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             </label>
           ))}
           <div className="flex flex-wrap gap-2">

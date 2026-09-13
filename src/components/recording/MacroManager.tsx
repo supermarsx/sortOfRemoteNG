@@ -62,17 +62,19 @@ function MacroLibrary({ mgr }: { mgr: Mgr }) {
         </label>
         <label className="flex items-center gap-2 text-xs">
           Category
-          <select
-            className="sor-form-input w-auto max-w-48"
-            style={{ width: "auto" }}
+          <Select
+            label="Category"
+            variant="form-sm"
+            className="w-auto max-w-48"
             value={mgr.category}
-            onChange={(event) => mgr.setCategory(event.target.value)}
-          >
-            <option value="">All categories</option>
-            {categories.map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
+            onChange={mgr.setCategory}
+            searchable
+            searchPlaceholder="Search categories…"
+            options={[
+              { value: "", label: "All categories" },
+              ...categories.map((value) => ({ value, label: value })),
+            ]}
+          />
         </label>
         <label className="flex items-center gap-2 text-xs">
           Platform
@@ -94,17 +96,17 @@ function MacroLibrary({ mgr }: { mgr: Mgr }) {
         </label>
         <label className="flex items-center gap-2 text-xs">
           Sort
-          <select
-            className="sor-form-input w-auto"
-            style={{ width: "auto" }}
+          <Select
+            label="Sort"
+            variant="form-sm"
+            className="w-auto"
             value={mgr.sort}
-            onChange={(event) =>
-              mgr.setSort(event.target.value as "name" | "updated")
-            }
-          >
-            <option value="name">Name</option>
-            <option value="updated">Recently updated</option>
-          </select>
+            onChange={(value) => mgr.setSort(value as "name" | "updated")}
+            options={[
+              { value: "name", label: "Name" },
+              { value: "updated", label: "Recently updated" },
+            ]}
+          />
         </label>
         {(mgr.searchQuery || mgr.category || mgr.platform) && (
           <button
@@ -325,16 +327,28 @@ function BrowseMacros({
     <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
       <label className="flex items-center gap-2 text-sm">
         Macro kind
-        <select
-          className="sor-form-input w-auto"
-          style={{ width: "auto" }}
+        <Select
+          label="Macro kind"
+          variant="form-sm"
+          className="w-auto"
           value={family}
           disabled={blocked}
-          onChange={(event) => setFamily(event.target.value as MacroFamily)}
-        >
-          <option value="terminal-macro">Terminal sequences</option>
-          <option value="website-macro">Website interactions</option>
-        </select>
+          onChange={(value) => {
+            if (!blocked) setFamily(value as MacroFamily);
+          }}
+          options={[
+            {
+              value: "terminal-macro",
+              label: "Terminal sequences",
+              icon: Terminal,
+            },
+            {
+              value: "website-macro",
+              label: "Website interactions",
+              icon: Globe,
+            },
+          ]}
+        />
       </label>
       {family === "terminal-macro" ? (
         <section aria-label="App-shipped macro templates">
@@ -564,33 +578,41 @@ export function MacroManager({
         <div className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] px-4 py-2 text-xs">
           <label className="flex items-center gap-2">
             Library scope
-            <select
-              aria-label="Macro library scope"
-              className="sor-form-input w-auto max-w-xs"
-              style={{ width: "auto" }}
+            <Select
+              label="Macro library scope"
+              variant="form-sm"
+              className="w-auto max-w-xs"
               disabled={mgr.busy || catalogBusy}
               value={mgr.scope.kind === "app" ? "app" : mgr.scope.databaseId}
-              onChange={(event) =>
+              onChange={(value) => {
+                if (mgr.busy || catalogBusy) return;
                 mgr.changeScope(
-                  event.target.value === "app"
+                  value === "app"
                     ? { kind: "app" }
-                    : { kind: "database", databaseId: event.target.value },
-                )
-              }
-            >
-              <option value="app">App-wide</option>
-              {mgr.databaseScope && (
-                <option value={mgr.databaseScope.databaseId}>
-                  Current database
-                </option>
-              )}
-              {mgr.scope.kind === "database" &&
-                mgr.databaseScope?.databaseId !== mgr.scope.databaseId && (
-                  <option value={mgr.scope.databaseId}>
-                    Owning database (unavailable)
-                  </option>
-                )}
-            </select>
+                    : { kind: "database", databaseId: value },
+                );
+              }}
+              options={[
+                { value: "app", label: "App-wide" },
+                ...(mgr.databaseScope
+                  ? [
+                      {
+                        value: mgr.databaseScope.databaseId,
+                        label: "Current database",
+                      },
+                    ]
+                  : []),
+                ...(mgr.scope.kind === "database" &&
+                mgr.databaseScope?.databaseId !== mgr.scope.databaseId
+                  ? [
+                      {
+                        value: mgr.scope.databaseId,
+                        label: "Owning database (unavailable)",
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </label>
           <span
             className="min-w-0 break-all text-[var(--color-textSecondary)]"

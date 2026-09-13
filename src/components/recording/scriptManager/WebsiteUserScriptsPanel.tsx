@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
+import { Select } from "../../ui/forms";
 import {
   useWebsiteUserScripts,
   type WebsiteUserScriptsLibraryBinding,
@@ -289,26 +290,28 @@ function AccessibleScripts({
               </label>
               <label className="block text-sm">
                 Website script language
-                <select
-                  className="sor-form-select mt-1"
+                <Select
+                  label="Website script language"
+                  variant="form"
+                  className="mt-1"
                   value={edit.item.language ?? "javascript"}
                   disabled={mgr.busy}
-                  onChange={(event) =>
+                  onChange={(value) => {
+                    if (mgr.busy) return;
                     setEdit({
                       ...edit,
                       item: {
                         ...edit.item,
                         language:
-                          event.target.value === "typescript"
-                            ? "typescript"
-                            : "javascript",
+                          value === "typescript" ? "typescript" : "javascript",
                       },
-                    })
-                  }
-                >
-                  <option value="javascript">JavaScript</option>
-                  <option value="typescript">TypeScript (standalone)</option>
-                </select>
+                    });
+                  }}
+                  options={[
+                    { value: "javascript", label: "JavaScript" },
+                    { value: "typescript", label: "TypeScript (standalone)" },
+                  ]}
+                />
               </label>
               <div className="block text-sm">
                 Website{" "}

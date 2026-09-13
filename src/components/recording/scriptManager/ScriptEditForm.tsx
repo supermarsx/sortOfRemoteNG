@@ -6,9 +6,18 @@ import { useTranslation } from "react-i18next";
 import { detectLanguage } from "../../../utils/recording/scriptSyntax";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
 import { Select } from "../../ui/forms";
+import { useId } from "react";
 
 function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();
+  const categoryId = useId();
+  const categorySuggestions = mgr.categories
+    .filter(
+      (category) =>
+        category !== mgr.editCategory &&
+        category.toLowerCase().includes(mgr.editCategory.trim().toLowerCase()),
+    )
+    .slice(0, 6);
   const detected =
     mgr.editLanguage === "auto"
       ? detectLanguage(mgr.editScript)
@@ -41,6 +50,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
               {t("scriptManager.language", "Language")}
             </label>
             <Select
+              label={t("scriptManager.language", "Language")}
               value={mgr.editLanguage}
               onChange={(v: string) => mgr.setEditLanguage(v as ScriptLanguage)}
               options={[
@@ -54,22 +64,45 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+            <label
+              htmlFor={categoryId}
+              className="block text-sm font-medium text-[var(--color-text)] mb-1.5"
+            >
               {t("scriptManager.category", "Category")}
             </label>
             <input
+              id={categoryId}
               type="text"
               value={mgr.editCategory}
               onChange={(e) => mgr.setEditCategory(e.target.value)}
               placeholder="Custom"
-              list="script-categories"
+              aria-describedby={`${categoryId}-help`}
               className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary"
             />
-            <datalist id="script-categories">
-              {mgr.categories.map((cat) => (
-                <option key={cat} value={cat} />
-              ))}
-            </datalist>
+            <p
+              id={`${categoryId}-help`}
+              className="mt-1 text-xs text-[var(--color-textMuted)]"
+            >
+              Enter any category, or choose a suggestion.
+            </p>
+            {categorySuggestions.length > 0 && (
+              <div
+                className="mt-2 flex flex-wrap gap-1.5"
+                role="group"
+                aria-label="Category suggestions"
+              >
+                {categorySuggestions.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    className="sor-btn-secondary-sm"
+                    onClick={() => mgr.setEditCategory(category)}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

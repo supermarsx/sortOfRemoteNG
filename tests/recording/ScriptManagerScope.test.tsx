@@ -261,16 +261,18 @@ describe("explicit script library scopes", () => {
     fireEvent.change(screen.getByPlaceholderText(/Enter script name/i), {
       target: { value: "Draft" },
     });
-    fireEvent.change(
+    fireEvent.click(
       screen.getByRole("combobox", { name: "Script library scope" }),
-      { target: { value: "db-a" } },
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Current database" }),
     );
     expect(screen.getByRole("dialog")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
     await waitFor(() =>
       expect(
         screen.getByRole("combobox", { name: "Script library scope" }),
-      ).toHaveValue("db-a"),
+      ).toHaveTextContent("Current database"),
     );
     fireEvent.click(screen.getByRole("tab", { name: "Website userscripts" }));
     expect(screen.getByTestId("website-binding")).toHaveTextContent(
@@ -343,18 +345,21 @@ describe("explicit script library scopes", () => {
   it("routes repository browsing by the explicit script kind and selected scope", async () => {
     render(<ScriptManager isOpen onClose={vi.fn()} />);
     await screen.findByText("App fixture");
-    fireEvent.change(
+    fireEvent.click(
       screen.getByRole("combobox", { name: "Script library scope" }),
-      { target: { value: "db-a" } },
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Current database" }),
     );
     fireEvent.click(screen.getByRole("tab", { name: "Browse scripts" }));
     fireEvent.click(
       screen.getByRole("tab", { name: "Repositories / packages" }),
     );
     await screen.findByTestId("repository-binding");
-    fireEvent.change(screen.getByRole("combobox", { name: "Script kind" }), {
-      target: { value: "website-script" },
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Script kind" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Website userscripts" }),
+    );
     expect(screen.getByTestId("repository-binding")).toHaveTextContent(
       'website-script:{"kind":"database","databaseId":"db-a"}',
     );

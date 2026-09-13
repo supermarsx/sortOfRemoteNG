@@ -130,9 +130,11 @@ describe("repository catalog review UI", () => {
     expect(
       screen.getByRole("button", { name: "Apply reviewed choices" }),
     ).toBeDisabled();
-    fireEvent.change(
+    fireEvent.click(
       screen.getByLabelText("Import choice for Public diagnostic"),
-      { target: { value: "replace" } },
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Replace reviewed existing entry" }),
     );
     expect(
       screen.getByRole("button", { name: "Apply reviewed choices" }),
@@ -165,9 +167,12 @@ describe("repository catalog review UI", () => {
       const choice = await screen.findByLabelText(
         "Import choice for Public diagnostic",
       );
-      expect(choice).toHaveValue("");
-      fireEvent.change(choice, { target: { value: "copy" } });
-      expect(choice).toHaveValue("copy");
+      expect(choice).toHaveTextContent("Choose action");
+      fireEvent.click(choice);
+      fireEvent.mouseDown(
+        screen.getByRole("option", { name: "Import independent copy" }),
+      );
+      expect(choice).toHaveTextContent("Import independent copy");
       expect(
         screen.getByRole("button", { name: "Apply reviewed choices" }),
       ).toBeEnabled();

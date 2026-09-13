@@ -4,6 +4,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ScriptManager } from "../../src/components/recording/ScriptManager";
@@ -815,6 +816,37 @@ describe("ScriptManager", () => {
       // Category input should exist in the form
       const categoryInput = screen.getByPlaceholderText("Custom");
       expect(categoryInput).toBeInTheDocument();
+    });
+
+    it("offers bounded themed category suggestions without restricting custom text", async () => {
+      await renderComponent();
+      fireEvent.click(screen.getByText("New Script"));
+      const categoryInput = screen.getByPlaceholderText("Custom");
+      expect(categoryInput).not.toHaveAttribute("list");
+      expect(document.querySelector("datalist")).toBeNull();
+      fireEvent.change(categoryInput, { target: { value: "" } });
+      const suggestions = screen.getByRole("group", {
+        name: "Category suggestions",
+      });
+      expect(
+        within(suggestions).getAllByRole("button").length,
+      ).toBeLessThanOrEqual(6);
+      fireEvent.change(categoryInput, { target: { value: "Sys" } });
+      const option = within(
+        screen.getByRole("group", { name: "Category suggestions" }),
+      ).getByRole("button", { name: "System" });
+      expect(option).toHaveClass("sor-btn-secondary-sm");
+      expect(option).toHaveAttribute("type", "button");
+      fireEvent.click(option);
+      expect(categoryInput).toHaveValue("System");
+      fireEvent.change(categoryInput, {
+        target: { value: "My completely new category" },
+      });
+      expect(categoryInput).toHaveValue("My completely new category");
+      expect(
+        screen.queryByRole("group", { name: "Category suggestions" }),
+      ).toBeNull();
+      expect(managedScriptsStoreMocks.save).not.toHaveBeenCalled();
     });
   });
 
