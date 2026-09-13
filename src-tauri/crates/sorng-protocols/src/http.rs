@@ -1423,6 +1423,66 @@ mod proxy_access_guard_tests {
     }
 }
 
+/// Closed local routes expose only their fixed category, never caller paths,
+/// destination queries, bodies, headers, or upstream response/error text.
+enum ObservedLocalRoute {
+    Font,
+    QuickConnectDiscovery,
+    QuickConnectDiscovered,
+    QuickConnectRedirect,
+}
+
+fn observe_local_response(
+    state: &AxumProxyState,
+    method: &axum::http::Method,
+    route: ObservedLocalRoute,
+    response: axum::response::Response,
+) -> axum::response::Response {
+    let path = match route {
+        ObservedLocalRoute::Font => font_assets::PREFIX,
+        ObservedLocalRoute::QuickConnectDiscovery => quickconnect_control::PATH,
+        ObservedLocalRoute::QuickConnectDiscovered => quickconnect_control::DISCOVERED_PATH,
+        ObservedLocalRoute::QuickConnectRedirect => quickconnect::PATH,
+    };
+    let url = response
+        .extensions()
+        .get::<quickconnect_control::ObservedDestination>()
+        .map(|observed| observed.description.clone())
+        .unwrap_or_else(|| format!("{}{path}", state.proxy_origin));
+    let status = response.status().as_u16();
+    let review_pending = response
+        .extensions()
+        .get::<quickconnect::ReviewPending>()
+        .is_some();
+    let error = (status >= 400 && !review_pending).then(|| format!("HTTP {status}"));
+    state.request_count.fetch_add(1, Ordering::Relaxed);
+    if error.is_some() {
+        state.error_count.fetch_add(1, Ordering::Relaxed);
+    }
+    // A review pause neither creates nor clears an unrelated request failure.
+    if !review_pending {
+        if let Ok(mut last_error) = state.last_error.lock() {
+            *last_error = error.as_ref().map(|error| format!("{error} for {url}"));
+        }
+    }
+    if let Ok(mut manager) = state.global_sessions.lock() {
+        manager.record_request(ProxyRequestLogEntry {
+            id: String::new(),
+            session_id: state.session_id.clone(),
+            method: match method.as_str() {
+                "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "CONNECT"
+                | "TRACE" => method.to_string(),
+                _ => "OTHER".into(),
+            },
+            url,
+            status,
+            error,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        });
+    }
+    response
+}
+
 /// Axum fallback handler — proxies every request to the target server.
 ///
 /// Safe read methods allow one automatic retry for transient connection errors
@@ -1436,13 +1496,33 @@ pub async fn axum_proxy_handler(
     use axum::http::{Response, StatusCode};
 
     let method = req.method().clone();
+    if req
+        .uri()
+        .path()
+        .starts_with(quickconnect_control::DISCOVERED_PATH)
+    {
+        let response = quickconnect_control::handle(state.clone(), req).await;
+        return observe_local_response(
+            &state,
+            &method,
+            ObservedLocalRoute::QuickConnectDiscovered,
+            response,
+        );
+    }
     if req.uri().path().starts_with(quickconnect_control::PATH) {
-        return quickconnect_control::handle(state, req).await;
+        let response = quickconnect_control::handle(state.clone(), req).await;
+        return observe_local_response(
+            &state,
+            &method,
+            ObservedLocalRoute::QuickConnectDiscovery,
+            response,
+        );
     }
     if req.uri().path().starts_with("/__sortofremoteng_assets_v1/") {
         // Closed public binary capability: never send this reserved path,
         // browser credentials or source query policies to the NAS.
-        return font_assets::handle(state, req).await;
+        let response = font_assets::handle(state.clone(), req).await;
+        return observe_local_response(&state, &method, ObservedLocalRoute::Font, response);
     }
     if websocket::is_upgrade_candidate(req.headers()) {
         return websocket::handle(state, req).await;
@@ -1504,14 +1584,20 @@ pub async fn axum_proxy_handler(
 
     if req.uri().path() == quickconnect::PATH {
         // A versioned vendor-script handoff is a local review request, never
-        // an upstream fetch or proxy-log entry containing a session URL.
-        return quickconnect::handle(
+        // an upstream fetch. Observe only its fixed path, not its session URL.
+        let response = quickconnect::handle(
             &state,
             &method,
             req.headers(),
             path_and_query.split_once('?').map(|(_, query)| query),
             document_sequence,
             navigation_token,
+        );
+        return observe_local_response(
+            &state,
+            &method,
+            ObservedLocalRoute::QuickConnectRedirect,
+            response,
         );
     }
 

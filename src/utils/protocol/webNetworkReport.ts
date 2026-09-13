@@ -25,6 +25,7 @@ const reasons = new Set([
   "policy-blocked-resource",
   "font-read-only",
   "quickconnect-control-method",
+  "quickconnect-probe-method",
   "unsupported-network-context",
   "unsupported-scheme",
   "invalid-url",
@@ -43,6 +44,56 @@ export interface WebNetworkReport {
   kind: string;
   reason: string;
   origin: string | null;
+}
+export interface WebNetworkRoutingStatus {
+  status: "current" | "missing" | "mismatch";
+  quickConnectNavigation: boolean;
+  quickConnectDiscovery: boolean;
+  quickConnectDiscovered: boolean;
+  quickConnectDirectNavigation: boolean;
+}
+/** Advisory only; invoke after the existing primary-document readiness fence. */
+export function webNetworkRoutingStatus(
+  value: unknown,
+  expectedQuickConnect: boolean,
+  expectedAliasRoutes = false,
+): WebNetworkRoutingStatus {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return {
+      status: "missing",
+      quickConnectNavigation: false,
+      quickConnectDiscovery: false,
+      quickConnectDiscovered: false,
+      quickConnectDirectNavigation: false,
+    };
+  const data = value as Record<string, unknown>;
+  if (
+    data.version !== 3 ||
+    typeof data.quickConnectNavigation !== "boolean" ||
+    typeof data.quickConnectDiscovery !== "boolean" ||
+    typeof data.quickConnectDiscovered !== "boolean" ||
+    typeof data.quickConnectDirectNavigation !== "boolean"
+  )
+    return {
+      status: "missing",
+      quickConnectNavigation: false,
+      quickConnectDiscovery: false,
+      quickConnectDiscovered: false,
+      quickConnectDirectNavigation: false,
+    };
+  return {
+    status:
+      data.quickConnectNavigation === expectedQuickConnect &&
+      data.quickConnectDiscovery === expectedAliasRoutes &&
+      data.quickConnectDiscovered === expectedAliasRoutes &&
+      data.quickConnectDirectNavigation === expectedAliasRoutes
+        ? "current"
+        : "mismatch",
+    quickConnectNavigation: data.quickConnectNavigation,
+    quickConnectDiscovery: data.quickConnectDiscovery,
+    quickConnectDiscovered: data.quickConnectDiscovered,
+    quickConnectDirectNavigation: data.quickConnectDirectNavigation,
+  };
 }
 export interface WebNetworkDocument {
   sessionId: string;

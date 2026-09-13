@@ -35,6 +35,14 @@ const fontUrl = "https://synostatic.synology.com/font/inter/inter-w400-1.woff2";
 const fontPath =
   "/__sortofremoteng_assets_v1/synology-inter/inter-w400-1.woff2";
 const controlPath = "/__sortofremoteng_quickconnect_control_v1";
+const discoveredPath = "/__sortofremoteng_quickconnect_discovered_v1";
+const regionalControl = "https://dec.quickconnect.to/Serv.php";
+const directProbe =
+  "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
+const unlearnedProbe =
+  "https://unlearned.example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true";
+const discoveredUrl = (destination) =>
+  discoveredPath + "?destination=" + encodeURIComponent(destination);
 const controlBody = JSON.stringify(
   ["mainapp_https", "mainapp_http"].map((id) => ({
     version: 1,
@@ -103,6 +111,8 @@ const server = createServer(async (request, response) => {
       synologyQuickConnect: {
         version: 1,
         navigationOrigins: [
+          "http://example-nas.quickconnect.to",
+          "https://example-nas.quickconnect.to",
           "https://global.quickconnect.to",
           "https://www.quickconnect.to",
         ],
@@ -111,6 +121,12 @@ const server = createServer(async (request, response) => {
           upstreamUrl: "https://global.quickconnect.to/Serv.php",
           proxyUrl: origin + controlPath,
         },
+        discovered: {
+          version: 1,
+          alias: "example-nas",
+          proxyUrl: origin + discoveredPath,
+        },
+        directNavigation: { version: 1, alias: "example-nas" },
       },
     };
     response.writeHead(200, {
@@ -135,9 +151,10 @@ for(const name of rtcNames){
 }
 ${source}
 const reports=[];
-installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push(report);});
+const installedNetwork=installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push(report);});
 (async function(){
  const results=[];
+ if(!Object.isFrozen(installedNetwork.capabilities)||installedNetwork.capabilities.version!==3||!installedNetwork.capabilities.quickConnectNavigation||!installedNetwork.capabilities.quickConnectDiscovery||!installedNetwork.capabilities.quickConnectDiscovered||!installedNetwork.capabilities.quickConnectDirectNavigation)throw Error('Routing module acknowledgement missing');
  async function check(name,run){try{await Promise.race([run(),new Promise((_,reject)=>setTimeout(()=>reject(Error('Case timed out')),5000))]);results.push({name,ok:true});}catch(error){results.push({name,ok:false,error:String(error)});}}
  await check('RTC optional discovery sees unavailable APIs without constructing peers',async()=>{
    for(const name of rtcNames){if(window[name]||typeof window[name]==='function'||name in window)throw Error('RTC capability still advertised');}
@@ -164,6 +181,12 @@ installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push
    if(routed.origin!==location.origin||routed.pathname!=='/__sortofremoteng_quickconnect_redirect_v1'||routed.searchParams.get('destination')!=='https://www.quickconnect.to/portal/')throw Error('Receipt route mismatch');
    if(reports.length!==before)throw Error('Permitted reference reported as network request');
  });
+ await check('QuickConnect HTTPS NAS alias uses the same receipt route',async()=>{
+   const anchor=document.createElement('a');anchor.href='https://example-nas.quickconnect.to/';
+   document.body.append(anchor);anchor.addEventListener('click',event=>event.preventDefault());anchor.click();
+   const routed=new URL(anchor.href);
+   if(routed.origin!==location.origin||routed.pathname!=='/__sortofremoteng_quickconnect_redirect_v1'||routed.searchParams.get('destination')!=='https://example-nas.quickconnect.to/')throw Error('HTTPS alias receipt route mismatch');
+ });
  await check('QuickConnect fetch POST uses protected route and document header',async()=>{
    const body=${JSON.stringify(controlBody)};
    const response=await fetch('https://global.quickconnect.to/Serv.php',{method:'POST',body,credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}});
@@ -173,6 +196,27 @@ installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push
    const body=${JSON.stringify(controlBody)};
    const response=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','https://global.quickconnect.to/Serv.php',true);xhr.withCredentials=true;xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded; charset=UTF-8');xhr.onload=()=>xhr.status===200?resolve(xhr.responseText):reject(Error('Discovery status'));xhr.onerror=()=>reject(Error('Discovery network'));xhr.send(body);});
    if(response!==body)throw Error('Discovery XHR body changed');
+ });
+ await check('regional discovery POST stays on the protected candidate route',async()=>{
+   const body=${JSON.stringify(controlBody)};
+   const response=await fetch('${regionalControl}',{method:'POST',body,credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}});
+   if(!response.ok||await response.text()!==body)throw Error('Regional response changed');
+ });
+ await check('same-NAS GET probe preserves real XHR response and browser headers',async()=>{
+   const response=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('GET',${JSON.stringify(directProbe)},true);xhr.responseType='json';xhr.onload=()=>xhr.status===200?resolve(xhr.response):reject(Error('Probe status'));xhr.onerror=()=>reject(Error('Probe network'));xhr.send();});
+   if(response.marker!=='loopback-probe')throw Error('Probe response fabricated or changed');
+ });
+ await check('unlearned same-NAS probe denial is not fabricated into success',async()=>{
+   const response=await fetch(${JSON.stringify(unlearnedProbe)});
+   if(response.status!==403||await response.text()!=='fixture-unlearned')throw Error('Unlearned response changed');
+ });
+ await check('same-NAS direct HTTPS navigation uses receipt, not discovery grant',async()=>{
+   const destination='https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/';
+   const anchor=document.createElement('a');anchor.href=destination;
+   if(anchor.hostname!=='192-168-50-100.example-nas.direct.quickconnect.to'||anchor.port!=='5002')throw Error('Direct anchor parser changed');
+   document.body.append(anchor);anchor.addEventListener('click',event=>event.preventDefault());anchor.click();
+   const routed=new URL(anchor.href);
+   if(routed.origin!==location.origin||routed.pathname!=='/__sortofremoteng_quickconnect_redirect_v1'||routed.searchParams.get('destination')!==destination)throw Error('Direct receipt route mismatch');
  });
  await check('dynamic CSS font routes before load',async()=>{
    const style=document.createElement('style');document.head.append(style);
@@ -278,10 +322,29 @@ installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push
     method: request.method,
     body,
     fixture: request.headers["x-fixture"],
-    ...(request.url === controlPath
-      ? { document: request.headers["x-sorng-quickconnect-document"] }
+    ...(request.url === controlPath ||
+    request.url.startsWith(discoveredPath + "?")
+      ? {
+          document: request.headers["x-sorng-quickconnect-document"],
+          origin: request.headers.origin ?? null,
+          fetchSite: request.headers["sec-fetch-site"],
+          fetchMode: request.headers["sec-fetch-mode"],
+          fetchDest: request.headers["sec-fetch-dest"],
+        }
       : {}),
   });
+  // Synthetic responses prove browser transport only. Native registry/grant
+  // validation is exercised independently by the Rust loopback suite.
+  if (request.url === discoveredUrl(unlearnedProbe)) {
+    response.writeHead(403).end("fixture-unlearned");
+    return;
+  }
+  if (request.url === discoveredUrl(directProbe)) {
+    response
+      .writeHead(200, { "Content-Type": "application/json" })
+      .end(JSON.stringify({ marker: "loopback-probe" }));
+    return;
+  }
   response.writeHead(200, { "Content-Type": "text/plain" }).end(body);
 });
 server.on("connection", (socket) => {
@@ -315,7 +378,7 @@ try {
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
-      `--host-resolver-rules=MAP synostatic.synology.com 127.0.0.1:${tripwire.address().port}, MAP global.quickconnect.to 127.0.0.1:${tripwire.address().port}, MAP www.quickconnect.to 127.0.0.1:${tripwire.address().port}`,
+      `--host-resolver-rules=MAP synostatic.synology.com 127.0.0.1:${tripwire.address().port}, MAP *.quickconnect.to 127.0.0.1:${tripwire.address().port}`,
       `--user-data-dir=${profile}`,
       "--remote-debugging-port=0",
       origin + "/",
@@ -361,6 +424,17 @@ try {
     results.every((item) => item.ok),
     "Browser Request/stream acceptance failed; never fall back to a direct request.",
   );
+  const dynamic = received.filter((item) =>
+    item.url.startsWith(discoveredPath + "?"),
+  );
+  assert.equal(dynamic.length, 3);
+  for (const item of dynamic) {
+    assert.equal(item.document, "7");
+    assert.equal(item.fetchSite, "same-origin");
+    assert.equal(item.fetchMode, "cors");
+    assert.equal(item.fetchDest, "empty");
+    assert.equal(item.origin, item.method === "GET" ? null : origin);
+  }
   assert.deepEqual(
     received
       .filter((item) => item.method !== "WEBSOCKET")
@@ -369,6 +443,13 @@ try {
       { url: "/rtc-https-fallback", method: "GET", body: "" },
       { url: controlPath, method: "POST", body: controlBody },
       { url: controlPath, method: "POST", body: controlBody },
+      {
+        url: discoveredUrl(regionalControl),
+        method: "POST",
+        body: controlBody,
+      },
+      { url: discoveredUrl(directProbe), method: "GET", body: "" },
+      { url: discoveredUrl(unlearnedProbe), method: "GET", body: "" },
       { url: "/string", method: "POST", body: "string-body" },
       { url: "/stream", method: "POST", body: "stream-body" },
       { url: "/override", method: "PUT", body: "override-body" },

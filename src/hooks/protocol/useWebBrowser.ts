@@ -6,7 +6,9 @@ import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import {
   appendWebNetworkReport,
   parseWebNetworkReport,
+  webNetworkRoutingStatus,
   type WebNetworkReport,
+  type WebNetworkRoutingStatus,
 } from "../../utils/protocol/webNetworkReport";
 import {
   parseWebNetworkGuardStatus,
@@ -40,7 +42,10 @@ import {
 } from "../../utils/security/runtimeCredentialVault";
 import { useHttpRedirectReview } from "./useHttpRedirectReview";
 import { useHttpRedirectTrust } from "./useHttpRedirectTrust";
-import { withSynologyRedirectDefaults } from "../../utils/protocol/synologyRedirectDefaults";
+import {
+  synologyDefaultRedirectOrigins,
+  withSynologyRedirectDefaults,
+} from "../../utils/protocol/synologyRedirectDefaults";
 import * as macroService from "../../utils/recording/macroService";
 import {
   verifyIdentity,
@@ -636,6 +641,19 @@ export function useWebBrowser(session: ConnectionSession) {
     scope: string;
     rows: WebNetworkReport[];
   }>({ scope: "", rows: [] });
+  const [networkRouting, setNetworkRouting] = useState<{
+    scope: string;
+    value: WebNetworkRoutingStatus;
+  } | null>(null);
+  const expectedNetworkRouting = useRef(false);
+  expectedNetworkRouting.current =
+    !!proxyOptions.policy?.synologyQuickConnectDefaults;
+  const expectedAliasRouting = useRef(false);
+  expectedAliasRouting.current =
+    !!proxyOptions.policy?.synologyQuickConnectDefaults &&
+    synologyDefaultRedirectOrigins(
+      proxyOptions.policy.synologyQuickConnectDefaults.originalOrigin,
+    ).length === 4;
   const networkReportScope = useCallback(
     () =>
       JSON.stringify([
@@ -2129,6 +2147,14 @@ export function useWebBrowser(session: ConnectionSession) {
           };
           const activatedDocument = currentDocumentRef.current;
           const activationScope = networkReportScope();
+          setNetworkRouting({
+            scope: activationScope,
+            value: webNetworkRoutingStatus(
+              report.networkRouting,
+              expectedNetworkRouting.current,
+              expectedAliasRouting.current,
+            ),
+          });
           void invoke<boolean>("activate_proxy_network_document", {
             sessionId: activatedDocument.sessionId,
             documentSequence: activatedDocument.sequence,
@@ -2913,6 +2939,10 @@ export function useWebBrowser(session: ConnectionSession) {
   });
 
   return {
+    webNetworkRouting:
+      networkRouting?.scope === networkReportScope()
+        ? networkRouting.value
+        : null,
     webNetworkReports:
       networkReports.scope === networkReportScope() ? networkReports.rows : [],
     webNetworkGuard:

@@ -23,11 +23,20 @@ interface ClientConfiguration extends ReturnType<typeof config> {
     navigationOrigins: string[];
     redirectEndpoint: string;
     rpc?: { upstreamUrl: string; proxyUrl: string };
+    discovered?: { version: number; alias: string; proxyUrl: string };
+    directNavigation?: { version: number; alias: string };
   };
 }
 interface Controller {
   mapUrl(value: unknown, kind: string, local?: boolean): string;
   dispose(): void;
+  capabilities: {
+    version: number;
+    quickConnectNavigation: boolean;
+    quickConnectDiscovery: boolean;
+    quickConnectDiscovered: boolean;
+    quickConnectDirectNavigation: boolean;
+  };
 }
 let controller: Controller | undefined;
 let install: (
@@ -114,12 +123,195 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       version: 1,
       navigationOrigins: [
         "http://example-nas.quickconnect.to",
+        "https://example-nas.quickconnect.to",
         "https://global.quickconnect.to",
         "https://www.quickconnect.to",
       ],
       redirectEndpoint: redirectProxy,
       rpc: { upstreamUrl: controlUrl, proxyUrl: controlProxy },
     },
+  });
+  const discoveredProxy =
+    proxy + "/__sortofremoteng_quickconnect_discovered_v1";
+  const discoveryConfig = () => {
+    const base = quickConfig();
+    return {
+      ...base,
+      synologyQuickConnect: {
+        ...base.synologyQuickConnect,
+        discovered: {
+          version: 1,
+          alias: "example-nas",
+          proxyUrl: discoveredProxy,
+        },
+        directNavigation: { version: 1, alias: "example-nas" },
+      },
+    };
+  };
+  const directProbe =
+    "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
+  it("keeps a newly selected direct host's own requests on its ordinary proxy route", async () => {
+    start({ ...discoveryConfig(), sourceOrigin: new URL(directProbe).origin });
+    await window.fetch(directProbe);
+    expect(fetch.mock.calls[0][0]).toBe(
+      proxy + "/webman/pingpong.cgi?action=cors&quickconnect=true",
+    );
+    const options = fetch.mock.calls[0][1] as RequestInit | undefined;
+    expect(
+      new Headers(options?.headers).has("X-Sorng-QuickConnect-Document"),
+    ).toBe(false);
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", directProbe, true);
+    expect(xhrOpen).toHaveBeenLastCalledWith(
+      "GET",
+      proxy + "/webman/pingpong.cgi?action=cors&quickconnect=true",
+      true,
+    );
+    expect(xhrHeader).not.toHaveBeenCalled();
+    await window.fetch(
+      "https://example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
+    );
+    expect(String(fetch.mock.calls[1][0])).toContain(
+      discoveredProxy + "?destination=",
+    );
+    expect(report).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["POST", "https://dec.quickconnect.to/Serv.php"],
+    ["GET", directProbe],
+    [
+      "GET",
+      "https://example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
+    ],
+  ])(
+    "routes candidate %s %s only to native grant validation with document fencing",
+    async (method, destination) => {
+      start(discoveryConfig());
+      const response = { status: 403, ok: false };
+      fetch.mockResolvedValueOnce(response);
+      expect(await window.fetch(destination, { method })).toBe(response);
+      const [target, options] = fetch.mock.calls[0] as [string, RequestInit];
+      const parsed = new URL(target);
+      expect(parsed.origin + parsed.pathname).toBe(discoveredProxy);
+      expect([...parsed.searchParams.keys()]).toEqual(["destination"]);
+      expect(parsed.searchParams.get("destination")).toBe(destination);
+      expect(
+        new Headers(options.headers).get("X-Sorng-QuickConnect-Document"),
+      ).toBe("3");
+      expect(options.credentials).toBe("omit");
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, destination, true);
+      expect(xhrOpen).toHaveBeenCalledWith(method, target, true);
+      expect(xhrHeader).toHaveBeenCalledWith(
+        "X-Sorng-QuickConnect-Document",
+        "3",
+      );
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(report).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps explicit direct-navigation permission separate from native-learned probe candidates", () => {
+    const input = discoveryConfig();
+    const { directNavigation: _direct, ...candidateOnly } =
+      input.synologyQuickConnect;
+    start({ ...input, synologyQuickConnect: candidateOnly });
+    expect(() =>
+      controller!.mapUrl(new URL(directProbe).origin + "/", "navigation"),
+    ).toThrow();
+    controller!.dispose();
+    start(input);
+    const link = document.createElement("a");
+    link.href = new URL(directProbe).origin + "/webman/";
+    expect(link.hostname).toBe(
+      "192-168-50-100.example-nas.direct.quickconnect.to",
+    );
+    document.body.append(link);
+    link.addEventListener("click", (event) => event.preventDefault());
+    link.click();
+    expect(new URL(link.href).searchParams.get("destination")).toBe(
+      new URL(directProbe).origin + "/webman/",
+    );
+    for (const kind of [
+      "form",
+      "resource",
+      "websocket",
+      "beacon",
+      "eventsource",
+    ])
+      expect(() => controller!.mapUrl(directProbe, kind)).toThrow();
+  });
+  it.each([
+    "https://other-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
+    "https://x.y.example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
+    "https://example-nas.direct.quickconnect.to:5003/webman/pingpong.cgi?action=cors&quickconnect=true",
+    "http://example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
+    directProbe + "&_cache=private",
+    directProbe + "#private",
+    directProbe.replace("pingpong.cgi", "entry.cgi"),
+    "https://x.dec.quickconnect.to/Serv.php",
+    "https://dec.quickconnect.to:5001/Serv.php",
+  ])(
+    "does not turn candidate routing into wildcard access: %s",
+    async (url) => {
+      start(discoveryConfig());
+      await expect(window.fetch(url)).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(JSON.stringify(report.mock.calls)).not.toContain("private");
+    },
+  );
+  it("enforces discovered method, metadata and teardown without direct fallbacks", async () => {
+    const input = discoveryConfig();
+    start(input);
+    await expect(window.fetch(directProbe, { method: "POST" })).rejects.toThrow(
+      "quickconnect-probe-method",
+    );
+    await expect(
+      window.fetch("https://dec.quickconnect.to/Serv.php"),
+    ).rejects.toThrow("quickconnect-control-method");
+    input.synologyQuickConnect.discovered.alias = "other-nas";
+    input.synologyQuickConnect.discovered.proxyUrl = "https://attacker.invalid";
+    await window.fetch(directProbe);
+    expect(String(fetch.mock.calls[0][0])).toContain(discoveredProxy);
+    window.dispatchEvent(new Event("pagehide"));
+    await expect(window.fetch(directProbe)).rejects.toThrow("document-closed");
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("acknowledges only installed capabilities and routes the HTTPS alias without broad origin permission", () => {
+    start(quickConfig());
+    expect(controller!.capabilities).toEqual({
+      version: 3,
+      quickConnectNavigation: true,
+      quickConnectDiscovery: true,
+      quickConnectDiscovered: false,
+      quickConnectDirectNavigation: false,
+    });
+    expect(Object.isFrozen(controller!.capabilities)).toBe(true);
+    expect(
+      new URL(
+        controller!.mapUrl(
+          "https://example-nas.quickconnect.to/",
+          "navigation",
+        ),
+      ).searchParams.get("destination"),
+    ).toBe("https://example-nas.quickconnect.to/");
+    expect(() =>
+      controller!.mapUrl(
+        "https://example-nas.quickconnect.to:5001/",
+        "navigation",
+      ),
+    ).toThrow();
+    expect(() =>
+      controller!.mapUrl("https://other-nas.quickconnect.to/", "navigation"),
+    ).toThrow();
+    controller!.dispose();
+    start();
+    expect(controller!.capabilities).toEqual({
+      version: 3,
+      quickConnectNavigation: false,
+      quickConnectDiscovery: false,
+      quickConnectDiscovered: false,
+      quickConnectDirectNavigation: false,
+    });
   });
   it("rejects forged capability paths and keeps navigation-only capability free of RPC authority", async () => {
     for (const change of [

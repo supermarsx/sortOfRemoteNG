@@ -4,6 +4,7 @@ import { normalizeSynologySettings } from "../../src/types/protocols/synology";
 import { normalizeHttpProxyPolicy } from "../../src/utils/connection/httpProxyPolicy";
 import {
   isSynologyDefaultRedirect,
+  isSynologyDefaultRedirectOrigin,
   synologyDefaultRedirectOrigins,
   synologyRedirectDefaultsForConnection,
   withSynologyRedirectDefaults,
@@ -17,8 +18,58 @@ const source = "https://my-nas.fr3.quickconnect.to";
 const context = { version: 1 as const, originalOrigin: source };
 
 describe("closed Synology redirect defaults", () => {
+  it("permits only the original NAS direct HTTPS namespace at ports5001/5002, including later source validation", () => {
+    const policy = withSynologyRedirectDefaults(
+      { ...DEFAULT_HTTP_PROXY_POLICY, httpsOnly: true },
+      context,
+    );
+    const allowed = [
+      "https://my-nas.direct.quickconnect.to:5001",
+      "https://my-nas.direct.quickconnect.to:5002",
+      "https://192-168-50-100.my-nas.direct.quickconnect.to:5002",
+    ];
+    for (const origin of allowed) {
+      expect(isSynologyDefaultRedirectOrigin(source, origin)).toBe(true);
+      expect(
+        isSynologyDefaultRedirect(policy, source, origin + "/webman/"),
+      ).toBe(true);
+      expect(isSynologyDefaultRedirect(policy, origin, portals[0] + "/")).toBe(
+        true,
+      );
+    }
+    for (const origin of [
+      "http://my-nas.direct.quickconnect.to:5001",
+      "https://my-nas.direct.quickconnect.to",
+      "https://my-nas.direct.quickconnect.to:5003",
+      "https://other-nas.direct.quickconnect.to:5001",
+      "https://x.y.my-nas.direct.quickconnect.to:5001",
+      "https://my-nas.direct.quickconnect.to.attacker.invalid:5001",
+      "https://x_y.my-nas.direct.quickconnect.to:5001",
+    ]) {
+      expect(isSynologyDefaultRedirectOrigin(source, origin)).toBe(false);
+      expect(isSynologyDefaultRedirect(policy, source, origin + "/")).toBe(
+        false,
+      );
+    }
+    expect(
+      isSynologyDefaultRedirectOrigin(
+        "https://global.quickconnect.to",
+        allowed[0],
+      ),
+    ).toBe(false);
+    expect(
+      isSynologyDefaultRedirectOrigin(
+        "https://custom.internal:5001",
+        allowed[0],
+      ),
+    ).toBe(false);
+  });
   it("retains only the original alias through all allowed portal hops", () => {
-    const origins = ["http://my-nas.quickconnect.to", ...portals];
+    const origins = [
+      "http://my-nas.quickconnect.to",
+      "https://my-nas.quickconnect.to",
+      ...portals,
+    ];
     expect(synologyDefaultRedirectOrigins(source)).toEqual(origins);
     expect(
       synologyDefaultRedirectOrigins("https://my-nas.quickconnect.to"),
@@ -35,7 +86,8 @@ describe("closed Synology redirect defaults", () => {
       for (const target of [
         "http://other-nas.quickconnect.to/",
         "http://my-nas.fr3.quickconnect.to/",
-        "https://my-nas.quickconnect.to/",
+        "https://other-nas.quickconnect.to/",
+        "https://my-nas.quickconnect.to:5001/",
         "http://global.quickconnect.to/",
         "http://www.quickconnect.to/",
         "https://global.quickconnect.to:5001/",
@@ -146,7 +198,7 @@ describe("closed Synology redirect defaults", () => {
       isSynologyDefaultRedirect(
         { ...policy, httpsOnly: true },
         source,
-        `${portals[0]}/`,
+        "https://my-nas.quickconnect.to/",
       ),
     ).toBe(true);
     expect(saved).not.toHaveProperty("synologyQuickConnectDefaults");

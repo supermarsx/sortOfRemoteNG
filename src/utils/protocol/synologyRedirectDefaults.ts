@@ -89,10 +89,44 @@ export function synologyDefaultRedirectOrigins(
         (labels.length === 2 && REGION.test(labels[1]))) &&
       !RESERVED.has(labels[0])
     ) {
-      result.unshift(`http://${labels[0]}.quickconnect.to`);
+      result.unshift(
+        `http://${labels[0]}.quickconnect.to`,
+        `https://${labels[0]}.quickconnect.to`,
+      );
     }
   }
   return result;
+}
+
+/** User-enabled same-NAS direct namespace: one optional DNS label, HTTPS only,
+ * explicit DSM ports. This never grants background RPC or TLS exceptions. */
+export function isSynologyDefaultRedirectOrigin(
+  originalOrigin: string,
+  candidateOrigin: string,
+): boolean {
+  try {
+    const origins = synologyDefaultRedirectOrigins(originalOrigin);
+    if (origins.includes(candidateOrigin)) return true;
+    const alias = origins[0]?.match(
+      /^http:\/\/([a-z0-9-]+)\.quickconnect\.to$/,
+    )?.[1];
+    if (!alias) return false;
+    const candidate = new URL(candidateOrigin);
+    if (
+      candidate.origin !== candidateOrigin ||
+      candidate.protocol !== "https:" ||
+      !["5001", "5002"].includes(candidate.port)
+    )
+      return false;
+    const suffix = `${alias}.direct.quickconnect.to`;
+    return (
+      candidate.hostname === suffix ||
+      (candidate.hostname.endsWith(`.${suffix}`) &&
+        LABEL.test(candidate.hostname.slice(0, -(suffix.length + 1))))
+    );
+  } catch {
+    return false;
+  }
 }
 
 function contextValue(value: unknown): SynologyQuickConnectDefaults {
@@ -167,9 +201,12 @@ export function isSynologyDefaultRedirect(
     const savedPolicy = { ...policy };
     delete savedPolicy.synologyQuickConnectDefaults;
     const normalized = normalizeHttpProxyPolicy(savedPolicy);
-    const source = originalUrl(sourceOrigin).origin;
-    const origins = synologyDefaultRedirectOrigins(context.originalOrigin);
-    if (source !== context.originalOrigin && !origins.includes(source))
+    const source = new URL(sourceOrigin).origin;
+    if (
+      source !== sourceOrigin ||
+      (source !== context.originalOrigin &&
+        !isSynologyDefaultRedirectOrigin(context.originalOrigin, source))
+    )
       return false;
     if (
       typeof destinationUrl !== "string" ||
@@ -192,7 +229,10 @@ export function isSynologyDefaultRedirect(
       return false;
     return (
       !(normalized.httpsOnly && destination.protocol === "http:") &&
-      origins.includes(destination.origin)
+      isSynologyDefaultRedirectOrigin(
+        context.originalOrigin,
+        destination.origin,
+      )
     );
   } catch {
     return false;

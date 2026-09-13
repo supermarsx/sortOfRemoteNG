@@ -1,4 +1,6 @@
 //! Synthetic CONNECT peers only; no public discovery API or NAS is contacted.
+#[path = "http_quickconnect_discovered_tests.rs"]
+mod discovered_tests;
 use super::super::quickconnect_control::{self as control, ReviewedQuickConnectControl};
 use super::*;
 use base64::Engine;
@@ -48,6 +50,17 @@ impl Drop for Peer {
     }
 }
 async fn peer(status: u16, body: Vec<u8>, extra: &str, hold: bool, https_proxy: bool) -> Peer {
+    let extra = extra.to_string();
+    scripted_peer(
+        Arc::new(move |_| (status, body.clone(), extra.clone(), Duration::ZERO)),
+        hold,
+        https_proxy,
+    )
+    .await
+}
+
+type FixtureReply = dyn Fn(&str) -> (u16, Vec<u8>, String, Duration) + Send + Sync;
+async fn scripted_peer(reply: Arc<FixtureReply>, hold: bool, https_proxy: bool) -> Peer {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!(
         "{}://127.0.0.1:{}",
@@ -58,7 +71,6 @@ async fn peer(status: u16, body: Vec<u8>, extra: &str, hold: bool, https_proxy: 
     let requests = seen.clone();
     let tls_failures = Arc::new(AtomicU64::new(0));
     let failures = tls_failures.clone();
-    let response = format!("HTTP/1.1 {status} Fixture\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nSet-Cookie: upstream-secret=blocked\r\nX-Private-Upstream: blocked\r\n{extra}Connection: close\r\n\r\n", body.len());
     let acceptor = tls_fixture::test_acceptor();
     let task = tokio::spawn(async move {
         let mut children = tokio::task::JoinSet::new();
@@ -66,7 +78,7 @@ async fn peer(status: u16, body: Vec<u8>, extra: &str, hold: bool, https_proxy: 
             tokio::select! {
                 incoming = listener.accept() => {
                     let (mut socket, _) = incoming.unwrap();
-                    let (acceptor, requests, failures, response, body) = (acceptor.clone(), requests.clone(), failures.clone(), response.clone(), body.clone());
+                    let (acceptor, requests, failures, reply) = (acceptor.clone(), requests.clone(), failures.clone(), reply.clone());
                     children.spawn(async move {
                         if https_proxy {
                             if acceptor.accept(socket).await.is_err() { failures.fetch_add(1, Ordering::SeqCst); }
@@ -82,9 +94,11 @@ async fn peer(status: u16, body: Vec<u8>, extra: &str, hold: bool, https_proxy: 
                         let mut data = vec![0; length];
                         if tls.read_exact(&mut data).await.is_err() { return; }
                         request.push_str(&String::from_utf8_lossy(&data));
+                        let (status, body, extra, delay) = reply(&request);
+                        let response = format!("HTTP/1.1 {status} Fixture\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nSet-Cookie: upstream-secret=blocked\r\nX-Private-Upstream: blocked\r\n{extra}Connection: close\r\n\r\n", body.len());
                         requests.lock().unwrap().push(request);
                         if hold { let _ = tls.read_u8().await; }
-                        else { let _ = tls.write_all(response.as_bytes()).await; let _ = tls.write_all(&body).await; let _ = tls.shutdown().await; }
+                        else { tokio::time::sleep(delay).await; let _ = tls.write_all(response.as_bytes()).await; let _ = tls.write_all(&body).await; let _ = tls.shutdown().await; }
                     });
                 },
                 _ = children.join_next(), if !children.is_empty() => {},
@@ -221,7 +235,19 @@ async fn discovery_posts_only_validated_anonymous_json_through_configured_connec
             assert!(!lower.contains(forbidden), "{forbidden}");
         }
     }
-    assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 0);
+    assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 2);
+    assert_eq!(proxy.state.error_count.load(Ordering::SeqCst), 0);
+    let manager = proxy.state.global_sessions.lock().unwrap();
+    assert_eq!(manager.request_log.len(), 2);
+    for entry in &manager.request_log {
+        assert_eq!(entry.method, "POST");
+        assert_eq!(
+            entry.url,
+            format!("{}{}", proxy.state.proxy_origin, control::PATH)
+        );
+        assert_eq!(entry.status, 200);
+        assert!(entry.error.is_none());
+    }
 }
 
 #[tokio::test]
@@ -474,7 +500,40 @@ async fn discovery_manifest_stays_closed_and_custom_dsm_navigation_uses_existing
     let mut settings = policy();
     let value = control::manifest(&settings, ORIGINAL, "http://fixture.localhost:1234").unwrap();
     assert_eq!(value["rpc"]["upstreamUrl"], control::UPSTREAM);
-    assert_eq!(value["navigationOrigins"].as_array().unwrap().len(), 3);
+    assert_eq!(value["navigationOrigins"].as_array().unwrap().len(), 4);
+    let secure_alias = "https://test-nas.quickconnect.to";
+    let alias_manifest =
+        control::manifest(&settings, secure_alias, "http://fixture.localhost:1234").unwrap();
+    assert_eq!(alias_manifest, value);
+    assert_eq!(value["directNavigation"]["alias"], "test-nas");
+    assert_eq!(
+        value["discovered"]["proxyUrl"],
+        format!("http://fixture.localhost:1234{}", control::DISCOVERED_PATH)
+    );
+    assert_eq!(
+        control::manifest(
+            &settings,
+            "https://test-nas.direct.quickconnect.to:5001",
+            "http://fixture.localhost:1234"
+        )
+        .unwrap(),
+        value
+    );
+    assert_eq!(
+        settings
+            .synology_quick_connect_defaults
+            .as_ref()
+            .unwrap()
+            .nas_alias()
+            .as_deref(),
+        Some("test-nas")
+    );
+    assert!(control::manifest(
+        &settings,
+        "https://other-nas.quickconnect.to",
+        "http://fixture.localhost:1234"
+    )
+    .is_none());
     settings.https_only = true;
     assert_eq!(
         control::manifest(&settings, ORIGINAL, "http://fixture.localhost:1234").unwrap()
@@ -482,7 +541,7 @@ async fn discovery_manifest_stays_closed_and_custom_dsm_navigation_uses_existing
             .as_array()
             .unwrap()
             .len(),
-        2
+        3
     );
     assert!(control::manifest(
         &HttpProxyPolicy::default(),
@@ -527,5 +586,6 @@ async fn discovery_manifest_stays_closed_and_custom_dsm_navigation_uses_existing
     let body = response.text().await.unwrap();
     assert!(body.contains("\"kind\":\"redirect_review\""));
     assert!(!body.contains("private-token"));
-    assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 0);
+    assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 1);
+    assert_eq!(proxy.state.error_count.load(Ordering::SeqCst), 0);
 }

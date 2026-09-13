@@ -28,7 +28,7 @@ import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy
 import { normalizeSynologySettings } from "../../types/protocols/synology";
 import {
   isSynologyDefaultRedirect,
-  synologyDefaultRedirectOrigins,
+  isSynologyDefaultRedirectOrigin,
   synologyRedirectDefaultsForConnection,
   withSynologyRedirectDefaults,
   type SynologyQuickConnectDefaults,
@@ -172,7 +172,8 @@ export function useHttpRedirectTrust(
         const currentOrigin = httpRedirectConnectionOrigin(connection);
         if (
           currentOrigin !== defaults.originalOrigin &&
-          !synologyDefaultRedirectOrigins(defaults.originalOrigin).includes(
+          !isSynologyDefaultRedirectOrigin(
+            defaults.originalOrigin,
             currentOrigin,
           )
         )

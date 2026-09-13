@@ -84,6 +84,7 @@ impl SynologyQuickConnectDefaults {
                     && (labels.len() == 1 || (labels.len() == 2 && regional_label(labels[1])))
                 {
                     destinations.insert(0, format!("http://{alias}.quickconnect.to"));
+                    destinations.insert(1, format!("https://{alias}.quickconnect.to"));
                 }
             }
         }
@@ -99,10 +100,41 @@ impl SynologyQuickConnectDefaults {
         Some(alias.to_string())
     }
 
+    fn permits_direct_origin(&self, destination: &Url) -> bool {
+        let Some(alias) = self.nas_alias() else {
+            return false;
+        };
+        let Some(host) = destination.host_str() else {
+            return false;
+        };
+        let suffix = format!("{alias}.direct.quickconnect.to");
+        let same_nas = host == suffix
+            || host
+                .strip_suffix(&format!(".{suffix}"))
+                .is_some_and(|label| {
+                    !label.is_empty()
+                        && label.len() <= 63
+                        && !label.starts_with('-')
+                        && !label.ends_with('-')
+                        && label.bytes().all(|byte| {
+                            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'
+                        })
+                });
+        destination.scheme() == "https"
+            && matches!(destination.port(), Some(5001 | 5002))
+            && destination.username().is_empty()
+            && destination.password().is_none()
+            && host.len() <= 253
+            && same_nas
+    }
+
     pub fn validate(&self, current_target: &Url) -> Result<(), String> {
         let destinations = self.origins().map_err(str::to_string)?;
         let current = current_target.origin().ascii_serialization();
-        if current == self.original_origin || destinations.contains(&current) {
+        if current == self.original_origin
+            || destinations.contains(&current)
+            || self.permits_direct_origin(current_target)
+        {
             Ok(())
         } else {
             Err("Synology redirect defaults do not belong to this source connection.".into())
@@ -114,9 +146,10 @@ impl SynologyQuickConnectDefaults {
             return false;
         };
         self.validate(&current).is_ok()
-            && self
-                .origins()
-                .is_ok_and(|origins| origins.contains(&destination.origin().ascii_serialization()))
+            && (self.permits_direct_origin(destination)
+                || self.origins().is_ok_and(|origins| {
+                    origins.contains(&destination.origin().ascii_serialization())
+                }))
     }
 }
 
@@ -137,11 +170,17 @@ mod tests {
         for current in [
             "https://nas-example.fr3.quickconnect.to",
             "http://nas-example.quickconnect.to",
+            "https://nas-example.quickconnect.to",
+            "https://nas-example.direct.quickconnect.to:5001",
+            "https://192-168-50-100.nas-example.direct.quickconnect.to:5002",
             PORTALS[0],
             PORTALS[1],
         ] {
             for destination in [
                 "http://nas-example.quickconnect.to/path",
+                "https://nas-example.quickconnect.to/path",
+                "https://nas-example.direct.quickconnect.to:5001/path",
+                "https://192-168-50-100.nas-example.direct.quickconnect.to:5002/path",
                 "https://global.quickconnect.to/path",
                 "https://www.quickconnect.to/",
             ] {
@@ -149,9 +188,14 @@ mod tests {
             }
             for rejected in [
                 "http://other-nas.quickconnect.to",
+                "https://other-nas.quickconnect.to",
                 "http://global.quickconnect.to",
                 "http://www.quickconnect.to",
-                "https://nas-example.quickconnect.to",
+                "https://nas-example.quickconnect.to:5001",
+                "http://nas-example.direct.quickconnect.to:5001",
+                "https://nas-example.direct.quickconnect.to:443",
+                "https://other-nas.direct.quickconnect.to:5001",
+                "https://one.two.nas-example.direct.quickconnect.to:5001",
                 "https://global.quickconnect.to:5001",
                 "https://www.quickconnect.to.attacker.invalid",
                 "http://nas-example.quickconnect.cn",

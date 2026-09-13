@@ -1,18 +1,25 @@
-import React from "react";
+import React, { useState } from "react";
 import { ShieldAlert, RefreshCw } from "lucide-react";
-import type { WebNetworkReport } from "../../../utils/protocol/webNetworkReport";
+import type {
+  WebNetworkReport,
+  WebNetworkRoutingStatus,
+} from "../../../utils/protocol/webNetworkReport";
 import type { WebNetworkGuardStatus } from "../../../utils/protocol/webNetworkGuard";
+import NativeHttpObservations from "./NativeHttpObservations";
 
 export default function WebNetworkNotice({
   reports,
   guard,
+  routing,
   onReload,
 }: {
   reports: readonly WebNetworkReport[];
   guard: WebNetworkGuardStatus | null;
+  routing?: WebNetworkRoutingStatus | null;
   onReload: () => void;
 }) {
-  if (!reports.length && !guard) return null;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  if (!reports.length && !guard && !routing) return null;
   const expired = reports.some((report) =>
     ["document-expired", "document-activation-failed"].includes(report.reason),
   );
@@ -30,9 +37,13 @@ export default function WebNetworkNotice({
         <span className="font-medium">
           {expired
             ? "This page needs to be reloaded"
-            : reports.length
-              ? "Some website requests were blocked"
-              : "Website proxy routing · partial browser enforcement"}
+            : routing?.status === "missing"
+              ? "Page routing module is not confirmed"
+              : routing?.status === "mismatch"
+                ? "Page routing settings do not match this connection"
+                : reports.length
+                  ? "Some website requests were blocked"
+                  : "Website proxy routing · partial browser enforcement"}
         </span>
         {expired && (
           <button
@@ -45,7 +56,10 @@ export default function WebNetworkNotice({
           </button>
         )}
       </div>
-      <details className="mt-1 text-[var(--color-textSecondary)]">
+      <details
+        className="mt-1 text-[var(--color-textSecondary)]"
+        onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
+      >
         <summary className="cursor-pointer">
           {reports.length
             ? `Review ${reports.length} network restriction${reports.length === 1 ? "" : "s"}`
@@ -59,6 +73,17 @@ export default function WebNetworkNotice({
                 ? "Native frame navigation protection is not available on this platform."
                 : "Native frame navigation protection is not ready."}{" "}
             Browser-wide network interception is not yet enforced.
+          </p>
+        )}
+        {routing && (
+          <p className="mt-2" data-testid="web-network-routing-status">
+            {routing.status === "missing"
+              ? "This page did not report the current routing module. It may come from an older desktop process. Restart the desktop application and reopen the website tab; refreshing the application UI alone does not update native proxy code."
+              : routing.status === "mismatch"
+                ? "The page's routing capabilities differ from the current connection settings. Reopen this website from its saved connection after checking its default destinations and database access."
+                : `Page routing module v3 reported. QuickConnect navigation: ${routing.quickConnectNavigation ? "available" : "off or unavailable for this source"}; discovery: ${routing.quickConnectDiscovery ? "available" : "off or unavailable for this source"}; same-NAS discovery routes: ${routing.quickConnectDiscovered ? "available; native grants still required" : "off or unavailable for this source"}; direct navigation: ${routing.quickConnectDirectNavigation ? "available" : "off or unavailable for this source"}.`}{" "}
+            This is a page-module diagnostic, not proof that every request is
+            captured.
           </p>
         )}
         <p className="mt-2">
@@ -83,13 +108,15 @@ export default function WebNetworkNotice({
                   ? `No route for this request (${report.kind})`
                   : report.reason === "quickconnect-control-method"
                     ? "Only the reviewed QuickConnect discovery POST can use this control route"
-                    : report.reason === "document-expired"
-                      ? "Reload to establish a fresh session document"
-                      : report.reason === "unsupported-network-context"
-                        ? `Unsupported ${report.kind} request`
-                        : report.reason === "request-body-too-large"
-                          ? "Retargeted Request uploads are limited to 16 MiB; nothing was sent"
-                          : "Request cannot use this session's routing policy"}
+                    : report.reason === "quickconnect-probe-method"
+                      ? "Only the exact same-NAS discovery GET can use this probe route"
+                      : report.reason === "document-expired"
+                        ? "Reload to establish a fresh session document"
+                        : report.reason === "unsupported-network-context"
+                          ? `Unsupported ${report.kind} request`
+                          : report.reason === "request-body-too-large"
+                            ? "Retargeted Request uploads are limited to 16 MiB; nothing was sent"
+                            : "Request cannot use this session's routing policy"}
             </li>
           ))}
         </ul>
@@ -103,6 +130,9 @@ export default function WebNetworkNotice({
             Match it to these reports; unrelated page errors are not suppressed.
           </p>
         )}
+        <NativeHttpObservations
+          active={detailsOpen && guard?.platform === "windows"}
+        />
       </details>
     </section>
   );

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendWebNetworkReport,
   parseWebNetworkReport,
+  webNetworkRoutingStatus,
 } from "../../src/utils/protocol/webNetworkReport";
 import { parseWebNetworkGuardStatus } from "../../src/utils/protocol/webNetworkGuard";
 const document = {
@@ -24,6 +25,101 @@ const report = {
   origin: "https://cdn.example",
 };
 describe("untrusted page network report boundary", () => {
+  it("distinguishes missing page module from disabled and mismatched capabilities without leaking input", () => {
+    for (const value of [
+      undefined,
+      null,
+      { version: 1 },
+      { version: 2, quickConnectNavigation: true, quickConnectDiscovery: true },
+      {
+        version: 3,
+        quickConnectNavigation: "private",
+        quickConnectDiscovery: true,
+      },
+    ])
+      expect(webNetworkRoutingStatus(value, true).status).toBe("missing");
+    expect(
+      webNetworkRoutingStatus(
+        {
+          version: 3,
+          quickConnectNavigation: false,
+          quickConnectDiscovery: false,
+          quickConnectDiscovered: false,
+          quickConnectDirectNavigation: false,
+        },
+        false,
+      ),
+    ).toEqual({
+      status: "current",
+      quickConnectNavigation: false,
+      quickConnectDiscovery: false,
+      quickConnectDiscovered: false,
+      quickConnectDirectNavigation: false,
+    });
+    expect(
+      webNetworkRoutingStatus(
+        {
+          version: 3,
+          quickConnectNavigation: false,
+          quickConnectDiscovery: false,
+          quickConnectDiscovered: false,
+          quickConnectDirectNavigation: false,
+        },
+        true,
+      ).status,
+    ).toBe("mismatch");
+    expect(
+      webNetworkRoutingStatus(
+        {
+          version: 3,
+          quickConnectNavigation: true,
+          quickConnectDiscovery: true,
+          quickConnectDiscovered: true,
+          quickConnectDirectNavigation: true,
+          credentials: "private",
+        },
+        true,
+        true,
+      ),
+    ).toEqual({
+      status: "current",
+      quickConnectNavigation: true,
+      quickConnectDiscovery: true,
+      quickConnectDiscovered: true,
+      quickConnectDirectNavigation: true,
+    });
+  });
+  it("requires the current alias capabilities but accepts an aliasless or disabled source", () => {
+    const aliasless = {
+      version: 3,
+      quickConnectNavigation: true,
+      quickConnectDiscovery: false,
+      quickConnectDiscovered: false,
+      quickConnectDirectNavigation: false,
+    };
+    expect(webNetworkRoutingStatus(aliasless, true, false).status).toBe(
+      "current",
+    );
+    expect(webNetworkRoutingStatus(aliasless, true, true).status).toBe(
+      "mismatch",
+    );
+    const all = {
+      ...aliasless,
+      quickConnectDiscovery: true,
+      quickConnectDiscovered: true,
+      quickConnectDirectNavigation: true,
+    };
+    expect(webNetworkRoutingStatus(all, true, true).status).toBe("current");
+    expect(webNetworkRoutingStatus(all, false, false).status).toBe("mismatch");
+    for (const key of [
+      "quickConnectDiscovered",
+      "quickConnectDirectNavigation",
+    ])
+      for (const value of [undefined, "true", 1, {}, null])
+        expect(
+          webNetworkRoutingStatus({ ...all, [key]: value }, true, true).status,
+        ).toBe("missing");
+  });
   it("accepts a fenced fixed QuickConnect method reason without including page-supplied body details", () => {
     expect(
       parseWebNetworkReport(

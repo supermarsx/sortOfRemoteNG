@@ -269,6 +269,69 @@ async function mounted() {
 }
 
 describe("mounted website network boundary", () => {
+  it.each(["missing", "legacy", "mismatch", "current"] as const)(
+    "uses only fenced primary readiness for %s routing-module diagnostics",
+    async (status) => {
+      const view = await mounted();
+      const iframe = view.container.querySelector("iframe")!;
+      const url = new URL(iframe.src);
+      const navigationToken = url.searchParams.get("__sorng_navigation_v1");
+      url.searchParams.delete("__sorng_navigation_v1");
+      const data = {
+        version: 1,
+        type: "proxy_document_start",
+        sessionId: "proxy-1",
+        documentToken: "d".repeat(32),
+        documentSequence: 1,
+        navigationToken,
+        url: url.href,
+        networkRouting:
+          status === "missing"
+            ? undefined
+            : {
+                version: status === "legacy" ? 2 : 3,
+                quickConnectNavigation: status === "current",
+                quickConnectDiscovery: false,
+                quickConnectDiscovered: false,
+                quickConnectDirectNavigation: false,
+              },
+      };
+      const send = (source: MessageEventSource | null, payload = data) =>
+        act(async () => {
+          window.dispatchEvent(
+            new MessageEvent("message", {
+              source,
+              origin: url.origin,
+              data: payload,
+            }),
+          );
+        });
+      await send(window);
+      await send(iframe.contentWindow, {
+        ...data,
+        navigationToken: "e".repeat(32),
+      });
+      expect(screen.queryByTestId("web-network-routing-status")).toBeNull();
+      await send(iframe.contentWindow);
+      expect(
+        screen.getByTestId("web-network-routing-status"),
+      ).toHaveTextContent(
+        status === "missing" || status === "legacy"
+          ? "Restart the desktop application"
+          : status === "mismatch"
+            ? "differ from the current connection settings"
+            : "Page routing module v3 reported",
+      );
+      expect(proxies).toHaveLength(1);
+      await act(async () => {
+        h.availabilityGeneration++;
+        view.rerender(<Harness />);
+      });
+      expect(screen.queryByTestId("web-network-routing-status")).toBeNull();
+      await send(iframe.contentWindow);
+      expect(screen.queryByTestId("web-network-routing-status")).toBeNull();
+    },
+  );
   it.each(["initializing", "failed"])(
     "blocks %s native guard before certificate or proxy requests",
     async (state) => {
@@ -484,6 +547,48 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  it("retains original context through regional to HTTPS alias and portal with Require HTTPS enabled", async () => {
+    h.connections = [
+      {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, httpsOnly: true },
+      },
+    ];
+    const view = await mounted();
+    for (const [index, destination] of [
+      "https://example-nas.quickconnect.to/",
+      "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/",
+      "https://global.quickconnect.to/",
+    ].entries()) {
+      redirect(view.container.querySelector("iframe")!, destination);
+      await waitFor(() => expect(proxies).toHaveLength(index + 2));
+      await waitFor(() =>
+        expect(view.container.querySelector("iframe")?.src).toContain(
+          proxies[index + 1].proxy_url,
+        ),
+      );
+      expect(
+        screen.queryByRole("region", { name: "Redirect review" }),
+      ).toBeNull();
+    }
+    for (const [, args] of h.invoke.mock.calls.filter(
+      ([name]) => name === "start_basic_auth_proxy",
+    ))
+      expect(args.config.proxy_policy).toMatchObject({
+        httpsOnly: true,
+        allowCrossOriginRedirects: false,
+        synologyQuickConnectDefaults: {
+          version: 1,
+          originalOrigin: "https://example-nas.fr3.quickconnect.to",
+        },
+      });
+    expect(
+      h.invoke.mock.calls.filter(
+        ([name]) => name === "get_tls_certificate_info",
+      ),
+    ).toHaveLength(4);
+  });
   it("labels built-in destinations separately and keeps configured login forwarding behind explicit review", async () => {
     h.connections = [
       {

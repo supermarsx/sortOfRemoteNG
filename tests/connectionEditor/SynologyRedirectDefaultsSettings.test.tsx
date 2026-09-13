@@ -47,14 +47,15 @@ describe("Synology default redirect controls", () => {
     );
     expect(
       screen.getByText(
-        /Only the initial get_server_info discovery POST is included/,
+        /Only get_server_info discovery POSTs and exact same-NAS/,
       ),
     ).toBeInTheDocument();
     const list = screen.getByRole("list", {
       name: "Synology default redirect destinations",
     });
-    expect(within(list).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(list).getAllByRole("listitem")).toHaveLength(4);
     expect(list).toHaveTextContent("http://my-nas.quickconnect.to");
+    expect(list).toHaveTextContent("https://my-nas.quickconnect.to");
     expect(list).not.toHaveTextContent("http://my-nas.fr3.quickconnect.to");
     expect(draft()).not.toHaveProperty("synologySettings");
     expect(draft()).not.toHaveProperty("httpTrustedRedirectDestinations");

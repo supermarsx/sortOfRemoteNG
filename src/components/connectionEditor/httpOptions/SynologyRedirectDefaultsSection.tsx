@@ -28,13 +28,16 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
   }
   if (!context) return null;
   const enabled = settings.useDefaultRedirectDestinations !== false;
+  const alias = synologyDefaultRedirectOrigins(
+    context.originalOrigin,
+  )[0]?.match(/^http:\/\/([a-z0-9-]+)\.quickconnect\.to$/)?.[1];
   return (
     <section className="space-y-3 rounded-lg border border-[var(--color-border)] p-4">
       <CheckboxField
         variant="form"
         label="Use Synology default redirect destinations"
         checked={enabled}
-        description="On by default. Allows anonymous handoffs to these exact destinations and, for a recognized original NAS alias, initial discovery through the app proxy at https://global.quickconnect.to/Serv.php. Require HTTPS upstream still blocks HTTP. Saved-login forwarding always needs separate approval."
+        description="On by default. Allows anonymous handoffs to these destinations and, for a recognized original NAS alias, initial discovery through the app proxy at https://global.quickconnect.to/Serv.php, verified regional retries and same-NAS direct checks. Require HTTPS upstream still blocks HTTP. Saved-login forwarding always needs separate approval."
         onChange={(useDefaultRedirectDestinations) =>
           mgr.setFormData((previous) => {
             try {
@@ -87,15 +90,27 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
           ),
         )}
       </ul>
+      {alias && (
+        <p className="break-all text-xs text-[var(--color-textSecondary)]">
+          {enabled ? "Also permits" : "Disabled"}: same-NAS direct HTTPS
+          endpoints{" "}
+          <span className="font-mono">{alias}.direct.quickconnect.to</span> and
+          one DNS label beneath it, only on ports 5001 or 5002. Each navigation
+          uses a fresh anonymous proxy and independent certificate checks; other
+          NAS aliases, HTTP and other ports are not included.
+        </p>
+      )}
       <p className="text-xs text-[var(--color-textSecondary)]">
         This list is derived from the original connection, not saved as
         individual trust entries. Disabling it does not remove destinations you
         explicitly trusted below or in Trust Center; those follow the general
-        redirect policy. Only the initial get_server_info discovery POST is
-        included; other APIs, tunnel requests, wakeup calls and NAS address
-        probes need separate routing. No cookies, passwords, general resource
-        origins or certificate exceptions are granted. Save the connection to
-        retain this preference.
+        redirect policy. Only get_server_info discovery POSTs and exact same-NAS
+        pingpong reachability GETs are included. Regional control and probe
+        targets must first be learned from verified provider responses for the
+        current document. Other APIs, tunnel requests and wakeup calls need
+        separate routing. No cookies, passwords, general resource origins or
+        certificate exceptions are granted. Save the connection to retain this
+        preference.
       </p>
     </section>
   );

@@ -1,5 +1,8 @@
 //! Closed anonymous QuickConnect discovery RPC. No arbitrary URLs, inherited
-//! website credentials, tunnel requests or response-selected destinations.
+//! website credentials or tunnel requests. Verified replies may enroll bounded
+//! original-NAS probe/control destinations in a private document registry.
+#[path = "http_quickconnect_discovered.rs"]
+mod discovered;
 use super::AxumProxyState;
 use axum::body::Body;
 use axum::http::{Method, Response, StatusCode};
@@ -10,13 +13,32 @@ use tokio::sync::Semaphore;
 pub(super) const PATH: &str = "/__sortofremoteng_quickconnect_control_v1";
 pub(super) const UPSTREAM: &str = "https://global.quickconnect.to/Serv.php";
 pub(super) const DOCUMENT_HEADER: &str = "x-sorng-quickconnect-document";
+pub(super) const DISCOVERED_PATH: &str = discovered::PATH;
 const MAX_REQUEST: usize = 4096;
 const MAX_RESPONSE: usize = 256 * 1024;
+
+#[derive(Clone)]
+pub(super) struct ObservedDestination {
+    pub(super) description: String,
+}
+
+struct LearningTicket<'a> {
+    registry: &'a std::sync::Mutex<discovered::Registry>,
+    ticket: discovered::Ticket,
+}
+impl Drop for LearningTicket<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut registry) = self.registry.lock() {
+            registry.finish(self.ticket);
+        }
+    }
+}
 
 pub(super) struct ReviewedQuickConnectControl {
     client: reqwest::Client,
     requests: Semaphore,
     downloads: Semaphore,
+    discovered: std::sync::Mutex<discovered::Registry>,
 }
 impl ReviewedQuickConnectControl {
     pub(super) fn new(proxy: Option<reqwest::Proxy>, min_tls: &str) -> Result<Self, String> {
@@ -64,6 +86,7 @@ impl ReviewedQuickConnectControl {
             client,
             requests: Semaphore::new(8),
             downloads: Semaphore::new(2),
+            discovered: Default::default(),
         }
     }
     #[cfg(test)]
@@ -73,6 +96,9 @@ impl ReviewedQuickConnectControl {
     pub(super) fn revoke(&self) {
         self.requests.close();
         self.downloads.close();
+        if let Ok(mut registry) = self.discovered.lock() {
+            registry.revoke();
+        }
     }
 }
 
@@ -135,9 +161,11 @@ pub(super) fn manifest(
         .filter(|origin| !policy.https_only || origin.starts_with("https:"))
         .collect();
     let mut value = serde_json::json!({"version":1,"navigationOrigins":origins,"redirectEndpoint":format!("{proxy}{}", super::quickconnect::PATH)});
-    if defaults.nas_alias().is_some() {
+    if let Some(alias) = defaults.nas_alias() {
         value["rpc"] =
             serde_json::json!({"upstreamUrl":UPSTREAM,"proxyUrl":format!("{proxy}{PATH}")});
+        value["discovered"] = serde_json::json!({"version":1,"alias":alias,"proxyUrl":format!("{proxy}{DISCOVERED_PATH}")});
+        value["directNavigation"] = serde_json::json!({"version":1,"alias":alias});
     }
     Some(value)
 }
@@ -151,25 +179,63 @@ fn refusal(status: StatusCode, message: &'static str) -> Response<Body> {
         .expect("static discovery refusal")
 }
 
+struct Exchange<'a> {
+    state: &'a AxumProxyState,
+    sequence: u64,
+    alias: &'a str,
+    url: reqwest::Url,
+    route: discovered::Route,
+    body: Vec<u8>,
+    learned: bool,
+}
+
 async fn exchange(
     control: &ReviewedQuickConnectControl,
-    body: Vec<u8>,
+    exchange: Exchange<'_>,
 ) -> Result<Response<Body>, &'static str> {
     let _download = control
         .downloads
         .acquire()
         .await
         .map_err(|_| "QuickConnect discovery ended.")?;
-    let mut response = control
-        .client
-        .post(UPSTREAM)
-        .header(
-            "Content-Type",
-            "application/x-www-form-urlencoded; charset=UTF-8",
-        )
+    if exchange.learned
+        && !control.discovered.lock().is_ok_and(|registry| {
+            registry.allows(exchange.sequence, exchange.alias, &exchange.url)
+                == Some(exchange.route)
+        })
+    {
+        return Err("QuickConnect destination is not approved for this document.");
+    }
+    let ticket = if exchange.route == discovered::Route::Control {
+        Some(LearningTicket {
+            registry: &control.discovered,
+            ticket: control
+                .discovered
+                .lock()
+                .map_err(|_| "QuickConnect discovery is unavailable.")?
+                .begin(exchange.sequence, exchange.alias)
+                .ok_or("QuickConnect discovery is stale.")?,
+        })
+    } else {
+        None
+    };
+    let request = match exchange.route {
+        discovered::Route::Control => control
+            .client
+            .post(exchange.url)
+            .header(
+                "Content-Type",
+                "application/x-www-form-urlencoded; charset=UTF-8",
+            )
+            .body(exchange.body),
+        discovered::Route::Probe => control
+            .client
+            .get(exchange.url)
+            .header("Origin", &exchange.state.target_origin),
+    };
+    let mut response = request
         .header("Accept", "application/json")
         .header("Accept-Encoding", "identity")
-        .body(body)
         .send()
         .await
         .map_err(|_| "Verified QuickConnect discovery failed; no alternate route was attempted.")?;
@@ -185,6 +251,18 @@ async fn exchange(
             .is_some_and(|value| value.as_bytes() != b"identity")
     {
         return Err("Unsupported QuickConnect discovery response.");
+    }
+    if exchange.route == discovered::Route::Probe {
+        let allowed = response.headers().get_all("access-control-allow-origin");
+        if allowed.iter().count() != 1
+            || !allowed
+                .iter()
+                .next()
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|origin| origin == "*" || origin == exchange.state.target_origin)
+        {
+            return Err("QuickConnect probe did not permit this anonymous source origin.");
+        }
     }
     let client_ip = (response.headers().get_all("x-qc-client-ip").iter().count() == 1)
         .then(|| {
@@ -209,10 +287,34 @@ async fn exchange(
     }
     let json: serde_json::Value = serde_json::from_slice(&bytes)
         .map_err(|_| "QuickConnect discovery did not return valid JSON.")?;
+    if exchange.route == discovered::Route::Probe
+        && !discovered::valid_probe_json(&json, exchange.alias)
+    {
+        return Err("QuickConnect probe did not identify the original NAS alias.");
+    }
     let bytes =
         serde_json::to_vec(&json).map_err(|_| "QuickConnect discovery JSON is unavailable.")?;
     if bytes.len() > MAX_RESPONSE {
         return Err("QuickConnect discovery response is too large.");
+    }
+    if status.is_success()
+        && exchange
+            .state
+            .network
+            .document_is_current(exchange.sequence)
+    {
+        if let Some(ticket) = ticket {
+            if let Ok(mut registry) = control.discovered.lock() {
+                if exchange
+                    .state
+                    .network
+                    .document_is_current(exchange.sequence)
+                    && !registry.learn(ticket.ticket, &json)
+                {
+                    return Err("QuickConnect discovery response is no longer current.");
+                }
+            }
+        }
     }
     let mut builder = Response::builder()
         .status(status.as_u16())
@@ -234,14 +336,33 @@ pub(super) async fn handle(
     request: axum::extract::Request,
 ) -> Response<Body> {
     let headers = request.headers();
+    let origin_optional = request.method() == Method::GET
+        && request.uri().path() == DISCOVERED_PATH
+        && [
+            ("sec-fetch-site", "same-origin"),
+            ("sec-fetch-dest", "empty"),
+        ]
+        .into_iter()
+        .all(|(name, expected)| {
+            headers.get_all(name).iter().count() == 1
+                && headers
+                    .get(name)
+                    .is_some_and(|value| value.as_bytes() == expected.as_bytes())
+        })
+        && headers.get_all("sec-fetch-mode").iter().count() == 1
+        && headers
+            .get("sec-fetch-mode")
+            .is_some_and(|value| matches!(value.as_bytes(), b"cors" | b"same-origin"));
     if !super::proxy_request_headers_are_authorized(
         headers,
         &state.proxy_authority,
         &state.proxy_origin,
     ) || headers.get_all("host").iter().count() != 1
-        || headers.get_all("origin").iter().count() != 1
-        || headers.get("origin").and_then(|value| value.to_str().ok())
-            != Some(state.proxy_origin.as_str())
+        || headers.get_all("origin").iter().count() > 1
+        || (headers.contains_key("origin")
+            && headers.get("origin").and_then(|value| value.to_str().ok())
+                != Some(state.proxy_origin.as_str()))
+        || (!headers.contains_key("origin") && !origin_optional)
     {
         return refusal(
             StatusCode::FORBIDDEN,
@@ -258,16 +379,25 @@ pub(super) async fn handle(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
         .map(str::trim);
-    if request.uri().path() != PATH
-        || request.uri().query().is_some()
-        || request.method() != Method::POST
+    let learned = request.uri().path() == DISCOVERED_PATH;
+    let post = request.method() == Method::POST;
+    let destination = if learned {
+        super::quickconnect::decode_destination(request.uri().query())
+    } else if request.uri().path() == PATH && request.uri().query().is_none() {
+        reqwest::Url::parse(UPSTREAM).ok()
+    } else {
+        None
+    };
+    if destination.is_none()
+        || !(post || learned && request.method() == Method::GET)
         || headers.get_all(DOCUMENT_HEADER).iter().count() != 1
         || sequence.is_none()
-        || headers.get_all("content-type").iter().count() != 1
-        || !mime.is_some_and(|mime| {
-            mime.eq_ignore_ascii_case("application/json")
-                || mime.eq_ignore_ascii_case("application/x-www-form-urlencoded")
-        })
+        || (post
+            && (headers.get_all("content-type").iter().count() != 1
+                || !mime.is_some_and(|mime| {
+                    mime.eq_ignore_ascii_case("application/json")
+                        || mime.eq_ignore_ascii_case("application/x-www-form-urlencoded")
+                })))
         || headers.contains_key("upgrade")
         || headers.contains_key("sec-websocket-key")
         || headers
@@ -282,7 +412,7 @@ pub(super) async fn handle(
     {
         return refusal(
             StatusCode::BAD_REQUEST,
-            "Only protected QuickConnect discovery POST requests are supported.",
+            "Only protected QuickConnect discovery POSTs and approved GET probes are supported.",
         );
     }
     let Some(defaults) = state.proxy_policy.synology_quick_connect_defaults.as_ref() else {
@@ -301,6 +431,18 @@ pub(super) async fn handle(
             "QuickConnect discovery does not belong to this source.",
         );
     };
+    let destination = destination.unwrap();
+    let route = if learned {
+        discovered::classify(&destination, &alias)
+    } else {
+        Some(discovered::Route::Control)
+    };
+    let Some(route) = route.filter(|route| post == (*route == discovered::Route::Control)) else {
+        return refusal(
+            StatusCode::BAD_REQUEST,
+            "Unsupported QuickConnect destination request.",
+        );
+    };
     let Some(control) = state.network.quickconnect_control.as_ref() else {
         return refusal(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -314,11 +456,31 @@ pub(super) async fn handle(
         );
     };
     let sequence = sequence.unwrap();
+    let approved = std::sync::atomic::AtomicBool::new(false);
+    let description = format!(
+        "{}: {}",
+        match route {
+            discovered::Route::Control => "QuickConnect regional discovery",
+            discovered::Route::Probe => "QuickConnect NAS probe",
+        },
+        destination.origin().ascii_serialization()
+    );
     let operation = async {
         state.network.await_document(sequence).await?;
         state
             .network
             .while_document(sequence, async {
+                if learned
+                    && !control.discovered.lock().is_ok_and(|registry| {
+                        registry.allows(sequence, &alias, &destination) == Some(route)
+                    })
+                {
+                    return Ok(refusal(
+                        StatusCode::FORBIDDEN,
+                        "QuickConnect destination is not approved for this document.",
+                    ));
+                }
+                approved.store(true, std::sync::atomic::Ordering::Relaxed);
                 let bytes = match axum::body::to_bytes(request.into_body(), MAX_REQUEST).await {
                     Ok(bytes) => bytes,
                     Err(_) => {
@@ -328,22 +490,46 @@ pub(super) async fn handle(
                         ))
                     }
                 };
-                let body = match validated_body(&bytes, &alias) {
+                let body = match if post {
+                    validated_body(&bytes, &alias)
+                } else if bytes.is_empty() {
+                    Ok(Vec::new())
+                } else {
+                    Err("QuickConnect probes cannot carry a body.")
+                } {
                     Ok(body) => body,
                     Err(message) => return Ok(refusal(StatusCode::BAD_REQUEST, message)),
                 };
-                exchange(control, body).await
+                exchange(
+                    control,
+                    Exchange {
+                        state: &state,
+                        sequence,
+                        alias: &alias,
+                        url: destination,
+                        route,
+                        body,
+                        learned,
+                    },
+                )
+                .await
             })
             .await?
     };
-    match tokio::time::timeout(Duration::from_secs(20), operation).await {
+    let mut response = match tokio::time::timeout(Duration::from_secs(20), operation).await {
         Ok(Ok(response)) => response,
         Ok(Err(message)) => refusal(StatusCode::BAD_GATEWAY, message),
         Err(_) => refusal(
             StatusCode::GATEWAY_TIMEOUT,
             "QuickConnect discovery timed out.",
         ),
+    };
+    if learned && approved.load(std::sync::atomic::Ordering::Relaxed) {
+        response
+            .extensions_mut()
+            .insert(ObservedDestination { description });
     }
+    response
 }
 
 #[cfg(test)]

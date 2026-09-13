@@ -1,8 +1,106 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebNetworkNotice from "../../src/components/protocol/webBrowser/WebNetworkNotice";
+vi.mock(
+  "../../src/components/protocol/webBrowser/NativeHttpObservations",
+  () => ({
+    default: ({ active }: { active: boolean }) => (
+      <div data-testid="native-observation-activity" data-active={active} />
+    ),
+  }),
+);
 afterEach(cleanup);
 describe("compact website network notice", () => {
+  it("only activates native observation snapshots while Windows details are expanded", async () => {
+    const view = render(
+      <WebNetworkNotice
+        reports={[]}
+        guard={{
+          platform: "windows",
+          frameNavigation: "enforced",
+          allNetworkRequestsMediated: false,
+        }}
+        onReload={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    fireEvent.click(screen.getByText("Protection details"));
+    await waitFor(() =>
+      expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+        "data-active",
+        "true",
+      ),
+    );
+    fireEvent.click(screen.getByText("Protection details"));
+    await waitFor(() =>
+      expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+        "data-active",
+        "false",
+      ),
+    );
+    view.rerender(
+      <WebNetworkNotice
+        reports={[]}
+        guard={{
+          platform: "linux",
+          frameNavigation: "unsupported",
+          allNetworkRequestsMediated: false,
+        }}
+        onReload={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Protection details"));
+    await waitFor(() =>
+      expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+        "data-active",
+        "false",
+      ),
+    );
+  });
+  it.each(["missing", "mismatch", "current"] as const)(
+    "explains %s module diagnostics without inventing a blocked request",
+    (status) => {
+      render(
+        <WebNetworkNotice
+          reports={[]}
+          guard={null}
+          routing={{
+            status,
+            quickConnectNavigation: false,
+            quickConnectDiscovery: false,
+            quickConnectDiscovered: false,
+            quickConnectDirectNavigation: false,
+          }}
+          onReload={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByText("Protection details"));
+      expect(
+        screen.getByTestId("web-network-routing-status"),
+      ).toHaveTextContent(
+        status === "missing"
+          ? "Restart the desktop application"
+          : status === "mismatch"
+            ? "differ from the current connection settings"
+            : "off or unavailable for this source",
+      );
+      expect(
+        screen.queryByText("Some website requests were blocked"),
+      ).toBeNull();
+      expect(
+        screen.getByTestId("web-network-routing-status"),
+      ).toHaveTextContent("not proof that every request is captured");
+    },
+  );
   it("explains a blocked font without claiming unrelated SecurityErrors have the same cause", () => {
     render(
       <WebNetworkNotice

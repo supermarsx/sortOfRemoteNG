@@ -12,6 +12,8 @@ function installWebNetworkClient(configuration, reportBlocked) {
     fontAssets = new Map(),
     navigationOrigins = new Set(),
     quickConnectRpc = null,
+    quickConnectDiscovered = null,
+    directNavigationAlias = null,
     redirectEndpoint = null,
     proxies = new Set(),
     reports = new Set(),
@@ -100,7 +102,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
       !quickConnect ||
       quickConnect.version !== 1 ||
       !Array.isArray(quickConnect.navigationOrigins) ||
-      quickConnect.navigationOrigins.length > 3 ||
+      quickConnect.navigationOrigins.length > 4 ||
       quickConnect.redirectEndpoint !==
         proxyOrigin + "/__sortofremoteng_quickconnect_redirect_v1"
     )
@@ -111,7 +113,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
         navigationOrigins.has(canonical) ||
         (canonical !== "https://global.quickconnect.to" &&
           canonical !== "https://www.quickconnect.to" &&
-          !/^http:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.quickconnect\.to$/.test(
+          !/^https?:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.quickconnect\.to$/.test(
             canonical,
           ))
       )
@@ -119,6 +121,17 @@ function installWebNetworkClient(configuration, reportBlocked) {
       navigationOrigins.add(canonical);
     });
     redirectEndpoint = quickConnect.redirectEndpoint;
+    if (quickConnect.directNavigation !== undefined) {
+      var directNavigation = quickConnect.directNavigation;
+      if (
+        !directNavigation ||
+        directNavigation.version !== 1 ||
+        typeof directNavigation.alias !== "string" ||
+        !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(directNavigation.alias)
+      )
+        throw new TypeError("Invalid QuickConnect capability configuration");
+      directNavigationAlias = directNavigation.alias;
+    }
     if (quickConnect.rpc !== undefined) {
       if (
         !quickConnect.rpc ||
@@ -131,6 +144,22 @@ function installWebNetworkClient(configuration, reportBlocked) {
       quickConnectRpc = {
         upstreamUrl: quickConnect.rpc.upstreamUrl,
         proxyUrl: quickConnect.rpc.proxyUrl,
+      };
+    }
+    if (quickConnect.discovered !== undefined) {
+      var discovered = quickConnect.discovered;
+      if (
+        !discovered ||
+        discovered.version !== 1 ||
+        typeof discovered.alias !== "string" ||
+        !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(discovered.alias) ||
+        discovered.proxyUrl !==
+          proxyOrigin + "/__sortofremoteng_quickconnect_discovered_v1"
+      )
+        throw new TypeError("Invalid QuickConnect capability configuration");
+      quickConnectDiscovered = {
+        alias: discovered.alias,
+        proxyUrl: discovered.proxyUrl,
       };
     }
   }
@@ -170,6 +199,22 @@ function installWebNetworkClient(configuration, reportBlocked) {
       "SecurityError",
     );
   }
+  function sameNasDirect(target, alias) {
+    if (
+      !alias ||
+      target.protocol !== "https:" ||
+      (target.port !== "5001" && target.port !== "5002")
+    )
+      return false;
+    var suffix = alias + ".direct.quickconnect.to";
+    var prefix = target.hostname.endsWith("." + suffix)
+      ? target.hostname.slice(0, -(suffix.length + 1))
+      : "";
+    return (
+      target.hostname === suffix ||
+      /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(prefix)
+    );
+  }
   function mapUrl(value, kind, localData, method, navigationReference) {
     if (!active) throw blocked(kind, "document-closed");
     var target;
@@ -193,7 +238,46 @@ function installWebNetworkClient(configuration, reportBlocked) {
         throw blocked(kind, "quickconnect-control-method", target.origin);
       return quickConnectRpc.proxyUrl;
     }
-    if (kind === "navigation" && navigationOrigins.has(target.origin)) {
+    if (
+      quickConnectDiscovered &&
+      target.origin !== sourceOrigin &&
+      target.origin !== proxyOrigin &&
+      (kind === "fetch" || kind === "xhr") &&
+      target.protocol === "https:" &&
+      !target.hash
+    ) {
+      var regional =
+        !target.port &&
+        /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.quickconnect\.to$/.test(
+          target.hostname,
+        ) &&
+        target.pathname === "/Serv.php" &&
+        !target.search;
+      var direct =
+        sameNasDirect(target, quickConnectDiscovered.alias) &&
+        target.pathname === "/webman/pingpong.cgi" &&
+        target.search === "?action=cors&quickconnect=true";
+      if (regional || direct) {
+        if (String(method).toUpperCase() !== (regional ? "POST" : "GET"))
+          throw blocked(
+            kind,
+            regional
+              ? "quickconnect-control-method"
+              : "quickconnect-probe-method",
+            target.origin,
+          );
+        // Matching syntax is NOT a grant. Native requires this exact target
+        // to have been learned from a verified response for this document.
+        var discoveredUrl = new NativeURL(quickConnectDiscovered.proxyUrl);
+        discoveredUrl.searchParams.set("destination", target.href);
+        return discoveredUrl.href;
+      }
+    }
+    if (
+      kind === "navigation" &&
+      (navigationOrigins.has(target.origin) ||
+        sameNasDirect(target, directNavigationAlias))
+    ) {
       if (target.href.length > 4096) throw blocked(kind, "invalid-url");
       // Setting href does not send a request. Preserve anchor-based URL
       // parsing; the capture click handler performs the actual handoff.
@@ -333,9 +417,17 @@ function installWebNetworkClient(configuration, reportBlocked) {
       reader.releaseLock();
     }
   }
+  function isQuickConnectRelay(url) {
+    return (
+      (quickConnectRpc && url === quickConnectRpc.proxyUrl) ||
+      (quickConnectDiscovered &&
+        (url === quickConnectDiscovered.proxyUrl ||
+          url.startsWith(quickConnectDiscovered.proxyUrl + "?")))
+    );
+  }
   if (typeof nativeFetch === "function") {
     function controlRequestOptions(url, options) {
-      if (!quickConnectRpc || url !== quickConnectRpc.proxyUrl) return options;
+      if (!isQuickConnectRelay(url)) return options;
       var headers = new Headers(options?.headers);
       headers.set("X-Sorng-QuickConnect-Document", String(sequence));
       return Object.assign({}, options, {
@@ -400,7 +492,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     replace(xhrPrototype, "open", function () {
       var args = Array.prototype.slice.call(arguments);
       args[1] = mapUrl(args[1], "xhr", false, args[0]);
-      var control = quickConnectRpc && args[1] === quickConnectRpc.proxyUrl;
+      var control = isQuickConnectRelay(args[1]);
       if (control && (args[3] || args[4]))
         throw blocked("xhr", "url-credentials");
       if (control && typeof nativeSetRequestHeader !== "function")
@@ -808,6 +900,8 @@ function installWebNetworkClient(configuration, reportBlocked) {
     fontAssets.clear();
     navigationOrigins.clear();
     quickConnectRpc = null;
+    quickConnectDiscovered = null;
+    directNavigationAlias = null;
     proxies.clear();
   }
   function restored(event) {
@@ -830,5 +924,19 @@ function installWebNetworkClient(configuration, reportBlocked) {
   }
   window.addEventListener("pagehide", revoke, { once: true });
   window.addEventListener("pageshow", restored);
-  return Object.freeze({ mapUrl: mapUrl, dispose: dispose });
+  return Object.freeze({
+    mapUrl: mapUrl,
+    dispose: dispose,
+    // Advisory installation receipt only; this does not prove engine-wide
+    // interception and must never create permission in the parent application.
+    capabilities: Object.freeze({
+      version: 3,
+      quickConnectNavigation:
+        navigationOrigins.size > 0 || directNavigationAlias !== null,
+      quickConnectDiscovery:
+        quickConnectRpc !== null || quickConnectDiscovered !== null,
+      quickConnectDiscovered: quickConnectDiscovered !== null,
+      quickConnectDirectNavigation: directNavigationAlias !== null,
+    }),
+  });
 }

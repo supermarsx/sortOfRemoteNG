@@ -197,7 +197,15 @@ async fn quickconnect_navigation_records_one_use_receipt_without_any_upstream_or
         .is_none());
     assert_eq!(upstream.hits.load(Ordering::SeqCst), 0);
     assert_eq!(destination.hits.load(Ordering::SeqCst), 0);
-    assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 0);
+    assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 1);
+    assert_eq!(proxy.state.error_count.load(Ordering::SeqCst), 0);
+    let entry = manager.request_log.back().unwrap();
+    assert_eq!(
+        entry.url,
+        format!("{}{}", proxy.state.proxy_origin, quickconnect::PATH)
+    );
+    assert_eq!(entry.status, 403);
+    assert!(entry.error.is_none());
 }
 
 #[tokio::test]

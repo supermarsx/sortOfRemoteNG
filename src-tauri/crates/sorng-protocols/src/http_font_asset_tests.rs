@@ -248,7 +248,16 @@ async fn public_fonts_are_anonymous_fixed_binary_gets_through_configured_proxy()
                 assert!(!pair[1].to_ascii_lowercase().contains(forbidden));
             }
         }
-        assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 0);
+        assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 2);
+        assert_eq!(proxy.state.error_count.load(Ordering::SeqCst), 0);
+        let manager = proxy.state.global_sessions.lock().unwrap();
+        assert_eq!(manager.request_log.len(), 2);
+        for entry in &manager.request_log {
+            assert_eq!(entry.method, "GET");
+            assert_eq!(entry.url, format!("{}{PREFIX}", proxy.state.proxy_origin));
+            assert_eq!(entry.status, 200);
+            assert!(entry.error.is_none());
+        }
     }
 }
 
@@ -415,7 +424,8 @@ async fn font_download_is_cancelled_on_session_revoke_and_unavailable_route_neve
             .status(),
         503
     );
-    assert_eq!(unavailable.state.request_count.load(Ordering::SeqCst), 0);
+    assert_eq!(unavailable.state.request_count.load(Ordering::SeqCst), 1);
+    assert_eq!(unavailable.state.error_count.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

@@ -4,6 +4,7 @@ use super::*;
 
 const ORIGINAL: &str = "https://nas-example.fr3.quickconnect.to";
 const ALIAS: &str = "http://nas-example.quickconnect.to";
+const SECURE_ALIAS: &str = "https://nas-example.quickconnect.to";
 const GLOBAL: &str = "https://global.quickconnect.to";
 const WWW: &str = "https://www.quickconnect.to";
 
@@ -37,14 +38,45 @@ async fn synology_defaults_are_destination_scoped_and_https_only_still_wins() {
         (defaults(ORIGINAL), ALIAS, true),
         (defaults(ORIGINAL), GLOBAL, true),
         (defaults(ORIGINAL), WWW, true),
+        (defaults(ORIGINAL), SECURE_ALIAS, true),
         (
             defaults(ORIGINAL),
-            "https://nas-example.quickconnect.to",
+            "https://nas-example.direct.quickconnect.to:5001",
+            true,
+        ),
+        (
+            defaults(ORIGINAL),
+            "https://192-168-50-100.nas-example.direct.quickconnect.to:5002",
+            true,
+        ),
+        (
+            defaults(ORIGINAL),
+            "https://other-nas.direct.quickconnect.to:5001",
+            false,
+        ),
+        (
+            defaults(ORIGINAL),
+            "http://nas-example.direct.quickconnect.to:5001",
+            false,
+        ),
+        (
+            defaults(ORIGINAL),
+            "https://nas-example.direct.quickconnect.to:5003",
             false,
         ),
         (
             defaults(ORIGINAL),
             "http://other-nas.quickconnect.to",
+            false,
+        ),
+        (
+            defaults(ORIGINAL),
+            "https://other-nas.quickconnect.to",
+            false,
+        ),
+        (
+            defaults(ORIGINAL),
+            "https://nas-example.quickconnect.to:5001",
             false,
         ),
         (defaults(ORIGINAL), "http://global.quickconnect.to", false),
@@ -66,6 +98,7 @@ async fn synology_defaults_are_destination_scoped_and_https_only_still_wins() {
         ),
         (defaults(ORIGINAL), "https://www.quickconnect.to:0", false),
         (HttpProxyPolicy::default(), ALIAS, false),
+        (HttpProxyPolicy::default(), SECURE_ALIAS, false),
         (HttpProxyPolicy::default(), GLOBAL, false),
         (
             HttpProxyPolicy {
@@ -81,6 +114,14 @@ async fn synology_defaults_are_destination_scoped_and_https_only_still_wins() {
                 ..defaults(ORIGINAL)
             },
             GLOBAL,
+            true,
+        ),
+        (
+            HttpProxyPolicy {
+                https_only: true,
+                ..defaults(ORIGINAL)
+            },
+            SECURE_ALIAS,
             true,
         ),
         (
@@ -127,6 +168,8 @@ async fn synology_defaults_are_destination_scoped_and_https_only_still_wins() {
 async fn synology_receipts_revalidate_defaults_policy_scope_and_document() {
     for mutation in [
         "opt-out",
+        "secure-opt-out",
+        "direct-opt-out",
         "https-only",
         "different-original",
         "shared-portals-original",
@@ -134,10 +177,11 @@ async fn synology_receipts_revalidate_defaults_policy_scope_and_document() {
         "document",
     ] {
         let fixture = receipt_fixture(GLOBAL, defaults(ORIGINAL)).await;
-        let origin = if mutation == "shared-portals-original" {
-            WWW
-        } else {
-            ALIAS
+        let origin = match mutation {
+            "shared-portals-original" => WWW,
+            "secure-opt-out" => SECURE_ALIAS,
+            "direct-opt-out" => "https://nas-example.direct.quickconnect.to:5001",
+            _ => ALIAS,
         };
         let destination =
             reqwest::Url::parse(&format!("{origin}/login?private-token=secret#fragment")).unwrap();
@@ -150,7 +194,9 @@ async fn synology_receipts_revalidate_defaults_policy_scope_and_document() {
         assert!(receipt.removed_query);
         let entry = manager.sessions.get_mut(&fixture.state.session_id).unwrap();
         match mutation {
-            "opt-out" => entry.proxy_policy.synology_quick_connect_defaults = None,
+            "opt-out" | "secure-opt-out" | "direct-opt-out" => {
+                entry.proxy_policy.synology_quick_connect_defaults = None
+            }
             "https-only" => entry.proxy_policy.https_only = true,
             "different-original" | "shared-portals-original" => {
                 entry.proxy_policy.synology_quick_connect_defaults =
@@ -240,7 +286,14 @@ async fn synology_default_chain_issues_sequential_redacted_receipts_without_netw
         .build()
         .unwrap();
     let mut previous_receipt: Option<String> = None;
-    for (source, destination) in [(ORIGINAL, GLOBAL), (GLOBAL, WWW), (WWW, ALIAS)] {
+    for (source, destination) in [
+        (ORIGINAL, SECURE_ALIAS),
+        (SECURE_ALIAS, GLOBAL),
+        (GLOBAL, WWW),
+        (WWW, "https://nas-example.direct.quickconnect.to:5001"),
+        ("https://nas-example.direct.quickconnect.to:5001", GLOBAL),
+        (GLOBAL, ALIAS),
+    ] {
         let fixture = proxy_with_policy(
             format!("{source}/"),
             upstream.clone(),
@@ -290,7 +343,15 @@ async fn synology_default_chain_issues_sequential_redacted_receipts_without_netw
         assert_eq!(*fixture.state.username.read().unwrap(), "");
         assert_eq!(*fixture.state.password.read().unwrap(), "");
         assert!(!fixture.state.auto_login_armed.load(Ordering::SeqCst));
-        assert_eq!(fixture.state.request_count.load(Ordering::SeqCst), 0);
+        assert_eq!(fixture.state.request_count.load(Ordering::SeqCst), 1);
+        assert_eq!(fixture.state.error_count.load(Ordering::SeqCst), 0);
+        let entry = manager.request_log.back().unwrap();
+        assert_eq!(entry.status, 403);
+        assert!(entry.error.is_none());
+        assert_eq!(
+            entry.url,
+            format!("{}{}", fixture.state.proxy_origin, quickconnect::PATH)
+        );
     }
     assert_eq!(hits.load(Ordering::SeqCst), 0);
     tripwire.abort();

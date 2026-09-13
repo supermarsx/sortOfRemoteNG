@@ -10,6 +10,10 @@ pub(super) const PATH: &str = "/__sortofremoteng_quickconnect_redirect_v1";
 const MAX_DESTINATION_BYTES: usize = 4096;
 const PREFIX: &str = "destination=";
 
+/// Native-only observation marker; a receipt pause is not an upstream failure.
+#[derive(Clone, Copy)]
+pub(super) struct ReviewPending;
+
 fn known_source(origin: &str) -> Option<reqwest::Url> {
     let source = reqwest::Url::parse(origin).ok()?;
     let host = source.host_str()?;
@@ -37,7 +41,7 @@ fn authorized_source(state: &AxumProxyState) -> Option<reqwest::Url> {
     })
 }
 
-fn decode_destination(query: Option<&str>) -> Option<reqwest::Url> {
+pub(super) fn decode_destination(query: Option<&str>) -> Option<reqwest::Url> {
     let query = query?;
     if query.len() > PREFIX.len() + 3 * MAX_DESTINATION_BYTES || query.contains('&') {
         return None;
@@ -97,13 +101,17 @@ fn policy_response(
     let source = authorized_source(state)
         .map(|url| url.to_string())
         .unwrap_or_else(|| "https://quickconnect.to/".into());
-    crate::themed_errors::themed_error_response(
+    let mut response = crate::themed_errors::themed_error_response(
         kind,
         &source,
         kind.hint(),
         &theme,
         &state.session_id,
-    )
+    );
+    if kind == crate::themed_errors::ProxyErrorKind::RedirectReview {
+        response.extensions_mut().insert(ReviewPending);
+    }
+    response
 }
 
 pub(super) fn handle(

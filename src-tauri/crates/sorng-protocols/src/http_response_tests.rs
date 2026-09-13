@@ -2,6 +2,8 @@
 //! are synthetic. No Tauri profile or desktop runtime is initialized.
 #[path = "http_font_asset_tests.rs"]
 mod font_asset_tests;
+#[path = "http_local_observation_tests.rs"]
+mod local_observation_tests;
 #[path = "http_network_tests.rs"]
 mod network_tests;
 #[path = "http_quickconnect_control_tests.rs"]

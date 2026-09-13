@@ -48,22 +48,34 @@ connections, **Use Synology default redirect destinations** is enabled by
 default. Find it in the connection editor's **HTTP(S) → Advanced → Internal
 proxy controls**. Clear the checkbox and save to opt out.
 
-The closed destination list is:
+The fixed destination list is:
 
 - `http://<original NAS alias>.quickconnect.to` on port 80, when the original
   address identifies a NAS alias;
+- `https://<original NAS alias>.quickconnect.to` on port 443 for that same alias;
 - `https://global.quickconnect.to` on port 443;
 - `https://www.quickconnect.to` on port 443.
 
 The alias comes only from the original connection. For example,
 `https://nas-example.fr3.quickconnect.to` identifies
-`http://nas-example.quickconnect.to`. A single alias label or an alias followed
+both `http://nas-example.quickconnect.to` and
+`https://nas-example.quickconnect.to`. A single alias label or an alias followed
 by one region label (two lowercase letters and digits) is recognized. Bare
 QuickConnect, reserved service names, deeper/direct hostnames and custom DSM
 addresses receive only the two fixed HTTPS portals; no NAS alias is guessed.
 An unsupported or noncanonical source does not gain these defaults. Later
 global/www hops retain the original connection's identity instead of learning
 a new alias from a redirect.
+
+For that recognized original alias, the same checkbox also permits anonymous
+navigation to `https://<alias>.direct.quickconnect.to:5001` or `:5002`, and
+`https://<label>.<alias>.direct.quickconnect.to:5001` or `:5002`. The optional
+prefix is exactly one valid ASCII DNS label, including an address-encoded
+label; it cannot contain another dot. This is not `*.quickconnect.to`: another
+NAS alias, deeper labels, HTTP direct URLs, other ports, lookalike suffixes,
+userinfo and trailing-dot hosts do not match. Direct-host navigation retains
+the original connection's owner and alias across subsequent handoffs. Starting
+from an unrecognized direct hostname does not guess a NAS alias.
 
 These destinations have a narrow exception to the general cross-origin and
 HTTP-downgrade review switches. **Require HTTPS upstream always takes
@@ -75,16 +87,16 @@ are not inherited by the destination.
 
 Each hop still uses a one-use native redirect receipt and a fresh protected
 proxy session, with HTTPS trust checked independently. There is no direct
-browser fallback, native cross-origin follow, wildcard QuickConnect grant or
+browser fallback, native cross-origin follow, blanket QuickConnect grant or
 general subresource permission. Changing the original source, opting out,
 or invalidating the document cancels stale default receipts. Disabling defaults
 does not delete explicitly trusted destinations; those remain subject to the
 general redirect policy. The derived runtime origin context is not saved or
 imported as connection policy.
 
-### Initial QuickConnect discovery
+### QuickConnect discovery and learned probes
 
-The same checkbox also permits one closed, anonymous discovery operation for
+The same checkbox also permits a closed, anonymous initial discovery operation for
 a recognized original NAS alias: **POST
 `https://global.quickconnect.to/Serv.php`**. This is an API request made before
 the website chooses its next page, not a redirect. Merely trusting a redirect
@@ -103,21 +115,59 @@ configured HTTP(S) proxy. It never carries the NAS login, cookies, custom
 headers, query additions, client certificate, certificate pin or disabled
 certificate checks. It follows no upstream redirects and has no direct retry.
 The response is bounded JSON, not an executable page or arbitrary resource;
-the only retained provider metadata is a validated `X-QC-CLIENT-IP` address.
+the only retained provider response header is a validated `X-QC-CLIENT-IP` address.
 Requests require the protected origin and current primary-document identity;
 navigation, opt-out and session closure invalidate their authority.
 
-This does **not** approve response-selected control servers, other `/Serv.php`
-commands such as `request_tunnel`, long-poll wakeup endpoints, direct/LAN
-ping-pong probes, or a general `www.quickconnect.to` API. Those requests still
-need distinct reviewed routing and may prevent a complete QuickConnect
-connection. The public homepage's normal alias navigation is separate from
-initial discovery. No live NAS or complete relay-login compatibility is claimed.
+Successful verified control replies can enroll two additional route types in
+a private native registry for the **same original alias and current document**:
+
+- `sites[]` may name a single-label `<site>.quickconnect.to` control host, such
+  as `dec.quickconnect.to`. Only its query-free HTTPS port-443 `/Serv.php` route
+  is enrolled, and it accepts the same exact two-entry `get_server_info` POST
+  schema. A syntactically matching hostname alone is not permission.
+- `smartdns.host`, `smartdns.lan` and `smartdns.lanv6` may supply same-NAS direct
+  hosts matching the namespace above. Only explicitly returned
+  `service.port`/`service.ext_port` values of 5001 or 5002 can enroll the exact
+  bodyless HTTPS GET `/webman/pingpong.cgi?action=cors&quickconnect=true`.
+  A different nonempty `server.pingpong_path` is not substituted or relayed.
+
+The registry retains at most 16 exact control URLs and 32 exact probe URLs.
+Independent one-use learning tickets are bounded to eight; concurrent valid
+responses for the same document can add routes without discarding each other's
+results. Navigation or session revocation prevents old tickets and grants from
+being reused. Returned opaque `serverID` fields are not assumed to equal the
+requested NAS alias. The request's validated original alias remains authority.
+
+For probes, the native client sends the real source origin, not the local proxy
+origin. It requires one `Access-Control-Allow-Origin` value permitting that
+source or anonymous `*`, and JSON `ezid` equal to the vendor's MD5-of-alias
+correlation value before returning the response to the same-proxy page. That
+correlation is **not** certificate verification or authentication. Browser GETs
+without `Origin` are accepted only on the discovered route with exact
+same-origin Fetch Metadata, protected Host and the current document header;
+a present mismatched or malformed Origin is still refused.
+
+These routes share limits of 4 KiB per request, 256 KiB per response, two
+simultaneous exchanges, eight admitted requests, a 15-second network deadline
+and a 20-second overall deadline. All still use the separate verified,
+credential-free client described above. Learning a probe does not authorize
+general resources, grant a TLS exception or forward a login; the separately
+enabled direct **navigation** pattern does not itself enroll a probe URL.
+Clearing the default-destinations checkbox removes both built-in navigation
+and discovery authority; independently saved redirect trust remains separate.
+
+Other `/Serv.php` commands such as `request_tunnel`, long-poll wakeup endpoints,
+arbitrary LAN/IP probes, other paths or ports, and a general URL relay remain
+unsupported. Those requests still need distinct reviewed routing and may
+prevent a complete QuickConnect connection. The public homepage's normal alias
+navigation is separate from discovery. No live NAS or complete relay-login
+compatibility is claimed.
 
 ## Foreign origins and unsupported traffic
 
 Third-party origins are currently **blocked, not transparently proxied**, except
-for the closed initial QuickConnect discovery operation above and public-font
+for the closed initial/learned QuickConnect routes above and public-font
 capability below.
 This includes a CDN or API that an otherwise trusted page references. A trusted
 redirect destination is not automatically an approved subresource origin or
@@ -185,18 +235,44 @@ engine traffic, or other browser-internal connections. No process-wide egress
 firewall or isolated browser-network context is claimed.
 
 On Windows, native frame navigation permits only registered live proxy origins
-and blank/srcdoc frames. A separate pre-request **document-only** filter refuses
+and blank/srcdoc frames. The native pre-request filter observes **all HTTP(S)
+resource categories**, but its enforcement remains **document-only**: it refuses
 unapproved document requests with a local 403 response; it also permits the
 compiled application origin needed to bootstrap the main shell. Frame checks
 still refuse embedding that application origin. Popups and external navigation
 are denied. Frame-navigation cancellation alone is insufficient: a browser can
 start a request before delivering that event.
 
-This shared WebView filter does not cover general subresources or WebSockets,
-and speculative TCP connections remain possible. It is not an all-network
+The additional observation does not reroute, allow, cancel or change general
+subresource requests. It leaves existing shell requests and Tauri handlers
+unchanged. It does not cover WebSockets, and speculative TCP connections remain
+possible. It is not an all-network
 firewall. Other platforms report the native guard as unsupported rather than
 claiming equivalent enforcement. Mandatory CSP and the document client do not
 replace that missing platform guarantee.
+
+The expanded protection details offer a native HTTP snapshot, refreshed on
+opening or explicit **Refresh snapshot**, with no background polling. It is
+application-wide WebView traffic, not traffic attributed to the selected tab,
+and does not include native proxy/upstream requests or other application
+services. Its in-memory ring retains at most 64 entries, evicting the oldest;
+snapshots display the newest entries first. Invalid/oversized entries and
+observations lost to diagnostic lock contention
+are omitted. Counters cover recorded observations, not every engine request.
+Only canonical destination origins, fixed method/resource/source categories,
+and known document-denial outcomes are retained. No paths, queries, fragments,
+userinfo, headers, bodies or credentials are retained or logged. An observed
+request is not evidence of a successful response or a permitted proxy route.
+Categories are reported by the engine: WebView2 can classify a JavaScript
+`fetch()` as `xhr`; the application does not relabel it from an inferred caller.
+The ring lasts for the application process, independently of individual tabs.
+
+The WebView2 request event has no trusted initiating frame/session identifier.
+`Referer` is not sufficient authority. Full session-owned interception would
+need an isolated per-session WebView or a verified native/CDP frame-to-owner
+mapping, plus explicit handling of other browser channels. Neither architecture
+is implemented by these diagnostics. The same-origin proxy, CSP and approved
+closed routes remain unchanged; there is no new direct fallback.
 
 Opening a page explicitly in an external browser is a separate route, using
 that browser's own networking and trust configuration. It is not a proxy
@@ -210,6 +286,16 @@ exposing an unguarded frame. Restart the application after native guard changes;
 a frontend hot reload cannot install a new native callback. Closing a proxy
 revokes its exact origin, so a stale manager entry cannot provide a usable
 unauthenticated loopback replacement URL.
+
+Protection details also show the page routing module's **v3 acknowledgement**
+for fixed QuickConnect navigation, initial discovery, learned routes and
+same-NAS direct navigation. Its four boolean capabilities are compared with
+the current connection after the existing primary-document identity checks.
+A missing/older acknowledgement or a settings mismatch is diagnostic guidance,
+not permission to replay a request or bypass trust. Restart the desktop process
+after native updates; refreshing the application UI cannot replace an older
+native proxy's injected module. Even a current v3 acknowledgement is not proof
+that every browser request or channel is captured.
 
 ## Developer checks and limits
 

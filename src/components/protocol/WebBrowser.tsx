@@ -36,6 +36,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       <WebNetworkNotice
         reports={mgr.webNetworkReports}
         guard={mgr.webNetworkGuard}
+        routing={mgr.webNetworkRouting}
         onReload={mgr.handleRefresh}
       />
       <ContentArea mgr={mgr} />
