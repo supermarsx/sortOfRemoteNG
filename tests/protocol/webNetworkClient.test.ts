@@ -150,6 +150,29 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   };
   const directProbe =
     "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
+  it.each(["/Serv.php", proxy + "/Serv.php"])(
+    "keeps source-global discovery %s on the learning route after URL rewriting",
+    async (destination) => {
+      start({
+        ...discoveryConfig(),
+        sourceOrigin: "https://global.quickconnect.to",
+      });
+      await window.fetch(destination, { method: "POST", body: "discovery" });
+      expect(fetch.mock.calls[0][0]).toBe(controlProxy);
+      const options = fetch.mock.calls[0][1] as RequestInit;
+      expect(
+        new Headers(options.headers).get("X-Sorng-QuickConnect-Document"),
+      ).toBe("3");
+      expect(options.credentials).toBe("omit");
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", destination, true);
+      expect(xhrOpen).toHaveBeenCalledWith("POST", controlProxy, true);
+      expect(xhrHeader).toHaveBeenCalledWith(
+        "X-Sorng-QuickConnect-Document",
+        "3",
+      );
+    },
+  );
   it("keeps a newly selected direct host's own requests on its ordinary proxy route", async () => {
     start({ ...discoveryConfig(), sourceOrigin: new URL(directProbe).origin });
     await window.fetch(directProbe);
@@ -175,6 +198,30 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       discoveredProxy + "?destination=",
     );
     expect(report).not.toHaveBeenCalled();
+  });
+  it("does not reinterpret other local sources or nonexact global RPC paths", async () => {
+    start(discoveryConfig());
+    await window.fetch("/Serv.php", { method: "POST" });
+    expect(fetch.mock.calls[0][0]).toBe(proxy + "/Serv.php");
+    controller!.dispose();
+    start({
+      ...discoveryConfig(),
+      sourceOrigin: "https://global.quickconnect.to",
+    });
+    for (const path of [
+      "/Serv.php?x=1",
+      "/Serv.php#fragment",
+      "/serv.php",
+      "/other/Serv.php",
+    ]) {
+      await window.fetch(path, { method: "POST" });
+      expect(fetch.mock.calls[fetch.mock.calls.length - 1][0]).toBe(
+        proxy + path,
+      );
+    }
+    await expect(window.fetch("/Serv.php", { method: "GET" })).rejects.toThrow(
+      "quickconnect-control-method",
+    );
   });
   it.each([
     ["POST", "https://dec.quickconnect.to/Serv.php"],

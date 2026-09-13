@@ -64,16 +64,9 @@ async fn verified_global_to_regional_to_browser_shaped_anonymous_probe_routes_an
         policy(),
     )
     .await;
-    assert_eq!(
-        routed(&proxy, REGIONAL, true)
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        403
-    );
     assert!(server.seen.lock().unwrap().is_empty());
-    learn(&proxy).await;
+    // Cold regional cache: the native route first verifies the fixed provider
+    // with this exact body, then sends only its advertised regional request.
     let regional = routed(&proxy, REGIONAL, true).send().await.unwrap();
     assert_eq!(regional.status(), 200);
     assert_eq!(
@@ -136,7 +129,7 @@ async fn verified_global_to_regional_to_browser_shaped_anonymous_probe_routes_an
     );
     assert_eq!(
         log.last().unwrap().url,
-        format!("{}{}", proxy.state.proxy_origin, control::DISCOVERED_PATH)
+        "QuickConnect discovery warm-up: https://global.quickconnect.to"
     );
     assert!(!serde_json::to_string(&log).unwrap().contains("private-"));
 }
@@ -159,7 +152,6 @@ async fn discovered_routes_refuse_unlearned_aliases_unsafe_headers_methods_queri
         format!("{PROBE}&secret=hidden"),
         PROBE.replace("/webman/pingpong.cgi", "/webapi/auth.cgi"),
         PROBE.replace("https:", "http:"),
-        REGIONAL.to_string(),
     ] {
         let response = routed(&proxy, &destination, destination == REGIONAL)
             .send()
@@ -311,7 +303,7 @@ async fn concurrent_verified_replies_union_even_when_later_request_fails_and_old
                 .unwrap()
                 .status()
                 .as_u16(),
-            if second_status == 200 { 200 } else { 403 }
+            if second_status == 200 { 200 } else { 500 }
         );
         proxy.state.network.document_issued(2, false);
         proxy.state.network.activate_document(2).unwrap();
@@ -321,7 +313,15 @@ async fn concurrent_verified_replies_union_even_when_later_request_fails_and_old
         next_document
             .headers_mut()
             .insert(control::DOCUMENT_HEADER, "2".parse().unwrap());
-        assert_eq!(client().execute(next_document).await.unwrap().status(), 403);
+        assert_eq!(
+            client()
+                .execute(next_document)
+                .await
+                .unwrap()
+                .status()
+                .as_u16(),
+            if second_status == 200 { 403 } else { 500 }
+        );
     }
 }
 
@@ -461,5 +461,221 @@ async fn document_replacement_and_session_close_cancel_inflight_and_queued_probe
             6,
             "queued probe must not start after revocation"
         );
+    }
+}
+
+#[tokio::test]
+async fn cold_regional_warmup_does_not_forward_unadvertised_targets_or_run_for_invalid_body_or_gets(
+) {
+    let server = peer(
+        200,
+        br#"[{"sites":["advertised.quickconnect.to"]}]"#.to_vec(),
+        "",
+        false,
+        false,
+    )
+    .await;
+    let proxy = fixture(
+        Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
+        ORIGINAL,
+        policy(),
+    )
+    .await;
+    for body in [
+        "not-json".to_string(),
+        payload()
+            .to_string()
+            .replace("get_server_info", "request_tunnel"),
+        payload().to_string().replace("test-nas", "other-nas"),
+    ] {
+        assert_eq!(
+            routed(&proxy, REGIONAL, true)
+                .body(body)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            400
+        );
+    }
+    assert_eq!(
+        routed(&proxy, PROBE, false).send().await.unwrap().status(),
+        403
+    );
+    assert!(
+        server.seen.lock().unwrap().is_empty(),
+        "invalid body or cold GET cannot initiate a warm-up"
+    );
+    assert_eq!(
+        routed(&proxy, REGIONAL, true)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let seen = server.seen.lock().unwrap();
+    assert_eq!(
+        seen.len(),
+        2,
+        "one fixed global exchange, no regional request"
+    );
+    assert!(seen[0].starts_with("CONNECT global.quickconnect.to:443 "));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(seen[1].split_once("\r\n\r\n").unwrap().1)
+            .unwrap(),
+        payload()
+    );
+    let log = proxy
+        .state
+        .global_sessions
+        .lock()
+        .unwrap()
+        .request_log_newest_first();
+    assert_eq!(
+        log[0].url,
+        "Attempted QuickConnect regional discovery: https://dec.quickconnect.to"
+    );
+    assert_eq!(
+        log[0].error.as_deref(),
+        Some("HTTP 403 [quickconnect_destination_not_discovered]")
+    );
+    assert_eq!(
+        log[1].url,
+        "QuickConnect discovery warm-up: https://global.quickconnect.to"
+    );
+    assert!(log[1].error.is_none());
+    assert_eq!(
+        log[2].url,
+        "Attempted QuickConnect NAS probe: https://test-nas.direct.quickconnect.to:5001"
+    );
+    assert_eq!(
+        log[2].error.as_deref(),
+        Some("HTTP 403 [quickconnect_destination_not_discovered]")
+    );
+    assert!(log
+        .iter()
+        .skip(3)
+        .all(|entry| entry.error.as_deref() == Some("HTTP 400 [quickconnect_unsupported_body]")));
+    let capture = serde_json::to_string(&log).unwrap();
+    for hidden in [
+        "serverID",
+        "private-",
+        "not-json",
+        "other-nas",
+        "request_tunnel",
+        "destination=",
+    ] {
+        assert!(!capture.contains(hidden));
+    }
+}
+
+#[tokio::test]
+async fn actual_upstream_403_is_not_reported_as_a_native_missing_grant() {
+    let server = peer(
+        403,
+        br#"[{"errno":13,"providerPrivate":"do-not-log"}]"#.to_vec(),
+        "",
+        false,
+        false,
+    )
+    .await;
+    let proxy = fixture(
+        Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
+        ORIGINAL,
+        policy(),
+    )
+    .await;
+    let response = routed(&proxy, REGIONAL, true).send().await.unwrap();
+    assert_eq!(response.status(), 403);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap()[0]["errno"],
+        13
+    );
+    assert_eq!(server.seen.lock().unwrap().len(), 2);
+    let log = proxy
+        .state
+        .global_sessions
+        .lock()
+        .unwrap()
+        .request_log_newest_first();
+    assert_eq!(log.len(), 2);
+    for entry in &log {
+        assert_eq!(
+            entry.error.as_deref(),
+            Some("HTTP 403 [quickconnect_upstream_status]")
+        );
+    }
+    assert!(!serde_json::to_string(&log).unwrap().contains("do-not-log"));
+}
+
+#[tokio::test]
+async fn regional_warmups_share_two_exchange_limit_and_document_revocation_cancels_the_queue() {
+    for close in [false, true] {
+        let server = peer(
+            200,
+            br#"[{"sites":["dec.quickconnect.to"]}]"#.to_vec(),
+            "",
+            true,
+            false,
+        )
+        .await;
+        let proxy = fixture(
+            Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
+            ORIGINAL,
+            policy(),
+        )
+        .await;
+        let mut pending = Vec::new();
+        for _ in 0..3 {
+            let request = routed(&proxy, REGIONAL, true).build().unwrap();
+            pending.push(tokio::spawn(async move {
+                client().execute(request).await.unwrap()
+            }));
+        }
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while server.seen.lock().unwrap().len() < 4 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(server.seen.lock().unwrap().len(), 4);
+        if close {
+            proxy.state.network.revoke();
+        } else {
+            proxy.state.network.document_issued(2, false);
+            proxy.state.network.activate_document(2).unwrap();
+        }
+        for request in pending {
+            let response = tokio::time::timeout(Duration::from_secs(2), request)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(response.status().is_client_error() || response.status().is_server_error());
+        }
+        let seen = server.seen.lock().unwrap();
+        assert_eq!(
+            seen.len(),
+            4,
+            "no queued warm-up or regional request after revocation"
+        );
+        let connects: Vec<_> = seen
+            .iter()
+            .filter(|request| request.starts_with("CONNECT "))
+            .collect();
+        assert_eq!(connects.len(), 2);
+        assert!(connects
+            .iter()
+            .all(|request| request.starts_with("CONNECT global.quickconnect.to:443 ")));
+        let log = proxy
+            .state
+            .global_sessions
+            .lock()
+            .unwrap()
+            .request_log_newest_first();
+        assert!(log
+            .iter()
+            .all(|entry| entry.error.as_deref() == Some("HTTP 502 [quickconnect_stale_document]")));
     }
 }

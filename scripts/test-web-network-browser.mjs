@@ -76,7 +76,55 @@ const result = new Promise((resolve) => {
   finish = resolve;
 });
 let origin;
+let globalFrameOrigin;
 const server = createServer(async (request, response) => {
+  if (request.url === "/global-frame") {
+    const config = {
+      version: 1,
+      sessionId: "global-frame-fixture",
+      documentSequence: 11,
+      sourceOrigin: "https://global.quickconnect.to",
+      proxyOrigin: globalFrameOrigin,
+      mappings: [],
+      synologyQuickConnect: {
+        version: 1,
+        navigationOrigins: [
+          "https://global.quickconnect.to",
+          "https://www.quickconnect.to",
+        ],
+        redirectEndpoint:
+          globalFrameOrigin + "/__sortofremoteng_quickconnect_redirect_v1",
+        rpc: {
+          upstreamUrl: "https://global.quickconnect.to/Serv.php",
+          proxyUrl: globalFrameOrigin + controlPath,
+        },
+        discovered: {
+          version: 1,
+          alias: "example-nas",
+          proxyUrl: globalFrameOrigin + discoveredPath,
+        },
+        directNavigation: { version: 1, alias: "example-nas" },
+      },
+    };
+    response.writeHead(200, {
+      "Content-Type": "text/html",
+      "Content-Security-Policy":
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; worker-src 'none'",
+    });
+    response.end(`<!doctype html><script>${source}
+installWebNetworkClient(${JSON.stringify(config)},function(){});
+(async function(){try{
+ const body=${JSON.stringify(controlBody)};
+ const first=await fetch('/Serv.php',{method:'POST',body,headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}});
+ if(!first.ok||await first.text()!==body)throw Error('Relative control changed');
+ const second=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST',location.origin+'/Serv.php');xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded; charset=UTF-8');xhr.onload=()=>xhr.status===200?resolve(xhr.responseText):reject(Error('Rewritten control status'));xhr.onerror=()=>reject(Error('Rewritten control failed'));xhr.send(body);});
+ if(second!==body)throw Error('Rewritten control changed');
+ const follow=await fetch(${JSON.stringify(regionalControl)},{method:'POST',body,headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}});
+ if(!follow.ok||await follow.text()!==body)throw Error('Follow-up response changed');
+ parent.postMessage({type:'global-frame-fixture',ok:true},${JSON.stringify(origin)});
+}catch(_){parent.postMessage({type:'global-frame-fixture',ok:false},${JSON.stringify(origin)});}})();</script>`);
+    return;
+  }
   if (request.url === fontPath) {
     fontRequests++;
     response
@@ -137,6 +185,9 @@ const server = createServer(async (request, response) => {
     });
     response.end(`<!doctype html><html><head><title>Synthetic proxy fixture</title><link rel="stylesheet" href="/rewritten-font.css"><script>window.onerror=function(message){fetch('/result',{method:'POST',body:JSON.stringify([{name:'page startup',ok:false,error:String(message)}])});};</script></head><body><script>
 const originalFetch = window.fetch.bind(window);
+// Test-host seam only: model the application's cross-origin frame mount,
+// not a website permission to create an unapproved child navigation.
+const hostFrameSrc=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'src').set;
 const OriginalFontFace=window.FontFace;
 // Never call a native peer. Replace only its constructor entry points with a
 // counting tripwire, retaining actual host property flags for the mask proof.
@@ -156,6 +207,11 @@ const installedNetwork=installWebNetworkClient(${JSON.stringify(config)}, functi
  const results=[];
  if(!Object.isFrozen(installedNetwork.capabilities)||installedNetwork.capabilities.version!==3||!installedNetwork.capabilities.quickConnectNavigation||!installedNetwork.capabilities.quickConnectDiscovery||!installedNetwork.capabilities.quickConnectDiscovered||!installedNetwork.capabilities.quickConnectDirectNavigation)throw Error('Routing module acknowledgement missing');
  async function check(name,run){try{await Promise.race([run(),new Promise((_,reject)=>setTimeout(()=>reject(Error('Case timed out')),5000))]);results.push({name,ok:true});}catch(error){results.push({name,ok:false,error:String(error)});}}
+ await check('sandboxed global portal routes relative and rewritten discovery before follow-up',()=>new Promise((resolve,reject)=>{
+   const frame=document.createElement('iframe');frame.sandbox='allow-same-origin allow-scripts allow-forms';
+   function result(event){if(event.source!==frame.contentWindow||event.origin!==${JSON.stringify(globalFrameOrigin)}||event.data?.type!=='global-frame-fixture')return;window.removeEventListener('message',result);frame.remove();event.data.ok?resolve():reject(Error('Embedded discovery failed'));}
+   window.addEventListener('message',result);hostFrameSrc.call(frame,${JSON.stringify(globalFrameOrigin + "/global-frame")});document.body.append(frame);
+ }));
  await check('RTC optional discovery sees unavailable APIs without constructing peers',async()=>{
    for(const name of rtcNames){if(window[name]||typeof window[name]==='function'||name in window)throw Error('RTC capability still advertised');}
    const addresses=[];const Peer=window.webkitRTCPeerConnection||window.mozRTCPeerConnection;
@@ -371,6 +427,7 @@ try {
   await new Promise((resolve) => tripwire.listen(0, "127.0.0.1", resolve));
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   origin = `http://p0123456789abcdef0123456789abcdef.localhost:${server.address().port}`;
+  globalFrameOrigin = `http://p1123456789abcdef0123456789abcdef.localhost:${server.address().port}`;
   browser = spawn(
     executable,
     [
@@ -418,7 +475,7 @@ try {
     received
       .filter((item) => item.url === controlPath)
       .map((item) => item.document),
-    ["7", "7"],
+    ["11", "11", "7", "7"],
   );
   assert.ok(
     results.every((item) => item.ok),
@@ -427,19 +484,39 @@ try {
   const dynamic = received.filter((item) =>
     item.url.startsWith(discoveredPath + "?"),
   );
-  assert.equal(dynamic.length, 3);
+  assert.equal(dynamic.length, 4);
   for (const item of dynamic) {
-    assert.equal(item.document, "7");
+    assert.ok(item.document === "7" || item.document === "11");
     assert.equal(item.fetchSite, "same-origin");
     assert.equal(item.fetchMode, "cors");
     assert.equal(item.fetchDest, "empty");
-    assert.equal(item.origin, item.method === "GET" ? null : origin);
+    assert.equal(
+      item.origin,
+      item.method === "GET"
+        ? null
+        : item.document === "11"
+          ? globalFrameOrigin
+          : origin,
+    );
+  }
+  for (const item of received.filter((item) => item.document === "11")) {
+    assert.equal(item.origin, globalFrameOrigin);
+    assert.equal(item.fetchSite, "same-origin");
+    assert.equal(item.fetchMode, "cors");
+    assert.equal(item.fetchDest, "empty");
   }
   assert.deepEqual(
     received
       .filter((item) => item.method !== "WEBSOCKET")
       .map(({ url, method, body }) => ({ url, method, body })),
     [
+      { url: controlPath, method: "POST", body: controlBody },
+      { url: controlPath, method: "POST", body: controlBody },
+      {
+        url: discoveredUrl(regionalControl),
+        method: "POST",
+        body: controlBody,
+      },
       { url: "/rtc-https-fallback", method: "GET", body: "" },
       { url: controlPath, method: "POST", body: controlBody },
       { url: controlPath, method: "POST", body: controlBody },

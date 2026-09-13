@@ -62,7 +62,14 @@ async fn reserved_route_failures_log_only_fixed_categories_without_network_or_bo
         assert_eq!(entry.url, format!("{}{category}", proxy.state.proxy_origin));
         assert_eq!(entry.method, "POST");
         assert_eq!(entry.status, status);
-        assert_eq!(entry.error, Some(format!("HTTP {status}")));
+        assert_eq!(
+            entry.error,
+            Some(if category == quickconnect_control::PATH {
+                format!("HTTP {status} [quickconnect_unsupported_request]")
+            } else {
+                format!("HTTP {status}")
+            })
+        );
     }
     assert_eq!(proxy.state.request_count.load(Ordering::SeqCst), 3);
     assert_eq!(proxy.state.error_count.load(Ordering::SeqCst), 3);

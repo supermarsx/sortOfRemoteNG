@@ -22,6 +22,44 @@ pub(super) struct ObservedDestination {
     pub(super) description: String,
 }
 
+/// Native-only fixed diagnostics. Never classify by copying a caller's URL,
+/// headers/body or a provider response/error into the request log.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Diagnostic {
+    RequestAuthority,
+    UnsupportedRequest,
+    DefaultsDisabled,
+    SourceScope,
+    Unavailable,
+    RequestLimit,
+    DestinationNotDiscovered,
+    BodyLimit,
+    UnsupportedBody,
+    StaleDocument,
+    Transport,
+    Timeout,
+    UpstreamStatus,
+}
+impl Diagnostic {
+    pub(super) fn code(self) -> &'static str {
+        match self {
+            Self::RequestAuthority => "quickconnect_request_authority",
+            Self::UnsupportedRequest => "quickconnect_unsupported_request",
+            Self::DefaultsDisabled => "quickconnect_defaults_disabled",
+            Self::SourceScope => "quickconnect_source_scope",
+            Self::Unavailable => "quickconnect_verified_route_unavailable",
+            Self::RequestLimit => "quickconnect_request_limit",
+            Self::DestinationNotDiscovered => "quickconnect_destination_not_discovered",
+            Self::BodyLimit => "quickconnect_body_limit",
+            Self::UnsupportedBody => "quickconnect_unsupported_body",
+            Self::StaleDocument => "quickconnect_stale_document",
+            Self::Transport => "quickconnect_verified_exchange_failed",
+            Self::Timeout => "quickconnect_timeout",
+            Self::UpstreamStatus => "quickconnect_upstream_status",
+        }
+    }
+}
+
 struct LearningTicket<'a> {
     registry: &'a std::sync::Mutex<discovered::Registry>,
     ticket: discovered::Ticket,
@@ -170,9 +208,10 @@ pub(super) fn manifest(
     Some(value)
 }
 
-fn refusal(status: StatusCode, message: &'static str) -> Response<Body> {
+fn refusal(status: StatusCode, message: &'static str, diagnostic: Diagnostic) -> Response<Body> {
     Response::builder()
         .status(status)
+        .extension(diagnostic)
         .header("Cache-Control", "no-store")
         .header("X-Content-Type-Options", "nosniff")
         .body(Body::from(message))
@@ -318,6 +357,7 @@ async fn exchange(
     }
     let mut builder = Response::builder()
         .status(status.as_u16())
+        .extension(Diagnostic::UpstreamStatus)
         .header("Content-Type", "application/json")
         .header("Content-Length", bytes.len())
         .header("Cache-Control", "no-store")
@@ -367,6 +407,7 @@ pub(super) async fn handle(
         return refusal(
             StatusCode::FORBIDDEN,
             "QuickConnect discovery is not authorized.",
+            Diagnostic::RequestAuthority,
         );
     }
     let sequence = headers
@@ -413,12 +454,14 @@ pub(super) async fn handle(
         return refusal(
             StatusCode::BAD_REQUEST,
             "Only protected QuickConnect discovery POSTs and approved GET probes are supported.",
+            Diagnostic::UnsupportedRequest,
         );
     }
     let Some(defaults) = state.proxy_policy.synology_quick_connect_defaults.as_ref() else {
         return refusal(
             StatusCode::FORBIDDEN,
             "QuickConnect discovery defaults are disabled.",
+            Diagnostic::DefaultsDisabled,
         );
     };
     let Some(alias) = reqwest::Url::parse(&state.target_origin)
@@ -429,6 +472,7 @@ pub(super) async fn handle(
         return refusal(
             StatusCode::FORBIDDEN,
             "QuickConnect discovery does not belong to this source.",
+            Diagnostic::SourceScope,
         );
     };
     let destination = destination.unwrap();
@@ -441,22 +485,26 @@ pub(super) async fn handle(
         return refusal(
             StatusCode::BAD_REQUEST,
             "Unsupported QuickConnect destination request.",
+            Diagnostic::UnsupportedRequest,
         );
     };
     let Some(control) = state.network.quickconnect_control.as_ref() else {
         return refusal(
             StatusCode::SERVICE_UNAVAILABLE,
             "Verified QuickConnect discovery is unavailable.",
+            Diagnostic::Unavailable,
         );
     };
     let Ok(_request) = control.requests.try_acquire() else {
         return refusal(
             StatusCode::TOO_MANY_REQUESTS,
             "QuickConnect discovery request limit reached.",
+            Diagnostic::RequestLimit,
         );
     };
     let sequence = sequence.unwrap();
     let approved = std::sync::atomic::AtomicBool::new(false);
+    let candidate_current = std::sync::atomic::AtomicBool::new(false);
     let description = format!(
         "{}: {}",
         match route {
@@ -466,27 +514,22 @@ pub(super) async fn handle(
         destination.origin().ascii_serialization()
     );
     let operation = async {
-        state.network.await_document(sequence).await?;
+        state
+            .network
+            .await_document(sequence)
+            .await
+            .map_err(|message| (Diagnostic::StaleDocument, message))?;
         state
             .network
             .while_document(sequence, async {
-                if learned
-                    && !control.discovered.lock().is_ok_and(|registry| {
-                        registry.allows(sequence, &alias, &destination) == Some(route)
-                    })
-                {
-                    return Ok(refusal(
-                        StatusCode::FORBIDDEN,
-                        "QuickConnect destination is not approved for this document.",
-                    ));
-                }
-                approved.store(true, std::sync::atomic::Ordering::Relaxed);
+                candidate_current.store(true, std::sync::atomic::Ordering::Relaxed);
                 let bytes = match axum::body::to_bytes(request.into_body(), MAX_REQUEST).await {
                     Ok(bytes) => bytes,
                     Err(_) => {
                         return Ok(refusal(
                             StatusCode::PAYLOAD_TOO_LARGE,
                             "QuickConnect discovery request exceeds its limit.",
+                            Diagnostic::BodyLimit,
                         ))
                     }
                 };
@@ -498,8 +541,64 @@ pub(super) async fn handle(
                     Err("QuickConnect probes cannot carry a body.")
                 } {
                     Ok(body) => body,
-                    Err(message) => return Ok(refusal(StatusCode::BAD_REQUEST, message)),
+                    Err(message) => {
+                        return Ok(refusal(
+                            StatusCode::BAD_REQUEST,
+                            message,
+                            Diagnostic::UnsupportedBody,
+                        ))
+                    }
                 };
+                let has_grant = || {
+                    control.discovered.lock().is_ok_and(|registry| {
+                        registry.allows(sequence, &alias, &destination) == Some(route)
+                    })
+                };
+                if learned && !has_grant() && route == discovered::Route::Control {
+                    // A cached regional first request still needs fresh
+                    // document authority. Ask only the fixed verified provider
+                    // with this exact validated discovery body, once.
+                    let mut warmup = match exchange(
+                        control,
+                        Exchange {
+                            state: &state,
+                            sequence,
+                            alias: &alias,
+                            url: reqwest::Url::parse(UPSTREAM).expect("fixed provider URL"),
+                            route: discovered::Route::Control,
+                            body: body.clone(),
+                            learned: false,
+                        },
+                    )
+                    .await
+                    {
+                        Ok(response) => response,
+                        Err(message) => {
+                            refusal(StatusCode::BAD_GATEWAY, message, Diagnostic::Transport)
+                        }
+                    };
+                    warmup.extensions_mut().insert(ObservedDestination {
+                        description:
+                            "QuickConnect discovery warm-up: https://global.quickconnect.to".into(),
+                    });
+                    let warmup = super::observe_local_response(
+                        &state,
+                        &Method::POST,
+                        super::ObservedLocalRoute::QuickConnectDiscovery,
+                        warmup,
+                    );
+                    if !warmup.status().is_success() {
+                        return Ok(warmup);
+                    }
+                }
+                if learned && !has_grant() {
+                    return Ok(refusal(
+                        StatusCode::FORBIDDEN,
+                        "QuickConnect destination is not approved for this document.",
+                        Diagnostic::DestinationNotDiscovered,
+                    ));
+                }
+                approved.store(true, std::sync::atomic::Ordering::Relaxed);
                 exchange(
                     control,
                     Exchange {
@@ -513,18 +612,26 @@ pub(super) async fn handle(
                     },
                 )
                 .await
+                .map_err(|message| (Diagnostic::Transport, message))
             })
-            .await?
+            .await
+            .map_err(|message| (Diagnostic::StaleDocument, message))?
     };
     let mut response = match tokio::time::timeout(Duration::from_secs(20), operation).await {
         Ok(Ok(response)) => response,
-        Ok(Err(message)) => refusal(StatusCode::BAD_GATEWAY, message),
+        Ok(Err((diagnostic, message))) => refusal(StatusCode::BAD_GATEWAY, message, diagnostic),
         Err(_) => refusal(
             StatusCode::GATEWAY_TIMEOUT,
             "QuickConnect discovery timed out.",
+            Diagnostic::Timeout,
         ),
     };
-    if learned && approved.load(std::sync::atomic::Ordering::Relaxed) {
+    if learned && candidate_current.load(std::sync::atomic::Ordering::Relaxed) {
+        let description = if approved.load(std::sync::atomic::Ordering::Relaxed) {
+            description
+        } else {
+            format!("Attempted {description}")
+        };
         response
             .extensions_mut()
             .insert(ObservedDestination { description });

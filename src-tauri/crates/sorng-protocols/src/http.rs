@@ -1454,7 +1454,16 @@ fn observe_local_response(
         .extensions()
         .get::<quickconnect::ReviewPending>()
         .is_some();
-    let error = (status >= 400 && !review_pending).then(|| format!("HTTP {status}"));
+    let error = (status >= 400 && !review_pending).then(|| {
+        if let Some(diagnostic) = response
+            .extensions()
+            .get::<quickconnect_control::Diagnostic>()
+        {
+            format!("HTTP {status} [{}]", diagnostic.code())
+        } else {
+            format!("HTTP {status}")
+        }
+    });
     state.request_count.fetch_add(1, Ordering::Relaxed);
     if error.is_some() {
         state.error_count.fetch_add(1, Ordering::Relaxed);

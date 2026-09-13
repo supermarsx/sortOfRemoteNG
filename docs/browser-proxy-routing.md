@@ -23,6 +23,20 @@ is mediated**. It does not change SSH, RDP, or other integration transports.
   per session, 15-second handshake/upgrade deadlines, 60 seconds without traffic
   in either direction, and a 30-minute maximum relay lifetime. Frames pass
   through fixed-size buffers; compression extensions are not negotiated.
+- Both `ws://` and `wss://` URLs for the current upstream origin use this route;
+  `wss://` retains verified upstream TLS even though the protected loopback
+  browser connection uses `ws://`. Negotiated subprotocols, binary messages,
+  fragmented messages, ping/pong, and close frames pass through unchanged.
+  Arbitrary foreign-origin sockets are not supported: a trusted redirect or
+  QuickConnect discovery/probe grant is not a WebSocket grant. After an approved
+  navigation establishes a new session origin, its same-origin sockets use
+  that new session's independent route.
+- Handshake attempts reaching the WebSocket handler appear in the bounded
+  proxy request log as **WebSocket handshake**, with status and a fixed error
+  category only. Socket paths, query strings, headers, subprotocol values and
+  message contents are not logged. Upstream 4xx/5xx rejections keep their HTTP
+  status, but no upstream response body, cookies, login challenge or redirect
+  headers are exposed. Malformed upstream upgrades and transport failures remain 502.
 
 The parent browser validates and selects the primary document. Loading an
 embedded child frame does not revoke its parent's sockets; child-frame
@@ -102,6 +116,12 @@ a recognized original NAS alias: **POST
 the website chooses its next page, not a redirect. Merely trusting a redirect
 destination does not authorize this API.
 
+When the selected website is the exact HTTPS global portal, its relative
+`/Serv.php` URL and the equivalent already-rewritten local URL use that same
+discovery endpoint. This preserves native response learning after a portal
+handoff; it does not reinterpret `/Serv.php` on another website or accept extra
+paths, query parameters or fragments as discovery requests.
+
 The document client maps this exact, query-free URL to a reserved endpoint on
 the session's protected loopback proxy. Native validation accepts only the
 two-entry `get_server_info` JSON request for `mainapp_https` then
@@ -138,6 +158,24 @@ responses for the same document can add routes without discarding each other's
 results. Navigation or session revocation prevents old tickets and grants from
 being reused. Returned opaque `serverID` fields are not assumed to equal the
 requested NAS alias. The request's validated original alias remains authority.
+
+A cached regional control host can be the page's first request. If that exact
+regional POST lacks a current-document grant, native routing first validates
+its body and performs one discovery exchange with the fixed global provider
+using the same validated body. It forwards to the region only if that verified
+reply advertises it. This warm-up shares the existing concurrency, deadline
+and document-revocation limits; it is not recursive and never bootstraps a cold
+direct GET probe. An unadvertised region remains refused without contacting it.
+
+Handled discovery failures include fixed, secret-free diagnostic codes in the
+bounded proxy request log. For example, `quickconnect_destination_not_discovered`
+means no current grant, `quickconnect_stale_document` means document authority
+ended, and `quickconnect_upstream_status` preserves a provider's HTTP error.
+A validated but uncontacted candidate is labelled **Attempted**, with only its
+canonical origin and operation. A completed global warm-up has its own entry;
+if it fails, the attempted regional entry can carry that same failure without
+implying the region was contacted. Request bodies, headers, destination queries
+and provider error contents are never copied into these diagnostics.
 
 For probes, the native client sends the real source origin, not the local proxy
 origin. It requires one `Access-Control-Allow-Origin` value permitting that
@@ -310,8 +348,11 @@ node ../scripts/native-build-env.mjs cargo clippy -p sorng-protocols --all-targe
 
 `http_network_tests.rs` exercises synthetic loopback upgrades, source credential
 and query handling, HTTPS pinning through HTTP CONNECT, handshake refusals,
-revocation, and response-policy coverage. `http_websocket.rs` includes raw-query
-and one-way-traffic idle regressions. Existing HTTP response, TLS, and reviewed
+revocation, and response-policy coverage. `http_websocket_acceptance_tests.rs`
+adds real plain/TLS-plus-CONNECT binary, fragmented, ping/pong, close and
+subprotocol exchanges, rejection status fidelity and secret-safe bounded logs.
+`http_websocket.rs` includes raw-query and one-way-traffic idle regressions.
+Existing HTTP response, TLS, and reviewed
 redirect fixtures remain relevant. These tests do not contact user sites,
 install trusted roots, prove compatibility with every website, or establish
 zero browser-engine egress. Native app compilation and actual platform guard

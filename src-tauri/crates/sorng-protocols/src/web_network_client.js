@@ -231,7 +231,9 @@ function installWebNetworkClient(configuration, reportBlocked) {
       throw blocked(kind, "url-credentials");
     if (
       quickConnectRpc &&
-      target.href === quickConnectRpc.upstreamUrl &&
+      (target.href === quickConnectRpc.upstreamUrl ||
+        (sourceOrigin === "https://global.quickconnect.to" &&
+          target.href === proxyOrigin + "/Serv.php")) &&
       (kind === "fetch" || kind === "xhr")
     ) {
       if (String(method).toUpperCase() !== "POST")
