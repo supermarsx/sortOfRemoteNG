@@ -1,14 +1,17 @@
 //! Origin-pinned WebSocket HTTP/1.1 upgrade over the very same reqwest client
 //! used for HTTP: certificate pin, cookie jar, authentication and configured
 //! upstream proxy are retained. No new TLS connector or direct fallback exists.
-use super::{collect_upstream_headers, upstream, AxumProxyState};
+use super::{collect_upstream_headers, upstream, AxumProxyState, ProxyRequestLogEntry};
 use axum::{
     body::Body,
     http::{HeaderMap, Method, Response, StatusCode, Version},
 };
 use base64::Engine;
 use sha1::{Digest, Sha1};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const DOCUMENT_MARKER: &str = "__sorng_ws_document_v1";
@@ -103,6 +106,41 @@ fn protocols(headers: &HeaderMap) -> Option<Vec<String>> {
 }
 
 pub(super) async fn handle(
+    state: Arc<AxumProxyState>,
+    request: axum::extract::Request,
+) -> Response<Body> {
+    // Handshakes are requests too, but socket URLs and subprotocols can contain
+    // credentials. Record only a fixed category, never endpoints or frames.
+    let method = if request.method() == Method::GET {
+        "GET"
+    } else {
+        "OTHER"
+    };
+    let response = handle_inner(state.clone(), request).await;
+    let status = response.status().as_u16();
+    let error = (status >= 400).then(|| format!("HTTP {status} [websocket_handshake]"));
+    state.request_count.fetch_add(1, Ordering::Relaxed);
+    if error.is_some() {
+        state.error_count.fetch_add(1, Ordering::Relaxed);
+    }
+    if let Ok(mut last_error) = state.last_error.lock() {
+        *last_error = error.clone();
+    }
+    if let Ok(mut manager) = state.global_sessions.lock() {
+        manager.record_request(ProxyRequestLogEntry {
+            id: String::new(),
+            session_id: state.session_id.clone(),
+            method: method.into(),
+            url: "WebSocket handshake".into(),
+            status,
+            error,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        });
+    }
+    response
+}
+
+async fn handle_inner(
     state: Arc<AxumProxyState>,
     mut request: axum::extract::Request,
 ) -> Response<Body> {
@@ -226,14 +264,29 @@ pub(super) async fn handle(
         }
         Err(_) => return refusal(StatusCode::GONE, "This proxy document has ended."),
     };
+    if response.status().is_client_error() || response.status().is_server_error() {
+        // Preserve actionable rejection status without exposing an upstream
+        // login challenge, cookies, redirect, error body or response headers.
+        return refusal(
+            response.status(),
+            "The upstream rejected the WebSocket handshake; no alternate route was attempted.",
+        );
+    }
     let expected_accept = base64::engine::general_purpose::STANDARD.encode(Sha1::digest(
         format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11").as_bytes(),
     ));
-    let selected = response
-        .headers()
-        .get("sec-websocket-protocol")
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
+    let selected = match response.headers().get("sec-websocket-protocol") {
+        Some(value) => match value.to_str() {
+            Ok(value) => Some(value.to_string()),
+            Err(_) => {
+                return refusal(
+                    StatusCode::BAD_GATEWAY,
+                    "The upstream returned an invalid WebSocket handshake.",
+                )
+            }
+        },
+        None => None,
+    };
     if response.status() != StatusCode::SWITCHING_PROTOCOLS
         || count(response.headers(), "sec-websocket-accept") != 1
         || count(response.headers(), "sec-websocket-protocol") > 1

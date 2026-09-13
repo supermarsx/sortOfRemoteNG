@@ -6,6 +6,8 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[path = "http_network_extra_tests.rs"]
 mod extra_tests;
+#[path = "http_websocket_acceptance_tests.rs"]
+mod websocket_acceptance_tests;
 
 const KEY: &str = "dGhlIHNhbXBsZSBub25jZQ==";
 const ACCEPT: &str = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
