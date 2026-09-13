@@ -596,6 +596,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
       "https",
       expect.objectContaining({ fingerprint: "sha256:clean-host-cert" }),
       "conn-1",
+      { caTrustMode: "review", policy: "tofu", proxyUrl: undefined },
     );
     expect(lastProxyConfig()?.target_url).toBe("https://admin.example.test/");
   });
