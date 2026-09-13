@@ -199,13 +199,22 @@ describe("visible website macro recording facilities", () => {
     "Website macros are disabled in global settings.",
     "Unlock the owning database.",
     "Wait for the current page to become ready.",
-  ])("shows the actionable unavailable reason: %s", (reason) => {
-    const actions = model({ recordingUnavailableReason: reason });
-    render(<WebAutomationControls automation={actions} />);
-    expect(screen.getByRole("status")).toHaveTextContent(reason);
-    expect(screen.getByRole("button", { name: "Record macro" })).toBeDisabled();
-    expect(actions.startRecording).not.toHaveBeenCalled();
-  });
+  ])(
+    "keeps the unavailable reason on the disabled control without an inline banner: %s",
+    (reason) => {
+      const actions = model({ recordingUnavailableReason: reason });
+      render(<WebAutomationControls automation={actions} />);
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.queryByText(reason)).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Record macro" }),
+      ).toHaveAttribute("title", reason);
+      expect(
+        screen.getByRole("button", { name: "Record macro" }),
+      ).toBeDisabled();
+      expect(actions.startRecording).not.toHaveBeenCalled();
+    },
+  );
   it("shows the active count and Stop & review; pending transitions prevent repeat requests", () => {
     const actions = model({ recording: true, steps: captured() });
     const view = render(<WebAutomationControls automation={actions} />);

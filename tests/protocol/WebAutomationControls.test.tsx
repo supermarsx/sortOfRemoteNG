@@ -66,6 +66,7 @@ vi.mock("../../src/utils/recording/webAutomationLibrary", async (original) => ({
 }));
 import { useWebAutomation } from "../../src/hooks/protocol/useWebAutomation";
 import { WebAutomationControls } from "../../src/components/protocol/webBrowser/WebAutomationControls";
+import WebAutomationNotice from "../../src/components/protocol/webBrowser/WebAutomationNotice";
 
 const script: BrowserScript = {
   kind: "script",
@@ -113,6 +114,7 @@ function Fixture({
     <>
       <iframe ref={iframe} title="Synthetic website" />
       <WebAutomationControls automation={current} />
+      <WebAutomationNotice automation={current} />
     </>
   );
 }
@@ -211,7 +213,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("mounted website automation controls and ownership", () => {
-  it("shows loading as a neutral status, then clears it when the library becomes ready", async () => {
+  it("keeps loading on the disabled recording tooltip, not a permanent status line", async () => {
     let finish!: (value: { value: WebAutomationLibrary }) => void;
     boundary.load.mockImplementationOnce(
       () =>
@@ -220,9 +222,11 @@ describe("mounted website automation controls and ownership", () => {
         }),
     );
     render(<Fixture />);
-    expect(screen.getByText("Loading website macro library…")).not.toHaveClass(
-      "text-warning",
-    );
+    expect(screen.queryByText("Loading website macro library…")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Record macro" }),
+    ).toHaveAttribute("title", "Loading website macro library…");
+    expect(screen.getByRole("button", { name: "Record macro" })).toBeDisabled();
     expect(screen.queryByText(/Unlock its storage/)).toBeNull();
     expect(current.libraryReady).toBe(false);
     await act(async () => finish({ value: library }));
@@ -244,7 +248,6 @@ describe("mounted website automation controls and ownership", () => {
     expect(
       screen.getByText("Website automation needs attention"),
     ).toBeVisible();
-    fireEvent.click(screen.getByText("Website automation needs attention"));
     expect(screen.getByRole("alert")).toHaveTextContent(
       /conflicting storage variants/,
     );

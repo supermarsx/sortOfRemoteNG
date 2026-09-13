@@ -268,11 +268,25 @@ async function mounted() {
   return view;
 }
 
+async function inspectWebsiteNotifications() {
+  const trigger = screen.getByRole("button", { name: "Website notifications" });
+  if (trigger.getAttribute("aria-expanded") !== "true")
+    await act(async () => {
+      fireEvent.click(trigger);
+    });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("dialog", { name: "Website notifications" }),
+    ).toBeVisible(),
+  );
+}
+
 describe("mounted website network boundary", () => {
   it.each(["missing", "legacy", "mismatch", "current"] as const)(
     "uses only fenced primary readiness for %s routing-module diagnostics",
     async (status) => {
       const view = await mounted();
+      await inspectWebsiteNotifications();
       const iframe = view.container.querySelector("iframe")!;
       const url = new URL(iframe.src);
       const navigationToken = url.searchParams.get("__sorng_navigation_v1");
@@ -314,6 +328,7 @@ describe("mounted website network boundary", () => {
       });
       expect(screen.queryByTestId("web-network-routing-status")).toBeNull();
       await send(iframe.contentWindow);
+      await inspectWebsiteNotifications();
       expect(
         screen.getByTestId("web-network-routing-status"),
       ).toHaveTextContent(
@@ -328,6 +343,7 @@ describe("mounted website network boundary", () => {
         h.availabilityGeneration++;
         view.rerender(<Harness />);
       });
+      await inspectWebsiteNotifications();
       expect(screen.queryByTestId("web-network-routing-status")).toBeNull();
       await send(iframe.contentWindow);
       expect(screen.queryByTestId("web-network-routing-status")).toBeNull();
@@ -361,6 +377,7 @@ describe("mounted website network boundary", () => {
       allNetworkRequestsMediated: false,
     };
     await mounted();
+    await inspectWebsiteNotifications();
     expect(
       screen.getByText(/Native frame navigation protection is not available/),
     ).toBeInTheDocument();
@@ -393,6 +410,7 @@ describe("mounted website network boundary", () => {
         );
       send({ ...identity, type: "proxy_document_start" });
       send({ ...identity, type: "proxy_dom_ready" });
+      await inspectWebsiteNotifications();
       expect(h.activate).toHaveBeenCalledWith({
         sessionId: "proxy-1",
         documentSequence: 1,
@@ -422,6 +440,7 @@ describe("mounted website network boundary", () => {
         h.availabilityGeneration++;
         view.rerender(<Harness />);
       } else send({ ...identity, type: "proxy_navigation_start" });
+      await inspectWebsiteNotifications();
       expect(
         screen.queryByText("https://blocked.example"),
       ).not.toBeInTheDocument();
@@ -485,6 +504,7 @@ describe("primary network document activation lifecycle", () => {
         reject(new Error("Synthetic activation failure"));
         await pending.catch(() => undefined);
       });
+      await inspectWebsiteNotifications();
       if (changeOwner)
         expect(
           screen.queryByRole("button", { name: "Reload page" }),
@@ -604,6 +624,7 @@ describe("actual website redirect review integration", () => {
       "https://example-nas.de2.quickconnect.to/",
       "https://example-nas.fr3.quickconnect.to/",
     ].entries()) {
+      resume = undefined;
       redirect(view.container.querySelector("iframe")!, destination, true, 202);
       await waitFor(() =>
         expect(
@@ -615,6 +636,9 @@ describe("actual website redirect review integration", () => {
       ).toBeNull();
       expect(screen.queryByRole("alert")).toBeNull();
       expect(proxies).toHaveLength(index + 1);
+      // The neutral UI can appear before this hop reaches native consumption.
+      // Never resolve the previous hop's already-completed callback.
+      await waitFor(() => expect(resume).toBeTypeOf("function"));
       await act(async () => {
         resume!();
       });

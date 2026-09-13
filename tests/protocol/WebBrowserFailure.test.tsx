@@ -339,6 +339,12 @@ describe("embedded web failure recovery screen", () => {
       name: "Dark-mode extension",
     });
     const recording = screen.getByTitle("Record HTTP traffic (HAR)");
+    const notifications = screen.getByRole("button", {
+      name: "Website notifications",
+    });
+    expect(extension.nextElementSibling).toBe(notifications);
+    expect(screen.queryByText(/Website proxy routing/)).toBeNull();
+    expect(screen.queryByText(/Sign-in & 2FA help/)).toBeNull();
     expect(
       extension.compareDocumentPosition(recording) &
         Node.DOCUMENT_POSITION_FOLLOWING,

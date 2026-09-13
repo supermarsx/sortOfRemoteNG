@@ -717,7 +717,6 @@ export function WebAutomationControls({
   const [review, setReview] = useState<"enable" | "discard" | "replace" | null>(
     null,
   );
-  const [reloading, setReloading] = useState(false);
   const reviewScope = useRef<string | null>(null);
   const openReview = (action: "enable" | "discard" | "replace") => {
     reviewScope.current = automation.recordingScopeKey;
@@ -849,43 +848,6 @@ export function WebAutomationControls({
               </div>
             )}
           </div>
-          {automation.error ? (
-            <div className="flex items-start gap-2 text-xs">
-              <details key={automation.recordingScopeKey} className="max-w-sm">
-                <summary className="cursor-pointer text-warning">
-                  Website automation needs attention
-                </summary>
-                <p role="alert" className="mt-1 break-words text-warning">
-                  {automation.error}
-                </p>
-              </details>
-              <button
-                type="button"
-                className="sor-btn-secondary shrink-0"
-                disabled={reloading || automation.busy}
-                onClick={async () => {
-                  setReloading(true);
-                  try {
-                    await automation.reload();
-                  } finally {
-                    setReloading(false);
-                  }
-                }}
-              >
-                {reloading ? "Reloading…" : "Reload library"}
-              </button>
-            </div>
-          ) : (
-            automation.recordingUnavailableReason && (
-              <span
-                role="status"
-                className="max-w-56 truncate text-[var(--color-textMuted)] text-xs"
-                title={automation.recordingUnavailableReason}
-              >
-                {automation.recordingUnavailableReason}
-              </span>
-            )
-          )}
         </div>
       )}
       <ConfirmDialog

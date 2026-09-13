@@ -1,6 +1,7 @@
 import type { SectionProps } from "./types";
 import RecordingControls from "./RecordingControls";
 import WebsiteDarkModeControls from "./WebsiteDarkModeControls";
+import WebsiteNotifications from "./WebsiteNotifications";
 import VaultInteractiveSignIn from "../../security/VaultInteractiveSignIn";
 import SecurityIcon, { AuthIcon } from "./SecurityIcon";
 import React, { useRef, useState } from "react";
@@ -324,6 +325,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           />
         )}
       <WebsiteDarkModeControls controller={mgr.automation.darkMode} />
+      <WebsiteNotifications mgr={mgr} />
       <RecordingControls mgr={mgr} />
       <button
         onClick={mgr.handleOpenExternal}

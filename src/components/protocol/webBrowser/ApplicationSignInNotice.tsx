@@ -3,7 +3,16 @@ import { ExternalLink } from "lucide-react";
 import type { SectionProps } from "./types";
 
 /** Guidance, not an inferred login state or a second credential collector. */
-export default function ApplicationSignInNotice({ mgr }: SectionProps) {
+export default function ApplicationSignInNotice({
+  mgr,
+}: {
+  mgr: Pick<
+    SectionProps["mgr"],
+    | "applicationExternalTarget"
+    | "openingApplicationExternal"
+    | "handleOpenApplicationExternal"
+  >;
+}) {
   const target = mgr.applicationExternalTarget;
   if (!target) return null;
   return (
