@@ -16,6 +16,7 @@ import {
   Ticket,
   Printer,
   X,
+  Layers,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useDocumentsWorkspace } from "../../hooks/documents/useDocumentsWorkspace";
@@ -68,6 +69,12 @@ import {
 } from "../../utils/documents/serviceDesk";
 import styles from "./documents.module.css";
 import CreateDocumentDialog from "./CreateDocumentDialog";
+import BulkEditEntriesDialog from "./BulkEditEntriesDialog";
+import {
+  applyBulkEntryPatch,
+  MAX_BULK_ENTRIES,
+  type BulkEntryPatch,
+} from "../../utils/documents/documentBulkEdit";
 import { useCurrentDatabaseSettings } from "../../hooks/settings/useCurrentDatabaseSettings";
 import {
   DOCUMENT_TYPE_OPTIONS,
@@ -159,6 +166,22 @@ export default function DocumentsWorkspace({
     useState<TicketFilters["priority"]>("");
   const [ticketTag, setTicketTag] = useState("");
   const [browsePage, setBrowsePage] = useState(0);
+  const [bulkSelection, setBulkSelection] = useState<{
+    key: string;
+    ids: string[];
+  }>({ key: "", ids: [] });
+  const [bulkReview, setBulkReview] = useState<{
+    key: string;
+    data: DatabaseDocuments;
+    ids: string[];
+    section: Section;
+  } | null>(null);
+  const [bulkNotice, setBulkNotice] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
+  const bulkReviewRef = useRef(bulkReview);
+  bulkReviewRef.current = bulkReview;
   const [focusReference, setFocusReference] =
     useState<Extract<DocumentReference, { kind: "cell" }>>();
   const [ioBusy, setIoBusy] = useState(false);
@@ -194,6 +217,40 @@ export default function DocumentsWorkspace({
   selection.current = { section, selectedId };
   const consumed = useRef("");
   const busy = workspace.busy || ioBusy;
+  const bulkKey = JSON.stringify([
+    workspace.accessKey,
+    section,
+    folder,
+    query,
+    ticketStatus,
+    ticketPriority,
+    ticketTag,
+  ]);
+  const bulkIds = bulkSelection.key === bulkKey ? bulkSelection.ids : [];
+  const bulkCurrent = useRef({
+    key: bulkKey,
+    data,
+    busy,
+    allValid,
+    policyReady,
+    stale: workspace.stale,
+    accessKey: workspace.accessKey,
+    folderIds: state.connections
+      .filter((item) => item.isGroup)
+      .map((item) => item.id),
+  });
+  bulkCurrent.current = {
+    key: bulkKey,
+    data,
+    busy,
+    allValid,
+    policyReady,
+    stale: workspace.stale,
+    accessKey: workspace.accessKey,
+    folderIds: state.connections
+      .filter((item) => item.isGroup)
+      .map((item) => item.id),
+  };
   const guard = useRef({
     databaseId: request.databaseId,
     dirty: false,
@@ -263,6 +320,9 @@ export default function DocumentsWorkspace({
     setTicketTag("");
     setBrowsePage(0);
     setCreateKey(null);
+    setBulkSelection({ key: "", ids: [] });
+    setBulkReview(null);
+    setBulkNotice(null);
   }, [workspace.accessKey]);
 
   const clearFilters = () => {
@@ -272,6 +332,12 @@ export default function DocumentsWorkspace({
     setTicketTag("");
     setBrowsePage(0);
   };
+  useEffect(() => {
+    setBulkSelection({ key: bulkKey, ids: [] });
+    bulkReviewRef.current = null;
+    setBulkReview(null);
+    setBulkNotice(null);
+  }, [bulkKey]);
   const requireType = (type: DatabaseDocumentType) => {
     const current = latestPolicy.current;
     if (!current.ready || !current.settings)
@@ -311,6 +377,41 @@ export default function DocumentsWorkspace({
     setFolder(entry.parentFolderId ?? "*");
     clearFilters();
     setCreateKey(null);
+  };
+  const applyBulk = (patch: BulkEntryPatch) => {
+    const latest = bulkCurrent.current;
+    if (
+      !bulkReview ||
+      bulkReviewRef.current !== bulkReview ||
+      !active(latest.accessKey) ||
+      latest.key !== bulkReview.key ||
+      latest.data !== bulkReview.data ||
+      latest.busy ||
+      !latest.allValid ||
+      !latest.policyReady ||
+      latest.stale ||
+      patch.section !== bulkReview.section
+    )
+      throw new Error(
+        "The entries or owning database changed. Reopen the bulk edit.",
+      );
+    const result = applyBulkEntryPatch(
+      bulkReview.data,
+      bulkReview.ids,
+      patch,
+      latest.folderIds,
+    );
+    assertAllowed(result.data);
+    bulkReviewRef.current = null;
+    if (result.changed) workspace.update(() => result.data);
+    setBulkNotice({
+      key: bulkReview.key,
+      message: result.changed
+        ? `${result.changed} ${bulkReview.section} updated in the draft. Save to commit these changes.`
+        : "The selected entries already have these values. No changes were made.",
+    });
+    setBulkSelection({ key: bulkReview.key, ids: [] });
+    setBulkReview(null);
   };
 
   const pickReference = useCallback(
@@ -1127,42 +1228,153 @@ export default function DocumentsWorkspace({
                 ? "person"
                 : "ticket"}
           </button>
+          <section
+            aria-label="Bulk entry selection"
+            className="space-y-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+              <span role="status">{bulkIds.length} selected</span>
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary !px-2 !py-1 !text-xs"
+                disabled={busy || !allValid || !bulkIds.length}
+                onClick={() => setBulkSelection({ key: bulkKey, ids: [] })}
+              >
+                Clear selection
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary !px-2 !py-1 !text-xs"
+                disabled={
+                  busy ||
+                  !allValid ||
+                  !browseRows.length ||
+                  new Set([...bulkIds, ...browseRows.map((row) => row.id)])
+                    .size > MAX_BULK_ENTRIES
+                }
+                onClick={() =>
+                  setBulkSelection({
+                    key: bulkKey,
+                    ids: [
+                      ...new Set([
+                        ...bulkIds,
+                        ...browseRows.map((row) => row.id),
+                      ]),
+                    ],
+                  })
+                }
+              >
+                Select page
+              </button>
+              {visible.length > browseRows.length && (
+                <button
+                  type="button"
+                  className="sor-btn sor-btn-secondary !px-2 !py-1 !text-xs"
+                  disabled={
+                    busy || !allValid || visible.length > MAX_BULK_ENTRIES
+                  }
+                  title={`Select all matching entries, up to ${MAX_BULK_ENTRIES}; narrow the filters for larger lists`}
+                  onClick={() =>
+                    setBulkSelection({
+                      key: bulkKey,
+                      ids: visible.map((row) => row.id),
+                    })
+                  }
+                >
+                  Select all {visible.length}
+                </button>
+              )}
+              <button
+                type="button"
+                className="sor-btn sor-btn-primary !px-2 !py-1 !text-xs"
+                disabled={
+                  busy ||
+                  !allValid ||
+                  !policyReady ||
+                  workspace.stale ||
+                  !bulkIds.length
+                }
+                onClick={() => {
+                  setBulkNotice(null);
+                  setBulkReview({
+                    key: bulkKey,
+                    data,
+                    ids: [...bulkIds],
+                    section,
+                  });
+                }}
+              >
+                <Layers size={12} /> Edit selected
+              </button>
+            </div>
+          </section>
+          {bulkNotice?.key === bulkKey && (
+            <p
+              role="status"
+              className="text-xs text-[var(--color-textSecondary)]"
+            >
+              {bulkNotice.message}
+            </p>
+          )}
           <div
             className="min-h-0 flex-1 space-y-1 overflow-auto"
             aria-label="Records"
           >
             {browseRows.map((entry) => (
-              <button
-                key={entry.id}
-                aria-label={`Open ${entry.label || "Untitled"}`}
-                disabled={busy || !allValid}
-                className={`w-full rounded border px-3 py-2 text-left ${selectedId === entry.id ? "border-primary/50 bg-primary/10" : "border-transparent hover:bg-[var(--color-surfaceHover)]"}`}
-                onClick={() => {
-                  setSelectedId(entry.id);
-                  setValid(true);
-                }}
-              >
-                <span className="block truncate text-sm font-medium">
-                  {entry.label || "Untitled"}
-                </span>
-                <span className="block truncate text-xs text-[var(--color-textMuted)]">
-                  {entry.detail}
-                </span>
-                {!!entry.tags.length && (
-                  <span className={`${styles.tags} mt-1`}>
-                    {entry.tags.slice(0, 3).map((tag) => (
-                      <span key={tag} className={styles.tag}>
-                        {tag}
-                      </span>
-                    ))}
-                    {entry.tags.length > 3 && (
-                      <span className={styles.tag}>
-                        +{entry.tags.length - 3}
-                      </span>
-                    )}
+              <div key={entry.id} className="flex items-start gap-1">
+                <input
+                  type="checkbox"
+                  className="sor-checkbox mt-3 shrink-0"
+                  aria-label={`Select ${entry.label || "Untitled"} for bulk edit`}
+                  checked={bulkIds.includes(entry.id)}
+                  disabled={
+                    busy ||
+                    !allValid ||
+                    (!bulkIds.includes(entry.id) &&
+                      bulkIds.length >= MAX_BULK_ENTRIES)
+                  }
+                  onChange={(event) =>
+                    setBulkSelection({
+                      key: bulkKey,
+                      ids: event.target.checked
+                        ? [...bulkIds, entry.id]
+                        : bulkIds.filter((id) => id !== entry.id),
+                    })
+                  }
+                />
+                <button
+                  aria-label={`Open ${entry.label || "Untitled"}`}
+                  disabled={busy || !allValid}
+                  className={`min-w-0 flex-1 rounded border px-3 py-2 text-left ${selectedId === entry.id ? "border-primary/50 bg-primary/10" : "border-transparent hover:bg-[var(--color-surfaceHover)]"}`}
+                  onClick={() => {
+                    setSelectedId(entry.id);
+                    setValid(true);
+                  }}
+                >
+                  <span className="block truncate text-sm font-medium">
+                    {entry.label || "Untitled"}
                   </span>
-                )}
-              </button>
+                  <span className="block truncate text-xs text-[var(--color-textMuted)]">
+                    {entry.detail}
+                  </span>
+                  {!!entry.tags.length && (
+                    <span className={`${styles.tags} mt-1`}>
+                      {entry.tags.slice(0, 3).map((tag) => (
+                        <span key={tag} className={styles.tag}>
+                          {tag}
+                        </span>
+                      ))}
+                      {entry.tags.length > 3 && (
+                        <span className={styles.tag}>
+                          +{entry.tags.length - 3}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </button>
+              </div>
             ))}
             {!visible.length && (
               <p className="p-2 text-sm text-[var(--color-textMuted)]">
@@ -1767,6 +1979,27 @@ export default function DocumentsWorkspace({
             </button>
           </ModalFooter>
         </Modal>
+      )}
+      {bulkReview?.key === bulkKey && (
+        <BulkEditEntriesDialog
+          key={bulkReview.key}
+          section={bulkReview.section}
+          count={bulkReview.ids.length}
+          folders={folders}
+          tagSuggestions={tagSuggestions}
+          disabled={
+            busy ||
+            !allValid ||
+            !policyReady ||
+            workspace.stale ||
+            data !== bulkReview.data
+          }
+          onClose={() => {
+            bulkReviewRef.current = null;
+            setBulkReview(null);
+          }}
+          onApply={applyBulk}
+        />
       )}
       {textMode && currentDocument && (
         <Modal

@@ -253,6 +253,218 @@ function deferred<T>() {
 }
 
 describe("protected document workspace integration", () => {
+  const bulkSelect = (label: string, option: string) => {
+    fireEvent.click(screen.getByRole("combobox", { name: label }));
+    fireEvent.mouseDown(screen.getByRole("option", { name: option }));
+  };
+  const bulkTags = (tag: string) => {
+    bulkSelect("Bulk tags", "Add tags (keep existing)");
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Tags"), {
+      target: { value: tag },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add tag" }));
+  };
+  const applyBulkReview = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Review changes" }));
+    expect(
+      screen.getByRole("region", { name: "Review bulk changes" }),
+    ).toBeVisible();
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  };
+  const ticketRows = () =>
+    ["First ticket", "Second ticket", "Untouched ticket"].map(
+      (title, index) => ({
+        id: `ticket-${index}`,
+        title,
+        description: `Original ${index}`,
+        status: "open" as const,
+        priority: "normal" as const,
+        tags: ["Existing"],
+        references: [],
+      }),
+    );
+
+  it("bulk edits selected ticket status, priority and tags as one protected draft/save", async () => {
+    saved = normalizeDatabaseDocuments({ ...saved, tickets: ticketRows() });
+    const untouched = structuredClone(saved.tickets[2]);
+    show();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "Service desk" }));
+    for (const title of ["First ticket", "Second ticket"])
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: `Select ${title} for bulk edit` }),
+      );
+    fireEvent.click(screen.getByRole("button", { name: "Edit selected" }));
+    bulkSelect("Bulk ticket status", "Resolved");
+    bulkSelect("Bulk ticket priority", "Urgent");
+    bulkTags("Network");
+    await applyBulkReview();
+    expect(saved.tickets[0].status).toBe("open");
+    expect(
+      screen.getByText(
+        "2 tickets updated in the draft. Save to commit these changes.",
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce(),
+    );
+    for (const ticket of saved.tickets.slice(0, 2))
+      expect(ticket).toMatchObject({
+        status: "resolved",
+        priority: "urgent",
+        tags: ["Existing", "Network"],
+      });
+    expect(saved.tickets[2]).toEqual(untouched);
+    expect(saved.tickets[0].description).toBe("Original 0");
+  });
+
+  it("bulk edits selected people organization/tags without changing contact fields or unselected people", async () => {
+    saved = normalizeDatabaseDocuments({
+      ...saved,
+      people: ["Alex", "Robin", "Unselected"].map((name, index) => ({
+        id: `person-${index}`,
+        name,
+        email: `person${index}@fixture.test`,
+        phone: "123",
+        organization: "Before",
+        notes: "Private notes",
+        tags: ["Existing"],
+        references: [],
+      })),
+    });
+    const original = structuredClone(saved.people);
+    show();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "People" }));
+    for (const name of ["Alex", "Robin"])
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: `Select ${name} for bulk edit` }),
+      );
+    fireEvent.click(screen.getByRole("button", { name: "Edit selected" }));
+    bulkSelect("Bulk organization", "Set organization");
+    fireEvent.change(screen.getByLabelText("Organization"), {
+      target: { value: "Support" },
+    });
+    bulkTags("On-call");
+    await applyBulkReview();
+    expect(saved.people).toEqual(original);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce(),
+    );
+    for (let index = 0; index < 2; index++)
+      expect(saved.people[index]).toEqual({
+        ...original[index],
+        organization: "Support",
+        tags: ["Existing", "On-call"],
+      });
+    expect(saved.people[2]).toEqual(original[2]);
+  });
+
+  it("bulk moves documents and changes icons through draft/save while preserving all blocks", async () => {
+    mock.connections.push({
+      ...mock.connections[0],
+      id: "team-folder",
+      name: "Team folder",
+      isGroup: true,
+    });
+    saved.documents.forEach((doc) => {
+      doc.icon = "folder";
+    });
+    const original = structuredClone(saved.documents);
+    show();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: "Select page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit selected" }));
+    bulkSelect("Bulk document folder", "Team folder");
+    bulkSelect("Bulk document icon", "Change document icon");
+    expect(
+      screen.getByRole("button", { name: /^Document icon:/ }),
+    ).toBeVisible();
+    await applyBulkReview();
+    expect(saved.documents).toEqual(original);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce(),
+    );
+    for (let index = 0; index < 2; index++) {
+      expect(saved.documents[index]).toMatchObject({
+        parentFolderId: "team-folder",
+        icon: "file-text",
+      });
+      expect(saved.documents[index].blocks).toEqual(original[index].blocks);
+      expect(saved.documents[index].name).toBe(original[index].name);
+    }
+  });
+
+  it.each(["lock", "generation"] as const)(
+    "discards a reviewed bulk edit when owner access changes: %s",
+    async (change) => {
+      const view = show();
+      await loaded();
+      const original = structuredClone(saved);
+      fireEvent.click(screen.getByRole("button", { name: "Select page" }));
+      fireEvent.click(screen.getByRole("button", { name: "Edit selected" }));
+      bulkSelect("Bulk document icon", "Change document icon");
+      fireEvent.click(screen.getByRole("button", { name: "Review changes" }));
+      const form = screen.getByRole("form", { name: "Bulk entry changes" });
+      if (change === "lock") mock.ready = false;
+      else mock.store!.scope = { databaseId: "db-a", generation: 2 };
+      view.rerender(
+        <DocumentsWorkspace sessionId="workspace-tab" request={request} />,
+      );
+      expect(
+        screen.queryByRole("dialog", { name: "Bulk edit documents" }),
+      ).toBeNull();
+      fireEvent.submit(form);
+      expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+      expect(saved).toEqual(original);
+    },
+  );
+
+  it.each(["filter", "section"] as const)(
+    "does not resurrect bulk selection after a %s round trip",
+    async (change) => {
+      show();
+      await loaded();
+      fireEvent.click(
+        screen.getByRole("checkbox", {
+          name: "Select Inventory for bulk edit",
+        }),
+      );
+      expect(
+        screen.getByRole("button", { name: "Edit selected" }),
+      ).toBeEnabled();
+      if (change === "filter") {
+        fireEvent.change(
+          screen.getByLabelText("Search documents and records"),
+          { target: { value: "Other" } },
+        );
+        fireEvent.change(
+          screen.getByLabelText("Search documents and records"),
+          { target: { value: "" } },
+        );
+      } else {
+        fireEvent.click(screen.getByRole("button", { name: "People" }));
+        fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+      }
+      expect(
+        screen.getByRole("checkbox", {
+          name: "Select Inventory for bulk edit",
+        }),
+      ).not.toBeChecked();
+      expect(
+        screen.getByRole("button", { name: "Edit selected" }),
+      ).toBeDisabled();
+      expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+    },
+  );
+
   it("bounds browser and sidebar rows to 50 and pages larger metadata lists", async () => {
     saved.documents = Array.from({ length: 53 }, (_, index) => ({
       ...structuredClone(saved.documents[0]),
