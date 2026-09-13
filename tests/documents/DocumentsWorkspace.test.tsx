@@ -325,6 +325,15 @@ describe("protected document workspace integration", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       /Security → Current database/,
     );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /global Connections encryption/,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /OS-vaulted global key qualifies/,
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      /without managed protection cannot/,
+    );
     expect(mock.store!.read).not.toHaveBeenCalled();
     expect(screen.queryByDisplayValue("Inventory")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Database security" }));

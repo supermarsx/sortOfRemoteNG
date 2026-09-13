@@ -613,7 +613,7 @@ export default function DocumentsWorkspace({
             className="text-sm text-[var(--color-textSecondary)]"
           >
             {workspace.error ||
-              "Open the owning database in the desktop app, enable its managed protection under Security → Current database, and unlock it. A normal open database without managed protection cannot store these private records."}
+              "Open and unlock the owning database in the desktop app. Documents need one verified protection layer: managed protection under Security → Current database, or applicable global Connections encryption with its key unlocked and the existing database file encrypted. An OS-vaulted global key qualifies when that encryption is active; a stored or unlocked key alone is not enough."}
           </p>
           <div className="flex justify-center gap-2">
             <button

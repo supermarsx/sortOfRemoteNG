@@ -161,9 +161,10 @@ app-wide encryption covering connection data. Ordinary JSON/third-party formats
 cannot safely carry vault IDs by themselves and direct you to this archive flow.
 Nothing falls back to a global credential store or silently selects local secrets.
 
-This vault storage policy does not relax the separate Documents feature:
-[database documents](database-documents.md) still require an unlocked protected
-managed database. A vault archive does not include documents or attachments.
+[Database documents](database-documents.md) likewise need one verified layer:
+unlocked managed protection or applicable, unlocked global Connections encryption
+of the owning file, including an OS-vaulted global key. A setting or unlocked key
+alone is insufficient. A vault archive does not include documents or attachments.
 
 Archive passwords and decrypted contents exist transiently in application memory
 while the operation or review is open. Closing the dialog or losing the owning

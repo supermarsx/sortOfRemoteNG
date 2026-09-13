@@ -21,8 +21,15 @@ attachments, people and tickets remain scoped to their original database.
 Right-click a folder and choose **New document** or browse that folder's
 documents. The Documents workspace also has People and Tickets sections for
 simple local service records. These are database-owned records, not a separate
-cloud service. Open and unlock a protected managed database first; no plaintext
-fallback library is created when storage is unavailable.
+cloud service. Open the owning database in the desktop app with at least one
+verified protection layer: either unlocked managed database protection or active
+global **Connections** encryption with its key unlocked and the existing file
+encrypted. An OS-vaulted global key is supported. A stored/unlocked key or an
+encryption preference alone is not proof that this database file is protected;
+native storage checks the applicable policy and authenticated encrypted file.
+If its key is unavailable, unlock it under **Settings → Security**, reopen the
+database and retry. No plaintext fallback library is created. A locked managed
+database remains locked even when an outer global encryption layer exists.
 
 Give a document a name, icon and folder, then add blocks: formatted text,
 Markdown, notes, passwords, Wi-Fi details and QR codes, accounts, identification

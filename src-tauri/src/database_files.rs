@@ -125,6 +125,9 @@ use sorng_encryption::{ArtifactKind, EncryptionState};
 #[cfg(test)]
 #[path = "database_credential_vault_tests.rs"]
 mod credential_vault_tests;
+#[cfg(test)]
+#[path = "database_document_protection_tests.rs"]
+mod document_protection_tests;
 
 /// Returns true when the given payload bytes start with the SORNG
 /// envelope magic — i.e. they've been P4-encrypted. False matches
@@ -531,6 +534,7 @@ async fn encode_payload(
     }
     if artifact == ArtifactKind::Connections {
         reject_plaintext_credential_vault(value)?;
+        reject_unprotected_documents(value)?;
         // Preserve the legacy writer's recoverable orphan-.tmp behavior: only
         // a generation from the actual read ladder supplies an existing vault.
         if safe_read_raw(canonical)
@@ -539,6 +543,7 @@ async fn encode_payload(
         {
             if let Some(current) = encrypted_load(state, artifact, canonical).await? {
                 reject_plaintext_credential_vault(&current.value)?;
+                reject_unprotected_documents(&current.value)?;
             }
         }
     }
@@ -859,7 +864,12 @@ pub async fn save_database_data(
         &data,
     )
     .await?;
-    reject_unprotected_documents(&data)?;
+    require_document_protection(
+        &enc_state,
+        existing.as_ref().map(|entry| &entry.value),
+        &data,
+    )
+    .await?;
     validate_data_shape(
         &data,
         row.get("isEncrypted")
@@ -963,9 +973,12 @@ pub(crate) async fn globally_protected_database(
     Ok(true)
 }
 
-/// Documents may contain private records and attachments: the initial format
-/// requires managed database protection, never a raw/plaintext save endpoint.
-pub(crate) fn reject_unprotected_documents(data: &serde_json::Value) -> Result<(), String> {
+const DOCUMENT_PLAINTEXT_WARNING: &str = "This database contains protected documents or private records that must remain encrypted. Enable and unlock global encryption with Connections set to encrypted, or keep managed database protection (a password or OS-vault slot). Removing the last encryption layer would expose private records; no plaintext copy was created.";
+
+/// Final plaintext artifact guard. Absence or the exact empty supported library
+/// is safe; malformed/unknown data cannot authorize a plaintext downgrade.
+/// Managed and legacy inner ciphertext remain opaque at this outer layer.
+pub fn reject_unprotected_documents(data: &serde_json::Value) -> Result<(), String> {
     let Some(value) = data.get("documents") else {
         return Ok(());
     };
@@ -986,9 +999,31 @@ pub(crate) fn reject_unprotected_documents(data: &serde_json::Value) -> Result<(
                 })
     });
     if !empty {
-        return Err("This database contains protected documents or private records. Remove them or export a protected archive before removing managed database protection; no plaintext copy was created.".into());
+        return Err(DOCUMENT_PLAINTEXT_WARNING.into());
     }
     Ok(())
+}
+
+/// Called under the writer/key coordinator. The actual Connections encoder
+/// must still encrypt before committing; merely having a global key or a
+/// setting for a different artifact is not protection. Inspect current data
+/// too, so omission from a raw replacement cannot strip its last layer.
+pub(crate) async fn require_document_protection(
+    state: &EncryptionState,
+    current: Option<&serde_json::Value>,
+    proposed: &serde_json::Value,
+) -> Result<(), String> {
+    if reject_unprotected_documents(proposed).is_ok()
+        && current.is_none_or(|value| reject_unprotected_documents(value).is_ok())
+    {
+        return Ok(());
+    }
+    let unlocked = state.is_unlocked().await;
+    if unlocked && state.resolve_write_policy(ArtifactKind::Connections, unlocked)? {
+        Ok(())
+    } else {
+        Err(DOCUMENT_PLAINTEXT_WARNING.into())
+    }
 }
 
 /// Atomically change the per-database password representation and its index flag.
@@ -1045,7 +1080,7 @@ pub async fn change_database_security(
             .ok_or("database encryption metadata malformed")?,
     )?;
     validate_data_shape(&data, is_encrypted)?;
-    reject_unprotected_documents(&data)?;
+    require_document_protection(&enc_state, Some(&existing.value), &data).await?;
     row["isEncrypted"] = is_encrypted.into();
     row["securityRevision"] = security_revision.into();
     row["updatedAt"] = updated_at.into();

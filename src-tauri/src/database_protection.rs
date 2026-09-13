@@ -6,6 +6,8 @@ use crate::database_files::{managed_commit, managed_snapshot, ManagedSnapshot};
 // protection facade; do not duplicate or weaken its plaintext-vault checks.
 #[doc(hidden)]
 pub use crate::database_files::reject_plaintext_credential_vault;
+#[doc(hidden)]
+pub use crate::database_files::reject_unprotected_documents;
 use crate::trust_store_commands as trust_reads;
 use codec::Zeroizing;
 use serde::Serialize;
@@ -830,7 +832,7 @@ async fn change_inner_with_initialization(
     };
     let managed = target.is_some();
     if !managed {
-        crate::database_files::reject_unprotected_documents(&data)?;
+        crate::database_files::require_document_protection(state, None, &data).await?;
         crate::database_files::require_credential_vault_protection(state, None, &data).await?;
     }
     let new_revision = codec::random_id();

@@ -1664,10 +1664,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     void recycleAccessGeneration;
     let scope: DocumentScope | null = null;
     try {
-      if (
-        !recycleLoading &&
-        databaseManager.getCurrentDatabase()?.protectionFormat === "sorng-db"
-      ) {
+      if (!recycleLoading && databaseManager.getCurrentDatabase()) {
         const current = captureRecycleScope();
         scope = {
           databaseId: current.databaseId,
@@ -1678,6 +1675,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       /* No metadata or payload is exposed from a suspended owner. */
     }
     const assertScope = (expected: DocumentScope) => {
+      if (!mountedRef.current)
+        throw new Error("The document workspace is no longer open.");
       let current;
       try {
         current = captureRecycleScope();
@@ -1699,11 +1698,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       activeDatabaseTargetRef.current?.assertAccessible?.();
     };
-    const requireManaged = async (expected: DocumentScope) => {
+    const requireProtected = async (expected: DocumentScope) => {
       assertScope(expected);
       if (!(await getInvoke()))
         throw new Error(
-          "Documents require the native desktop app and a managed protected database. No browser or plaintext fallback was created.",
+          "Documents require the native desktop app and encrypted database storage. No browser or plaintext fallback was created.",
         );
       assertScope(expected);
       const target = activeDatabaseTargetRef.current;
@@ -1711,23 +1710,35 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         throw new Error(
           "Reopen the updated protected database before using documents.",
         );
-      const status = await databaseManager.getDatabaseProtectionStatus(
-        expected.databaseId,
-      );
+      let status;
+      try {
+        status = await databaseManager.getDatabaseProtectionStatus(
+          expected.databaseId,
+        );
+      } catch {
+        assertScope(expected);
+        throw new Error(
+          "Database protection could not be verified. Unlock the applicable global at-rest encryption key or the managed database in Settings → Security, then reopen the owning database and retry. No document data was exposed.",
+        );
+      }
       assertScope(expected);
       const owner = databaseManager.getCurrentDatabase();
-      if (status.kind !== "managed")
+      if (
+        status.kind !== "managed" &&
+        status.globalEncryptionProtected !== true
+      )
         throw new Error(
-          "Protect the current database with managed protection first (Settings → Security → Current database).",
+          "Documents need one verified protection layer: unlock managed protection in Settings → Security → Current database, or enable global Connections encryption and encrypt this database's existing file. Unlocking a global key alone does not protect an unencrypted file.",
         );
       if (
-        !status.unlocked ||
-        !status.securityRevision ||
-        status.securityRevision !== owner?.securityRevision ||
+        typeof status.securityRevision !== "string" ||
+        status.securityRevision !== (owner?.securityRevision ?? "") ||
+        (status.kind === "managed" &&
+          (!status.unlocked || !status.securityRevision)) ||
         target !== activeDatabaseTargetRef.current
       )
         throw new Error(
-          "The managed database lease changed. Unlock and reload before using documents.",
+          "The protected database lease changed. Unlock and reload before using documents.",
         );
       target.assertAccessible();
       return target;
@@ -1737,9 +1748,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       changeRevision: documentsChangeRevision,
       async read(expectedScope) {
         const expected = { ...expectedScope };
-        await requireManaged(expected);
+        await requireProtected(expected);
         await flushPendingSave();
-        const target = await requireManaged(expected);
+        const target = await requireProtected(expected);
         await target.verifyCurrent!();
         assertScope(expected);
         const result = normalizeDatabaseDocuments(
@@ -1747,6 +1758,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         await verifyDocumentAttachments(result);
         assertScope(expected);
+        if (target !== (await requireProtected(expected)))
+          throw new Error(
+            "The document database changed. Reload before continuing.",
+          );
         return result;
       },
       async compareAndSwap(expectedScope, expectedData, replacement) {
@@ -1767,9 +1782,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           );
         documentsBusyRef.current = true;
         try {
-          await requireManaged(expected);
+          await requireProtected(expected);
           await flushPendingSave();
-          let target = await requireManaged(expected);
+          let target = await requireProtected(expected);
           const current = normalizeDatabaseDocuments(
             loadedStorageRef.current?.documents,
           );
@@ -1779,7 +1794,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             );
           await verifyDocumentAttachments(proposed, current);
           assertScope(expected);
-          target = await requireManaged(expected);
+          target = await requireProtected(expected);
           // Changes while attachment verification awaited must join the same queue.
           await flushPendingSave();
           assertScope(expected);

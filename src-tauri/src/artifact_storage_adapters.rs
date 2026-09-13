@@ -19,6 +19,9 @@ use std::{
 };
 
 #[cfg(test)]
+#[path = "artifact_documents_tests.rs"]
+mod document_tests;
+#[cfg(test)]
 #[path = "tests/artifact_storage_adapters.rs"]
 mod tests;
 
@@ -827,6 +830,7 @@ async fn encoded_bytes(
             let data: serde_json::Value = serde_json::from_slice(plain)
                 .map_err(|_| "Connections data could not be verified before removing encryption")?;
             crate::database_protection::reject_plaintext_credential_vault(&data)?;
+            crate::database_protection::reject_unprotected_documents(&data)?;
         }
         return Ok(plain.to_vec());
     }

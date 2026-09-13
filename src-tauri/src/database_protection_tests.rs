@@ -1,4 +1,6 @@
 use super::*;
+#[path = "database_documents_managed_tests.rs"]
+mod document_layer_tests;
 use sorng_storage::sdbf;
 use std::{
     collections::HashMap,

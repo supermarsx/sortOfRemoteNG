@@ -171,14 +171,14 @@ describe("native managed database document persistence", () => {
       const { result } = await mount();
       const api = result.current.documents!;
       await expect(api.read(api.scope!)).rejects.toThrow(
-        /Protect the current database/,
+        /one verified protection layer/,
       );
       await expect(
         api.compareAndSwap(api.scope!, emptyDatabaseDocuments(), {
           ...fixture(),
           revision: 1,
         }),
-      ).rejects.toThrow(/Protect the current database/);
+      ).rejects.toThrow(/one verified protection layer/);
       expect(mock.save).not.toHaveBeenCalled();
     },
   );

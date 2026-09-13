@@ -15,6 +15,7 @@ import type { DatabaseVaultArchive } from "../../src/types/security/vaultArchive
 import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
 import { useConnections } from "../../src/contexts/useConnections";
 import DatabaseCredentialVault from "../../src/components/security/DatabaseCredentialVault";
+import { fixture as documentFixture } from "../documents/fixtures";
 const mock = vi.hoisted(() => ({
   owner: "db-a",
   locked: false,
@@ -199,6 +200,141 @@ const archive = (): DatabaseVaultArchive => ({
   ],
 });
 
+describe("native verified protection for documents", () => {
+  it.each(["managed", "none", "legacy-password"])(
+    "reads and durably saves documents with the %s protection path",
+    async (kind) => {
+      mock.managed = kind === "managed";
+      mock.saved!.documents = documentFixture();
+      mock.status.mockResolvedValue({
+        kind,
+        unlocked: kind !== "legacy-password",
+        securityRevision: "revision",
+        globalEncryptionProtected: kind !== "managed",
+      });
+      const hook = await mount();
+      const api = hook.result.current.documents!;
+      const prior = await api.read(api.scope!);
+      const next = {
+        ...prior,
+        revision: prior.revision + 1,
+        documents: prior.documents.map((document) => ({
+          ...document,
+          name: "Verified document",
+        })),
+      };
+      await act(() => api.compareAndSwap(api.scope!, prior, next));
+      expect(mock.saved!.documents).toEqual(next);
+      expect(await hook.result.current.documents!.read(api.scope!)).toEqual(
+        next,
+      );
+      expect(mock.saved!.connections[0].password).toBe(
+        "CONNECTION_LOCAL_UNTOUCHED",
+      );
+      await expect(api.compareAndSwap(api.scope!, prior, next)).rejects.toThrow(
+        /changed since/,
+      );
+    },
+  );
+  it.each([undefined, false, "true", 1, null])(
+    "refuses documents without a strict native global proof (%s)",
+    async (proof) => {
+      mock.managed = false;
+      mock.status.mockResolvedValue({
+        kind: "none",
+        unlocked: true,
+        securityRevision: "revision",
+        globalEncryptionProtected: proof,
+      });
+      const hook = await mount();
+      const api = hook.result.current.documents!;
+      await expect(api.read(api.scope!)).rejects.toThrow(
+        /one verified protection layer/,
+      );
+      await expect(
+        api.compareAndSwap(api.scope!, documentFixture(), {
+          ...documentFixture(),
+          revision: 1,
+        }),
+      ).rejects.toThrow(/one verified protection layer/);
+      expect(mock.save).not.toHaveBeenCalled();
+    },
+  );
+  it("gives safe key-unlock guidance when native cannot authenticate the stored file", async () => {
+    mock.managed = false;
+    mock.status.mockRejectedValue(Error("PRIVATE_NATIVE_ERROR"));
+    const hook = await mount();
+    const api = hook.result.current.documents!;
+    await expect(api.read(api.scope!)).rejects.toThrow(
+      /Unlock the applicable global at-rest encryption key/,
+    );
+    expect(mock.verify).not.toHaveBeenCalled();
+  });
+  it("refuses a locked managed database even when an outer global layer is present", async () => {
+    mock.status.mockResolvedValue({
+      kind: "managed",
+      unlocked: false,
+      securityRevision: "revision",
+      globalEncryptionProtected: true,
+    });
+    const hook = await mount();
+    const api = hook.result.current.documents!;
+    await expect(api.read(api.scope!)).rejects.toThrow(/lease changed/);
+    expect(mock.save).not.toHaveBeenCalled();
+  });
+  it("rechecks native global protection before disclosing a document read", async () => {
+    mock.managed = false;
+    mock.status.mockResolvedValue({
+      kind: "none",
+      unlocked: true,
+      securityRevision: "revision",
+      globalEncryptionProtected: true,
+    });
+    const hook = await mount();
+    const api = hook.result.current.documents!;
+    mock.verify.mockImplementationOnce(async () => {
+      mock.status.mockResolvedValue({
+        kind: "none",
+        unlocked: true,
+        securityRevision: "revision",
+        globalEncryptionProtected: false,
+      });
+    });
+    await expect(api.read(api.scope!)).rejects.toThrow(
+      /one verified protection layer/,
+    );
+    expect(mock.save).not.toHaveBeenCalled();
+  });
+  it.each(["owner", "lock", "unmount"] as const)(
+    "rejects a delayed protection proof after %s changes",
+    async (change) => {
+      mock.managed = false;
+      const hook = await mount();
+      const api = hook.result.current.documents!;
+      const pending = deferred<{
+        kind: string;
+        securityRevision: string;
+        unlocked: boolean;
+        globalEncryptionProtected: boolean;
+      }>();
+      mock.status.mockReturnValue(pending.promise);
+      const read = api.read(api.scope!);
+      await waitFor(() => expect(mock.status).toHaveBeenCalled());
+      if (change === "owner") mock.owner = "db-b";
+      else if (change === "lock") mock.locked = true;
+      else hook.unmount();
+      pending.resolve({
+        kind: "none",
+        securityRevision: "revision",
+        unlocked: true,
+        globalEncryptionProtected: true,
+      });
+      await expect(read).rejects.toThrow(/owning|changed|no longer open/);
+      expect(mock.save).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("native global encryption proof for vault access", () => {
   it.each(["none", "legacy-password"])(
     "supports %s only with actual global encryption proof and owner access",
@@ -211,7 +347,7 @@ describe("native global encryption proof for vault access", () => {
         globalEncryptionProtected: true,
       });
       const hook = await mount();
-      expect(hook.result.current.documents!.scope).toBeNull();
+      expect(hook.result.current.documents!.scope?.databaseId).toBe("db-a");
       const snapshot = await add(hook);
       const api = hook.result.current.credentialVault!;
       expect(await api.resolve(snapshot, id, ["password"])).toEqual({
