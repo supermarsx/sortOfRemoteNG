@@ -26,7 +26,10 @@ const ROUTES: Readonly<Record<string, string>> = {
   "/__sortofremoteng_quickconnect_redirect_v1": "QuickConnect redirect",
 };
 
-function destination(value: string): { origin: string; category: string } {
+export function proxyLogDestination(value: string): {
+  origin: string;
+  category: string;
+} {
   if (value === "WebSocket handshake")
     return { origin: "unavailable", category: "WebSocket handshake" };
   if (typeof value !== "string" || value.length > 16_384)
@@ -87,7 +90,7 @@ export function proxyLogClipboard(entries: readonly ProxyRequestLogEntry[]): {
       typeof entry.error === "string"
         ? /^HTTP \d{3} \[([a-z_]+)\]$/.exec(entry.error)?.[1]
         : undefined;
-    const route = destination(entry.url);
+    const route = proxyLogDestination(entry.url);
     const detail = parseProxyLogDiagnostic(entry.diagnostic);
     const metadata: string[] = [];
     if (detail) {
@@ -112,6 +115,18 @@ export function proxyLogClipboard(entries: readonly ProxyRequestLogEntry[]): {
         metadata.push(`attempt-${attempts.get(detail.attemptId)}`);
       }
       if (detail.hop !== undefined) metadata.push(`hop=${detail.hop}`);
+      if (detail.redirectTargetOrigin !== undefined) {
+        metadata.push(`redirectSourceOrigin=${route.origin}`);
+        metadata.push(`redirectTargetOrigin=${detail.redirectTargetOrigin}`);
+      }
+      if (detail.redirectSourcePath !== undefined)
+        metadata.push(`redirectSourcePath=${detail.redirectSourcePath}`);
+      if (detail.redirectTargetPath !== undefined)
+        metadata.push(`redirectTargetPath=${detail.redirectTargetPath}`);
+      if (detail.redirectQueryRemoved !== undefined)
+        metadata.push(`redirectQueryRemoved=${detail.redirectQueryRemoved}`);
+      if (detail.sameOriginRedirects !== undefined)
+        metadata.push(`sameOriginRedirects=${detail.sameOriginRedirects}`);
       if (labels.candidate)
         metadata.push("candidate result only; not the final connection result");
     }
@@ -123,6 +138,7 @@ export function proxyLogClipboard(entries: readonly ProxyRequestLogEntry[]): {
       `Internal proxy log — latest ${selected.length} of ${entries.length} retained entries (maximum ${PROXY_LOG_COPY_LIMIT}).`,
       "Order: oldest to newest within this snapshot; all retained sessions, independent of the visible page.",
       "Privacy: URL paths, queries, fragments, userinfo, headers, bodies and free-form errors omitted. Only known diagnostic codes and route categories retained; unknown is not classified as a document.",
+      "Redirect diagnostics retain origins and root/DSM/other path categories only. upstreamHTTP is the server response before any local handoff response; sameOriginRedirects counts internal follows. Query-removal records sanitization, not the removed values. A successful relay candidate is not a successful document load.",
       "Session and attempt labels are local to this copy. Matching attempt labels identify native-correlated operations across proxy handoffs; they are not inferred from origins or times. Request duration is unavailable for entries without structured diagnostics. Durations cover the logged operation through its stage, not full page readiness. HTTP status records the proxy response, not proof of successful website sign-in.",
       "",
       ...lines,

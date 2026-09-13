@@ -144,6 +144,23 @@ another origin's cookies. Different currently approved TLS identities discard
 the corresponding origin's retained jar; each destination still gets a newly
 verified transport. Discovery/probe identity proofs remain document-scoped.
 
+Within a same-origin redirect chain, newly issued server cookies supersede
+stale incoming browser values. Server-declared paths and deletions are preserved. The
+final response also delivers intermediate cookie updates to the browser, in
+issuance order before the final response's updates. Valid upstream Domain
+attributes become host-only cookies on that session's isolated proxy host;
+expiry, path, Secure, HttpOnly and SameSite attributes are preserved. This does
+not share a cookie jar across different upstream origins.
+
+If an incoming request has several cookies with the same name and a server
+update cannot identify their scopes, the proxy does not guess which one to
+replace. It stops that ambiguous exchange with instructions to clear the
+session cookies and retry; clearing still requires the user's action. The
+browser's Cookie header does not contain the missing path/domain information.
+This is not complete browser cookie-scope virtualization: even one browser-only
+cookie does not reveal its original scope, and projecting same-name/same-path
+cookies from different upstream Domain scopes can collapse that distinction.
+
 This volatile continuity uses a one-use native ticket from a consumed redirect
 receipt, an explicit source-session transfer, and exact destination/path, route
 and original-policy checks. The ticket is not a saved/exported connection field.
@@ -162,6 +179,22 @@ of cycling indefinitely. Ordinary repeated login URLs, duplicate requests and
 child frames do not count. Reaching DSM application HTML under `/webman/` clears
 that connector-cycle history. This guard diagnoses non-convergence; it does not
 claim to detect authentication success or every possible provider loop.
+
+HTTP redirects need separate tracking: a regional server can return a redirect
+before any connector HTML is received. A successful regional NAS probe does not
+rule this out. That probe checks the identity endpoint under `/webman/`; opening
+the website is a different request, with a different path and browser context.
+Repeated regional-to-alias handoffs are not evidence that the NAS is offline,
+and increasing the redirect allowance does not repair the handoff.
+
+For the anonymous, root-only regional → HTTP alias → HTTPS alias → same
+regional circuit, native receipt consumption tracks both HTTP and vendor-script
+handoffs. A third unchanged regional restart stops with
+`quickconnect_redirect_loop`. Cookie-state changes reset the circuit count;
+cookie values and the in-memory comparison digest are never logged. Non-root
+and authenticated flows are excluded, and a vendor handoff needs evidence of
+the current primary root document. This is a bounded stop, not a claim that the
+underlying relay problem has been repaired or that sign-in succeeded.
 
 The “proxy
 keepalive” health check tests the local proxy listener and can restart a dead
@@ -316,6 +349,18 @@ encoding/size/JSON errors and NAS identity mismatch. A candidate probe failure
 is not proof that the whole connection failed; an HTTP 200 is not proof of
 sign-in. Unknown transport failures remain explicitly unknown rather than
 being guessed from sensitive raw exception text.
+
+For example, a regional relay probe returning 200 followed by a page handoff
+back to the HTTP alias, then the HTTPS alias, then the regional relay, is a
+discovery cycle. The native 202 means the app is preparing a destination
+handoff; it is not the upstream server's redirect status. Inspect the redirect
+details rather than treating the probe's 200 as proof that DSM loaded. Direct
+candidate timeouts can occur independently while the relay is reachable.
+
+Redirect details include the actual upstream redirect status, source and
+destination origins, root/DSM/other path categories, the number of internal
+same-origin redirects, and whether a query or fragment was removed. They do
+not retain the actual paths, parameter values, Location header, or cookies.
 
 **Copy last 1,000** includes this structured diagnostic information with stable
 per-copy attempt aliases. It excludes request paths, query strings, headers,

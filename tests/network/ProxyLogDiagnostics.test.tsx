@@ -42,6 +42,60 @@ function show(value: unknown) {
   );
 }
 describe("readable proxy request diagnostics", () => {
+  it("explains document HTTP cycles with safe redirect evidence rather than calling the server unreachable", () => {
+    show({
+      ...detail,
+      phase: "quickconnect_redirect",
+      stage: "handoff",
+      outcome: "failed",
+      code: "quickconnect_redirect_loop",
+      upstreamStatus: 302,
+      redirectSourcePath: "root",
+      redirectTargetPath: "dsm",
+      redirectTargetOrigin: "https://destination.test",
+      redirectQueryRemoved: true,
+      sameOriginRedirects: 2,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /fixture.test/ }));
+    const diagnostics = screen.getByRole("region", {
+      name: "Request diagnostics",
+    });
+    for (const text of [
+      "Upstream HTTP302",
+      "Redirect source originhttps://fixture.test",
+      "Redirect destination originhttps://destination.test",
+      "Source path categoryRoot",
+      "Destination path categoryDSM",
+      "Internal same-origin redirects2",
+      "Query or fragment removedYes",
+      "HTTP redirect cycle",
+      "does not mean the server was unreachable",
+      "before the proxy's local handoff response",
+    ])
+      expect(diagnostics).toHaveTextContent(text);
+    expect(diagnostics).not.toHaveTextContent(
+      "A failed candidate can be expected",
+    );
+  });
+  it("keeps a successful relay probe distinct from the subsequent document outcome", () => {
+    show({
+      ...detail,
+      phase: "quickconnect_relay_probe",
+      stage: "complete",
+      code: "quickconnect_upstream_status",
+      outcome: "succeeded",
+      upstreamStatus: 200,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /fixture.test/ }));
+    const diagnostics = screen.getByRole("region", {
+      name: "Request diagnostics",
+    });
+    expect(diagnostics).toHaveTextContent(
+      "Relay candidate · Request completed",
+    );
+    expect(diagnostics).toHaveTextContent("not the final connection result");
+    expect(diagnostics).not.toHaveTextContent("Redirect destination origin");
+  });
   it("shows compact phase/outcome/timing and detailed safe failure context", () => {
     show(detail);
     expect(

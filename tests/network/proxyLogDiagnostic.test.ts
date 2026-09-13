@@ -17,6 +17,66 @@ export const diagnostic: ProxyLogDiagnostic = {
   hop: 2,
 };
 describe("closed proxy log diagnostics", () => {
+  it("preserves bounded redirect evidence separately from local response status", () => {
+    const redirect = {
+      ...diagnostic,
+      phase: "quickconnect_redirect",
+      stage: "handoff",
+      code: "quickconnect_redirect_loop",
+      outcome: "failed",
+      upstreamStatus: 302,
+      redirectSourcePath: "root",
+      redirectTargetPath: "dsm",
+      redirectTargetOrigin: "https://example-nas.fr3.quickconnect.to",
+      redirectQueryRemoved: false,
+      sameOriginRedirects: 0,
+    };
+    expect(parseProxyLogDiagnostic(redirect)).toEqual(redirect);
+    const parsed = parseProxyLogDiagnostic({
+      ...redirect,
+      sameOriginRedirects: 20,
+      redirectQueryRemoved: true,
+      redirectTargetPath: "other",
+    })!;
+    expect(proxyDiagnosticLabels(parsed)).toMatchObject({
+      candidate: false,
+      redirectSourcePath: "Root",
+      redirectTargetPath: "Other",
+    });
+    expect(proxyDiagnosticLabels(parsed).explanation).toContain(
+      "HTTP redirect cycle",
+    );
+    expect(proxyDiagnosticLabels(parsed).explanation).toContain(
+      "does not mean the server was unreachable",
+    );
+  });
+  it.each([
+    { redirectSourcePath: "/private-path" },
+    { redirectTargetPath: "constructor" },
+    { redirectQueryRemoved: "true" },
+    { redirectQueryRemoved: 1 },
+    { sameOriginRedirects: -1 },
+    { sameOriginRedirects: 21 },
+    { sameOriginRedirects: 0.5 },
+    { redirectTargetOrigin: "https://fixture.test/private-path" },
+    { redirectTargetOrigin: "https://fixture.test?token=private-query" },
+    { redirectTargetOrigin: "https://fixture.test#private-fragment" },
+    {
+      redirectTargetOrigin:
+        "https://private-user:private-password@fixture.test",
+    },
+    { redirectTargetOrigin: "https://fixture.test/" },
+    { redirectTargetOrigin: "https://fixture.test." },
+    { redirectTargetOrigin: "https://fixture.test:0" },
+    { redirectTargetOrigin: "https://FIXTURE.test" },
+    { redirectTargetOrigin: "javascript:private-data" },
+    { redirectTargetOrigin: null },
+  ])(
+    "rejects noncanonical or secret-bearing redirect metadata %#",
+    (fields) => {
+      expect(parseProxyLogDiagnostic({ ...diagnostic, ...fields })).toBeNull();
+    },
+  );
   it("accepts native bounded metadata including zero rounded duration", () => {
     expect(parseProxyLogDiagnostic(diagnostic)).toEqual(diagnostic);
     expect(

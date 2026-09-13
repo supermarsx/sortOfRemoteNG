@@ -36,6 +36,7 @@ const LANES = {
   direct_probe: "Direct probe",
   relay_probe: "Relay probe",
 } as const;
+const REDIRECT_PATHS = { root: "Root", dsm: "DSM", other: "Other" } as const;
 
 /** Fixed application copy only. Never display an arbitrary native error chain. */
 export const PROXY_DIAGNOSTIC_EXPLANATIONS = {
@@ -56,7 +57,7 @@ export const PROXY_DIAGNOSTIC_EXPLANATIONS = {
   quickconnect_redirect_pending:
     "The app is preparing a reviewed destination handoff; this is not a sign-in result.",
   quickconnect_redirect_loop:
-    "Repeated QuickConnect navigation or its redirect limit stopped the handoff.",
+    "QuickConnect returned a repeated HTTP redirect cycle or reached its redirect limit. The proxy stopped the handoff; this does not mean the server was unreachable.",
   quickconnect_connector_restart:
     "The QuickConnect connector was encountered again during the handoff.",
   quickconnect_request_authority:
@@ -117,6 +118,11 @@ export interface ProxyLogDiagnostic {
   upstreamStatus?: number;
   attemptId?: string;
   hop?: number;
+  redirectSourcePath?: keyof typeof REDIRECT_PATHS;
+  redirectTargetPath?: keyof typeof REDIRECT_PATHS;
+  redirectTargetOrigin?: string;
+  redirectQueryRemoved?: boolean;
+  sameOriginRedirects?: number;
 }
 const fields = new Set([
   "lane",
@@ -130,6 +136,11 @@ const fields = new Set([
   "upstreamStatus",
   "attemptId",
   "hop",
+  "redirectSourcePath",
+  "redirectTargetPath",
+  "redirectTargetOrigin",
+  "redirectQueryRemoved",
+  "sameOriginRedirects",
 ]);
 const owns = (object: object, key: unknown): key is string =>
   typeof key === "string" && Object.prototype.hasOwnProperty.call(object, key);
@@ -138,6 +149,25 @@ const integer = (value: unknown, min: number, max: number): value is number =>
   Number.isSafeInteger(value) &&
   value >= min &&
   value <= max;
+
+function isCanonicalHttpOrigin(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 2048) return false;
+  try {
+    const url = new URL(value);
+    return (
+      ["http:", "https:"].includes(url.protocol) &&
+      url.origin === value &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      url.port !== "0" &&
+      !url.hostname.endsWith(".")
+    );
+  } catch {
+    return false;
+  }
+}
 
 export function parseProxyLogDiagnostic(
   value: unknown,
@@ -158,6 +188,24 @@ export function parseProxyLogDiagnostic(
       return null;
   if (data.lane !== undefined && !owns(LANES, data.lane)) return null;
   if (data.hop !== undefined && !integer(data.hop, 0, 20)) return null;
+  for (const key of ["redirectSourcePath", "redirectTargetPath"])
+    if (data[key] !== undefined && !owns(REDIRECT_PATHS, data[key]))
+      return null;
+  if (
+    data.redirectTargetOrigin !== undefined &&
+    !isCanonicalHttpOrigin(data.redirectTargetOrigin)
+  )
+    return null;
+  if (
+    data.redirectQueryRemoved !== undefined &&
+    typeof data.redirectQueryRemoved !== "boolean"
+  )
+    return null;
+  if (
+    data.sameOriginRedirects !== undefined &&
+    !integer(data.sameOriginRedirects, 0, 20)
+  )
+    return null;
   if (
     data.upstreamStatus !== undefined &&
     !integer(data.upstreamStatus, 100, 599)
@@ -192,6 +240,27 @@ export function parseProxyLogDiagnostic(
       ? {}
       : { attemptId: (data.attemptId as string).toLowerCase() }),
     ...(data.hop === undefined ? {} : { hop: data.hop as number }),
+    ...(data.redirectSourcePath === undefined
+      ? {}
+      : {
+          redirectSourcePath:
+            data.redirectSourcePath as ProxyLogDiagnostic["redirectSourcePath"],
+        }),
+    ...(data.redirectTargetPath === undefined
+      ? {}
+      : {
+          redirectTargetPath:
+            data.redirectTargetPath as ProxyLogDiagnostic["redirectTargetPath"],
+        }),
+    ...(data.redirectTargetOrigin === undefined
+      ? {}
+      : { redirectTargetOrigin: data.redirectTargetOrigin as string }),
+    ...(data.redirectQueryRemoved === undefined
+      ? {}
+      : { redirectQueryRemoved: data.redirectQueryRemoved as boolean }),
+    ...(data.sameOriginRedirects === undefined
+      ? {}
+      : { sameOriginRedirects: data.sameOriginRedirects as number }),
   };
 }
 
@@ -202,6 +271,14 @@ export function proxyDiagnosticLabels(data: ProxyLogDiagnostic) {
     stage: STAGES[data.stage],
     outcome: OUTCOMES[data.outcome],
     explanation: PROXY_DIAGNOSTIC_EXPLANATIONS[data.code],
+    redirectSourcePath:
+      data.redirectSourcePath === undefined
+        ? undefined
+        : REDIRECT_PATHS[data.redirectSourcePath],
+    redirectTargetPath:
+      data.redirectTargetPath === undefined
+        ? undefined
+        : REDIRECT_PATHS[data.redirectTargetPath],
     candidate:
       data.phase === "quickconnect_direct_probe" ||
       data.phase === "quickconnect_relay_probe",

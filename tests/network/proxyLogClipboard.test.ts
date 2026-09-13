@@ -13,6 +13,60 @@ const entry = (id: number): ProxyRequestLogEntry => ({
   error: null,
 });
 describe("safe retained proxy log clipboard snapshot", () => {
+  it("copies safe redirect categories and actual upstream status independently of a relay candidate result", () => {
+    const redirect: ProxyLogDiagnostic = {
+      phase: "quickconnect_redirect",
+      stage: "handoff",
+      outcome: "continuing",
+      code: "quickconnect_redirect_pending",
+      durationMs: 12,
+      upstreamStatus: 302,
+      redirectSourcePath: "root",
+      redirectTargetPath: "dsm",
+      redirectTargetOrigin: "https://target.test",
+      redirectQueryRemoved: true,
+      sameOriginRedirects: 2,
+    };
+    const result = proxyLogClipboard([
+      { ...entry(2), status: 202, diagnostic: redirect },
+      {
+        ...entry(1),
+        diagnostic: {
+          phase: "quickconnect_relay_probe",
+          stage: "complete",
+          outcome: "succeeded",
+          code: "quickconnect_upstream_status",
+          durationMs: 5,
+          upstreamStatus: 200,
+        },
+      },
+    ]);
+    const rows = result.text.split("\n").filter((line) => /^\d+\./.test(line));
+    expect(rows[0]).toContain("phase=Relay candidate");
+    expect(rows[0]).toContain("upstreamHTTP=200");
+    expect(rows[0]).toContain("candidate result only");
+    expect(rows[1]).toContain("HTTP 202");
+    expect(rows[1]).toContain("upstreamHTTP=302");
+    expect(rows[1]).toContain("redirectSourceOrigin=https://fixture.test");
+    expect(rows[1]).toContain("redirectTargetOrigin=https://target.test");
+    expect(rows[1]).toContain("redirectSourcePath=root");
+    expect(rows[1]).toContain("redirectTargetPath=dsm");
+    expect(rows[1]).toContain("redirectQueryRemoved=true");
+    expect(rows[1]).toContain("sameOriginRedirects=2");
+    expect(result.text).not.toMatch(/private\/path|token=secret|#secret/);
+    const invalid = proxyLogClipboard([
+      {
+        ...entry(3),
+        diagnostic: {
+          ...redirect,
+          redirectTargetOrigin: "https://target.test?private-token",
+        },
+      },
+    ]);
+    expect(invalid.text).not.toContain("private-token");
+    expect(invalid.text).toContain("sequence=3");
+    expect(invalid.text).not.toContain("redirectTargetOrigin=");
+  });
   it("correlates validated native attempt IDs across proxy sessions and includes safe timings/stages", () => {
     const detail: ProxyLogDiagnostic = {
       phase: "quickconnect_direct_probe",

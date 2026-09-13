@@ -34,6 +34,7 @@ import {
 } from "../../utils/network/proxyLogDiagnostic";
 import { Checkbox } from "../ui/forms";
 import { CopyLatestProxyLogButton } from "./CopyLatestProxyLogButton";
+import { proxyLogDestination } from "../../utils/network/proxyLogClipboard";
 import {
   classifySession,
   getProxySessionStatusMeta,
@@ -295,6 +296,42 @@ const LogRow: React.FC<{
                     <dd>{diagnostic.upstreamStatus}</dd>
                   </>
                 )}
+                {diagnostic.redirectTargetOrigin !== undefined && (
+                  <>
+                    <dt>Redirect source origin</dt>
+                    <dd className="break-all">
+                      {proxyLogDestination(entry.url).origin}
+                    </dd>
+                    <dt>Redirect destination origin</dt>
+                    <dd className="break-all">
+                      {diagnostic.redirectTargetOrigin}
+                    </dd>
+                  </>
+                )}
+                {labels.redirectSourcePath && (
+                  <>
+                    <dt>Source path category</dt>
+                    <dd>{labels.redirectSourcePath}</dd>
+                  </>
+                )}
+                {labels.redirectTargetPath && (
+                  <>
+                    <dt>Destination path category</dt>
+                    <dd>{labels.redirectTargetPath}</dd>
+                  </>
+                )}
+                {diagnostic.sameOriginRedirects !== undefined && (
+                  <>
+                    <dt>Internal same-origin redirects</dt>
+                    <dd>{diagnostic.sameOriginRedirects}</dd>
+                  </>
+                )}
+                {diagnostic.redirectQueryRemoved !== undefined && (
+                  <>
+                    <dt>Query or fragment removed</dt>
+                    <dd>{diagnostic.redirectQueryRemoved ? "Yes" : "No"}</dd>
+                  </>
+                )}
                 {diagnostic.attemptId && (
                   <>
                     <dt>Attempt</dt>
@@ -313,6 +350,13 @@ const LogRow: React.FC<{
                 <dd className="break-all font-mono">{diagnostic.code}</dd>
               </dl>
               <p>{labels.explanation}</p>
+              {diagnostic.redirectTargetOrigin !== undefined && (
+                <p className="text-[var(--color-textMuted)]">
+                  Upstream HTTP is the server's redirect response, before the
+                  proxy's local handoff response. Only path categories are
+                  retained, not paths or removed parameters.
+                </p>
+              )}
               {labels.candidate && (
                 <p className="text-[var(--color-textMuted)]">
                   This is one candidate route, not the final connection result.
