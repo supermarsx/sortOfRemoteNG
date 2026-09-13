@@ -1029,10 +1029,16 @@ export default function DocumentsWorkspace({
             />
           )}
           {section === "tickets" && (
-            <div className={styles.ticketFilters} aria-label="Ticket filters">
+            <div
+              className={styles.ticketFilters}
+              role="group"
+              aria-label="Ticket filters"
+            >
               <Select
                 label="Filter ticket status"
                 variant="form-sm"
+                className={styles.ticketFilter}
+                title={`Ticket status: ${ticketStatus ? ticketStatus.replace(/-/g, " ") : "All statuses"}`}
                 value={ticketStatus}
                 onChange={(value) => {
                   setTicketStatus(value as TicketFilters["status"]);
@@ -1049,6 +1055,8 @@ export default function DocumentsWorkspace({
               <Select
                 label="Filter ticket priority"
                 variant="form-sm"
+                className={styles.ticketFilter}
+                title={`Ticket priority: ${ticketPriority || "All priorities"}`}
                 value={ticketPriority}
                 onChange={(value) => {
                   setTicketPriority(value as TicketFilters["priority"]);
@@ -1065,7 +1073,10 @@ export default function DocumentsWorkspace({
               <Select
                 label="Filter ticket tag"
                 variant="form-sm"
+                className={`${styles.ticketFilter} ${styles.ticketFilterWide}`}
+                title={`Ticket tag: ${ticketTag || "All tags"}`}
                 searchable
+                searchPlaceholder="Search ticket tags"
                 value={ticketTag}
                 onChange={(value) => {
                   setTicketTag(value);
@@ -1076,14 +1087,14 @@ export default function DocumentsWorkspace({
                   ...ticketTags.map((tag) => ({ value: tag, label: tag })),
                 ]}
               />
-              <div className="flex items-center justify-between gap-2">
+              <div className={styles.ticketFilterSummary}>
                 <span role="status">
                   {visible.length} of {data.tickets.length} tickets
                 </span>
                 {(query || ticketStatus || ticketPriority || ticketTag) && (
                   <button
                     type="button"
-                    className="sor-btn sor-btn-secondary"
+                    className={`sor-btn sor-btn-secondary ${styles.clearTicketFilters}`}
                     onClick={clearFilters}
                   >
                     <X size={12} />

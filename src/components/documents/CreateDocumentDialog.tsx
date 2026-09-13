@@ -357,7 +357,7 @@ function DocumentCreationForm(props: CreateDocumentDialogProps) {
                     return (
                       <label
                         key={template.id}
-                        className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 ${!enabled ? "cursor-not-allowed border-[var(--color-border)] opacity-50" : starter === template.id ? "cursor-pointer border-primary bg-primary/10" : "cursor-pointer border-[var(--color-border)] bg-[var(--color-background)] hover:border-primary/50"}`}
+                        className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 ${!enabled ? "cursor-not-allowed border-[var(--color-border)] opacity-50" : starter === template.id ? "cursor-pointer border-primary" : "cursor-pointer border-[var(--color-border)] bg-[var(--color-background)] hover:border-primary/50"}`}
                       >
                         <input
                           className="sr-only peer"
@@ -465,7 +465,7 @@ function DocumentCreationForm(props: CreateDocumentDialogProps) {
           </span>
           <button
             type="button"
-            className="sor-btn-secondary"
+            className="sor-btn sor-btn-secondary"
             onClick={close}
             disabled={busy}
           >
@@ -473,7 +473,7 @@ function DocumentCreationForm(props: CreateDocumentDialogProps) {
           </button>
           <button
             type="submit"
-            className="sor-btn-primary flex items-center gap-2"
+            className="sor-btn sor-btn-primary"
             disabled={unavailable || !name.trim() || !allowed || !folderExists}
           >
             {busy ? (

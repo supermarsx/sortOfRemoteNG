@@ -35,10 +35,11 @@ export function DocumentIconPicker({
     <div className="min-w-0">
       <button
         type="button"
-        className="sor-btn-secondary flex items-center gap-2"
+        className="sor-btn sor-btn-secondary"
         aria-label={`Document icon: ${current?.label ?? "Text file"}`}
         aria-expanded={open}
         aria-controls={id}
+        title="Choose document icon"
         disabled={disabled}
         onClick={() => setOpen(!open)}
       >
@@ -74,7 +75,7 @@ export function DocumentIconPicker({
               <button
                 key={entry.key}
                 type="button"
-                className={`sor-icon-btn relative h-10 w-10 ${entry.key === value ? "bg-primary/10 text-primary ring-1 ring-primary" : ""}`}
+                className="sor-icon-btn sor-accent-choice relative h-10 w-10"
                 aria-label={entry.label}
                 aria-pressed={entry.key === value}
                 title={entry.label}

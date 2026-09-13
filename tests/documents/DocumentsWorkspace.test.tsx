@@ -25,6 +25,7 @@ import { fixture } from "./fixtures";
 import type { DatabaseDocumentType } from "../../src/types/settings/databaseSettings";
 import { normalizeDatabaseDocuments } from "../../src/utils/documents/validation";
 import { DOCUMENT_TYPE_OPTIONS } from "../../src/utils/documents/documentTypePolicy";
+import styles from "../../src/components/documents/documents.module.css";
 
 const mock = vi.hoisted(() => ({
   ready: true,
@@ -675,6 +676,29 @@ describe("protected document workspace integration", () => {
     await loaded();
     fireEvent.click(screen.getByRole("button", { name: "Service desk" }));
     expect(screen.getByText("2 of 2 tickets")).toBeInTheDocument();
+    const filters = screen.getByRole("group", { name: "Ticket filters" });
+    const status = within(filters).getByRole("combobox", {
+      name: "Filter ticket status",
+    });
+    const priority = within(filters).getByRole("combobox", {
+      name: "Filter ticket priority",
+    });
+    const tag = within(filters).getByRole("combobox", {
+      name: "Filter ticket tag",
+    });
+    expect(filters).toHaveClass(styles.ticketFilters);
+    for (const control of [status, priority, tag]) {
+      expect(control).toHaveClass("sor-form-select-sm", styles.ticketFilter);
+    }
+    expect(status).not.toHaveClass(styles.ticketFilterWide);
+    expect(priority).not.toHaveClass(styles.ticketFilterWide);
+    expect(tag).toHaveClass(styles.ticketFilterWide);
+    expect(status).toHaveAttribute("title", "Ticket status: All statuses");
+    expect(priority).toHaveAttribute(
+      "title",
+      "Ticket priority: All priorities",
+    );
+    expect(tag).toHaveAttribute("title", "Ticket tag: All tags");
     fireEvent.change(screen.getByLabelText("Search documents and records"), {
       target: { value: "TWELVE" },
     });
@@ -690,10 +714,19 @@ describe("protected document workspace integration", () => {
     fireEvent.click(
       screen.getByRole("combobox", { name: "Filter ticket tag" }),
     );
+    fireEvent.change(screen.getByLabelText("Search ticket tags"), {
+      target: { value: "Off" },
+    });
+    expect(screen.queryByRole("option", { name: "Network" })).toBeNull();
     fireEvent.mouseDown(screen.getByRole("option", { name: "Office" }));
+    expect(tag).toHaveFocus();
+    expect(tag).toHaveAttribute("title", "Ticket tag: Office");
     expect(screen.getByText("0 of 2 tickets")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByText("2 of 2 tickets")).toBeInTheDocument();
+    expect(status).toHaveTextContent("All statuses");
+    expect(priority).toHaveTextContent("All priorities");
+    expect(tag).toHaveTextContent("All tags");
     expect(saved.tickets).toHaveLength(2);
     expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
   });

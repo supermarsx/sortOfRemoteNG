@@ -57,6 +57,40 @@ const submit = () =>
 afterEach(cleanup);
 
 describe("new-document dialog", () => {
+  it("uses complete app button recipes and outlined icon/template selection", () => {
+    render(<CreateDocumentDialog {...props()} />);
+    const choose = screen.getByRole("button", {
+      name: "Document icon: Text file",
+    });
+    expect(choose).toHaveClass("sor-btn", "sor-btn-secondary");
+    expect(choose).toHaveAttribute("title", "Choose document icon");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveClass(
+      "sor-btn",
+      "sor-btn-secondary",
+    );
+    expect(screen.getByRole("button", { name: "Create document" })).toHaveClass(
+      "sor-btn",
+      "sor-btn-primary",
+    );
+    expect(
+      screen.getByRole("radio", { name: "Blank document" }).closest("label"),
+    ).toHaveClass("border-primary");
+    expect(
+      screen.getByRole("radio", { name: "Blank document" }).closest("label"),
+    ).not.toHaveClass("bg-primary/10");
+    fireEvent.click(choose);
+    fireEvent.change(screen.getByLabelText("Search document icons"), {
+      target: { value: "Text file" },
+    });
+    const selectedIcon = within(
+      screen.getByRole("group", { name: "Document icons" }),
+    ).getByRole("button", { name: "Text file" });
+    expect(selectedIcon).toHaveClass("sor-icon-btn", "sor-accent-choice");
+    expect(selectedIcon).toHaveAttribute("aria-pressed", "true");
+    expect(selectedIcon).not.toHaveClass("bg-primary/10", "ring-primary");
+    expect(selectedIcon.querySelector("svg")).not.toBeNull();
+  });
+
   it("creates nothing on open, focuses the name, and cancels without creating", async () => {
     const p = props();
     const { rerender } = render(<CreateDocumentDialog {...p} isOpen={false} />);
