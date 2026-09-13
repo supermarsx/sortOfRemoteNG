@@ -48,6 +48,7 @@ let fetch: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let beacon: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let xhrOpen: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let xhrHeader: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
+let xhrSend: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let constructed: Array<{ kind: string; args: unknown[] }>;
 const RealRequest = globalThis.Request;
 
@@ -59,6 +60,7 @@ beforeEach(() => {
   beacon = vi.fn().mockReturnValue(true);
   xhrOpen = vi.fn();
   xhrHeader = vi.fn();
+  xhrSend = vi.fn();
   constructed = [];
   vi.stubGlobal("fetch", fetch);
   vi.stubGlobal("Request", RealRequest);
@@ -70,6 +72,9 @@ beforeEach(() => {
       }
       setRequestHeader(...args: unknown[]) {
         xhrHeader(...args);
+      }
+      send(...args: unknown[]) {
+        xhrSend(...args);
       }
     },
   );
@@ -150,6 +155,63 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   };
   const directProbe =
     "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
+  it("preserves the exact singleton tunnel body and content type through regional fetch and XHR", async () => {
+    const body = JSON.stringify([
+      {
+        version: 1,
+        command: "request_tunnel",
+        stop_when_error: false,
+        stop_when_success: true,
+        id: "mainapp_https",
+        serverID: "example-nas",
+        is_gofile: false,
+        path: "",
+      },
+    ]);
+    const mime = "application/x-www-form-urlencoded; charset=UTF-8";
+    const destination = "https://dec.quickconnect.to/Serv.php";
+    const expected =
+      discoveredProxy + "?destination=" + encodeURIComponent(destination);
+    start(discoveryConfig());
+    await window.fetch(destination, {
+      method: "POST",
+      body,
+      credentials: "include",
+      headers: { "Content-Type": mime },
+    });
+    const options = fetch.mock.calls[0][1] as RequestInit;
+    expect(fetch.mock.calls[0][0]).toBe(expected);
+    expect(options.body).toBe(body);
+    expect(options.credentials).toBe("omit");
+    expect(new Headers(options.headers).get("content-type")).toBe(mime);
+    expect(
+      new Headers(options.headers).get("X-Sorng-QuickConnect-Document"),
+    ).toBe("3");
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", destination, true);
+    xhr.setRequestHeader("Content-Type", mime);
+    xhr.send(body);
+    expect(xhrOpen).toHaveBeenCalledWith("POST", expected, true);
+    expect(xhrHeader.mock.calls).toEqual([
+      ["X-Sorng-QuickConnect-Document", "3"],
+      ["Content-Type", mime],
+    ]);
+    expect(xhrSend).toHaveBeenCalledExactlyOnceWith(body);
+    await window.fetch(
+      new RealRequest(destination, {
+        method: "POST",
+        body,
+        headers: { "Content-Type": mime },
+      }),
+    );
+    const replay = fetch.mock.calls[1][0] as Request;
+    expect(replay.url).toBe(expected);
+    expect(await replay.text()).toBe(body);
+    expect(replay.headers.get("content-type")).toBe(mime);
+    expect(replay.headers.get("X-Sorng-QuickConnect-Document")).toBe("3");
+    expect(replay.credentials).toBe("omit");
+    expect(report).not.toHaveBeenCalled();
+  });
   it.each(["/Serv.php", proxy + "/Serv.php"])(
     "keeps source-global discovery %s on the learning route after URL rewriting",
     async (destination) => {

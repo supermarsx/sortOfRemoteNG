@@ -1,5 +1,7 @@
 //! Synthetic verified control replies enroll exact routes; no NAS, provider
 //! API, OS trust store or user credentials are accessed.
+#[path = "http_quickconnect_tunnel_tests.rs"]
+mod tunnel_tests;
 use super::*;
 const REGIONAL: &str = "https://dec.quickconnect.to/Serv.php";
 const PROBE: &str = "https://test-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true";

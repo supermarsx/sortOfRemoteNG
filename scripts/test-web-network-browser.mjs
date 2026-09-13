@@ -55,6 +55,18 @@ const controlBody = JSON.stringify(
     path: "",
   })),
 );
+const tunnelBody = JSON.stringify([
+  {
+    version: 1,
+    command: "request_tunnel",
+    stop_when_error: false,
+    stop_when_success: true,
+    id: "mainapp_https",
+    serverID: "example-nas",
+    is_gofile: false,
+    path: "",
+  },
+]);
 const profile = await mkdtemp(path.join(tmpdir(), "sorng-network-smoke-"));
 let fontRequests = 0;
 let directBytes = 0;
@@ -258,6 +270,16 @@ const installedNetwork=installWebNetworkClient(${JSON.stringify(config)}, functi
    const response=await fetch('${regionalControl}',{method:'POST',body,credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}});
    if(!response.ok||await response.text()!==body)throw Error('Regional response changed');
  });
+ await check('regional singleton request_tunnel fetch preserves all eight fields',async()=>{
+   const body=${JSON.stringify(tunnelBody)};
+   const response=await fetch('${regionalControl}',{method:'POST',body,credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}});
+   if(!response.ok||await response.text()!==body)throw Error('Tunnel fetch body changed');
+ });
+ await check('regional singleton request_tunnel XHR preserves all eight fields',async()=>{
+   const body=${JSON.stringify(tunnelBody)};
+   const response=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','${regionalControl}',true);xhr.withCredentials=true;xhr.setRequestHeader('Content-Type','application/x-www-form-urlencoded; charset=UTF-8');xhr.onload=()=>xhr.status===200?resolve(xhr.responseText):reject(Error('Tunnel status'));xhr.onerror=()=>reject(Error('Tunnel network'));xhr.send(body);});
+   if(response!==body)throw Error('Tunnel XHR body changed');
+ });
  await check('same-NAS GET probe preserves real XHR response and browser headers',async()=>{
    const response=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('GET',${JSON.stringify(directProbe)},true);xhr.responseType='json';xhr.onload=()=>xhr.status===200?resolve(xhr.response):reject(Error('Probe status'));xhr.onerror=()=>reject(Error('Probe network'));xhr.send();});
    if(response.marker!=='loopback-probe')throw Error('Probe response fabricated or changed');
@@ -382,6 +404,7 @@ const installedNetwork=installWebNetworkClient(${JSON.stringify(config)}, functi
     request.url.startsWith(discoveredPath + "?")
       ? {
           document: request.headers["x-sorng-quickconnect-document"],
+          contentType: request.headers["content-type"] ?? null,
           origin: request.headers.origin ?? null,
           fetchSite: request.headers["sec-fetch-site"],
           fetchMode: request.headers["sec-fetch-mode"],
@@ -484,7 +507,7 @@ try {
   const dynamic = received.filter((item) =>
     item.url.startsWith(discoveredPath + "?"),
   );
-  assert.equal(dynamic.length, 4);
+  assert.equal(dynamic.length, 6);
   for (const item of dynamic) {
     assert.ok(item.document === "7" || item.document === "11");
     assert.equal(item.fetchSite, "same-origin");
@@ -497,6 +520,17 @@ try {
         : item.document === "11"
           ? globalFrameOrigin
           : origin,
+    );
+  }
+  const tunnels = dynamic.filter((item) => item.body === tunnelBody);
+  assert.equal(tunnels.length, 2);
+  for (const item of tunnels) {
+    assert.equal(item.url, discoveredUrl(regionalControl));
+    assert.equal(item.method, "POST");
+    assert.equal(item.document, "7");
+    assert.equal(
+      item.contentType,
+      "application/x-www-form-urlencoded; charset=UTF-8",
     );
   }
   for (const item of received.filter((item) => item.document === "11")) {
@@ -525,6 +559,8 @@ try {
         method: "POST",
         body: controlBody,
       },
+      { url: discoveredUrl(regionalControl), method: "POST", body: tunnelBody },
+      { url: discoveredUrl(regionalControl), method: "POST", body: tunnelBody },
       { url: discoveredUrl(directProbe), method: "GET", body: "" },
       { url: discoveredUrl(unlearnedProbe), method: "GET", body: "" },
       { url: "/string", method: "POST", body: "string-body" },

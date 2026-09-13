@@ -108,7 +108,7 @@ does not delete explicitly trusted destinations; those remain subject to the
 general redirect policy. The derived runtime origin context is not saved or
 imported as connection policy.
 
-### QuickConnect discovery and learned probes
+### QuickConnect discovery, learned probes and bounded tunnel setup
 
 The same checkbox also permits a closed, anonymous initial discovery operation for
 a recognized original NAS alias: **POST
@@ -123,7 +123,7 @@ handoff; it does not reinterpret `/Serv.php` on another website or accept extra
 paths, query parameters or fragments as discovery requests.
 
 The document client maps this exact, query-free URL to a reserved endpoint on
-the session's protected loopback proxy. Native validation accepts only the
+the session's protected loopback proxy. Initial discovery validation accepts the
 two-entry `get_server_info` JSON request for `mainapp_https` then
 `mainapp_http`, with both `serverID` values matching the original alias,
 `version: 1`, both stop flags false, and `is_gofile: false`. Both path values
@@ -145,7 +145,8 @@ a private native registry for the **same original alias and current document**:
 - `sites[]` may name a single-label `<site>.quickconnect.to` control host, such
   as `dec.quickconnect.to`. Only its query-free HTTPS port-443 `/Serv.php` route
   is enrolled, and it accepts the same exact two-entry `get_server_info` POST
-  schema. A syntactically matching hostname alone is not permission.
+  schema or the bounded tunnel-setup operation described below. A syntactically
+  matching hostname alone is not permission.
 - `smartdns.host`, `smartdns.lan` and `smartdns.lanv6` may supply same-NAS direct
   hosts matching the namespace above. Only explicitly returned
   `service.port`/`service.ext_port` values of 5001 or 5002 can enroll the exact
@@ -162,10 +163,32 @@ requested NAS alias. The request's validated original alias remains authority.
 A cached regional control host can be the page's first request. If that exact
 regional POST lacks a current-document grant, native routing first validates
 its body and performs one discovery exchange with the fixed global provider
-using the same validated body. It forwards to the region only if that verified
+using validated discovery parameters. It forwards to the region only if that verified
 reply advertises it. This warm-up shares the existing concurrency, deadline
 and document-revocation limits; it is not recursive and never bootstraps a cold
 direct GET probe. An unadvertised region remains refused without contacting it.
+
+For an authorized regional control endpoint, the same checkbox also permits a
+single-element JSON array containing exactly eight `request_tunnel` fields:
+`version: 1`, `command: "request_tunnel"`, `stop_when_error: false`,
+`stop_when_success: true`, `id: "mainapp_https"` or `"mainapp_http"`, the original alias in
+`serverID`, `is_gofile: false`, and the bounded safe `path` (which may be empty).
+Extra fields, other commands, batching and other service IDs are refused.
+The fixed global control endpoint cannot receive this operation.
+
+If tunnel setup is the first request to a cached region, the global warm-up
+reconstructs the two safe `get_server_info` commands from its validated alias
+and path. It **does not send or replay `request_tunnel` to global**. Only after
+the verified discovery response advertises the exact region is the original
+tunnel operation sent there once. There is no automatic tunnel retry, redirect
+following, alternate route or direct-network fallback. It retains the same
+anonymous client, configured proxy, verified TLS, size/deadline/concurrency and
+document-revocation bounds as discovery.
+
+Tunnel responses do not enroll additional origins or resource permissions.
+Supporting this setup command does not mean all subsequent relay pages,
+subresources or wake-up commands are supported; those retain their separate
+routing and trust requirements.
 
 Handled discovery failures include fixed, secret-free diagnostic codes in the
 bounded proxy request log. For example, `quickconnect_destination_not_discovered`
@@ -195,7 +218,7 @@ enabled direct **navigation** pattern does not itself enroll a probe URL.
 Clearing the default-destinations checkbox removes both built-in navigation
 and discovery authority; independently saved redirect trust remains separate.
 
-Other `/Serv.php` commands such as `request_tunnel`, long-poll wakeup endpoints,
+Other `/Serv.php` commands, long-poll wakeup endpoints,
 arbitrary LAN/IP probes, other paths or ports, and a general URL relay remain
 unsupported. Those requests still need distinct reviewed routing and may
 prevent a complete QuickConnect connection. The public homepage's normal alias

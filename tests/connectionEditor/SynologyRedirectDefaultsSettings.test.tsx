@@ -47,9 +47,16 @@ describe("Synology default redirect controls", () => {
     );
     expect(
       screen.getByText(
-        /Only get_server_info discovery POSTs and exact same-NAS/,
+        /Supported requests are bounded get_server_info discovery POSTs, selected-NAS regional request_tunnel relay setup for mainapp_https or mainapp_http/,
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Relay setup is sent once to an approved region, never replayed to global/,
+      ),
+    ).toHaveTextContent(
+      "No cookies, passwords, arbitrary destinations or certificate exceptions are granted",
+    );
     const list = screen.getByRole("list", {
       name: "Synology default redirect destinations",
     });

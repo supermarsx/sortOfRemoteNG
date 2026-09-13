@@ -37,7 +37,7 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
         variant="form"
         label="Use Synology default redirect destinations"
         checked={enabled}
-        description="On by default. Allows anonymous handoffs to these destinations and, for a recognized original NAS alias, initial discovery through the app proxy at https://global.quickconnect.to/Serv.php, verified regional retries and same-NAS direct checks. Require HTTPS upstream still blocks HTTP. Saved-login forwarding always needs separate approval."
+        description="On by default. Allows anonymous handoffs to these destinations and, for a recognized original NAS alias, initial discovery through the app proxy at https://global.quickconnect.to/Serv.php, verified regional discovery, bounded relay setup and same-NAS direct checks. Require HTTPS upstream still blocks HTTP. Saved-login forwarding always needs separate approval."
         onChange={(useDefaultRedirectDestinations) =>
           mgr.setFormData((previous) => {
             try {
@@ -104,13 +104,15 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
         This list is derived from the original connection, not saved as
         individual trust entries. Disabling it does not remove destinations you
         explicitly trusted below or in Trust Center; those follow the general
-        redirect policy. Only get_server_info discovery POSTs and exact same-NAS
-        pingpong reachability GETs are included. Regional control and probe
-        targets must first be learned from verified provider responses for the
-        current document. Other APIs, tunnel requests and wakeup calls need
-        separate routing. No cookies, passwords, general resource origins or
-        certificate exceptions are granted. Save the connection to retain this
-        preference.
+        redirect policy. Supported requests are bounded get_server_info
+        discovery POSTs, selected-NAS regional request_tunnel relay setup for
+        mainapp_https or mainapp_http, and exact same-NAS pingpong reachability
+        GETs. Regional control and probe targets must first be learned from
+        verified provider responses for the current document. Relay setup is
+        sent once to an approved region, never replayed to global. Other APIs,
+        relay subresources and wakeup calls need separate routing. No cookies,
+        passwords, arbitrary destinations or certificate exceptions are granted.
+        Save the connection to retain this preference.
       </p>
     </section>
   );

@@ -118,6 +118,7 @@ async fn scripted_peer(reply: Arc<FixtureReply>, hold: bool, https_proxy: bool) 
         .use_preconfigured_tls(build_pinned_tls_config(hex::encode(Sha256::digest(cert))).unwrap())
         .cookie_store(false)
         .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
         .timeout(Duration::from_secs(3))
         .build()
         .unwrap();

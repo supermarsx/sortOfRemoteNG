@@ -1,6 +1,6 @@
-//! Closed anonymous QuickConnect discovery RPC. No arbitrary URLs, inherited
-//! website credentials or tunnel requests. Verified replies may enroll bounded
-//! original-NAS probe/control destinations in a private document registry.
+//! Closed anonymous QuickConnect discovery and tunnel-setup RPCs. No arbitrary
+//! URLs or inherited website credentials. Only verified discovery replies may
+//! enroll original-NAS probe/control destinations in a private document registry.
 #[path = "http_quickconnect_discovered.rs"]
 mod discovered;
 use super::AxumProxyState;
@@ -103,6 +103,7 @@ impl ReviewedQuickConnectControl {
             .cookie_store(false)
             .referer(false)
             .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
             .no_gzip()
             .no_brotli()
             .no_deflate()
@@ -154,18 +155,31 @@ struct ControlCommand {
     path: String,
 }
 
-fn validated_body(bytes: &[u8], alias: &str) -> Result<Vec<u8>, &'static str> {
-    let invalid = "Unsupported QuickConnect discovery request.";
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Operation {
+    Discovery,
+    Tunnel,
+    Probe,
+}
+
+struct ValidatedBody {
+    operation: Operation,
+    bytes: Vec<u8>,
+    discovery_body: Vec<u8>,
+}
+
+fn validated_body(bytes: &[u8], alias: &str) -> Result<ValidatedBody, &'static str> {
+    let invalid = "Unsupported QuickConnect control request.";
     if bytes.len() > MAX_REQUEST {
         return Err(invalid);
     }
-    let commands: [ControlCommand; 2] = serde_json::from_slice(bytes).map_err(|_| invalid)?;
-    for (command, id) in commands.iter().zip(["mainapp_https", "mainapp_http"]) {
+    let commands: Vec<ControlCommand> = serde_json::from_slice(bytes).map_err(|_| invalid)?;
+    if !matches!(commands.len(), 1 | 2) {
+        return Err(invalid);
+    }
+    for command in &commands {
         if command.version != 1
-            || command.command != "get_server_info"
             || command.stop_when_error
-            || command.stop_when_success
-            || command.id != id
             || command.server_id != alias
             || command.is_gofile
             || command.path.len() > 128
@@ -178,10 +192,51 @@ fn validated_body(bytes: &[u8], alias: &str) -> Result<Vec<u8>, &'static str> {
             return Err(invalid);
         }
     }
-    if commands[0].path != commands[1].path {
-        return Err(invalid);
-    }
-    serde_json::to_vec(&commands).map_err(|_| invalid)
+    let operation = match commands.as_slice() {
+        [https, http]
+            if https.command == "get_server_info"
+                && http.command == "get_server_info"
+                && https.id == "mainapp_https"
+                && http.id == "mainapp_http"
+                && !https.stop_when_success
+                && !http.stop_when_success
+                && https.path == http.path =>
+        {
+            Operation::Discovery
+        }
+        [tunnel]
+            if tunnel.command == "request_tunnel"
+                && matches!(tunnel.id.as_str(), "mainapp_https" | "mainapp_http")
+                && tunnel.stop_when_success =>
+        {
+            Operation::Tunnel
+        }
+        _ => return Err(invalid),
+    };
+    let bytes = serde_json::to_vec(&commands).map_err(|_| invalid)?;
+    let discovery_body = if operation == Operation::Discovery {
+        bytes.clone()
+    } else {
+        // Tunnel setup can mutate provider state. Its cold-route warm-up must
+        // be a newly constructed read-only discovery request, never a replay
+        // of the tunnel command against the global authority.
+        let discovery = ["mainapp_https", "mainapp_http"].map(|id| ControlCommand {
+            version: 1,
+            command: "get_server_info".into(),
+            stop_when_error: false,
+            stop_when_success: false,
+            id: id.into(),
+            server_id: alias.into(),
+            is_gofile: false,
+            path: commands[0].path.clone(),
+        });
+        serde_json::to_vec(&discovery).map_err(|_| invalid)?
+    };
+    Ok(ValidatedBody {
+        operation,
+        bytes,
+        discovery_body,
+    })
 }
 
 pub(super) fn manifest(
@@ -224,6 +279,7 @@ struct Exchange<'a> {
     alias: &'a str,
     url: reqwest::Url,
     route: discovered::Route,
+    operation: Operation,
     body: Vec<u8>,
     learned: bool,
 }
@@ -232,6 +288,13 @@ async fn exchange(
     control: &ReviewedQuickConnectControl,
     exchange: Exchange<'_>,
 ) -> Result<Response<Body>, &'static str> {
+    if exchange.operation == Operation::Tunnel
+        && (!exchange.learned
+            || exchange.route != discovered::Route::Control
+            || exchange.url.as_str() == UPSTREAM)
+    {
+        return Err("QuickConnect tunnel setup requires an approved regional control route.");
+    }
     let _download = control
         .downloads
         .acquire()
@@ -245,7 +308,7 @@ async fn exchange(
     {
         return Err("QuickConnect destination is not approved for this document.");
     }
-    let ticket = if exchange.route == discovered::Route::Control {
+    let ticket = if exchange.operation == Operation::Discovery {
         Some(LearningTicket {
             registry: &control.discovered,
             ticket: control
@@ -277,7 +340,7 @@ async fn exchange(
         .header("Accept-Encoding", "identity")
         .send()
         .await
-        .map_err(|_| "Verified QuickConnect discovery failed; no alternate route was attempted.")?;
+        .map_err(|_| "Verified QuickConnect request failed; no alternate route was attempted.")?;
     let status = response.status();
     if status.is_redirection()
         || !(200..600).contains(&status.as_u16())
@@ -453,7 +516,7 @@ pub(super) async fn handle(
     {
         return refusal(
             StatusCode::BAD_REQUEST,
-            "Only protected QuickConnect discovery POSTs and approved GET probes are supported.",
+            "Only protected QuickConnect control POSTs and approved GET probes are supported.",
             Diagnostic::UnsupportedRequest,
         );
     }
@@ -505,14 +568,8 @@ pub(super) async fn handle(
     let sequence = sequence.unwrap();
     let approved = std::sync::atomic::AtomicBool::new(false);
     let candidate_current = std::sync::atomic::AtomicBool::new(false);
-    let description = format!(
-        "{}: {}",
-        match route {
-            discovered::Route::Control => "QuickConnect regional discovery",
-            discovered::Route::Probe => "QuickConnect NAS probe",
-        },
-        destination.origin().ascii_serialization()
-    );
+    let tunnel_requested = std::sync::atomic::AtomicBool::new(false);
+    let destination_origin = destination.origin().ascii_serialization();
     let operation = async {
         state
             .network
@@ -536,7 +593,11 @@ pub(super) async fn handle(
                 let body = match if post {
                     validated_body(&bytes, &alias)
                 } else if bytes.is_empty() {
-                    Ok(Vec::new())
+                    Ok(ValidatedBody {
+                        operation: Operation::Probe,
+                        bytes: Vec::new(),
+                        discovery_body: Vec::new(),
+                    })
                 } else {
                     Err("QuickConnect probes cannot carry a body.")
                 } {
@@ -549,6 +610,16 @@ pub(super) async fn handle(
                         ))
                     }
                 };
+                if body.operation == Operation::Tunnel {
+                    tunnel_requested.store(true, std::sync::atomic::Ordering::Relaxed);
+                    if !learned || destination.as_str() == UPSTREAM {
+                        return Ok(refusal(
+                            StatusCode::BAD_REQUEST,
+                            "QuickConnect tunnel setup requires an approved regional control route.",
+                            Diagnostic::UnsupportedRequest,
+                        ));
+                    }
+                }
                 let has_grant = || {
                     control.discovered.lock().is_ok_and(|registry| {
                         registry.allows(sequence, &alias, &destination) == Some(route)
@@ -557,7 +628,8 @@ pub(super) async fn handle(
                 if learned && !has_grant() && route == discovered::Route::Control {
                     // A cached regional first request still needs fresh
                     // document authority. Ask only the fixed verified provider
-                    // with this exact validated discovery body, once.
+                    // with a validated discovery body, once. Tunnel setup is
+                    // never replayed against this global authority.
                     let mut warmup = match exchange(
                         control,
                         Exchange {
@@ -566,7 +638,8 @@ pub(super) async fn handle(
                             alias: &alias,
                             url: reqwest::Url::parse(UPSTREAM).expect("fixed provider URL"),
                             route: discovered::Route::Control,
-                            body: body.clone(),
+                            operation: Operation::Discovery,
+                            body: body.discovery_body,
                             learned: false,
                         },
                     )
@@ -607,7 +680,8 @@ pub(super) async fn handle(
                         alias: &alias,
                         url: destination,
                         route,
-                        body,
+                        operation: body.operation,
+                        body: body.bytes,
                         learned,
                     },
                 )
@@ -626,7 +700,20 @@ pub(super) async fn handle(
             Diagnostic::Timeout,
         ),
     };
-    if learned && candidate_current.load(std::sync::atomic::Ordering::Relaxed) {
+    let tunnel_requested = tunnel_requested.load(std::sync::atomic::Ordering::Relaxed);
+    if (learned || tunnel_requested) && candidate_current.load(std::sync::atomic::Ordering::Relaxed)
+    {
+        let description = format!(
+            "{}: {destination_origin}",
+            if tunnel_requested {
+                "QuickConnect tunnel setup"
+            } else {
+                match route {
+                    discovered::Route::Control => "QuickConnect regional discovery",
+                    discovered::Route::Probe => "QuickConnect NAS probe",
+                }
+            }
+        );
         let description = if approved.load(std::sync::atomic::Ordering::Relaxed) {
             description
         } else {
