@@ -6,13 +6,192 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::{collections::BTreeSet, sync::Mutex, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Mutex,
+    time::Duration,
+};
 use tokio::sync::{watch, Semaphore};
+
+#[cfg(test)]
+#[path = "http_referrer_policy_tests.rs"]
+mod referrer_policy_tests;
+
+#[derive(Clone, Copy)]
+enum DocumentReferrerPolicy {
+    OriginAllowed,
+    SameOriginOnly,
+    Suppress,
+}
+impl DocumentReferrerPolicy {
+    fn token(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "no-referrer" => Some(Self::Suppress),
+            "same-origin" => Some(Self::SameOriginOnly),
+            "no-referrer-when-downgrade"
+            | "origin"
+            | "origin-when-cross-origin"
+            | "strict-origin"
+            | "strict-origin-when-cross-origin"
+            | "unsafe-url" => Some(Self::OriginAllowed),
+            _ => None,
+        }
+    }
+    fn restrict(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Suppress, _) | (_, Self::Suppress) => Self::Suppress,
+            (Self::SameOriginOnly, _) | (_, Self::SameOriginOnly) => Self::SameOriginOnly,
+            _ => Self::OriginAllowed,
+        }
+    }
+    fn from_response(headers: &axum::http::HeaderMap, html: &str) -> Self {
+        let mut policy = Self::OriginAllowed;
+        for value in headers.get_all("referrer-policy") {
+            let Ok(value) = value.to_str() else {
+                return Self::Suppress;
+            };
+            if value.len() > 1024 {
+                return Self::Suppress;
+            }
+            for token in value.split(',') {
+                if let Some(recognized) = Self::token(token) {
+                    policy = recognized;
+                }
+            }
+        }
+        // Conservative static-meta inspection: ambiguous/encoded policy names
+        // suppress reconstruction. We never infer a permissive policy from JS,
+        // nor override an explicit stricter header with a later meta element.
+        static ATTR: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let attr = ATTR.get_or_init(|| {
+            regex::Regex::new(
+                r#"(?is)([a-z][a-z0-9_-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))"#,
+            )
+            .unwrap()
+        });
+        let lower = html.to_ascii_lowercase();
+        let mut cursor = 0;
+        let mut templates = 0usize;
+        while let Some(offset) = lower[cursor..].find('<') {
+            let start = cursor + offset;
+            if lower[start..].starts_with("<!--") {
+                let Some(end) = lower[start + 4..].find("-->") else {
+                    break;
+                };
+                cursor = start + 4 + end + 3;
+                continue;
+            }
+            let Some((tag_name, closing, end)) = super::proxy_response::html_tag(&lower, start)
+            else {
+                cursor = start + 1;
+                continue;
+            };
+            cursor = end;
+            if tag_name == "template" {
+                templates = if closing {
+                    templates.saturating_sub(1)
+                } else {
+                    templates + 1
+                };
+                continue;
+            }
+            if closing {
+                continue;
+            }
+            if tag_name == "plaintext" {
+                break;
+            }
+            if matches!(
+                tag_name,
+                "script"
+                    | "style"
+                    | "title"
+                    | "textarea"
+                    | "xmp"
+                    | "iframe"
+                    | "noembed"
+                    | "noframes"
+                    | "noscript"
+            ) {
+                let prefix = format!("</{tag_name}");
+                let mut search = cursor;
+                loop {
+                    let Some(offset) = lower[search..].find(&prefix) else {
+                        cursor = lower.len();
+                        break;
+                    };
+                    let close = search + offset;
+                    if let Some((name, true, close_end)) =
+                        super::proxy_response::html_tag(&lower, close)
+                    {
+                        if name == tag_name {
+                            cursor = close_end;
+                            break;
+                        }
+                    }
+                    search = close + prefix.len();
+                }
+                continue;
+            }
+            if tag_name != "meta" || templates > 0 {
+                continue;
+            }
+            let tag = &html[start..end];
+            let mut names = Vec::new();
+            let mut contents = Vec::new();
+            for value in attr.captures_iter(tag) {
+                let text = value
+                    .get(2)
+                    .or_else(|| value.get(3))
+                    .or_else(|| value.get(4))
+                    .unwrap()
+                    .as_str();
+                match value[1].to_ascii_lowercase().as_str() {
+                    "name" => names.push(text),
+                    "content" => contents.push(text),
+                    _ => {}
+                }
+            }
+            if names.iter().any(|name| name.contains('&')) {
+                return Self::Suppress;
+            }
+            if names
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case("referrer"))
+            {
+                if names.len() != 1 || contents.len() != 1 {
+                    return Self::Suppress;
+                }
+                if contents[0].contains('&') {
+                    return Self::Suppress;
+                }
+                if let Some(meta) = Self::token(contents[0]) {
+                    policy = policy.restrict(meta);
+                }
+            }
+        }
+        policy
+    }
+    fn origin(self, source: &str, destination: &reqwest::Url) -> Option<String> {
+        let source_url = reqwest::Url::parse(source).ok()?;
+        if source_url.origin().ascii_serialization() != source
+            || !matches!(source_url.scheme(), "http" | "https")
+            || !matches!(destination.scheme(), "http" | "https")
+            || source_url.scheme() == "https" && destination.scheme() != "https"
+            || matches!(self, Self::Suppress)
+            || matches!(self, Self::SameOriginOnly) && source_url.origin() != destination.origin()
+        {
+            return None;
+        }
+        Some(format!("{source}/"))
+    }
+}
 
 pub struct ProxyNetworkState {
     active: AtomicBool,
     document: watch::Sender<u64>,
     issued: Mutex<BTreeSet<u64>>,
+    document_referrers: Mutex<BTreeMap<u64, DocumentReferrerPolicy>>,
     origin_lease: Option<crate::webview_origins::ProxyOriginLease>,
     proxy_origin: Option<String>,
     pub(super) sockets: Arc<Semaphore>,
@@ -34,6 +213,7 @@ impl Default for ProxyNetworkState {
             active: AtomicBool::new(true),
             document: watch::channel(0).0,
             issued: Mutex::new(BTreeSet::new()),
+            document_referrers: Mutex::new(BTreeMap::new()),
             origin_lease: None,
             proxy_origin: None,
             sockets: Arc::new(Semaphore::new(16)),
@@ -44,6 +224,88 @@ impl Default for ProxyNetworkState {
 }
 
 impl ProxyNetworkState {
+    /// Native response evidence only. Retain no URL, page content or headers.
+    pub(super) fn record_document_referrer(
+        &self,
+        sequence: u64,
+        headers: &axum::http::HeaderMap,
+        html: &str,
+    ) {
+        if !self.is_active()
+            || !self
+                .issued
+                .lock()
+                .is_ok_and(|issued| issued.contains(&sequence))
+        {
+            return;
+        }
+        let policy = DocumentReferrerPolicy::from_response(headers, html);
+        let active = *self.document.borrow();
+        if let Ok(mut policies) = self.document_referrers.lock() {
+            policies.insert(sequence, policy);
+            while policies.len() > 64 {
+                if let Some(oldest) = policies.keys().copied().find(|value| *value != active) {
+                    policies.remove(&oldest);
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    pub(super) fn document_referrer_origin(
+        &self,
+        sequence: u64,
+        destination: &reqwest::Url,
+        source_origin: &str,
+    ) -> Option<String> {
+        let current = self.document.borrow();
+        if !self.is_active() || sequence == 0 || *current != sequence {
+            return None;
+        }
+        let policy = *self.document_referrers.lock().ok()?.get(&sequence)?;
+        policy.origin(source_origin, destination)
+    }
+    pub(super) fn with_selected_document_referrer_origin<T>(
+        &self,
+        destination: &reqwest::Url,
+        source_origin: &str,
+        expected_sequence: Option<u64>,
+        operation: impl FnOnce(Option<String>) -> T,
+    ) -> Result<T, &'static str> {
+        // The callback may lock attempt/cookie state: retain the established
+        // document -> attempt lock order and the selected-document lease.
+        let current = self.document.borrow();
+        if !self.is_active()
+            || *current == 0
+            || expected_sequence.is_some_and(|sequence| sequence != *current)
+        {
+            return Err("The proxy document is no longer active.");
+        }
+        let origin = self
+            .document_referrers
+            .lock()
+            .ok()
+            .and_then(|policies| policies.get(&*current).copied())
+            .and_then(|policy| policy.origin(source_origin, destination));
+        let result = operation(origin);
+        drop(current);
+        Ok(result)
+    }
+    pub(super) fn selected_document_sequence(&self) -> Option<u64> {
+        let current = self.document.borrow();
+        (self.is_active() && *current > 0).then_some(*current)
+    }
+    pub(super) fn selected_referrer_document_sequence(&self) -> Option<u64> {
+        let current = self.document.borrow();
+        if !self.is_active() || *current == 0 {
+            return None;
+        }
+        self.document_referrers
+            .lock()
+            .ok()?
+            .contains_key(&*current)
+            .then_some(*current)
+    }
     pub fn server_guard(self: &Arc<Self>) -> ProxyNetworkServerGuard {
         ProxyNetworkServerGuard(self.clone())
     }
@@ -92,6 +354,9 @@ impl ProxyNetworkState {
 
     pub fn revoke(&self) {
         self.active.store(false, Ordering::Release);
+        if let Ok(mut policies) = self.document_referrers.lock() {
+            policies.clear();
+        }
         if let Some(lease) = &self.origin_lease {
             lease.revoke();
         }

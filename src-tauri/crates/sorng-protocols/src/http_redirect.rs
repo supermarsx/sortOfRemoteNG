@@ -32,11 +32,18 @@ pub(super) struct PendingRedirect {
     // Vendor navigation belongs to the selected successful primary root, not
     // the numerically previous request (which may be a nested frame).
     http_cycle_primary: Option<u64>,
+    suppress_referrer: bool,
+    source_document: Option<u64>,
 }
 impl PendingRedirect {
     fn current(&self) -> bool {
         self.created.elapsed() < Duration::from_secs(120)
             && self.sequence.load(Ordering::SeqCst) == self.review.document_sequence
+            && self.source_document.is_none_or(|sequence| {
+                self.state
+                    .upgrade()
+                    .is_some_and(|state| state.network.document_is_current(sequence))
+            })
             && self.http_cycle_primary.is_none_or(|sequence| {
                 self.state.upgrade().is_some_and(|state| {
                     state.network.document_is_current(sequence)
@@ -96,6 +103,12 @@ pub(super) fn record_vendor(
     navigation_token: Option<String>,
     headers: &axum::http::HeaderMap,
 ) -> bool {
+    let Some(source_document) = state.network.selected_document_sequence() else {
+        return false;
+    };
+    let suppress_referrer =
+        !super::quickconnect_control::request_has_local_referrer(headers, &state.proxy_origin)
+            .unwrap_or(false);
     // This entry point is the verified vendor navigation adapter, not an HTTP
     // response. It can upgrade/finish a previously observed HTTP circuit, never
     // arm it. The provider also performs the HTTP-to-HTTPS alias upgrade in JS.
@@ -152,6 +165,10 @@ pub(super) fn record_vendor(
         navigation_token,
         edge,
         http_cycle_primary,
+        ReferrerEvidence {
+            suppress: suppress_referrer,
+            source_document: Some(source_document),
+        },
     )
 }
 
@@ -166,6 +183,7 @@ pub(super) fn cycle_context_is_anonymous(state: &AxumProxyState) -> bool {
         && state.proxy_policy.query_parameters.is_empty()
 }
 
+#[cfg(test)]
 pub(super) fn record_with_edge(
     state: &Arc<AxumProxyState>,
     destination: &reqwest::Url,
@@ -173,6 +191,27 @@ pub(super) fn record_with_edge(
     navigation_token: Option<String>,
     http_cycle_edge: Option<super::attempt::HttpRedirectEdge>,
 ) -> bool {
+    record_with_edge_and_referrer(
+        state,
+        destination,
+        document_sequence,
+        navigation_token,
+        http_cycle_edge,
+        false,
+    )
+}
+
+pub(super) fn record_with_edge_and_referrer(
+    state: &Arc<AxumProxyState>,
+    destination: &reqwest::Url,
+    document_sequence: u64,
+    navigation_token: Option<String>,
+    http_cycle_edge: Option<super::attempt::HttpRedirectEdge>,
+    suppress_referrer: bool,
+) -> bool {
+    // An initial 3xx has an issued navigation sequence but no successful
+    // source document. It may still transfer, without creating a referrer.
+    let source_document = state.network.selected_referrer_document_sequence();
     record_evidence(
         state,
         destination,
@@ -180,7 +219,16 @@ pub(super) fn record_with_edge(
         navigation_token,
         http_cycle_edge,
         None,
+        ReferrerEvidence {
+            suppress: suppress_referrer || source_document.is_none(),
+            source_document,
+        },
     )
+}
+
+struct ReferrerEvidence {
+    suppress: bool,
+    source_document: Option<u64>,
 }
 
 fn record_evidence(
@@ -190,6 +238,7 @@ fn record_evidence(
     navigation_token: Option<String>,
     http_cycle_edge: Option<super::attempt::HttpRedirectEdge>,
     http_cycle_primary: Option<u64>,
+    referrer: ReferrerEvidence,
 ) -> bool {
     if !destination_allowed(&state.proxy_policy, &state.target_origin, destination)
         || document_sequence == 0
@@ -229,6 +278,8 @@ fn record_evidence(
             state: Arc::downgrade(state),
             http_cycle_edge,
             http_cycle_primary,
+            suppress_referrer: referrer.suppress,
+            source_document: referrer.source_document,
         },
     );
     true
@@ -312,7 +363,13 @@ impl ProxySessionManager {
                 {
                     review.continuation_id = Some(
                         self.attempts
-                            .prepare_transfer(attempt, &destination, &review.receipt_id)
+                            .prepare_transfer_with_referrer_suppressed(
+                                attempt,
+                                &destination,
+                                &review.receipt_id,
+                                pending.suppress_referrer,
+                                pending.source_document,
+                            )
                             .ok()?,
                     );
                     attempt.consume_http_redirect(pending.http_cycle_edge.as_ref());
@@ -347,6 +404,8 @@ mod tests {
             state: std::sync::Weak::new(),
             http_cycle_edge: None,
             http_cycle_primary: None,
+            suppress_referrer: false,
+            source_document: None,
         };
         assert!(pending.current());
         sequence.store(2, Ordering::SeqCst);

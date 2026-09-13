@@ -81,9 +81,27 @@ pub struct AttemptSession {
     generation: u64,
     cache_seeded: Arc<AtomicBool>,
     root_document: Arc<AtomicU64>,
+    referrer_document: Arc<Mutex<std::sync::Weak<super::network::ProxyNetworkState>>>,
+    handoff_referrer: Arc<Mutex<Option<Option<String>>>>,
 }
 
 impl AttemptSession {
+    pub(super) fn bind_referrer_document(&self, network: &Arc<super::network::ProxyNetworkState>) {
+        if self.is_current() {
+            if let Ok(mut source) = self.referrer_document.lock() {
+                *source = Arc::downgrade(network);
+            }
+        }
+    }
+    /// Outer Some claims this handoff's first navigation even when source
+    /// policy suppressed its origin. Never reuse the hint after dispatch.
+    pub(super) fn take_handoff_referrer(&self) -> Option<Option<String>> {
+        let state = self.attempt.state.lock().ok()?;
+        if !self.current(&state) {
+            return None;
+        }
+        self.handoff_referrer.lock().ok()?.take()
+    }
     pub(super) fn document_landed(&self, url: &Url, sequence: u64) {
         if self.is_current() {
             let root = url.origin().ascii_serialization() == self.origin
@@ -590,6 +608,7 @@ struct Ticket {
     destination: String,
     released: bool,
     created: Instant,
+    referrer_origin: Option<String>,
 }
 #[derive(Default)]
 pub struct AttemptRegistry {
@@ -625,6 +644,8 @@ impl AttemptRegistry {
             generation: state.generation,
             cache_seeded: Arc::new(AtomicBool::new(false)),
             root_document: Arc::new(AtomicU64::new(0)),
+            referrer_document: Arc::new(Mutex::new(std::sync::Weak::new())),
+            handoff_referrer: Arc::new(Mutex::new(None)),
         })
     }
     fn prune(&mut self) {
@@ -665,7 +686,17 @@ impl AttemptRegistry {
         &mut self,
         source: &AttemptSession,
         destination: &Url,
+        receipt_id: &str,
+    ) -> Result<String, String> {
+        self.prepare_transfer_with_referrer_suppressed(source, destination, receipt_id, false, None)
+    }
+    pub(super) fn prepare_transfer_with_referrer_suppressed(
+        &mut self,
+        source: &AttemptSession,
+        destination: &Url,
         _receipt_id: &str,
+        suppress_referrer: bool,
+        expected_document_sequence: Option<u64>,
     ) -> Result<String, String> {
         self.prune();
         if self.tickets.len() >= MAX_TICKETS {
@@ -678,26 +709,50 @@ impl AttemptRegistry {
         {
             return Err(UNAVAILABLE.into());
         }
-        let state = source.attempt.state.lock().map_err(|_| UNAVAILABLE)?;
-        if !source.current(&state)
-            || state.hops >= MAX_HOPS
-            || !source.attempt.defaults.permits(&source.origin, destination)
-            || destination.query().is_some()
-            || destination.fragment().is_some()
-        {
-            return Err(UNAVAILABLE.into());
+        let network = source
+            .referrer_document
+            .lock()
+            .ok()
+            .and_then(|source| source.upgrade());
+        let mut create_ticket = |referrer_origin| {
+            let state = source.attempt.state.lock().map_err(|_| UNAVAILABLE)?;
+            if !source.current(&state)
+                || state.hops >= MAX_HOPS
+                || !source.attempt.defaults.permits(&source.origin, destination)
+                || destination.query().is_some()
+                || destination.fragment().is_some()
+            {
+                return Err(UNAVAILABLE.into());
+            }
+            let id = uuid::Uuid::new_v4().to_string();
+            self.tickets.insert(
+                id.clone(),
+                Ticket {
+                    source: source.clone(),
+                    destination: destination.to_string(),
+                    released: false,
+                    created: Instant::now(),
+                    referrer_origin: if suppress_referrer {
+                        None
+                    } else {
+                        referrer_origin
+                    },
+                },
+            );
+            Ok(id)
+        };
+        match network {
+            Some(network) => network
+                .with_selected_document_referrer_origin(
+                    destination,
+                    &source.origin,
+                    expected_document_sequence,
+                    create_ticket,
+                )
+                .map_err(|_| UNAVAILABLE.to_string())?,
+            None if expected_document_sequence.is_some() => Err(UNAVAILABLE.into()),
+            None => create_ticket(None),
         }
-        let id = uuid::Uuid::new_v4().to_string();
-        self.tickets.insert(
-            id.clone(),
-            Ticket {
-                source: source.clone(),
-                destination: destination.to_string(),
-                released: false,
-                created: Instant::now(),
-            },
-        );
-        Ok(id)
     }
     pub fn stop(
         &mut self,
@@ -776,6 +831,8 @@ impl AttemptRegistry {
             }
             state.hops += 1;
             let session = attach(attempt.clone(), &mut state, config, target, session_id);
+            *session.handoff_referrer.lock().map_err(|_| UNAVAILABLE)? =
+                Some(ticket.referrer_origin);
             return Ok(Some(session));
         }
         let Some(defaults) = policy
@@ -849,6 +906,8 @@ fn attach(
         generation: state.generation,
         cache_seeded: Arc::new(AtomicBool::new(false)),
         root_document: Arc::new(AtomicU64::new(0)),
+        referrer_document: Arc::new(Mutex::new(std::sync::Weak::new())),
+        handoff_referrer: Arc::new(Mutex::new(None)),
     }
 }
 

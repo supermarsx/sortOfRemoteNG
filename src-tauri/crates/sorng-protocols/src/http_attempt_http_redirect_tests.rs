@@ -1,7 +1,14 @@
 //! Real protected handler, native receipt consumption and local CONNECT/TLS.
 //! No browser/provider/NAS requests; the provider pages are synthetic HTML.
+#[path = "http_redirect_referrer_response_tests.rs"]
+mod redirect_referrer_response_tests;
+#[path = "http_vendor_referrer_document_tests.rs"]
+mod vendor_referrer_document_tests;
 use super::*;
 use tokio::io::AsyncWrite;
+
+#[path = "http_attempt_referrer_tests.rs"]
+mod referrer_tests;
 
 const PLAIN_ALIAS: &str = "http://example.quickconnect.to/";
 trait Io: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -75,7 +82,11 @@ async fn cycle_peer(http_upgrade: bool) -> CyclePeer {
                 let mut status = 200;
                 let mut extra = String::new();
                 let mut body = "<html><head></head><body>Synthetic provider page</body></html>".to_string();
-                if path == "/webman/pingpong.cgi" {
+                if path == "/no-referrer" || path == "/same-origin" {
+                    extra = format!("Referrer-Policy: {}\r\n", path.trim_start_matches('/'));
+                } else if path == "/meta-referrer" {
+                    body = "<html><head></head><body><meta name=referrer content=no-referrer>Synthetic page</body></html>".into();
+                } else if path == "/webman/pingpong.cgi" {
                     use md5::{Digest, Md5};
                     body = json!({"ezid":hex::encode(Md5::digest(b"example"))}).to_string();
                     extra = "Access-Control-Allow-Origin: *\r\n".into();

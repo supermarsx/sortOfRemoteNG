@@ -1885,6 +1885,28 @@ pub async fn axum_proxy_handler(
         &state.proxy_origin,
         &state.target_origin,
     );
+    if document_request
+        && navigation_token.is_some()
+        && matches!(method, axum::http::Method::GET | axum::http::Method::HEAD)
+        && state.proxy_policy.synology_quick_connect_defaults.is_some()
+    {
+        if let Some(referrer) = state
+            .network
+            .with_current_document(document_sequence, || {
+                state
+                    .attempt
+                    .as_ref()
+                    .and_then(|attempt| attempt.take_handoff_referrer())
+            })
+            .ok()
+            .flatten()
+        {
+            fwd_headers.retain(|(name, _)| !name.eq_ignore_ascii_case("referer"));
+            if let Some(origin) = referrer {
+                fwd_headers.push(("referer".into(), origin));
+            }
+        }
+    }
     if navigation_token.is_some() || state.proxy_policy.cache_mode == CacheMode::Bypass {
         fwd_headers.retain(|(name, _)| {
             !matches!(
@@ -2150,6 +2172,21 @@ pub async fn axum_proxy_handler(
                 (status_u16 >= 400).then(|| format!("HTTP {status_u16}")),
                 completed_diagnostic,
             );
+
+            if state.proxy_policy.synology_quick_connect_defaults.is_some()
+                && document_request
+                && status_code.is_success()
+                && proxy_response::is_html(content_type.as_deref())
+            {
+                state.network.record_document_referrer(
+                    document_sequence,
+                    &resp_hdrs,
+                    &String::from_utf8_lossy(&raw_bytes),
+                );
+                if let Some(attempt) = &state.attempt {
+                    attempt.bind_referrer_document(&state.network);
+                }
+            }
 
             // Only an explicitly marked primary navigation may advance the
             // logical attempt's connector guard. Nested frames, XHR and late
@@ -2488,12 +2525,13 @@ pub async fn axum_proxy_handler(
                         && document_request
                         && matches!(method_str.as_str(), "GET" | "HEAD")
                         && body_bytes.is_empty()
-                        && redirect::record_with_edge(
+                        && redirect::record_with_edge_and_referrer(
                             &state,
                             &redirect.destination,
                             document_sequence,
                             navigation_token.clone(),
                             cycle_edge,
+                            redirect.suppress_referrer,
                         )
                 } else {
                     false

@@ -357,7 +357,7 @@ pub(super) fn remove_known_framebreaker(html: &str) -> String {
     result
 }
 
-fn html_tag(html: &str, start: usize) -> Option<(&str, bool, usize)> {
+pub(super) fn html_tag(html: &str, start: usize) -> Option<(&str, bool, usize)> {
     let bytes = html.as_bytes();
     let mut cursor = start + 1;
     let closing = bytes.get(cursor) == Some(&b'/');

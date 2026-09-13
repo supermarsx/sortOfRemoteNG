@@ -345,6 +345,15 @@ async fn synology_default_chain_issues_sequential_redacted_receipts_without_netw
         )
         .await;
         register(&fixture);
+        // Receipt-only tripwire fixture: model the already loaded native
+        // primary document without contacting the synthetic destination.
+        fixture.state.document_sequence.store(1, Ordering::SeqCst);
+        fixture.state.network.document_issued(1, true);
+        fixture.state.network.record_document_referrer(
+            1,
+            &axum::http::HeaderMap::new(),
+            "<html><head></head></html>",
+        );
         *fixture.state.last_error.lock().unwrap() = Some("unrelated previous failure".into());
         let target = format!("{destination}/dsm/login?private-token=hidden#fragment");
         let response = client()

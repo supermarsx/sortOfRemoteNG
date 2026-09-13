@@ -27,6 +27,57 @@ pub(super) const DOCUMENT_HEADER: &str = "x-sorng-quickconnect-document";
 pub(super) const DISCOVERED_PATH: &str = discovered::PATH;
 const MAX_REQUEST: usize = 4096;
 const MAX_RESPONSE: usize = 256 * 1024;
+const MAX_USER_AGENT: usize = 1024;
+const MAX_REFERRER: usize = 8192;
+
+// Compatibility metadata from this protected request, never identity/trust
+// evidence. Do not persist it, invent a browser agent, or inherit other headers.
+fn request_user_agent(
+    headers: &axum::http::HeaderMap,
+) -> Result<Option<reqwest::header::HeaderValue>, ()> {
+    let mut values = headers.get_all("user-agent").iter();
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some()
+        || value.as_bytes().len() > MAX_USER_AGENT
+        || !value
+            .as_bytes()
+            .iter()
+            .all(|byte| (b' '..=b'~').contains(byte))
+        || value.to_str().map_or(true, |value| value.trim().is_empty())
+    {
+        return Err(());
+    }
+    Ok(Some(value.clone()))
+}
+
+// Presence of a same-proxy browser referrer is a compatibility hint only. Its
+// path/query are discarded, and the actual upstream origin and policy must
+// come from the current native document. Valid foreign referrers stay omitted.
+pub(super) fn request_has_local_referrer(
+    headers: &axum::http::HeaderMap,
+    proxy_origin: &str,
+) -> Result<bool, ()> {
+    let mut values = headers.get_all("referer").iter();
+    let Some(value) = values.next() else {
+        return Ok(false);
+    };
+    if values.next().is_some() || value.as_bytes().len() > MAX_REFERRER {
+        return Err(());
+    }
+    let value = value.to_str().map_err(|_| ())?;
+    let url = reqwest::Url::parse(value).map_err(|_| ())?;
+    if url.as_str() != value
+        || !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(());
+    }
+    Ok(url.origin().ascii_serialization() == proxy_origin)
+}
 
 #[derive(Clone)]
 pub(super) struct ObservedDestination {
@@ -453,6 +504,8 @@ struct Exchange<'a> {
     body: Vec<u8>,
     dynamic_route: bool,
     lane: ExchangeLane,
+    user_agent: Option<reqwest::header::HeaderValue>,
+    has_local_referrer: bool,
 }
 
 type ExchangeFailure = (Diagnostic, &'static str);
@@ -573,6 +626,23 @@ async fn exchange(
             request.header(reqwest::header::COOKIE, cookie)
         } else {
             request
+        }
+    } else {
+        request
+    };
+    let request = if let Some(user_agent) = exchange.user_agent {
+        request.header(reqwest::header::USER_AGENT, user_agent)
+    } else {
+        request
+    };
+    let request = if exchange.has_local_referrer {
+        match exchange.state.network.document_referrer_origin(
+            exchange.sequence,
+            &exchange.url,
+            &exchange.state.target_origin,
+        ) {
+            Some(origin) => request.header(reqwest::header::REFERER, origin),
+            None => request,
         }
     } else {
         request
@@ -808,6 +878,24 @@ async fn handle_inner(
             Diagnostic::RequestAuthority,
         );
     }
+    let user_agent = match request_user_agent(headers) {
+        Ok(value) => value,
+        Err(()) => return refusal(
+            StatusCode::BAD_REQUEST,
+            "QuickConnect requires at most one nonempty printable User-Agent of up to 1024 bytes.",
+            Diagnostic::UnsupportedRequest,
+        ),
+    };
+    let has_local_referrer = match request_has_local_referrer(headers, &state.proxy_origin) {
+        Ok(value) => value,
+        Err(()) => {
+            return refusal(
+                StatusCode::BAD_REQUEST,
+                "QuickConnect requires at most one valid HTTP(S) referrer of up to 8192 bytes.",
+                Diagnostic::UnsupportedRequest,
+            )
+        }
+    };
     let sequence = headers
         .get(DOCUMENT_HEADER)
         .and_then(|value| value.to_str().ok())
@@ -1002,6 +1090,8 @@ async fn handle_inner(
                         body: body.bytes,
                         dynamic_route,
                         lane,
+                        user_agent,
+                        has_local_referrer,
                     },
                     progress,
                 )

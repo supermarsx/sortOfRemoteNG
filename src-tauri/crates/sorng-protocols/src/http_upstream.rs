@@ -7,6 +7,47 @@ pub(super) struct CrossOriginRedirect {
     pub(super) status: u16,
     pub(super) method: reqwest::Method,
     pub(super) same_origin_redirects: u32,
+    /// Native-only restriction from redirect responses, never response headers.
+    pub(super) suppress_referrer: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RedirectReferrerPolicy {
+    Suppress,
+    SameOrigin,
+    OriginAllowed,
+}
+
+fn redirect_referrer_policy(
+    headers: &reqwest::header::HeaderMap,
+) -> Option<RedirectReferrerPolicy> {
+    let mut suppression = None;
+    let mut bytes = 0usize;
+    for value in headers.get_all("referrer-policy") {
+        bytes = bytes.saturating_add(value.as_bytes().len());
+        if bytes > 1024 {
+            return Some(RedirectReferrerPolicy::Suppress);
+        }
+        let Ok(value) = value.to_str() else {
+            return Some(RedirectReferrerPolicy::Suppress);
+        };
+        for token in value.split(',') {
+            match token.trim().to_ascii_lowercase().as_str() {
+                "no-referrer" => suppression = Some(RedirectReferrerPolicy::Suppress),
+                "same-origin" => suppression = Some(RedirectReferrerPolicy::SameOrigin),
+                "no-referrer-when-downgrade"
+                | "origin"
+                | "origin-when-cross-origin"
+                | "strict-origin"
+                | "strict-origin-when-cross-origin"
+                | "unsafe-url" => {
+                    suppression = Some(RedirectReferrerPolicy::OriginAllowed);
+                }
+                _ => {}
+            }
+        }
+    }
+    suppression
 }
 
 pub(super) enum UpstreamError {
@@ -300,6 +341,7 @@ async fn send_inner(
         state.password.read().map(|g| g.clone()).unwrap_or_default(),
     );
     let redirect_limit = super::same_origin_redirect_limit(state.redirect_profile);
+    let mut redirect_referrer = RedirectReferrerPolicy::OriginAllowed;
     for redirect in 0..=redirect_limit {
         if url.origin().ascii_serialization() != state.target_origin
             || !url.username().is_empty()
@@ -324,6 +366,16 @@ async fn send_inner(
                 .as_ref()
                 .and_then(|attempt| attempt.merged_request_cookies(&url, &effective_cookies));
             for (name, value) in headers {
+                if name.eq_ignore_ascii_case("referer")
+                    && match redirect_referrer {
+                        RedirectReferrerPolicy::Suppress => true,
+                        RedirectReferrerPolicy::SameOrigin => reqwest::Url::parse(value)
+                            .map_or(true, |referer| referer.origin() != url.origin()),
+                        RedirectReferrerPolicy::OriginAllowed => false,
+                    }
+                {
+                    continue;
+                }
                 if name.eq_ignore_ascii_case("cookie")
                     && (merged_cookies.is_some() || changed_cookie.is_some())
                 {
@@ -410,6 +462,11 @@ async fn send_inner(
         if websocket {
             return Err(UpstreamError::Policy("A WebSocket handshake cannot follow redirects. Review the endpoint before reconnecting."));
         }
+        if let Some(policy) = redirect_referrer_policy(response.headers()) {
+            // A later absent/unknown header does not discard a restriction
+            // issued by an earlier same-origin redirect in this request.
+            redirect_referrer = policy;
+        }
         if redirect == redirect_limit {
             return Err(UpstreamError::RedirectLoop);
         }
@@ -441,6 +498,7 @@ async fn send_inner(
                     status: status.as_u16(),
                     method: method.clone(),
                     same_origin_redirects: redirect as u32,
+                    suppress_referrer: redirect_referrer != RedirectReferrerPolicy::OriginAllowed,
                 },
             )));
         }
@@ -467,6 +525,33 @@ async fn send_inner(
 #[cfg(test)]
 mod cookie_projection_tests {
     use super::RedirectCookieOverlay;
+
+    #[test]
+    fn redirect_referrer_policy_uses_last_recognized_token_without_exposing_headers() {
+        use super::RedirectReferrerPolicy::{OriginAllowed, SameOrigin, Suppress};
+        for (value, expected) in [
+            ("unknown", None),
+            ("no-referrer", Some(Suppress)),
+            ("same-origin", Some(SameOrigin)),
+            ("origin, no-referrer, unknown", Some(Suppress)),
+            ("no-referrer, origin", Some(OriginAllowed)),
+            (
+                "SAME-ORIGIN, strict-origin-when-cross-origin",
+                Some(OriginAllowed),
+            ),
+        ] {
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.append("referrer-policy", value.parse().unwrap());
+            assert_eq!(super::redirect_referrer_policy(&headers), expected);
+        }
+        let mut headers = reqwest::header::HeaderMap::new();
+        assert_eq!(super::redirect_referrer_policy(&headers), None);
+        headers.append("referrer-policy", "origin".parse().unwrap());
+        headers.append("referrer-policy", "same-origin, unknown".parse().unwrap());
+        assert_eq!(super::redirect_referrer_policy(&headers), Some(SameOrigin));
+        headers.append("referrer-policy", "x".repeat(1025).parse().unwrap());
+        assert_eq!(super::redirect_referrer_policy(&headers), Some(Suppress));
+    }
 
     #[test]
     fn domain_projection_does_not_upgrade_invalid_secure_cookie_prefixes() {

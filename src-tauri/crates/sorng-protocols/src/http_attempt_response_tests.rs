@@ -357,7 +357,10 @@ async fn protected_handler_stops_only_third_distinct_marked_regional_connector_h
     let mut registry = attempt::AttemptRegistry::default();
     let mut session = start(&mut registry, &peer, REGIONAL, "regional-0", None);
     let attempt_id = session.diagnostic().unwrap().0;
+    let mut previous_proxy = None;
     for visit in 0..6 {
+        // Keep the source document alive until its continuation is prepared.
+        let _source_proxy = previous_proxy.take();
         if visit > 0 {
             let alias = start(
                 &mut registry,
@@ -381,6 +384,18 @@ async fn protected_handler_stops_only_third_distinct_marked_regional_connector_h
             session.clone(),
         )
         .await;
+        if visit == 0 {
+            // A nested connector needs an actual selected parent; an unmarked
+            // child by itself cannot authorize the subsequent handoff.
+            assert_eq!(
+                request(&proxy, "/plain", true, "document")
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::OK
+            );
+        }
         let (path, marked, destination) = match visit {
             0 => ("/connector", false, "iframe"), // Nested/unmarked connector is not an initial landing.
             1 => ("/connector", true, "empty"), // Even a copied marker cannot make XHR a document.
@@ -444,8 +459,9 @@ async fn protected_handler_stops_only_third_distinct_marked_regional_connector_h
                 );
             }
         }
+        previous_proxy = Some(proxy);
     }
-    assert_eq!(peer.requests.lock().unwrap().len(), 12);
+    assert_eq!(peer.requests.lock().unwrap().len(), 13);
 }
 
 async fn wait_for_header_log(proxy: &FixtureProxy) {

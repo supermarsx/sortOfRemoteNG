@@ -108,6 +108,19 @@ fn enabled() -> HttpProxyPolicy {
     }
 }
 
+fn select_source_document(proxy: &FixtureProxy) {
+    // This tripwire fixture deliberately does not fetch HTML. Establish the
+    // native-issued primary that a real loaded source page already owns.
+    let sequence = proxy.state.document_sequence.fetch_add(1, Ordering::SeqCst) + 1;
+    proxy.state.network.document_issued(sequence, true);
+    proxy.state.network.activate_document(sequence).unwrap();
+    proxy.state.network.record_document_referrer(
+        sequence,
+        &axum::http::HeaderMap::new(),
+        "<html><head></head></html>",
+    );
+}
+
 #[tokio::test]
 async fn quickconnect_error_bundle_is_projected_after_gzip_decode_without_changing_page_identity() {
     let text = format!(
@@ -165,6 +178,7 @@ async fn quickconnect_error_bundle_is_projected_after_gzip_decode_without_changi
 async fn quickconnect_navigation_records_one_use_receipt_without_any_upstream_or_destination_request(
 ) {
     let (proxy, upstream) = fixture("fixture.quickconnect.to", enabled()).await;
+    select_source_document(&proxy);
     let destination = tripwire().await;
     let target = format!(
         "https://127.0.0.1:{}/dsm/login?private-token=hidden#fragment",
@@ -378,6 +392,7 @@ async fn quickconnect_navigation_exact_source_and_downgrade_permissions_remain_r
             },
         )
         .await;
+        select_source_document(&proxy);
         let response = request(&proxy)
             .query(&[("destination", "http://127.0.0.1:1/dsm/")])
             .send()
@@ -393,6 +408,7 @@ async fn quickconnect_navigation_exact_source_and_downgrade_permissions_remain_r
 #[tokio::test]
 async fn quickconnect_navigation_receipt_does_not_survive_new_document_or_session_stop() {
     let (proxy, upstream) = fixture("fixture.quickconnect.to", enabled()).await;
+    select_source_document(&proxy);
     request(&proxy)
         .query(&[("destination", "https://target.invalid/path/")])
         .send()

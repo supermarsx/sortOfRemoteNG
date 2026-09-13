@@ -4,12 +4,16 @@
 mod control_cookie_tests;
 #[path = "http_quickconnect_probe_defaults_tests.rs"]
 mod probe_defaults_tests;
+#[path = "http_quickconnect_referrer_tests.rs"]
+mod referrer_tests;
 #[path = "http_quickconnect_relay_probe_tests.rs"]
 mod relay_probe_tests;
 #[path = "http_quickconnect_scheduling_tests.rs"]
 mod scheduling_tests;
 #[path = "http_quickconnect_tunnel_tests.rs"]
 mod tunnel_tests;
+#[path = "http_quickconnect_user_agent_tests.rs"]
+mod user_agent_tests;
 use super::*;
 const REGIONAL: &str = "https://dec.quickconnect.to/Serv.php";
 const PROBE: &str = "https://test-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true";

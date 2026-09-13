@@ -2,6 +2,8 @@ use super::*;
 use serde_json::json;
 #[path = "http_attempt_provider_cookie_tests.rs"]
 mod provider_cookie_tests;
+#[path = "http_attempt_referrer_state_tests.rs"]
+mod referrer_state_tests;
 
 #[test]
 fn http_cycle_evidence_counts_consumption_not_peeks_and_resets_on_progress_or_scope_change() {
