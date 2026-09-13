@@ -285,11 +285,12 @@ function installWebNetworkClient(configuration, reportBlocked) {
         ) &&
         target.pathname === "/Serv.php" &&
         !target.search;
-      var direct =
-        sameNasDirect(target, quickConnectDiscovered.alias) &&
+      var probe =
+        (sameNasDirect(target, quickConnectDiscovered.alias) ||
+          sameNasRegional(target, quickConnectDiscovered.alias)) &&
         target.pathname === "/webman/pingpong.cgi" &&
         target.search === "?action=cors&quickconnect=true";
-      if (regional || direct) {
+      if (regional || probe) {
         if (String(method).toUpperCase() !== (regional ? "POST" : "GET"))
           throw blocked(
             kind,
@@ -299,8 +300,8 @@ function installWebNetworkClient(configuration, reportBlocked) {
             target.origin,
           );
         // Native validates the opted-in provider namespace, original alias,
-        // exact control body and current document. A direct probe additionally
-        // requires its exact target to have been learned from discovery.
+        // exact control body and current document. Direct and regional relay
+        // probes remain fixed anonymous GETs with native TLS/CORS/identity checks.
         var discoveredUrl = new NativeURL(quickConnectDiscovered.proxyUrl);
         discoveredUrl.searchParams.set("destination", target.href);
         return discoveredUrl.href;

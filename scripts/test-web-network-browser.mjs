@@ -39,6 +39,8 @@ const discoveredPath = "/__sortofremoteng_quickconnect_discovered_v1";
 const regionalControl = "https://dec.quickconnect.to/Serv.php";
 const directProbe =
   "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
+const relayProbe =
+  "https://example-nas.fr3.quickconnect.to/webman/pingpong.cgi?action=cors&quickconnect=true";
 const unlearnedProbe =
   "https://unlearned.example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true";
 const discoveredUrl = (destination) =>
@@ -296,6 +298,12 @@ const installedNetwork=installWebNetworkClient(${JSON.stringify(config)}, functi
    const response=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('GET',${JSON.stringify(directProbe)},true);xhr.responseType='json';xhr.onload=()=>xhr.status===200?resolve(xhr.response):reject(Error('Probe status'));xhr.onerror=()=>reject(Error('Probe network'));xhr.send();});
    if(response.marker!=='loopback-probe')throw Error('Probe response fabricated or changed');
  });
+ await check('same-NAS regional relay pingpong GET uses protected fetch and XHR only',async()=>{
+   const response=await fetch(${JSON.stringify(relayProbe)});
+   if(response.status!==200||(await response.json()).marker!=='loopback-probe')throw Error('Relay fetch response changed');
+   const value=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('GET',${JSON.stringify(relayProbe)},true);xhr.responseType='json';xhr.onload=()=>xhr.status===200?resolve(xhr.response):reject(Error('Relay status'));xhr.onerror=()=>reject(Error('Relay network'));xhr.send();});
+   if(value.marker!=='loopback-probe')throw Error('Relay XHR response changed');
+ });
  await check('unlearned same-NAS probe denial is not fabricated into success',async()=>{
    const response=await fetch(${JSON.stringify(unlearnedProbe)});
    if(response.status!==403||await response.text()!=='fixture-unlearned')throw Error('Unlearned response changed');
@@ -430,7 +438,10 @@ const installedNetwork=installWebNetworkClient(${JSON.stringify(config)}, functi
     response.writeHead(403).end("fixture-unlearned");
     return;
   }
-  if (request.url === discoveredUrl(directProbe)) {
+  if (
+    request.url === discoveredUrl(directProbe) ||
+    request.url === discoveredUrl(relayProbe)
+  ) {
     response
       .writeHead(200, { "Content-Type": "application/json" })
       .end(JSON.stringify({ marker: "loopback-probe" }));
@@ -519,7 +530,7 @@ try {
   const dynamic = received.filter((item) =>
     item.url.startsWith(discoveredPath + "?"),
   );
-  assert.equal(dynamic.length, 6);
+  assert.equal(dynamic.length, 8);
   for (const item of dynamic) {
     assert.ok(item.document === "7" || item.document === "11");
     assert.equal(item.fetchSite, "same-origin");
@@ -574,6 +585,8 @@ try {
       { url: discoveredUrl(regionalControl), method: "POST", body: tunnelBody },
       { url: discoveredUrl(regionalControl), method: "POST", body: tunnelBody },
       { url: discoveredUrl(directProbe), method: "GET", body: "" },
+      { url: discoveredUrl(relayProbe), method: "GET", body: "" },
+      { url: discoveredUrl(relayProbe), method: "GET", body: "" },
       { url: discoveredUrl(unlearnedProbe), method: "GET", body: "" },
       { url: "/string", method: "POST", body: "string-body" },
       { url: "/stream", method: "POST", body: "stream-body" },

@@ -158,6 +158,8 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   };
   const directProbe =
     "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
+  const relayProbe =
+    "https://example-nas.fr3.quickconnect.to/webman/pingpong.cgi?action=cors&quickconnect=true";
   it("uses a separate immutable regional hint only for selected-NAS HTTPS receipt navigation", () => {
     const input = discoveryConfig();
     start(input);
@@ -332,9 +334,31 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       "quickconnect-control-method",
     );
   });
+  it("keeps same-current regional relay traffic on its ordinary protected route", async () => {
+    start({ ...discoveryConfig(), sourceOrigin: new URL(relayProbe).origin });
+    await window.fetch(relayProbe);
+    expect(fetch.mock.calls[0][0]).toBe(
+      proxy + "/webman/pingpong.cgi?action=cors&quickconnect=true",
+    );
+    const options = fetch.mock.calls[0][1] as RequestInit | undefined;
+    expect(
+      new Headers(options?.headers).has("X-Sorng-QuickConnect-Document"),
+    ).toBe(false);
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", relayProbe, true);
+    expect(xhrOpen).toHaveBeenCalledWith(
+      "GET",
+      proxy + "/webman/pingpong.cgi?action=cors&quickconnect=true",
+      true,
+    );
+    expect(xhrHeader).not.toHaveBeenCalled();
+    expect(report).not.toHaveBeenCalled();
+  });
   it.each([
     ["POST", "https://dec.quickconnect.to/Serv.php"],
     ["GET", directProbe],
+    ["GET", relayProbe],
+    ["GET", relayProbe.replace("fr3", "de2")],
     [
       "GET",
       "https://example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
@@ -404,6 +428,16 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     directProbe + "&_cache=private",
     directProbe + "#private",
     directProbe.replace("pingpong.cgi", "entry.cgi"),
+    relayProbe.replace("example-nas", "other-nas"),
+    relayProbe.replace(".fr3", ".x.fr3"),
+    relayProbe.replace(".fr3", ".fr"),
+    relayProbe.replace(".fr3", ".fr3x"),
+    relayProbe.replace("https:", "http:"),
+    relayProbe.replace(".to/", ".to:5001/"),
+    relayProbe.replace(".to/", ".to.evil.invalid/"),
+    relayProbe.replace("pingpong.cgi", "entry.cgi"),
+    relayProbe + "&private=hidden",
+    relayProbe + "#private",
     "https://x.dec.quickconnect.to/Serv.php",
     "https://dec.quickconnect.to:5001/Serv.php",
   ])(
@@ -431,6 +465,29 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     window.dispatchEvent(new Event("pagehide"));
     await expect(window.fetch(directProbe)).rejects.toThrow("document-closed");
     expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("does not widen relay probes into other methods, resource contexts or disabled defaults", async () => {
+    start(discoveryConfig());
+    await expect(window.fetch(relayProbe, { method: "POST" })).rejects.toThrow(
+      "quickconnect-probe-method",
+    );
+    for (const kind of [
+      "resource",
+      "form",
+      "websocket",
+      "beacon",
+      "eventsource",
+    ])
+      expect(() => controller!.mapUrl(relayProbe, kind)).toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event("pagehide"));
+    await expect(window.fetch(relayProbe)).rejects.toThrow("document-closed");
+    controller!.dispose();
+    start(config());
+    await expect(window.fetch(relayProbe)).rejects.toThrow(
+      "origin-not-approved",
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("acknowledges only installed capabilities and routes the HTTPS alias without broad origin permission", () => {
     start(quickConfig());

@@ -1,7 +1,6 @@
 //! Closed original-NAS QuickConnect operations. These bounded defaults
 //! capabilities cannot be expanded by any provider response.
 use reqwest::Url;
-use serde_json::Value;
 
 pub(super) const PATH: &str = "/__sortofremoteng_quickconnect_discovered_v1";
 const PROBE_PATH: &str = "/webman/pingpong.cgi";
@@ -46,17 +45,25 @@ pub(super) fn classify(url: &Url, alias: &str) -> Option<Route> {
     }
     let suffix = format!("{alias}.direct.quickconnect.to");
     let same_nas = host == suffix || host.strip_suffix(&format!(".{suffix}")).is_some_and(label);
-    (same_nas
-        && matches!(url.port(), Some(5001 | 5002))
+    let regional = host
+        .strip_prefix(&format!("{alias}."))
+        .and_then(|host| host.strip_suffix(".quickconnect.to"))
+        .is_some_and(|region| {
+            let bytes = region.as_bytes();
+            (3..=63).contains(&bytes.len())
+                && bytes[..2].iter().all(u8::is_ascii_lowercase)
+                && bytes[2..].iter().all(u8::is_ascii_digit)
+        });
+    ((same_nas && matches!(url.port(), Some(5001 | 5002))
+        || regional && url.port_or_known_default() == Some(443))
         && url.path() == PROBE_PATH
         && url.query() == Some(PROBE_QUERY))
     .then_some(Route::Probe)
 }
 
-pub(super) fn valid_probe_json(json: &Value, alias: &str) -> bool {
+pub(super) fn alias_digest(alias: &str) -> String {
     use md5::{Digest, Md5};
-    let expected = hex::encode(Md5::digest(alias.as_bytes()));
-    json.get("ezid").and_then(Value::as_str) == Some(expected.as_str())
+    hex::encode(Md5::digest(alias.as_bytes()))
 }
 
 #[cfg(test)]
@@ -75,6 +82,15 @@ mod tests {
                 assert_eq!(classify(&url, "other-nas"), None);
             }
         }
+        for authority in [
+            "test-nas.fr3.quickconnect.to",
+            "test-nas.de2.quickconnect.to:443",
+        ] {
+            let url =
+                Url::parse(&format!("https://{authority}{PROBE_PATH}?{PROBE_QUERY}")).unwrap();
+            assert_eq!(classify(&url, "test-nas"), Some(Route::Probe));
+            assert_eq!(classify(&url, "other-nas"), None);
+        }
     }
     #[test]
     fn candidate_syntax_cannot_expand_into_other_aliases_queries_methods_or_provider_suffixes() {
@@ -89,6 +105,14 @@ mod tests {
             "https://user@dec.quickconnect.to/Serv.php",
             "https://dec.quickconnect.to:5001/Serv.php",
             "https://dec.quickconnect.to./Serv.php",
+            "https://other-nas.fr3.quickconnect.to/webman/pingpong.cgi?action=cors&quickconnect=true",
+            "https://test-nas.fr.quickconnect.to/webman/pingpong.cgi?action=cors&quickconnect=true",
+            "https://test-nas.fr3x.quickconnect.to/webman/pingpong.cgi?action=cors&quickconnect=true",
+            "https://test-nas.x.fr3.quickconnect.to/webman/pingpong.cgi?action=cors&quickconnect=true",
+            "https://test-nas.fr3.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
+            "http://test-nas.fr3.quickconnect.to/webman/pingpong.cgi?action=cors&quickconnect=true",
+            "https://test-nas.fr3.quickconnect.to/webman/pingpong.cgi?action=cors&quickconnect=true&private=secret",
+            "https://test-nas.fr3.quickconnect.to/webapi/auth.cgi?action=cors&quickconnect=true",
         ] { assert!(classify(&Url::parse(value).unwrap(), "test-nas").is_none(), "{value}"); }
     }
 }

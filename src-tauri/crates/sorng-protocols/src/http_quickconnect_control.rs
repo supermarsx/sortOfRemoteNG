@@ -4,6 +4,8 @@
 //! Every exchange still requires the current native document lease.
 #[path = "http_quickconnect_discovered.rs"]
 mod discovered;
+#[path = "http_quickconnect_probe_identities.rs"]
+mod probe_identities;
 use super::AxumProxyState;
 use axum::body::Body;
 use axum::http::{Method, Response, StatusCode};
@@ -63,6 +65,7 @@ pub(super) struct ReviewedQuickConnectControl {
     client: reqwest::Client,
     requests: Semaphore,
     downloads: Semaphore,
+    probe_identities: probe_identities::ProbeIdentities,
 }
 impl ReviewedQuickConnectControl {
     pub(super) fn new(proxy: Option<reqwest::Proxy>, min_tls: &str) -> Result<Self, String> {
@@ -111,6 +114,7 @@ impl ReviewedQuickConnectControl {
             client,
             requests: Semaphore::new(8),
             downloads: Semaphore::new(2),
+            probe_identities: probe_identities::ProbeIdentities::default(),
         }
     }
     #[cfg(test)]
@@ -120,6 +124,7 @@ impl ReviewedQuickConnectControl {
     pub(super) fn revoke(&self) {
         self.requests.close();
         self.downloads.close();
+        self.probe_identities.revoke();
     }
 }
 
@@ -235,6 +240,7 @@ fn refusal(status: StatusCode, message: &'static str, diagnostic: Diagnostic) ->
 
 struct Exchange<'a> {
     state: &'a AxumProxyState,
+    sequence: u64,
     alias: &'a str,
     url: reqwest::Url,
     route: discovered::Route,
@@ -328,14 +334,27 @@ async fn exchange(
     let json: serde_json::Value = serde_json::from_slice(&bytes)
         .map_err(|_| "QuickConnect discovery did not return valid JSON.")?;
     if exchange.route == discovered::Route::Probe
-        && !discovered::valid_probe_json(&json, exchange.alias)
+        && !control
+            .probe_identities
+            .accepts(exchange.sequence, exchange.alias, &json)
     {
-        return Err("QuickConnect probe did not identify the original NAS alias.");
+        return Err("QuickConnect probe did not match an approved current-document NAS identity.");
     }
     let bytes =
         serde_json::to_vec(&json).map_err(|_| "QuickConnect discovery JSON is unavailable.")?;
     if bytes.len() > MAX_RESPONSE {
         return Err("QuickConnect discovery response is too large.");
+    }
+    if status.is_success()
+        && exchange.route == discovered::Route::Control
+        && exchange
+            .state
+            .network
+            .document_is_current(exchange.sequence)
+    {
+        control
+            .probe_identities
+            .learn(exchange.sequence, exchange.alias, &json);
     }
     let mut builder = Response::builder()
         .status(status.as_u16())
@@ -498,6 +517,9 @@ pub(super) async fn handle(
         state
             .network
             .while_document(sequence, async {
+                if !control.probe_identities.prepare(sequence, &alias) {
+                    return Err((Diagnostic::StaleDocument, "The proxy identity scope is no longer active."));
+                }
                 candidate_current.store(true, std::sync::atomic::Ordering::Relaxed);
                 let bytes = match axum::body::to_bytes(request.into_body(), MAX_REQUEST).await {
                     Ok(bytes) => bytes,
@@ -549,6 +571,7 @@ pub(super) async fn handle(
                     control,
                     Exchange {
                         state: &state,
+                        sequence,
                         alias: &alias,
                         url: destination,
                         route,

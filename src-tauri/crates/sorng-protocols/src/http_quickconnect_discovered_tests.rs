@@ -2,6 +2,8 @@
 //! API, OS trust store or user credentials are accessed.
 #[path = "http_quickconnect_probe_defaults_tests.rs"]
 mod probe_defaults_tests;
+#[path = "http_quickconnect_relay_probe_tests.rs"]
+mod relay_probe_tests;
 #[path = "http_quickconnect_tunnel_tests.rs"]
 mod tunnel_tests;
 use super::*;

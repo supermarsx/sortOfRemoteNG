@@ -174,7 +174,11 @@ It does not authorize other paths, methods, resources or credential forwarding.
 The same default preference permits the exact bodyless HTTPS GET
 `/webman/pingpong.cgi?action=cors&quickconnect=true` at
 `<alias>.direct.quickconnect.to:5001` or `:5002`, optionally with one valid DNS
-label before the original alias. It does not depend on a prior discovery reply
+label before the original alias. It also permits that fixed GET at
+`<alias>.<region>.quickconnect.to:443`, with the same original-alias and bounded
+region-label rules as regional navigation. Once a regional host is the current
+website, its own requests keep using the ordinary protected same-origin route.
+These destination permissions do not depend on a prior discovery reply
 or a transient learned-route registry. Other aliases, paths, queries, methods,
 HTTP and ports remain refused. A returned `server.pingpong_path` cannot expand
 the route. Original-source policy and current primary-document identity remain
@@ -218,9 +222,18 @@ and provider error contents are never copied into these diagnostics.
 
 For probes, the native client sends the real source origin, not the local proxy
 origin. It requires one `Access-Control-Allow-Origin` value permitting that
-source or anonymous `*`, and JSON `ezid` equal to the vendor's MD5-of-alias
-correlation value before returning the response to the same-proxy page. That
-correlation is **not** certificate verification or authentication. Browser GETs
+source or anonymous `*`, and JSON `ezid` matching a current-document NAS identity
+before returning the response to the same-proxy page. The original alias's MD5
+correlation remains accepted for compatibility. Successful verified discovery
+or tunnel replies may additionally supply the vendor's `server.serverID`: only
+HTTP-success replies with numeric `errno: 0` and the reviewed complete server,
+service and environment field shape qualify. The native client keeps at most
+16 MD5 correlation hashes for the original alias and current primary document;
+source IDs must be nonempty, at most 256 UTF-8 bytes and contain no control
+characters. No raw ID is retained by this registry, logged or persisted.
+Document replacement makes prior hashes unusable, and session revocation clears
+them. These identity receipts never grant URLs, ports, resources or credentials.
+The correlation is **not** certificate verification or authentication. Browser GETs
 without `Origin` are accepted only on the protected probe route with exact
 same-origin Fetch Metadata, protected Host and the current document header;
 a present mismatched or malformed Origin is still refused.
