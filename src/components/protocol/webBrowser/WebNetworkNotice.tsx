@@ -11,11 +11,13 @@ export default function WebNetworkNotice({
   reports,
   guard,
   routing,
+  proxyOrigin,
   onReload,
 }: {
   reports: readonly WebNetworkReport[];
   guard: WebNetworkGuardStatus | null;
   routing?: WebNetworkRoutingStatus | null;
+  proxyOrigin?: string;
   onReload: () => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -81,7 +83,7 @@ export default function WebNetworkNotice({
               ? "This page did not report the current routing module. It may come from an older desktop process. Restart the desktop application and reopen the website tab; refreshing the application UI alone does not update native proxy code."
               : routing.status === "mismatch"
                 ? "The page's routing capabilities differ from the current connection settings. Reopen this website from its saved connection after checking its default destinations and database access."
-                : `Page routing module v3 reported. QuickConnect navigation: ${routing.quickConnectNavigation ? "available" : "off or unavailable for this source"}; discovery: ${routing.quickConnectDiscovery ? "available" : "off or unavailable for this source"}; same-NAS discovery routes: ${routing.quickConnectDiscovered ? "available; native grants still required" : "off or unavailable for this source"}; direct navigation: ${routing.quickConnectDirectNavigation ? "available" : "off or unavailable for this source"}.`}{" "}
+                : `Page routing module v4 reported. QuickConnect navigation: ${routing.quickConnectNavigation ? "available" : "off or unavailable for this source"}; discovery: ${routing.quickConnectDiscovery ? "available" : "off or unavailable for this source"}; same-NAS probe routes: ${routing.quickConnectDiscovered ? "available; native grants still required" : "off or unavailable for this source"}; direct navigation: ${routing.quickConnectDirectNavigation ? "available" : "off or unavailable for this source"}; regional navigation: ${routing.quickConnectRegionalNavigation ? "available" : "off or unavailable for this source"}.`}{" "}
             This is a page-module diagnostic, not proof that every request is
             captured.
           </p>
@@ -107,7 +109,7 @@ export default function WebNetworkNotice({
                 : report.reason === "origin-not-approved"
                   ? `No route for this request (${report.kind})`
                   : report.reason === "quickconnect-control-method"
-                    ? "Only the reviewed QuickConnect discovery POST can use this control route"
+                    ? "Only bounded QuickConnect control POSTs for discovery or relay setup can use this route"
                     : report.reason === "quickconnect-probe-method"
                       ? "Only the exact same-NAS discovery GET can use this probe route"
                       : report.reason === "document-expired"
@@ -131,6 +133,7 @@ export default function WebNetworkNotice({
           </p>
         )}
         <NativeHttpObservations
+          proxyOrigin={proxyOrigin}
           active={detailsOpen && guard?.platform === "windows"}
         />
       </details>

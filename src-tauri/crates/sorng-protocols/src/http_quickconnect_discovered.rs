@@ -1,5 +1,6 @@
-//! Native-only, document-bound discovery grants. Candidate URL syntax is not
-//! authority: only a verified original-alias control response can enroll it.
+//! Native-only, document-bound direct-probe grants. Control URL syntax describes
+//! the separate closed provider capability; only verified original-alias
+//! discovery replies can enroll direct NAS probes.
 use reqwest::Url;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -7,7 +8,6 @@ use std::collections::BTreeSet;
 pub(super) const PATH: &str = "/__sortofremoteng_quickconnect_discovered_v1";
 const PROBE_PATH: &str = "/webman/pingpong.cgi";
 const PROBE_QUERY: &str = "action=cors&quickconnect=true";
-const MAX_CONTROLS: usize = 16;
 const MAX_PROBES: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,7 +66,6 @@ pub(super) struct Registry {
     sequence: u64,
     revision: u64,
     alias: String,
-    controls: BTreeSet<String>,
     probes: BTreeSet<String>,
     pending: BTreeSet<u64>,
     revoked: bool,
@@ -74,7 +73,6 @@ pub(super) struct Registry {
 impl Registry {
     pub(super) fn revoke(&mut self) {
         self.revoked = true;
-        self.controls.clear();
         self.probes.clear();
         self.pending.clear();
     }
@@ -90,7 +88,6 @@ impl Registry {
         if sequence != self.sequence {
             self.sequence = sequence;
             self.alias = alias.to_string();
-            self.controls.clear();
             self.probes.clear();
             self.pending.clear();
         }
@@ -110,10 +107,7 @@ impl Registry {
             return None;
         }
         match classify(url, alias)? {
-            Route::Control => self
-                .controls
-                .contains(url.as_str())
-                .then_some(Route::Control),
+            Route::Control => None,
             Route::Probe => self.probes.contains(url.as_str()).then_some(Route::Probe),
         }
     }
@@ -135,25 +129,9 @@ impl Registry {
             return true;
         };
         for entry in entries {
-            // A control redirect can contain sites without a server object.
-            // Returned server IDs are not assumed to equal the requested alias.
-            if let Some(sites) = entry
-                .get("sites")
-                .and_then(Value::as_array)
-                .filter(|sites| sites.len() <= MAX_CONTROLS)
-            {
-                for site in sites.iter().filter_map(Value::as_str) {
-                    let Ok(url) = Url::parse(&format!("https://{site}/Serv.php")) else {
-                        continue;
-                    };
-                    if url.host_str() == Some(site)
-                        && classify(&url, &self.alias) == Some(Route::Control)
-                        && self.controls.len() < MAX_CONTROLS
-                    {
-                        self.controls.insert(url.to_string());
-                    }
-                }
-            }
+            // sites[] is a vendor routing hint, not an exhaustive control-host
+            // authorization list. Returned server IDs are also not assumed to
+            // equal the validated request's original NAS alias.
             if entry
                 .pointer("/server/pingpong_path")
                 .and_then(Value::as_str)
@@ -230,10 +208,13 @@ mod tests {
         assert!(registry.learn(current, &response()));
         assert!(registry.learn(old, &response()));
         assert!(!registry.learn(old, &response()));
-        assert_eq!(
-            registry.allows(1, "test-nas", &control),
-            Some(Route::Control)
-        );
+        // Control permission is the separately validated defaults namespace,
+        // not a grant learned from response sites[].
+        assert!(registry.allows(1, "test-nas", &control).is_none());
+        let probe = Url::parse(&format!(
+            "https://test-nas.direct.quickconnect.to:5001{PROBE_PATH}?{PROBE_QUERY}"
+        ))
+        .unwrap();
         for host in [
             "test-nas.direct.quickconnect.to",
             "192-168-50-100.test-nas.direct.quickconnect.to",
@@ -244,10 +225,10 @@ mod tests {
                 assert_eq!(registry.allows(1, "test-nas", &url), Some(Route::Probe));
             }
         }
-        assert!(registry.allows(1, "other-nas", &control).is_none());
+        assert!(registry.allows(1, "other-nas", &probe).is_none());
         registry.begin(2, "test-nas").unwrap();
         registry.learn(current, &response());
-        assert!(registry.allows(2, "test-nas", &control).is_none());
+        assert!(registry.allows(2, "test-nas", &probe).is_none());
         assert!(registry.begin(1, "test-nas").is_none());
         registry.revoke();
         assert!(registry.begin(3, "test-nas").is_none());
@@ -275,7 +256,6 @@ mod tests {
             .map(|i| format!("host{i}.test-nas.direct.quickconnect.to"))
             .collect();
         registry.learn(ticket, &serde_json::json!([{"sites":sites,"smartdns":{"lan":hosts},"service":{"port":5001,"ext_port":5002}}]));
-        assert_eq!(registry.controls.len(), MAX_CONTROLS);
         assert_eq!(registry.probes.len(), MAX_PROBES);
     }
 }

@@ -51,6 +51,7 @@ export interface WebNetworkRoutingStatus {
   quickConnectDiscovery: boolean;
   quickConnectDiscovered: boolean;
   quickConnectDirectNavigation: boolean;
+  quickConnectRegionalNavigation: boolean;
 }
 /** Advisory only; invoke after the existing primary-document readiness fence. */
 export function webNetworkRoutingStatus(
@@ -65,14 +66,16 @@ export function webNetworkRoutingStatus(
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
       quickConnectDirectNavigation: false,
+      quickConnectRegionalNavigation: false,
     };
   const data = value as Record<string, unknown>;
   if (
-    data.version !== 3 ||
+    data.version !== 4 ||
     typeof data.quickConnectNavigation !== "boolean" ||
     typeof data.quickConnectDiscovery !== "boolean" ||
     typeof data.quickConnectDiscovered !== "boolean" ||
-    typeof data.quickConnectDirectNavigation !== "boolean"
+    typeof data.quickConnectDirectNavigation !== "boolean" ||
+    typeof data.quickConnectRegionalNavigation !== "boolean"
   )
     return {
       status: "missing",
@@ -80,19 +83,22 @@ export function webNetworkRoutingStatus(
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
       quickConnectDirectNavigation: false,
+      quickConnectRegionalNavigation: false,
     };
   return {
     status:
       data.quickConnectNavigation === expectedQuickConnect &&
       data.quickConnectDiscovery === expectedAliasRoutes &&
       data.quickConnectDiscovered === expectedAliasRoutes &&
-      data.quickConnectDirectNavigation === expectedAliasRoutes
+      data.quickConnectDirectNavigation === expectedAliasRoutes &&
+      data.quickConnectRegionalNavigation === expectedAliasRoutes
         ? "current"
         : "mismatch",
     quickConnectNavigation: data.quickConnectNavigation,
     quickConnectDiscovery: data.quickConnectDiscovery,
     quickConnectDiscovered: data.quickConnectDiscovered,
     quickConnectDirectNavigation: data.quickConnectDirectNavigation,
+    quickConnectRegionalNavigation: data.quickConnectRegionalNavigation,
   };
 }
 export interface WebNetworkDocument {

@@ -32,7 +32,7 @@ describe("untrusted page network report boundary", () => {
       { version: 1 },
       { version: 2, quickConnectNavigation: true, quickConnectDiscovery: true },
       {
-        version: 3,
+        version: 4,
         quickConnectNavigation: "private",
         quickConnectDiscovery: true,
       },
@@ -41,11 +41,12 @@ describe("untrusted page network report boundary", () => {
     expect(
       webNetworkRoutingStatus(
         {
-          version: 3,
+          version: 4,
           quickConnectNavigation: false,
           quickConnectDiscovery: false,
           quickConnectDiscovered: false,
           quickConnectDirectNavigation: false,
+          quickConnectRegionalNavigation: false,
         },
         false,
       ),
@@ -55,15 +56,17 @@ describe("untrusted page network report boundary", () => {
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
       quickConnectDirectNavigation: false,
+      quickConnectRegionalNavigation: false,
     });
     expect(
       webNetworkRoutingStatus(
         {
-          version: 3,
+          version: 4,
           quickConnectNavigation: false,
           quickConnectDiscovery: false,
           quickConnectDiscovered: false,
           quickConnectDirectNavigation: false,
+          quickConnectRegionalNavigation: false,
         },
         true,
       ).status,
@@ -71,11 +74,12 @@ describe("untrusted page network report boundary", () => {
     expect(
       webNetworkRoutingStatus(
         {
-          version: 3,
+          version: 4,
           quickConnectNavigation: true,
           quickConnectDiscovery: true,
           quickConnectDiscovered: true,
           quickConnectDirectNavigation: true,
+          quickConnectRegionalNavigation: true,
           credentials: "private",
         },
         true,
@@ -87,15 +91,17 @@ describe("untrusted page network report boundary", () => {
       quickConnectDiscovery: true,
       quickConnectDiscovered: true,
       quickConnectDirectNavigation: true,
+      quickConnectRegionalNavigation: true,
     });
   });
   it("requires the current alias capabilities but accepts an aliasless or disabled source", () => {
     const aliasless = {
-      version: 3,
+      version: 4,
       quickConnectNavigation: true,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
       quickConnectDirectNavigation: false,
+      quickConnectRegionalNavigation: false,
     };
     expect(webNetworkRoutingStatus(aliasless, true, false).status).toBe(
       "current",
@@ -108,12 +114,14 @@ describe("untrusted page network report boundary", () => {
       quickConnectDiscovery: true,
       quickConnectDiscovered: true,
       quickConnectDirectNavigation: true,
+      quickConnectRegionalNavigation: true,
     };
     expect(webNetworkRoutingStatus(all, true, true).status).toBe("current");
     expect(webNetworkRoutingStatus(all, false, false).status).toBe("mismatch");
     for (const key of [
       "quickConnectDiscovered",
       "quickConnectDirectNavigation",
+      "quickConnectRegionalNavigation",
     ])
       for (const value of [undefined, "true", 1, {}, null])
         expect(

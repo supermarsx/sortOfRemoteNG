@@ -100,6 +100,25 @@ impl SynologyQuickConnectDefaults {
         Some(alias.to_string())
     }
 
+    fn permits_regional_origin(&self, destination: &Url) -> bool {
+        let Some(alias) = self.nas_alias() else {
+            return false;
+        };
+        let Some(host) = destination.host_str() else {
+            return false;
+        };
+        destination.scheme() == "https"
+            && destination.port().is_none()
+            && destination.username().is_empty()
+            && destination.password().is_none()
+            && host
+                .strip_suffix(".quickconnect.to")
+                .and_then(|prefix| prefix.split_once('.'))
+                .is_some_and(|(candidate_alias, region)| {
+                    candidate_alias == alias && regional_label(region)
+                })
+    }
+
     fn permits_direct_origin(&self, destination: &Url) -> bool {
         let Some(alias) = self.nas_alias() else {
             return false;
@@ -133,6 +152,7 @@ impl SynologyQuickConnectDefaults {
         let current = current_target.origin().ascii_serialization();
         if current == self.original_origin
             || destinations.contains(&current)
+            || self.permits_regional_origin(current_target)
             || self.permits_direct_origin(current_target)
         {
             Ok(())
@@ -146,7 +166,8 @@ impl SynologyQuickConnectDefaults {
             return false;
         };
         self.validate(&current).is_ok()
-            && (self.permits_direct_origin(destination)
+            && (self.permits_regional_origin(destination)
+                || self.permits_direct_origin(destination)
                 || self.origins().is_ok_and(|origins| {
                     origins.contains(&destination.origin().ascii_serialization())
                 }))
@@ -169,6 +190,7 @@ mod tests {
         let defaults = context("https://nas-example.fr3.quickconnect.to");
         for current in [
             "https://nas-example.fr3.quickconnect.to",
+            "https://nas-example.us2.quickconnect.to",
             "http://nas-example.quickconnect.to",
             "https://nas-example.quickconnect.to",
             "https://nas-example.direct.quickconnect.to:5001",
@@ -177,6 +199,8 @@ mod tests {
             PORTALS[1],
         ] {
             for destination in [
+                "https://nas-example.fr3.quickconnect.to/path",
+                "https://nas-example.us2.quickconnect.to/path",
                 "http://nas-example.quickconnect.to/path",
                 "https://nas-example.quickconnect.to/path",
                 "https://nas-example.direct.quickconnect.to:5001/path",
@@ -187,6 +211,17 @@ mod tests {
                 assert!(defaults.permits(current, &Url::parse(destination).unwrap()));
             }
             for rejected in [
+                "http://nas-example.us2.quickconnect.to",
+                "https://other-nas.us2.quickconnect.to",
+                "https://nas-example.us2.quickconnect.to:5001",
+                "https://nas-example.direct.quickconnect.to",
+                "https://nas-example.us.quickconnect.to",
+                "https://nas-example.usa2.quickconnect.to",
+                "https://nas-example.u2.quickconnect.to",
+                "https://nas-example.us-2.quickconnect.to",
+                "https://nas-example.us2.extra.quickconnect.to",
+                "https://nas-example.us2.quickconnect.to.",
+                "https://user@nas-example.us2.quickconnect.to",
                 "http://other-nas.quickconnect.to",
                 "https://other-nas.quickconnect.to",
                 "http://global.quickconnect.to",
@@ -206,6 +241,44 @@ mod tests {
         assert!(!defaults.permits(
             "https://unrelated.invalid",
             &Url::parse(PORTALS[0]).unwrap()
+        ));
+    }
+
+    #[test]
+    fn regional_sources_and_destinations_keep_original_alias_and_dns_bounds() {
+        let defaults = context("https://nas-example.fr3.quickconnect.to");
+        let maximum = format!("https://nas-example.us{}.quickconnect.to", "2".repeat(61));
+        let too_long = format!("https://nas-example.us{}.quickconnect.to", "2".repeat(62));
+        for source in ["https://nas-example.us2.quickconnect.to", maximum.as_str()] {
+            assert!(defaults.validate(&Url::parse(source).unwrap()).is_ok());
+            assert!(defaults.permits(source, &Url::parse(&defaults.original_origin).unwrap()));
+            assert!(defaults.permits(PORTALS[0], &Url::parse(source).unwrap()));
+        }
+        for source in [
+            "http://nas-example.us2.quickconnect.to",
+            "https://other-nas.us2.quickconnect.to",
+            "https://nas-example.us2.quickconnect.to:444",
+            "https://nas-example.us2.quickconnect.to.",
+            "https://nas-example.us2.extra.quickconnect.to",
+            too_long.as_str(),
+        ] {
+            assert!(defaults.validate(&Url::parse(source).unwrap()).is_err());
+            assert!(!defaults.permits(PORTALS[0], &Url::parse(source).unwrap()));
+        }
+        for original in [
+            PORTALS[0],
+            "https://nas.custom.invalid",
+            "https://nas-example.direct.quickconnect.to",
+        ] {
+            assert!(!context(original).permits(
+                original,
+                &Url::parse("https://nas-example.us2.quickconnect.to").unwrap()
+            ));
+        }
+        // URL canonicalization removes explicit standard HTTPS port 443.
+        assert!(defaults.permits(
+            PORTALS[0],
+            &Url::parse("https://nas-example.us2.quickconnect.to:443/path").unwrap()
         ));
     }
 

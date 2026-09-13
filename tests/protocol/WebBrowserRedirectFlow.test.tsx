@@ -289,11 +289,12 @@ describe("mounted website network boundary", () => {
           status === "missing"
             ? undefined
             : {
-                version: status === "legacy" ? 2 : 3,
+                version: status === "legacy" ? 3 : 4,
                 quickConnectNavigation: status === "current",
                 quickConnectDiscovery: false,
                 quickConnectDiscovered: false,
                 quickConnectDirectNavigation: false,
+                quickConnectRegionalNavigation: false,
               },
       };
       const send = (source: MessageEventSource | null, payload = data) =>
@@ -320,7 +321,7 @@ describe("mounted website network boundary", () => {
           ? "Restart the desktop application"
           : status === "mismatch"
             ? "differ from the current connection settings"
-            : "Page routing module v3 reported",
+            : "Page routing module v4 reported",
       );
       expect(proxies).toHaveLength(1);
       await act(async () => {
@@ -547,6 +548,50 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  it("automatically returns from the portal through selected-NAS regions without changing the original owner or alias", async () => {
+    h.connections = [
+      {
+        ...h.connections[0],
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, httpsOnly: true },
+      },
+    ];
+    const view = await mounted();
+    for (const [index, destination] of [
+      "https://global.quickconnect.to/",
+      "https://example-nas.de2.quickconnect.to/",
+      "https://example-nas.fr3.quickconnect.to/",
+    ].entries()) {
+      redirect(view.container.querySelector("iframe")!, destination);
+      await waitFor(() => expect(proxies).toHaveLength(index + 2));
+      await waitFor(() =>
+        expect(view.container.querySelector("iframe")?.src).toContain(
+          proxies[index + 1].proxy_url,
+        ),
+      );
+      expect(
+        screen.queryByRole("region", { name: "Redirect review" }),
+      ).toBeNull();
+    }
+    const starts = h.invoke.mock.calls.filter(
+      ([name]) => name === "start_basic_auth_proxy",
+    );
+    for (const [, args] of starts)
+      expect(args.config.proxy_policy).toMatchObject({
+        allowCrossOriginRedirects: false,
+        httpsOnly: true,
+        synologyQuickConnectDefaults: {
+          version: 1,
+          originalOrigin: "https://example-nas.fr3.quickconnect.to",
+        },
+      });
+    expect(
+      h.invoke.mock.calls.filter(
+        ([name]) => name === "get_tls_certificate_info",
+      ),
+    ).toHaveLength(4);
+    expect(h.connections[0].hostname).toBe("example-nas.fr3.quickconnect.to");
+  });
   it("retains original context through regional to HTTPS alias and portal with Require HTTPS enabled", async () => {
     h.connections = [
       {

@@ -1,6 +1,7 @@
 //! Closed anonymous QuickConnect discovery and tunnel-setup RPCs. No arbitrary
-//! URLs or inherited website credentials. Only verified discovery replies may
-//! enroll original-NAS probe/control destinations in a private document registry.
+//! URLs or inherited website credentials. The closed provider-control namespace
+//! is authorized by original-NAS defaults; only verified discovery replies may
+//! enroll direct NAS probes in a private document registry.
 #[path = "http_quickconnect_discovered.rs"]
 mod discovered;
 use super::AxumProxyState;
@@ -165,7 +166,6 @@ enum Operation {
 struct ValidatedBody {
     operation: Operation,
     bytes: Vec<u8>,
-    discovery_body: Vec<u8>,
 }
 
 fn validated_body(bytes: &[u8], alias: &str) -> Result<ValidatedBody, &'static str> {
@@ -214,29 +214,7 @@ fn validated_body(bytes: &[u8], alias: &str) -> Result<ValidatedBody, &'static s
         _ => return Err(invalid),
     };
     let bytes = serde_json::to_vec(&commands).map_err(|_| invalid)?;
-    let discovery_body = if operation == Operation::Discovery {
-        bytes.clone()
-    } else {
-        // Tunnel setup can mutate provider state. Its cold-route warm-up must
-        // be a newly constructed read-only discovery request, never a replay
-        // of the tunnel command against the global authority.
-        let discovery = ["mainapp_https", "mainapp_http"].map(|id| ControlCommand {
-            version: 1,
-            command: "get_server_info".into(),
-            stop_when_error: false,
-            stop_when_success: false,
-            id: id.into(),
-            server_id: alias.into(),
-            is_gofile: false,
-            path: commands[0].path.clone(),
-        });
-        serde_json::to_vec(&discovery).map_err(|_| invalid)?
-    };
-    Ok(ValidatedBody {
-        operation,
-        bytes,
-        discovery_body,
-    })
+    Ok(ValidatedBody { operation, bytes })
 }
 
 pub(super) fn manifest(
@@ -259,6 +237,7 @@ pub(super) fn manifest(
             serde_json::json!({"upstreamUrl":UPSTREAM,"proxyUrl":format!("{proxy}{PATH}")});
         value["discovered"] = serde_json::json!({"version":1,"alias":alias,"proxyUrl":format!("{proxy}{DISCOVERED_PATH}")});
         value["directNavigation"] = serde_json::json!({"version":1,"alias":alias});
+        value["regionalNavigation"] = serde_json::json!({"version":1,"alias":alias});
     }
     Some(value)
 }
@@ -281,7 +260,7 @@ struct Exchange<'a> {
     route: discovered::Route,
     operation: Operation,
     body: Vec<u8>,
-    learned: bool,
+    dynamic_route: bool,
 }
 
 async fn exchange(
@@ -289,7 +268,7 @@ async fn exchange(
     exchange: Exchange<'_>,
 ) -> Result<Response<Body>, &'static str> {
     if exchange.operation == Operation::Tunnel
-        && (!exchange.learned
+        && (!exchange.dynamic_route
             || exchange.route != discovered::Route::Control
             || exchange.url.as_str() == UPSTREAM)
     {
@@ -300,7 +279,7 @@ async fn exchange(
         .acquire()
         .await
         .map_err(|_| "QuickConnect discovery ended.")?;
-    if exchange.learned
+    if exchange.route == discovered::Route::Probe
         && !control.discovered.lock().is_ok_and(|registry| {
             registry.allows(exchange.sequence, exchange.alias, &exchange.url)
                 == Some(exchange.route)
@@ -483,9 +462,9 @@ pub(super) async fn handle(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
         .map(str::trim);
-    let learned = request.uri().path() == DISCOVERED_PATH;
+    let dynamic_route = request.uri().path() == DISCOVERED_PATH;
     let post = request.method() == Method::POST;
-    let destination = if learned {
+    let destination = if dynamic_route {
         super::quickconnect::decode_destination(request.uri().query())
     } else if request.uri().path() == PATH && request.uri().query().is_none() {
         reqwest::Url::parse(UPSTREAM).ok()
@@ -493,7 +472,7 @@ pub(super) async fn handle(
         None
     };
     if destination.is_none()
-        || !(post || learned && request.method() == Method::GET)
+        || !(post || dynamic_route && request.method() == Method::GET)
         || headers.get_all(DOCUMENT_HEADER).iter().count() != 1
         || sequence.is_none()
         || (post
@@ -539,7 +518,7 @@ pub(super) async fn handle(
         );
     };
     let destination = destination.unwrap();
-    let route = if learned {
+    let route = if dynamic_route {
         discovered::classify(&destination, &alias)
     } else {
         Some(discovered::Route::Control)
@@ -596,7 +575,6 @@ pub(super) async fn handle(
                     Ok(ValidatedBody {
                         operation: Operation::Probe,
                         bytes: Vec::new(),
-                        discovery_body: Vec::new(),
                     })
                 } else {
                     Err("QuickConnect probes cannot carry a body.")
@@ -612,7 +590,7 @@ pub(super) async fn handle(
                 };
                 if body.operation == Operation::Tunnel {
                     tunnel_requested.store(true, std::sync::atomic::Ordering::Relaxed);
-                    if !learned || destination.as_str() == UPSTREAM {
+                    if !dynamic_route || destination.as_str() == UPSTREAM {
                         return Ok(refusal(
                             StatusCode::BAD_REQUEST,
                             "QuickConnect tunnel setup requires an approved regional control route.",
@@ -620,51 +598,15 @@ pub(super) async fn handle(
                         ));
                     }
                 }
-                let has_grant = || {
-                    control.discovered.lock().is_ok_and(|registry| {
+                // The exact anonymous provider-control namespace and closed
+                // original-alias body are the defaults capability. sites[] is
+                // not an exhaustive regional allowlist. Direct NAS probes,
+                // unlike control POSTs, still need a verified discovery grant.
+                if route == discovered::Route::Probe
+                    && !control.discovered.lock().is_ok_and(|registry| {
                         registry.allows(sequence, &alias, &destination) == Some(route)
                     })
-                };
-                if learned && !has_grant() && route == discovered::Route::Control {
-                    // A cached regional first request still needs fresh
-                    // document authority. Ask only the fixed verified provider
-                    // with a validated discovery body, once. Tunnel setup is
-                    // never replayed against this global authority.
-                    let mut warmup = match exchange(
-                        control,
-                        Exchange {
-                            state: &state,
-                            sequence,
-                            alias: &alias,
-                            url: reqwest::Url::parse(UPSTREAM).expect("fixed provider URL"),
-                            route: discovered::Route::Control,
-                            operation: Operation::Discovery,
-                            body: body.discovery_body,
-                            learned: false,
-                        },
-                    )
-                    .await
-                    {
-                        Ok(response) => response,
-                        Err(message) => {
-                            refusal(StatusCode::BAD_GATEWAY, message, Diagnostic::Transport)
-                        }
-                    };
-                    warmup.extensions_mut().insert(ObservedDestination {
-                        description:
-                            "QuickConnect discovery warm-up: https://global.quickconnect.to".into(),
-                    });
-                    let warmup = super::observe_local_response(
-                        &state,
-                        &Method::POST,
-                        super::ObservedLocalRoute::QuickConnectDiscovery,
-                        warmup,
-                    );
-                    if !warmup.status().is_success() {
-                        return Ok(warmup);
-                    }
-                }
-                if learned && !has_grant() {
+                {
                     return Ok(refusal(
                         StatusCode::FORBIDDEN,
                         "QuickConnect destination is not approved for this document.",
@@ -682,7 +624,7 @@ pub(super) async fn handle(
                         route,
                         operation: body.operation,
                         body: body.bytes,
-                        learned,
+                        dynamic_route,
                     },
                 )
                 .await
@@ -701,7 +643,8 @@ pub(super) async fn handle(
         ),
     };
     let tunnel_requested = tunnel_requested.load(std::sync::atomic::Ordering::Relaxed);
-    if (learned || tunnel_requested) && candidate_current.load(std::sync::atomic::Ordering::Relaxed)
+    if (dynamic_route || tunnel_requested)
+        && candidate_current.load(std::sync::atomic::Ordering::Relaxed)
     {
         let description = format!(
             "{}: {destination_origin}",

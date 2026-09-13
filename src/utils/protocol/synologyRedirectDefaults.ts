@@ -98,8 +98,8 @@ export function synologyDefaultRedirectOrigins(
   return result;
 }
 
-/** User-enabled same-NAS direct namespace: one optional DNS label, HTTPS only,
- * explicit DSM ports. This never grants background RPC or TLS exceptions. */
+/** User-enabled same-NAS regional/direct namespaces. Neither grants arbitrary
+ * background requests, another NAS alias or TLS exceptions. */
 export function isSynologyDefaultRedirectOrigin(
   originalOrigin: string,
   candidateOrigin: string,
@@ -115,9 +115,21 @@ export function isSynologyDefaultRedirectOrigin(
     if (
       candidate.origin !== candidateOrigin ||
       candidate.protocol !== "https:" ||
-      !["5001", "5002"].includes(candidate.port)
+      candidate.hostname.length > 253
     )
       return false;
+    const regionalPrefix = `${alias}.`;
+    const regionalSuffix = ".quickconnect.to";
+    if (
+      !candidate.port &&
+      candidate.hostname.startsWith(regionalPrefix) &&
+      candidate.hostname.endsWith(regionalSuffix) &&
+      REGION.test(
+        candidate.hostname.slice(regionalPrefix.length, -regionalSuffix.length),
+      )
+    )
+      return true;
+    if (!["5001", "5002"].includes(candidate.port)) return false;
     const suffix = `${alias}.direct.quickconnect.to`;
     return (
       candidate.hostname === suffix ||

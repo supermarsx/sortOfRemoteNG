@@ -25,6 +25,7 @@ interface ClientConfiguration extends ReturnType<typeof config> {
     rpc?: { upstreamUrl: string; proxyUrl: string };
     discovered?: { version: number; alias: string; proxyUrl: string };
     directNavigation?: { version: number; alias: string };
+    regionalNavigation?: { version: number; alias: string };
   };
 }
 interface Controller {
@@ -36,6 +37,7 @@ interface Controller {
     quickConnectDiscovery: boolean;
     quickConnectDiscovered: boolean;
     quickConnectDirectNavigation: boolean;
+    quickConnectRegionalNavigation: boolean;
   };
 }
 let controller: Controller | undefined;
@@ -150,11 +152,56 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
           proxyUrl: discoveredProxy,
         },
         directNavigation: { version: 1, alias: "example-nas" },
+        regionalNavigation: { version: 1, alias: "example-nas" },
       },
     };
   };
   const directProbe =
     "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
+  it("uses a separate immutable regional hint only for selected-NAS HTTPS receipt navigation", () => {
+    const input = discoveryConfig();
+    start(input);
+    for (const destination of [
+      "https://example-nas.fr3.quickconnect.to/",
+      "https://example-nas.de2.quickconnect.to/webman/",
+    ]) {
+      const anchor = document.createElement("a");
+      anchor.href = destination;
+      expect(anchor.href).toBe(destination);
+      document.body.append(anchor);
+      anchor.addEventListener("click", (event) => event.preventDefault());
+      anchor.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      expect(new URL(anchor.href).searchParams.get("destination")).toBe(
+        destination,
+      );
+      expect(() => controller!.mapUrl(destination, "fetch")).toThrow();
+    }
+    for (const destination of [
+      "http://example-nas.fr3.quickconnect.to/",
+      "https://example-nas.fr3.quickconnect.to:5001/",
+      "https://other-nas.fr3.quickconnect.to/",
+      "https://example-nas.fr.quickconnect.to/",
+      "https://example-nas.fr3x.quickconnect.to/",
+      "https://example-nas.x.fr3.quickconnect.to/",
+    ])
+      expect(() => controller!.mapUrl(destination, "navigation")).toThrow();
+    input.synologyQuickConnect.regionalNavigation.alias = "other-nas";
+    expect(() =>
+      controller!.mapUrl(
+        "https://other-nas.fr3.quickconnect.to/",
+        "navigation",
+      ),
+    ).toThrow();
+    window.dispatchEvent(new Event("pagehide"));
+    expect(() =>
+      controller!.mapUrl(
+        "https://example-nas.fr3.quickconnect.to/",
+        "navigation",
+      ),
+    ).toThrow("document-closed");
+  });
   it("preserves the exact singleton tunnel body and content type through regional fetch and XHR", async () => {
     const body = JSON.stringify([
       {
@@ -388,11 +435,12 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   it("acknowledges only installed capabilities and routes the HTTPS alias without broad origin permission", () => {
     start(quickConfig());
     expect(controller!.capabilities).toEqual({
-      version: 3,
+      version: 4,
       quickConnectNavigation: true,
       quickConnectDiscovery: true,
       quickConnectDiscovered: false,
       quickConnectDirectNavigation: false,
+      quickConnectRegionalNavigation: false,
     });
     expect(Object.isFrozen(controller!.capabilities)).toBe(true);
     expect(
@@ -415,11 +463,12 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     controller!.dispose();
     start();
     expect(controller!.capabilities).toEqual({
-      version: 3,
+      version: 4,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
       quickConnectDirectNavigation: false,
+      quickConnectRegionalNavigation: false,
     });
   });
   it("rejects forged capability paths and keeps navigation-only capability free of RPC authority", async () => {

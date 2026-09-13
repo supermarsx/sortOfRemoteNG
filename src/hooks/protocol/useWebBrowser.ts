@@ -3017,6 +3017,10 @@ export function useWebBrowser(session: ConnectionSession) {
     proxyRestarting,
     handleRestartProxy,
     proxySessionIdRef,
+    webProxyOrigin:
+      proxySessionIdRef.current && proxyUrlRef.current
+        ? new URL(proxyUrlRef.current).origin
+        : undefined,
     // Certificate
     showCertPopup,
     setShowCertPopup,

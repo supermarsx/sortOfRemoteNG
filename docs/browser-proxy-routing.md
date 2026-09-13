@@ -81,6 +81,13 @@ An unsupported or noncanonical source does not gain these defaults. Later
 global/www hops retain the original connection's identity instead of learning
 a new alias from a redirect.
 
+The same original alias can also navigate anonymously to
+`https://<alias>.<region>.quickconnect.to` on port 443, including a return to
+its original regional address. The region is exactly two lowercase letters
+followed by 1–61 digits (one DNS label). Other aliases, HTTP regional URLs,
+custom ports and deeper names are not included. Each handoff still requires
+its native receipt, original owner/provenance and independent TLS checks.
+
 For that recognized original alias, the same checkbox also permits anonymous
 navigation to `https://<alias>.direct.quickconnect.to:5001` or `:5002`, and
 `https://<label>.<alias>.direct.quickconnect.to:5001` or `:5002`. The optional
@@ -139,34 +146,35 @@ the only retained provider response header is a validated `X-QC-CLIENT-IP` addre
 Requests require the protected origin and current primary-document identity;
 navigation, opt-out and session closure invalidate their authority.
 
-Successful verified control replies can enroll two additional route types in
-a private native registry for the **same original alias and current document**:
+For a recognized original NAS alias, the default setting explicitly permits
+closed control POSTs at `https://<single-label>.quickconnect.to/Serv.php`,
+with default port 443 and no query or fragment. This includes regional control
+hosts such as `dec.quickconnect.to` without requiring a preceding `sites[]`
+advertisement. The permission is scoped to the provider's DNS namespace and
+the exact validated operation for the original alias/current document; a host
+matching that namespace is not itself proof that it is a regional server.
+It does not authorize other paths, methods, resources or credential forwarding.
 
-- `sites[]` may name a single-label `<site>.quickconnect.to` control host, such
-  as `dec.quickconnect.to`. Only its query-free HTTPS port-443 `/Serv.php` route
-  is enrolled, and it accepts the same exact two-entry `get_server_info` POST
-  schema or the bounded tunnel-setup operation described below. A syntactically
-  matching hostname alone is not permission.
-- `smartdns.host`, `smartdns.lan` and `smartdns.lanv6` may supply same-NAS direct
-  hosts matching the namespace above. Only explicitly returned
-  `service.port`/`service.ext_port` values of 5001 or 5002 can enroll the exact
-  bodyless HTTPS GET `/webman/pingpong.cgi?action=cors&quickconnect=true`.
-  A different nonempty `server.pingpong_path` is not substituted or relayed.
+Only successful verified **discovery** replies can enroll direct probes in a
+private native registry for the **same original alias and current document**.
+`smartdns.host`, `smartdns.lan` and `smartdns.lanv6` may supply same-NAS direct
+hosts matching the namespace above. Only explicitly returned
+`service.port`/`service.ext_port` values of 5001 or 5002 can enroll the exact
+bodyless HTTPS GET `/webman/pingpong.cgi?action=cors&quickconnect=true`.
+A different nonempty `server.pingpong_path` is not substituted or relayed.
 
-The registry retains at most 16 exact control URLs and 32 exact probe URLs.
+The registry retains at most 32 exact probe URLs.
 Independent one-use learning tickets are bounded to eight; concurrent valid
 responses for the same document can add routes without discarding each other's
 results. Navigation or session revocation prevents old tickets and grants from
 being reused. Returned opaque `serverID` fields are not assumed to equal the
 requested NAS alias. The request's validated original alias remains authority.
 
-A cached regional control host can be the page's first request. If that exact
-regional POST lacks a current-document grant, native routing first validates
-its body and performs one discovery exchange with the fixed global provider
-using validated discovery parameters. It forwards to the region only if that verified
-reply advertises it. This warm-up shares the existing concurrency, deadline
-and document-revocation limits; it is not recursive and never bootstraps a cold
-direct GET probe. An unadvertised region remains refused without contacting it.
+A cached provider control host can be the page's first request. Its bounded
+operation is sent directly through the configured proxy after validation;
+there is no synthesized global warm-up, control-host learning prerequisite or
+automatic replay. A direct GET probe without a current discovered grant
+remains refused before contacting that host.
 
 For an authorized regional control endpoint, the same checkbox also permits a
 single-element JSON array containing exactly eight `request_tunnel` fields:
@@ -176,11 +184,9 @@ single-element JSON array containing exactly eight `request_tunnel` fields:
 Extra fields, other commands, batching and other service IDs are refused.
 The fixed global control endpoint cannot receive this operation.
 
-If tunnel setup is the first request to a cached region, the global warm-up
-reconstructs the two safe `get_server_info` commands from its validated alias
-and path. It **does not send or replay `request_tunnel` to global**. Only after
-the verified discovery response advertises the exact region is the original
-tunnel operation sent there once. There is no automatic tunnel retry, redirect
+Tunnel setup is sent once to the requested eligible provider control host.
+It **does not send or replay `request_tunnel` to global**, including through
+the generic provider-control route. There is no automatic tunnel retry, redirect
 following, alternate route or direct-network fallback. It retains the same
 anonymous client, configured proxy, verified TLS, size/deadline/concurrency and
 document-revocation bounds as discovery.
@@ -192,12 +198,11 @@ routing and trust requirements.
 
 Handled discovery failures include fixed, secret-free diagnostic codes in the
 bounded proxy request log. For example, `quickconnect_destination_not_discovered`
-means no current grant, `quickconnect_stale_document` means document authority
+means a direct probe has no current grant, `quickconnect_stale_document` means document authority
 ended, and `quickconnect_upstream_status` preserves a provider's HTTP error.
 A validated but uncontacted candidate is labelled **Attempted**, with only its
-canonical origin and operation. A completed global warm-up has its own entry;
-if it fails, the attempted regional entry can carry that same failure without
-implying the region was contacted. Request bodies, headers, destination queries
+canonical origin and operation, without implying that the server was contacted.
+Request bodies, headers, destination queries
 and provider error contents are never copied into these diagnostics.
 
 For probes, the native client sends the real source origin, not the local proxy
@@ -348,14 +353,14 @@ a frontend hot reload cannot install a new native callback. Closing a proxy
 revokes its exact origin, so a stale manager entry cannot provide a usable
 unauthenticated loopback replacement URL.
 
-Protection details also show the page routing module's **v3 acknowledgement**
-for fixed QuickConnect navigation, initial discovery, learned routes and
-same-NAS direct navigation. Its four boolean capabilities are compared with
+Protection details also show the page routing module's **v4 acknowledgement**
+for fixed QuickConnect navigation, initial discovery, learned probes and
+same-NAS direct/regional navigation. Its five boolean capabilities are compared with
 the current connection after the existing primary-document identity checks.
 A missing/older acknowledgement or a settings mismatch is diagnostic guidance,
 not permission to replay a request or bypass trust. Restart the desktop process
 after native updates; refreshing the application UI cannot replace an older
-native proxy's injected module. Even a current v3 acknowledgement is not proof
+native proxy's injected module. Even a current v4 acknowledgement is not proof
 that every browser request or channel is captured.
 
 ## Developer checks and limits

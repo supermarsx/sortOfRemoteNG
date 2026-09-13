@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import NativeHttpObservations from "../../src/components/protocol/webBrowser/NativeHttpObservations";
@@ -48,6 +49,38 @@ const status = () => ({
   allNetworkRequestsMediated: false,
   httpObservations: snapshot(),
 });
+const PROXY = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
+const NEXT_PROXY = "http://pabcdef0123456789abcdef0123456789.localhost:43124";
+const trafficStatus = () => ({
+  ...status(),
+  httpObservations: {
+    scope: "application",
+    total: 7,
+    documentBlocked: 1,
+    recent: [
+      "http://ipc.localhost",
+      PROXY,
+      NEXT_PROXY,
+      "https://blocked.example.com",
+      "https://api.example.com",
+      "http://ipc.localhost.example.com",
+      "https://ipc.localhost",
+    ].map((origin, index) => ({
+      sequence: index + 1,
+      method: "POST",
+      origin,
+      resourceKind: index === 3 ? "document" : "xhr",
+      sourceKind: "document",
+      documentBlocked: index === 3,
+    })),
+  },
+});
+function chooseFilter(name: string) {
+  fireEvent.click(
+    screen.getByRole("combobox", { name: "Filter native observations" }),
+  );
+  fireEvent.mouseDown(screen.getByRole("option", { name }));
+}
 
 beforeEach(() => {
   fixture.isActive = true;
@@ -132,6 +165,120 @@ describe("native HTTP diagnostic validation", () => {
 });
 
 describe("native HTTP observations disclosure", () => {
+  it("defaults to the exact active proxy, keeps blocked requests visible, and explicitly reveals IPC", async () => {
+    fixture.invoke.mockResolvedValue(trafficStatus());
+    render(<NativeHttpObservations active proxyOrigin={PROXY} />);
+    const list = await screen.findByRole("list", {
+      name: "Filtered native observations",
+    });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+    expect(list).toHaveTextContent(`POST ${PROXY}`);
+    expect(list).not.toHaveTextContent("ipc.localhost");
+    const blocked = screen.getByRole("list", {
+      name: "Blocked documents outside filter",
+    });
+    expect(blocked).toHaveTextContent("https://blocked.example.com");
+    expect(blocked).toHaveTextContent("document blocked");
+    expect(screen.getByText(/App IPC may already have evicted/)).toBeVisible();
+    expect(screen.getByText(/Matching an origin/)).toHaveTextContent(
+      "does not establish tab ownership",
+    );
+    chooseFilter("Other website traffic");
+    expect(within(list).getAllByRole("listitem")).toHaveLength(4);
+    expect(list).not.toHaveTextContent(PROXY);
+    expect(list).toHaveTextContent(NEXT_PROXY);
+    expect(list).toHaveTextContent("http://ipc.localhost.example.com");
+    expect(
+      screen.queryByRole("list", { name: "Blocked documents outside filter" }),
+    ).toBeNull();
+    chooseFilter("All, including app IPC");
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(7);
+    expect(rows[0]).toHaveTextContent("https://ipc.localhost");
+    expect(rows[6]).toHaveTextContent("http://ipc.localhost");
+    expect(fixture.invoke).toHaveBeenCalledTimes(1);
+  });
+  it("without a proxy defaults to non-IPC rows without assigning them to this tab", async () => {
+    fixture.invoke.mockResolvedValue(trafficStatus());
+    render(<NativeHttpObservations active />);
+    const list = await screen.findByRole("list", {
+      name: "Filtered native observations",
+    });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+    expect(list).toHaveTextContent(PROXY);
+    expect(list).toHaveTextContent(NEXT_PROXY);
+    expect(
+      within(list).queryByText(/^POST https?:\/\/ipc\.localhost —/),
+    ).toBeNull();
+    expect(screen.getByText(/No active proxy origin/)).toHaveTextContent(
+      "not assigned to a tab",
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Filter native observations" }),
+    ).toHaveTextContent("Website traffic (excluding app IPC)");
+  });
+  it("never hides an IPC-origin document denial behind the IPC filter", async () => {
+    const value = trafficStatus();
+    value.httpObservations.documentBlocked = 2;
+    value.httpObservations.recent[0].resourceKind = "document";
+    value.httpObservations.recent[0].documentBlocked = true;
+    fixture.invoke.mockResolvedValue(value);
+    render(<NativeHttpObservations active proxyOrigin={PROXY} />);
+    const blocked = await screen.findByRole("list", {
+      name: "Blocked documents outside filter",
+    });
+    expect(blocked).toHaveTextContent("POST http://ipc.localhost");
+    expect(within(blocked).getAllByRole("listitem")).toHaveLength(2);
+  });
+  it("clears stale rows and resets the filter on origin change without requesting another snapshot", async () => {
+    fixture.invoke.mockResolvedValue(trafficStatus());
+    const view = render(<NativeHttpObservations active proxyOrigin={PROXY} />);
+    await screen.findByRole("list", { name: "Filtered native observations" });
+    chooseFilter("All, including app IPC");
+    view.rerender(<NativeHttpObservations active proxyOrigin={NEXT_PROXY} />);
+    expect(screen.queryByRole("listitem")).toBeNull();
+    expect(
+      screen.getByRole("combobox", { name: "Filter native observations" }),
+    ).toHaveTextContent("Current proxy origin");
+    expect(screen.getByText(/Refresh to read a snapshot/)).toBeVisible();
+    expect(fixture.invoke).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh snapshot" }));
+    const list = await screen.findByRole("list", {
+      name: "Filtered native observations",
+    });
+    expect(list).toHaveTextContent(NEXT_PROXY);
+    expect(list).not.toHaveTextContent(PROXY);
+    expect(fixture.invoke).toHaveBeenCalledTimes(2);
+  });
+  it("discards a deferred old-origin snapshot even after an origin ABA transition", async () => {
+    let resolve!: (value: unknown) => void;
+    fixture.invoke.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const view = render(<NativeHttpObservations active proxyOrigin={PROXY} />);
+    view.rerender(<NativeHttpObservations active proxyOrigin={NEXT_PROXY} />);
+    view.rerender(<NativeHttpObservations active proxyOrigin={PROXY} />);
+    await act(async () => resolve(trafficStatus()));
+    expect(screen.queryByRole("listitem")).toBeNull();
+    expect(fixture.invoke).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Refresh snapshot" }),
+    ).toBeEnabled();
+  });
+  it("does not display or reinterpret a malformed secret-bearing proxy URL", async () => {
+    render(
+      <NativeHttpObservations
+        active
+        proxyOrigin="https://private-user:private-secret@example.com/path"
+      />,
+    );
+    await screen.findByRole("list", { name: "Filtered native observations" });
+    expect(screen.queryByText(/private-user|private-secret/)).toBeNull();
+    expect(screen.getByText(/No active proxy origin/)).toBeVisible();
+  });
   it("does not request while closed; opens/refreshes explicitly and distinguishes native scope", async () => {
     const view = render(<NativeHttpObservations active={false} />);
     expect(fixture.invoke).not.toHaveBeenCalled();

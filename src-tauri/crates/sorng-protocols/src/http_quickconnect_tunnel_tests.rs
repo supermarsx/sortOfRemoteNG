@@ -21,7 +21,8 @@ fn sent_body(request: &str) -> serde_json::Value {
 async fn successful_tunnel(cold: bool) {
     for id in ["mainapp_https", "mainapp_http"] {
         // Deliberately discovery-shaped fields in the tunnel reply must not
-        // create new probe or regional-control grants.
+        // create new NAS probe grants. Control permission is namespace-bound,
+        // not a grant learned from an allegedly exhaustive sites list.
         let mut reply = smartdns();
         reply[0]["sites"] = serde_json::json!(["unlearned.quickconnect.to"]);
         reply[0]["errno"] = 0.into();
@@ -29,11 +30,8 @@ async fn successful_tunnel(cold: bool) {
         let expected_reply = reply.clone();
         let server = scripted_peer(
             Arc::new(move |request| {
-                let body = if request
-                    .to_ascii_lowercase()
-                    .contains("host: global.quickconnect.to")
-                {
-                    br#"[{"sites":["dec.quickconnect.to"]}]"#.to_vec()
+                let body = if sent_body(request)[0]["command"] == "get_server_info" {
+                    b"[]".to_vec()
                 } else {
                     reply.to_string().into_bytes()
                 };
@@ -55,7 +53,12 @@ async fn successful_tunnel(cold: bool) {
         )
         .await;
         if !cold {
-            learn(&proxy).await;
+            let discovery = routed(&proxy, REGIONAL, true).send().await.unwrap();
+            assert_eq!(discovery.status(), 200);
+            assert_eq!(
+                discovery.json::<serde_json::Value>().await.unwrap(),
+                serde_json::json!([])
+            );
             assert_eq!(server.seen.lock().unwrap().len(), 2);
         }
         let response = tunnel(&proxy, id)
@@ -82,19 +85,16 @@ async fn successful_tunnel(cold: bool) {
             let seen = server.seen.lock().unwrap();
             assert_eq!(
                 seen.len(),
-                4,
-                "one global exchange and one regional exchange"
+                if cold { 2 } else { 4 },
+                "only explicitly requested operations"
             );
-            assert!(seen[0].starts_with("CONNECT global.quickconnect.to:443 "));
-            assert!(seen[2].starts_with("CONNECT dec.quickconnect.to:443 "));
-            let mut discovery = payload();
-            if cold {
-                for command in discovery.as_array_mut().unwrap() {
-                    command["path"] = "".into();
-                }
+            for connect in seen.iter().step_by(2) {
+                assert!(connect.starts_with("CONNECT dec.quickconnect.to:443 "));
             }
-            assert_eq!(sent_body(&seen[1]), discovery);
-            assert_eq!(sent_body(&seen[3]), tunnel_body(id));
+            if !cold {
+                assert_eq!(sent_body(&seen[1]), payload());
+            }
+            assert_eq!(sent_body(seen.last().unwrap()), tunnel_body(id));
             for request in seen.iter().skip(1).step_by(2) {
                 assert!(request.starts_with("POST /Serv.php HTTP/1.1\r\n"));
                 let lower = request.to_ascii_lowercase();
@@ -142,34 +142,22 @@ async fn successful_tunnel(cold: bool) {
             routed(&proxy, PROBE, false).send().await.unwrap().status(),
             403
         );
-        assert_eq!(server.seen.lock().unwrap().len(), 4);
-        let unknown = routed(&proxy, "https://unlearned.quickconnect.to/Serv.php", true)
-            .body(tunnel_body(id).to_string())
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(unknown.status(), 403);
-        let seen = server.seen.lock().unwrap();
-        assert_eq!(seen.len(), 6, "only a new fixed-global check is permitted");
-        assert!(seen[4].starts_with("CONNECT global.quickconnect.to:443 "));
-        assert!(!seen.iter().any(|request| request
-            .to_ascii_lowercase()
-            .contains("host: unlearned.quickconnect.to")));
+        assert_eq!(server.seen.lock().unwrap().len(), if cold { 2 } else { 4 });
     }
 }
 
 #[tokio::test]
-async fn tunnel_advertised_regional_supports_both_services_anonymously_without_learning_reply() {
+async fn tunnel_after_no_sites_regional_discovery_supports_both_services_without_learning_reply() {
     successful_tunnel(false).await;
 }
 
 #[tokio::test]
-async fn tunnel_cold_regional_uses_two_discovery_commands_before_exact_singleton_tunnel() {
+async fn tunnel_cold_regional_sends_only_exact_requested_singleton_without_global_warmup() {
     successful_tunnel(true).await;
 }
 
 #[tokio::test]
-async fn tunnel_unadvertised_regional_refuses_after_only_fixed_global_discovery() {
+async fn tunnel_provider_control_namespace_does_not_require_sites_advertisement() {
     let server = peer(
         200,
         br#"[{"sites":["other.quickconnect.to"]}]"#.to_vec(),
@@ -190,18 +178,12 @@ async fn tunnel_unadvertised_regional_refuses_after_only_fixed_global_discovery(
             .await
             .unwrap()
             .status(),
-        403
+        200
     );
     let seen = server.seen.lock().unwrap();
     assert_eq!(seen.len(), 2);
-    assert!(seen[0].starts_with("CONNECT global.quickconnect.to:443 "));
-    let body = sent_body(&seen[1]);
-    assert_eq!(body.as_array().unwrap().len(), 2);
-    assert!(body
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|command| command["command"] == "get_server_info"));
+    assert!(seen[0].starts_with("CONNECT dec.quickconnect.to:443 "));
+    assert_eq!(sent_body(&seen[1]), tunnel_body("mainapp_https"));
     let log = proxy
         .state
         .global_sessions
@@ -210,16 +192,13 @@ async fn tunnel_unadvertised_regional_refuses_after_only_fixed_global_discovery(
         .request_log_newest_first();
     assert_eq!(
         log[0].url,
-        "Attempted QuickConnect tunnel setup: https://dec.quickconnect.to"
+        "QuickConnect tunnel setup: https://dec.quickconnect.to"
     );
-    assert_eq!(
-        log[0].error.as_deref(),
-        Some("HTTP 403 [quickconnect_destination_not_discovered]")
-    );
+    assert!(log[0].error.is_none());
 }
 
 #[tokio::test]
-async fn tunnel_rejects_malformed_or_expanded_commands_before_any_warmup_or_upstream() {
+async fn tunnel_rejects_malformed_or_expanded_commands_before_any_upstream() {
     let server = peer(
         200,
         br#"[{"sites":["dec.quickconnect.to"]}]"#.to_vec(),
@@ -297,7 +276,7 @@ async fn tunnel_rejects_malformed_or_expanded_commands_before_any_warmup_or_upst
             "{mutation}"
         );
     }
-    // This command is authorized only at a provider-advertised regional route,
+    // This command is authorized only at a bounded regional control route,
     // never by merely POSTing it to the fixed global capability endpoint.
     assert_eq!(
         request(&proxy)
@@ -401,7 +380,7 @@ async fn tunnel_requires_enabled_original_owner_current_document_and_verified_ro
     );
     let seen = server.seen.lock().unwrap();
     assert_eq!(seen.len(), 1);
-    assert!(seen[0].starts_with("CONNECT global.quickconnect.to:443 "));
+    assert!(seen[0].starts_with("CONNECT dec.quickconnect.to:443 "));
     assert!(!seen[0].contains("request_tunnel") && !seen[0].contains("source-private"));
 }
 
@@ -426,26 +405,7 @@ async fn tunnel_provider_errors_are_not_retried_and_do_not_learn_routes() {
         (200, vec![b' '; 256 * 1024 + 1], "", 502),
     ] {
         let expected_body = body.clone();
-        let server = scripted_peer(
-            Arc::new(move |request| {
-                if request
-                    .to_ascii_lowercase()
-                    .contains("host: global.quickconnect.to")
-                {
-                    (
-                        200,
-                        br#"[{"sites":["dec.quickconnect.to"]}]"#.to_vec(),
-                        String::new(),
-                        Duration::ZERO,
-                    )
-                } else {
-                    (status, body.clone(), extra.into(), Duration::ZERO)
-                }
-            }),
-            false,
-            false,
-        )
-        .await;
+        let server = peer(status, body, extra, false, false).await;
         let proxy = fixture(
             Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
             ORIGINAL,
@@ -468,8 +428,8 @@ async fn tunnel_provider_errors_are_not_retried_and_do_not_learn_routes() {
         }
         assert_eq!(
             server.seen.lock().unwrap().len(),
-            4,
-            "exactly one global discovery and one regional command"
+            2,
+            "exactly one requested regional command without retry or warm-up"
         );
         let log = proxy
             .state
@@ -489,26 +449,14 @@ async fn tunnel_document_replacement_and_stop_cancel_inflight_reply_without_repl
         let reached = Arc::new(AtomicBool::new(false));
         let hit = reached.clone();
         let server = scripted_peer(
-            Arc::new(move |request| {
-                if request
-                    .to_ascii_lowercase()
-                    .contains("host: global.quickconnect.to")
-                {
-                    (
-                        200,
-                        br#"[{"sites":["dec.quickconnect.to"]}]"#.to_vec(),
-                        String::new(),
-                        Duration::ZERO,
-                    )
-                } else {
-                    hit.store(true, Ordering::SeqCst);
-                    (
-                        200,
-                        br#"[{"errno":0,"privateLateReply":"never-visible"}]"#.to_vec(),
-                        String::new(),
-                        Duration::from_secs(1),
-                    )
-                }
+            Arc::new(move |_| {
+                hit.store(true, Ordering::SeqCst);
+                (
+                    200,
+                    br#"[{"errno":0,"privateLateReply":"never-visible"}]"#.to_vec(),
+                    String::new(),
+                    Duration::from_secs(1),
+                )
             }),
             false,
             false,
@@ -541,7 +489,12 @@ async fn tunnel_document_replacement_and_stop_cancel_inflight_reply_without_repl
             .unwrap();
         assert!(!response.status().is_success());
         assert!(!response.text().await.unwrap().contains("privateLateReply"));
-        assert_eq!(server.seen.lock().unwrap().len(), 4);
+        {
+            let seen = server.seen.lock().unwrap();
+            assert_eq!(seen.len(), 2);
+            assert!(seen[0].starts_with("CONNECT dec.quickconnect.to:443 "));
+            assert_eq!(sent_body(&seen[1]), tunnel_body("mainapp_https"));
+        }
         assert!(!tunnel(&proxy, "mainapp_https")
             .send()
             .await
@@ -550,8 +503,8 @@ async fn tunnel_document_replacement_and_stop_cancel_inflight_reply_without_repl
             .is_success());
         assert_eq!(
             server.seen.lock().unwrap().len(),
-            4,
-            "stale document must not warm up or replay"
+            2,
+            "stale document must not send or replay"
         );
     }
 }

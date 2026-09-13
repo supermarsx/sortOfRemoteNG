@@ -508,6 +508,10 @@ async fn discovery_manifest_stays_closed_and_custom_dsm_navigation_uses_existing
     assert_eq!(alias_manifest, value);
     assert_eq!(value["directNavigation"]["alias"], "test-nas");
     assert_eq!(
+        value["regionalNavigation"],
+        serde_json::json!({"version":1,"alias":"test-nas"})
+    );
+    assert_eq!(
         value["discovered"]["proxyUrl"],
         format!("http://fixture.localhost:1234{}", control::DISCOVERED_PATH)
     );
@@ -564,6 +568,7 @@ async fn discovery_manifest_stays_closed_and_custom_dsm_navigation_uses_existing
         .original_origin = source.into();
     let value = control::manifest(&settings, source, "http://fixture.localhost:1234").unwrap();
     assert!(value.get("rpc").is_none());
+    assert!(value.get("regionalNavigation").is_none());
     let proxy = fixture(None, source, settings).await;
     let response = client()
         .get(format!(

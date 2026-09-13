@@ -13,6 +13,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     navigationOrigins = new Set(),
     quickConnectRpc = null,
     quickConnectDiscovered = null,
+    regionalNavigationAlias = null,
     directNavigationAlias = null,
     redirectEndpoint = null,
     proxies = new Set(),
@@ -121,6 +122,17 @@ function installWebNetworkClient(configuration, reportBlocked) {
       navigationOrigins.add(canonical);
     });
     redirectEndpoint = quickConnect.redirectEndpoint;
+    if (quickConnect.regionalNavigation !== undefined) {
+      var regionalNavigation = quickConnect.regionalNavigation;
+      if (
+        !regionalNavigation ||
+        regionalNavigation.version !== 1 ||
+        typeof regionalNavigation.alias !== "string" ||
+        !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(regionalNavigation.alias)
+      )
+        throw new TypeError("Invalid QuickConnect capability configuration");
+      regionalNavigationAlias = regionalNavigation.alias;
+    }
     if (quickConnect.directNavigation !== undefined) {
       var directNavigation = quickConnect.directNavigation;
       if (
@@ -215,6 +227,24 @@ function installWebNetworkClient(configuration, reportBlocked) {
       /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(prefix)
     );
   }
+  function sameNasRegional(target, alias) {
+    if (
+      !alias ||
+      target.protocol !== "https:" ||
+      target.port ||
+      target.hostname.length > 253
+    )
+      return false;
+    var prefix = alias + ".",
+      suffix = ".quickconnect.to";
+    return (
+      target.hostname.startsWith(prefix) &&
+      target.hostname.endsWith(suffix) &&
+      /^[a-z]{2}[0-9]{1,61}$/.test(
+        target.hostname.slice(prefix.length, -suffix.length),
+      )
+    );
+  }
   function mapUrl(value, kind, localData, method, navigationReference) {
     if (!active) throw blocked(kind, "document-closed");
     var target;
@@ -268,8 +298,9 @@ function installWebNetworkClient(configuration, reportBlocked) {
               : "quickconnect-probe-method",
             target.origin,
           );
-        // Matching syntax is NOT a grant. Native requires this exact target
-        // to have been learned from a verified response for this document.
+        // Native validates the opted-in provider namespace, original alias,
+        // exact control body and current document. A direct probe additionally
+        // requires its exact target to have been learned from discovery.
         var discoveredUrl = new NativeURL(quickConnectDiscovered.proxyUrl);
         discoveredUrl.searchParams.set("destination", target.href);
         return discoveredUrl.href;
@@ -278,6 +309,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     if (
       kind === "navigation" &&
       (navigationOrigins.has(target.origin) ||
+        sameNasRegional(target, regionalNavigationAlias) ||
         sameNasDirect(target, directNavigationAlias))
     ) {
       if (target.href.length > 4096) throw blocked(kind, "invalid-url");
@@ -903,6 +935,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     navigationOrigins.clear();
     quickConnectRpc = null;
     quickConnectDiscovered = null;
+    regionalNavigationAlias = null;
     directNavigationAlias = null;
     proxies.clear();
   }
@@ -932,13 +965,16 @@ function installWebNetworkClient(configuration, reportBlocked) {
     // Advisory installation receipt only; this does not prove engine-wide
     // interception and must never create permission in the parent application.
     capabilities: Object.freeze({
-      version: 3,
+      version: 4,
       quickConnectNavigation:
-        navigationOrigins.size > 0 || directNavigationAlias !== null,
+        navigationOrigins.size > 0 ||
+        directNavigationAlias !== null ||
+        regionalNavigationAlias !== null,
       quickConnectDiscovery:
         quickConnectRpc !== null || quickConnectDiscovered !== null,
       quickConnectDiscovered: quickConnectDiscovered !== null,
       quickConnectDirectNavigation: directNavigationAlias !== null,
+      quickConnectRegionalNavigation: regionalNavigationAlias !== null,
     }),
   });
 }

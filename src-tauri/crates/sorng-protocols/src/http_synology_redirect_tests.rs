@@ -41,6 +41,26 @@ async fn synology_defaults_are_destination_scoped_and_https_only_still_wins() {
         (defaults(ORIGINAL), SECURE_ALIAS, true),
         (
             defaults(ORIGINAL),
+            "https://nas-example.us2.quickconnect.to",
+            true,
+        ),
+        (
+            defaults(ORIGINAL),
+            "http://nas-example.us2.quickconnect.to",
+            false,
+        ),
+        (
+            defaults(ORIGINAL),
+            "https://other-nas.us2.quickconnect.to",
+            false,
+        ),
+        (
+            defaults(ORIGINAL),
+            "https://nas-example.us2.quickconnect.to:5001",
+            false,
+        ),
+        (
+            defaults(ORIGINAL),
             "https://nas-example.direct.quickconnect.to:5001",
             true,
         ),
@@ -99,6 +119,11 @@ async fn synology_defaults_are_destination_scoped_and_https_only_still_wins() {
         (defaults(ORIGINAL), "https://www.quickconnect.to:0", false),
         (HttpProxyPolicy::default(), ALIAS, false),
         (HttpProxyPolicy::default(), SECURE_ALIAS, false),
+        (
+            HttpProxyPolicy::default(),
+            "https://nas-example.us2.quickconnect.to",
+            false,
+        ),
         (HttpProxyPolicy::default(), GLOBAL, false),
         (
             HttpProxyPolicy {
@@ -107,6 +132,14 @@ async fn synology_defaults_are_destination_scoped_and_https_only_still_wins() {
             },
             ALIAS,
             false,
+        ),
+        (
+            HttpProxyPolicy {
+                https_only: true,
+                ..defaults(ORIGINAL)
+            },
+            "https://nas-example.us2.quickconnect.to",
+            true,
         ),
         (
             HttpProxyPolicy {
@@ -170,6 +203,9 @@ async fn synology_receipts_revalidate_defaults_policy_scope_and_document() {
         "opt-out",
         "secure-opt-out",
         "direct-opt-out",
+        "regional-opt-out",
+        "regional-original",
+        "regional-document",
         "https-only",
         "different-original",
         "shared-portals-original",
@@ -181,6 +217,9 @@ async fn synology_receipts_revalidate_defaults_policy_scope_and_document() {
             "shared-portals-original" => WWW,
             "secure-opt-out" => SECURE_ALIAS,
             "direct-opt-out" => "https://nas-example.direct.quickconnect.to:5001",
+            "regional-opt-out" | "regional-original" | "regional-document" => {
+                "https://nas-example.us2.quickconnect.to"
+            }
             _ => ALIAS,
         };
         let destination =
@@ -194,16 +233,16 @@ async fn synology_receipts_revalidate_defaults_policy_scope_and_document() {
         assert!(receipt.removed_query);
         let entry = manager.sessions.get_mut(&fixture.state.session_id).unwrap();
         match mutation {
-            "opt-out" | "secure-opt-out" | "direct-opt-out" => {
+            "opt-out" | "secure-opt-out" | "direct-opt-out" | "regional-opt-out" => {
                 entry.proxy_policy.synology_quick_connect_defaults = None
             }
             "https-only" => entry.proxy_policy.https_only = true,
-            "different-original" | "shared-portals-original" => {
+            "different-original" | "shared-portals-original" | "regional-original" => {
                 entry.proxy_policy.synology_quick_connect_defaults =
                     defaults("https://other-nas.quickconnect.to").synology_quick_connect_defaults
             }
             "unrelated-source" => entry.target_origin = "https://unrelated.invalid".into(),
-            "document" => {
+            "document" | "regional-document" => {
                 fixture
                     .state
                     .document_sequence
@@ -289,6 +328,9 @@ async fn synology_default_chain_issues_sequential_redacted_receipts_without_netw
     for (source, destination) in [
         (ORIGINAL, SECURE_ALIAS),
         (SECURE_ALIAS, GLOBAL),
+        (GLOBAL, ORIGINAL),
+        (ORIGINAL, "https://nas-example.us2.quickconnect.to"),
+        ("https://nas-example.us2.quickconnect.to", GLOBAL),
         (GLOBAL, WWW),
         (WWW, "https://nas-example.direct.quickconnect.to:5001"),
         ("https://nas-example.direct.quickconnect.to:5001", GLOBAL),

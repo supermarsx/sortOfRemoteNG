@@ -51,9 +51,7 @@ describe("Synology default redirect controls", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /Relay setup is sent once to an approved region, never replayed to global/,
-      ),
+      screen.getByText(/Relay setup is sent once, never to global/),
     ).toHaveTextContent(
       "No cookies, passwords, arbitrary destinations or certificate exceptions are granted",
     );

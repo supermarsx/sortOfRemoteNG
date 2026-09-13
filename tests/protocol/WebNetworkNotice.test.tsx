@@ -10,8 +10,18 @@ import WebNetworkNotice from "../../src/components/protocol/webBrowser/WebNetwor
 vi.mock(
   "../../src/components/protocol/webBrowser/NativeHttpObservations",
   () => ({
-    default: ({ active }: { active: boolean }) => (
-      <div data-testid="native-observation-activity" data-active={active} />
+    default: ({
+      active,
+      proxyOrigin,
+    }: {
+      active: boolean;
+      proxyOrigin?: string;
+    }) => (
+      <div
+        data-testid="native-observation-activity"
+        data-active={active}
+        data-origin={proxyOrigin}
+      />
     ),
   }),
 );
@@ -21,6 +31,7 @@ describe("compact website network notice", () => {
     const view = render(
       <WebNetworkNotice
         reports={[]}
+        proxyOrigin="http://p0123456789abcdef0123456789abcdef.localhost:43123"
         guard={{
           platform: "windows",
           frameNavigation: "enforced",
@@ -28,6 +39,10 @@ describe("compact website network notice", () => {
         }}
         onReload={vi.fn()}
       />,
+    );
+    expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
+      "data-origin",
+      "http://p0123456789abcdef0123456789abcdef.localhost:43123",
     );
     expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
       "data-active",
@@ -79,6 +94,7 @@ describe("compact website network notice", () => {
             quickConnectDiscovery: false,
             quickConnectDiscovered: false,
             quickConnectDirectNavigation: false,
+            quickConnectRegionalNavigation: false,
           }}
           onReload={vi.fn()}
         />,
@@ -178,7 +194,9 @@ describe("compact website network notice", () => {
       ),
     ).toBeVisible();
     expect(
-      screen.getByText(/Only the reviewed QuickConnect discovery POST/),
+      screen.getByText(
+        /Only bounded QuickConnect control POSTs for discovery or relay setup/,
+      ),
     ).toBeVisible();
     expect(screen.queryByText(/Destination not yet approved/)).toBeNull();
   });

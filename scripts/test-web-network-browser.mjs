@@ -116,6 +116,7 @@ const server = createServer(async (request, response) => {
           proxyUrl: globalFrameOrigin + discoveredPath,
         },
         directNavigation: { version: 1, alias: "example-nas" },
+        regionalNavigation: { version: 1, alias: "example-nas" },
       },
     };
     response.writeHead(200, {
@@ -187,6 +188,7 @@ installWebNetworkClient(${JSON.stringify(config)},function(){});
           proxyUrl: origin + discoveredPath,
         },
         directNavigation: { version: 1, alias: "example-nas" },
+        regionalNavigation: { version: 1, alias: "example-nas" },
       },
     };
     response.writeHead(200, {
@@ -217,7 +219,7 @@ const reports=[];
 const installedNetwork=installWebNetworkClient(${JSON.stringify(config)}, function(report){reports.push(report);});
 (async function(){
  const results=[];
- if(!Object.isFrozen(installedNetwork.capabilities)||installedNetwork.capabilities.version!==3||!installedNetwork.capabilities.quickConnectNavigation||!installedNetwork.capabilities.quickConnectDiscovery||!installedNetwork.capabilities.quickConnectDiscovered||!installedNetwork.capabilities.quickConnectDirectNavigation)throw Error('Routing module acknowledgement missing');
+ if(!Object.isFrozen(installedNetwork.capabilities)||installedNetwork.capabilities.version!==4||!installedNetwork.capabilities.quickConnectNavigation||!installedNetwork.capabilities.quickConnectDiscovery||!installedNetwork.capabilities.quickConnectDiscovered||!installedNetwork.capabilities.quickConnectDirectNavigation||!installedNetwork.capabilities.quickConnectRegionalNavigation)throw Error('Routing module acknowledgement missing');
  async function check(name,run){try{await Promise.race([run(),new Promise((_,reject)=>setTimeout(()=>reject(Error('Case timed out')),5000))]);results.push({name,ok:true});}catch(error){results.push({name,ok:false,error:String(error)});}}
  await check('sandboxed global portal routes relative and rewritten discovery before follow-up',()=>new Promise((resolve,reject)=>{
    const frame=document.createElement('iframe');frame.sandbox='allow-same-origin allow-scripts allow-forms';
@@ -254,6 +256,16 @@ const installedNetwork=installWebNetworkClient(${JSON.stringify(config)}, functi
    document.body.append(anchor);anchor.addEventListener('click',event=>event.preventDefault());anchor.click();
    const routed=new URL(anchor.href);
    if(routed.origin!==location.origin||routed.pathname!=='/__sortofremoteng_quickconnect_redirect_v1'||routed.searchParams.get('destination')!=='https://example-nas.quickconnect.to/')throw Error('HTTPS alias receipt route mismatch');
+ });
+ await check('same-NAS regional HTTPS navigation preserves anchor parsing and uses native receipts',async()=>{
+   for(const destination of ['https://example-nas.fr3.quickconnect.to/','https://example-nas.de2.quickconnect.to/webman/']){
+     const anchor=document.createElement('a');anchor.href=destination;
+     if(anchor.href!==destination)throw Error('Regional anchor parser changed');
+     document.body.append(anchor);anchor.addEventListener('click',event=>event.preventDefault());anchor.click();
+     const routed=new URL(anchor.href);
+     if(routed.origin!==location.origin||routed.pathname!=='/__sortofremoteng_quickconnect_redirect_v1'||routed.searchParams.get('destination')!==destination)throw Error('Regional receipt route mismatch');
+     anchor.remove();
+   }
  });
  await check('QuickConnect fetch POST uses protected route and document header',async()=>{
    const body=${JSON.stringify(controlBody)};

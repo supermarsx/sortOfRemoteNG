@@ -51,8 +51,7 @@ async fn learn(proxy: &FixtureProxy) {
 }
 
 #[tokio::test]
-async fn verified_global_to_regional_to_browser_shaped_anonymous_probe_routes_and_logs_exact_origin(
-) {
+async fn verified_regional_to_browser_shaped_anonymous_probe_routes_and_logs_exact_origin() {
     let server = scripted_peer(Arc::new(|request| {
         let lower = request.to_ascii_lowercase();
         let (body, extra) = if request.starts_with("GET ") { (pong(), "Access-Control-Allow-Origin: *\r\n".into()) }
@@ -67,8 +66,8 @@ async fn verified_global_to_regional_to_browser_shaped_anonymous_probe_routes_an
     )
     .await;
     assert!(server.seen.lock().unwrap().is_empty());
-    // Cold regional cache: the native route first verifies the fixed provider
-    // with this exact body, then sends only its advertised regional request.
+    // A cached region uses the closed provider-control capability directly;
+    // no global exchange or sites[] response is a prerequisite.
     let regional = routed(&proxy, REGIONAL, true).send().await.unwrap();
     assert_eq!(regional.status(), 200);
     assert_eq!(
@@ -97,7 +96,8 @@ async fn verified_global_to_regional_to_browser_shaped_anonymous_probe_routes_an
         assert_eq!(result.bytes().await.unwrap().as_ref(), pong());
     }
     let seen = server.seen.lock().unwrap();
-    assert_eq!(seen.len(), 8);
+    assert_eq!(seen.len(), 6);
+    assert!(seen[0].starts_with("CONNECT dec.quickconnect.to:443 "));
     for pair in seen.chunks_exact(2) {
         assert!(pair[0].contains("CONNECT "));
         let request = pair[1].to_ascii_lowercase();
@@ -131,7 +131,7 @@ async fn verified_global_to_regional_to_browser_shaped_anonymous_probe_routes_an
     );
     assert_eq!(
         log.last().unwrap().url,
-        "QuickConnect discovery warm-up: https://global.quickconnect.to"
+        "QuickConnect regional discovery: https://dec.quickconnect.to"
     );
     assert!(!serde_json::to_string(&log).unwrap().contains("private-"));
 }
@@ -264,12 +264,40 @@ async fn concurrent_verified_replies_union_even_when_later_request_fails_and_old
     for second_status in [200, 500] {
         let calls = Arc::new(AtomicU64::new(0));
         let call_count = calls.clone();
-        let server = scripted_peer(Arc::new(move |request| {
-            if request.to_ascii_lowercase().contains("host: global.quickconnect.to") {
-                let first = call_count.fetch_add(1, Ordering::SeqCst) == 0;
-                (if first {200} else {second_status}, serde_json::json!([{"sites":[if first {"first.quickconnect.to"} else {"second.quickconnect.to"}]}]).to_string().into_bytes(), String::new(), if first {Duration::from_millis(150)} else {Duration::ZERO})
-            } else { (200, b"[]".to_vec(), String::new(), Duration::ZERO) }
-        }), false, false).await;
+        let server = scripted_peer(
+            Arc::new(move |request| {
+                if request.starts_with("POST ") {
+                    let first = call_count.fetch_add(1, Ordering::SeqCst) == 0;
+                    let host = if first {
+                        "first.test-nas.direct.quickconnect.to"
+                    } else {
+                        "second.test-nas.direct.quickconnect.to"
+                    };
+                    (
+                        if first { 200 } else { second_status },
+                        serde_json::json!([{"smartdns":{"host":host},"service":{"port":5001}}])
+                            .to_string()
+                            .into_bytes(),
+                        String::new(),
+                        if first {
+                            Duration::from_millis(150)
+                        } else {
+                            Duration::ZERO
+                        },
+                    )
+                } else {
+                    (
+                        200,
+                        pong(),
+                        "Access-Control-Allow-Origin: *\r\n".into(),
+                        Duration::ZERO,
+                    )
+                }
+            }),
+            false,
+            false,
+        )
+        .await;
         let proxy = fixture(
             Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
             ORIGINAL,
@@ -290,8 +318,10 @@ async fn concurrent_verified_replies_union_even_when_later_request_fails_and_old
             second_status
         );
         assert_eq!(pending.await.unwrap().status(), 200);
+        let first_probe = PROBE.replace("test-nas.direct", "first.test-nas.direct");
+        let second_probe = PROBE.replace("test-nas.direct", "second.test-nas.direct");
         assert_eq!(
-            routed(&proxy, "https://first.quickconnect.to/Serv.php", true)
+            routed(&proxy, &first_probe, false)
                 .send()
                 .await
                 .unwrap()
@@ -299,19 +329,18 @@ async fn concurrent_verified_replies_union_even_when_later_request_fails_and_old
             200
         );
         assert_eq!(
-            routed(&proxy, "https://second.quickconnect.to/Serv.php", true)
+            routed(&proxy, &second_probe, false)
                 .send()
                 .await
                 .unwrap()
                 .status()
                 .as_u16(),
-            if second_status == 200 { 200 } else { 500 }
+            if second_status == 200 { 200 } else { 403 }
         );
         proxy.state.network.document_issued(2, false);
         proxy.state.network.activate_document(2).unwrap();
-        let mut next_document = routed(&proxy, "https://first.quickconnect.to/Serv.php", true)
-            .build()
-            .unwrap();
+        let before = server.seen.lock().unwrap().len();
+        let mut next_document = routed(&proxy, &first_probe, false).build().unwrap();
         next_document
             .headers_mut()
             .insert(control::DOCUMENT_HEADER, "2".parse().unwrap());
@@ -322,8 +351,9 @@ async fn concurrent_verified_replies_union_even_when_later_request_fails_and_old
                 .unwrap()
                 .status()
                 .as_u16(),
-            if second_status == 200 { 403 } else { 500 }
+            403
         );
+        assert_eq!(server.seen.lock().unwrap().len(), before);
     }
 }
 
@@ -467,8 +497,7 @@ async fn document_replacement_and_session_close_cancel_inflight_and_queued_probe
 }
 
 #[tokio::test]
-async fn cold_regional_warmup_does_not_forward_unadvertised_targets_or_run_for_invalid_body_or_gets(
-) {
+async fn provider_control_needs_no_sites_but_invalid_bodies_and_cold_probes_never_send() {
     let server = peer(
         200,
         br#"[{"sites":["advertised.quickconnect.to"]}]"#.to_vec(),
@@ -506,7 +535,7 @@ async fn cold_regional_warmup_does_not_forward_unadvertised_targets_or_run_for_i
     );
     assert!(
         server.seen.lock().unwrap().is_empty(),
-        "invalid body or cold GET cannot initiate a warm-up"
+        "invalid body or cold GET cannot contact any upstream"
     );
     assert_eq!(
         routed(&proxy, REGIONAL, true)
@@ -514,15 +543,15 @@ async fn cold_regional_warmup_does_not_forward_unadvertised_targets_or_run_for_i
             .await
             .unwrap()
             .status(),
-        403
+        200
     );
     let seen = server.seen.lock().unwrap();
     assert_eq!(
         seen.len(),
         2,
-        "one fixed global exchange, no regional request"
+        "one requested regional exchange, no global discovery or fallback"
     );
-    assert!(seen[0].starts_with("CONNECT global.quickconnect.to:443 "));
+    assert!(seen[0].starts_with("CONNECT dec.quickconnect.to:443 "));
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(seen[1].split_once("\r\n\r\n").unwrap().1)
             .unwrap(),
@@ -536,28 +565,20 @@ async fn cold_regional_warmup_does_not_forward_unadvertised_targets_or_run_for_i
         .request_log_newest_first();
     assert_eq!(
         log[0].url,
-        "Attempted QuickConnect regional discovery: https://dec.quickconnect.to"
+        "QuickConnect regional discovery: https://dec.quickconnect.to"
     );
-    assert_eq!(
-        log[0].error.as_deref(),
-        Some("HTTP 403 [quickconnect_destination_not_discovered]")
-    );
+    assert!(log[0].error.is_none());
     assert_eq!(
         log[1].url,
-        "QuickConnect discovery warm-up: https://global.quickconnect.to"
-    );
-    assert!(log[1].error.is_none());
-    assert_eq!(
-        log[2].url,
         "Attempted QuickConnect NAS probe: https://test-nas.direct.quickconnect.to:5001"
     );
     assert_eq!(
-        log[2].error.as_deref(),
+        log[1].error.as_deref(),
         Some("HTTP 403 [quickconnect_destination_not_discovered]")
     );
     assert!(log
         .iter()
-        .skip(3)
+        .skip(2)
         .all(|entry| entry.error.as_deref() == Some("HTTP 400 [quickconnect_unsupported_body]")));
     let capture = serde_json::to_string(&log).unwrap();
     for hidden in [
@@ -601,7 +622,11 @@ async fn actual_upstream_403_is_not_reported_as_a_native_missing_grant() {
         .lock()
         .unwrap()
         .request_log_newest_first();
-    assert_eq!(log.len(), 2);
+    assert_eq!(log.len(), 1);
+    assert_eq!(
+        log[0].url,
+        "QuickConnect regional discovery: https://dec.quickconnect.to"
+    );
     for entry in &log {
         assert_eq!(
             entry.error.as_deref(),
@@ -612,7 +637,7 @@ async fn actual_upstream_403_is_not_reported_as_a_native_missing_grant() {
 }
 
 #[tokio::test]
-async fn regional_warmups_share_two_exchange_limit_and_document_revocation_cancels_the_queue() {
+async fn regional_requests_share_two_exchange_limit_and_document_revocation_cancels_the_queue() {
     for close in [false, true] {
         let server = peer(
             200,
@@ -660,7 +685,7 @@ async fn regional_warmups_share_two_exchange_limit_and_document_revocation_cance
         assert_eq!(
             seen.len(),
             4,
-            "no queued warm-up or regional request after revocation"
+            "no queued regional request or fallback after revocation"
         );
         let connects: Vec<_> = seen
             .iter()
@@ -669,7 +694,7 @@ async fn regional_warmups_share_two_exchange_limit_and_document_revocation_cance
         assert_eq!(connects.len(), 2);
         assert!(connects
             .iter()
-            .all(|request| request.starts_with("CONNECT global.quickconnect.to:443 ")));
+            .all(|request| request.starts_with("CONNECT dec.quickconnect.to:443 ")));
         let log = proxy
             .state
             .global_sessions

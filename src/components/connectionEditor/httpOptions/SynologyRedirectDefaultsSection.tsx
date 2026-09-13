@@ -92,6 +92,18 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
       </ul>
       {alias && (
         <p className="break-all text-xs text-[var(--color-textSecondary)]">
+          {enabled ? "Also permits" : "Disabled"}: same-NAS regional HTTPS
+          portals{" "}
+          <span className="font-mono">
+            {alias}.&lt;region&gt;.quickconnect.to
+          </span>{" "}
+          on port 443, where the region is two lowercase letters followed by
+          digits. This includes returning to the original region, not another
+          NAS alias.
+        </p>
+      )}
+      {alias && (
+        <p className="break-all text-xs text-[var(--color-textSecondary)]">
           {enabled ? "Also permits" : "Disabled"}: same-NAS direct HTTPS
           endpoints{" "}
           <span className="font-mono">{alias}.direct.quickconnect.to</span> and
@@ -107,12 +119,13 @@ export default function SynologyRedirectDefaultsSection({ mgr }: { mgr: Mgr }) {
         redirect policy. Supported requests are bounded get_server_info
         discovery POSTs, selected-NAS regional request_tunnel relay setup for
         mainapp_https or mainapp_http, and exact same-NAS pingpong reachability
-        GETs. Regional control and probe targets must first be learned from
-        verified provider responses for the current document. Relay setup is
-        sent once to an approved region, never replayed to global. Other APIs,
-        relay subresources and wakeup calls need separate routing. No cookies,
-        passwords, arbitrary destinations or certificate exceptions are granted.
-        Save the connection to retain this preference.
+        GETs. Control POSTs are limited to HTTPS port 443 at
+        &lt;single-label&gt;.quickconnect.to/Serv.php with the original NAS
+        alias and current document. Direct probes still require targets learned
+        from verified discovery responses. Relay setup is sent once, never to
+        global. Other APIs, relay subresources and wakeup calls need separate
+        routing. No cookies, passwords, arbitrary destinations or certificate
+        exceptions are granted. Save the connection to retain this preference.
       </p>
     </section>
   );

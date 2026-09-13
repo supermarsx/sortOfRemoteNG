@@ -18,6 +18,46 @@ const source = "https://my-nas.fr3.quickconnect.to";
 const context = { version: 1 as const, originalOrigin: source };
 
 describe("closed Synology redirect defaults", () => {
+  it("permits HTTPS known-shape regions only for the original alias, including a return to its original region", () => {
+    const policy = withSynologyRedirectDefaults(
+      { ...DEFAULT_HTTP_PROXY_POLICY, httpsOnly: true },
+      context,
+    );
+    for (const origin of [
+      source,
+      "https://my-nas.de2.quickconnect.to",
+      "https://my-nas.us123.quickconnect.to",
+    ]) {
+      expect(isSynologyDefaultRedirect(policy, portals[0], origin + "/")).toBe(
+        true,
+      );
+      expect(isSynologyDefaultRedirect(policy, origin, source + "/")).toBe(
+        true,
+      );
+    }
+    for (const origin of [
+      "http://my-nas.fr3.quickconnect.to",
+      "https://my-nas.fr3.quickconnect.to:5001",
+      "https://other-nas.fr3.quickconnect.to",
+      "https://my-nas.fr.quickconnect.to",
+      "https://my-nas.fr3x.quickconnect.to",
+      "https://my-nas.x.fr3.quickconnect.to",
+      "https://my-nas.fr3.quickconnect.to.",
+      "https://my-nas.fr3.quickconnect.to.attacker.invalid",
+    ]) {
+      expect(isSynologyDefaultRedirectOrigin(source, origin)).toBe(false);
+      expect(isSynologyDefaultRedirect(policy, portals[0], origin + "/")).toBe(
+        false,
+      );
+    }
+    expect(
+      isSynologyDefaultRedirect(
+        { ...policy, synologyQuickConnectDefaults: undefined },
+        portals[0],
+        source + "/",
+      ),
+    ).toBe(false);
+  });
   it("permits only the original NAS direct HTTPS namespace at ports5001/5002, including later source validation", () => {
     const policy = withSynologyRedirectDefaults(
       { ...DEFAULT_HTTP_PROXY_POLICY, httpsOnly: true },
