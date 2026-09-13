@@ -28,6 +28,7 @@ import {
   ManagerTab,
 } from "../../hooks/network/useInternalProxyManager";
 import { Checkbox } from "../ui/forms";
+import { CopyLatestProxyLogButton } from "./CopyLatestProxyLogButton";
 import {
   classifySession,
   getProxySessionStatusMeta,
@@ -343,20 +344,23 @@ export const ProxyLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const visible = mgr.requestLog.slice(offset, offset + pageSize);
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="text-sm text-[var(--color-textSecondary)]">
           Last {mgr.requestLog.length} proxied requests (newest first). Click a
           row to see full details and copy individual fields.
         </p>
-        {mgr.requestLog.length > 0 && (
-          <button
-            onClick={mgr.handleClearLog}
-            className="sor-option-chip text-xs"
-          >
-            <Trash2 size={12} />
-            <span>Clear Log</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-start gap-2">
+          <CopyLatestProxyLogButton entries={mgr.requestLog} />
+          {mgr.requestLog.length > 0 && (
+            <button
+              onClick={mgr.handleClearLog}
+              className="sor-option-chip text-xs"
+            >
+              <Trash2 size={12} />
+              <span>Clear Log</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {mgr.requestLog.length === 0 ? (

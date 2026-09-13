@@ -1,10 +1,11 @@
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ProxyLogsTab } from "../../src/components/network/InternalProxyManager";
 import type { useInternalProxyManager } from "../../src/hooks/network/useInternalProxyManager";
 
 type Manager = ReturnType<typeof useInternalProxyManager>;
+afterEach(() => vi.unstubAllGlobals());
 const entry = (i: number) => ({
   id: String(i),
   session_id: "fixture",
@@ -22,6 +23,22 @@ function manager(size = 10000) {
 }
 
 describe("bounded newest-first proxy request log", () => {
+  it("copies the newest 1000 retained entries even while viewing an older page", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    render(<ProxyLogsTab mgr={manager(1200)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Older requests" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy latest 1,000" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Copied 1000"),
+    );
+    const text = writeText.mock.calls[0][0] as string;
+    expect(text).toContain("latest 1000 of 1200");
+    expect(text).toContain("1. sequence=201 |");
+    expect(text).toContain("1000. sequence=1200 |");
+    expect(text).not.toContain("sequence=200 |");
+    expect(screen.getByText("Page 2 of 12")).toBeInTheDocument();
+  });
   it("renders at most100 of10000 and pages in native newest-first order", () => {
     const mgr = manager();
     render(<ProxyLogsTab mgr={mgr} />);
