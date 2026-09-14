@@ -219,7 +219,6 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "singleWindowMode",
     "singleConnectionMode",
     "reconnectOnReload",
-    "enableAutocomplete",
     "openConnectionInBackground",
     "switchTabOnActivity",
     "closeTabOnDisconnect",

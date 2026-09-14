@@ -290,16 +290,6 @@ export const BEHAVIOR_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Behavior",
   },
   {
-    key: "enableAutocomplete",
-    label: "Enable browser autocomplete on input fields",
-    description:
-      "Allow the browser's built-in autocomplete to suggest previously entered values in input fields like hostnames and usernames.",
-    tags: ["auto complete", "suggestions", "input", "form", "autofill"],
-    synonyms: ["autocomplete", "autofill", "suggestions"],
-    section: "behavior",
-    sectionLabel: "Behavior",
-  },
-  {
     key: "enableWinrmTools",
     label: "Enable Windows Remote Management tools",
     description:

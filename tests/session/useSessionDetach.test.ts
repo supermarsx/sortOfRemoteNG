@@ -537,6 +537,10 @@ describe("useSessionDetach", () => {
       await result.current.handleSessionDetach("s1");
     });
     expect(registerWindow).toHaveBeenCalledWith("detached-s1", ["s1"]);
+    expect(mockWebviewCreate).toHaveBeenCalledWith(
+      "detached-s1",
+      expect.objectContaining({ generalAutofillEnabled: false }),
+    );
   });
 
   it("reattachRdpSession activates existing session by backendSessionId", () => {

@@ -73,6 +73,17 @@ const behaviorSettings = {
 } as unknown as GlobalSettings;
 
 describe("Behavior settings section accents", () => {
+  it("does not offer browser autocomplete even when imported settings enabled it", () => {
+    render(
+      <BehaviorSettings settings={behaviorSettings} updateSettings={vi.fn()} />,
+    );
+    expect(
+      screen.queryByLabelText(/browser autocomplete/i),
+    ).not.toBeInTheDocument();
+    expect(
+      document.querySelector('[data-setting-key="enableAutocomplete"]'),
+    ).toBeNull();
+  });
   it("uses the accent color for the page and subsection icons", () => {
     const { container } = render(
       <BehaviorSettings settings={behaviorSettings} updateSettings={vi.fn()} />,

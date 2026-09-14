@@ -114,6 +114,7 @@ pub fn show(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         percent_encode(SPLASH_HTML)
     );
     let builder = WebviewWindowBuilder::new(app, "splash", WebviewUrl::External(data_uri.parse()?))
+        .general_autofill_enabled(false)
         .title("sortOfRemoteNG")
         .inner_size(340.0, 240.0)
         .resizable(false)

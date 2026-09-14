@@ -49,6 +49,7 @@ mod splash;
 mod state_registry;
 mod tray;
 mod web_network_guard;
+mod webview_privacy;
 // Compatibility helpers for the updater settings file. The production
 // updater path is owned by `sorng-updater` and `tauri-plugin-updater`.
 pub mod updater_config;
@@ -178,6 +179,7 @@ pub fn run() {
             Some(vec!["--autostart"]),
         ))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(webview_privacy::init())
         .plugin(tauri_plugin_fs::init())
         // Tauri updater plugin: the only production-authoritative signed
         // check/download/install path. App-owned updater commands in

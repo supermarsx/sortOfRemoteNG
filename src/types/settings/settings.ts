@@ -174,7 +174,7 @@ export interface GlobalSettings {
   singleWindowMode: boolean;
   singleConnectionMode: boolean;
   reconnectOnReload: boolean;
-  /** Allow browser autocomplete on input fields (default: false) */
+  /** @deprecated Ignored legacy import field; browser form history is disabled. */
   enableAutocomplete: boolean;
   warnOnClose: boolean;
   warnOnExit: boolean;

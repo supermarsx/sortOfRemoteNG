@@ -24,6 +24,7 @@
         "transparent": true,
         "center": true,
         "dragDropEnabled": false,
+        "generalAutofillEnabled": false,
         "visible": false
       }
     ],

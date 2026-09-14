@@ -70,6 +70,7 @@ import { useSettings } from "../../src/contexts/SettingsContext";
 import { generateId } from "../../src/utils/core/id";
 import MenuSurface from "../../src/components/ui/overlays/MenuSurface";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
+import { useAppFormPrivacy } from "../../src/hooks/window/useAppFormPrivacy";
 import type {
   WindowSessionSync,
   WindowCommand,
@@ -2329,6 +2330,7 @@ const DetachedSecurityBoundary: React.FC<{ children: React.ReactNode }> = ({
 };
 
 const DetachedClient: React.FC = () => {
+  useAppFormPrivacy();
   const [closeRegistration, setCloseRegistration] =
     useState<DetachedWindowCloseRegistration | null>(null);
   const handleRegisterDisconnect = useCallback(

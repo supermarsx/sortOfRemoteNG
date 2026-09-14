@@ -487,6 +487,7 @@ export function useSessionDetach(
               resizable: true,
               decorations: false,
               dragDropEnabled: false,
+              generalAutofillEnabled: false,
             });
             newWindow.once("tauri://created", () => {
               newWindow.setFocus().catch(() => undefined);

@@ -48,6 +48,7 @@ import {
 } from "./utils/core/errors";
 import { useSessionManager } from "./hooks/session/useSessionManager";
 import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
+import { useAppFormPrivacy } from "./hooks/window/useAppFormPrivacy";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { collectConnectionSubtreeIds } from "./utils/connection/recycleBin";
@@ -119,6 +120,7 @@ const TRAY_QUIT_REQUESTED_EVENT = "tray-quit-requested";
  * managing global application state.
  */
 const AppContent: React.FC = () => {
+  useAppFormPrivacy();
   const { begin: beginDatabaseOpening } = useDatabaseOpenNotification();
   const { t } = useTranslation();
   const { state, dispatch, loadData, saveData, flushPendingSave, recycleBin } =
@@ -413,31 +415,6 @@ const AppContent: React.FC = () => {
     for (const key of keys) result[key] = makeToolSetter(key);
     toolShowSetters.current = result;
   }
-
-  // Suppress autocomplete on all inputs when the setting is disabled
-  useEffect(() => {
-    if (appSettings.enableAutocomplete) return;
-    const attr = "autocomplete";
-    const applyToAll = () => {
-      document
-        .querySelectorAll<
-          HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-        >("input, textarea, select")
-        .forEach((el) => {
-          if (!el.getAttribute(attr) || el.getAttribute(attr) !== "off") {
-            el.setAttribute(attr, "off");
-            // Chrome ignores autocomplete="off" on some fields — use a non-standard
-            // value to ensure the browser doesn't auto-fill.
-            el.setAttribute("data-lpignore", "true");
-            el.setAttribute("data-form-type", "other");
-          }
-        });
-    };
-    applyToAll();
-    const observer = new MutationObserver(() => applyToAll());
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [appSettings.enableAutocomplete]);
 
   // Track when app is fully initialized
   useEffect(() => {
