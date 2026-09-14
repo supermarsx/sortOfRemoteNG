@@ -25,8 +25,16 @@ pub struct SynoResponse<T> {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SynoApiError {
     pub code: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_supplemental_errors")]
     pub errors: Vec<serde_json::Value>,
+}
+
+// Optional supplementary errors do not override the authoritative numeric DSM
+// code. Accept absent/null/array only; malformed scalar/object values still fail.
+fn nullable_supplemental_errors<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<serde_json::Value>, D::Error> {
+    Option::<Vec<serde_json::Value>>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 /// Discovered API entry from `SYNO.API.Info`.

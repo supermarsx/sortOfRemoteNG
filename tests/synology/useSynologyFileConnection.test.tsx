@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useSynologyFileConnection } from "../../src/hooks/synology/useSynologyFileConnection";
 import type { SynologyFileAuthResult } from "../../src/types/hardware/synologyFileStation";
+import {
+  parseSynologyApiFailure,
+  SYNOLOGY_DIAGNOSTIC_MARKER,
+} from "../../src/utils/synology/apiFailureDiagnostic";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -25,6 +29,39 @@ const setup = () => {
 beforeEach(() => vi.mocked(invoke).mockReset());
 afterEach(cleanup);
 describe("scoped Synology sign-in", () => {
+  it.each(["html", "200"])(
+    "preserves only closed failure metadata when a short password is %s",
+    async (password) => {
+      const data = {
+        stage: "api_login",
+        category: "html",
+        httpStatus: 200,
+        contentType: "html",
+        bytesRead: 500,
+      };
+      vi.mocked(invoke).mockRejectedValueOnce(
+        new Error(
+          `Safe failure mentioning ${password}.${SYNOLOGY_DIAGNOSTIC_MARKER}${JSON.stringify(data)}`,
+        ),
+      );
+      const { result } = setup();
+      act(() => result.current.setPassword(password));
+      await act(() => result.current.connect());
+      expect(parseSynologyApiFailure(result.current.connectionError!)).toEqual(
+        data,
+      );
+      expect(
+        result.current.connectionError!.split(SYNOLOGY_DIAGNOSTIC_MARKER)[0],
+      ).not.toContain(password);
+      expect(result.current.connectionError).toContain("[REDACTED]");
+      expect(result.current.connectionStatus).toBe("error");
+      expect(
+        vi
+          .mocked(invoke)
+          .mock.calls.filter(([command]) => command === "syn_fs_connect"),
+      ).toHaveLength(1);
+    },
+  );
   it("resolves vault credentials with a base guard, completes one server-requested OTP, and never stores login secrets in form state", async () => {
     const resolveCredentials = vi.fn(async (assertAttempt: () => void) => ({
       username: "vault-user",

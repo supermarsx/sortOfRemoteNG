@@ -121,9 +121,11 @@ impl AuthManager {
         client.device_token = None;
         client.config.device_token = None;
         client.config.access_token = None;
-        let response = client.file_call("SYNO.API.Auth", 6, "login", &params).await;
+        let response = client
+            .file_call_typed("SYNO.API.Auth", 6, "login", &params)
+            .await;
         drop(params);
-        let login: LoginResult = serde_json::from_value(response?)?;
+        let login: LoginResult = response?;
         if login.sid.is_empty() || login.sid.len() > 4096 || login.sid.chars().any(char::is_control)
         {
             return Err(SynologyError::parse("NAS returned an invalid session"));

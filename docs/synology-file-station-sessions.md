@@ -167,6 +167,16 @@ existing cancellation and late-session cleanup protections. An actual sign-in
 or shared-folder error replaces loading with the error and an explicit retry
 action; no password, OTP or file operation is automatically replayed.
 
+When the native client can classify a failed HTTP response, **API failure details**
+shows the failed step, HTTP status, response kind, content-type category, inspected
+byte count and any bounded DSM error code. HTML instead of JSON can indicate a
+website login or portal rather than a usable API endpoint; HTTP 200 alone does
+not prove API success. **Copy diagnostics** copies only these safe fields and a
+fixed explanation, never response bodies, URLs, cookies, headers or credentials.
+Inspected bytes are not necessarily the full response size; the response body is
+not retained in the diagnostic. Older clients and
+failures without response metadata keep their existing error message.
+
 The NAS sections, folder navigation and selected file rows follow the app's
 outlined accent styling. The file selection column stays compact while the
 remaining columns retain horizontal scrolling on narrow views.

@@ -57,9 +57,10 @@ pub mod logs;
 pub mod network;
 pub mod notifications;
 pub mod packages;
-pub mod security;
+mod response_diagnostics;
 pub mod scoped_files;
 pub mod section_access;
+pub mod security;
 pub mod service;
 pub mod services;
 pub mod shares;
@@ -76,3 +77,6 @@ mod scoped_files_tests;
 
 #[cfg(test)]
 mod file_transfer_tests;
+
+#[cfg(test)]
+mod response_diagnostics_tests;

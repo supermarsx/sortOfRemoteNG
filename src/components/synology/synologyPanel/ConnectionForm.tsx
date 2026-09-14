@@ -4,6 +4,7 @@ import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
 import { DialogHeader } from "../../ui/overlays/DialogHeader";
 import type { SubProps } from "./types";
 import SynologyInitializationStatus from "./SynologyInitializationStatus";
+import SynologyApiFailure from "./SynologyApiFailure";
 
 const inputClass =
   "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-3 py-2 text-sm text-[var(--color-text)]";
@@ -45,16 +46,13 @@ const ConnectionForm: React.FC<
                 </h2>
               </div>
             </div>
-            <p className="break-words text-sm text-[var(--color-textSecondary)]">
-              {mgr.connectionError ??
-                mgr.challenge?.message ??
-                "The NAS session is disconnected."}
-              {mgr.connectionError && (
-                <span className="mt-2 block text-xs">
-                  No automatic sign-in retry was made.
-                </span>
-              )}
-            </p>
+            {mgr.connectionError ? (
+              <SynologyApiFailure error={mgr.connectionError} alert={false} />
+            ) : (
+              <p className="break-words text-sm text-[var(--color-textSecondary)]">
+                {mgr.challenge?.message ?? "The NAS session is disconnected."}
+              </p>
+            )}
             <div className="flex justify-end">
               <button
                 type="button"
@@ -87,12 +85,7 @@ const ConnectionForm: React.FC<
               </p>
             </div>
             {mgr.connectionError && !mgr.challenge && (
-              <p
-                role="alert"
-                className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error break-words"
-              >
-                {mgr.connectionError}
-              </p>
+              <SynologyApiFailure error={mgr.connectionError} />
             )}
             <div className="flex gap-3">
               <label
@@ -258,9 +251,7 @@ const ConnectionForm: React.FC<
             </>
           )}
           {mgr.connectionError && (
-            <p role="alert" className="text-sm text-error break-words">
-              {mgr.connectionError}
-            </p>
+            <SynologyApiFailure error={mgr.connectionError} />
           )}
         </ModalBody>
         <ModalFooter className="shrink-0 gap-2 px-5 py-3">

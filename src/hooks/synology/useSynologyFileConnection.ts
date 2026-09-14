@@ -8,6 +8,7 @@ import type {
   SynologyFileLogin,
 } from "../../types/hardware/synologyFileStation";
 import { normalizeSynologyEndpoint } from "../../utils/connection/synologyEndpoint";
+import { redactSynologyFailureSecrets } from "../../utils/synology/apiFailureDiagnostic";
 
 export interface SynologyFileConnectionOptions {
   /** One identity for this mounted tab; never a connection id shared by tabs. */
@@ -383,9 +384,10 @@ export function useSynologyFileConnection(
         );
     } catch (error) {
       if (valid()) {
-        let safe = toSafeManagementError(error);
-        for (const secret of [config.password, otp])
-          if (secret) safe = safe.split(secret).join("[REDACTED]");
+        const safe = redactSynologyFailureSecrets(
+          toSafeManagementError(error),
+          [config.password, otp],
+        );
         setConnectionError(safe);
         setConnectionStatus("error");
         pendingCredentials.current = null;

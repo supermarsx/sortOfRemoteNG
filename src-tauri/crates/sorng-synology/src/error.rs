@@ -64,6 +64,7 @@ pub enum SynologyErrorKind {
 pub struct SynologyError {
     pub kind: SynologyErrorKind,
     pub message: String,
+    pub(crate) diagnostic: Option<crate::response_diagnostics::ResponseDiagnostic>,
 }
 
 impl SynologyError {
@@ -89,7 +90,13 @@ impl SynologyError {
         Self {
             kind,
             message: msg.into(),
+            diagnostic: None,
         }
+    }
+
+    pub(crate) fn with_diagnostic_from(mut self, source: &Self) -> Self {
+        self.diagnostic = source.diagnostic;
+        self
     }
 
     // ── Convenience constructors ────────────────────────────────────
@@ -204,7 +211,11 @@ impl SynologyError {
 
 impl fmt::Display for SynologyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
+        write!(f, "{}", self.message)?;
+        if let Some(diagnostic) = self.diagnostic {
+            write!(f, "{diagnostic}")?;
+        }
+        Ok(())
     }
 }
 
@@ -239,13 +250,20 @@ pub type SynologyResult<T> = Result<T, SynologyError>;
 
 pub fn command_error(error: SynologyError) -> String {
     if let SynologyErrorKind::ApiError(code @ (106 | 107 | 119 | 150)) = error.kind {
-        format!(
+        let mut message = format!(
             "SYNOLOGY_SESSION_EXPIRED: {}",
             SynologyError::file_station(code)
-        )
+        );
+        if let Some(diagnostic) = error.diagnostic {
+            message.push_str(&diagnostic.to_string());
+        }
+        message
     } else if matches!(error.kind, SynologyErrorKind::SessionExpired) {
-        "SYNOLOGY_SESSION_EXPIRED: This Synology session ended. Connect again before continuing."
-            .into()
+        let mut message = "SYNOLOGY_SESSION_EXPIRED: This Synology session ended. Connect again before continuing.".to_string();
+        if let Some(diagnostic) = error.diagnostic {
+            message.push_str(&diagnostic.to_string());
+        }
+        message
     } else {
         error.to_string()
     }

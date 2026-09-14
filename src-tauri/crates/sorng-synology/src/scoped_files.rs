@@ -247,10 +247,10 @@ impl SynologyService {
                 SynologyErrorKind::ApiError(403 | 406) => Ok(FileStationLogin::OtpRequired { message: "Enter the current verification code from your authenticator.".into() }),
                 SynologyErrorKind::ApiError(404) => Ok(FileStationLogin::OtpInvalid { message: "The verification code was not accepted. Enter a new current code.".into() }),
                 SynologyErrorKind::ApiError(449) => Ok(FileStationLogin::UnsupportedMfa { message: "This NAS requires an authentication setup or approval that this API login cannot complete. Use DSM in your browser; Secure SignIn push and WebAuthn are not supported here.".into() }),
-                SynologyErrorKind::ApiError(407) => Err(SynologyError::auth("This client IP is blocked by the NAS. Review DSM security settings before retrying.")),
-                SynologyErrorKind::ApiError(408 | 409) => Err(SynologyError::auth("The NAS password has expired. Change it in DSM, then reconnect.")),
-                SynologyErrorKind::ApiError(410) => Err(SynologyError::auth("DSM requires a password change. Complete it in your browser, then reconnect.")),
-                SynologyErrorKind::ApiError(400) => Err(SynologyError::auth("NAS rejected the username or password")),
+                SynologyErrorKind::ApiError(407) => Err(SynologyError::auth("This client IP is blocked by the NAS. Review DSM security settings before retrying.").with_diagnostic_from(&error)),
+                SynologyErrorKind::ApiError(408 | 409) => Err(SynologyError::auth("The NAS password has expired. Change it in DSM, then reconnect.").with_diagnostic_from(&error)),
+                SynologyErrorKind::ApiError(410) => Err(SynologyError::auth("DSM requires a password change. Complete it in your browser, then reconnect.").with_diagnostic_from(&error)),
+                SynologyErrorKind::ApiError(400) => Err(SynologyError::auth("NAS rejected the username or password").with_diagnostic_from(&error)),
                 _ => Err(error),
             },
         }
@@ -270,8 +270,8 @@ impl SynologyService {
                 .await;
             return Err(SynologyError::new(
                 error.kind.clone(),
-                format!("DSM accepted sign-in, but the first authenticated File Station check failed. {error}"),
-            ));
+                format!("DSM accepted sign-in, but the first authenticated File Station check failed. {}", error.message),
+            ).with_diagnostic_from(&error));
         }
         if !active.load(Ordering::Acquire) {
             let _ = tokio::time::timeout(Duration::from_secs(2), AuthManager::logout(&mut client))

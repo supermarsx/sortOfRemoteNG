@@ -24,6 +24,34 @@ const manager = (overrides: Partial<Mgr> = {}) =>
     ...overrides,
   }) as unknown as Mgr;
 describe("saved NAS status page", () => {
+  it.each([true, false])(
+    "renders structured safe API errors in the saved=%s connection form",
+    (targetLocked) => {
+      const data = {
+        stage: "api_discovery",
+        category: "html",
+        httpStatus: 200,
+        contentType: "html",
+        bytesRead: 4096,
+      };
+      render(
+        <ConnectionForm
+          mgr={manager({
+            targetLocked,
+            connectionError: `Native explanation\nsynology-diagnostic:v1:${JSON.stringify(data)}`,
+          })}
+        />,
+      );
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "web page instead of API JSON",
+      );
+      expect(screen.getByText("Discovering DSM APIs")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Copy diagnostics" }),
+      ).toBeEnabled();
+      expect(screen.queryByText(/synology-diagnostic/)).not.toBeInTheDocument();
+    },
+  );
   it("shows the actual failure and Retry without duplicate credential fields", () => {
     const mgr = manager();
     render(<ConnectionForm mgr={mgr} />);

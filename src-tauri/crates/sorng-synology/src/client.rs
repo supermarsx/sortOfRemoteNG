@@ -7,6 +7,7 @@
 //! 4. Handles SynoToken CSRF headers when required
 
 use crate::error::{SynologyError, SynologyResult};
+use crate::response_diagnostics::{Category, ResponseFacts, Stage, RESPONSE_LIMIT};
 use crate::types::*;
 
 use reqwest::Client;
@@ -101,7 +102,7 @@ impl SynoClient {
     /// Query `SYNO.API.Info` to discover all available APIs.
     pub async fn discover_apis(&mut self) -> SynologyResult<()> {
         let url = format!("{}/webapi/entry.cgi", self.base_url);
-        let resp: SynoResponse<HashMap<String, ApiInfoEntry>> = Self::read_json(
+        let (resp, facts): (SynoResponse<HashMap<String, ApiInfoEntry>>, _) = Self::read_json_at(
             self.http
                 .post(&url)
                 .form(&[
@@ -112,12 +113,17 @@ impl SynoClient {
                 ])
                 .send()
                 .await?,
+            Stage::ApiDiscovery,
         )
         .await?;
 
         if !resp.success {
             let code = resp.error.map(|e| e.code).unwrap_or(100);
-            return Err(SynologyError::from_dsm_code(code, "API discovery"));
+            return Err(facts.annotate(
+                SynologyError::from_dsm_code(code, "API discovery"),
+                Category::DsmApi,
+                Some(code),
+            ));
         }
 
         self.api_info = resp.data.unwrap_or_default();
@@ -191,8 +197,8 @@ impl SynoClient {
         method: &str,
         form: &[(&str, &str)],
     ) -> SynologyResult<T> {
-        let value = self.post_value(api, version, method, form).await?;
-        serde_json::from_value(value).map_err(Into::into)
+        let (value, facts) = self.post_value_observed(api, version, method, form).await?;
+        facts.decode_value(value)
     }
 
     /// A void POST call (returns `SynoResponse<serde_json::Value>` and ignores data).
@@ -244,25 +250,41 @@ impl SynoClient {
     }
 
     pub(crate) async fn read_json<T: DeserializeOwned>(
-        mut response: reqwest::Response,
+        response: reqwest::Response,
     ) -> SynologyResult<T> {
+        Self::read_json_at(response, Stage::ApiResponse)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    async fn read_json_at<T: DeserializeOwned>(
+        mut response: reqwest::Response,
+        stage: Stage,
+    ) -> SynologyResult<(T, ResponseFacts)> {
+        let mut facts = ResponseFacts::new(&response, stage);
         if !response.status().is_success() {
-            return Err(SynologyError::connection(format!(
-                "NAS HTTP request failed (status {})",
-                response.status().as_u16()
-            )));
+            return Err(facts.annotate(
+                SynologyError::connection(format!(
+                    "NAS HTTP request failed (status {})",
+                    response.status().as_u16()
+                )),
+                Category::HttpStatus,
+                None,
+            ));
         }
-        const LIMIT: usize = 8 * 1024 * 1024;
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await? {
-            if bytes.len().saturating_add(chunk.len()) > LIMIT {
-                return Err(SynologyError::parse(
-                    "NAS API response exceeds the 8 MiB limit",
+            if bytes.len().saturating_add(chunk.len()) > RESPONSE_LIMIT {
+                return Err(facts.annotate(
+                    SynologyError::parse("NAS API response exceeds the 8 MiB limit"),
+                    Category::ResponseTooLarge,
+                    None,
                 ));
             }
             bytes.extend_from_slice(&chunk);
+            facts.bytes_read = bytes.len();
         }
-        serde_json::from_slice(&bytes).map_err(Into::into)
+        facts.decode(&bytes).map(|value| (value, facts))
     }
 
     pub(crate) async fn post_value(
@@ -272,18 +294,33 @@ impl SynoClient {
         method: &str,
         form: &[(&str, &str)],
     ) -> SynologyResult<serde_json::Value> {
-        let resp: SynoResponse<serde_json::Value> = Self::read_json(
+        self.post_value_observed(api, version, method, form)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    async fn post_value_observed(
+        &self,
+        api: &str,
+        version: u32,
+        method: &str,
+        form: &[(&str, &str)],
+    ) -> SynologyResult<(serde_json::Value, ResponseFacts)> {
+        let (resp, facts): (SynoResponse<serde_json::Value>, _) = Self::read_json_at(
             self.form_request(api, version, method, form)?
                 .send()
                 .await?,
+            Stage::operation(api, method),
         )
         .await?;
         if resp.success {
-            Ok(resp.data.unwrap_or(serde_json::Value::Null))
+            Ok((resp.data.unwrap_or(serde_json::Value::Null), facts))
         } else {
-            Err(SynologyError::from_dsm_code(
-                resp.error.map(|e| e.code).unwrap_or(100),
-                api,
+            let code = resp.error.map(|e| e.code).unwrap_or(100);
+            Err(facts.annotate(
+                SynologyError::from_dsm_code(code, api),
+                Category::DsmApi,
+                Some(code),
             ))
         }
     }
@@ -296,6 +333,16 @@ impl SynoClient {
         method: &str,
         params: &[(&str, serde_json::Value)],
     ) -> SynologyResult<serde_json::Value> {
+        self.file_call_typed(api, maximum, method, params).await
+    }
+
+    pub(crate) async fn file_call_typed<T: DeserializeOwned>(
+        &self,
+        api: &str,
+        maximum: u32,
+        method: &str,
+        params: &[(&str, serde_json::Value)],
+    ) -> SynologyResult<T> {
         let version = self
             .best_version(api, maximum)
             .ok_or_else(|| SynologyError::api_not_found(format!("NAS does not provide {api}")))?;
@@ -321,18 +368,23 @@ impl SynoClient {
             .iter()
             .map(|(key, value)| (*key, value.as_str()))
             .collect();
-        let response: SynoResponse<serde_json::Value> = Self::read_json(
+        let (response, facts): (SynoResponse<serde_json::Value>, _) = Self::read_json_at(
             self.form_request(api, version, method, &form)?
                 .send()
                 .await?,
+            Stage::operation(api, method),
         )
         .await?;
         if response.success {
-            Ok(response.data.unwrap_or(serde_json::Value::Null))
+            facts.decode_value(response.data.unwrap_or(serde_json::Value::Null))
         } else {
             let code = response.error.map(|e| e.code).unwrap_or(100);
             // Do not forward NAS-provided nested errors, paths, URLs, or credentials.
-            Err(SynologyError::file_station(code))
+            Err(facts.annotate(
+                SynologyError::file_station(code),
+                Category::DsmApi,
+                Some(code),
+            ))
         }
     }
 

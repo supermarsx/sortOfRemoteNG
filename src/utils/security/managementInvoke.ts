@@ -1,4 +1,9 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import {
+  hasSynologyDiagnostic,
+  parseSynologyApiFailure,
+  SYNOLOGY_DIAGNOSTIC_MARKER,
+} from "../synology/apiFailureDiagnostic";
 
 const MAX_COMMAND_LENGTH = 128;
 const MAX_DEPTH = 16;
@@ -156,8 +161,17 @@ export function toSafeManagementError(
   error: unknown,
   fallback = "The management operation failed.",
 ): string {
-  const redacted = rawErrorText(error, fallback)
-    .slice(0, MAX_RAW_ERROR_LENGTH)
+  const raw = rawErrorText(error, fallback).slice(0, MAX_RAW_ERROR_LENGTH);
+  const diagnostic = parseSynologyApiFailure(raw);
+  if (hasSynologyDiagnostic(raw) && !diagnostic)
+    return "The NAS API request failed; diagnostic metadata was unavailable.";
+  const suffix = diagnostic
+    ? SYNOLOGY_DIAGNOSTIC_MARKER + JSON.stringify(diagnostic)
+    : "";
+  const prefix = diagnostic
+    ? raw.slice(0, raw.lastIndexOf(SYNOLOGY_DIAGNOSTIC_MARKER))
+    : raw;
+  const redacted = prefix
     .replace(
       /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/gi,
       "[REDACTED PRIVATE KEY]",
@@ -180,7 +194,10 @@ export function toSafeManagementError(
     .replace(/\b[A-Za-z0-9+/]{80,}={0,2}\b/g, "[REDACTED DATA]")
     .trim();
 
-  return (redacted || fallback).slice(0, MAX_SAFE_ERROR_LENGTH);
+  return (
+    (redacted || fallback).slice(0, MAX_SAFE_ERROR_LENGTH - suffix.length) +
+    suffix
+  );
 }
 
 const requestLimits: EnvelopeLimits = {
