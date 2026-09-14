@@ -20,5 +20,5 @@ url = { workspace = true }
 bytes = { workspace = true }
 # Jitter for retry backoff
 rand = { workspace = true }
-# Vendor dylib (quick-xml, percent-encoding, hmac, sha2, hex)
+# Grouped Rust dependencies (quick-xml, percent-encoding, hmac, sha2, hex)
 sorng-aws-vendor = { path = "../sorng-aws-vendor" }

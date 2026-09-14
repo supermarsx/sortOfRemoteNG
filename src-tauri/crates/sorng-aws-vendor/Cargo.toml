@@ -3,10 +3,12 @@ publish = false
 name = "sorng-aws-vendor"
 version.workspace = true
 edition = "2021"
-description = "Dynamically linked vendor dependencies for the AWS stack"
+description = "Grouped Rust vendor dependencies for the AWS stack"
 
 [lib]
-crate-type = ["dylib", "rlib"]
+# Ordinary Rust consumers use this rlib. There is no runtime-loading or bundle
+# contract for a companion Rust DLL, so do not emit an unused dynamic output.
+crate-type = ["rlib"]
 
 [dependencies]
 quick-xml = { version = "0.41", features = ["serialize"] }

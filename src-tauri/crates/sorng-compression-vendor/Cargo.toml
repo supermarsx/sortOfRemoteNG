@@ -3,10 +3,12 @@ publish = false
 name = "sorng-compression-vendor"
 version.workspace = true
 edition = "2021"
-description = "Dynamically linked vendor dependencies for compression (zstd + flate2)"
+description = "Grouped Rust vendor dependencies for compression (zstd + flate2)"
 
 [lib]
-crate-type = ["dylib", "rlib"]
+# This Rust wrapper is not a runtime DLL boundary. Native zstd linkage remains
+# controlled by the unchanged dependencies and the selected build environment.
+crate-type = ["rlib"]
 
 [dependencies]
 zstd = "0.13"

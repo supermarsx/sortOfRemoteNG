@@ -43,8 +43,6 @@ fn main() {
     println!("cargo:rerun-if-env-changed={CHECKOUT_ENV}");
     println!("cargo:rerun-if-env-changed={DISABLE_ENV}");
     println!("cargo:rerun-if-env-changed={GO_BINARY_ENV}");
-    println!("cargo:rerun-if-env-changed=PATH");
-    println!("cargo:rerun-if-env-changed=Path");
 
     if bridge_disabled() {
         emit_stub_runtime("OPKSSH vendor bridge disabled by environment");
@@ -82,6 +80,12 @@ fn main() {
         emit_stub_runtime_metadata();
         return;
     }
+
+    // Only the Go-building branch discovers child tools through PATH. MSVC
+    // reads the fixed staged DLL above; shell/npm PATH differences must not
+    // invalidate that metadata-only wrapper and all of its Rust consumers.
+    println!("cargo:rerun-if-env-changed=PATH");
+    println!("cargo:rerun-if-env-changed=Path");
 
     let Some(checkout_path) = discover_checkout_path() else {
         emit_stub_runtime("OPKSSH checkout not found; leaving vendor wrapper metadata-only");

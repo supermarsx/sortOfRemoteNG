@@ -163,3 +163,75 @@ test("SSH scripting compiles exactly one implementation and retains command regi
     /ssh_commands::execute_user_script,/,
   );
 });
+
+test("ordinary vendor wrappers retain complete Rust APIs without unused DLL outputs", () => {
+  for (const [wrapper, consumer, exports] of [
+    [
+      "sorng-aws-vendor",
+      "sorng-aws",
+      ["quick_xml", "percent_encoding", "hmac", "sha2", "hex"],
+    ],
+    ["sorng-compression-vendor", "sorng-recording", ["zstd", "flate2"]],
+  ]) {
+    const manifest = read(`src-tauri/crates/${wrapper}/Cargo.toml`);
+    const library = manifest.split("[lib]")[1].split(/^\[/m)[0];
+    const outputs = library.match(/^crate-type\s*=\s*(\[[^\]]*\])/m);
+    assert.ok(outputs, `${wrapper} declares its output contract`);
+    assert.deepEqual(JSON.parse(outputs[1]), ["rlib"], wrapper);
+
+    // Removing a companion artifact must not hide APIs behind new opt-ins or
+    // disable the dependencies' existing default/native capabilities.
+    assert.doesNotMatch(manifest, /^\[features\]/m);
+    const dependencies = manifest.split("[dependencies]")[1].split(/^\[/m)[0];
+    const names = [...dependencies.matchAll(/^([\w-]+)\s*=/gm)].map((match) =>
+      match[1].replaceAll("-", "_"),
+    );
+    assert.deepEqual(names.sort(), [...exports].sort());
+    assert.doesNotMatch(
+      dependencies,
+      /(?:optional\s*=\s*true|default-features\s*=\s*false)/,
+    );
+    if (wrapper === "sorng-aws-vendor") {
+      assert.match(
+        dependencies,
+        /^quick-xml\s*=.*features\s*=\s*\["serialize"\]/m,
+      );
+    }
+
+    const source = read(`src-tauri/crates/${wrapper}/src/lib.rs`);
+    const reexports = [...source.matchAll(/^pub extern crate (\w+);/gm)].map(
+      (match) => match[1],
+    );
+    assert.deepEqual(reexports.sort(), [...exports].sort());
+    assert.doesNotMatch(source, /#\s*!?\[cfg(?:_attr)?\(/);
+    assert.match(
+      read(`src-tauri/crates/${consumer}/Cargo.toml`),
+      new RegExp(
+        `^${wrapper}\\s*=\\s*\\{\\s*path\\s*=\\s*"\\.\\./${wrapper}"\\s*\\}`,
+        "m",
+      ),
+    );
+
+    // These are not the explicitly staged OPKSSH/native C runtimes. Adding a
+    // wrapper DLL to packaging would contradict their rlib-only contract.
+    for (const path of [
+      "src-tauri/tauri.conf.json",
+      "scripts/stage-windows-native-runtime.mjs",
+      "scripts/native-build-env.mjs",
+    ]) {
+      const text = read(path);
+      assert.ok(!text.includes(wrapper), `${path} must not bundle ${wrapper}`);
+      assert.ok(
+        !text.includes(wrapper.replaceAll("-", "_")),
+        `${path} must not load ${wrapper}`,
+      );
+    }
+  }
+  // Existing full/static/platform feature parity tests above remain the gate:
+  // no application capability is removed to avoid the extra link output.
+  assert.ok(closure(["default"]).has("cloud"));
+  assert.match(
+    read("src-tauri/Cargo.toml"),
+    /^sorng-recording\s*=\s*\{\s*path\s*=\s*"crates\/sorng-recording"\s*\}/m,
+  );
+});

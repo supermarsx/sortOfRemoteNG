@@ -19,7 +19,7 @@ sha2 = { workspace = true }
 # the heavy sorng-ssh crate just for a handful of regexes.
 regex = { workspace = true }
 lazy_static = { workspace = true }
-# Vendor dylib (zstd + flate2)
+# Grouped Rust dependencies (zstd + flate2; native linkage unchanged)
 sorng-compression-vendor = { path = "../sorng-compression-vendor" }
 # Encryption-at-rest (Phase 2a) — dispatched envelope read/write for
 # recording metadata + macros. We only need `EncryptionState` and the
