@@ -89,6 +89,13 @@ for (const [name, launch, prefix] of [
           arch: "x64",
           exists: (file) => files.has(file),
         },
+        buildResourceOptions: {
+          resources: {
+            parallelism: 40,
+            totalMemoryBytes: 288 * 1024 ** 3,
+            freeMemoryBytes: 230 * 1024 ** 3,
+          },
+        },
         prepareTauriDevOpkssh: (received, env) => {
           assert.deepEqual(received, args);
           staged.push(env);
@@ -110,7 +117,7 @@ for (const [name, launch, prefix] of [
             process.execPath,
             [
               "-e",
-              "process.stdout.write(JSON.stringify({lib:process.env.OPENSSL_LIB_DIR,libs:process.env.OPENSSL_LIBS,static:process.env.OPENSSL_STATIC,path:process.env.PATH||process.env.Path,port:process.env.SORNG_DEV_PORT}))",
+              "process.stdout.write(JSON.stringify({lib:process.env.OPENSSL_LIB_DIR,libs:process.env.OPENSSL_LIBS,static:process.env.OPENSSL_STATIC,path:process.env.PATH||process.env.Path,port:process.env.SORNG_DEV_PORT,jobs:process.env.CARGO_BUILD_JOBS}))",
             ],
             { env: options.env, encoding: "utf8", windowsHide: true },
           );
@@ -128,10 +135,12 @@ for (const [name, launch, prefix] of [
         static: "1",
         path: "C:\\Strawberry\\perl\\bin;existing-path",
         port: "3042",
+        jobs: "32",
       });
       assert.equal(baseEnv.OPENSSL_LIB_DIR, root);
       assert.equal(baseEnv.OPENSSL_LIBS, undefined);
       assert.equal(baseEnv.Path, "existing-path");
+      assert.equal(baseEnv.CARGO_BUILD_JOBS, undefined);
       child.emit("exit", 7, null);
       assert.equal(status, 7);
       host.emit("SIGINT");

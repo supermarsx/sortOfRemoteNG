@@ -18,6 +18,10 @@ import {
 import { stageVendorArtifact } from "./stage-opkssh-vendor.mjs";
 import { stageFileViewerHost } from "./stage-file-viewer-host.mjs";
 import { buildNativeChildEnvironment } from "./lib/native-child-env.mjs";
+import {
+  describeDevBuildResources,
+  planDevBuildResources,
+} from "./lib/dev-build-budget.mjs";
 
 const require = createRequire(import.meta.url);
 const tauriConfigPath = fileURLToPath(
@@ -66,6 +70,7 @@ export function buildTauriLaunchPlan({
   baseEnv = process.env,
   securityOverride,
   nativeEnvironmentOptions,
+  buildResourceOptions,
 } = {}) {
   const port = parseDevPort(portValue);
   const devUrl = `http://localhost:${port}`;
@@ -74,16 +79,23 @@ export function buildTauriLaunchPlan({
     build: { devUrl },
     app: { security },
   };
+  const buildResources = planDevBuildResources({
+    ...buildResourceOptions,
+    argv: passthrough,
+    baseEnv,
+  });
 
   return {
     port,
     devUrl,
+    buildResources,
     env: {
       ...buildNativeChildEnvironment({
         ...nativeEnvironmentOptions,
         baseEnv,
         argv: passthrough,
       }),
+      ...buildResources.environment,
       SORNG_DEV_PORT: String(port),
       SORNG_DEV_PORT_RESOLVED: "1",
       SORNG_TAURI_MANAGED_DEV: "1",
@@ -134,10 +146,12 @@ export async function main(
     passthrough,
     baseEnv,
     nativeEnvironmentOptions: dependencies.nativeEnvironmentOptions,
+    buildResourceOptions: dependencies.buildResourceOptions,
   });
 
   log(`dev server will use port ${plan.port} (${selected.action})`);
   log(`pinning Tauri devUrl and capability origin -> ${plan.devUrl}`);
+  log(describeDevBuildResources(plan.buildResources));
   log(
     "Cargo defaults include all supported features; reduced builds require --no-default-features. Native services still require their documented drivers/tools.",
   );

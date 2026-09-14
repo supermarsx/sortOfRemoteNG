@@ -21,6 +21,14 @@ Adding `--features lean` alone does not subtract default capabilities. Never use
 
 The default/full bundle builds Kafka and OpenH264 from source, with bundled SQLite. It requires the normal native C/CMake toolchain. `npm run tauri:build` retains its existing platform-specific native-runtime staging, and release CI retains its explicit full feature lists with `--no-default-features`. Those lists choose either static or dynamic variants of Kafka, SQLite and OpenH264, not both. Alternate linkage bundles must also disable defaults.
 
+## Development build parallelism and memory
+
+The two managed Tauri development commands choose Cargo parallelism at each launch from the process-visible CPU count and the current physical free RAM. Their advisory build allowance is `min(40 GiB, max(0, free RAM - 7% of total RAM))`. The estimate reserves 8 GiB within that allowance for Next.js, linking and native helpers, then 1 GiB for each Cargo job, capped by available CPUs. A 40-CPU process with ample free RAM therefore selects 32 jobs, overriding the repository's ordinary 28-job default **only in the dev child environment**.
+
+This is a launch-time sizing heuristic, **not a hard 40 GiB process-tree limit or a guarantee that 7% of RAM remains free**. Individual compiler/linker peaks and unrelated processes vary; Cargo's job limit does not enforce memory usage. If observed headroom is insufficient even for the minimum one-job estimate, the launcher warns and retains one job. It never kills, pauses or retunes an existing build or app, and does not change the application's runtime heap. Restart the managed dev command to recalculate the recommendation.
+
+Explicit `CARGO_BUILD_JOBS` and Cargo `--jobs`/`-j` arguments remain authoritative and are identified in the startup message; they can exceed the advisory recommendation. A custom runner, explicit profile/release invocation or Cargo `--config` also retains its existing policy. Regular Cargo commands, production/release builds, feature sets and optimization profiles are unchanged. For example, `npm run tauri:dev -- -- --jobs 4` explicitly selects four Cargo jobs for that invocation.
+
 ## OPKSSH runtime prerequisites
 
 The default includes `opkssh-vendored-wrapper`. Managed development now verifies/stages its real embedded runtime before native launch; production staging uses the same checks. On Windows/MSVC, the statically linked Rust wrapper is deliberately metadata-only: the application dynamically loads a separately staged GNU bridge. On Windows x64, a healthy staged or cached bridge is reused; otherwise `npm run vendor:opkssh:build -- --skip-stage` builds it using the documented Go/GNU-toolchain and pinned-upstream prerequisites. Missing prerequisites fail visibly rather than replacing the bridge with a metadata-only DLL. No toolchain is installed automatically.
