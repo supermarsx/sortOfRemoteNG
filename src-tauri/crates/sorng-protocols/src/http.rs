@@ -982,6 +982,19 @@ mod upstream_auth_mode_tests {
     }
 }
 
+/// Non-secret snapshot of an explicitly authorized, one-use native form flow.
+/// CredentialsReleased reports handout, never successful website sign-in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeferredSynologyLoginStatus {
+    AwaitingNas,
+    WaitingForForm,
+    WaitingForPassword,
+    CredentialsReleased,
+    Expired,
+    Cancelled,
+}
+
 /// Response from starting the proxy mediator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyMediatorResponse {
@@ -991,6 +1004,9 @@ pub struct ProxyMediatorResponse {
     pub session_id: String,
     /// The proxied URL to use
     pub proxy_url: String,
+    /// Native intent only; the redirected connection remains anonymous.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred_login_status: Option<DeferredSynologyLoginStatus>,
 }
 
 /// Proxy session tracking using a local TCP server (axum on 127.0.0.1:0).
@@ -1072,6 +1088,8 @@ pub struct ProxySessionDetail {
     pub request_count: u64,
     pub error_count: u64,
     pub last_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred_login_status: Option<DeferredSynologyLoginStatus>,
 }
 
 impl ProxySessionManager {

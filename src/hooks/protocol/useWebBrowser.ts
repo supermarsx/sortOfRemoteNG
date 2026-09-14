@@ -42,6 +42,7 @@ import {
 } from "../../utils/security/runtimeCredentialVault";
 import { useHttpRedirectReview } from "./useHttpRedirectReview";
 import { useHttpRedirectTrust } from "./useHttpRedirectTrust";
+import { useDeferredSynologyLoginStatus } from "./useDeferredSynologyLoginStatus";
 import {
   synologyDefaultRedirectOrigins,
   withSynologyRedirectDefaults,
@@ -94,6 +95,7 @@ import {
    ═══════════════════════════════════════════════════════════════ */
 
 export interface ProxyMediatorResponse {
+  deferred_login_status?: unknown;
   local_port: number;
   session_id: string;
   proxy_url: string;
@@ -689,6 +691,26 @@ export function useWebBrowser(session: ConnectionSession) {
     url: string;
     ownerScope: string;
   } | null>(null);
+  const deferredLogin = useDeferredSynologyLoginStatus({
+    scope: JSON.stringify([
+      session.id,
+      session.connectionId,
+      reviewedFlowScope,
+    ]),
+    requested: !!redirectTrust.defaultSource?.formLogin,
+    valid: redirectTrust.formLoginCurrent,
+    assertCurrent: () => assertFormLoginCurrentRef.current?.(),
+    context: () =>
+      proxySessionIdRef.current
+        ? {
+            sessionId: proxySessionIdRef.current,
+            generation: navGenRef.current,
+            document: currentDocumentRef.current?.token ?? null,
+          }
+        : null,
+  });
+  const deferredLoginRef = useRef(deferredLogin);
+  deferredLoginRef.current = deferredLogin;
   const [networkReports, setNetworkReports] = useState<{
     scope: string;
     rows: WebNetworkReport[];
@@ -928,7 +950,10 @@ export function useWebBrowser(session: ConnectionSession) {
     connection &&
     connection.protocol === "https" &&
     (connection as unknown as Record<string, unknown>)?.httpVerifySsl === false;
-  const iconCount = 2 + (hasAuth ? 1 : 0) + (sslVerifyDisabled ? 1 : 0);
+  const iconCount =
+    2 +
+    (hasAuth || deferredLogin.presentation ? 1 : 0) +
+    (sslVerifyDisabled ? 1 : 0);
   const iconPadding = 12 + iconCount * 22 + 16;
 
   // ── Bookmark state ─────────────────────────────────────────
@@ -1740,6 +1765,7 @@ export function useWebBrowser(session: ConnectionSession) {
           }
           proxySessionIdRef.current = response.session_id;
           proxyUrlRef.current = protectedProxyUrl;
+          deferredLoginRef.current.receive(response);
           navigateFrame(
             protectedProxyUrl.replace(/\/+$/, "") + pagePath,
             gen,
@@ -1992,6 +2018,7 @@ export function useWebBrowser(session: ConnectionSession) {
       }
       proxySessionIdRef.current = resp.session_id;
       proxyUrlRef.current = protectedProxyUrl;
+      deferredLoginRef.current.receive(resp);
       setProxyAlive(true);
       clearNavigationFailure();
       const urlObj = new URL(activeNavigationUrlRef.current);
@@ -2110,6 +2137,28 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       if (event.origin !== expectedOrigin) return;
+      if (event.data?.type === "proxy_autologin_result") {
+        const current = currentDocumentRef.current;
+        // This legacy, unscoped result is only a bounded refresh hint, never
+        // status or sign-in proof. Read the exact current native session again;
+        // never display a phase or success claim supplied by the page.
+        if (
+          current &&
+          current.generation === navGenRef.current &&
+          current.sessionId === proxySessionIdRef.current &&
+          current.ownerScope === trustOwnerScopeRef.current &&
+          !navigationFailureRef.current &&
+          [
+            "submitted",
+            "cancelled",
+            "reviewed-login-timeout",
+            "reviewed-login-stopped",
+            "autologin-client-unavailable",
+          ].includes(event.data?.result?.reason)
+        )
+          deferredLoginRef.current.refreshFromPage();
+        return;
+      }
       if (event.data?.type === "sorng_web_network_blocked") {
         const current = currentDocumentRef.current;
         if (
@@ -2258,6 +2307,7 @@ export function useWebBrowser(session: ConnectionSession) {
             ownerScope: trustOwnerScopeRef.current,
           };
           const activatedDocument = currentDocumentRef.current;
+          void deferredLoginRef.current.refresh();
           const activationScope = networkReportScope();
           setNetworkRouting({
             scope: activationScope,
@@ -2318,6 +2368,7 @@ export function useWebBrowser(session: ConnectionSession) {
         setIsLoading(false);
         clearLoadingIndicator();
         // DOM readiness is not successful authentication or full resource load.
+        void deferredLoginRef.current.refresh();
         return;
       }
       const failure = parseProxyFailurePayload(
@@ -2398,6 +2449,7 @@ export function useWebBrowser(session: ConnectionSession) {
     // native receipt can authorize this review; no URL or destination is read
     // from the page, and an ordinary load with no receipt stays unchanged.
     void redirectReviewRef.current.offer(false, true);
+    void deferredLoginRef.current.refresh();
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
       loadTimeoutRef.current = null;
@@ -3122,6 +3174,8 @@ export function useWebBrowser(session: ConnectionSession) {
     handleCancelLoading,
     // Auth
     hasAuth,
+    deferredLogin: deferredLogin.presentation,
+    refreshDeferredLoginStatus: deferredLogin.refresh,
     authLabel:
       ["none", "bitwarden-form", "synology-form"].includes(
         applicationAuth.login?.upstreamAuthMode ?? "",

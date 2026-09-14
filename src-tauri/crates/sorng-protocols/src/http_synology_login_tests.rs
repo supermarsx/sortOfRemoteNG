@@ -133,7 +133,7 @@ fn expiry_and_cancellation_erase_secrets_and_never_rearm() {
         }
         intent.expire();
         assert!(intent.username.is_none() && intent.password.is_none());
-        assert!(matches!(intent.phase, Phase::Spent));
+        assert!(matches!(intent.phase, Phase::Spent(_)));
         assert!(!intent.bind("nas", 1, &target));
     }
     let mut pending = intent();
@@ -207,6 +207,7 @@ fn repeated_binding_or_readiness_reads_cannot_extend_page_deadline() {
     for _ in 0..4 {
         assert!(intent.bind("nas", 1, &target));
         assert!(intent.nonce("nas", 1).is_some());
+        assert_eq!(intent.status(), DeferredSynologyLoginStatus::WaitingForForm);
         assert!(
             matches!(&intent.phase, Phase::Account { issued: current, .. } if *current == issued)
         );
@@ -234,4 +235,114 @@ fn password_deadline_still_expires_at_thirty_seconds_without_replay() {
     assert!(intent.dispense("nas", 1, token, Some("password")).is_err());
     assert!(intent.spent_for_test());
     assert!(intent.dispense("nas", 1, &nonce, None).is_err());
+}
+
+#[test]
+fn status_tracks_native_handout_without_claiming_sign_in_or_releasing_credentials() {
+    let mut intent = intent();
+    let target = Url::parse(NAS).unwrap();
+    assert_eq!(intent.status(), DeferredSynologyLoginStatus::AwaitingNas);
+    assert!(intent.username.is_some() && intent.password.is_some());
+    assert!(!intent.bind("nas", 1, &target));
+    assert_eq!(intent.status(), DeferredSynologyLoginStatus::AwaitingNas);
+    intent.record_probe(target.origin().ascii_serialization());
+    assert!(intent.bind("nas", 1, &target));
+    let nonce = intent.nonce("nas", 1).unwrap();
+    assert_eq!(intent.status(), DeferredSynologyLoginStatus::WaitingForForm);
+    assert!(intent.username.is_some() && intent.password.is_some());
+    let account = intent.dispense("nas", 1, &nonce, None).unwrap();
+    assert_eq!(
+        intent.status(),
+        DeferredSynologyLoginStatus::WaitingForPassword
+    );
+    assert!(intent.username.is_none() && intent.password.is_some());
+    let continuation = account["continuation"].as_str().unwrap();
+    let _password = intent
+        .dispense("nas", 1, continuation, Some("password"))
+        .unwrap();
+    for _ in 0..3 {
+        intent.cancel_issued();
+        assert_eq!(
+            intent.status(),
+            DeferredSynologyLoginStatus::CredentialsReleased
+        );
+        assert!(intent.spent_for_test());
+        assert!(intent.dispense("nas", 1, &nonce, None).is_err());
+        assert!(!intent.bind("nas", 2, &target));
+    }
+}
+
+#[test]
+fn status_preserves_actual_expiry_or_cancellation_without_renewal() {
+    let mut pending = intent();
+    pending.created = Instant::now() - INTENT_LIFETIME;
+    assert_eq!(pending.status(), DeferredSynologyLoginStatus::Expired);
+    pending.cancel_issued();
+    assert_eq!(pending.status(), DeferredSynologyLoginStatus::Expired);
+    assert!(pending.spent_for_test());
+
+    let mut bound = intent();
+    let target = Url::parse(NAS).unwrap();
+    bound.record_probe(target.origin().ascii_serialization());
+    assert!(bound.bind("nas", 1, &target));
+    bound.cancel_issued();
+    assert_eq!(bound.status(), DeferredSynologyLoginStatus::Cancelled);
+    bound.created = Instant::now() - INTENT_LIFETIME;
+    assert_eq!(bound.status(), DeferredSynologyLoginStatus::Cancelled);
+    assert!(bound.spent_for_test());
+}
+
+#[test]
+fn status_serialization_is_a_closed_scalar_and_old_session_responses_remain_readable() {
+    for (status, expected) in [
+        (DeferredSynologyLoginStatus::AwaitingNas, "awaiting_nas"),
+        (
+            DeferredSynologyLoginStatus::WaitingForForm,
+            "waiting_for_form",
+        ),
+        (
+            DeferredSynologyLoginStatus::WaitingForPassword,
+            "waiting_for_password",
+        ),
+        (
+            DeferredSynologyLoginStatus::CredentialsReleased,
+            "credentials_released",
+        ),
+        (DeferredSynologyLoginStatus::Expired, "expired"),
+        (DeferredSynologyLoginStatus::Cancelled, "cancelled"),
+    ] {
+        let json = serde_json::to_value(status).unwrap();
+        assert_eq!(json, expected);
+        assert_eq!(
+            serde_json::from_value::<DeferredSynologyLoginStatus>(json).unwrap(),
+            status
+        );
+    }
+    assert!(serde_json::from_str::<DeferredSynologyLoginStatus>("\"signed_in\"").is_err());
+    let legacy = serde_json::json!({
+        "local_port": 1234, "session_id": "fixture", "proxy_url": "http://fixture.localhost:1234/"
+    });
+    let response: crate::http::ProxyMediatorResponse =
+        serde_json::from_value(legacy.clone()).unwrap();
+    assert!(response.deferred_login_status.is_none());
+    assert_eq!(serde_json::to_value(response).unwrap(), legacy);
+    let status = intent().status();
+    let response = crate::http::ProxyMediatorResponse {
+        local_port: 1234,
+        session_id: "fixture".into(),
+        proxy_url: "http://fixture.localhost:1234/".into(),
+        deferred_login_status: Some(status),
+    };
+    let json = serde_json::to_value(response).unwrap();
+    assert_eq!(json.as_object().unwrap().len(), 4);
+    assert_eq!(json["deferred_login_status"], "awaiting_nas");
+    let text = json.to_string();
+    for private in [
+        "synthetic-user",
+        "synthetic-password",
+        "nonce",
+        "continuation",
+    ] {
+        assert!(!text.contains(private));
+    }
 }

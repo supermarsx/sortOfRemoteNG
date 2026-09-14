@@ -45,6 +45,7 @@ const h = vi.hoisted(() => ({
   settingsReady: true,
   locked: false,
   availabilityGeneration: 1,
+  loginStatuses: {} as Record<string, string>,
   vault: undefined as DatabaseCredentialVaultApi | undefined,
   networkGuardStatus: {
     platform: "windows",
@@ -187,6 +188,7 @@ beforeEach(() => {
   h.failSaveAfterDispatch = false;
   h.runtimeStart = null;
   h.vault = undefined;
+  h.loginStatuses = {};
   h.dispatch.mockReset();
   h.connections = [
     {
@@ -236,6 +238,7 @@ beforeEach(() => {
           const index = proxies.length + 1;
           const config = args.config as { target_url: string };
           const proxy = {
+            deferred_login_status: h.loginStatuses[`proxy-${index}`],
             session_id: `proxy-${index}`,
             local_port: 43080 + index,
             proxy_url: `http://p${index.toString(16).padStart(32, "0")}.localhost:${43080 + index}/`,
@@ -244,6 +247,13 @@ beforeEach(() => {
           proxies.push(proxy);
           return proxy;
         }
+        if (command === "get_proxy_session_details")
+          return proxies
+            .filter((proxy) => proxy.session_id === args.sessionId)
+            .map((proxy) => ({
+              session_id: proxy.session_id,
+              deferred_login_status: h.loginStatuses[proxy.session_id],
+            }));
         if (command === "review_proxy_redirect")
           return receipts.get(args.sessionId as string) ?? null;
         if (
@@ -661,6 +671,118 @@ describe("actual website redirect review integration", () => {
         compareAndSwap: vi.fn(),
       };
   }
+  it("keeps the saved-login toolbar indicator through an anonymous handoff using native status only", async () => {
+    automaticSource();
+    h.loginStatuses = {
+      "proxy-1": "awaiting_nas",
+      "proxy-2": "waiting_for_form",
+    };
+    const { view } = await mountContinuation();
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    const icon = await screen.findByRole("button", {
+      name: "Saved Synology form login",
+    });
+    expect(icon).toHaveAttribute(
+      "title",
+      expect.stringContaining("Waiting for the DSM form"),
+    );
+    const starts = h.invoke.mock.calls.filter(
+      ([command]) => command === "start_basic_auth_proxy",
+    );
+    expect(starts[1][1].config).toMatchObject({
+      username: "",
+      password: "",
+      http_auto_login: false,
+    });
+    h.loginStatuses["proxy-2"] = "credentials_released";
+    await act(async () => fireEvent.click(icon));
+    expect(icon).toHaveAttribute(
+      "title",
+      expect.stringContaining("One-shot credentials released"),
+    );
+    expect(icon).toHaveAttribute(
+      "title",
+      expect.stringContaining("not proof of successful sign-in"),
+    );
+    expect(view.container.querySelector("iframe")).not.toBeNull();
+  });
+  it("does not let parent or another frame login reports refresh the current native status", async () => {
+    automaticSource();
+    h.loginStatuses = {
+      "proxy-1": "awaiting_nas",
+      "proxy-2": "waiting_for_form",
+    };
+    const { view } = await mountContinuation();
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    const iframe = view.container.querySelector("iframe")!;
+    const frameUrl = new URL(iframe.src);
+    const navigationToken = frameUrl.searchParams.get("__sorng_navigation_v1");
+    frameUrl.searchParams.delete("__sorng_navigation_v1");
+    const identity = {
+      version: 1,
+      sessionId: "proxy-2",
+      documentToken: "e".repeat(32),
+      documentSequence: 1,
+      navigationToken,
+      url: frameUrl.toString(),
+    };
+    await act(async () => {
+      for (const type of ["proxy_document_start", "proxy_dom_ready"])
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: frameUrl.origin,
+            data: { ...identity, type },
+          }),
+        );
+    });
+    const count = () =>
+      h.invoke.mock.calls.filter(
+        ([name]) => name === "get_proxy_session_details",
+      ).length;
+    const before = count();
+    await act(async () => {
+      for (const source of [window, null])
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source,
+            origin: frameUrl.origin,
+            data: {
+              type: "proxy_autologin_result",
+              result: { reason: "submitted", ok: true },
+            },
+          }),
+        );
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: iframe.contentWindow,
+          origin: "https://other.invalid",
+          data: {
+            type: "proxy_autologin_result",
+            result: { reason: "submitted" },
+          },
+        }),
+      );
+    });
+    expect(count()).toBe(before);
+    h.loginStatuses["proxy-2"] = "cancelled";
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: iframe.contentWindow,
+          origin: frameUrl.origin,
+          data: {
+            type: "proxy_autologin_result",
+            result: { reason: "submitted", ok: true },
+          },
+        }),
+      ),
+    );
+    expect(count()).toBe(before + 1);
+    expect(
+      screen.getByRole("button", { name: "Saved Synology form login" }),
+    ).toHaveAttribute("title", expect.stringContaining("Attempt cancelled"));
+  });
   it.each(["password", "vault"])(
     "revokes original %s while the anonymous descendant is active",
     async (change) => {

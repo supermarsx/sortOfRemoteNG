@@ -1,6 +1,9 @@
 //! One original, explicit Synology form intent. Never a navigation permission.
 //! Secrets stay native and separate from HTTP authentication and provider jars.
-use super::{BasicAuthProxyConfig, SynologyQuickConnectDefaults, UpstreamAuthMode};
+use super::{
+    BasicAuthProxyConfig, DeferredSynologyLoginStatus, SynologyQuickConnectDefaults,
+    UpstreamAuthMode,
+};
 use reqwest::Url;
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
@@ -29,7 +32,7 @@ enum Phase {
         nonce: String,
         issued: Instant,
     },
-    Spent,
+    Spent(DeferredSynologyLoginStatus),
 }
 
 // No Debug/Serialize. Neither grants nor secrets belong in public diagnostics.
@@ -49,7 +52,7 @@ impl DeferredSynologyLogin {
 
     #[cfg(test)]
     pub(super) fn spent_for_test(&self) -> bool {
-        matches!(self.phase, Phase::Spent) && self.username.is_none() && self.password.is_none()
+        matches!(self.phase, Phase::Spent(_)) && self.username.is_none() && self.password.is_none()
     }
 
     pub(super) fn capture(
@@ -91,23 +94,34 @@ impl DeferredSynologyLogin {
             Phase::Pending => self.created.elapsed() >= INTENT_LIFETIME,
             Phase::Account { issued, .. } => issued.elapsed() >= READINESS_LIFETIME,
             Phase::Password { issued, .. } => issued.elapsed() >= STAGE_LIFETIME,
-            Phase::Spent => false,
+            Phase::Spent(_) => false,
         };
         if expired {
-            self.spend();
+            self.spend(DeferredSynologyLoginStatus::Expired);
         }
     }
 
-    fn spend(&mut self) {
+    fn spend(&mut self, status: DeferredSynologyLoginStatus) {
         self.username = None;
         self.password = None;
         self.verified_origins.clear();
-        self.phase = Phase::Spent;
+        self.phase = Phase::Spent(status);
     }
 
     pub(super) fn cancel_issued(&mut self) {
-        if !matches!(self.phase, Phase::Pending) {
-            self.spend();
+        if matches!(self.phase, Phase::Account { .. } | Phase::Password { .. }) {
+            self.spend(DeferredSynologyLoginStatus::Cancelled);
+        }
+    }
+
+    /// Reading status expires an elapsed grant but never mints or renews one.
+    pub(super) fn status(&mut self) -> DeferredSynologyLoginStatus {
+        self.expire();
+        match self.phase {
+            Phase::Pending => DeferredSynologyLoginStatus::AwaitingNas,
+            Phase::Account { .. } => DeferredSynologyLoginStatus::WaitingForForm,
+            Phase::Password { .. } => DeferredSynologyLoginStatus::WaitingForPassword,
+            Phase::Spent(status) => status,
         }
     }
 
@@ -145,9 +159,9 @@ impl DeferredSynologyLogin {
                 document: sequence,
                 ..
             } if bound == session && *sequence == document => true,
-            Phase::Spent => false,
+            Phase::Spent(_) => false,
             _ => {
-                self.spend();
+                self.spend(DeferredSynologyLoginStatus::Cancelled);
                 false
             }
         }
@@ -226,7 +240,7 @@ impl DeferredSynologyLogin {
                 Some("password"),
             ) if bound == session && *sequence == document && expected == nonce => {
                 let password = self.password.take().ok_or(UNAVAILABLE)?;
-                self.spend();
+                self.spend(DeferredSynologyLoginStatus::CredentialsReleased);
                 Ok(serde_json::json!({"loginFlow":"synology", "password":&**password}))
             }
             _ => Err(UNAVAILABLE),

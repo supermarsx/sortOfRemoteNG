@@ -1,4 +1,5 @@
 use super::*;
+use crate::http::DeferredSynologyLoginStatus as LoginStatus;
 const ALIAS: &str = "https://example.quickconnect.to/";
 const NAS: &str = "https://example.fr3.quickconnect.to/";
 
@@ -23,6 +24,10 @@ fn native_capture_scrubs_original_and_successor_http_config_without_changing_tra
     let mut registry = AttemptRegistry::default();
     let mut original = opted_config();
     let source = start(&mut registry, &original, "source");
+    assert_eq!(
+        source.deferred_login_status(),
+        Some(LoginStatus::AwaitingNas)
+    );
     let policy = original.proxy_policy.clone();
     let proxy = original.upstream_proxy_url.clone();
     source.strip_deferred_login_config(&mut original);
@@ -40,6 +45,16 @@ fn native_capture_scrubs_original_and_successor_http_config_without_changing_tra
     target.bind_deferred_login_document(&Url::parse(NAS).unwrap(), 1);
     assert_eq!(target.deferred_login_document(), Some(1));
     assert!(source.deferred_login_document().is_none());
+    assert_eq!(
+        target.deferred_login_status(),
+        Some(LoginStatus::WaitingForForm)
+    );
+    assert_eq!(source.deferred_login_status(), Some(LoginStatus::Cancelled));
+    // Reading a stale source cannot cancel or inspect its current successor.
+    assert_eq!(
+        target.deferred_login_status(),
+        Some(LoginStatus::WaitingForForm)
+    );
 }
 
 #[test]
@@ -87,6 +102,7 @@ fn restart_and_ordinary_stop_revoke_even_unspent_intent_and_preserve_closed_mode
         };
         assert!(next.uses_deferred_synology_login());
         assert!(next.attempt.state.lock().unwrap().deferred_login.is_none());
+        assert_eq!(next.deferred_login_status(), Some(LoginStatus::Cancelled));
         let mut config = opted_config();
         next.strip_deferred_login_config(&mut config);
         assert!(
@@ -108,6 +124,7 @@ fn first_bound_sequence_cannot_be_rearmed_by_another_receipt() {
     let again = transfer(&mut registry, &alias, NAS, "nas-again");
     again.bind_deferred_login_document(&Url::parse(NAS).unwrap(), 1);
     assert!(again.deferred_login_document().is_none());
+    assert_eq!(again.deferred_login_status(), Some(LoginStatus::Cancelled));
 }
 
 #[tokio::test]
@@ -145,4 +162,17 @@ async fn native_expiry_timer_clears_idle_credentials_without_another_read() {
     })
     .await
     .unwrap();
+    assert_eq!(source.deferred_login_status(), Some(LoginStatus::Expired));
+}
+
+#[test]
+fn manual_anonymous_attempt_has_no_deferred_login_status() {
+    let mut registry = AttemptRegistry::default();
+    let source = start(&mut registry, &config(ALIAS), "manual");
+    assert_eq!(source.deferred_login_status(), None);
+    source.record_deferred_login_probe("example", &probe(NAS));
+    let target = transfer(&mut registry, &source, NAS, "nas");
+    target.bind_deferred_login_document(&Url::parse(NAS).unwrap(), 1);
+    assert_eq!(target.deferred_login_status(), None);
+    assert!(target.deferred_login_document().is_none());
 }

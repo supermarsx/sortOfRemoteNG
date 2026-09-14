@@ -22,10 +22,32 @@ const SecurityIcon: React.FC<SectionProps> = ({ mgr }) => {
   return <ShieldAlert size={14} className="text-warning" />;
 };
 
-const AuthIcon: React.FC<{ hasAuth: boolean; authLabel?: string }> = ({
-  hasAuth,
-  authLabel = "Basic Auth",
-}) => {
+const AuthIcon: React.FC<{
+  hasAuth: boolean;
+  authLabel?: string;
+  deferredLogin?: { label: string; detail: string; muted: boolean } | null;
+  onRefresh?: () => void;
+}> = ({ hasAuth, authLabel = "Basic Auth", deferredLogin, onRefresh }) => {
+  if (deferredLogin)
+    return (
+      <button
+        type="button"
+        className="sor-icon-btn-sm"
+        onClick={onRefresh}
+        aria-label={deferredLogin.label}
+        title={deferredLogin.detail}
+        data-tooltip={deferredLogin.detail}
+      >
+        <User
+          size={14}
+          className={
+            deferredLogin.muted
+              ? "text-[var(--color-textMuted)]"
+              : "text-primary"
+          }
+        />
+      </button>
+    );
   if (!hasAuth) return null;
   return (
     <span

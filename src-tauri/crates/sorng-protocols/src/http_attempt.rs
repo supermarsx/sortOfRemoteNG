@@ -106,6 +106,29 @@ impl AttemptSession {
         self.attempt.deferred_synology
     }
 
+    /// Snapshot for existing session-info IPC only. Never a login grant.
+    /// Stale generations report cancellation, not a successor's private phase.
+    #[doc(hidden)]
+    pub fn deferred_login_status(&self) -> Option<super::DeferredSynologyLoginStatus> {
+        if !self.attempt.deferred_synology {
+            return None;
+        }
+        let Ok(mut state) = self.attempt.state.lock() else {
+            return Some(super::DeferredSynologyLoginStatus::Cancelled);
+        };
+        if !self.current(&state) {
+            return Some(super::DeferredSynologyLoginStatus::Cancelled);
+        }
+        Some(
+            state
+                .deferred_login
+                .as_mut()
+                .map_or(super::DeferredSynologyLoginStatus::Cancelled, |login| {
+                    login.status()
+                }),
+        )
+    }
+
     fn expire_login_after(&self, duration: Duration) {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;

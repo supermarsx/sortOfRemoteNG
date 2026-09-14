@@ -732,11 +732,16 @@ pub async fn start_basic_auth_proxy(
         );
     }
 
+    let deferred_login_status = attempt_guard
+        .0
+        .as_ref()
+        .and_then(|attempt| attempt.deferred_login_status());
     attempt_guard.0 = None;
     Ok(ProxyMediatorResponse {
         local_port,
         session_id: session_id.clone(),
         proxy_url: protected_endpoint.url,
+        deferred_login_status,
     })
 }
 
@@ -873,6 +878,10 @@ pub fn list_proxy_sessions(
                 local_port: entry.local_port,
                 session_id: id.clone(),
                 proxy_url: entry.network.proxy_url()?,
+                deferred_login_status: entry
+                    .attempt
+                    .as_ref()
+                    .and_then(|attempt| attempt.deferred_login_status()),
             })
         })
         .collect())
@@ -881,12 +890,14 @@ pub fn list_proxy_sessions(
 /// Get detailed information about all proxy sessions.
 #[tauri::command]
 pub fn get_proxy_session_details(
+    session_id: Option<String>,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<Vec<ProxySessionDetail>, String> {
     let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     Ok(mgr
         .sessions
         .iter()
+        .filter(|(id, _)| session_id.as_ref().is_none_or(|expected| expected == *id))
         .filter_map(|(id, entry)| {
             Some(ProxySessionDetail {
                 session_id: id.clone(),
@@ -900,6 +911,10 @@ pub fn get_proxy_session_details(
                 request_count: entry.request_count.load(Ordering::Relaxed),
                 error_count: entry.error_count.load(Ordering::Relaxed),
                 last_error: entry.last_error.lock().ok().and_then(|g| g.clone()),
+                deferred_login_status: entry
+                    .attempt
+                    .as_ref()
+                    .and_then(|attempt| attempt.deferred_login_status()),
             })
         })
         .collect())
@@ -1258,11 +1273,16 @@ pub async fn restart_proxy_session(
         );
     }
 
+    let deferred_login_status = attempt_guard
+        .0
+        .as_ref()
+        .and_then(|attempt| attempt.deferred_login_status());
     attempt_guard.0 = None;
     Ok(ProxyMediatorResponse {
         local_port,
         session_id: new_session_id,
         proxy_url: protected_endpoint.url,
+        deferred_login_status,
     })
 }
 
