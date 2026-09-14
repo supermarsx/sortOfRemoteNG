@@ -36,6 +36,7 @@ export default tseslint.config(
       ".next/**",
       ".next-tauri-dev/**",
       ".claude/**",
+      ".cache/**",
       ".copilot/**",
       ".orchestration/**",
     ],

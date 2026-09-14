@@ -38,5 +38,5 @@
     ".next-tauri-dev/types/**/*.ts",
     ".next-tauri-dev/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "e2e", "src-tauri", "out"]
+  "exclude": ["node_modules", "e2e", "src-tauri", "out", ".cache"]
 }
