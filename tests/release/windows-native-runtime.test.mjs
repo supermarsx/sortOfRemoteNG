@@ -16,6 +16,7 @@ import {
   OPENSSL_RUNTIME_DLLS,
   REQUIRED_LICENSE_PORTS,
   VCPKG_BASELINE,
+  bootstrapVcpkg,
   nativeBuildEnvironment,
   readPeImports,
   readPeMachine,
@@ -189,6 +190,124 @@ test("rejects stale runner vcpkg roots that do not match the pinned baseline", (
     usablePinnedVcpkgRoot(fixtureRoot, "vcpkg.exe", baseline),
     undefined,
   );
+});
+
+function pinnedToolFixture(t, { baselineFile = true, executable = true } = {}) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "sorng-vcpkg-bootstrap-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, ["init", "--quiet"]);
+  git(root, ["config", "user.name", "Release Test"]);
+  git(root, ["config", "user.email", "release@test.invalid"]);
+  writeFileSync(
+    path.join(root, "README.fixture"),
+    "synthetic bootstrap fixture\n",
+  );
+  if (baselineFile) {
+    mkdirSync(path.join(root, "versions"));
+    writeFileSync(path.join(root, "versions", "baseline.json"), "{}\n");
+  }
+  if (executable)
+    writeFileSync(path.join(root, "vcpkg.exe"), "synthetic tool\n");
+  git(root, ["add", "."]);
+  git(root, ["commit", "--quiet", "-m", "synthetic pinned tool"]);
+  return { root, baseline: git(root, ["rev-parse", "HEAD"]) };
+}
+
+test("reuses the validated cached pinned tool without clone, fetch, checkout or bootstrap", (t) => {
+  const fixture = pinnedToolFixture(t);
+  const commands = [];
+  const installation = bootstrapVcpkg({
+    ...fixture,
+    execute: (...args) => {
+      commands.push(args);
+      throw new Error("Unexpected bootstrap command for a valid cache");
+    },
+  });
+  assert.deepEqual(installation, {
+    root: fixture.root,
+    executable: path.join(fixture.root, "vcpkg.exe"),
+  });
+  assert.deepEqual(commands, []);
+});
+
+test("stale or incomplete cached tools retain explicit pinned bootstrap and fail on fetch refusal", (t) => {
+  for (const kind of ["wrong-head", "missing-baseline", "missing-executable"]) {
+    const fixture = pinnedToolFixture(t, {
+      baselineFile: kind !== "missing-baseline",
+      executable: kind !== "missing-executable",
+    });
+    if (kind === "wrong-head") {
+      writeFileSync(path.join(fixture.root, "later.fixture"), "not the pin\n");
+      git(fixture.root, ["add", "."]);
+      git(fixture.root, [
+        "commit",
+        "--quiet",
+        "-m",
+        "synthetic newer checkout",
+      ]);
+    }
+    const commands = [];
+    assert.throws(
+      () =>
+        bootstrapVcpkg({
+          ...fixture,
+          execute: (command, args) => {
+            commands.push([command, args]);
+            throw new Error(
+              "Synthetic fetch refused; no network was attempted",
+            );
+          },
+        }),
+      /Synthetic fetch refused/u,
+    );
+    assert.deepEqual(
+      commands,
+      [
+        [
+          "git",
+          [
+            "-C",
+            fixture.root,
+            "fetch",
+            "--depth=1",
+            "origin",
+            fixture.baseline,
+          ],
+        ],
+      ],
+      kind,
+    );
+  }
+});
+
+test("cache validation prevents partial-clone lazy fetches and optional Git writes", (t) => {
+  const fixture = pinnedToolFixture(t);
+  const commands = [];
+  const installation = usablePinnedVcpkgRoot(
+    fixture.root,
+    "vcpkg.exe",
+    fixture.baseline,
+    (command, args, options) => {
+      commands.push([command, args]);
+      assert.equal(options.env.GIT_NO_LAZY_FETCH, "1");
+      assert.equal(options.env.GIT_OPTIONAL_LOCKS, "0");
+      return args.includes("rev-parse") ? fixture.baseline : "";
+    },
+  );
+  assert.equal(installation.root, fixture.root);
+  assert.deepEqual(commands, [
+    ["git", ["-C", fixture.root, "rev-parse", "HEAD"]],
+    [
+      "git",
+      [
+        "-C",
+        fixture.root,
+        "cat-file",
+        "-e",
+        `${fixture.baseline}:versions/baseline.json`,
+      ],
+    ],
+  ]);
 });
 
 test("maps the supported Windows Rust targets to their exact vcpkg and PE identities", () => {

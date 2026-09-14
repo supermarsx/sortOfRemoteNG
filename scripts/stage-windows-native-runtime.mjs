@@ -445,6 +445,7 @@ export function usablePinnedVcpkgRoot(
   candidate,
   executableName = "vcpkg.exe",
   baseline = VCPKG_BASELINE,
+  execute = execFileSync,
 ) {
   if (!candidate) return undefined;
   const root = path.resolve(candidate);
@@ -454,20 +455,28 @@ export function usablePinnedVcpkgRoot(
   }
 
   try {
-    const head = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+    // Cache validation must remain local even for a partial Git clone.
+    const validationEnvironment = {
+      ...process.env,
+      GIT_NO_LAZY_FETCH: "1",
+      GIT_OPTIONAL_LOCKS: "0",
+    };
+    const head = execute("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
+      env: validationEnvironment,
     })
       .trim()
       .toLowerCase();
     if (head !== baseline.toLowerCase()) return undefined;
-    execFileSync(
+    execute(
       "git",
       ["-C", root, "cat-file", "-e", `${baseline}:versions/baseline.json`],
       {
         stdio: "ignore",
         windowsHide: true,
+        env: validationEnvironment,
       },
     );
   } catch {
@@ -477,43 +486,43 @@ export function usablePinnedVcpkgRoot(
   return { root, executable };
 }
 
-function bootstrapVcpkg() {
-  const gitDirectory = path.join(bootstrapRoot, ".git");
+export function bootstrapVcpkg({
+  root = bootstrapRoot,
+  baseline = VCPKG_BASELINE,
+  execute = run,
+} = {}) {
+  const cached = usablePinnedVcpkgRoot(root, "vcpkg.exe", baseline);
+  if (cached) return cached;
+
+  const gitDirectory = path.join(root, ".git");
   if (!existsSync(gitDirectory)) {
-    mkdirSync(path.dirname(bootstrapRoot), { recursive: true });
-    run("git", [
+    mkdirSync(path.dirname(root), { recursive: true });
+    execute("git", [
       "clone",
       "--depth=1",
       "--filter=blob:none",
       "--no-checkout",
       "https://github.com/microsoft/vcpkg.git",
-      bootstrapRoot,
+      root,
     ]);
   }
 
-  run("git", [
-    "-C",
-    bootstrapRoot,
-    "fetch",
-    "--depth=1",
-    "origin",
-    VCPKG_BASELINE,
-  ]);
-  run("git", ["-C", bootstrapRoot, "checkout", "--detach", VCPKG_BASELINE]);
+  execute("git", ["-C", root, "fetch", "--depth=1", "origin", baseline]);
+  execute("git", ["-C", root, "checkout", "--detach", baseline]);
 
-  const executable = path.join(bootstrapRoot, "vcpkg.exe");
+  const executable = path.join(root, "vcpkg.exe");
   if (!existsSync(executable)) {
     // Node cannot execute .bat files directly with shell=false. Keep command
     // parsing inside cmd.exe and pass only the fixed, repository-owned path.
-    run(
+    execute(
       process.env.ComSpec ?? "cmd.exe",
       ["/d", "/s", "/c", "call bootstrap-vcpkg.bat -disableMetrics"],
-      { cwd: bootstrapRoot },
+      { cwd: root },
     );
   }
   if (!existsSync(executable))
     fail("the pinned vcpkg bootstrap produced no vcpkg.exe");
-  return { root: bootstrapRoot, executable };
+  return { root, executable };
 }
 
 function resolveVcpkg() {
