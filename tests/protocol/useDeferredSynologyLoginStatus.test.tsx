@@ -59,6 +59,10 @@ describe("native deferred Synology status snapshots", () => {
       { sessionId: "proxy-a" },
     );
     expect(view.result.current.presentation?.status).toBe(status);
+    expect(view.result.current.presentation?.text).toMatch(/^Auto-fill: /);
+    expect(view.result.current.presentation?.text).not.toMatch(
+      /signed in|successful|complete/i,
+    );
     expect(view.result.current.presentation?.detail).toContain(
       "not proof of successful sign-in",
     );
@@ -84,6 +88,9 @@ describe("native deferred Synology status snapshots", () => {
         }),
       );
       expect(view.result.current.presentation?.status).toBeNull();
+      expect(view.result.current.presentation?.text).toBe(
+        "Saved login: status unknown",
+      );
       expect(view.result.current.presentation?.detail).toContain(
         "Saved login requested; native status unknown",
       );

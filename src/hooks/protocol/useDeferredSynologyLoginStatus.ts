@@ -26,6 +26,14 @@ const LABELS: Record<DeferredSynologyLoginStatus, string> = {
   expired: "Attempt expired",
   cancelled: "Attempt cancelled",
 };
+const VISIBLE_LABELS: Record<DeferredSynologyLoginStatus, string> = {
+  awaiting_nas: "Auto-fill: awaiting NAS",
+  waiting_for_form: "Auto-fill: waiting for DSM",
+  waiting_for_password: "Auto-fill: waiting for password",
+  credentials_released: "Auto-fill: credentials released",
+  expired: "Auto-fill: expired",
+  cancelled: "Auto-fill: cancelled",
+};
 interface Context {
   sessionId: string;
   generation: number;
@@ -159,6 +167,11 @@ export function useDeferredSynologyLoginStatus(options: Options) {
     presentation: options.requested
       ? {
           label: "Saved Synology form login",
+          text: !options.valid
+            ? "Auto-fill: access changed"
+            : status
+              ? VISIBLE_LABELS[status]
+              : "Saved login: status unknown",
           detail: !options.valid
             ? "Original login access changed. Reopen the original saved connection."
             : status

@@ -3,7 +3,11 @@ import React from "react";
 import { Shield, AlertTriangle } from "lucide-react";
 
 const SecurityInfoBar: React.FC<SectionProps> = ({ mgr }) => (
-  <div className="flex items-center space-x-2 text-xs">
+  <div
+    role="group"
+    aria-label="Website connection information"
+    className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+  >
     {mgr.isSecure ? (
       <div className="flex items-center space-x-1 text-success">
         <Shield size={12} />
@@ -27,17 +31,41 @@ const SecurityInfoBar: React.FC<SectionProps> = ({ mgr }) => (
         </span>
       )}
     <span className="text-[var(--color-textMuted)]">•</span>
-    <span className="text-[var(--color-textSecondary)]">
+    <span className="min-w-0 break-all text-[var(--color-textSecondary)]">
       Connected to {mgr.session.hostname}
     </span>
-    {mgr.hasAuth && (
+    {mgr.deferredLogin ? (
       <>
         <span className="text-[var(--color-textMuted)]">•</span>
-        <span className="text-primary">
-          {mgr.authLabel ?? "Basic Auth"} configured:{" "}
-          {mgr.resolvedCreds?.username}
-        </span>
+        <button
+          type="button"
+          className="sor-icon-btn-sm min-w-0 text-left"
+          aria-label="Refresh saved login status"
+          title={mgr.deferredLogin.detail}
+          data-tooltip={mgr.deferredLogin.detail}
+          onClick={() => void mgr.refreshDeferredLoginStatus?.()}
+        >
+          <span
+            className={
+              mgr.deferredLogin.muted
+                ? "text-[var(--color-textSecondary)]"
+                : "text-primary"
+            }
+          >
+            {mgr.deferredLogin.text}
+          </span>
+        </button>
       </>
+    ) : (
+      mgr.hasAuth && (
+        <>
+          <span className="text-[var(--color-textMuted)]">•</span>
+          <span className="text-primary">
+            {mgr.authLabel ?? "Basic Auth"} configured:{" "}
+            {mgr.resolvedCreds?.username}
+          </span>
+        </>
+      )
     )}
   </div>
 );

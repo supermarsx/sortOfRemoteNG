@@ -23,6 +23,7 @@ import {
 import type { HttpRedirectReview } from "../../src/utils/protocol/httpRedirectReview";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 import { mergeLocalSessionUpdate } from "../../src/utils/session/sessionLifecycle";
+import { OPEN_RUNTIME_CONNECTION_EVENT } from "../../src/hooks/session/useRuntimeConnectionLaunch";
 import type {
   DatabaseCredentialSnapshot,
   DatabaseCredentialVaultApi,
@@ -592,6 +593,39 @@ describe("actual website redirect review integration", () => {
   const continuationDestination =
     "https://example-nas.de2.quickconnect.to/webman/";
 
+  it("preserves ordinary configured-auth text without showing deferred auto-fill status", async () => {
+    h.connections[0] = {
+      ...h.connections[0],
+      httpApplication: undefined,
+      basicAuthUsername: "ordinary-user",
+      basicAuthPassword: "ordinary-password",
+    };
+    await mounted();
+    expect(
+      screen.getByRole("group", { name: "Website connection information" }),
+    ).toHaveTextContent("Basic Auth configured: ordinary-user");
+    expect(
+      screen.queryByRole("button", { name: "Refresh saved login status" }),
+    ).toBeNull();
+  });
+
+  it("prefers one visible native saved-login status over the original configured-username label", async () => {
+    automaticSource();
+    h.connections[0].hostname = "example-nas.fr3.quickconnect.to";
+    h.loginStatuses["proxy-1"] = "awaiting_nas";
+    await mounted();
+    const information = screen.getByRole("group", {
+      name: "Website connection information",
+    });
+    expect(information).toHaveTextContent("Auto-fill: awaiting NAS");
+    expect(information).not.toHaveTextContent("configured:");
+    expect(information).not.toHaveTextContent("fixture-user");
+    expect(
+      screen.getAllByRole("button", { name: "Refresh saved login status" }),
+    ).toHaveLength(1);
+    expect(information).toHaveClass("flex-wrap", "min-w-0");
+  });
+
   async function mountContinuation(holdCertificate = false) {
     h.connections = [
       {
@@ -682,6 +716,13 @@ describe("actual website redirect review integration", () => {
     const icon = await screen.findByRole("button", {
       name: "Saved Synology form login",
     });
+    const status = screen.getByRole("button", {
+      name: "Refresh saved login status",
+    });
+    expect(status).toHaveTextContent("Auto-fill: waiting for DSM");
+    expect(
+      status.closest('[aria-label="Website connection information"]'),
+    ).not.toBeNull();
     expect(icon).toHaveAttribute(
       "title",
       expect.stringContaining("Waiting for the DSM form"),
@@ -700,11 +741,116 @@ describe("actual website redirect review integration", () => {
       "title",
       expect.stringContaining("One-shot credentials released"),
     );
+    expect(status).toHaveTextContent("Auto-fill: credentials released");
     expect(icon).toHaveAttribute(
       "title",
       expect.stringContaining("not proof of successful sign-in"),
     );
     expect(view.container.querySelector("iframe")).not.toBeNull();
+  });
+  it("shows the original saved-login request in a separate anonymous redirect tab without claiming an attempt was transferred", async () => {
+    automaticSource();
+    h.connections[0] = {
+      ...h.connections[0],
+      hostname: "example-nas.fr3.quickconnect.to",
+      httpRedirectAuthentication: {
+        version: 1,
+        mode: "saved-login",
+        allowInsecureHttp: false,
+      },
+    };
+    const view = await mounted();
+    let launched: Connection | undefined;
+    const captureLaunch = (event: Event) => {
+      launched = (event as CustomEvent<{ connection: Connection }>).detail
+        .connection;
+    };
+    window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, captureLaunch);
+    try {
+      redirect(
+        view.container.querySelector("iframe")!,
+        continuationDestination,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Open anonymous tab" }),
+      );
+      await waitFor(() => expect(launched).toBeDefined());
+    } finally {
+      window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, captureLaunch);
+    }
+    expect(
+      getRuntimeWebNavigation(launched!.id)?.nativeContinuation,
+    ).toBeUndefined();
+    expect(
+      getRuntimeWebNavigation(launched!.id)?.synologyRedirectSource?.formLogin,
+    ).toBeDefined();
+    view.unmount();
+    h.runtimeStart = launched!;
+    const next = render(<Harness />);
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    const icon = await screen.findByRole("button", {
+      name: "Refresh saved login status",
+    });
+    expect(icon).toHaveTextContent("Saved login: status unknown");
+    expect(icon).not.toHaveTextContent("waiting");
+    const starts = h.invoke.mock.calls.filter(
+      ([command]) => command === "start_basic_auth_proxy",
+    );
+    expect(starts[1][1].config).toMatchObject({
+      username: "",
+      password: "",
+      http_auto_login: false,
+    });
+    expect(starts[1][1].config.continuation_id).toBeUndefined();
+    // Only an actual native response can change the new tab's unknown status.
+    h.loginStatuses["proxy-2"] = "waiting_for_form";
+    await act(async () => fireEvent.click(icon));
+    expect(icon).toHaveTextContent("Auto-fill: waiting for DSM");
+    next.unmount();
+  });
+  it("keeps visible native auto-fill status and the original form lease over three anonymous same-tab hops", async () => {
+    automaticSource();
+    h.loginStatuses = {
+      "proxy-1": "awaiting_nas",
+      "proxy-2": "awaiting_nas",
+      "proxy-3": "awaiting_nas",
+      "proxy-4": "waiting_for_form",
+    };
+    const { view } = await mountContinuation();
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    const originalLease = getRuntimeWebNavigation(h.sessions[0].connectionId)
+      ?.synologyRedirectSource?.formLogin;
+    expect(originalLease).toBeDefined();
+    for (const [index, destination] of [
+      "https://global.quickconnect.to/",
+      "https://example-nas.fr3.quickconnect.to/webman/",
+    ].entries()) {
+      await waitFor(() =>
+        expect(view.container.querySelector("iframe")?.src).toContain(
+          proxies[index + 1].proxy_url,
+        ),
+      );
+      redirect(view.container.querySelector("iframe")!, destination, true, 202);
+      await waitFor(() => expect(proxies).toHaveLength(index + 3));
+      expect(
+        getRuntimeWebNavigation(h.sessions[0].connectionId)
+          ?.synologyRedirectSource?.formLogin,
+      ).toBe(originalLease);
+    }
+    expect(
+      screen.getByRole("button", { name: "Refresh saved login status" }),
+    ).toHaveTextContent("Auto-fill: waiting for DSM");
+    const starts = h.invoke.mock.calls.filter(
+      ([command]) => command === "start_basic_auth_proxy",
+    );
+    for (const [, args] of starts.slice(1)) {
+      expect(args.config).toMatchObject({
+        username: "",
+        password: "",
+        http_auto_login: false,
+      });
+      expect(args.config.continuation_id).toBe(continuationId);
+    }
   });
   it("does not let parent or another frame login reports refresh the current native status", async () => {
     automaticSource();
