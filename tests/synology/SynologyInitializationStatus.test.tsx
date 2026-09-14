@@ -43,6 +43,9 @@ describe("NAS observed initialization status", () => {
       expect.objectContaining({ size: 48, paused: false }),
     );
     expect(screen.getByRole("status")).toHaveTextContent("reported together");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "QuickConnect addresses are resolved before DSM API discovery",
+    );
     expect(
       screen.getByText("Desktop capabilities verified"),
     ).toBeInTheDocument();

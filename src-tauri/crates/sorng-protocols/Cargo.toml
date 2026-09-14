@@ -11,6 +11,7 @@ default = []
 tls-cert-details = []
 
 [dependencies]
+sorng-quickconnect = { path = "../sorng-quickconnect" }
 sorng-core = { path = "../sorng-core" }
 sorng-socket-transport = { path = "../sorng-socket-transport" }
 serde = { workspace = true }

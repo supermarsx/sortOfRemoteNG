@@ -74,6 +74,16 @@ impl std::fmt::Display for ResponseDiagnostic {
     }
 }
 
+impl ResponseDiagnostic {
+    pub(crate) fn discovery_fallback(self) -> bool {
+        matches!(self.stage, Stage::ApiDiscovery)
+            && (matches!(self.http_status, 404 | 405)
+                || matches!(self.category, Category::Html)
+                || matches!(self.category, Category::DsmApi)
+                    && matches!(self.dsm_code, Some(102 | 103)))
+    }
+}
+
 impl ResponseFacts {
     pub(crate) fn new(response: &reqwest::Response, stage: Stage) -> Self {
         let content_type = match response.headers().get(reqwest::header::CONTENT_TYPE) {

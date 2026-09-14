@@ -10,9 +10,9 @@ const stages = {
       "Verifying native Synology NAS API availability in this desktop build. No NAS sign-in has started.",
   },
   signin: {
-    title: "Contacting DSM and signing in…",
+    title: "Resolving the NAS and signing in…",
     detail:
-      "Waiting for the native connection and authentication request. DSM discovery, network connection and sign-in are reported together, not as separate progress events.",
+      "Waiting for the native request on the selected app-wide route: direct or an HTTP(S) proxy. QuickConnect addresses are resolved before DSM API discovery and sign-in. These steps are reported together, not as separate progress events.",
   },
   verification: {
     title: "Verifying the one-time code…",

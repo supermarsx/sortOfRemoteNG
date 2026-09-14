@@ -29,6 +29,7 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             syn_fs_connect,
+            syn_fs_transport_capabilities,
             syn_fs_cancel_connect,
             syn_fs_list,
             syn_fs_disconnect,
@@ -54,6 +55,11 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
             .build()
             .unwrap();
     for (command, body, expected) in [
+        (
+            "syn_fs_transport_capabilities",
+            json!({}),
+            Ok(json!({"version":1,"httpProxy":true,"quickConnect":true})),
+        ),
         (
             "syn_fs_cancel_connect",
             json!({"instanceId":"missing","requestId":"request"}),

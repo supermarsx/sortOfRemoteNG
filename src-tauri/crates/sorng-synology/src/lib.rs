@@ -52,11 +52,13 @@ pub mod file_station;
 pub mod file_transfer;
 pub mod file_viewers;
 pub mod hardware;
+pub mod http_route;
 pub mod instances;
 pub mod logs;
 pub mod network;
 pub mod notifications;
 pub mod packages;
+mod quickconnect;
 mod response_diagnostics;
 pub mod scoped_files;
 pub mod section_access;
@@ -80,3 +82,6 @@ mod file_transfer_tests;
 
 #[cfg(test)]
 mod response_diagnostics_tests;
+
+#[cfg(test)]
+mod quickconnect_tests;

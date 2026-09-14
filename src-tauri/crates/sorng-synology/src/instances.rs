@@ -219,6 +219,22 @@ impl SynologyInstances {
         request: &str,
         config: SynologyConfig,
     ) -> Result<FileStationLogin, String> {
+        self.connect_with_route(
+            instance,
+            request,
+            config,
+            crate::http_route::NativeHttpRoute::Direct {},
+        )
+        .await
+    }
+
+    pub async fn connect_with_route(
+        &self,
+        instance: &str,
+        request: &str,
+        config: SynologyConfig,
+        route: crate::http_route::NativeHttpRoute,
+    ) -> Result<FileStationLogin, String> {
         validate_id(instance)?;
         validate_id(request)?;
         let _permit = self.connects.try_acquire().map_err(|_| "Too many Synology connections are pending; wait for cancellation to finish before retrying".to_string())?;
@@ -255,7 +271,7 @@ impl SynologyInstances {
         // out an authenticated candidate before discarding it. Dropping a login
         // future mid-flight would lose the SID needed for best-effort logout.
         let outcome = candidate
-            .fs_connect_cancellable(config, &attempt.active)
+            .fs_connect_routed(config, &attempt.active, route)
             .await;
         let mut retired = None;
         let accepted = {

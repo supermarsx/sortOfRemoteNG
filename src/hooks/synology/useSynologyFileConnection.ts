@@ -9,6 +9,12 @@ import type {
 } from "../../types/hardware/synologyFileStation";
 import { normalizeSynologyEndpoint } from "../../utils/connection/synologyEndpoint";
 import { redactSynologyFailureSecrets } from "../../utils/synology/apiFailureDiagnostic";
+import { verifySynologyApiTransportCapabilities } from "./synologyApiCapabilities";
+import {
+  captureSynologyApiRoute,
+  SYNOLOGY_ROUTE_CHANGED,
+  type SynologyApiRouteSnapshot,
+} from "./synologyApiRoute";
 
 export interface SynologyFileConnectionOptions {
   /** One identity for this mounted tab; never a connection id shared by tabs. */
@@ -92,10 +98,12 @@ export function useSynologyFileConnection(
   const receipt = useRef<string | null>(null);
   const pendingRequest = useRef<string | null>(null);
   const pendingCredentials = useRef<SynologyFileLogin | null>(null);
+  const activeRoute = useRef<SynologyApiRouteSnapshot | null>(null);
   const assertSessionAccess = useCallback(() => {
     if (!alive.current || !current.current.isOpen)
       throw new Error("This NAS session is unavailable.");
     current.current.assertCurrent?.();
+    activeRoute.current?.assertCurrent();
   }, []);
   const release = useCallback(
     (id: string) =>
@@ -115,6 +123,7 @@ export function useSynologyFileConnection(
     cancelPending();
     busy.current = false;
     pendingCredentials.current = null;
+    activeRoute.current = null;
     if (alive.current) {
       setPassword("");
       setOtpCode("");
@@ -152,6 +161,7 @@ export function useSynologyFileConnection(
       attempts.current++;
       cancelPending();
       pendingCredentials.current = null;
+      activeRoute.current = null;
       const id = receipt.current;
       receipt.current = null;
       if (id) void release(id).catch(() => undefined);
@@ -160,6 +170,22 @@ export function useSynologyFileConnection(
   useEffect(() => {
     if (!isOpen) void disconnect().catch(() => undefined);
   }, [isOpen, disconnect]);
+
+  useEffect(() => {
+    const checkRoute = () => {
+      try {
+        activeRoute.current?.assertCurrent();
+      } catch {
+        void disconnect().catch(() => undefined);
+        if (alive.current) {
+          setConnectionError(SYNOLOGY_ROUTE_CHANGED);
+          setConnectionStatus("error");
+        }
+      }
+    };
+    window.addEventListener("settings-updated", checkRoute);
+    return () => window.removeEventListener("settings-updated", checkRoute);
+  }, [disconnect]);
 
   useEffect(() => {
     if (!sessionId || !isOpen) return;
@@ -291,17 +317,40 @@ export function useSynologyFileConnection(
     setConnectionError(null);
     setConnectionStatus("connecting");
     setOtpCode("");
+    let routeSnapshot: SynologyApiRouteSnapshot | null = null;
     try {
+      routeSnapshot = activeRoute.current ?? captureSynologyApiRoute();
+      routeSnapshot.assertCurrent();
+      activeRoute.current = routeSnapshot;
       // The resolver's returned guard calls this base guard. It must not recurse
       // through the returned credential guard that is installed afterwards.
       const assertBaseAttempt = () => {
         if (!valid(false))
           throw new Error("This NAS authentication attempt was cancelled.");
+        routeSnapshot!.assertCurrent();
       };
       const assertAttempt = () => {
         if (!valid())
           throw new Error("This NAS authentication attempt was cancelled.");
+        routeSnapshot!.assertCurrent();
       };
+      const checkReturnedRoute = async (result: SynologyFileAuthResult) => {
+        try {
+          routeSnapshot!.assertCurrent();
+        } catch {
+          if (
+            result?.status === "connected" &&
+            typeof result.sessionId === "string" &&
+            result.sessionId.length > 0 &&
+            result.sessionId.length <= 256 &&
+            ![...result.sessionId].some((char) => char.charCodeAt(0) < 32)
+          )
+            await release(result.sessionId);
+          throw new Error(SYNOLOGY_ROUTE_CHANGED);
+        }
+      };
+      await verifySynologyApiTransportCapabilities();
+      assertAttempt();
       if (resolveCredentials) {
         const credentials = await resolveCredentials(assertBaseAttempt);
         assertAttempt();
@@ -320,7 +369,9 @@ export function useSynologyFileConnection(
         instanceId,
         requestId,
         otpCode: otp || null,
+        route: routeSnapshot.route,
       });
+      await checkReturnedRoute(result);
       if (result?.status === "otp_required" && !otp && resolveOtp && valid()) {
         // One server-requested factor, never an automatic retry of a rejected code.
         const generated = await resolveOtp(assertAttempt);
@@ -337,7 +388,9 @@ export function useSynologyFileConnection(
           instanceId,
           requestId,
           otpCode: otp,
+          route: routeSnapshot.route,
         });
+        await checkReturnedRoute(result);
       }
       if (
         !result ||
@@ -386,11 +439,18 @@ export function useSynologyFileConnection(
       if (valid()) {
         const safe = redactSynologyFailureSecrets(
           toSafeManagementError(error),
-          [config.password, otp],
+          [
+            config.password,
+            otp,
+            ...(routeSnapshot?.route.kind === "http_proxy"
+              ? [routeSnapshot.route.username, routeSnapshot.route.password]
+              : []),
+          ],
         );
         setConnectionError(safe);
         setConnectionStatus("error");
         pendingCredentials.current = null;
+        activeRoute.current = null;
         setChallenge(null);
         setPassword("");
       }

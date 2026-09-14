@@ -123,7 +123,7 @@ describe("saved NAS status page", () => {
     });
     render(<ConnectionForm mgr={mgr} />);
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Contacting DSM and signing in",
+      "Resolving the NAS and signing in",
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel connection" }));
     expect(mgr.cancelChallenge).toHaveBeenCalledOnce();

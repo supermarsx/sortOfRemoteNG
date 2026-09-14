@@ -1,70 +1,11 @@
-//! Closed original-NAS QuickConnect operations. These bounded defaults
-//! capabilities cannot be expanded by any provider response.
+//! Browser authorization remains in its native document/attempt guards; the
+//! exact destination grammar is shared with the native API resolver.
+#[cfg(test)]
 use reqwest::Url;
-
 pub(super) const PATH: &str = "/__sortofremoteng_quickconnect_discovered_v1";
-const PROBE_PATH: &str = "/webman/pingpong.cgi";
-const PROBE_QUERY: &str = "action=cors&quickconnect=true";
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Route {
-    Control,
-    Probe,
-}
-
-fn label(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 63
-        && value
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        && !value.starts_with('-')
-        && !value.ends_with('-')
-}
-
-pub(super) fn classify(url: &Url, alias: &str) -> Option<Route> {
-    if !label(alias)
-        || url.scheme() != "https"
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-        || url.as_str().len() > 2048
-    {
-        return None;
-    }
-    let host = url.host_str()?;
-    if host.len() > 253 {
-        return None;
-    }
-    if url.port_or_known_default() == Some(443)
-        && url.path() == "/Serv.php"
-        && url.query().is_none()
-        && host.strip_suffix(".quickconnect.to").is_some_and(label)
-    {
-        return Some(Route::Control);
-    }
-    let suffix = format!("{alias}.direct.quickconnect.to");
-    let same_nas = host == suffix || host.strip_suffix(&format!(".{suffix}")).is_some_and(label);
-    let regional = host
-        .strip_prefix(&format!("{alias}."))
-        .and_then(|host| host.strip_suffix(".quickconnect.to"))
-        .is_some_and(|region| {
-            let bytes = region.as_bytes();
-            (3..=63).contains(&bytes.len())
-                && bytes[..2].iter().all(u8::is_ascii_lowercase)
-                && bytes[2..].iter().all(u8::is_ascii_digit)
-        });
-    ((same_nas && matches!(url.port(), Some(5001 | 5002))
-        || regional && url.port_or_known_default() == Some(443))
-        && url.path() == PROBE_PATH
-        && url.query() == Some(PROBE_QUERY))
-    .then_some(Route::Probe)
-}
-
-pub(super) fn alias_digest(alias: &str) -> String {
-    use md5::{Digest, Md5};
-    hex::encode(Md5::digest(alias.as_bytes()))
-}
+pub(super) use sorng_quickconnect::{alias_digest, classify, Route};
+#[cfg(test)]
+use sorng_quickconnect::{PROBE_PATH, PROBE_QUERY};
 
 #[cfg(test)]
 mod tests {

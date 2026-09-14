@@ -560,6 +560,7 @@ pub fn is_command(command: &str) -> bool {
             | "smc_get_node_manager_stats"
             | "smc_reset_bmc"
             | "syn_fs_connect"
+            | "syn_fs_transport_capabilities"
             | "syn_fs_cancel_connect"
             | "syn_fs_create_share_link"
             | "syn_fs_list_share_links"
@@ -1373,6 +1374,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         supermicro_commands::smc_reset_bmc,
         // Synology NAS commands — Connection
         synology_commands::syn_fs_connect,
+        synology_commands::syn_fs_transport_capabilities,
         synology_commands::syn_fs_cancel_connect,
         synology_commands::syn_fs_create_share_link,
         synology_commands::syn_fs_list_share_links,

@@ -75,8 +75,18 @@ impl SynologyService {
     // ─── Connection ──────────────────────────────────────────────
 
     pub async fn connect(&mut self, config: SynologyConfig) -> SynologyResult<String> {
-        let mut client = SynoClient::new(&config)?;
-        client.discover_apis().await?;
+        self.connect_with_route(config, crate::http_route::NativeHttpRoute::Direct {})
+            .await
+    }
+
+    pub async fn connect_with_route(
+        &mut self,
+        config: SynologyConfig,
+        route: crate::http_route::NativeHttpRoute,
+    ) -> SynologyResult<String> {
+        let mut client = SynoClient::new_with_route(&config, route)?;
+        crate::quickconnect::prepare(&mut client, &std::sync::atomic::AtomicBool::new(true))
+            .await?;
         let msg = AuthManager::login(&mut client).await?;
         self.fs_cleanup().await;
         self.config = Some(client.config.clone());

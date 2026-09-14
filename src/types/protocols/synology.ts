@@ -65,7 +65,8 @@ export function isSynologyFileConnection(
   );
 }
 
-/** Native File Station currently supports direct connections and system TLS trust only. */
+/** Per-connection chains and custom TLS are unsupported. The explicit app-wide
+ * HTTP(S) proxy is captured separately at runtime, never saved in this schema. */
 export function assertSynologyNativeRoute(
   connection: Partial<Connection>,
 ): void {
@@ -79,7 +80,7 @@ export function assertSynologyNativeRoute(
     connection.security?.tunnelChain?.length
   )
     throw new Error(
-      "Native File Station does not support this proxy/VPN/tunnel route. Use the DSM website connection or explicitly remove the route.",
+      "Native File Station does not support per-connection proxy/VPN/tunnel chains. Use the app-wide HTTP(S) proxy, the DSM website connection, or explicitly remove this route.",
     );
   if (
     connection.httpVerifySsl === false ||

@@ -11,6 +11,9 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { SynologyPanel } from "../../src/components/synology/SynologyPanel";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../src/hooks/synology/synologyApiCapabilities", () => ({
+  verifySynologyApiTransportCapabilities: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("../../src/components/ui/display/loadingElement", () => ({
   LoadingElement: () => <span data-testid="configured-app-loader" />,
 }));
@@ -147,6 +150,7 @@ describe("SynologyPanel mounted native File Station workflow", () => {
       password: "private-password",
       useHttps: true,
       otpCode: null,
+      route: { kind: "direct" },
     });
     expect(invoke).toHaveBeenCalledWith(
       "syn_fs_list",

@@ -221,6 +221,20 @@ impl SynologyService {
         config: SynologyConfig,
         active: &AtomicBool,
     ) -> SynologyResult<FileStationLogin> {
+        self.fs_connect_routed(
+            config,
+            active,
+            crate::http_route::NativeHttpRoute::Direct {},
+        )
+        .await
+    }
+
+    pub(crate) async fn fs_connect_routed(
+        &mut self,
+        config: SynologyConfig,
+        active: &AtomicBool,
+        route: crate::http_route::NativeHttpRoute,
+    ) -> SynologyResult<FileStationLogin> {
         if config.username.is_empty()
             || config.username.len() > 256
             || config.password.is_empty()
@@ -233,9 +247,9 @@ impl SynologyService {
                 "Enter a username, password, and a valid one-time code when requested",
             ));
         }
-        let mut client = SynoClient::new(&config)?;
+        let mut client = SynoClient::new_with_route(&config, route)?;
         drop(config);
-        client.discover_apis().await?;
+        crate::quickconnect::prepare(&mut client, active).await?;
         if !active.load(Ordering::Acquire) {
             return Err(SynologyError::session_expired(
                 "Synology connection attempt was cancelled",

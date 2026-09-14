@@ -28,11 +28,19 @@ pub struct SynoClient {
     pub model: Option<String>,
     pub config: SynologyConfig,
     pub(crate) auth_session: &'static str,
+    pub(crate) route: crate::http_route::NativeHttpRoute,
 }
 
 impl SynoClient {
     /// Create a new client from config.
     pub fn new(config: &SynologyConfig) -> SynologyResult<Self> {
+        Self::new_with_route(config, crate::http_route::NativeHttpRoute::Direct {})
+    }
+
+    pub fn new_with_route(
+        config: &SynologyConfig,
+        route: crate::http_route::NativeHttpRoute,
+    ) -> SynologyResult<Self> {
         if config.insecure {
             return Err(SynologyError::connection(
                 "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
@@ -60,11 +68,8 @@ impl SynoClient {
         let parsed = url::Url::parse(&format!("{scheme}://{host}:{}", config.port))?;
         let base_url = parsed.as_str().trim_end_matches('/').to_string();
 
-        let http = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(config.timeout_secs.clamp(1, 300)))
-            .redirect(reqwest::redirect::Policy::none())
-            .cookie_store(true)
+        let http = route
+            .builder(Duration::from_secs(config.timeout_secs.clamp(1, 300)), true)?
             .build()?;
 
         Ok(Self {
@@ -78,11 +83,37 @@ impl SynoClient {
             model: None,
             config: config.clone(),
             auth_session: "SortOfRemoteNG",
+            route,
         })
     }
 
     pub fn is_connected(&self) -> bool {
         self.sid.is_some()
+    }
+
+    pub(crate) fn reset_anonymous_http(&mut self, referrer: Option<&str>) -> SynologyResult<()> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Some(referrer) = referrer {
+            headers.insert(
+                reqwest::header::REFERER,
+                reqwest::header::HeaderValue::from_str(referrer)
+                    .map_err(|_| SynologyError::connection("Invalid QuickConnect source origin"))?,
+            );
+            headers.insert(
+                reqwest::header::USER_AGENT,
+                reqwest::header::HeaderValue::from_static("SortOfRemoteNG-SynologyAPI/1"),
+            );
+        }
+        self.http = self
+            .route
+            .builder(
+                Duration::from_secs(self.config.timeout_secs.clamp(1, 300)),
+                true,
+            )?
+            .default_headers(headers)
+            .build()?;
+        self.api_info.clear();
+        Ok(())
     }
 
     /// Produce a safe (no secrets) version of the current config.
@@ -101,21 +132,51 @@ impl SynoClient {
 
     /// Query `SYNO.API.Info` to discover all available APIs.
     pub async fn discover_apis(&mut self) -> SynologyResult<()> {
-        let url = format!("{}/webapi/entry.cgi", self.base_url);
-        let (resp, facts): (SynoResponse<HashMap<String, ApiInfoEntry>>, _) = Self::read_json_at(
-            self.http
-                .post(&url)
-                .form(&[
-                    ("api", "SYNO.API.Info"),
-                    ("version", "1"),
-                    ("method", "query"),
-                    ("query", "all"),
-                ])
-                .send()
-                .await?,
-            Stage::ApiDiscovery,
-        )
-        .await?;
+        self.discover_apis_cancellable(&std::sync::atomic::AtomicBool::new(true))
+            .await
+    }
+
+    pub(crate) async fn discover_apis_cancellable(
+        &mut self,
+        active: &std::sync::atomic::AtomicBool,
+    ) -> SynologyResult<()> {
+        if !active.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(SynologyError::session_expired(
+                "Synology connection attempt was cancelled",
+            ));
+        }
+        match self.discover_at("entry.cgi").await {
+            Err(error)
+                if error
+                    .diagnostic
+                    .is_some_and(|facts| facts.discovery_fallback()) =>
+            {
+                if !active.load(std::sync::atomic::Ordering::Acquire) {
+                    return Err(SynologyError::session_expired(
+                        "Synology connection attempt was cancelled",
+                    ));
+                }
+                self.discover_at("query.cgi").await
+            }
+            result => result,
+        }
+    }
+
+    pub(crate) async fn discover_at(&mut self, gateway: &str) -> SynologyResult<()> {
+        let url = format!("{}/webapi/{gateway}", self.base_url);
+        let params = [
+            ("api", "SYNO.API.Info"),
+            ("version", "1"),
+            ("method", "query"),
+            ("query", "all"),
+        ];
+        let request = if gateway == "query.cgi" {
+            self.http.get(&url).query(&params)
+        } else {
+            self.http.post(&url).form(&params)
+        };
+        let (resp, facts): (SynoResponse<HashMap<String, ApiInfoEntry>>, _) =
+            Self::read_json_at(request.send().await?, Stage::ApiDiscovery).await?;
 
         if !resp.success {
             let code = resp.error.map(|e| e.code).unwrap_or(100);

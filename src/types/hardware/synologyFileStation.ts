@@ -1,5 +1,10 @@
 import type { FileListResult } from "./synology";
 
+/** Runtime-only route. Never add this or its proxy credentials to saved login/session data. */
+export type SynologyApiRoute =
+  | { kind: "direct" }
+  | { kind: "http_proxy"; url: string; username?: string; password?: string };
+
 export interface SynologyFileLogin {
   host: string;
   port: number;

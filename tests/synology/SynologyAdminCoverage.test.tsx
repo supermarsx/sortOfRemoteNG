@@ -10,6 +10,9 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+vi.mock("../../src/hooks/synology/synologyApiCapabilities", () => ({
+  verifySynologyApiTransportCapabilities: vi.fn().mockResolvedValue(undefined),
+}));
 import { SynologySessionContent } from "../../src/components/synology/SynologyPanel";
 import { useSynologyManager } from "../../src/hooks/synology/useSynologyManager";
 import { useSynologyAdminActions } from "../../src/hooks/synology/useSynologyAdminActions";

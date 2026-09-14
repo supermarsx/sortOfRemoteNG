@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useSynologyFileConnection } from "../../src/hooks/synology/useSynologyFileConnection";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../src/hooks/synology/synologyApiCapabilities", () => ({
+  verifySynologyApiTransportCapabilities: vi.fn().mockResolvedValue(undefined),
+}));
 const seed = {
   host: "nas.example.test",
   port: 5001,

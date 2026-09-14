@@ -16,6 +16,9 @@ import type { DatabaseAvailability } from "../../src/contexts/ConnectionContextT
 import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 import SynologySessionPanel from "../../src/components/synology/SynologySessionPanel";
 import { disconnectSynologySession } from "../../src/utils/session/synologySessionLifecycle";
+vi.mock("../../src/hooks/synology/synologyApiCapabilities", () => ({
+  verifySynologyApiTransportCapabilities: vi.fn().mockResolvedValue(undefined),
+}));
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -266,7 +269,7 @@ describe("saved Synology session ownership", () => {
     );
     expect(
       await screen.findByRole("heading", {
-        name: "Contacting DSM and signing in…",
+        name: "Resolving the NAS and signing in…",
       }),
     ).toBeInTheDocument();
     expect(

@@ -8,6 +8,9 @@ import {
   SYNOLOGY_DIAGNOSTIC_MARKER,
 } from "../../src/utils/synology/apiFailureDiagnostic";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../src/hooks/synology/synologyApiCapabilities", () => ({
+  verifySynologyApiTransportCapabilities: vi.fn().mockResolvedValue(undefined),
+}));
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -182,9 +185,10 @@ describe("scoped Synology sign-in", () => {
       }),
     );
     let work!: Promise<void>;
-    act(() => {
+    await act(async () => {
       work = result.current.connect();
     });
+    expect(resolveCredentials).toHaveBeenCalledOnce();
     unmount();
     pending.resolve({
       username: "late",
@@ -363,7 +367,7 @@ describe("scoped Synology sign-in", () => {
       { initialProps: { open: true } },
     );
     let attempt!: Promise<void>;
-    act(() => {
+    await act(async () => {
       attempt = hook.result.current.connect();
     });
     const request = vi
@@ -449,6 +453,7 @@ describe("scoped Synology sign-in", () => {
       password: "private-password",
       useHttps: true,
       otpCode: null,
+      route: { kind: "direct" },
       instanceId: result.current.instanceId,
       requestId: expect.any(String),
     });
@@ -514,9 +519,13 @@ describe("scoped Synology sign-in", () => {
     );
     const { result } = setup();
     let pending!: Promise<void>;
-    act(() => {
+    await act(async () => {
       pending = result.current.connect();
     });
+    expect(invoke).toHaveBeenCalledWith(
+      "syn_fs_connect",
+      expect.objectContaining({ password: "private-password" }),
+    );
     act(() => result.current.cancelChallenge());
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "syn_fs_connect"
@@ -549,9 +558,13 @@ describe("scoped Synology sign-in", () => {
     vi.mocked(invoke).mockReturnValue(pending.promise);
     const { result, rerender } = setup();
     let attempt!: Promise<void>;
-    act(() => {
+    await act(async () => {
       attempt = result.current.connect();
     });
+    expect(invoke).toHaveBeenCalledWith(
+      "syn_fs_connect",
+      expect.objectContaining({ otpCode: null }),
+    );
     rerender({ open: false });
     rerender({ open: true });
     await act(async () => {

@@ -9,6 +9,13 @@ use tauri_plugin_dialog::DialogExt;
 
 // ─── Scoped File Station explorer ─────────────────────────────────
 
+/// Read-only build contract. Old backends must never silently ignore a route
+/// supplied by a hot-reloaded frontend and send the request directly.
+#[tauri::command]
+pub fn syn_fs_transport_capabilities() -> serde_json::Value {
+    serde_json::json!({"version":1,"httpProxy":true,"quickConnect":true})
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn syn_fs_connect(
@@ -21,6 +28,7 @@ pub async fn syn_fs_connect(
     password: String,
     use_https: bool,
     otp_code: Option<String>,
+    route: Option<sorng_synology::http_route::NativeHttpRoute>,
 ) -> Result<FileStationLogin, String> {
     let config = SynologyConfig {
         host,
@@ -34,7 +42,9 @@ pub async fn syn_fs_connect(
         device_token: None,
         access_token: None,
     };
-    state.connect(&instance_id, &request_id, config).await
+    state
+        .connect_with_route(&instance_id, &request_id, config, route.unwrap_or_default())
+        .await
 }
 
 #[tauri::command]
@@ -141,7 +151,9 @@ pub(crate) fn isolated_viewer_candidates(
     ])
 }
 
-fn isolated_viewer_executable<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> Result<std::path::PathBuf, String> {
+fn isolated_viewer_executable<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Result<std::path::PathBuf, String> {
     let resources = window
         .app_handle()
         .path()
@@ -569,6 +581,7 @@ pub async fn syn_connect(
     insecure: bool,
     otp_code: Option<String>,
     access_token: Option<String>,
+    route: Option<sorng_synology::http_route::NativeHttpRoute>,
 ) -> Result<String, String> {
     let config = SynologyConfig {
         host,
@@ -586,7 +599,9 @@ pub async fn syn_connect(
         return Err("Use syn_fs_connect for a named Synology instance".into());
     }
     let mut svc = state.resolve(None, None).await?;
-    let result = svc.connect(config).await;
+    let result = svc
+        .connect_with_route(config, route.unwrap_or_default())
+        .await;
     svc.finish(result)
 }
 

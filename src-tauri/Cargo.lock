@@ -12000,6 +12000,7 @@ dependencies = [
  "sha2 0.10.9",
  "socket2 0.6.5",
  "sorng-core",
+ "sorng-quickconnect",
  "sorng-socket-transport",
  "sqlx",
  "ssh2",
@@ -12040,6 +12041,16 @@ dependencies = [
  "url",
  "uuid",
  "x509-parser",
+]
+
+[[package]]
+name = "sorng-quickconnect"
+version = "26.45.0"
+dependencies = [
+ "hex",
+ "md-5 0.10.6",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -12637,11 +12648,15 @@ dependencies = [
  "chrono",
  "futures",
  "log",
+ "rcgen",
  "reqwest 0.12.28",
+ "rustls",
  "serde",
  "serde_json",
+ "sorng-quickconnect",
  "tempfile",
  "tokio",
+ "tokio-rustls",
  "url",
  "uuid",
  "windows-sys 0.61.2",

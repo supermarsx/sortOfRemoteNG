@@ -32,7 +32,7 @@ final DSM address when available.
 
 These options are for **Website — DSM in browser**, not **Synology NAS API**.
 Switching to API mode hides the website aliases without changing their saved
-values. The native API client requires a directly usable DSM API endpoint and
+values. The native API client has its own anonymous QuickConnect resolver; it
 does not follow the browser's reviewed multi-hop handoffs or inherit its login.
 
 ## DSM website sign-in
@@ -124,8 +124,12 @@ to change NAS settings; each action retains its own server-side permission check
 The API view uses the credentials saved in Application, without a second
 username/password form in the session tab. A DSM authenticator challenge opens
 a one-time-code dialog. Browser cookies do not authenticate the API explorer.
-The API currently supports direct routing and verified system TLS, not browser
-certificate exceptions or proxy/VPN routes; unsupported settings are refused.
+The API uses the selected app-wide route: direct access or the configured
+HTTP(S) proxy. The same route is retained through discovery, sign-in and later
+API calls; no environment proxy or direct fallback is used. Per-connection
+proxy/VPN/tunnel chains and browser certificate exceptions remain unsupported
+and are refused. HTTPS always verifies the server certificate. Changing the
+app-wide proxy requires reconnecting, not silently moving an active NAS session.
 
 A reverse-proxy hostname is supported as the server address when it forwards
 DSM's `/webapi/` routes. The native client requests DSM's session cookie and
@@ -140,16 +144,45 @@ root HTTP(S) URLs. An explicit URL uses its own scheme and port (80/443 when
 omitted). A plain host uses the configured port. URLs with credentials, query
 strings or application paths cannot be used as API server addresses.
 
+### QuickConnect API resolution
+
+For a QuickConnect address, use the NAS alias, such as
+`your-nas.quickconnect.to`. The native client contacts the provider anonymously,
+then tests a bounded set of same-NAS HTTPS endpoints. It requires matching NAS
+identity evidence and usable authentication/File Station API discovery before
+sending the saved login. Resolution has a 120-second deadline and may request
+one regional relay tunnel. An HTTP landing alias is only an identifier: its
+resolution and selected NAS endpoint still use verified HTTPS.
+
+Provider cookies stay in separate origin-specific jars. The selected NAS keeps
+one private client and cookie jar from its identity probe through API discovery,
+sign-in and subsequent operations; failed candidates do not share that jar.
+Nothing imports the DSM website's cookies or credentials. Unsupported endpoints,
+certificate failures and redirects do not authorize a downgrade or an arbitrary
+destination. Synthetic CONNECT/TLS tests cover this flow; a successful live NAS
+or QuickConnect sign-in is not inferred from those fixtures.
+
+Anonymous API discovery tries `/webapi/entry.cgi` first. A gateway compatibility
+failure (HTTP 404/405, HTML, or DSM API code 102/103) permits one anonymous
+`/webapi/query.cgi` request on that same endpoint and route. This is not a login
+retry: passwords, one-time codes and authenticated file operations are never
+automatically replayed. If resolution fails, check QuickConnect and the selected
+network route, or explicitly choose a usable LAN/DDNS/reverse-proxy API address.
+
 ### Initialization status
 
 Opening a saved API tab shows the app's configured loading element alongside
 the current observed stage and elapsed time for that stage:
 
 1. **Checking desktop capabilities** verifies native API availability before
-   sending NAS credentials.
-2. **Contacting DSM and signing in** waits for one native request. Network
-   connection, DSM discovery and authentication are not reported as separate
-   backend events, so the app does not invent sub-stages or a percentage.
+   sending NAS credentials. A read-only transport-version check also requires
+   the running backend to confirm HTTP proxy and QuickConnect support. If that
+   marker is missing or outdated, restart/update the desktop app; refreshing its
+   page or retrying credentials cannot upgrade an already-running native binary.
+2. **Resolving the NAS and signing in** waits for one native request on the
+   selected route. QuickConnect resolution, DSM discovery and authentication are
+   not reported as separate backend events, so the app does not invent
+   sub-stages or a percentage.
 3. **Loading shared folders** starts only after an API session is established.
    Other administration data loads when its section is opened.
 

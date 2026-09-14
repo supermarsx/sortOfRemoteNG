@@ -23,6 +23,7 @@ use tokio::{
 
 const PRIVATE: &str = "synthetic-private-response-marker";
 
+#[derive(Clone)]
 struct Reply {
     status: u16,
     content_type: Option<&'static str>,
@@ -229,7 +230,10 @@ async fn discovery_distinguishes_empty_html_syntax_and_schema_without_response_c
     ];
     for (reply, category, mime) in cases {
         let length = reply.body.len();
-        let peer = Peer::start(vec![reply]).await;
+        // HTML at entry.cgi permits one anonymous GET query.cgi compatibility
+        // read, never a login. Both gateway responses remain diagnostic.
+        let expected_reads = if category == "html" { 2 } else { 1 };
+        let peer = Peer::start(vec![reply; expected_reads]).await;
         let error = SynologyService::new()
             .fs_connect(peer.config())
             .await
@@ -239,7 +243,11 @@ async fn discovery_distinguishes_empty_html_syntax_and_schema_without_response_c
             diagnostic(&error),
             json!({"stage":"api_discovery","category":category,"httpStatus":200,"contentType":mime,"bytesRead":length})
         );
-        assert_eq!(peer.count(), 1, "discovery failure cannot dispatch login");
+        assert_eq!(
+            peer.count(),
+            expected_reads,
+            "discovery failure cannot dispatch login"
+        );
     }
 }
 

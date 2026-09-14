@@ -10,6 +10,7 @@ import {
   _resetInMemorySettingsStore,
 } from "../../src/utils/settings/settingsManager";
 import type { ProxyConfig } from "../../src/types/settings/settings";
+import { captureSynologyApiRoute } from "../../src/hooks/synology/synologyApiRoute";
 
 function setProxy(overrides: Partial<ProxyConfig>) {
   SettingsManager.getInstance().applyInMemory({
@@ -36,6 +37,35 @@ describe("integration HTTP proxy helper", () => {
     expect(withGlobalHttpProxy({ host: "grafana" })).toEqual({
       host: "grafana",
     });
+  });
+
+  it("gives native Synology the same selected browser route with separate ephemeral authentication", () => {
+    setProxy({
+      type: "https",
+      host: "2001:db8::12",
+      port: 3128,
+      username: "user name",
+      password: "pa:ss",
+    });
+    const before = JSON.stringify(SettingsManager.getInstance().getSettings());
+    const snapshot = captureSynologyApiRoute();
+    expect(getGlobalHttpProxyUrl({ failClosed: true })).toBe(
+      "https://user%20name:pa%3Ass@[2001:db8::12]:3128",
+    );
+    expect(snapshot.route).toEqual({
+      kind: "http_proxy",
+      url: "https://[2001:db8::12]:3128",
+      username: "user name",
+      password: "pa:ss",
+    });
+    expect(JSON.stringify(SettingsManager.getInstance().getSettings())).toBe(
+      before,
+    );
+    setProxy({ type: "socks5" });
+    expect(captureSynologyApiRoute).toThrow();
+    expect(snapshot.assertCurrent).toThrow(/changed/);
+    setProxy({ enabled: false });
+    expect(captureSynologyApiRoute().route).toEqual({ kind: "direct" });
   });
 
   it("adds snake_case proxy_url for plain serde config structs", () => {

@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::{collections::BTreeSet, sync::Mutex};
 
 const MAX_IDENTITIES: usize = 16;
+#[cfg(test)]
 const MAX_SERVER_ID_BYTES: usize = 256;
 
 #[derive(Default)]
@@ -48,31 +49,7 @@ impl ProbeIdentities {
             return;
         };
         for item in items {
-            // Reviewed vendor ResponseParser.isValidServerInfo minimum shape.
-            // Merely finding a recursively nested serverID is not evidence.
-            if item.get("errno").and_then(Value::as_i64) != Some(0)
-                || [
-                    "/server/interface",
-                    "/server/external/ip",
-                    "/service/port",
-                    "/service/ext_port",
-                    "/env/control_host",
-                    "/env/relay_region",
-                ]
-                .iter()
-                .any(|path| item.pointer(path).is_none_or(Value::is_null))
-            {
-                continue;
-            }
-            let Some(id) = item
-                .pointer("/server/serverID")
-                .and_then(Value::as_str)
-                .filter(|id| {
-                    !id.is_empty()
-                        && id.len() <= MAX_SERVER_ID_BYTES
-                        && !id.chars().any(char::is_control)
-                })
-            else {
+            let Some(id) = sorng_quickconnect::discovery_server_id(item) else {
                 continue;
             };
             if state.hashes.len() < MAX_IDENTITIES {
