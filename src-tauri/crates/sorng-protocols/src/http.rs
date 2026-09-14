@@ -1835,12 +1835,11 @@ pub async fn axum_proxy_handler(
     // Reserve navigation START order, so a slow prior page never acquires a
     // newer identity merely by finishing last. XHR does not consume a sequence.
     let document_sequence = if document_request {
-        // Serialize a reviewed password handout with document invalidation.
+        // Serialize a reviewed vault password handout with document invalidation.
         // A queued old-page redemption cannot observe a pre-navigation sequence.
-        if matches!(
-            state.upstream_auth_mode,
-            UpstreamAuthMode::BitwardenForm | UpstreamAuthMode::SynologyForm
-        ) {
+        // Direct Synology grants bind to the frontend-selected document instead
+        // (serialized with selection), so child frame issuance never revokes them.
+        if state.upstream_auth_mode == UpstreamAuthMode::BitwardenForm {
             let mut continuation = state.bitwarden_continuation.lock().ok();
             let next = state.document_sequence.fetch_add(1, Ordering::SeqCst) + 1;
             if let Some(slot) = continuation.as_mut() {
@@ -2210,12 +2209,15 @@ pub async fn axum_proxy_handler(
 
             // Login is bound to the selected primary, not the global issuance
             // counter: an unrelated child response cannot replace this grant.
+            // Only an app-marked, already selected primary can begin readiness.
+            // Until a credential is released, any other eligible DSM document
+            // (a markerless reload the frontend selects later, or a child) is
+            // recorded as a candidate; redemption still requires selection.
             if state
                 .attempt
                 .as_ref()
                 .is_some_and(|attempt| attempt.uses_deferred_synology_login())
                 && document_request
-                && navigation_token.is_some()
                 && status_code.is_success()
                 && proxy_response::is_html(content_type.as_deref())
                 && !proxy_response::quickconnect_connector_asset(
@@ -2224,9 +2226,21 @@ pub async fn axum_proxy_handler(
                 )
             {
                 if let Some(attempt) = &state.attempt {
-                    let _ = state.network.with_current_document(document_sequence, || {
-                        attempt.bind_deferred_login_document(&response_url, document_sequence);
-                    });
+                    let selected_primary = navigation_token.is_some()
+                        && state
+                            .network
+                            .with_current_document(document_sequence, || {
+                                attempt
+                                    .bind_deferred_login_document(&response_url, document_sequence);
+                            })
+                            .is_ok();
+                    if !selected_primary {
+                        attempt.record_deferred_login_successor(
+                            &response_url,
+                            document_sequence,
+                            state.network.with_selected_document(|selected| selected),
+                        );
+                    }
                 }
             }
 

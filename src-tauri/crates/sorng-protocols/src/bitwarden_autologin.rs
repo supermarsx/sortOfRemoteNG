@@ -1,5 +1,6 @@
 //! One-shot, document-bound username/password grants for reviewed staged flows.
 //! No password is read or serialized during the email grant.
+use super::synology_direct::{DirectSynologyLogin, PasswordRedemption};
 use super::{forbidden, server_error, AutoLoginQuery};
 use crate::http::{AxumProxyState, BasicAuthProxyConfig, UpstreamAuthMode};
 use axum::body::Body;
@@ -9,22 +10,23 @@ use std::time::{Duration, Instant};
 
 const GRANT_LIFETIME: Duration = Duration::from_secs(30);
 
-fn account_lifetime(mode: UpstreamAuthMode) -> Duration {
-    if mode == UpstreamAuthMode::SynologyForm {
-        super::SYNOLOGY_FORM_READINESS_LIFETIME
-    } else {
-        GRANT_LIFETIME
-    }
+/// Reviewed staged-login grant slot. The historical name is kept for the shared
+/// proxy state. A vault continuation follows the global document issuance
+/// order; direct Synology page grants follow the frontend-selected document.
+pub struct BitwardenContinuation(Grant);
+
+enum Grant {
+    Vault(VaultContinuation),
+    Synology(DirectSynologyLogin),
 }
 
-pub struct BitwardenContinuation {
+struct VaultContinuation {
     token: String,
     document_sequence: u64,
     issued: Instant,
     password_stage: bool,
-    lifetime: Duration,
 }
-impl BitwardenContinuation {
+impl VaultContinuation {
     fn valid(&self, token: &str, sequence: u64, password_stage: bool) -> bool {
         self.password_stage == password_stage
             && self.token == token
@@ -32,7 +34,7 @@ impl BitwardenContinuation {
             && !self.expired()
     }
     fn expired(&self) -> bool {
-        self.issued.elapsed() >= self.lifetime
+        self.issued.elapsed() >= GRANT_LIFETIME
     }
 }
 
@@ -41,14 +43,39 @@ pub fn bind_document(state: &AxumProxyState, sequence: u64) -> Option<()> {
         return None;
     }
     let nonce = state.auto_login_nonce.read().ok()?.clone()?;
-    *state.bitwarden_continuation.lock().ok()? = Some(BitwardenContinuation {
-        token: nonce,
-        document_sequence: sequence,
-        issued: Instant::now(),
-        password_stage: false,
-        lifetime: account_lifetime(state.upstream_auth_mode),
-    });
+    *state.bitwarden_continuation.lock().ok()? =
+        Some(BitwardenContinuation(Grant::Vault(VaultContinuation {
+            token: nonce,
+            document_sequence: sequence,
+            issued: Instant::now(),
+            password_stage: false,
+        })));
     Some(())
+}
+
+/// Record this armed DSM document's own page grant and return its nonce.
+pub fn bind_synology_document(state: &AxumProxyState, sequence: u64) -> Option<String> {
+    // Grant slot, then document: the same order as redirect acceptance.
+    let mut slot = state.bitwarden_continuation.lock().ok()?;
+    // A redirect handoff disarms under this lock; never re-create after it.
+    if !state.auto_login_armed.load(Ordering::SeqCst) {
+        return None;
+    }
+    let selected = state.network.with_selected_document(|selected| selected);
+    if !matches!(
+        slot.as_ref(),
+        Some(BitwardenContinuation(Grant::Synology(_)))
+    ) {
+        *slot = Some(BitwardenContinuation(Grant::Synology(
+            DirectSynologyLogin::default(),
+        )));
+    }
+    match slot.as_mut() {
+        Some(BitwardenContinuation(Grant::Synology(login))) => {
+            login.record_page(sequence, selected)
+        }
+        _ => None,
+    }
 }
 
 pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
@@ -103,16 +130,22 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
         Ok(pending) => pending,
         Err(_) => return forbidden("reviewed login unavailable"),
     };
+    if state.upstream_auth_mode == UpstreamAuthMode::SynologyForm {
+        return dispense_synology(state, &mut pending, query);
+    }
+    fn vault(pending: &Option<BitwardenContinuation>) -> Option<&VaultContinuation> {
+        match pending {
+            Some(BitwardenContinuation(Grant::Vault(grant))) => Some(grant),
+            _ => None,
+        }
+    }
     let sequence = state.document_sequence.load(Ordering::SeqCst);
     if query.phase.as_deref() == Some("password") {
-        let valid = pending
-            .as_ref()
-            .is_some_and(|grant| grant.valid(&query.nonce, sequence, true));
+        let valid = vault(&pending).is_some_and(|grant| grant.valid(&query.nonce, sequence, true));
         if !valid {
             // A navigation/expiry permanently invalidates this attempt. A wrong
             // random token must not consume somebody else's still-valid grant.
-            if pending
-                .as_ref()
+            if vault(&pending)
                 .is_some_and(|grant| grant.document_sequence != sequence || grant.expired())
             {
                 *pending = None;
@@ -129,10 +162,7 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
     if query.phase.is_some() || !state.auto_login_armed.load(Ordering::SeqCst) {
         return forbidden("reviewed login not armed");
     }
-    if !pending
-        .as_ref()
-        .is_some_and(|grant| grant.valid(&query.nonce, sequence, false))
-    {
+    if !vault(&pending).is_some_and(|grant| grant.valid(&query.nonce, sequence, false)) {
         return forbidden("reviewed login document changed or expired");
     }
     let mut nonce = match state.auto_login_nonce.write() {
@@ -149,14 +179,63 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
         Err(_) => return forbidden("reviewed login credential unavailable"),
     };
     let token = crate::themed_auth::fresh_nonce();
-    *pending = Some(BitwardenContinuation {
+    *pending = Some(BitwardenContinuation(Grant::Vault(VaultContinuation {
         token: token.clone(),
         document_sequence: sequence,
         issued: Instant::now(),
         password_stage: true,
-        lifetime: GRANT_LIFETIME,
-    });
+    })));
     json(serde_json::json!({"loginFlow":flow, "username": &*username, "continuation":token}))
+}
+
+/// Direct DSM grants are bound to the selected document, never the global
+/// issuance counter. Caller holds the session manager and grant slot locks.
+fn dispense_synology(
+    state: &AxumProxyState,
+    pending: &mut Option<BitwardenContinuation>,
+    query: &AutoLoginQuery,
+) -> Response<Body> {
+    let Some(BitwardenContinuation(Grant::Synology(login))) = pending.as_mut() else {
+        return forbidden("reviewed login document changed or expired");
+    };
+    if query.phase.as_deref() == Some("password") {
+        let selected = state
+            .network
+            .with_selected_document(|selected| login.redeem_password(Some(selected), &query.nonce));
+        let outcome = match selected {
+            Some(outcome) => outcome,
+            None => login.redeem_password(None, &query.nonce),
+        };
+        match outcome {
+            PasswordRedemption::Released => {
+                *pending = None;
+                let password = match state.password.read() {
+                    Ok(password) => password,
+                    Err(_) => return forbidden("reviewed login credential unavailable"),
+                };
+                return json(serde_json::json!({"loginFlow":"synology", "password": &*password}));
+            }
+            PasswordRedemption::Revoked => *pending = None,
+            PasswordRedemption::Refused => {}
+        }
+        return forbidden("reviewed login continuation expired or invalid");
+    }
+    if query.phase.is_some() || !state.auto_login_armed.load(Ordering::SeqCst) {
+        return forbidden("reviewed login not armed");
+    }
+    let Some(token) = state
+        .network
+        .with_selected_document(|selected| login.release_account(selected, &query.nonce))
+        .flatten()
+    else {
+        return forbidden("reviewed login document changed or expired");
+    };
+    state.auto_login_armed.store(false, Ordering::SeqCst);
+    let username = match state.username.read() {
+        Ok(username) => username,
+        Err(_) => return forbidden("reviewed login credential unavailable"),
+    };
+    json(serde_json::json!({"loginFlow":"synology", "username": &*username, "continuation":token}))
 }
 
 #[cfg(test)]
@@ -164,12 +243,11 @@ mod tests {
     use super::*;
     #[test]
     fn reviewed_vault_grants_expire_and_never_cross_stage_or_document() {
-        let mut grant = BitwardenContinuation {
+        let mut grant = VaultContinuation {
             token: "fixture".into(),
             document_sequence: 7,
             issued: Instant::now(),
             password_stage: true,
-            lifetime: GRANT_LIFETIME,
         };
         assert!(grant.valid("fixture", 7, true));
         assert!(!grant.valid("fixture", 7, false));
@@ -179,26 +257,28 @@ mod tests {
     }
 
     #[test]
-    fn only_synology_account_readiness_uses_longer_nonrenewable_lifetime() {
-        for mode in [
-            UpstreamAuthMode::SynologyForm,
-            UpstreamAuthMode::BitwardenForm,
-        ] {
-            let mut grant = BitwardenContinuation {
+    fn vault_stages_stay_thirty_seconds_while_synology_windows_are_longer() {
+        assert_eq!(GRANT_LIFETIME, Duration::from_secs(30));
+        assert_eq!(
+            super::super::SYNOLOGY_FORM_PASSWORD_LIFETIME,
+            Duration::from_secs(90)
+        );
+        assert_eq!(
+            super::super::SYNOLOGY_FORM_READINESS_LIFETIME,
+            Duration::from_secs(300)
+        );
+        for password_stage in [false, true] {
+            let mut grant = VaultContinuation {
                 token: "fixture".into(),
                 document_sequence: 7,
-                issued: Instant::now() - Duration::from_secs(61),
-                password_stage: false,
-                lifetime: account_lifetime(mode),
+                issued: Instant::now() - Duration::from_secs(29),
+                password_stage,
             };
-            assert_eq!(
-                grant.valid("fixture", 7, false),
-                mode == UpstreamAuthMode::SynologyForm
-            );
-            assert!(!grant.valid("fixture", 8, false));
-            assert!(!grant.valid("fixture", 7, true));
-            assert!(!grant.valid("wrong", 7, false));
-            grant.issued = Instant::now() - grant.lifetime;
+            assert!(grant.valid("fixture", 7, password_stage));
+            assert!(!grant.valid("fixture", 8, password_stage));
+            assert!(!grant.valid("fixture", 7, !password_stage));
+            assert!(!grant.valid("wrong", 7, password_stage));
+            grant.issued = Instant::now() - GRANT_LIFETIME;
             assert!(grant.expired());
         }
     }

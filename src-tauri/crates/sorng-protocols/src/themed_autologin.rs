@@ -59,13 +59,25 @@ use std::sync::{Arc, RwLock};
 use crate::http::{AxumProxyState, HttpAutoLoginSelectors};
 use crate::themed_auth::fresh_nonce;
 
-// Native lifetime of the nonce while the verified DSM page mounts its account
-// controls. The client performs a shorter bounded read-only readiness wait.
+// Native lifetime of a DSM page grant while the verified page mounts its account
+// controls, measured from the latest document bind. The client performs a
+// shorter bounded read-only readiness wait.
 pub(crate) const SYNOLOGY_FORM_READINESS_LIFETIME: std::time::Duration =
-    std::time::Duration::from_secs(120);
+    std::time::Duration::from_secs(300);
+// Successor documents may renew QuickConnect readiness, never past this
+// absolute cap from the first bind. A direct page grant is never renewed.
+pub(crate) const SYNOLOGY_FORM_READINESS_CAP: std::time::Duration =
+    std::time::Duration::from_secs(600);
+// Username release to password redemption, allowing a slow DSM password panel.
+// Interactive 2FA / Secure SignIn follows the password handout and needs no
+// native grant, so this window never bounds the user's approval step.
+pub(crate) const SYNOLOGY_FORM_PASSWORD_LIFETIME: std::time::Duration =
+    std::time::Duration::from_secs(90);
 
 #[path = "bitwarden_autologin.rs"]
 mod bitwarden;
+#[path = "http_synology_direct_login.rs"]
+mod synology_direct;
 pub use bitwarden::{validate_config as validate_reviewed_login_config, BitwardenContinuation};
 
 /// Bounded form options. Literal values are secret-capable and never embedded in HTML.
@@ -224,7 +236,14 @@ pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64)
         .as_ref()
         .filter(|attempt| attempt.uses_deferred_synology_login())
     {
-        let nonce = attempt.deferred_login_nonce(&state.network, document_sequence)?;
+        let nonce = attempt.deferred_login_nonce(document_sequence)?;
+        return Some(autologin_client_script(&nonce, "null", true));
+    }
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::SynologyForm {
+        // Each DSM document keeps its own bounded page grant instead of the
+        // single nonce slot: a later child frame cannot overwrite, rebind or
+        // redeem it. Redemption requires this document to be selected.
+        let nonce = bitwarden::bind_synology_document(state, document_sequence)?;
         return Some(autologin_client_script(&nonce, "null", true));
     }
     let injection = build_autologin_injection_from_slots(
@@ -232,15 +251,8 @@ pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64)
         &state.auto_login_nonce,
         &state.auto_login_selectors,
     )?;
-    if matches!(
-        state.upstream_auth_mode,
-        crate::http::UpstreamAuthMode::BitwardenForm | crate::http::UpstreamAuthMode::SynologyForm
-    ) {
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::BitwardenForm {
         bitwarden::bind_document(state, document_sequence)?;
-    }
-    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::SynologyForm {
-        let nonce = state.auto_login_nonce.read().ok()?.clone()?;
-        return Some(autologin_client_script(&nonce, "null", true));
     }
     Some(injection)
 }

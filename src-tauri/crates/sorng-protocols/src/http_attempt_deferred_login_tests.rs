@@ -166,6 +166,51 @@ async fn native_expiry_timer_clears_idle_credentials_without_another_read() {
 }
 
 #[test]
+fn verified_probe_and_reviewed_handoff_renew_pending_intent_without_reviving_it() {
+    fn renewed(session: &AttemptSession) -> Option<Instant> {
+        session
+            .attempt
+            .state
+            .lock()
+            .unwrap()
+            .deferred_login
+            .as_ref()
+            .unwrap()
+            .renewed_for_test()
+    }
+    let mut registry = AttemptRegistry::default();
+    let source = start(&mut registry, &opted_config(), "source");
+    assert!(renewed(&source).is_none());
+    // Unverified probe evidence never renews the human-paced review window.
+    source.record_deferred_login_probe("wrong-alias", &probe(NAS));
+    source.record_deferred_login_probe("example", &probe("https://global.quickconnect.to/"));
+    assert!(renewed(&source).is_none());
+    source.record_deferred_login_probe("example", &probe(NAS));
+    let probed = renewed(&source).expect("a verified probe renews the pending intent");
+    let target = transfer(&mut registry, &source, NAS, "nas");
+    let handed = renewed(&target).expect("a consumed handoff renews the pending intent");
+    assert!(handed >= probed);
+    assert_eq!(
+        target.deferred_login_status(),
+        Some(LoginStatus::AwaitingNas)
+    );
+    // An intent that already lapsed is never revived by a later hop.
+    target
+        .attempt
+        .state
+        .lock()
+        .unwrap()
+        .deferred_login
+        .as_mut()
+        .unwrap()
+        .age_for_test();
+    let alias = transfer(&mut registry, &target, ALIAS, "alias");
+    assert_eq!(alias.deferred_login_status(), Some(LoginStatus::Expired));
+    alias.record_deferred_login_probe("example", &probe(NAS));
+    assert_eq!(alias.deferred_login_status(), Some(LoginStatus::Expired));
+}
+
+#[test]
 fn manual_anonymous_attempt_has_no_deferred_login_status() {
     let mut registry = AttemptRegistry::default();
     let source = start(&mut registry, &config(ALIAS), "manual");

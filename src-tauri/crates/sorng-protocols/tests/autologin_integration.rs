@@ -22,13 +22,17 @@
 //! body.replacen("</body>", &format!("{}</body>", injected_scripts), 1);
 //! ```
 
-use std::sync::atomic::AtomicBool;
-use std::sync::RwLock;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::{Arc, RwLock};
 
 use sorng_protocols::autologin_asset::{autologin_client_asset_script, AUTOLOGIN_CLIENT_JS};
-use sorng_protocols::http::HttpAutoLoginSelectors;
+use sorng_protocols::http::{
+    AxumProxyState, HttpAutoLoginSelectors, HttpProxyPolicy, ProxyNetworkState,
+    ProxySessionManager, UpstreamAuthMode,
+};
 use sorng_protocols::themed_autologin::{
-    build_autologin_injection_from_slots, AutoLoginCreds, AUTOLOGIN_PATH,
+    build_autologin_injection, build_autologin_injection_from_slots, AutoLoginCreds, AUTOLOGIN_PATH,
 };
 
 /// The nav reporter the proxy always injects first (constant string in http.rs).
@@ -258,4 +262,73 @@ fn endpoint_creds_shape_matches_what_the_served_bootstrap_expects() {
         !json2.contains("selectors"),
         "selectors omitted when none configured"
     );
+}
+
+fn served_nonce(html: &str) -> String {
+    html.split_once("var NONCE=\"")
+        .expect("bootstrap nonce")
+        .1
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned()
+}
+
+/// Direct reviewed Synology login: each served DSM document carries its own
+/// page nonce. A later child frame render neither overwrites the shared nonce
+/// slot nor changes what the page itself was served, and nothing secret ships.
+#[test]
+fn synology_direct_documents_keep_their_own_page_nonce_outside_the_shared_slot() {
+    let state = AxumProxyState {
+        attempt: None,
+        network: Arc::new(ProxyNetworkState::default()),
+        session_id: "synthetic-session".into(),
+        connection_id: "synthetic-owner".into(),
+        target_url: "https://nas.invalid/".into(),
+        username: Arc::new(RwLock::new("synthetic-user".into())),
+        password: Arc::new(RwLock::new("synthetic-password".into())),
+        upstream_auth_mode: UpstreamAuthMode::SynologyForm,
+        proxy_policy: HttpProxyPolicy::default(),
+        redirect_profile: None,
+        custom_headers: HashMap::new(),
+        pending_nonce: Arc::new(RwLock::new(None)),
+        theme: Arc::new(RwLock::new(
+            sorng_protocols::theme_tokens::ThemeTokens::dark_default(),
+        )),
+        target_origin: "https://nas.invalid".into(),
+        proxy_authority: "p0123456789abcdef0123456789abcdef.localhost:1".into(),
+        proxy_origin: "http://p0123456789abcdef0123456789abcdef.localhost:1".into(),
+        auto_login_armed: Arc::new(AtomicBool::new(true)),
+        auto_login_nonce: Arc::new(RwLock::new(None)),
+        bitwarden_continuation: Default::default(),
+        auto_login_selectors: None,
+        http_form_automation: None,
+        client: reqwest::Client::new(),
+        document_sequence: Arc::new(AtomicU64::new(2)),
+        request_count: Arc::new(AtomicU64::new(0)),
+        error_count: Arc::new(AtomicU64::new(0)),
+        last_error: Arc::new(std::sync::Mutex::new(None)),
+        global_sessions: ProxySessionManager::new(),
+        credentials_applied: None,
+    };
+    // The page (document 1) is rendered after a child (document 2) started.
+    let page = build_autologin_injection(&state, 1).expect("page bootstrap");
+    let child = build_autologin_injection(&state, 2).expect("child bootstrap");
+    let (page_nonce, child_nonce) = (served_nonce(&page), served_nonce(&child));
+    assert_ne!(page_nonce, child_nonce);
+    for html in [&page, &child] {
+        assert!(html.contains("fetchCredsAndRun(NONCE,SEL, 'synology')"));
+        assert!(!html.contains("synthetic-user") && !html.contains("synthetic-password"));
+    }
+    assert!(state.auto_login_nonce.read().unwrap().is_none());
+    // Re-rendering a document returns its own grant; the child never replaced it.
+    assert_eq!(
+        served_nonce(&build_autologin_injection(&state, 1).unwrap()),
+        page_nonce
+    );
+    // Disarmed sessions ship no DSM bootstrap for any document.
+    state
+        .auto_login_armed
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(build_autologin_injection(&state, 3).is_none());
 }

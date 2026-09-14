@@ -5,26 +5,39 @@ use super::{
     UpstreamAuthMode,
 };
 use reqwest::Url;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
+/// Capture to the first verified hop.
 pub(super) const INTENT_LIFETIME: Duration = Duration::from_secs(120);
+/// Redirect review is human-paced: each verified probe or handoff renews the
+/// pending intent to this window, never past `INTENT_CAP` from capture.
+pub(super) const INTENT_RENEWAL: Duration = Duration::from_secs(300);
+pub(super) const INTENT_CAP: Duration = Duration::from_secs(900);
+/// Idle page-readiness window from the latest document bind.
 pub(super) const READINESS_LIFETIME: Duration =
     crate::themed_autologin::SYNOLOGY_FORM_READINESS_LIFETIME;
-pub(super) const STAGE_LIFETIME: Duration = Duration::from_secs(30);
+pub(super) const READINESS_CAP: Duration = crate::themed_autologin::SYNOLOGY_FORM_READINESS_CAP;
+pub(super) const STAGE_LIFETIME: Duration =
+    crate::themed_autologin::SYNOLOGY_FORM_PASSWORD_LIFETIME;
 const MAX_VERIFIED_ORIGINS: usize = 16;
+/// Candidate page documents retained while no credential is released.
+pub(super) const MAX_CANDIDATE_DOCUMENTS: usize = 8;
 const UNAVAILABLE: &str = "The saved Synology login attempt is unavailable or expired. Reopen the original connection to try again.";
 
 enum Phase {
     Pending,
     Account {
-        // No credential has been released. This is a fixed page/form-readiness
-        // window, distinct from the password transition after account dispense.
+        // No credential has been released. Readiness idles from the latest
+        // bind and never outlives the absolute cap from the first bind.
         session: String,
+        /// Latest bound document.
         document: u64,
-        nonce: String,
+        /// Page nonce per eligible document. Redemption requires selection.
+        candidates: BTreeMap<u64, String>,
         issued: Instant,
+        first_bound: Instant,
     },
     Password {
         session: String,
@@ -35,11 +48,35 @@ enum Phase {
     Spent(DeferredSynologyLoginStatus),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Bind {
+    New,
+    Existing,
+    Refused,
+}
+
+/// Time left before a pending intent expires, from its ages.
+fn intent_left(since_capture: Duration, since_renewal: Option<Duration>) -> Duration {
+    since_renewal
+        .map_or(INTENT_LIFETIME.saturating_sub(since_capture), |renewal| {
+            INTENT_RENEWAL.saturating_sub(renewal)
+        })
+        .min(INTENT_CAP.saturating_sub(since_capture))
+}
+
+/// Time left before page readiness expires, from its bind ages.
+fn readiness_left(since_latest_bind: Duration, since_first_bind: Duration) -> Duration {
+    READINESS_LIFETIME
+        .saturating_sub(since_latest_bind)
+        .min(READINESS_CAP.saturating_sub(since_first_bind))
+}
+
 // No Debug/Serialize. Neither grants nor secrets belong in public diagnostics.
 pub(super) struct DeferredSynologyLogin {
     username: Option<Zeroizing<String>>,
     password: Option<Zeroizing<String>>,
     created: Instant,
+    renewed: Option<Instant>,
     phase: Phase,
     verified_origins: BTreeSet<String>,
 }
@@ -48,6 +85,12 @@ impl DeferredSynologyLogin {
     #[cfg(test)]
     pub(super) fn age_for_test(&mut self) {
         self.created = Instant::now() - INTENT_LIFETIME;
+        self.renewed = None;
+    }
+
+    #[cfg(test)]
+    pub(super) fn renewed_for_test(&self) -> Option<Instant> {
+        self.renewed
     }
 
     #[cfg(test)]
@@ -84,19 +127,32 @@ impl DeferredSynologyLogin {
             username: Some(Zeroizing::new(config.username.clone())),
             password: Some(Zeroizing::new(config.password.clone())),
             created: Instant::now(),
+            renewed: None,
             phase: Phase::Pending,
             verified_origins,
         }))
     }
 
+    /// Time until the current phase expires; `None` once spent. Native timers
+    /// use it after every bind or renewal, so an idle grant is erased on time.
+    pub(super) fn remaining(&self) -> Option<Duration> {
+        match &self.phase {
+            Phase::Pending => Some(intent_left(
+                self.created.elapsed(),
+                self.renewed.map(|renewed| renewed.elapsed()),
+            )),
+            Phase::Account {
+                issued,
+                first_bound,
+                ..
+            } => Some(readiness_left(issued.elapsed(), first_bound.elapsed())),
+            Phase::Password { issued, .. } => Some(STAGE_LIFETIME.saturating_sub(issued.elapsed())),
+            Phase::Spent(_) => None,
+        }
+    }
+
     pub(super) fn expire(&mut self) {
-        let expired = match &self.phase {
-            Phase::Pending => self.created.elapsed() >= INTENT_LIFETIME,
-            Phase::Account { issued, .. } => issued.elapsed() >= READINESS_LIFETIME,
-            Phase::Password { issued, .. } => issued.elapsed() >= STAGE_LIFETIME,
-            Phase::Spent(_) => false,
-        };
-        if expired {
+        if self.remaining() == Some(Duration::ZERO) {
             self.spend(DeferredSynologyLoginStatus::Expired);
         }
     }
@@ -125,16 +181,61 @@ impl DeferredSynologyLogin {
         }
     }
 
-    pub(super) fn record_probe(&mut self, origin: String) {
+    /// Caller proved a verified login probe. Renews a pending intent; returns
+    /// the new time left when renewed.
+    pub(super) fn record_probe(&mut self, origin: String) -> Option<Duration> {
         self.expire();
-        if matches!(self.phase, Phase::Pending)
-            && self.verified_origins.len() < MAX_VERIFIED_ORIGINS
-        {
+        if !matches!(self.phase, Phase::Pending) {
+            return None;
+        }
+        if !self.verified_origins.contains(&origin) {
+            if self.verified_origins.len() >= MAX_VERIFIED_ORIGINS {
+                return None;
+            }
             self.verified_origins.insert(origin);
+        }
+        self.renew_intent()
+    }
+
+    /// A consumed same-attempt handoff or verified probe. Pending only; never
+    /// past `INTENT_CAP` and never reviving an expired intent.
+    pub(super) fn renew_intent(&mut self) -> Option<Duration> {
+        self.expire();
+        if !matches!(self.phase, Phase::Pending) {
+            return None;
+        }
+        self.renewed = Some(Instant::now());
+        self.remaining()
+    }
+
+    /// The app-marked primary document, selected at response time.
+    pub(super) fn bind(&mut self, session: &str, document: u64, target: &Url) -> bool {
+        self.bind_document(session, document, target, true, Some(document)) != Bind::Refused
+    }
+
+    /// Any other eligible DSM document response while no credential has been
+    /// released. Returns the renewed time left when a new candidate was bound.
+    pub(super) fn record_successor(
+        &mut self,
+        session: &str,
+        document: u64,
+        target: &Url,
+        selected: Option<u64>,
+    ) -> Option<Duration> {
+        match self.bind_document(session, document, target, false, selected) {
+            Bind::New => self.remaining(),
+            Bind::Existing | Bind::Refused => None,
         }
     }
 
-    pub(super) fn bind(&mut self, session: &str, document: u64, target: &Url) -> bool {
+    fn bind_document(
+        &mut self,
+        session: &str,
+        document: u64,
+        target: &Url,
+        selected_primary: bool,
+        selected: Option<u64>,
+    ) -> Bind {
         self.expire();
         if document == 0
             || !matches!(target.path(), "/" | "/webman/index.cgi")
@@ -142,27 +243,50 @@ impl DeferredSynologyLogin {
                 .verified_origins
                 .contains(&target.origin().ascii_serialization())
         {
-            return false;
+            return Bind::Refused;
         }
-        match &self.phase {
-            Phase::Pending => {
+        match &mut self.phase {
+            Phase::Pending if selected_primary => {
+                let now = Instant::now();
                 self.phase = Phase::Account {
                     session: session.into(),
                     document,
-                    nonce: crate::themed_auth::fresh_nonce(),
-                    issued: Instant::now(),
+                    candidates: BTreeMap::from([(document, crate::themed_auth::fresh_nonce())]),
+                    issued: now,
+                    first_bound: now,
                 };
-                true
+                Bind::New
             }
             Phase::Account {
                 session: bound,
-                document: sequence,
+                document: latest,
+                candidates,
+                issued,
                 ..
-            } if bound == session && *sequence == document => true,
-            Phase::Spent(_) => false,
+            } if bound == session => {
+                // Repeated binding or readiness reads never extend the deadline.
+                if candidates.contains_key(&document) {
+                    return Bind::Existing;
+                }
+                if selected.is_some_and(|selected| document < selected) {
+                    return Bind::Refused;
+                }
+                candidates.insert(document, crate::themed_auth::fresh_nonce());
+                prune_candidates(candidates, selected);
+                if !candidates.contains_key(&document) {
+                    return Bind::Refused;
+                }
+                *latest = (*latest).max(document);
+                *issued = Instant::now();
+                Bind::New
+            }
+            Phase::Pending | Phase::Spent(_) => Bind::Refused,
+            // A child or a not-yet-selected successor never changes a released
+            // username; selection of another document cancels at redemption.
+            _ if !selected_primary => Bind::Refused,
             _ => {
                 self.spend(DeferredSynologyLoginStatus::Cancelled);
-                false
+                Bind::Refused
             }
         }
     }
@@ -172,14 +296,14 @@ impl DeferredSynologyLogin {
         match &self.phase {
             Phase::Account {
                 session: bound,
-                document: sequence,
-                nonce,
+                candidates,
                 ..
-            } if bound == session && *sequence == document => Some(nonce.clone()),
+            } if bound == session => candidates.get(&document).cloned(),
             _ => None,
         }
     }
 
+    #[cfg(test)]
     pub(super) fn document(&mut self, session: &str) -> Option<u64> {
         self.expire();
         match &self.phase {
@@ -197,10 +321,11 @@ impl DeferredSynologyLogin {
         }
     }
 
+    /// `selected` is the frontend-selected document, held by the caller's lease.
     pub(super) fn dispense(
         &mut self,
         session: &str,
-        document: u64,
+        selected: u64,
         nonce: &str,
         phase: Option<&str>,
     ) -> Result<serde_json::Value, &'static str> {
@@ -208,21 +333,26 @@ impl DeferredSynologyLogin {
         if nonce.is_empty() {
             return Err(UNAVAILABLE);
         }
-        match (&self.phase, phase) {
+        match (&mut self.phase, phase) {
             (
                 Phase::Account {
                     session: bound,
-                    document: sequence,
-                    nonce: expected,
+                    candidates,
                     ..
                 },
                 None,
-            ) if bound == session && *sequence == document && expected == nonce => {
+            ) if bound == session => {
+                // Only the selected page's own nonce redeems. Selection is
+                // monotonic, so an older page's nonce can never redeem again,
+                // and a stale or wrong request never cancels the successor.
+                if candidates.get(&selected).map(String::as_str) != Some(nonce) {
+                    return Err(UNAVAILABLE);
+                }
                 let username = self.username.take().ok_or(UNAVAILABLE)?;
                 let next = crate::themed_auth::fresh_nonce();
                 self.phase = Phase::Password {
                     session: session.into(),
-                    document,
+                    document: selected,
                     nonce: next.clone(),
                     issued: Instant::now(),
                 };
@@ -233,18 +363,43 @@ impl DeferredSynologyLogin {
             (
                 Phase::Password {
                     session: bound,
-                    document: sequence,
+                    document,
                     nonce: expected,
                     ..
                 },
                 Some("password"),
-            ) if bound == session && *sequence == document && expected == nonce => {
+            ) if bound == session => {
+                if *document != selected {
+                    // After username release a document change always cancels.
+                    self.spend(DeferredSynologyLoginStatus::Cancelled);
+                    return Err(UNAVAILABLE);
+                }
+                if expected != nonce {
+                    return Err(UNAVAILABLE);
+                }
                 let password = self.password.take().ok_or(UNAVAILABLE)?;
                 self.spend(DeferredSynologyLoginStatus::CredentialsReleased);
                 Ok(serde_json::json!({"loginFlow":"synology", "password":&**password}))
             }
             _ => Err(UNAVAILABLE),
         }
+    }
+}
+
+/// Drop superseded pages, then the oldest unselected pages beyond the bound.
+fn prune_candidates(candidates: &mut BTreeMap<u64, String>, selected: Option<u64>) {
+    if let Some(selected) = selected {
+        candidates.retain(|document, _| *document >= selected);
+    }
+    while candidates.len() > MAX_CANDIDATE_DOCUMENTS {
+        let Some(oldest) = candidates
+            .keys()
+            .copied()
+            .find(|document| Some(*document) != selected)
+        else {
+            break;
+        };
+        candidates.remove(&oldest);
     }
 }
 

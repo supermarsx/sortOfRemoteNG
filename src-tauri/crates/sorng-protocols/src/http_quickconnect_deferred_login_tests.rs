@@ -596,3 +596,82 @@ async fn primary_html_still_binds_after_an_intervening_child_advances_global_seq
     );
     assert_no_transport_or_manager_credentials(&peer, &target);
 }
+
+async fn verified_nas_proxy(peer: &CyclePeer, manager: ProxySessionManagerState) -> FixtureProxy {
+    let source = login_proxy(peer, manager.clone(), ALIAS, None, true).await;
+    page(&source, "/", true, "document").await;
+    assert_eq!(probe(&source, REGIONAL).await.status(), StatusCode::OK);
+    vendor(&source, REGIONAL).await;
+    login_proxy(peer, manager, REGIONAL, Some(&source), false).await
+}
+
+#[tokio::test]
+async fn account_phase_markerless_successor_rebinds_and_old_page_nonce_dies() {
+    let peer = login_peer(ProbeReply::Valid).await;
+    let target = verified_nas_proxy(&peer, ProxySessionManager::new()).await;
+    let attempt = target.state.attempt.clone().unwrap();
+    let first = nonce(&page(&target, "/", true, "document").await).unwrap();
+    // DSM reloads or redirects without the app marker before any credential
+    // is released. The successor is a candidate, never a selected grant.
+    let second = nonce(&page(&target, "/webman/index.cgi", false, "document").await)
+        .expect("an Account-phase DSM successor must keep a staged bootstrap");
+    assert_ne!(first, second);
+    assert_eq!(
+        grant(&target, &second, false).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        attempt.deferred_login_status(),
+        Some(DeferredSynologyLoginStatus::WaitingForForm)
+    );
+    assert_eq!(target.state.network.activate_document(2), Ok(true));
+    // The old page can never be selected again, so its nonce is dead. A stale
+    // old-page request does not cancel the successor's readiness.
+    assert_eq!(
+        grant(&target, &first, false).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        attempt.deferred_login_status(),
+        Some(DeferredSynologyLoginStatus::WaitingForForm)
+    );
+    let account = grant(&target, &second, false).await;
+    assert_eq!(account.status(), StatusCode::OK);
+    let account: serde_json::Value = account.json().await.unwrap();
+    assert_eq!(account["username"], USERNAME);
+    assert!(account.get("password").is_none());
+    let secret = grant(&target, account["continuation"].as_str().unwrap(), true).await;
+    assert_eq!(secret.status(), StatusCode::OK);
+    assert_eq!(
+        secret.json::<serde_json::Value>().await.unwrap()["password"],
+        PASSWORD
+    );
+    assert_no_transport_or_manager_credentials(&peer, &target);
+}
+
+#[tokio::test]
+async fn released_username_never_rebinds_a_successor_and_selection_change_cancels() {
+    let peer = login_peer(ProbeReply::Valid).await;
+    let target = verified_nas_proxy(&peer, ProxySessionManager::new()).await;
+    let attempt = target.state.attempt.clone().unwrap();
+    let first = nonce(&page(&target, "/", true, "document").await).unwrap();
+    let account = grant(&target, &first, false).await;
+    assert_eq!(account.status(), StatusCode::OK);
+    let account: serde_json::Value = account.json().await.unwrap();
+    let continuation = account["continuation"].as_str().unwrap();
+    assert!(nonce(&page(&target, "/webman/index.cgi", false, "document").await).is_none());
+    assert_eq!(
+        attempt.deferred_login_status(),
+        Some(DeferredSynologyLoginStatus::WaitingForPassword)
+    );
+    assert_eq!(target.state.network.activate_document(2), Ok(true));
+    let password = grant(&target, continuation, true).await;
+    assert_eq!(password.status(), StatusCode::FORBIDDEN);
+    let body = password.text().await.unwrap();
+    assert!(!body.contains(USERNAME) && !body.contains(PASSWORD));
+    assert_eq!(
+        attempt.deferred_login_status(),
+        Some(DeferredSynologyLoginStatus::Cancelled)
+    );
+    assert_no_transport_or_manager_credentials(&peer, &target);
+}

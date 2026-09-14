@@ -468,6 +468,21 @@ impl ProxyNetworkState {
         Ok(operation())
     }
 
+    /// Candidate-document login grants: run a short synchronous operation with
+    /// the currently selected document's lease held, passing its sequence.
+    /// `None` when no document is selected or the session has ended. A grant
+    /// slot lock may already be held (grant slot, then document; never the
+    /// reverse). The operation must not await or re-enter this network state.
+    pub(crate) fn with_selected_document<T>(&self, operation: impl FnOnce(u64) -> T) -> Option<T> {
+        let current = self.document.borrow();
+        if !self.is_active() || *current == 0 {
+            return None;
+        }
+        let result = operation(*current);
+        drop(current);
+        Some(result)
+    }
+
     pub(super) async fn while_document<T>(
         &self,
         sequence: u64,

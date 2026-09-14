@@ -242,6 +242,11 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
             shutdown_tx: None,
         },
     );
+    if mode == UpstreamAuthMode::SynologyForm {
+        // Direct DSM grants redeem only for the frontend-selected document.
+        // The app-marked first document is selected on issuance.
+        state.network.document_issued(1, true);
+    }
     let html = crate::themed_autologin::build_autologin_injection(state, 1).unwrap();
     assert!(!html.contains("synthetic-user") && !html.contains("synthetic-master-password"));
     assert_eq!(
@@ -249,6 +254,20 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
         mode == UpstreamAuthMode::SynologyForm
     );
     proxy
+}
+
+/// Direct DSM page grants belong to their own document, never the single
+/// nonce slot; rendering the same document again returns the same nonce.
+fn reviewed_synology_page_nonce(proxy: &FixtureProxy, document: u64) -> Option<String> {
+    let html = crate::themed_autologin::build_autologin_injection(&proxy.state, document)?;
+    assert!(proxy.state.auto_login_nonce.read().unwrap().is_none());
+    Some(
+        html.split_once("var NONCE=\"")?
+            .1
+            .split('"')
+            .next()?
+            .to_owned(),
+    )
 }
 
 #[tokio::test]
@@ -263,13 +282,17 @@ async fn reviewed_vault_staged_grants_are_one_use_and_keep_password_out_of_email
 
 async fn assert_reviewed_staged_grants(mode: UpstreamAuthMode) {
     let proxy = reviewed_login_proxy(mode).await;
-    let nonce = proxy
-        .state
-        .auto_login_nonce
-        .read()
-        .unwrap()
-        .clone()
-        .unwrap();
+    let nonce = if mode == UpstreamAuthMode::SynologyForm {
+        reviewed_synology_page_nonce(&proxy, 1).unwrap()
+    } else {
+        proxy
+            .state
+            .auto_login_nonce
+            .read()
+            .unwrap()
+            .clone()
+            .unwrap()
+    };
     let first = fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={nonce}")).await;
     assert_eq!(first.status(), StatusCode::OK);
     assert_eq!(first.headers()["cache-control"], "no-store");
@@ -344,13 +367,17 @@ async fn reviewed_vault_document_navigation_and_session_stop_revoke_pending_pass
 async fn assert_reviewed_revocation(mode: UpstreamAuthMode) {
     for stop in [false, true] {
         let proxy = reviewed_login_proxy(mode).await;
-        let nonce = proxy
-            .state
-            .auto_login_nonce
-            .read()
-            .unwrap()
-            .clone()
-            .unwrap();
+        let nonce = if mode == UpstreamAuthMode::SynologyForm {
+            reviewed_synology_page_nonce(&proxy, 1).unwrap()
+        } else {
+            proxy
+                .state
+                .auto_login_nonce
+                .read()
+                .unwrap()
+                .clone()
+                .unwrap()
+        };
         let data: serde_json::Value = fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={nonce}"))
             .await
             .json()
@@ -366,6 +393,12 @@ async fn assert_reviewed_revocation(mode: UpstreamAuthMode) {
                 .remove(&proxy.state.session_id);
         } else {
             proxy.state.document_sequence.fetch_add(1, Ordering::SeqCst);
+            if mode == UpstreamAuthMode::SynologyForm {
+                // A direct DSM continuation ignores issuance order: the
+                // frontend selecting another top-level document revokes it.
+                proxy.state.network.document_issued(2, false);
+                assert_eq!(proxy.state.network.activate_document(2), Ok(true));
+            }
         }
         let token = data["continuation"].as_str().unwrap();
         let reply = fetch(
@@ -379,7 +412,55 @@ async fn assert_reviewed_revocation(mode: UpstreamAuthMode) {
             .await
             .unwrap()
             .contains("synthetic-master-password"));
+        if mode == UpstreamAuthMode::SynologyForm && !stop {
+            // Revocation is permanent, even after the stale page is gone.
+            let again = fetch(
+                &proxy,
+                &format!("{AUTOLOGIN_PATH}?phase=password&nonce={token}"),
+            )
+            .await;
+            assert_eq!(again.status(), StatusCode::FORBIDDEN);
+        }
     }
+    if mode != UpstreamAuthMode::SynologyForm {
+        return;
+    }
+    // Inverse: a non-selected child document neither obtains a grant nor
+    // revokes the selected page's continuation.
+    let proxy = reviewed_login_proxy(mode).await;
+    let page = reviewed_synology_page_nonce(&proxy, 1).unwrap();
+    proxy.state.document_sequence.fetch_add(1, Ordering::SeqCst);
+    proxy.state.network.document_issued(2, false);
+    let child = reviewed_synology_page_nonce(&proxy, 2).unwrap();
+    assert_ne!(child, page);
+    let refused = fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={child}")).await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+    assert!(!refused.text().await.unwrap().contains("synthetic-user"));
+    let data: serde_json::Value = fetch(&proxy, &format!("{AUTOLOGIN_PATH}?nonce={page}"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(data["username"], "synthetic-user");
+    assert!(reviewed_synology_page_nonce(&proxy, 2).is_none());
+    let child_password = fetch(
+        &proxy,
+        &format!("{AUTOLOGIN_PATH}?phase=password&nonce={child}"),
+    )
+    .await;
+    assert_eq!(child_password.status(), StatusCode::FORBIDDEN);
+    let token = data["continuation"].as_str().unwrap();
+    let reply = fetch(
+        &proxy,
+        &format!("{AUTOLOGIN_PATH}?phase=password&nonce={token}"),
+    )
+    .await;
+    assert_eq!(reply.status(), StatusCode::OK);
+    assert!(reply
+        .text()
+        .await
+        .unwrap()
+        .contains("synthetic-master-password"));
 }
 
 #[tokio::test]

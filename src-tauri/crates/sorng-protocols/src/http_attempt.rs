@@ -154,58 +154,86 @@ impl AttemptSession {
         {
             return;
         }
-        if let Ok(mut state) = self.attempt.state.lock() {
-            if self.current(&state) {
-                if let Some(login) = state.deferred_login.as_mut() {
-                    login.record_probe(target.origin().ascii_serialization());
-                }
-            }
-        }
-    }
-
-    pub(super) fn bind_deferred_login_document(&self, target: &Url, sequence: u64) {
-        let bound = self.attempt.state.lock().ok().is_some_and(|mut state| {
-            let tls_admitted = state
-                .origins
-                .get(&self.origin)
-                .is_some_and(|origin| origin.tls_identity.0 || origin.tls_identity.1.is_some());
-            if !self.current(&state)
-                || !tls_admitted
-                || target.origin().ascii_serialization() != self.origin
-                || !self.attempt.defaults.permits_nas_origin(target)
-            {
-                return false;
+        let renewed = self.attempt.state.lock().ok().and_then(|mut state| {
+            if !self.current(&state) {
+                return None;
             }
             state
                 .deferred_login
-                .as_mut()
-                .is_some_and(|login| login.bind(&self.session_id, sequence, target))
+                .as_mut()?
+                .record_probe(target.origin().ascii_serialization())
         });
-        if bound {
-            self.expire_login_after(super::synology_login::READINESS_LIFETIME);
+        if let Some(remaining) = renewed {
+            self.expire_login_after(remaining);
         }
     }
 
-    pub(crate) fn deferred_login_nonce(
-        &self,
-        network: &super::ProxyNetworkState,
-        sequence: u64,
-    ) -> Option<String> {
-        network
-            .with_current_document(sequence, || {
-                let mut state = self.attempt.state.lock().ok()?;
-                if !self.current(&state) {
-                    return None;
-                }
-                state
-                    .deferred_login
-                    .as_mut()?
-                    .nonce(&self.session_id, sequence)
-            })
-            .ok()
-            .flatten()
+    fn admits_login_target(&self, state: &AttemptState, target: &Url) -> bool {
+        let tls_admitted = state
+            .origins
+            .get(&self.origin)
+            .is_some_and(|origin| origin.tls_identity.0 || origin.tls_identity.1.is_some());
+        self.current(state)
+            && tls_admitted
+            && target.origin().ascii_serialization() == self.origin
+            && self.attempt.defaults.permits_nas_origin(target)
     }
 
+    // Caller holds the selected-document lease for an app-marked primary.
+    pub(super) fn bind_deferred_login_document(&self, target: &Url, sequence: u64) {
+        let remaining = self.attempt.state.lock().ok().and_then(|mut state| {
+            if !self.admits_login_target(&state, target) {
+                return None;
+            }
+            let login = state.deferred_login.as_mut()?;
+            login
+                .bind(&self.session_id, sequence, target)
+                .then(|| login.remaining())
+                .flatten()
+        });
+        if let Some(remaining) = remaining {
+            self.expire_login_after(remaining);
+        }
+    }
+
+    /// Any other eligible DSM HTML response. While no credential is released it
+    /// becomes a page candidate that only redeems once the frontend selects it.
+    pub(super) fn record_deferred_login_successor(
+        &self,
+        target: &Url,
+        sequence: u64,
+        selected: Option<u64>,
+    ) {
+        let renewed = self.attempt.state.lock().ok().and_then(|mut state| {
+            if !self.admits_login_target(&state, target) {
+                return None;
+            }
+            state.deferred_login.as_mut()?.record_successor(
+                &self.session_id,
+                sequence,
+                target,
+                selected,
+            )
+        });
+        if let Some(remaining) = renewed {
+            self.expire_login_after(remaining);
+        }
+    }
+
+    /// Page nonce recorded for this document response. It is embedded only in
+    /// that document's HTML and redeems only while that document is selected.
+    pub(crate) fn deferred_login_nonce(&self, sequence: u64) -> Option<String> {
+        let mut state = self.attempt.state.lock().ok()?;
+        if !self.current(&state) {
+            return None;
+        }
+        state
+            .deferred_login
+            .as_mut()?
+            .nonce(&self.session_id, sequence)
+    }
+
+    #[cfg(test)]
     pub(crate) fn deferred_login_document(&self) -> Option<u64> {
         let mut state = self.attempt.state.lock().ok()?;
         if !self.current(&state) {
@@ -220,22 +248,22 @@ impl AttemptSession {
         nonce: &str,
         phase: Option<&str>,
     ) -> Result<serde_json::Value, &'static str> {
-        let sequence = self.deferred_login_document().ok_or(UNAVAILABLE)?;
-        let guarded = network.with_current_document(sequence, || {
+        // Lock order: selected document, then attempt.
+        let guarded = network.with_selected_document(|selected| {
             let mut state = self.attempt.state.lock().map_err(|_| UNAVAILABLE)?;
             if !self.current(&state) {
                 return Err(UNAVAILABLE);
             }
             state.deferred_login.as_mut().ok_or(UNAVAILABLE)?.dispense(
                 &self.session_id,
-                sequence,
+                selected,
                 nonce,
                 phase,
             )
         });
         let result = match guarded {
-            Ok(result) => result,
-            Err(_) => {
+            Some(result) => result,
+            None => {
                 if let Ok(mut state) = self.attempt.state.lock() {
                     if self.current(&state) {
                         if let Some(login) = state.deferred_login.as_mut() {
@@ -1001,9 +1029,18 @@ impl AttemptRegistry {
                 return Err(UNAVAILABLE.into());
             }
             state.hops += 1;
+            // A consumed, reviewed same-attempt handoff renews a still-pending
+            // login intent (human-paced review), bounded by its absolute cap.
+            let renewed = state
+                .deferred_login
+                .as_mut()
+                .and_then(|login| login.renew_intent());
             let session = attach(attempt.clone(), &mut state, config, target, session_id);
             *session.handoff_referrer.lock().map_err(|_| UNAVAILABLE)? =
                 Some(ticket.referrer_origin);
+            if let Some(remaining) = renewed {
+                session.expire_login_after(remaining);
+            }
             return Ok(Some(session));
         }
         let Some(defaults) = policy
