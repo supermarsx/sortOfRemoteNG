@@ -606,10 +606,41 @@ test("real-repository dry-run is read-only and reports the complete direct graph
   assert.equal(result.parity.total, Object.keys(directDependencies).length);
   assert.equal(result.parity.bunVersion, "1.3.11");
   assert.ok(result.policy.eligible.length > 0);
+  // Every exact pin is a deliberate hold the updater never moves; adding one
+  // to package.json must be acknowledged here with its reason.
   assert.deepEqual(result.policy.exactHolds, [
+    // Tiptap packages peer-require each other at the identical version.
+    "@tiptap/core",
+    "@tiptap/pm",
+    "@tiptap/react",
+    "@tiptap/starter-kit",
+    // Version-locked tooling (JAVASCRIPT_UPDATE_HOLDS).
     "@types/node",
+    // Univer packages depend on each other at the exact version, and
+    // spreadsheetUniverAdapter.ts stamps that version as the workbook appVersion.
+    "@univerjs/core",
+    "@univerjs/preset-sheets-core",
+    "@univerjs/preset-sheets-data-validation",
+    "@univerjs/preset-sheets-filter",
+    "@univerjs/preset-sheets-sort",
+    "@univerjs/themes",
+    // Lockstep with vitest (JAVASCRIPT_UPDATE_HOLDS).
     "@vitest/coverage-v8",
+    // Sanitizes rendered Mermaid SVG (diagramSafety.ts).
+    "dompurify",
+    // Parses untrusted XLSX imports (spreadsheetFiles.ts).
+    "exceljs",
+    // Renders untrusted diagram source (MermaidBlock.tsx).
+    "mermaid",
+    // Parses untrusted PDFs with a worker bundled from the same package.
+    "pdfjs-dist",
+    // Ships in the script editor as the runtime formatter (scriptEditorTools.ts).
     "prettier",
+    // Peer of the Univer stack above.
+    "rxjs",
+    // Its bundled public suffix list decides passkey RP boundaries.
+    "tldts",
+    // Version-locked tooling (JAVASCRIPT_UPDATE_HOLDS).
     "vitest",
   ]);
   assert.deepEqual(result.policy.explicitHolds, expectedCompatibleHolds());
