@@ -38,7 +38,13 @@ jobs:
       - name: Enforce Node toolchain contract
         run: npm run toolchain:test
       - name: Verify full-feature native defaults and launchers
-        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs
+        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs
+      - name: Verify generated cache exclusions
+        run: node --test tests/tooling/buildCacheExclusions.node-test.mjs
+      - name: Check generated command registrar inventories
+        run: node scripts/generate-command-inventory.mjs --check
+      - name: Check sorted core command groups
+        run: node scripts/sort-core-command-groups.mjs --check
       - name: Test compatible npm update automation
         run: npm run deps:npm:update:test
       - name: Test Cargo update automation
