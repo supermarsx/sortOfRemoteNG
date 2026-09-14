@@ -6,10 +6,28 @@
   if (window.__sorng_synology_login) return;
   var ran = false,
     stopped = false,
-    cancelActive = null;
+    cancelActive = null,
+    status = null,
+    terminalStatus = false;
+  // Read-only page diagnostics. The private document reporter adds its native
+  // identity before forwarding these fixed strings to the parent application.
+  function publish(phase, reason, terminal) {
+    if (terminalStatus) return;
+    terminalStatus = !!terminal;
+    if (status && status.phase === phase && status.reason === reason) return;
+    status = { phase: phase, reason: reason };
+    try {
+      document.dispatchEvent(
+        new CustomEvent("sorng_synology_login_progress", {
+          detail: { phase: phase, reason: reason },
+        }),
+      );
+    } catch (_) {}
+  }
   function cancel() {
     stopped = true;
     if (cancelActive) cancelActive();
+    else publish("cancelled", "cancelled", true);
   }
   window.addEventListener("pagehide", cancel);
   window.addEventListener("unload", cancel);
@@ -34,7 +52,8 @@
         password = null,
         timeout = null,
         deadline = 0;
-      var enteredPassword = false;
+      var enteredPassword = false,
+        failureReason = "stopped";
       var start = new URL(location.href);
       var readinessEvents = [
         "DOMContentLoaded",
@@ -86,6 +105,25 @@
         }
         username = continuation = password = readinessNonce = null;
         cancelActive = null;
+        publish(
+          ok
+            ? "submitted"
+            : reason === "reviewed-login-timeout"
+              ? "timeout"
+              : reason === "cancelled"
+                ? "cancelled"
+                : "stopped",
+          ok
+            ? "submitted"
+            : reason === "reviewed-login-timeout"
+              ? "timeout"
+              : reason === "cancelled"
+                ? "cancelled"
+                : reason === "invalid-credential-response"
+                  ? "invalid-credential-response"
+                  : failureReason,
+          true,
+        );
         var result = { ok: ok, reason: reason };
         helpers.report(result);
         resolve(result);
@@ -93,8 +131,14 @@
       cancelActive = function () {
         finish(false, "cancelled");
       };
-      function unique(selector) {
+      function reject(reason) {
+        failureReason = reason;
+        throw new Error("reviewed-login-stopped");
+      }
+      function unique(selector, phase, part) {
         var elements = document.querySelectorAll(selector);
+        if (elements.length !== 1 && phase)
+          publish(phase, part + (elements.length ? "-ambiguous" : "-missing"));
         return elements.length === 1 ? elements[0] : null;
       }
       function allowedRoute() {
@@ -115,41 +159,55 @@
         );
       }
       function safe() {
-        if (
-          finished ||
-          stopped ||
-          performance.now() >= deadline ||
-          !allowedRoute()
-        )
+        if (finished || stopped || performance.now() >= deadline) return false;
+        if (!allowedRoute()) {
+          failureReason = "route-changed";
           return false;
-        if (root && unique("#sds-login-vue") !== root) return false;
-        return !Array.prototype.some.call(
+        }
+        if (root && unique("#sds-login-vue") !== root) {
+          failureReason = "form-changed";
+          return false;
+        }
+        var captcha = Array.prototype.some.call(
           document.querySelectorAll(
             'input[name*="captcha" i], [class*="captcha" i], iframe[src*="recaptcha" i]',
           ),
           helpers.isVisible,
         );
+        if (captcha) failureReason = "captcha";
+        return !captcha;
       }
       // Structural identity is independent of enabled/visible controls: Vue
       // can enable Next only after input, or overlap panels during transition.
       function locate(passwordStage) {
         if (!safe()) throw new Error("reviewed-login-stopped");
-        var nextRoot = unique("#sds-login-vue");
+        var nextRoot = unique("#sds-login-vue", "waiting_root", "root");
         if (!nextRoot) return null;
+        var waiting = passwordStage
+          ? "waiting_password_form"
+          : "waiting_account_form";
         var form = unique(
           passwordStage ? "form#dsm-pass-fieldset" : "form#dsm-user-fieldset",
+          waiting,
+          "form",
         );
+        if (!form) return null;
         var field = unique(
           passwordStage
             ? '#dsm-pass-fieldset input[syno-id="password"][type="password"][name="current-password"][autocomplete="current-password"]'
             : '#dsm-user-fieldset input[syno-id="username"][type="text"][name="username"][autocomplete="username"]',
+          waiting,
+          "field",
         );
+        if (!field) return null;
         var button = unique(
           passwordStage
             ? 'div[role="button"][syno-id="password-panel-next-btn"]'
             : 'div[role="button"][syno-id="account-panel-next-btn"]',
+          waiting,
+          "button",
         );
-        if (!form || !field || !button) return null;
+        if (!button) return null;
         var panel = form.closest(".login-tabs-content-wrapper");
         if (
           !nextRoot.contains(form) ||
@@ -166,7 +224,7 @@
             },
           )
         )
-          throw new Error("reviewed-login-form-changed");
+          reject("form-changed");
         if (passwordStage) {
           var hidden = form.querySelectorAll(
             'input[name="username"][autocomplete="username"][hidden]',
@@ -180,13 +238,16 @@
                 field !== passwordTarget.field ||
                 field.value !== password))
           )
-            throw new Error("reviewed-login-form-changed");
+            reject("form-changed");
           if (account.form.isConnected) {
-            if (!same(account, locate(false)))
-              throw new Error("reviewed-login-form-changed");
+            if (!same(account, locate(false))) reject("form-changed");
+            publish("waiting_password_form", "panel-transition");
             return null;
           }
-          if (location.hash !== "#/signin/password") return null;
+          if (location.hash !== "#/signin/password") {
+            publish("waiting_password_form", "password-route");
+            return null;
+          }
         }
         return {
           root: nextRoot,
@@ -208,21 +269,44 @@
         );
       }
       function editable(target) {
-        return (
-          helpers.isVisible(target.field) &&
-          !target.field.disabled &&
-          !target.field.matches(":disabled") &&
-          !target.field.readOnly
-        );
+        var reason =
+          target.field.disabled || target.field.matches(":disabled")
+            ? "field-disabled"
+            : target.field.readOnly
+              ? "field-readonly"
+              : !helpers.isVisible(target.field)
+                ? "field-hidden"
+                : null;
+        if (reason)
+          publish(
+            phase === "account-button"
+              ? "waiting_next_button"
+              : phase === "password-button"
+                ? "waiting_signin_button"
+                : phase === "account" || phase === "fetching-account"
+                  ? "waiting_account_editable"
+                  : "waiting_password_form",
+            reason,
+          );
+        return reason === null;
       }
       function clickable(target) {
-        return (
-          editable(target) &&
-          helpers.isVisible(target.button) &&
-          !target.button.matches(
-            ".disable,.spin,[aria-disabled=true],[disabled]",
-          )
-        );
+        if (!editable(target)) return false;
+        var reason = !helpers.isVisible(target.button)
+          ? "button-hidden"
+          : target.button.matches(
+                ".disable,.spin,[aria-disabled=true],[disabled]",
+              )
+            ? "button-disabled"
+            : null;
+        if (reason)
+          publish(
+            phase === "password-button"
+              ? "waiting_signin_button"
+              : "waiting_next_button",
+            reason,
+          );
+        return reason === null;
       }
       function validAccount() {
         return (
@@ -261,6 +345,9 @@
         var nonce = readinessNonce;
         readinessNonce = null;
         phase = "fetching-account";
+        publish("requesting_username", "requesting-username");
+        if (!same(account, locate(false)) || !editable(account))
+          reject("form-changed");
         request(nonce, false)
           .then(function (reply) {
             try {
@@ -270,11 +357,10 @@
                 !reply ||
                 reply.loginFlow !== "synology"
               )
-                throw new Error("reviewed-login-form-changed");
+                reject("form-changed");
               username = reply.username;
               continuation = reply.continuation;
-              if (!validAccount())
-                throw new Error("invalid-credential-response");
+              if (!validAccount()) reject("invalid-credential-response");
               controller = null;
               phase = "account";
               // Native password capability now has 30s; do not renew on events.
@@ -285,6 +371,8 @@
             }
           })
           .catch(function () {
+            if (failureReason === "stopped")
+              failureReason = "credentials-unavailable";
             finish(false, "reviewed-login-stopped");
           });
       }
@@ -292,6 +380,9 @@
         var nonce = continuation;
         continuation = null;
         phase = "fetching-password";
+        publish("requesting_password", "requesting-password");
+        if (!same(passwordTarget, locate(true)) || !editable(passwordTarget))
+          reject("form-changed");
         request(nonce, true)
           .then(function (reply) {
             try {
@@ -302,7 +393,7 @@
                 reply.loginFlow !== "synology" ||
                 typeof reply.password !== "string"
               )
-                throw new Error("reviewed-login-form-changed");
+                reject("form-changed");
               controller = null;
               password = reply.password;
               // Set phase before input events; nested progress must never refill.
@@ -333,7 +424,7 @@
                 !same(passwordTarget, locate(true)) ||
                 passwordTarget.field.value !== password
               )
-                throw new Error("reviewed-login-form-changed");
+                reject("form-changed");
             } finally {
               processing = false;
               clearReply(reply);
@@ -341,6 +432,8 @@
             progress();
           })
           .catch(function () {
+            if (failureReason === "stopped")
+              failureReason = "credentials-unavailable";
             finish(false, "reviewed-login-stopped");
           });
       }
@@ -356,22 +449,22 @@
         processing = true;
         try {
           if (!safe()) throw new Error("reviewed-login-stopped");
-          if (document.readyState === "loading") return;
+          if (document.readyState === "loading") {
+            publish("waiting_document", "document-loading");
+            return;
+          }
           if (phase === "fetching-account") {
-            if (!same(account, locate(false)))
-              throw new Error("reviewed-login-form-changed");
+            if (!same(account, locate(false))) reject("form-changed");
             return;
           }
           if (phase === "fetching-password") {
-            if (!same(passwordTarget, locate(true)))
-              throw new Error("reviewed-login-form-changed");
+            if (!same(passwordTarget, locate(true))) reject("form-changed");
             return;
           }
           if (phase === "account") {
             var found = locate(false);
             if (!found || !editable(found)) return;
-            if (account && !same(account, found))
-              throw new Error("reviewed-login-form-changed");
+            if (account && !same(account, found)) reject("form-changed");
             account = found;
             root = found.root; // Never latch an empty/loading Vue mount.
             if (readinessNonce) {
@@ -379,7 +472,7 @@
               return;
             }
             if (account.field.value && account.field.value !== username)
-              throw new Error("reviewed-login-form-changed");
+              reject("form-changed");
             phase = "account-button";
             account.form.addEventListener("submit", preventNativeSubmit, true);
             helpers.fillField(
@@ -401,7 +494,7 @@
               !same(account, locate(false)) ||
               account.field.value !== username
             )
-              throw new Error("reviewed-login-form-changed");
+              reject("form-changed");
             if (!clickable(account)) return;
             account.form.addEventListener("submit", preventNativeSubmit, true);
             phase = "password";
@@ -419,7 +512,7 @@
               !same(passwordTarget, locate(true)) ||
               passwordTarget.field.value !== password
             )
-              throw new Error("reviewed-login-form-changed");
+              reject("form-changed");
             if (!clickable(passwordTarget)) return;
             passwordTarget.form.addEventListener(
               "submit",
@@ -469,5 +562,9 @@
       return run({}, helpers, nonce);
     },
     cancel: cancel,
+    getStatus: function () {
+      return status ? { phase: status.phase, reason: status.reason } : null;
+    },
   };
+  publish("waiting_document", "not-started");
 })();

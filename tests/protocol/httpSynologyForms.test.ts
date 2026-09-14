@@ -30,7 +30,10 @@ const win = window as unknown as {
     ): Promise<unknown>;
     cancel(): void;
   };
-  __sorng_synology_login: { cancel(): void };
+  __sorng_synology_login: {
+    cancel(): void;
+    getStatus(): { phase: string; reason: string };
+  };
   __autologin_last?: { ok: boolean; reason: string };
 };
 const username = "synthetic-user",
@@ -112,6 +115,137 @@ afterEach(() => {
 });
 
 describe("reviewed DSM website login", () => {
+  it("exposes a read-only initial snapshot without starting a login", () => {
+    const status = win.__sorng_synology_login.getStatus();
+    expect(status).toEqual({
+      phase: "waiting_document",
+      reason: "not-started",
+    });
+    status.reason = password;
+    expect(win.__sorng_synology_login.getStatus().reason).toBe("not-started");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["root-missing", "#sds-login-vue", "remove", "waiting_root"],
+    ["root-ambiguous", "#sds-login-vue", "duplicate", "waiting_root"],
+    ["form-missing", "form", "remove", "waiting_account_form"],
+    ["form-ambiguous", "form", "duplicate", "waiting_account_form"],
+    ["field-missing", '[syno-id="username"]', "remove", "waiting_account_form"],
+    [
+      "field-ambiguous",
+      '[syno-id="username"]',
+      "duplicate",
+      "waiting_account_form",
+    ],
+    [
+      "button-missing",
+      '[syno-id="account-panel-next-btn"]',
+      "remove",
+      "waiting_account_form",
+    ],
+    [
+      "button-ambiguous",
+      '[syno-id="account-panel-next-btn"]',
+      "duplicate",
+      "waiting_account_form",
+    ],
+    [
+      "field-hidden",
+      '[syno-id="username"]',
+      "hidden",
+      "waiting_account_editable",
+    ],
+    [
+      "field-disabled",
+      '[syno-id="username"]',
+      "disabled",
+      "waiting_account_editable",
+    ],
+    [
+      "field-readonly",
+      '[syno-id="username"]',
+      "readonly",
+      "waiting_account_editable",
+    ],
+  ])(
+    "reports %s without consuming credentials",
+    async (reason, selector, change, phase) => {
+      const element = document.querySelector(selector)!;
+      if (change === "remove") element.remove();
+      else if (change === "duplicate") element.after(element.cloneNode(true));
+      else element.setAttribute(change, "");
+      const pending = begin();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(win.__sorng_synology_login.getStatus()).toEqual({ phase, reason });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+      win.__sorng_synology_login.cancel();
+      await pending;
+    },
+  );
+  it("reports late form readiness with only fixed strings and freezes its terminal snapshot", async () => {
+    const events: { phase: string; reason: string }[] = [];
+    const listener = (event: Event) => {
+      events.push((event as CustomEvent).detail);
+    };
+    document.addEventListener("sorng_synology_login_progress", listener);
+    try {
+      document.body.innerHTML = '<div id="sds-login-vue"></div>';
+      const pending = begin();
+      await vi.advanceTimersByTimeAsync(0);
+      document.dispatchEvent(new Event("load"));
+      document.body.setAttribute("data-diagnostic-secret", password);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(events).toEqual([
+        { phase: "waiting_account_form", reason: "form-missing" },
+      ]);
+      showAccount();
+      document.querySelector('[syno-id="username"]')!.outerHTML =
+        '<input syno-id="username" type="text" placeholder="Username" enterkeyhint="" autofocus="autofocus" name="username" autocomplete="username" tabindex="1" class="">';
+      await vi.advanceTimersByTimeAsync(0);
+      showPassword();
+      await vi.advanceTimersByTimeAsync(0);
+      await pending;
+      expect(win.__sorng_synology_login.getStatus()).toEqual({
+        phase: "submitted",
+        reason: "submitted",
+      });
+      const complete = events.slice();
+      win.__sorng_synology_login.cancel();
+      showAccount();
+      document.dispatchEvent(new Event("load"));
+      await begin();
+      await vi.advanceTimersByTimeAsync(90000);
+      expect(events).toEqual(complete);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(submit).toHaveBeenCalledOnce();
+      for (const event of events)
+        expect(Object.keys(event)).toEqual(["phase", "reason"]);
+      const serialized = JSON.stringify(events);
+      for (const secret of [username, password, "a".repeat(32), "b".repeat(32)])
+        expect(serialized).not.toContain(secret);
+    } finally {
+      document.removeEventListener("sorng_synology_login_progress", listener);
+    }
+  });
+  it("revalidates after a diagnostic listener changes the account form before acquisition", async () => {
+    const listener = (event: Event) => {
+      if ((event as CustomEvent).detail.phase === "requesting_username")
+        document.querySelector("form")!.setAttribute("action", "/other");
+    };
+    document.addEventListener("sorng_synology_login_progress", listener);
+    try {
+      await begin();
+      expect(win.__sorng_synology_login.getStatus()).toEqual({
+        phase: "stopped",
+        reason: "form-changed",
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener("sorng_synology_login_progress", listener);
+    }
+  });
   it("waits through replacement of an empty Vue mount before capturing the account form", async () => {
     document.body.innerHTML = '<div id="sds-login-vue"></div>';
     const pending = begin();
@@ -159,6 +293,10 @@ describe("reviewed DSM website login", () => {
     const pending = begin();
     await vi.advanceTimersByTimeAsync(1000);
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(win.__sorng_synology_login.getStatus()).toEqual({
+      phase: "waiting_document",
+      reason: "document-loading",
+    });
     Object.defineProperty(document, "readyState", {
       configurable: true,
       value: "interactive",
@@ -311,11 +449,19 @@ describe("reviewed DSM website login", () => {
     await vi.advanceTimersByTimeAsync(1);
     await pending;
     expect(win.__autologin_last?.reason).toBe("reviewed-login-timeout");
+    expect(win.__sorng_synology_login.getStatus()).toEqual({
+      phase: "timeout",
+      reason: "timeout",
+    });
     showAccount();
     document.dispatchEvent(new Event("transitionend"));
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+    expect(win.__sorng_synology_login.getStatus()).toEqual({
+      phase: "timeout",
+      reason: "timeout",
+    });
   });
   it.each(["cancel", "timeout", "route-aba", "replacement", "action"])(
     "rejects and clears a late first username body after %s without another request",

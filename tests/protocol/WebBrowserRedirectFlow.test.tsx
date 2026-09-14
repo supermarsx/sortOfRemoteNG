@@ -719,7 +719,7 @@ describe("actual website redirect review integration", () => {
     const status = screen.getByRole("button", {
       name: "Refresh saved login status",
     });
-    expect(status).toHaveTextContent("Auto-fill: waiting for DSM");
+    expect(status).toHaveTextContent("Auto-fill: page helper unconfirmed");
     expect(
       status.closest('[aria-label="Website connection information"]'),
     ).not.toBeNull();
@@ -805,7 +805,7 @@ describe("actual website redirect review integration", () => {
     // Only an actual native response can change the new tab's unknown status.
     h.loginStatuses["proxy-2"] = "waiting_for_form";
     await act(async () => fireEvent.click(icon));
-    expect(icon).toHaveTextContent("Auto-fill: waiting for DSM");
+    expect(icon).toHaveTextContent("Auto-fill: page helper unconfirmed");
     next.unmount();
   });
   it("explains explicit status refresh failures separately from missing native sessions or attempts", async () => {
@@ -874,7 +874,7 @@ describe("actual website redirect review integration", () => {
     }
     expect(
       screen.getByRole("button", { name: "Refresh saved login status" }),
-    ).toHaveTextContent("Auto-fill: waiting for DSM");
+    ).toHaveTextContent("Auto-fill: page helper unconfirmed");
     const starts = h.invoke.mock.calls.filter(
       ([command]) => command === "start_basic_auth_proxy",
     );
@@ -945,6 +945,55 @@ describe("actual website redirect review integration", () => {
         }),
       );
     });
+    expect(count()).toBe(before);
+    const progress = {
+      ...identity,
+      type: "proxy_synology_login_progress",
+      phase: "waiting_account_form",
+      reason: "button-missing",
+    };
+    const sendProgress = (
+      data = progress,
+      source: MessageEventSource | null = iframe.contentWindow,
+      origin = frameUrl.origin,
+    ) => {
+      window.dispatchEvent(
+        new MessageEvent("message", { source, origin, data }),
+      );
+    };
+    const statusButton = screen.getByRole("button", {
+      name: "Refresh saved login status",
+    });
+    await act(async () => {
+      sendProgress(progress, window);
+      sendProgress(progress, iframe.contentWindow, "https://other.invalid");
+      for (const changes of [
+        { version: 2 },
+        { sessionId: "other" },
+        { documentToken: "f".repeat(32) },
+        { documentSequence: 2 },
+        { navigationToken: null },
+        { phase: "private" },
+        { reason: "private" },
+      ])
+        sendProgress({ ...progress, ...changes } as typeof progress);
+    });
+    expect(statusButton).toHaveTextContent(
+      "Auto-fill: page helper unconfirmed",
+    );
+    await act(async () => sendProgress());
+    expect(statusButton).toHaveTextContent("Auto-fill: finding login form");
+    expect(statusButton.title).toContain(
+      "The reviewed action button is absent",
+    );
+    expect(statusButton.title).toContain(
+      "Native snapshot: Waiting for the DSM form",
+    );
+    expect(count()).toBe(before);
+    await act(async () =>
+      sendProgress({ ...progress, phase: "timeout", reason: "timeout" }),
+    );
+    expect(statusButton).toHaveTextContent("Auto-fill: timed out");
     expect(count()).toBe(before);
     h.loginStatuses["proxy-2"] = "cancelled";
     await act(async () =>

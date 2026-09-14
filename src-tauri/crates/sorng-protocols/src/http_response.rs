@@ -461,11 +461,13 @@ window.addEventListener('beforeunload',function(){{emit('proxy_navigation_start'
 {dark_mode_client}
 {automation_client}
 emit('proxy_document_start');
+{synology_progress_client}
 function ready(){{emit('proxy_dom_ready');}}
 if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',ready,{{once:true}});}}else{{ready();}}
 }})();</script>"#,
         automation_client = include_str!("web_automation_client.js"),
         dark_mode_client = include_str!("web_dark_mode_client.js"),
+        synology_progress_client = include_str!("synology_login_progress_client.js"),
         network_client =
             super::network::bootstrap(session_id, sequence, source_origin, proxy_origin, policy),
     );

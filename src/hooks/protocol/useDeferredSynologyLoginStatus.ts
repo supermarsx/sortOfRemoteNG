@@ -80,6 +80,77 @@ interface Snapshot {
   reason: DiagnosticReason | null;
 }
 const READ_TIMEOUT = 6000;
+const PAGE_PHASES = {
+  waiting_document: "page loading",
+  waiting_root: "finding DSM",
+  waiting_account_form: "finding login form",
+  waiting_account_editable: "username not ready",
+  requesting_username: "requesting username",
+  waiting_next_button: "waiting for Next",
+  waiting_password_form: "finding password form",
+  requesting_password: "requesting password",
+  waiting_signin_button: "waiting for Sign in",
+  submitted: "reported submission",
+  timeout: "timed out",
+  stopped: "stopped",
+  cancelled: "cancelled",
+} as const;
+const PAGE_REASONS = {
+  "not-started": "The page helper is installed but has not started.",
+  "document-loading": "The document is still parsing.",
+  "root-missing": "The reviewed DSM root is absent.",
+  "root-ambiguous": "More than one matching DSM root was found.",
+  "form-missing": "The reviewed form is absent.",
+  "form-ambiguous": "More than one reviewed form was found.",
+  "field-missing": "The exact reviewed input is absent.",
+  "field-ambiguous": "More than one matching input was found.",
+  "button-missing": "The reviewed action button is absent.",
+  "button-ambiguous": "More than one matching action button was found.",
+  "field-hidden": "The reviewed input is hidden.",
+  "field-disabled": "The reviewed input is disabled.",
+  "field-readonly": "The reviewed input is read-only.",
+  "button-hidden": "The reviewed action button is hidden.",
+  "button-disabled": "The reviewed action button is disabled.",
+  "panel-transition": "The page is transitioning between login panels.",
+  "password-route": "The password-stage route is not ready.",
+  "requesting-username": "The helper requested the one-use username grant.",
+  "requesting-password": "The helper requested the one-use password grant.",
+  submitted:
+    "The helper reports clicking Sign in; this does not confirm authentication.",
+  timeout: "The page helper reached its existing deadline.",
+  stopped: "The page helper stopped without completing submission.",
+  cancelled: "The page helper was cancelled.",
+  "form-changed": "The reviewed form identity changed.",
+  "route-changed": "The reviewed page route changed.",
+  captcha: "An interactive CAPTCHA was detected.",
+  "credentials-unavailable":
+    "The credential grant was unavailable; no retry was attempted.",
+  "invalid-credential-response":
+    "The credential response did not match the reviewed protocol.",
+  "observation-limited":
+    "Page-helper diagnostics changed too often. Intermediate observations are now limited; the terminal result can still be reported.",
+} as const;
+type PageProgress = {
+  phase: keyof typeof PAGE_PHASES;
+  reason: keyof typeof PAGE_REASONS;
+};
+export function parseSynologyLoginProgress(
+  value: unknown,
+): PageProgress | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const { phase, reason } = value as Record<string, unknown>;
+  if (
+    typeof phase !== "string" ||
+    typeof reason !== "string" ||
+    !Object.prototype.hasOwnProperty.call(PAGE_PHASES, phase) ||
+    !Object.prototype.hasOwnProperty.call(PAGE_REASONS, reason)
+  )
+    return null;
+  return {
+    phase: phase as PageProgress["phase"],
+    reason: reason as PageProgress["reason"],
+  };
+}
 interface Context {
   sessionId: string;
   generation: number;
@@ -105,6 +176,16 @@ export function useDeferredSynologyLoginStatus(options: Options) {
   const pending = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const pageResult = useRef<string | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [pageSnapshot, setPageSnapshot] = useState<{
+    key: string;
+    progress: PageProgress;
+  } | null>(null);
+  const pageSeen = useRef<{
+    key: string;
+    last: string | null;
+    count: number;
+    terminal: boolean;
+  } | null>(null);
   useEffect(() => {
     if (
       !snapshot?.status ||
@@ -252,29 +333,76 @@ export function useDeferredSynologyLoginStatus(options: Options) {
     pageResult.current = current.key;
     void refresh();
   }, [capture, refresh]);
+  const receivePageProgress = useCallback(
+    (value: unknown) => {
+      const current = capture();
+      const progress = parseSynologyLoginProgress(value);
+      if (!current?.document || !progress) return;
+      if (pageSeen.current?.key !== current.key)
+        pageSeen.current = {
+          key: current.key,
+          last: null,
+          count: 0,
+          terminal: false,
+        };
+      const seen = pageSeen.current;
+      const key = `${progress.phase}:${progress.reason}`;
+      const terminal = [
+        "submitted",
+        "timeout",
+        "stopped",
+        "cancelled",
+      ].includes(progress.phase);
+      const limited = progress.reason === "observation-limited";
+      if (
+        seen.terminal ||
+        seen.last === key ||
+        (!terminal && seen.count >= 64 && !(limited && seen.count === 64))
+      )
+        return;
+      seen.last = key;
+      seen.count++;
+      seen.terminal = terminal;
+      setPageSnapshot({ key: current.key, progress });
+    },
+    [capture],
+  );
   const current = capture();
   const status = snapshot?.key === current?.key ? snapshot?.status : null;
   const reason =
     snapshot?.key === current?.key ? snapshot?.reason : "not-observed";
   const lastObserved =
     snapshot?.key === current?.key ? snapshot?.lastObserved : null;
+  const pageProgress =
+    pageSnapshot?.key === current?.key ? pageSnapshot?.progress : null;
+  const nativeDetail = status
+    ? `Native snapshot: ${LABELS[status]}. ${status === "expired" || status === "cancelled" ? "Reopen the original saved connection to start another attempt. " : ""}This is not proof of successful sign-in. Click to refresh status.`
+    : `Saved login requested; native status unknown. [${reason ?? "not-observed"}] ${DIAGNOSTICS[reason ?? "not-observed"][1]} ${lastObserved ? `Last observed: ${LABELS[lastObserved]} (not current status). ` : ""}This is not proof of successful sign-in.`;
+  const pageDetail = pageProgress
+    ? ` Page helper reports [${pageProgress.phase}/${pageProgress.reason}]: ${PAGE_REASONS[pageProgress.reason]} This is advisory page state, not native authorization or proof of sign-in.`
+    : " No scoped page-helper progress has been received for this document.";
   return {
     receive,
     refresh,
     refreshFromPage,
+    receivePageProgress,
     presentation: options.requested
       ? {
           label: "Saved Synology form login",
           text: !options.valid
             ? "Auto-fill: access changed"
-            : status
-              ? VISIBLE_LABELS[status]
-              : DIAGNOSTICS[reason ?? "not-observed"][0],
+            : pageProgress && status !== "expired" && status !== "cancelled"
+              ? pageProgress.reason === "observation-limited"
+                ? "Auto-fill: details limited"
+                : `Auto-fill: ${PAGE_PHASES[pageProgress.phase]}`
+              : status === "waiting_for_form"
+                ? "Auto-fill: page helper unconfirmed"
+                : status
+                  ? VISIBLE_LABELS[status]
+                  : DIAGNOSTICS[reason ?? "not-observed"][0],
           detail: !options.valid
             ? "Original login access changed. Reopen the original saved connection."
-            : status
-              ? `Native snapshot: ${LABELS[status]}. ${status === "expired" || status === "cancelled" ? "Reopen the original saved connection to start another attempt. " : ""}This is not proof of successful sign-in. Click to refresh status.`
-              : `Saved login requested; native status unknown. [${reason ?? "not-observed"}] ${DIAGNOSTICS[reason ?? "not-observed"][1]} ${lastObserved ? `Last observed: ${LABELS[lastObserved]} (not current status). ` : ""}This is not proof of successful sign-in.`,
+            : nativeDetail + pageDetail,
           muted:
             !options.valid ||
             !status ||
@@ -283,6 +411,7 @@ export function useDeferredSynologyLoginStatus(options: Options) {
             status === "credentials_released",
           status,
           reason,
+          pageProgress,
         }
       : null,
   };

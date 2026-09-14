@@ -2,6 +2,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   parseDeferredSynologyLoginStatus,
+  parseSynologyLoginProgress,
   useDeferredSynologyLoginStatus,
 } from "../../src/hooks/protocol/useDeferredSynologyLoginStatus";
 
@@ -41,6 +42,111 @@ function fixture() {
   };
 }
 describe("native deferred Synology status snapshots", () => {
+  it("keeps page-helper timeout distinct from the native grant without requesting or retrying anything", () => {
+    const view = fixture();
+    act(() =>
+      view.result.current.receive({
+        session_id: "proxy-a",
+        deferred_login_status: "waiting_for_form",
+      }),
+    );
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "timeout",
+        reason: "timeout",
+        password: "private",
+      }),
+    );
+    expect(view.result.current.presentation).toMatchObject({
+      status: "waiting_for_form",
+      text: "Auto-fill: timed out",
+      pageProgress: { phase: "timeout", reason: "timeout" },
+    });
+    expect(view.result.current.presentation?.detail).toContain(
+      "Native snapshot: Waiting for the DSM form",
+    );
+    expect(view.result.current.presentation?.detail).toContain(
+      "advisory page state",
+    );
+    expect(JSON.stringify(view.result.current.presentation)).not.toContain(
+      "private",
+    );
+    expect(h.invoke).not.toHaveBeenCalled();
+  });
+  it("validates closed page phases/reasons and never uses page submission as sign-in proof", () => {
+    expect(
+      parseSynologyLoginProgress({ phase: "__proto__", reason: "timeout" }),
+    ).toBeNull();
+    expect(
+      parseSynologyLoginProgress({
+        phase: "submitted",
+        reason: { toString: () => "submitted" },
+      }),
+    ).toBeNull();
+    const view = fixture();
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "submitted",
+        reason: "submitted",
+      }),
+    );
+    expect(view.result.current.presentation?.text).toBe(
+      "Auto-fill: reported submission",
+    );
+    expect(view.result.current.presentation?.detail).toContain(
+      "does not confirm authentication",
+    );
+    expect(view.result.current.presentation?.status).toBeNull();
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "waiting_root",
+        reason: "root-missing",
+      }),
+    );
+    expect(view.result.current.presentation?.pageProgress?.phase).toBe(
+      "submitted",
+    );
+    view.rerender({ ...view.options, scope: "other" });
+    view.rerender(view.options);
+    expect(view.result.current.presentation?.pageProgress).toBeNull();
+    expect(h.invoke).not.toHaveBeenCalled();
+  });
+  it("hides page diagnostics on document replacement, absent document or revoked original lease", () => {
+    const view = fixture();
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "waiting_account_form",
+        reason: "button-missing",
+      }),
+    );
+    view.replaceContext({
+      sessionId: "proxy-a",
+      generation: 1,
+      document: "doc-b",
+    });
+    view.rerender(view.options);
+    expect(view.result.current.presentation?.pageProgress).toBeNull();
+    view.replaceContext({
+      sessionId: "proxy-a",
+      generation: 1,
+      document: null,
+    });
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "timeout",
+        reason: "timeout",
+      }),
+    );
+    expect(view.result.current.presentation?.pageProgress).toBeNull();
+    view.rerender({ ...view.options, valid: false });
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "timeout",
+        reason: "timeout",
+      }),
+    );
+    expect(view.result.current.presentation?.pageProgress).toBeNull();
+  });
   it.each([
     "awaiting_nas",
     "waiting_for_form",

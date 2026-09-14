@@ -2137,6 +2137,24 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       if (event.origin !== expectedOrigin) return;
+      if (event.data?.type === "proxy_synology_login_progress") {
+        const current = currentDocumentRef.current;
+        const report = event.data;
+        if (
+          current &&
+          current.generation === navGenRef.current &&
+          current.sessionId === proxySessionIdRef.current &&
+          current.ownerScope === trustOwnerScopeRef.current &&
+          !navigationFailureRef.current &&
+          report.version === 1 &&
+          report.sessionId === current.sessionId &&
+          report.documentToken === current.token &&
+          report.documentSequence === current.sequence &&
+          report.navigationToken === current.navigationToken
+        )
+          deferredLoginRef.current.receivePageProgress(report);
+        return;
+      }
       if (event.data?.type === "proxy_autologin_result") {
         const current = currentDocumentRef.current;
         // This legacy, unscoped result is only a bounded refresh hint, never
