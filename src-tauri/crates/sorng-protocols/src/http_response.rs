@@ -7,6 +7,15 @@ use std::io::Read;
 pub(super) const MAX_EDITABLE_BODY_BYTES: usize = 32 * 1024 * 1024;
 pub(super) const ACCEPT_ENCODING: &str = "gzip, deflate";
 const NAVIGATION_MARKER: &str = "__sorng_navigation_v1";
+#[path = "http_response_script_insertion.rs"]
+mod script_insertion;
+
+pub(super) fn inject_page_scripts(html: &str, scripts: &str) -> String {
+    let Some(index) = script_insertion::insertion_position(html) else {
+        return html.to_string();
+    };
+    format!("{}{}{}", &html[..index], scripts, &html[index..])
+}
 
 /// Keep absolute URLs absolute: app scripts commonly pass these strings to
 /// URL() without a base. Removing the origin breaks those scripts. Never turn

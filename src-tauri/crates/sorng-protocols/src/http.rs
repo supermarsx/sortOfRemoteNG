@@ -2449,13 +2449,8 @@ pub async fn axum_proxy_handler(
                 let injected_scripts =
                     format!("{}{}{}", nav_script, autologin_asset, autologin_script);
                 let body_str = String::from_utf8_lossy(&final_body);
-                if body_str.contains("</body>") {
-                    let injected =
-                        body_str.replacen("</body>", &format!("{}</body>", injected_scripts), 1);
-                    final_body = injected.into_bytes();
-                } else {
-                    final_body.extend_from_slice(injected_scripts.as_bytes());
-                }
+                final_body =
+                    proxy_response::inject_page_scripts(&body_str, &injected_scripts).into_bytes();
                 // Install before application scripts, independently of optional
                 // auto-login. Readiness means DOM available, never authenticated.
                 final_body = proxy_response::inject_readiness(

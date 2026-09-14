@@ -1,0 +1,97 @@
+[
+  {
+    "name": "ordinary",
+    "input": "<html><body><input name=username></body></html>",
+    "expected": "<html><body><input name=username>__SORNG_PAGE_SCRIPTS__</body></html>"
+  },
+  {
+    "name": "commented closing body",
+    "input": "<body><!-- example: </body> --><input name=username></body>",
+    "expected": "<body><!-- example: </body> --><input name=username>__SORNG_PAGE_SCRIPTS__</body>"
+  },
+  {
+    "name": "nested template",
+    "input": "<body><template><template></body></template></template><input name=username></body>",
+    "expected": "<body><template><template></body></template></template><input name=username>__SORNG_PAGE_SCRIPTS__</body>"
+  },
+  {
+    "name": "script string",
+    "input": "<body><script>window.example = '</body>';</script><input name=username></body>",
+    "expected": "<body><script>window.example = '</body>';</script><input name=username>__SORNG_PAGE_SCRIPTS__</body>"
+  },
+  {
+    "name": "malformed raw-text closer stays inside script",
+    "input": "<body><script>window.example = '</script:fake></body>';</script><input name=username></body>",
+    "expected": "<body><script>window.example = '</script:fake></body>';</script><input name=username>__SORNG_PAGE_SCRIPTS__</body>"
+  },
+  {
+    "name": "textarea",
+    "input": "<body><textarea>example </body></textarea><input name=username></body>",
+    "expected": "<body><textarea>example </body></textarea><input name=username>__SORNG_PAGE_SCRIPTS__</body>"
+  },
+  {
+    "name": "style",
+    "input": "<body><style>/* example </body> */</style><input name=username></body>",
+    "expected": "<body><style>/* example </body> */</style><input name=username>__SORNG_PAGE_SCRIPTS__</body>"
+  },
+  {
+    "name": "quoted attribute",
+    "input": "<body><div title='example </body>'></div><input name=username></body>",
+    "expected": "<body><div title='example </body>'></div><input name=username>__SORNG_PAGE_SCRIPTS__</body>"
+  },
+  {
+    "name": "uppercase",
+    "input": "<HTML><BODY><input name=username></BODY></HTML>",
+    "expected": "<HTML><BODY><input name=username>__SORNG_PAGE_SCRIPTS__</BODY></HTML>"
+  },
+  {
+    "name": "safe missing closing body",
+    "input": "<html><body><input name=username>",
+    "expected": "<html><body><input name=username>__SORNG_PAGE_SCRIPTS__"
+  },
+  {
+    "name": "namespace-dependent CDATA refuses injection",
+    "input": "<body><input name=username><![CDATA[><template>]]></body>",
+    "expected": "<body><input name=username><![CDATA[><template>]]></body>"
+  },
+  {
+    "name": "abrupt comment close refuses injection",
+    "input": "<body><input name=username><!-- --!><template><!-- x --></body>",
+    "expected": "<body><input name=username><!-- --!><template><!-- x --></body>"
+  },
+  {
+    "name": "empty abrupt comment refuses injection",
+    "input": "<body><input name=username><!--><template><!-- x --></body>",
+    "expected": "<body><input name=username><!--><template><!-- x --></body>"
+  },
+  {
+    "name": "bogus declaration refuses injection",
+    "input": "<body><input name=username><!example \"><template>\"></body>",
+    "expected": "<body><input name=username><!example \"><template>\"></body>"
+  },
+  {
+    "name": "processing instruction refuses injection",
+    "input": "<body><input name=username><?foo \" ><template><!--\"> </body>",
+    "expected": "<body><input name=username><?foo \" ><template><!--\"> </body>"
+  },
+  {
+    "name": "unquoted attribute quote refuses injection",
+    "input": "<body><input name=username><div x=a'><template>'></body>",
+    "expected": "<body><input name=username><div x=a'><template>'></body>"
+  },
+  {
+    "name": "valid attribute forms and slashes",
+    "input": "<body class=login data-path=/webman/><input name=username disabled><div data-a='quoted > value' data-b=plain data-c=\"other > value\" hidden></div><br /></body>",
+    "expected": "<body class=login data-path=/webman/><input name=username disabled><div data-a='quoted > value' data-b=plain data-c=\"other > value\" hidden></div><br />__SORNG_PAGE_SCRIPTS__</body>"
+  },
+  {
+    "name": "unclosed comment",
+    "input": "<body><input name=username><!-- example: </body>",
+    "expected": "<body><input name=username><!-- example: </body>"
+  },
+  {
+    "name": "unclosed template",
+    "input": "<body><input name=username><template>example </body>",
+    "expected": "<body><input name=username><template>example </body>"
+  }
+]
