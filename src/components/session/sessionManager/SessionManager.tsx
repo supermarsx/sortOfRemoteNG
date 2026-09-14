@@ -49,6 +49,7 @@ import {
 } from "../../../hooks/session/useUnifiedSessionManager";
 import { RdpHistoryView } from "./RdpHistoryView";
 import { SshSessionsView } from "./SshSessionsView";
+import { ActionLogViewer } from "../../monitoring/ActionLogViewer";
 import { getProtocolIcon } from "../../connection/connectionTree/helpers";
 import {
   BoundedSessionCloseBatch,
@@ -65,6 +66,9 @@ interface SessionManagerProps {
   connections: Connection[];
   activeBackendSessionIds?: string[];
   onClose: () => void;
+  initialView?: SessionManagerView;
+  /** Changes when an existing manager receives a new navigation request. */
+  viewRequestId?: string;
   /** RDP detach/reattach/reconnect call paths supplied by App-level hooks. */
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
@@ -101,13 +105,14 @@ function formatSessionSourceSummary(mgr: Mgr): string {
    Sidebar views (Sessions + absorbed sub-views)
    ═══════════════════════════════════════════════════════════════════ */
 
-type ManagerView =
+export type SessionManagerView =
   | "sessions"
   | "ssh-sessions"
   | "rdp-logs"
   | "rdp-history"
   | "proxy-logs"
-  | "proxy-stats";
+  | "proxy-stats"
+  | "action-log";
 
 function groupIconForRow(row: UnifiedSessionRow): React.ElementType {
   if (row.bucket === "tool") return Wrench;
@@ -1196,11 +1201,12 @@ const SessionsView: React.FC<{
    ═══════════════════════════════════════════════════════════════════ */
 
 const VIEWS: {
-  id: ManagerView;
+  id: SessionManagerView;
   label: string;
   icon: React.ElementType;
 }[] = [
   { id: "sessions", label: "Sessions", icon: LayoutGrid },
+  { id: "action-log", label: "Action Log", icon: ScrollText },
   { id: "ssh-sessions", label: "SSH Sessions", icon: SshProtocolIcon },
   { id: "rdp-logs", label: "RDP Logs", icon: ScrollText },
   { id: "rdp-history", label: "RDP History", icon: History },
@@ -1210,6 +1216,8 @@ const VIEWS: {
 
 export const SessionManager: React.FC<SessionManagerProps> = ({
   isVisible,
+  initialView = "sessions",
+  viewRequestId,
   connections,
   activeBackendSessionIds = [],
   onReattachSession,
@@ -1223,7 +1231,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
   thumbnailInterval = 5,
 }) => {
   const { state, dispatch } = useConnections();
-  const [view, setView] = useState<ManagerView>("sessions");
+  const [view, setView] = useState<SessionManagerView>(initialView);
   const mgr = useUnifiedSessionManager({
     isVisible,
     connections,
@@ -1236,6 +1244,11 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     activeView: view,
   });
   const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
+
+  useEffect(() => {
+    setView(initialView);
+    setLogSessionFilter(null);
+  }, [initialView, viewRequestId]);
 
   const handleViewRdpLogs = (sessionId: string) => {
     setLogSessionFilter(sessionId);
@@ -1350,8 +1363,12 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           <ErrorBanner error={mgr.error} onClear={mgr.clearError} compact />
+
+          {view === "action-log" && (
+            <ActionLogViewer isOpen isActive={mgr.observationActive} />
+          )}
 
           {view === "sessions" && (
             <SessionsView

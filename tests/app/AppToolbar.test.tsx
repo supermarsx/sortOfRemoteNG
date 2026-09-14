@@ -95,6 +95,15 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("keeps the Action Log visibility preference as a labelled Session Manager shortcut", () => {
+    const props = makeProps();
+    props.appSettings.showActionLogIcon = true;
+    props.databaseManager.getCurrentDatabase = () => ({ id: "fixture-db" });
+    render(<AppToolbar {...(props as any)} />);
+    fireEvent.click(screen.getByTitle("Session Manager — Action Log"));
+    expect(props.setShowActionLog).toHaveBeenCalledExactlyOnceWith(true);
+    expect(screen.queryByTitle("Action Log")).not.toBeInTheDocument();
+  });
   it("opens autonomous security tools from Management without a database and honors both visibility flags", () => {
     const openCredentialVault = vi.fn(),
       openHardwareKeys = vi.fn();
@@ -511,7 +520,7 @@ describe("AppToolbar", () => {
       ["Macro Manager", "macroManager"],
       ["Recording Manager", "recordingManager"],
       ["Performance Monitor", "performanceMonitor"],
-      ["Action Log", "actionLog"],
+      ["Session Manager — Action Log", "actionLog"],
     ] as const;
 
     expected.forEach(([title, toolKey]) => {

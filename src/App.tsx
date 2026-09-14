@@ -79,6 +79,9 @@ import {
   ToolKey,
   createToolSession,
   getToolProtocol,
+  findExistingToolSession,
+  sessionManagerNavigation,
+  selectDetachedSessionManager,
   isToolProtocol,
 } from "./components/app/toolSession";
 import { generateId } from "./utils/core/id";
@@ -306,6 +309,7 @@ const AppContent: React.FC = () => {
   useStartupFailureAlerts();
   useSettingsWriteFailureAlerts();
   const {
+    registry: wmRegistry,
     registerWindow: wmRegisterWindow,
     detachRef: wmDetachRef,
     reattachSession: wmReattachSession,
@@ -353,28 +357,40 @@ const AppContent: React.FC = () => {
     (toolKey: ToolKey): React.Dispatch<React.SetStateAction<boolean>> => {
       return ((v: boolean | ((prev: boolean) => boolean)) => {
         if (v !== true) return;
-        const protocol = getToolProtocol(toolKey);
-        // Check for detached instance first — focus its window instead of creating a duplicate
-        const detached = sessionsRef.current.find(
-          (s) => s.protocol === protocol && s.layout?.isDetached,
-        );
-        if (detached?.layout?.windowId) {
-          focusDetachedWindow(detached.layout.windowId);
-          return;
-        }
-        const existing = sessionsRef.current.find(
-          (s) => s.protocol === protocol && !s.layout?.isDetached,
-        );
+        const existing = findExistingToolSession(sessionsRef.current, toolKey);
         if (existing) {
+          const navigation = sessionManagerNavigation(toolKey);
+          const selectedDetachedManager = selectDetachedSessionManager(
+            wmRegistry.current,
+            existing,
+          );
+          if (navigation || selectedDetachedManager) {
+            const update = {
+              id: existing.id,
+              name: navigation ? "Session Manager" : existing.name,
+              ...(navigation ? { sessionManagerView: navigation } : {}),
+            };
+            sessionsRef.current = sessionsRef.current.map((session) =>
+              session.id === existing.id ? { ...session, ...update } : session,
+            );
+            dispatch({ type: "UPDATE_SESSION", payload: update });
+          }
+          if (existing.layout?.isDetached && existing.layout.windowId) {
+            focusDetachedWindow(existing.layout.windowId);
+            return;
+          }
           setActiveSessionId(existing.id);
         } else {
           const session = createToolSession(toolKey);
+          // Claim immediately so repeated shortcut clicks before React commits
+          // still focus the same new tab.
+          sessionsRef.current = [...sessionsRef.current, session];
           dispatch({ type: "ADD_SESSION", payload: session });
           requestAnimationFrame(() => setActiveSessionId(session.id));
         }
       }) as React.Dispatch<React.SetStateAction<boolean>>;
     },
-    [dispatch, setActiveSessionId, focusDetachedWindow],
+    [dispatch, setActiveSessionId, focusDetachedWindow, wmRegistry],
   );
 
   // Build wrapped setters once — they're stable because makeToolSetter

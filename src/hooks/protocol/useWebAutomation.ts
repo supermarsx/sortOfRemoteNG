@@ -13,6 +13,10 @@ import type {
 import { prepareWebsiteScript } from "../../utils/recording/websiteScriptCompiler";
 import { useWebsiteDarkMode } from "./useWebsiteDarkMode";
 import {
+  recordSessionActivity,
+  type SessionActivityContext,
+} from "../../utils/monitoring/sessionActivityLog";
+import {
   normalizeHttpAutomation,
   normalizeSessionQuickActions,
   resolveHttpAutomationPermissions,
@@ -42,6 +46,7 @@ import {
 } from "../../utils/connection/databaseManager";
 
 interface Options {
+  activityContext?: SessionActivityContext;
   connection: Connection | undefined;
   ownerDatabaseId: string | undefined;
   settings: GlobalSettings;
@@ -833,6 +838,11 @@ export function useWebAutomation(options: Options) {
       return;
     }
     const doc = { ...currentDocument };
+    const activityContext = latest.current.activityContext;
+    const activitySource =
+      item.kind === "script" ? "website_script" : "website_macro";
+    const startedAt = performance.now();
+    let activityStarted = false;
     const check = () => {
       assertAccess(captured);
       const enabled = permissionsRef.current.value;
@@ -862,6 +872,8 @@ export function useWebAutomation(options: Options) {
       check();
       validated = await resolveItem(item, captured);
       check();
+      recordSessionActivity(activityContext, activitySource, "started");
+      activityStarted = true;
       if (validated.kind === "script") {
         const code = await prepareWebsiteScript(validated);
         checkOwner();
@@ -903,7 +915,14 @@ export function useWebAutomation(options: Options) {
         }
       check();
       checkOwner();
+      recordSessionActivity(activityContext, activitySource, "completed", {
+        durationMs: performance.now() - startedAt,
+      });
     } catch (failure) {
+      if (activityStarted)
+        recordSessionActivity(activityContext, activitySource, "failed", {
+          durationMs: performance.now() - startedAt,
+        });
       if (mounted.current && epoch.current === captured)
         setError(message(failure));
     } finally {

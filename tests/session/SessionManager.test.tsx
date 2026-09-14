@@ -468,6 +468,36 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
 
   afterEach(() => cleanup());
 
+  it("embeds Action Log and honors a fresh navigation request in an already-open manager", async () => {
+    const Harness = ({ request }: { request: string }) => (
+      <ToastProvider>
+        <ConnectionProvider>
+          <SessionManager
+            isVisible
+            connections={CONNECTIONS}
+            onClose={() => {}}
+            initialView="action-log"
+            viewRequestId={request}
+          />
+        </ConnectionProvider>
+      </ToastProvider>
+    );
+    const view = render(<Harness request="first" />);
+    expect(
+      await screen.findByRole("region", { name: "Action Log" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    fireEvent.click(screen.getByTestId("session-view-sessions"));
+    expect(screen.queryByRole("region", { name: "Action Log" })).toBeNull();
+    view.rerender(<Harness request="second" />);
+    expect(
+      await screen.findByRole("region", { name: "Action Log" }),
+    ).toBeVisible();
+    expect(screen.getByTestId("session-view-action-log")).toHaveClass(
+      "sor-sidebar-tab-active",
+    );
+  });
+
   it("does not render when not visible", () => {
     renderManager({ isVisible: false });
     expect(screen.queryByText("Prod RDP")).not.toBeInTheDocument();

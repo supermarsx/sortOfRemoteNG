@@ -129,6 +129,7 @@ export interface UseUnifiedSessionManagerParams {
     | "ssh-sessions"
     | "rdp-logs"
     | "rdp-history"
+    | "action-log"
     | "proxy-logs"
     | "proxy-stats";
 }

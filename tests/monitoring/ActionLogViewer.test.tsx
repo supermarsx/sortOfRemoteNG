@@ -19,8 +19,10 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       getActionLog: mocks.getActionLog,
+      getSettings: () => ({ maxLogEntries: 1000 }),
       clearActionLog: mocks.clearActionLog,
       logAction: vi.fn(),
+      subscribeActionLog: () => () => {},
     }),
   },
 }));
@@ -74,7 +76,9 @@ describe("ActionLogViewer", () => {
     render(<ActionLogViewer isOpen onClose={() => {}} />);
 
     // Component renders when open - check for log entries
-    expect(await screen.findByText("Connected successfully")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Connected successfully"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Authentication failed")).toBeInTheDocument();
 
     const search = screen.getByPlaceholderText("Search logs...");
@@ -106,7 +110,7 @@ describe("ActionLogViewer", () => {
     URL.revokeObjectURL = vi.fn();
 
     render(<ActionLogViewer isOpen onClose={() => {}} />);
-    fireEvent.click(await screen.findByText("logs.export"));
+    fireEvent.click(await screen.findByText("Export diagnostics CSV"));
 
     expect(URL.createObjectURL).toHaveBeenCalled();
     expect(URL.revokeObjectURL).toHaveBeenCalled();

@@ -8,7 +8,6 @@ const TOOL_ENTRY_LABELS = [
   { key: "macroManager", label: "Macro Manager" },
   { key: "scriptManager", label: "Script Manager" },
   { key: "performanceMonitor", label: "Performance Monitor" },
-  { key: "actionLog", label: "Action Log" },
   { key: "shortcutManager", label: "Shortcut Manager" },
   { key: "bulkSsh", label: "Bulk SSH Commander" },
   { key: "rdpSessions", label: "Session Manager" },

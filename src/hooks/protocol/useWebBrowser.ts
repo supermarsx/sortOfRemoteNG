@@ -43,6 +43,7 @@ import {
 import { useHttpRedirectReview } from "./useHttpRedirectReview";
 import { useHttpRedirectTrust } from "./useHttpRedirectTrust";
 import { useDeferredSynologyLoginStatus } from "./useDeferredSynologyLoginStatus";
+import { recordSessionActivity } from "../../utils/monitoring/sessionActivityLog";
 import {
   synologyDefaultRedirectOrigins,
   withSynologyRedirectDefaults,
@@ -692,6 +693,13 @@ export function useWebBrowser(session: ConnectionSession) {
     ownerScope: string;
   } | null>(null);
   const deferredLogin = useDeferredSynologyLoginStatus({
+    activityContext: session.ownerDatabaseId
+      ? {
+          sessionId: session.id,
+          connectionId: session.connectionId,
+          databaseId: session.ownerDatabaseId,
+        }
+      : undefined,
     scope: JSON.stringify([
       session.id,
       session.connectionId,
@@ -710,6 +718,12 @@ export function useWebBrowser(session: ConnectionSession) {
         : null,
   });
   const deferredLoginRef = useRef(deferredLogin);
+  const activitySessionRef = useRef(session);
+  activitySessionRef.current = session;
+  const loggedAutoLoginHints = useRef<{
+    document: object;
+    reasons: Set<string>;
+  } | null>(null);
   deferredLoginRef.current = deferredLogin;
   const [networkReports, setNetworkReports] = useState<{
     scope: string;
@@ -2173,8 +2187,29 @@ export function useWebBrowser(session: ConnectionSession) {
             "reviewed-login-stopped",
             "autologin-client-unavailable",
           ].includes(event.data?.result?.reason)
-        )
+        ) {
+          if (loggedAutoLoginHints.current?.document !== current)
+            loggedAutoLoginHints.current = {
+              document: current,
+              reasons: new Set(),
+            };
+          const reason: string = event.data.result.reason;
+          if (!loggedAutoLoginHints.current.reasons.has(reason)) {
+            loggedAutoLoginHints.current.reasons.add(reason);
+            recordSessionActivity(
+              activitySessionRef.current.ownerDatabaseId
+                ? {
+                    sessionId: activitySessionRef.current.id,
+                    connectionId: activitySessionRef.current.connectionId,
+                    databaseId: activitySessionRef.current.ownerDatabaseId,
+                  }
+                : undefined,
+              "autofill",
+              "helper_reported",
+            );
+          }
           deferredLoginRef.current.refreshFromPage();
+        }
         return;
       }
       if (event.data?.type === "sorng_web_network_blocked") {
@@ -3084,6 +3119,13 @@ export function useWebBrowser(session: ConnectionSession) {
       : null;
   }, []);
   const automation = useWebAutomation({
+    activityContext: session.ownerDatabaseId
+      ? {
+          sessionId: session.id,
+          connectionId: session.connectionId,
+          databaseId: session.ownerDatabaseId,
+        }
+      : undefined,
     connection,
     ownerDatabaseId: session.ownerDatabaseId,
     settings,

@@ -1643,6 +1643,11 @@ export interface ConnectionSession {
     section: "diagnostics" | "settings";
   };
   recordingPlayer?: { recordingId: string };
+  /** Non-secret navigation request for the consolidated Session Manager tool. */
+  sessionManagerView?: {
+    view: "sessions" | "action-log";
+    requestId: string;
+  };
 
   /**
    * Safe dependency snapshot for reconnect/detach. Runtime hosts, credentials,

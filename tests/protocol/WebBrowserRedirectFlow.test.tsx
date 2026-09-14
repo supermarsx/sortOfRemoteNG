@@ -9,6 +9,10 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  clearSessionActivityLog,
+  getSessionActivityLog,
+} from "../../src/utils/monitoring/sessionActivityLog";
 import type {
   Connection,
   ConnectionSession,
@@ -173,6 +177,7 @@ function Harness() {
   return <WebBrowser key={session.connectionId} session={session} />;
 }
 beforeEach(() => {
+  clearSessionActivityLog();
   h.activate.mockReset().mockResolvedValue(false);
   h.availabilityGeneration = 1;
   h.networkGuardStatus = {
@@ -922,6 +927,7 @@ describe("actual website redirect review integration", () => {
         ([name]) => name === "get_proxy_session_details",
       ).length;
     const before = count();
+    const beforeLogs = getSessionActivityLog().length;
     await act(async () => {
       for (const source of [window, null])
         window.dispatchEvent(
@@ -946,6 +952,7 @@ describe("actual website redirect review integration", () => {
       );
     });
     expect(count()).toBe(before);
+    expect(getSessionActivityLog()).toHaveLength(beforeLogs);
     const progress = {
       ...identity,
       type: "proxy_synology_login_progress",
@@ -1009,6 +1016,33 @@ describe("actual website redirect review integration", () => {
       ),
     );
     expect(count()).toBe(before + 1);
+    const hints = () =>
+      getSessionActivityLog().filter(
+        (entry) => entry.code === "helper_reported",
+      );
+    expect(hints()).toHaveLength(1);
+    expect(hints()[0].details).toContain("not native status or proof");
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: iframe.contentWindow,
+          origin: frameUrl.origin,
+          data: {
+            type: "proxy_autologin_result",
+            result: {
+              reason: "submitted",
+              password: "PRIVATE_PASSWORD",
+              error: "PRIVATE_PAGE_ERROR",
+            },
+          },
+        }),
+      ),
+    );
+    expect(hints()).toHaveLength(1);
+    expect(count()).toBe(before + 1);
+    expect(JSON.stringify(getSessionActivityLog())).not.toMatch(
+      /PRIVATE_PASSWORD|PRIVATE_PAGE_ERROR/,
+    );
     expect(
       screen.getByRole("button", { name: "Saved Synology form login" }),
     ).toHaveAttribute("title", expect.stringContaining("Attempt cancelled"));

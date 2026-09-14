@@ -509,7 +509,10 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                 onClick={() => setShowActionLog(true)}
                 disabled={noCollection}
                 className="app-bar-button p-2"
-                title={t("toolbar.actionLog", "Action Log")}
+                title={t(
+                  "toolbar.sessionManagerActionLog",
+                  "Session Manager — Action Log",
+                )}
               >
                 <ToolGlyph tool="actionLog" />
               </button>

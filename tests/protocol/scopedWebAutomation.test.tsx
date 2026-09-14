@@ -2,6 +2,10 @@ import React from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearSessionActivityLog,
+  getSessionActivityLog,
+} from "../../src/utils/monitoring/sessionActivityLog";
+import {
   ConnectionContext,
   type ConnectionContextType,
 } from "../../src/contexts/ConnectionContextTypes";
@@ -109,6 +113,7 @@ const empty = (): DatabaseAutomationLibrary => ({
   },
 });
 beforeEach(() => {
+  clearSessionActivityLog();
   vi.restoreAllMocks();
   vi.clearAllMocks();
   h.lease = 1;
@@ -197,6 +202,11 @@ function mount() {
   const view = renderHook(
     () =>
       useWebAutomation({
+        activityContext: {
+          sessionId: "tab-a",
+          connectionId: "connection-a",
+          databaseId: "db-a",
+        },
         connection,
         ownerDatabaseId: "db-a",
         settings,
@@ -275,6 +285,18 @@ describe("scope-qualified website automation runtime", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0][1].code).toContain("document.title = title");
     expect(calls[0][1].code).not.toContain(": string");
+    expect(getSessionActivityLog().map((entry) => entry.code)).toEqual([
+      "completed",
+      "started",
+    ]);
+    expect(getSessionActivityLog()[0]).toMatchObject({
+      source: "website_script",
+      sessionId: "tab-a",
+      databaseId: "db-a",
+    });
+    expect(JSON.stringify(getSessionActivityLog())).not.toContain(
+      "document.title",
+    );
   });
   it.each(["owner", "source", "page"] as const)(
     "refuses a %s change while lazy TypeScript compilation is pending",
@@ -327,6 +349,13 @@ describe("scope-qualified website automation runtime", () => {
         h.request.mock.calls.filter(([action]) => action === "script"),
       ).toHaveLength(0);
       expect(view.result.current.error).toBeTruthy();
+      expect(getSessionActivityLog().map((entry) => entry.code)).toEqual([
+        "failed",
+        "started",
+      ]);
+      expect(
+        getSessionActivityLog().every((entry) => entry.databaseId === "db-a"),
+      ).toBe(true);
     },
   );
   it("refuses invalid TypeScript without sending it to the page", async () => {
@@ -439,6 +468,7 @@ describe("scope-qualified website automation runtime", () => {
       h.request.mock.calls.filter(([action]) => action === "script"),
     ).toHaveLength(0);
     expect(view.result.current.error).toMatch(/changed|deleted/);
+    expect(getSessionActivityLog()).toHaveLength(0);
   });
   it("runs exact persisted database script without passing wrapper scope to payload validation or the page", async () => {
     const view = mount();

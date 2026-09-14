@@ -1014,6 +1014,7 @@ export class SettingsManager {
   private static instance: SettingsManager | null = null;
   private settings: GlobalSettings = DEFAULT_SETTINGS;
   private actionLog: ActionLogEntry[] = [];
+  private actionLogListeners = new Set<() => void>();
   private performanceMetrics: PerformanceMetrics[] = [];
   private customScripts: CustomScript[] = [];
   private readonly settingsSyncRuntime: SettingsSyncRuntime;
@@ -1775,7 +1776,7 @@ export class SettingsManager {
       duration,
     };
 
-    this.actionLog.unshift(entry); // Add newest entry to the front
+    this.actionLog = [entry, ...this.actionLog]; // Immutable snapshot for observers.
 
     // Limit log size to avoid unbounded memory growth
     if (this.actionLog.length > this.settings.maxLogEntries) {
@@ -1785,6 +1786,7 @@ export class SettingsManager {
 
     // Persist asynchronously so logs survive page reloads
     this.saveActionLog();
+    this.notifyActionLog();
   }
 
   /**
@@ -1795,12 +1797,30 @@ export class SettingsManager {
     return this.actionLog;
   }
 
+  subscribeActionLog(listener: () => void): () => void {
+    this.actionLogListeners.add(listener);
+    return () => {
+      this.actionLogListeners.delete(listener);
+    };
+  }
+
+  private notifyActionLog(): void {
+    for (const listener of this.actionLogListeners) {
+      try {
+        listener();
+      } catch {
+        /* A viewer must not disrupt the recorded action. */
+      }
+    }
+  }
+
   /**
    * Removes all log entries and persists the empty log.
    */
   clearActionLog(): void {
     this.actionLog = [];
     this.saveActionLog();
+    this.notifyActionLog();
   }
 
   private async saveActionLog(): Promise<void> {
@@ -1823,6 +1843,7 @@ export class SettingsManager {
               ? entry.timestamp
               : new Date(entry.timestamp).toISOString(),
         }));
+        this.notifyActionLog();
       }
     } catch (error) {
       console.error("Failed to load action log:", error);

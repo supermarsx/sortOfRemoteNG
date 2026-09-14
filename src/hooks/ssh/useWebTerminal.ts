@@ -7,6 +7,10 @@ import {
   openTerminalLink,
 } from "../../utils/ssh/terminalLinks";
 import { SettingsManager } from "../../utils/settings/settingsManager";
+import {
+  recordSessionActivity,
+  type SessionActivityContext,
+} from "../../utils/monitoring/sessionActivityLog";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useTerminalRecorder } from "../recording/useTerminalRecorder";
@@ -2577,6 +2581,17 @@ export function useWebTerminal(
       )
         return;
       scriptRunBusyRef.current = true;
+      let activityContext: SessionActivityContext | undefined;
+      let activityStarted = false;
+      let activityFinished = false;
+      const activityStart = performance.now();
+      const activityResult = (code: "dispatched" | "completed" | "failed") => {
+        if (!activityStarted || activityFinished) return;
+        activityFinished = true;
+        recordSessionActivity(activityContext, "ssh_script", code, {
+          durationMs: performance.now() - activityStart,
+        });
+      };
       try {
         const assertCurrent = captureQuickActionSession();
         const reviewed = structuredClone(script);
@@ -2594,6 +2609,15 @@ export function useWebTerminal(
         script = reviewed;
         const targetSessionId = sshSessionId.current;
         const currentSession = sessionRef.current;
+        activityContext = currentSession.ownerDatabaseId
+          ? {
+              sessionId: currentSession.id,
+              connectionId: currentSession.connectionId,
+              databaseId: currentSession.ownerDatabaseId,
+            }
+          : undefined;
+        activityStarted = true;
+        recordSessionActivity(activityContext, "ssh_script", "started");
         const lines = script.script
           .split("\n")
           .filter((line) => !line.startsWith("#!"));
@@ -2627,12 +2651,14 @@ export function useWebTerminal(
               sessionId: targetSessionId,
               data: command + "\n",
             });
+            activityResult("dispatched");
             recordExecution({
               status: "pending",
               evidence: "dispatch-accepted",
               executedAt: new Date().toISOString(),
             });
           } catch (dispatchError) {
+            activityResult("failed");
             assertCurrent();
             recordExecution({
               status: "cancelled",
@@ -2661,6 +2687,7 @@ export function useWebTerminal(
               script: command,
               interpreter,
             });
+            activityResult(result.exitCode === 0 ? "completed" : "failed");
             assertCurrent();
             const completedAt = new Date().toISOString();
             recordExecution({
@@ -2690,6 +2717,7 @@ export function useWebTerminal(
               );
             }
           } catch {
+            activityResult("failed");
             assertCurrent();
             // An execution request may fail after starting remotely. Replaying it
             // through the shell would duplicate effects, so never redispatch.
@@ -2707,6 +2735,7 @@ export function useWebTerminal(
         }
         closeScriptSelector();
       } catch {
+        activityResult("failed");
         toastRef.current.error(
           "The SSH action was cancelled or its session is no longer ready. No automatic retry was performed.",
         );
@@ -3660,6 +3689,16 @@ export function useWebTerminal(
       setReplayingMacro(true);
       const controller = new AbortController();
       replayAbortRef.current = controller;
+      const activitySession = sessionRef.current;
+      const activityContext = activitySession.ownerDatabaseId
+        ? {
+            sessionId: activitySession.id,
+            connectionId: activitySession.connectionId,
+            databaseId: activitySession.ownerDatabaseId,
+          }
+        : undefined;
+      const activityStart = performance.now();
+      recordSessionActivity(activityContext, "ssh_macro", "started");
       try {
         await macroService.replayMacro(
           sshSessionId.current,
@@ -3670,7 +3709,16 @@ export function useWebTerminal(
           },
           controller.signal,
         );
+        recordSessionActivity(
+          activityContext,
+          "ssh_macro",
+          controller.signal.aborted ? "failed" : "completed",
+          { durationMs: performance.now() - activityStart },
+        );
       } catch {
+        recordSessionActivity(activityContext, "ssh_macro", "failed", {
+          durationMs: performance.now() - activityStart,
+        });
         if (!controller.signal.aborted)
           toastRef.current.error(
             "Macro replay stopped because the SSH session changed or a step failed.",

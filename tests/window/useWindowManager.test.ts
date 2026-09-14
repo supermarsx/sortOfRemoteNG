@@ -7,7 +7,11 @@ import {
 import {
   createRdpInternalsSession,
   createSecurityToolSession,
+  createToolSession,
+  selectDetachedSessionManager,
+  sessionManagerNavigation,
 } from "../../src/components/app/toolSession";
+import { mergeLocalSessionUpdate } from "../../src/utils/session/sessionLifecycle";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -112,6 +116,74 @@ function createMemoryRevisionStore(initialHighWater: string | null = null) {
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe("useWindowManager", () => {
+  const checkDetachedManagerNavigation = async () => {
+    const manager = {
+      ...createToolSession("internalProxy"),
+      layout: {
+        isDetached: true,
+        windowId: "detached-manager",
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 600,
+        zIndex: 0,
+      },
+    };
+    const other = makeSession("other", { layout: manager.layout });
+    const props: Parameters<typeof useWindowManager>[0] = {
+      sessions: [other, manager],
+      connections: [],
+      tabGroups: [],
+      dispatch: vi.fn(),
+      setActiveSessionId: vi.fn(),
+      handleSessionClose: vi.fn(),
+    };
+    const view = renderHook((current) => useWindowManager(current), {
+      initialProps: props,
+    });
+    act(() =>
+      view.result.current.registerWindow("detached-manager", [
+        other.id,
+        manager.id,
+      ]),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    mockEmitTo.mockClear();
+    const request = sessionManagerNavigation("actionLog");
+    act(() => {
+      expect(
+        selectDetachedSessionManager(
+          view.result.current.registry.current,
+          manager,
+        ),
+      ).toBe(true);
+    });
+    // No eager sync may publish old view metadata before the session update.
+    expect(mockEmitTo).not.toHaveBeenCalled();
+    const updated = mergeLocalSessionUpdate(manager, {
+      id: manager.id,
+      sessionManagerView: request,
+    });
+    view.rerender({ ...props, sessions: [other, updated] });
+    await waitFor(() =>
+      expect(mockEmitTo).toHaveBeenCalledWith(
+        "detached-manager",
+        "wm:sync",
+        expect.objectContaining({
+          activeSessionId: manager.id,
+          sessions: expect.arrayContaining([
+            expect.objectContaining({
+              id: manager.id,
+              sessionManagerView: request,
+            }),
+          ]),
+        }),
+      ),
+    );
+    expect(mockEmitTo).toHaveBeenCalledOnce();
+  };
   it("reattaches an exact detached tab once with actor, owner and reattach-only intent intact", () => {
     const dispatch = vi.fn();
     const setActiveSessionId = vi.fn();
@@ -1306,4 +1378,10 @@ describe("useWindowManager", () => {
       "main",
     );
   });
+  // Run after the existing first-revision-allocation failure fixture so this
+  // successful emit does not preallocate its module-level revision block.
+  it(
+    "syncs the exact detached manager tab selection together with its latest Action Log request",
+    checkDetachedManagerNavigation,
+  );
 });

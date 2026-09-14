@@ -1,6 +1,7 @@
 import { ConnectionSession } from "../../types/connection/connection";
 import { ToolDisplayModes } from "../../types/settings/settings";
 import { generateId } from "../../utils/core/id";
+import type { WindowRegistry } from "../../types/windowManager";
 
 export type ToolKey = keyof ToolDisplayModes;
 
@@ -116,7 +117,7 @@ export const createRecordingPlayerSession = (
 
 export const TOOL_LABELS: Record<ToolKey, string> = {
   performanceMonitor: "Performance Monitor",
-  actionLog: "Action Log",
+  actionLog: "Session Manager",
   importExport: "Import / Export",
   shortcutManager: "Shortcuts",
   proxyChain: "Proxy & VPN",
@@ -162,19 +163,78 @@ export const getToolKeyFromProtocol = (protocol: string): ToolKey | null => {
 };
 
 export const getToolProtocol = (toolKey: ToolKey): string =>
-  `${TOOL_PROTOCOL_PREFIX}${toolKey}`;
+  `${TOOL_PROTOCOL_PREFIX}${toolKey === "actionLog" ? "internalProxy" : toolKey}`;
+
+/** Legacy tool names remain readable, but Action Log no longer opens a separate tool. */
+export const isSessionManagerProtocol = (protocol: string): boolean =>
+  ["tool:internalProxy", "tool:rdpSessions", "tool:actionLog"].includes(
+    protocol,
+  );
+
+/** Select the exact already-owned manager tab. The next session update lets
+ * existing window sync publish selection and latest view together. */
+export const selectDetachedSessionManager = (
+  registry: WindowRegistry,
+  session: ConnectionSession,
+): boolean => {
+  if (
+    !isSessionManagerProtocol(session.protocol) ||
+    !session.layout?.isDetached ||
+    !session.layout.windowId
+  )
+    return false;
+  const windowId = registry.sessionOwnership.get(session.id);
+  if (!windowId || windowId === "main" || windowId !== session.layout.windowId)
+    return false;
+  const entry = registry.windows.get(windowId);
+  if (!entry?.sessionIds.includes(session.id)) return false;
+  entry.activeSessionId = session.id;
+  return true;
+};
+
+export const findExistingToolSession = (
+  sessions: readonly ConnectionSession[],
+  toolKey: ToolKey,
+): ConnectionSession | undefined => {
+  const protocol = getToolProtocol(toolKey);
+  const candidates = sessions.filter((session) =>
+    isSessionManagerProtocol(protocol)
+      ? isSessionManagerProtocol(session.protocol)
+      : session.protocol === protocol,
+  );
+  return (
+    candidates.find(
+      (session) => session.layout?.isDetached && session.layout.windowId,
+    ) ?? candidates.find((session) => !session.layout?.isDetached)
+  );
+};
+
+export const sessionManagerNavigation = (
+  toolKey: ToolKey,
+): ConnectionSession["sessionManagerView"] =>
+  toolKey === "actionLog" || toolKey === "internalProxy"
+    ? {
+        view: toolKey === "actionLog" ? "action-log" : "sessions",
+        requestId: generateId(),
+      }
+    : undefined;
 
 export const createToolSession = (
   toolKey: ToolKey,
   opts?: { connectionId?: string; name?: string; initialParentId?: string },
 ): ConnectionSession => ({
   id: generateId(),
-  connectionId: opts?.connectionId ?? `tool-${toolKey}`,
+  connectionId:
+    opts?.connectionId ??
+    `tool-${toolKey === "actionLog" ? "internalProxy" : toolKey}`,
   name: opts?.name ?? TOOL_LABELS[toolKey],
   status: "connected",
   startTime: new Date(),
   protocol: getToolProtocol(toolKey),
   hostname: "",
+  ...(toolKey === "actionLog"
+    ? { sessionManagerView: sessionManagerNavigation(toolKey) }
+    : {}),
   ...(toolKey === "connectionEditor" &&
   !opts?.connectionId &&
   opts?.initialParentId

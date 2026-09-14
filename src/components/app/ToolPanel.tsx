@@ -58,13 +58,6 @@ const ConnectionRecycleBinTab = dynamic(
   () => import("../connection/ConnectionRecycleBinTab"),
   { ssr: false },
 );
-const ActionLogViewer = dynamic(
-  () =>
-    import("../monitoring/ActionLogViewer").then(
-      (module) => module.ActionLogViewer,
-    ),
-  { ssr: false },
-);
 const ShortcutManagerDialog = dynamic(
   () =>
     import("./ShortcutManagerDialog").then(
@@ -254,6 +247,13 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   const { settings } = useSettings();
   const { isActive } = useSessionRenderActivity();
   const toolKey = getToolKeyFromProtocol(session.protocol);
+  useEffect(() => {
+    if (toolKey === "actionLog" && session.name === "Action Log")
+      dispatch?.({
+        type: "UPDATE_SESSION",
+        payload: { id: session.id, name: "Session Manager" },
+      });
+  }, [dispatch, session.id, session.name, toolKey]);
   const openTrustCenter = useTrustCenterSession(onActivateSession, session);
   const openCredentialVault = useSecurityToolSession(
     "credentialVault",
@@ -505,13 +505,21 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       {toolKey === "performanceMonitor" && (
         <PerformanceMonitor isOpen onClose={onClose} />
       )}
-      {toolKey === "actionLog" && <ActionLogViewer isOpen onClose={onClose} />}
       {toolKey === "shortcutManager" && (
         <ShortcutManagerDialog isOpen onClose={onClose} />
       )}
       {toolKey === "proxyChain" && <ProxyChainMenu isOpen onClose={onClose} />}
-      {toolKey === "internalProxy" && (
+      {(toolKey === "internalProxy" ||
+        toolKey === "actionLog" ||
+        toolKey === "rdpSessions") && (
         <SessionManager
+          initialView={
+            session.sessionManagerView?.view === "action-log" ||
+            (!session.sessionManagerView && toolKey === "actionLog")
+              ? "action-log"
+              : "sessions"
+          }
+          viewRequestId={session.sessionManagerView?.requestId}
           isVisible={isActive}
           connections={state.connections}
           activeBackendSessionIds={activeRdpBackendIds}
@@ -620,21 +628,6 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
             onConnect={onReconnect}
           />
         </FeatureErrorBoundary>
-      )}
-      {toolKey === "rdpSessions" && (
-        <SessionManager
-          isVisible={isActive}
-          connections={state.connections}
-          activeBackendSessionIds={activeRdpBackendIds}
-          onClose={onClose}
-          onReattachSession={onReattachSession}
-          onDetachToWindow={onDetachToWindow}
-          onReconnect={onReconnect}
-          onCloseSession={onCloseManagedSession}
-          thumbnailsEnabled={settings.rdpSessionThumbnailsEnabled}
-          thumbnailPolicy={settings.rdpSessionThumbnailPolicy}
-          thumbnailInterval={settings.rdpSessionThumbnailInterval}
-        />
       )}
       {toolKey === "shortcutCreator" && (
         <ShortcutCreator isOpen onClose={onClose} />

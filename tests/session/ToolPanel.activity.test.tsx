@@ -8,10 +8,12 @@ import {
   createRdpInternalsSession,
   createRecordingPlayerSession,
 } from "../../src/components/app/toolSession";
+const state = vi.hoisted(() => ({ dispatch: vi.fn() }));
 
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: { sessions: [], connections: [] },
+    dispatch: state.dispatch,
     databaseAvailability: {
       status: "ready",
       databaseId: "fixture-db",
@@ -43,12 +45,22 @@ vi.mock("../../src/components/recording/RecordingManager", () => ({
   ),
 }));
 vi.mock("../../src/components/session/sessionManager/SessionManager", () => ({
-  SessionManager: ({ isVisible }: { isVisible: boolean }) => {
+  SessionManager: ({
+    isVisible,
+    initialView,
+    viewRequestId,
+  }: {
+    isVisible: boolean;
+    initialView?: string;
+    viewRequestId?: string;
+  }) => {
     const [count, setCount] = useState(0);
     return (
       <button
         data-testid="manager"
         data-visible={String(isVisible)}
+        data-view={initialView}
+        data-request={viewRequestId}
         onClick={() => setCount(count + 1)}
       >
         {count}
@@ -58,6 +70,65 @@ vi.mock("../../src/components/session/sessionManager/SessionManager", () => ({
 }));
 
 describe("tool tab background activity", () => {
+  it("routes restored legacy Action Log tabs into the manager log view and renames only the old default title", async () => {
+    state.dispatch.mockClear();
+    const session = {
+      ...createToolSession("internalProxy"),
+      protocol: "tool:actionLog",
+      name: "Action Log",
+      ownerDatabaseId: "fixture-db",
+    };
+    const view = render(<ToolTabViewer session={session} onClose={vi.fn()} />);
+    expect(await screen.findByTestId("manager")).toHaveAttribute(
+      "data-view",
+      "action-log",
+    );
+    expect(state.dispatch).toHaveBeenCalledWith({
+      type: "UPDATE_SESSION",
+      payload: { id: session.id, name: "Session Manager" },
+    });
+    state.dispatch.mockClear();
+    view.rerender(
+      <ToolTabViewer
+        session={{ ...session, name: "My activity" }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(state.dispatch).not.toHaveBeenCalled();
+  });
+  it("forwards repeated view requests without remounting the consolidated manager", async () => {
+    const session = {
+      ...createToolSession("actionLog"),
+      ownerDatabaseId: "fixture-db",
+    };
+    const view = render(<ToolTabViewer session={session} onClose={vi.fn()} />);
+    const manager = await screen.findByTestId("manager");
+    expect(manager).toHaveAttribute("data-view", "action-log");
+    fireEvent.click(manager);
+    view.rerender(
+      <ToolTabViewer
+        session={{
+          ...session,
+          sessionManagerView: { view: "sessions", requestId: "second" },
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(manager).toHaveTextContent("1");
+    expect(manager).toHaveAttribute("data-view", "sessions");
+    view.rerender(
+      <ToolTabViewer
+        session={{
+          ...session,
+          sessionManagerView: { view: "action-log", requestId: "third" },
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(manager).toHaveAttribute("data-request", "third");
+    expect(manager).toHaveAttribute("data-view", "action-log");
+    expect(manager).toHaveTextContent("1");
+  });
   it("routes a scoped Internals tool without rendering another desktop and closes only that tab", async () => {
     const source = {
       ...createToolSession("rdpSessions"),

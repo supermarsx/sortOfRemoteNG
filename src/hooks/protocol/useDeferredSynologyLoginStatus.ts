@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  recordSessionActivity,
+  type SessionActivityContext,
+} from "../../utils/monitoring/sessionActivityLog";
 
 const STATUSES = [
   "awaiting_nas",
@@ -164,6 +168,7 @@ interface Context {
   document: string | null;
 }
 interface Options {
+  activityContext?: SessionActivityContext;
   scope: string;
   requested: boolean;
   valid: boolean;
@@ -182,6 +187,7 @@ export function useDeferredSynologyLoginStatus(options: Options) {
   const operation = useRef(0);
   const pending = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const pageResult = useRef<string | null>(null);
+  const loggedNative = useRef<{ key: string; value: string } | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [pageSnapshot, setPageSnapshot] = useState<{
     key: string;
@@ -243,6 +249,19 @@ export function useDeferredSynologyLoginStatus(options: Options) {
       status: DeferredSynologyLoginStatus | null,
       reason: DiagnosticReason | null,
     ) => {
+      if (capture()?.key !== key) return;
+      const value = status ?? `unavailable:${reason}`;
+      if (
+        loggedNative.current?.key !== key ||
+        loggedNative.current.value !== value
+      ) {
+        loggedNative.current = { key, value };
+        recordSessionActivity(
+          latest.current.activityContext,
+          "autofill",
+          status ?? "status_unavailable",
+        );
+      }
       setSnapshot((previous) => ({
         key,
         status,
@@ -254,7 +273,7 @@ export function useDeferredSynologyLoginStatus(options: Options) {
             : null),
       }));
     },
-    [],
+    [capture],
   );
   const receive = useCallback(
     (response: { session_id: string; deferred_login_status?: unknown }) => {
@@ -370,6 +389,12 @@ export function useDeferredSynologyLoginStatus(options: Options) {
       seen.last = key;
       seen.count++;
       seen.terminal = terminal;
+      recordSessionActivity(
+        latest.current.activityContext,
+        "autofill",
+        progress.phase,
+        { reason: progress.reason },
+      );
       setPageSnapshot({ key: current.key, progress });
     },
     [capture],

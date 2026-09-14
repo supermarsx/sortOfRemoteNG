@@ -1,160 +1,459 @@
 import React from "react";
 import {
-  X,
+  ArrowUpDown,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
   Download,
   Filter,
-  Trash2,
   Search,
-  Clock,
-  AlertCircle,
-  Info,
-  AlertTriangle,
-  Bug,
-  Calendar,
-  Server,
+  ScrollText,
+  Trash2,
+  X,
 } from "lucide-react";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
-import { useActionLogViewer } from "../../hooks/monitoring/useActionLogViewer";
+import {
+  ACTION_LOG_SOURCES,
+  type ActionLogSortKey,
+  useActionLogViewer,
+} from "../../hooks/monitoring/useActionLogViewer";
 import { useLocaleFormat } from "../../hooks/settings/useLocaleFormat";
-import { EmptyState } from '../ui/display';import { Select } from '../ui/forms';
+import { EmptyState } from "../ui/display";
 
-const LEVEL_ICONS: Record<string, React.ReactElement> = {
-  debug: <Bug className="text-[var(--color-textSecondary)]" size={14} />,
-  info: <Info className="text-primary" size={14} />,
-  warn: <AlertTriangle className="text-warning" size={14} />,
-  error: <AlertCircle className="text-error" size={14} />,
-};
-
-const DEFAULT_ICON = (
-  <Info className="text-[var(--color-textSecondary)]" size={14} />
-);
-
+interface ActionLogViewerProps {
+  isOpen: boolean;
+  /** Session Manager supplies its visibility/minimize gate. */
+  isActive?: boolean;
+  /** Legacy callers may still supply this; this embedded view has no close chrome. */
+  onClose?: () => void;
+}
+type Manager = ReturnType<typeof useActionLogViewer>;
 const LEVEL_COLORS: Record<string, string> = {
-  debug: "text-[var(--color-textSecondary)]",
+  debug: "text-[var(--color-textMuted)]",
   info: "text-primary",
   warn: "text-warning",
   error: "text-error",
 };
 
-const getLevelIcon = (level: string) => LEVEL_ICONS[level] ?? DEFAULT_ICON;
-const getLevelColor = (level: string) =>
-  LEVEL_COLORS[level] ?? "text-[var(--color-textSecondary)]";
-
-interface ActionLogViewerProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-type Mgr = ReturnType<typeof useActionLogViewer>;
-
-/* ---------- sub-components ---------- */
-
-function SearchBar({ m }: { m: Mgr }) {
+function LogFilter({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="relative flex-1 max-w-md">
-        <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)]" />
-        <input type="text" placeholder="Search logs..." value={m.searchTerm} onChange={(e) => m.setSearchTerm(e.target.value)} aria-label="Search logs" className="sor-form-input sor-form-input-icon-left w-full" />
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-[var(--color-textSecondary)] px-2 py-1 bg-[var(--color-border)]/50 rounded-lg">{m.filteredLogs.length} of {m.logs.length}</span>
-        <button onClick={m.exportLogs} className="sor-option-chip text-sm"><Download size={14} /><span>{m.t("logs.export")}</span></button>
-        <button onClick={m.clearLogs} className="sor-option-chip text-sm hover:bg-error/90 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-error"><Trash2 size={14} /><span>{m.t("logs.clear")}</span></button>
-      </div>
-    </div>
+    <label className="flex min-w-0 items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+      <span className="sr-only">{label}</span>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="sor-form-select-sm max-w-52"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
-function FilterBar({ m }: { m: Mgr }) {
+function LogToolbar({ manager: m }: { manager: Manager }) {
   return (
-    <div className="flex items-center gap-3 flex-wrap">
-      <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)] uppercase tracking-wider"><Filter size={14} /><span>Filters</span></div>
-      <Select value={m.levelFilter} onChange={(v: string) => m.setLevelFilter(v)} variant="form-sm" options={[{ value: "all", label: "All Levels" }, { value: "debug", label: "Debug" }, { value: "info", label: "Info" }, { value: "warn", label: "Warning" }, { value: "error", label: "Error" }]} />
-      {m.uniqueActions.length > 0 && (
-        <Select value={m.actionFilter} onChange={(v: string) => m.setActionFilter(v)} variant="form-sm" options={[{ value: 'all', label: 'All Actions' }, ...m.uniqueActions.map((a) => ({ value: a, label: a }))]} title="Filter by action" />
-      )}
-      {m.uniqueConnections.length > 0 && (
-        <div className="flex items-center gap-1.5">
-          <Server size={14} className="text-[var(--color-textMuted)]" />
-          <Select value={m.connectionFilter} onChange={(v: string) => m.setConnectionFilter(v)} variant="form-sm" options={[{ value: 'all', label: 'All Connections' }, ...m.uniqueConnections.map((c) => ({ value: c, label: c }))]} title="Filter by connection" />
+    <div className="shrink-0 border-b border-[var(--color-border)] p-4 space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 font-semibold text-[var(--color-text)]">
+            <ScrollText size={16} aria-hidden="true" /> Action Log
+          </h2>
+          <p className="mt-1 max-w-3xl text-xs text-[var(--color-textMuted)]">
+            Session activity is retained in this window’s memory, up to{" "}
+            {m.sessionLimit.toLocaleString()} entries; older entries are
+            evicted. Application history follows your log retention settings.
+          </p>
         </div>
-      )}
-      <div className="flex items-center gap-1.5">
-        <Calendar size={14} className="text-[var(--color-textMuted)]" />
-        <Select value={m.dateFilter} onChange={(v: string) => m.setDateFilter(v)} variant="form-sm" options={[{ value: "all", label: "All Time" }, { value: "today", label: "Today" }, { value: "yesterday", label: "Yesterday" }, { value: "week", label: "Last 7 Days" }, { value: "month", label: "Last 30 Days" }]} />
+        <div className="flex flex-wrap shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void m.copyFilteredDiagnostics()}
+            disabled={!m.filteredLogs.length || m.copying !== null}
+            className="sor-option-chip text-xs disabled:opacity-40"
+          >
+            <Copy size={14} aria-hidden="true" /> Copy filtered diagnostics
+          </button>
+          <button
+            type="button"
+            onClick={m.exportLogs}
+            disabled={!m.filteredLogs.length}
+            className="sor-option-chip text-xs disabled:opacity-40"
+          >
+            <Download size={14} aria-hidden="true" /> Export diagnostics CSV
+          </button>
+          <button
+            type="button"
+            onClick={m.requestLegacyExport}
+            disabled={!m.filteredApplicationLogs.length}
+            className="sor-option-chip text-xs disabled:opacity-40"
+          >
+            Export application log…
+          </button>
+          <button
+            type="button"
+            onClick={m.clearLogs}
+            disabled={!m.logs.length}
+            className="sor-option-chip text-xs text-error disabled:opacity-40"
+          >
+            <Trash2 size={14} aria-hidden="true" /> {m.t("logs.clear", "Clear")}
+          </button>
+        </div>
       </div>
-      {m.hasActiveFilters && (
-        <button onClick={m.resetFilters} className="sor-option-chip text-xs text-warning hover:text-warning hover:bg-warning/10"><X size={12} />Clear filters</button>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-44 flex-1">
+          <Search
+            size={14}
+            aria-hidden="true"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
+          />
+          <input
+            type="search"
+            placeholder="Search logs..."
+            aria-label="Search logs"
+            value={m.searchTerm}
+            onChange={(event) => m.setSearchTerm(event.target.value)}
+            autoComplete="off"
+            className="sor-form-input sor-form-input-icon-left w-full text-xs"
+          />
+        </div>
+        <Filter
+          size={14}
+          aria-hidden="true"
+          className="text-[var(--color-textMuted)]"
+        />
+        <LogFilter
+          label="Filter by source"
+          value={m.sourceFilter}
+          onChange={m.setSourceFilter}
+          options={[
+            { value: "all", label: "All sources" },
+            ...ACTION_LOG_SOURCES,
+          ]}
+        />
+        <LogFilter
+          label="Filter by level"
+          value={m.levelFilter}
+          onChange={m.setLevelFilter}
+          options={[
+            { value: "all", label: "All levels" },
+            { value: "debug", label: "Debug" },
+            { value: "info", label: "Info" },
+            { value: "warn", label: "Warning" },
+            { value: "error", label: "Error" },
+          ]}
+        />
+        <LogFilter
+          label="Filter by action"
+          value={m.actionFilter}
+          onChange={m.setActionFilter}
+          options={[
+            { value: "all", label: "All actions" },
+            ...m.uniqueActions.map((action) => ({
+              value: action,
+              label: action,
+            })),
+          ]}
+        />
+        <LogFilter
+          label="Filter by connection"
+          value={m.connectionFilter}
+          onChange={m.setConnectionFilter}
+          options={[
+            { value: "all", label: "All connections" },
+            ...m.uniqueConnections.map((connection) => ({
+              value: connection,
+              label: connection,
+            })),
+          ]}
+        />
+        <LogFilter
+          label="Filter by time"
+          value={m.dateFilter}
+          onChange={m.setDateFilter}
+          options={[
+            { value: "all", label: "All time" },
+            { value: "today", label: "Today" },
+            { value: "yesterday", label: "Yesterday" },
+            { value: "week", label: "Last 7 days" },
+            { value: "month", label: "Last 30 days" },
+          ]}
+        />
+        {m.hasActiveFilters && (
+          <button
+            type="button"
+            onClick={m.resetFilters}
+            className="sor-option-chip text-xs text-warning"
+          >
+            <X size={12} aria-hidden="true" /> Clear filters
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-[var(--color-textMuted)]">
+        Diagnostics omit legacy application names and free-text action/details.
+        CSV includes all matching rows, not just the current page.
+      </p>
+      {m.feedback && (
+        <p role="status" className="text-xs text-[var(--color-textSecondary)]">
+          {m.feedback}
+        </p>
       )}
     </div>
   );
 }
 
-function LogTable({ m }: { m: Mgr }) {
+function SortHeading({
+  manager: m,
+  field,
+  children,
+}: {
+  manager: Manager;
+  field: ActionLogSortKey;
+  children: React.ReactNode;
+}) {
+  return (
+    <th
+      scope="col"
+      aria-sort={
+        m.sortKey !== field
+          ? "none"
+          : m.sortDirection === "asc"
+            ? "ascending"
+            : "descending"
+      }
+      className="sor-th whitespace-nowrap"
+    >
+      <button
+        type="button"
+        onClick={() => m.sortBy(field)}
+        aria-label={`Sort logs by ${field}`}
+        className="inline-flex items-center gap-1 hover:text-[var(--color-text)]"
+      >
+        {children}
+        <ArrowUpDown
+          size={12}
+          aria-hidden="true"
+          className={m.sortKey === field ? "text-primary" : "opacity-50"}
+        />
+      </button>
+    </th>
+  );
+}
+
+function LogTable({ manager: m }: { manager: Manager }) {
   const { formatDate, formatTime } = useLocaleFormat();
   return (
-    <div className="flex-1 overflow-y-auto min-h-0">
-      <table className="sor-data-table w-full">
-        <thead className="bg-[var(--color-border)] sticky top-0">
+    <div
+      className="min-h-0 flex-1 overflow-auto"
+      data-testid="action-log-scroll-region"
+    >
+      <table
+        className="sor-data-table w-full text-xs"
+        aria-label="Action log entries"
+      >
+        <thead className="sticky top-0 z-10 bg-[var(--color-surface)]">
           <tr>
-            <th className="sor-th"><div className="flex items-center space-x-1"><Clock size={12} /><span>{m.t("logs.timestamp")}</span></div></th>
-            <th className="sor-th">{m.t("logs.level")}</th>
-            <th className="sor-th">{m.t("logs.action")}</th>
-            <th className="sor-th">{m.t("logs.connection")}</th>
-            <th className="sor-th">{m.t("logs.details")}</th>
-            <th className="sor-th">Duration</th>
+            <SortHeading manager={m} field="timestamp">
+              Time
+            </SortHeading>
+            <SortHeading manager={m} field="source">
+              Source
+            </SortHeading>
+            <SortHeading manager={m} field="level">
+              Level
+            </SortHeading>
+            <SortHeading manager={m} field="action">
+              Action
+            </SortHeading>
+            <SortHeading manager={m} field="connection">
+              Connection
+            </SortHeading>
+            <th scope="col" className="sor-th">
+              Details
+            </th>
+            <SortHeading manager={m} field="duration">
+              Duration
+            </SortHeading>
+            <th scope="col" className="sor-th">
+              <span className="sr-only">Copy diagnostics</span>
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[var(--color-border)]">
-          {m.filteredLogs.map((log) => (
-            <tr key={log.id} className="hover:bg-[var(--color-border)]">
-              <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)]"><div><div>{formatDate(log.timestamp)}</div><div className="text-xs text-[var(--color-textMuted)]">{formatTime(log.timestamp)}</div></div></td>
-              <td className="px-4 py-3 text-sm"><div className={`flex items-center space-x-2 ${getLevelColor(log.level)}`}>{getLevelIcon(log.level)}<span className="capitalize">{log.level}</span></div></td>
-              <td className="px-4 py-3 text-sm text-[var(--color-text)] font-medium">{log.action}</td>
-              <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)]">{log.connectionName || "-"}</td>
-              <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)] max-w-md"><div className="truncate" title={log.details}>{log.details}</div></td>
-              <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)]">{log.duration ? `${log.duration}ms` : "-"}</td>
+          {m.pageLogs.map((log) => (
+            <tr
+              key={log.rowKey}
+              className="hover:bg-[var(--color-surfaceHover)]"
+              data-testid="action-log-row"
+            >
+              <td className="px-3 py-2 whitespace-nowrap text-[var(--color-textSecondary)]">
+                <time dateTime={String(log.timestamp)}>
+                  <span className="block">{formatDate(log.timestamp)}</span>
+                  <span className="text-[var(--color-textMuted)]">
+                    {formatTime(log.timestamp)}
+                  </span>
+                </time>
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap text-[var(--color-textSecondary)]">
+                {log.sourceLabel}
+              </td>
+              <td className="px-3 py-2">
+                <span className={`capitalize ${LEVEL_COLORS[log.level]}`}>
+                  {log.level === "warn" ? "Warning" : log.level}
+                </span>
+              </td>
+              <td className="px-3 py-2 font-medium text-[var(--color-text)]">
+                {log.action}
+              </td>
+              <td className="max-w-48 px-3 py-2 break-words text-[var(--color-textSecondary)]">
+                {log.connectionName || "—"}
+              </td>
+              <td className="min-w-48 max-w-xl px-3 py-2 text-[var(--color-textSecondary)]">
+                <p className="break-words">{log.details}</p>
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap tabular-nums text-[var(--color-textSecondary)]">
+                {log.duration == null ? "—" : `${log.duration} ms`}
+              </td>
+              <td className="px-2 py-2">
+                <button
+                  type="button"
+                  aria-label={`Copy diagnostics for ${log.localAlias}`}
+                  title="Copy diagnostics; legacy names and free text are omitted"
+                  disabled={m.copying !== null}
+                  onClick={() => void m.copyLog(log)}
+                  className="sor-icon-btn-sm disabled:opacity-40"
+                >
+                  {m.copied === log.rowKey ? (
+                    <Check size={14} aria-hidden="true" />
+                  ) : (
+                    <Copy size={14} aria-hidden="true" />
+                  )}
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {m.filteredLogs.length === 0 && (
+      {!m.filteredLogs.length && (
         <EmptyState
-          icon={AlertCircle}
-          iconSize={48}
-          message="No log entries found"
-          hint="Try adjusting your search or filter criteria"
+          icon={ScrollText}
+          iconSize={32}
+          message={
+            m.logs.length
+              ? "No matching log entries"
+              : "No activity recorded yet"
+          }
+          hint={
+            m.logs.length
+              ? "Adjust your search or filters to see more activity."
+              : "Application and session actions will appear here when logging is enabled."
+          }
         />
       )}
     </div>
   );
 }
 
-/* ---------- root ---------- */
+function LogPagination({ manager: m }: { manager: Manager }) {
+  return (
+    <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-textSecondary)]">
+      <span aria-live="polite">
+        {m.filteredLogs.length ? (m.currentPage - 1) * m.pageSize + 1 : 0}–
+        {Math.min(m.currentPage * m.pageSize, m.filteredLogs.length)} of{" "}
+        {m.filteredLogs.length} matching · {m.logs.length} retained
+      </span>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2">
+          Rows
+          <select
+            aria-label="Log rows per page"
+            className="sor-form-select-sm"
+            value={m.pageSize}
+            onChange={(event) => m.setPageSize(Number(event.target.value))}
+          >
+            {[25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span>
+          Page {m.currentPage} of {m.pageCount}
+        </span>
+        <button
+          type="button"
+          aria-label="Previous log page"
+          className="sor-icon-btn-sm disabled:opacity-40"
+          disabled={m.currentPage <= 1}
+          onClick={() => m.setPage(m.currentPage - 1)}
+        >
+          <ChevronLeft size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Next log page"
+          className="sor-icon-btn-sm disabled:opacity-40"
+          disabled={m.currentPage >= m.pageCount}
+          onClick={() => m.setPage(m.currentPage + 1)}
+        >
+          <ChevronRight size={14} aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
-export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({ isOpen, onClose }) => {
-  const m = useActionLogViewer(isOpen);
-
+export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
+  isOpen,
+  isActive = isOpen,
+}) => {
+  const manager = useActionLogViewer(isOpen && isActive);
   if (!isOpen) return null;
-
   return (
     <>
-      <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
-        <div className="border-b border-[var(--color-border)] px-4 py-3 space-y-3">
-          <SearchBar m={m} />
-          <FilterBar m={m} />
-        </div>
-        <LogTable m={m} />
-      </div>
+      <section
+        aria-label="Action Log"
+        className="h-full min-h-0 min-w-0 flex flex-col overflow-hidden bg-[var(--color-surface)]"
+      >
+        <LogToolbar manager={manager} />
+        <LogTable manager={manager} />
+        <LogPagination manager={manager} />
+      </section>
       <ConfirmDialog
-        isOpen={m.showClearConfirm}
-        title={m.t("logs.clearConfirmTitle") || "Clear Action Log"}
-        message={m.t("logs.clearConfirmMessage") || "Are you sure you want to clear all log entries? This action cannot be undone."}
-        confirmText={m.t("logs.clear") || "Clear"}
-        cancelText={m.t("common.cancel") || "Cancel"}
-        onConfirm={m.confirmClearLogs}
-        onCancel={() => m.setShowClearConfirm(false)}
+        isOpen={manager.showClearConfirm}
+        title="Clear Action Log"
+        message="Clear retained application log entries and current in-memory session activity? This cannot be undone. Active sessions and saved scripts or macros are not affected."
+        confirmText={manager.t("logs.clear", "Clear")}
+        cancelText={manager.t("common.cancel", "Cancel")}
+        onConfirm={manager.confirmClearLogs}
+        onCancel={() => manager.setShowClearConfirm(false)}
         variant="danger"
+      />
+      <ConfirmDialog
+        isOpen={manager.showLegacyExportConfirm}
+        title="Export application log?"
+        message="This exports the original application log, including names and free-text details that may contain sensitive information. Review the file before sharing it. New session activity is not included. For sharing, use Export diagnostics CSV instead."
+        confirmText="Export application log"
+        cancelText="Cancel"
+        onConfirm={manager.confirmLegacyExport}
+        onCancel={() => manager.setShowLegacyExportConfirm(false)}
+        variant="warning"
       />
     </>
   );

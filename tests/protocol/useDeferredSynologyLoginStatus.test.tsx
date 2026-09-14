@@ -1,6 +1,10 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearSessionActivityLog,
+  getSessionActivityLog,
+} from "../../src/utils/monitoring/sessionActivityLog";
+import {
   parseDeferredSynologyLoginStatus,
   parseSynologyLoginProgress,
   useDeferredSynologyLoginStatus,
@@ -9,6 +13,7 @@ import {
 const h = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }));
 beforeEach(() => {
+  clearSessionActivityLog();
   vi.useFakeTimers();
   h.invoke.mockReset();
 });
@@ -23,6 +28,11 @@ function fixture() {
     document: "doc-a" as string | null,
   };
   const options = {
+    activityContext: {
+      sessionId: "tab-a",
+      connectionId: "connection-a",
+      databaseId: "db-a",
+    },
     scope: "owner-a:source-a",
     requested: true,
     valid: true,
@@ -42,6 +52,67 @@ function fixture() {
   };
 }
 describe("native deferred Synology status snapshots", () => {
+  it("logs only accepted closed observations, deduplicates snapshots and ignores revoked late replies", async () => {
+    const view = fixture();
+    act(() => {
+      view.result.current.receive({
+        session_id: "proxy-a",
+        deferred_login_status: "waiting_for_form",
+      });
+      view.result.current.receive({
+        session_id: "proxy-a",
+        deferred_login_status: "waiting_for_form",
+      });
+      view.result.current.receive({
+        session_id: "foreign",
+        deferred_login_status: "credentials_released",
+      });
+      view.result.current.receivePageProgress({
+        phase: "waiting_next_button",
+        reason: "input-settling",
+        value: "PRIVATE_PASSWORD",
+      });
+      view.result.current.receivePageProgress({
+        phase: "waiting_next_button",
+        reason: "input-settling",
+      });
+    });
+    expect(getSessionActivityLog().map((entry) => entry.code)).toEqual([
+      "waiting_next_button",
+      "waiting_for_form",
+    ]);
+    expect(getSessionActivityLog()[0]).toMatchObject({
+      sessionId: "tab-a",
+      connectionId: "connection-a",
+      databaseId: "db-a",
+    });
+    expect(JSON.stringify(getSessionActivityLog())).not.toContain(
+      "PRIVATE_PASSWORD",
+    );
+    let resolve!: (value: unknown) => void;
+    h.invoke.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    let reading!: Promise<void>;
+    act(() => {
+      reading = view.result.current.refresh();
+    });
+    view.rerender({ ...view.options, valid: false });
+    await act(async () => {
+      resolve([
+        {
+          session_id: "proxy-a",
+          deferred_login_status: "credentials_released",
+        },
+      ]);
+      await reading;
+    });
+    expect(getSessionActivityLog()).toHaveLength(2);
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+  });
   it("explains stable-form and input waits then a non-advancing Next without retrying", () => {
     const view = fixture();
     act(() =>

@@ -323,11 +323,11 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
   },
   {
     key: "showActionLogIcon",
-    label: "Action Log",
-    labelKey: "settingsLayout.actionLog",
+    label: "Session Manager — Action Log",
+    labelKey: "settingsLayout.sessionManagerActionLog",
     description:
-      "Show the action log icon for reviewing recent application actions and events",
-    descriptionKey: "settingsLayout.actionLogTooltip",
+      "Show a shortcut to the Action Log view inside Session Manager",
+    descriptionKey: "settingsLayout.sessionManagerActionLogTooltip",
     tags: ["toolbar", "icon", "action log", "audit", "events", "history"],
     synonyms: ["audit log", "activity log", "event log"],
     section: "layout",

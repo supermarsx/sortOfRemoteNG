@@ -122,6 +122,21 @@ afterEach(() => {
 });
 
 describe("automatic Session Manager observation", () => {
+  it("does not start native session observation for the Action Log view", async () => {
+    const view = renderHook(() =>
+      useUnifiedSessionManager({
+        isVisible: true,
+        connections: CONNECTIONS,
+        activeBackendSessionIds: BACKENDS,
+        thumbnailsEnabled: false,
+        activeView: "action-log",
+      }),
+    );
+    await tick(60_000);
+    expect(fixture.invoke).not.toHaveBeenCalled();
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("reports current proxy health without treating historical errors as active failures", async () => {
     const original = fixture.invoke.getMockImplementation()!;
     fixture.invoke.mockImplementation((command: string) =>

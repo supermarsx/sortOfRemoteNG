@@ -1,19 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, cleanup } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
   getActionLog: vi.fn(),
   clearActionLog: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  listeners: new Set<() => void>(),
 }));
 
 vi.mock("../../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       getActionLog: mocks.getActionLog,
+      getSettings: () => ({ maxLogEntries: 1000 }),
       clearActionLog: mocks.clearActionLog,
       logAction: vi.fn(),
+      subscribeActionLog: (listener: () => void) => {
+        mocks.listeners.add(listener);
+        return () => mocks.listeners.delete(listener);
+      },
     }),
   },
 }));
@@ -88,9 +94,11 @@ describe("useActionLogViewer", () => {
     vi.clearAllMocks();
     vi.useFakeTimers({ now: new Date("2026-03-25T12:00:00Z") });
     mocks.getActionLog.mockReturnValue([]);
+    mocks.listeners.clear();
   });
 
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
   });
 
@@ -131,7 +139,9 @@ describe("useActionLogViewer", () => {
     });
 
     expect(mocks.getActionLog).toHaveBeenCalled();
-    expect(result.current.logs).toEqual(logs);
+    expect(result.current.logs).toEqual(
+      logs.map((log) => expect.objectContaining(log)),
+    );
   });
 
   it("does not load logs when closed", () => {
@@ -139,7 +149,7 @@ describe("useActionLogViewer", () => {
     expect(mocks.getActionLog).not.toHaveBeenCalled();
   });
 
-  it("auto-refreshes logs every 5 seconds when open", async () => {
+  it("refreshes from log notifications without polling", async () => {
     mocks.getActionLog.mockReturnValue([]);
 
     renderHook(() => useActionLogViewer(true));
@@ -150,7 +160,11 @@ describe("useActionLogViewer", () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
 
-    expect(mocks.getActionLog.mock.calls.length).toBeGreaterThan(initialCallCount);
+    expect(mocks.getActionLog.mock.calls.length).toBe(initialCallCount);
+    act(() => mocks.listeners.forEach((listener) => listener()));
+    expect(mocks.getActionLog.mock.calls.length).toBeGreaterThan(
+      initialCallCount,
+    );
   });
 
   // ── Unique values ────────────────────────────────────
@@ -363,7 +377,9 @@ describe("useActionLogViewer", () => {
     });
 
     expect(result.current.filteredLogs).toHaveLength(1);
-    expect(result.current.filteredLogs[0].connectionName).toBe("staging-server");
+    expect(result.current.filteredLogs[0].connectionName).toBe(
+      "staging-server",
+    );
   });
 
   it("search is case insensitive", async () => {
@@ -515,14 +531,20 @@ describe("useActionLogViewer", () => {
     // Mock DOM APIs after renderHook so they don't break React's container creation
     const mockClick = vi.fn();
     const origCreateElement = document.createElement.bind(document);
-    const createElementSpy = vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
-      if (tag === "a") {
-        return { click: mockClick, href: "", download: "" } as any;
-      }
-      return origCreateElement(tag);
-    });
-    const mockAppendChild = vi.spyOn(document.body, "appendChild").mockImplementation((n) => n);
-    const mockRemoveChild = vi.spyOn(document.body, "removeChild").mockImplementation((n) => n);
+    const createElementSpy = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tag: string) => {
+        if (tag === "a") {
+          return { click: mockClick, href: "", download: "" } as any;
+        }
+        return origCreateElement(tag);
+      });
+    const mockAppendChild = vi
+      .spyOn(document.body, "appendChild")
+      .mockImplementation((n) => n);
+    const mockRemoveChild = vi
+      .spyOn(document.body, "removeChild")
+      .mockImplementation((n) => n);
     vi.stubGlobal("URL", {
       createObjectURL: vi.fn().mockReturnValue("blob:test"),
       revokeObjectURL: vi.fn(),
@@ -552,11 +574,14 @@ describe("useActionLogViewer", () => {
     });
 
     // Force Blob constructor to throw — stub AFTER renderHook
-    vi.stubGlobal("Blob", class {
-      constructor() {
-        throw new Error("Blob creation failed");
-      }
-    });
+    vi.stubGlobal(
+      "Blob",
+      class {
+        constructor() {
+          throw new Error("Blob creation failed");
+        }
+      },
+    );
 
     act(() => {
       result.current.exportLogs();
