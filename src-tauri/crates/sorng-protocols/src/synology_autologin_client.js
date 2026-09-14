@@ -50,13 +50,19 @@
         observer = null,
         controller = null,
         password = null,
+        passwordWritten = false,
         timeout = null,
-        deadline = 0;
+        deadline = 0,
+        settleTimer = null,
+        settleTarget = null,
+        settleStage = null,
+        settleTicks = 0;
       var enteredPassword = false,
         failureReason = "stopped";
       var start = new URL(location.href);
       var readinessEvents = [
         "DOMContentLoaded",
+        "readystatechange",
         "load",
         "transitionend",
         "animationend",
@@ -73,13 +79,17 @@
       }
       function finish(ok, reason) {
         if (finished) return;
+        if (!ok && failureReason === "timeout")
+          reason = "reviewed-login-timeout";
         finished = true;
         if (observer) observer.disconnect();
         if (controller) controller.abort();
         clearTimeout(timeout);
+        resetSettle();
         window.removeEventListener("hashchange", navigation);
         window.removeEventListener("popstate", navigation);
         window.removeEventListener("resize", progress);
+        window.removeEventListener("load", progress);
         readinessEvents.forEach(function (event) {
           document.removeEventListener(event, progress, true);
         });
@@ -94,6 +104,7 @@
         // Clear only our own unsent value, never overwrite a user's edit.
         if (
           !ok &&
+          passwordWritten &&
           password !== null &&
           passwordTarget &&
           passwordTarget.field.value === password
@@ -116,7 +127,9 @@
           ok
             ? "submitted"
             : reason === "reviewed-login-timeout"
-              ? "timeout"
+              ? phase === "password"
+                ? "next-not-advanced"
+                : "timeout"
               : reason === "cancelled"
                 ? "cancelled"
                 : reason === "invalid-credential-response"
@@ -159,7 +172,11 @@
         );
       }
       function safe() {
-        if (finished || stopped || performance.now() >= deadline) return false;
+        if (finished || stopped) return false;
+        if (performance.now() >= deadline) {
+          failureReason = "timeout";
+          return false;
+        }
         if (!allowedRoute()) {
           failureReason = "route-changed";
           return false;
@@ -268,6 +285,30 @@
           target.panel === current.panel
         );
       }
+      function resetSettle() {
+        clearTimeout(settleTimer);
+        settleTimer = null;
+        settleTarget = settleStage = null;
+        settleTicks = 0;
+      }
+      // Two separate scheduling turns check the same reviewed controls. This
+      // lets load/input handlers settle; it does not prove framework hydration.
+      function settled(target, stage, publicPhase, reason) {
+        if (settleStage !== stage || !same(settleTarget, target)) {
+          resetSettle();
+          settleTarget = target;
+          settleStage = stage;
+        }
+        if (settleTicks >= 2) return true;
+        publish(publicPhase, reason);
+        if (settleTimer === null)
+          settleTimer = setTimeout(function () {
+            settleTimer = null;
+            settleTicks++;
+            progress();
+          }, 50);
+        return false;
+      }
       function editable(target) {
         var reason =
           target.field.disabled || target.field.matches(":disabled")
@@ -353,7 +394,6 @@
             try {
               if (
                 !same(account, locate(false)) ||
-                !editable(account) ||
                 !reply ||
                 reply.loginFlow !== "synology"
               )
@@ -388,7 +428,6 @@
             try {
               if (
                 !same(passwordTarget, locate(true)) ||
-                !editable(passwordTarget) ||
                 !reply ||
                 reply.loginFlow !== "synology" ||
                 typeof reply.password !== "string"
@@ -396,37 +435,8 @@
                 reject("form-changed");
               controller = null;
               password = reply.password;
-              // Set phase before input events; nested progress must never refill.
-              phase = "password-button";
-              processing = true;
-              passwordTarget.form.addEventListener(
-                "submit",
-                preventNativeSubmit,
-                true,
-              );
-              helpers.fillField(
-                passwordTarget.field,
-                password,
-                function () {
-                  return (
-                    same(passwordTarget, locate(true)) &&
-                    editable(passwordTarget)
-                  );
-                },
-                function () {
-                  return (
-                    same(passwordTarget, locate(true)) &&
-                    passwordTarget.field.value === password
-                  );
-                },
-              );
-              if (
-                !same(passwordTarget, locate(true)) ||
-                passwordTarget.field.value !== password
-              )
-                reject("form-changed");
+              phase = "password-field";
             } finally {
-              processing = false;
               clearReply(reply);
             }
             progress();
@@ -449,7 +459,8 @@
         processing = true;
         try {
           if (!safe()) throw new Error("reviewed-login-stopped");
-          if (document.readyState === "loading") {
+          if (document.readyState !== "complete") {
+            resetSettle();
             publish("waiting_document", "document-loading");
             return;
           }
@@ -463,10 +474,36 @@
           }
           if (phase === "account") {
             var found = locate(false);
-            if (!found || !editable(found)) return;
             if (account && !same(account, found)) reject("form-changed");
+            if (
+              account &&
+              username &&
+              account.field.value &&
+              account.field.value !== username
+            )
+              reject("form-changed");
+            if (!found || !editable(found)) {
+              resetSettle();
+              return;
+            }
+            if (!account && !helpers.isVisible(found.button)) {
+              resetSettle();
+              publish("waiting_account_stable", "button-hidden");
+              return;
+            }
+            if (
+              !account &&
+              !settled(
+                found,
+                "account-readiness",
+                "waiting_account_stable",
+                "form-settling",
+              )
+            )
+              return;
             account = found;
             root = found.root; // Never latch an empty/loading Vue mount.
+            resetSettle();
             if (readinessNonce) {
               captureAccount();
               return;
@@ -495,9 +532,22 @@
               account.field.value !== username
             )
               reject("form-changed");
-            if (!clickable(account)) return;
+            if (!clickable(account)) {
+              resetSettle();
+              return;
+            }
+            if (
+              !settled(
+                account,
+                "account-input",
+                "waiting_next_button",
+                "input-settling",
+              )
+            )
+              return;
             account.form.addEventListener("submit", preventNativeSubmit, true);
             phase = "password";
+            resetSettle();
             account.button.click();
           }
           if (phase === "password") {
@@ -507,13 +557,57 @@
             capturePassword();
             return;
           }
+          if (phase === "password-field") {
+            if (
+              !same(passwordTarget, locate(true)) ||
+              passwordTarget.field.value
+            )
+              reject("form-changed");
+            if (!editable(passwordTarget)) return;
+            // Set phase before input events; nested progress must never refill.
+            phase = "password-button";
+            passwordTarget.form.addEventListener(
+              "submit",
+              preventNativeSubmit,
+              true,
+            );
+            helpers.fillField(
+              passwordTarget.field,
+              password,
+              function () {
+                return (
+                  same(passwordTarget, locate(true)) && editable(passwordTarget)
+                );
+              },
+              function () {
+                if (passwordTarget.field.value === password)
+                  passwordWritten = true;
+                return (
+                  same(passwordTarget, locate(true)) &&
+                  passwordTarget.field.value === password
+                );
+              },
+            );
+          }
           if (phase === "password-button") {
             if (
               !same(passwordTarget, locate(true)) ||
               passwordTarget.field.value !== password
             )
               reject("form-changed");
-            if (!clickable(passwordTarget)) return;
+            if (!clickable(passwordTarget)) {
+              resetSettle();
+              return;
+            }
+            if (
+              !settled(
+                passwordTarget,
+                "password-input",
+                "waiting_signin_button",
+                "input-settling",
+              )
+            )
+              return;
             passwordTarget.form.addEventListener(
               "submit",
               preventNativeSubmit,
@@ -544,6 +638,7 @@
       window.addEventListener("hashchange", navigation);
       window.addEventListener("popstate", navigation);
       window.addEventListener("resize", progress);
+      window.addEventListener("load", progress);
       readinessEvents.forEach(function (event) {
         document.addEventListener(event, progress, true);
       });

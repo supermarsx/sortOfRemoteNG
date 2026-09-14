@@ -65,6 +65,16 @@ the client allows 25 seconds for the matching password panel and submission.
 These stages do not renew or retry a login. Direct DSM Automatic form login uses
 the same readiness and password windows; other website login flows are unchanged.
 
+The page helper waits for document loading to complete, then checks the reviewed
+editable account controls across two 50-millisecond turns before requesting the
+username. After filling each field once, it allows two further 50-millisecond
+turns for input handling before clicking. These bounded stability checks are not
+proof that Vue has finished initializing, and they do not extend the deadlines.
+Hover the compact Auto-fill status for the fixed page phase/reason and the separate
+native grant snapshot. A timeout after Next says that the expected password-panel
+transition was not accepted; it does not silently click again. Refresh status
+only reads native state—it does not restart a stopped login.
+
 After updating the app, changing the original credentials or database/vault
 access, or letting the attempt expire, **close the tab and reopen the original
 saved connection**. Reloading the anonymous redirected tab does not recover

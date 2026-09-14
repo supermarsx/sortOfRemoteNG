@@ -6,6 +6,7 @@
     "waiting_root",
     "waiting_account_form",
     "waiting_account_editable",
+    "waiting_account_stable",
     "requesting_username",
     "waiting_next_button",
     "waiting_password_form",
@@ -19,6 +20,9 @@
   var reasons = [
     "not-started",
     "document-loading",
+    "form-settling",
+    "input-settling",
+    "next-not-advanced",
     "root-missing",
     "root-ambiguous",
     "form-missing",

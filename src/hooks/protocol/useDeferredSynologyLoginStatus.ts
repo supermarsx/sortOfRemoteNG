@@ -85,6 +85,7 @@ const PAGE_PHASES = {
   waiting_root: "finding DSM",
   waiting_account_form: "finding login form",
   waiting_account_editable: "username not ready",
+  waiting_account_stable: "checking login form",
   requesting_username: "requesting username",
   waiting_next_button: "waiting for Next",
   waiting_password_form: "finding password form",
@@ -97,7 +98,13 @@ const PAGE_PHASES = {
 } as const;
 const PAGE_REASONS = {
   "not-started": "The page helper is installed but has not started.",
-  "document-loading": "The document is still parsing.",
+  "document-loading": "The document has not completed loading.",
+  "form-settling":
+    "The reviewed editable account controls are being checked for stability before requesting the username. This does not prove the page framework has finished initializing.",
+  "input-settling":
+    "The helper filled the reviewed input once and is allowing the page to process its input events before clicking.",
+  "next-not-advanced":
+    "Next was clicked once, but the expected password-panel transition was not accepted before the deadline. No second click or login retry was attempted.",
   "root-missing": "The reviewed DSM root is absent.",
   "root-ambiguous": "More than one matching DSM root was found.",
   "form-missing": "The reviewed form is absent.",

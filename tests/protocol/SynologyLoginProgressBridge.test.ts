@@ -31,6 +31,29 @@ afterEach(() => {
 });
 
 describe("actual native-included DSM progress bridge", () => {
+  it("forwards bounded readiness and transition reasons without page-owned extra data", () => {
+    install();
+    for (const [phase, reason] of [
+      ["waiting_account_stable", "form-settling"],
+      ["waiting_next_button", "input-settling"],
+      ["timeout", "next-not-advanced"],
+    ]) {
+      send({
+        phase,
+        reason,
+        inputValue: "private",
+        href: "https://private.invalid",
+      });
+      expect(messages.mock.lastCall?.[0]).toEqual({
+        type: "proxy_synology_login_progress",
+        version: 1,
+        ...identity(),
+        phase,
+        reason,
+      });
+    }
+    expect(messages).toHaveBeenCalledTimes(3);
+  });
   it("copies only fixed diagnostics and the original native document identity", () => {
     const bound = identity();
     install(bound);

@@ -32,8 +32,8 @@ const bootstrap = template
   .replace("{nonce:?}", JSON.stringify("a".repeat(32)))
   .replace("{selectors_json}", "null")
   .replace("{flow_hint}", ", 'synology'")
-  .replaceAll("{{", "{")
-  .replaceAll("}}", "}");
+  .replace(/\{\{/g, "{")
+  .replace(/\}\}/g, "}");
 const scripts = assets + bootstrap;
 async function parse(html: string) {
   const request = vi.fn(() =>

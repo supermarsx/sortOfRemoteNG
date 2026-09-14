@@ -42,6 +42,41 @@ function fixture() {
   };
 }
 describe("native deferred Synology status snapshots", () => {
+  it("explains stable-form and input waits then a non-advancing Next without retrying", () => {
+    const view = fixture();
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "waiting_account_stable",
+        reason: "form-settling",
+      }),
+    );
+    expect(view.result.current.presentation?.text).toBe(
+      "Auto-fill: checking login form",
+    );
+    expect(view.result.current.presentation?.detail).toContain(
+      "does not prove the page framework",
+    );
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "waiting_next_button",
+        reason: "input-settling",
+      }),
+    );
+    expect(view.result.current.presentation?.detail).toContain(
+      "filled the reviewed input once",
+    );
+    act(() =>
+      view.result.current.receivePageProgress({
+        phase: "timeout",
+        reason: "next-not-advanced",
+      }),
+    );
+    expect(view.result.current.presentation?.text).toBe("Auto-fill: timed out");
+    expect(view.result.current.presentation?.detail).toContain(
+      "Next was clicked once",
+    );
+    expect(h.invoke).not.toHaveBeenCalled();
+  });
   it("keeps page-helper timeout distinct from the native grant without requesting or retrying anything", () => {
     const view = fixture();
     act(() =>
