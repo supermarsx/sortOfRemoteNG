@@ -10033,6 +10033,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-commands-bmc"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-bmc-common",
+ "sorng-idrac",
+ "sorng-ilo",
+ "sorng-lenovo",
+ "sorng-supermicro",
+ "tauri",
+]
+
+[[package]]
 name = "sorng-commands-cloud"
 version = "26.45.0"
 dependencies = [
@@ -10078,6 +10091,7 @@ dependencies = [
  "sorng-app-domains",
  "sorng-app-shell",
  "sorng-biometrics",
+ "sorng-commands-vpn",
  "sorng-core",
  "sorng-encryption",
  "sorng-llm",
@@ -10104,26 +10118,12 @@ dependencies = [
 name = "sorng-commands-infra"
 version = "26.45.0"
 dependencies = [
- "base64 0.23.1",
- "chrono",
- "log",
- "serde",
- "serde_json",
- "sorng-bmc-common",
- "sorng-hyperv",
- "sorng-idrac",
- "sorng-ilo",
- "sorng-lenovo",
- "sorng-meshcentral",
- "sorng-proxmox",
- "sorng-supermicro",
- "sorng-synology",
- "sorng-vmware",
- "sorng-voip-phone",
+ "sorng-commands-bmc",
+ "sorng-commands-nas",
+ "sorng-commands-proxmox",
+ "sorng-commands-remote",
+ "sorng-commands-virtualization",
  "tauri",
- "tauri-plugin-dialog",
- "tokio",
- "uuid",
 ]
 
 [[package]]
@@ -10148,6 +10148,17 @@ dependencies = [
  "sorng-spamassassin",
  "tauri",
  "uuid",
+]
+
+[[package]]
+name = "sorng-commands-nas"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-synology",
+ "tauri",
+ "tauri-plugin-dialog",
+ "tokio",
 ]
 
 [[package]]
@@ -10214,6 +10225,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-commands-proxmox"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-proxmox",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-remote"
+version = "26.45.0"
+dependencies = [
+ "sorng-meshcentral",
+ "sorng-voip-phone",
+ "tauri",
+]
+
+[[package]]
 name = "sorng-commands-services"
 version = "26.45.0"
 dependencies = [
@@ -10276,6 +10305,30 @@ dependencies = [
  "sorng-warpgate",
  "tauri",
  "uuid",
+]
+
+[[package]]
+name = "sorng-commands-virtualization"
+version = "26.45.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sorng-hyperv",
+ "sorng-vmware",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-vpn"
+version = "26.45.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "sorng-openvpn",
+ "sorng-vpn",
+ "tauri",
+ "tokio",
 ]
 
 [[package]]

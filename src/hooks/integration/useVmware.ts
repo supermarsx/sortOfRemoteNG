@@ -1,6 +1,6 @@
 // useVmware — real Tauri `invoke(...)` wrappers for the sorng-vmware backend.
 //
-// Pairs 1:1 with src-tauri/crates/sorng-vmware/src/commands.rs (55 commands).
+// Pairs 1:1 with src-tauri/crates/sorng-commands-virtualization/src/vmware_commands/inner.rs (55 commands).
 // Argument names match the Rust `#[tauri::command]` params exactly (camelCase,
 // per Tauri's snake_case↔camelCase arg mapping) so no custom serializer is needed.
 

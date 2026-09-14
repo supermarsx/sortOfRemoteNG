@@ -1,0 +1,451 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "chaining_commands::acquire_vpn_leases"
+    },
+    {
+      "path": "chaining_commands::connect_connection_chain"
+    },
+    {
+      "path": "ikev2_commands::connect_ikev2"
+    },
+    {
+      "path": "ipsec_commands::connect_ipsec"
+    },
+    {
+      "path": "l2tp_commands::connect_l2tp"
+    },
+    {
+      "path": "openvpn_commands::connect_openvpn"
+    },
+    {
+      "path": "pptp_commands::connect_pptp"
+    },
+    {
+      "path": "proxy_commands::connect_proxy_chain"
+    },
+    {
+      "path": "softether_commands::connect_softether",
+      "cfg": "feature = \"vpn-softether\""
+    },
+    {
+      "path": "sstp_commands::connect_sstp"
+    },
+    {
+      "path": "tailscale_commands::connect_tailscale"
+    },
+    {
+      "path": "proxy_commands::connect_via_proxy"
+    },
+    {
+      "path": "wireguard_commands::connect_wireguard"
+    },
+    {
+      "path": "zerotier_commands::connect_zerotier"
+    },
+    {
+      "path": "chaining_commands::create_connection_chain"
+    },
+    {
+      "path": "ikev2_commands::create_ikev2_connection"
+    },
+    {
+      "path": "ipsec_commands::create_ipsec_connection"
+    },
+    {
+      "path": "l2tp_commands::create_l2tp_connection"
+    },
+    {
+      "path": "openvpn_commands::create_openvpn_connection"
+    },
+    {
+      "path": "openvpn_commands::create_openvpn_connection_from_ovpn"
+    },
+    {
+      "path": "pptp_commands::create_pptp_connection"
+    },
+    {
+      "path": "proxy_commands::create_proxy_chain"
+    },
+    {
+      "path": "proxy_commands::create_proxy_connection"
+    },
+    {
+      "path": "softether_commands::create_softether_connection",
+      "cfg": "feature = \"vpn-softether\""
+    },
+    {
+      "path": "sstp_commands::create_sstp_connection"
+    },
+    {
+      "path": "tailscale_commands::create_tailscale_connection"
+    },
+    {
+      "path": "wireguard_commands::create_wireguard_connection"
+    },
+    {
+      "path": "wireguard_commands::create_wireguard_connection_from_conf"
+    },
+    {
+      "path": "zerotier_commands::create_zerotier_connection"
+    },
+    {
+      "path": "chaining_commands::delete_connection_chain"
+    },
+    {
+      "path": "ikev2_commands::delete_ikev2_connection"
+    },
+    {
+      "path": "ipsec_commands::delete_ipsec_connection"
+    },
+    {
+      "path": "l2tp_commands::delete_l2tp_connection"
+    },
+    {
+      "path": "openvpn_commands::delete_openvpn_connection"
+    },
+    {
+      "path": "pptp_commands::delete_pptp_connection"
+    },
+    {
+      "path": "proxy_commands::delete_proxy_chain"
+    },
+    {
+      "path": "proxy_commands::delete_proxy_connection"
+    },
+    {
+      "path": "softether_commands::delete_softether_connection",
+      "cfg": "feature = \"vpn-softether\""
+    },
+    {
+      "path": "sstp_commands::delete_sstp_connection"
+    },
+    {
+      "path": "tailscale_commands::delete_tailscale_connection"
+    },
+    {
+      "path": "wireguard_commands::delete_wireguard_connection"
+    },
+    {
+      "path": "zerotier_commands::delete_zerotier_connection"
+    },
+    {
+      "path": "chaining_commands::disconnect_connection_chain"
+    },
+    {
+      "path": "ikev2_commands::disconnect_ikev2"
+    },
+    {
+      "path": "ipsec_commands::disconnect_ipsec"
+    },
+    {
+      "path": "l2tp_commands::disconnect_l2tp"
+    },
+    {
+      "path": "openvpn_commands::disconnect_openvpn"
+    },
+    {
+      "path": "pptp_commands::disconnect_pptp"
+    },
+    {
+      "path": "proxy_commands::disconnect_proxy"
+    },
+    {
+      "path": "proxy_commands::disconnect_proxy_chain"
+    },
+    {
+      "path": "softether_commands::disconnect_softether",
+      "cfg": "feature = \"vpn-softether\""
+    },
+    {
+      "path": "sstp_commands::disconnect_sstp"
+    },
+    {
+      "path": "tailscale_commands::disconnect_tailscale"
+    },
+    {
+      "path": "wireguard_commands::disconnect_wireguard"
+    },
+    {
+      "path": "zerotier_commands::disconnect_zerotier"
+    },
+    {
+      "path": "chaining_commands::ensure_vpn_connected"
+    },
+    {
+      "path": "chaining_commands::get_connection_chain"
+    },
+    {
+      "path": "ikev2_commands::get_ikev2_connection"
+    },
+    {
+      "path": "ikev2_commands::get_ikev2_status"
+    },
+    {
+      "path": "ipsec_commands::get_ipsec_connection"
+    },
+    {
+      "path": "ipsec_commands::get_ipsec_status"
+    },
+    {
+      "path": "l2tp_commands::get_l2tp_connection"
+    },
+    {
+      "path": "l2tp_commands::get_l2tp_status"
+    },
+    {
+      "path": "openvpn_commands::get_openvpn_connection"
+    },
+    {
+      "path": "openvpn_commands::get_openvpn_status"
+    },
+    {
+      "path": "pptp_commands::get_pptp_connection"
+    },
+    {
+      "path": "pptp_commands::get_pptp_status"
+    },
+    {
+      "path": "proxy_commands::get_proxy_chain"
+    },
+    {
+      "path": "proxy_commands::get_proxy_chain_health"
+    },
+    {
+      "path": "proxy_commands::get_proxy_connection"
+    },
+    {
+      "path": "softether_commands::get_softether_connection",
+      "cfg": "feature = \"vpn-softether\""
+    },
+    {
+      "path": "softether_commands::get_softether_status",
+      "cfg": "feature = \"vpn-softether\""
+    },
+    {
+      "path": "sstp_commands::get_sstp_connection"
+    },
+    {
+      "path": "sstp_commands::get_sstp_status"
+    },
+    {
+      "path": "tailscale_commands::get_tailscale_connection"
+    },
+    {
+      "path": "tailscale_commands::get_tailscale_status"
+    },
+    {
+      "path": "chaining_commands::get_vpn_runtime_capabilities"
+    },
+    {
+      "path": "wireguard_commands::get_wireguard_connection"
+    },
+    {
+      "path": "wireguard_commands::get_wireguard_status"
+    },
+    {
+      "path": "zerotier_commands::get_zerotier_connection"
+    },
+    {
+      "path": "zerotier_commands::get_zerotier_status"
+    },
+    {
+      "path": "chaining_commands::list_connection_chains"
+    },
+    {
+      "path": "ikev2_commands::list_ikev2_connections"
+    },
+    {
+      "path": "ipsec_commands::list_ipsec_connections"
+    },
+    {
+      "path": "l2tp_commands::list_l2tp_connections"
+    },
+    {
+      "path": "openvpn_commands::list_openvpn_connections"
+    },
+    {
+      "path": "pptp_commands::list_pptp_connections"
+    },
+    {
+      "path": "proxy_commands::list_proxy_chains"
+    },
+    {
+      "path": "proxy_commands::list_proxy_connections"
+    },
+    {
+      "path": "softether_commands::list_softether_connections",
+      "cfg": "feature = \"vpn-softether\""
+    },
+    {
+      "path": "sstp_commands::list_sstp_connections"
+    },
+    {
+      "path": "tailscale_commands::list_tailscale_connections"
+    },
+    {
+      "path": "wireguard_commands::list_wireguard_connections"
+    },
+    {
+      "path": "zerotier_commands::list_zerotier_connections"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_capture_route_table"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_check_dns_leak"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_check_health"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_clear_logs"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_connect"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_connect_with_events"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_create_and_connect"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_create_connection"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_detect_version"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_disconnect"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_disconnect_all"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_export_config"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_export_logs"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_find_binary"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_flush_dns"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_binary_paths"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_config_templates"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_connection_info"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_default_reconnect"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_dns_config"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_logs"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_routing_policy"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_stats"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_get_status"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_import_config"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_list_connections"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_mgmt_command"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_remove_connection"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_search_logs"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_send_auth"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_send_otp"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_set_default_dns"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_set_default_reconnect"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_set_default_routing"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_set_dns_config"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_set_routing_policy"
+    },
+    {
+      "path": "openvpn_dedicated_commands::openvpn_validate_config"
+    },
+    {
+      "path": "chaining_commands::release_vpn_leases"
+    },
+    {
+      "path": "openvpn_commands::set_openvpn_connection_key_files"
+    },
+    {
+      "path": "chaining_commands::update_connection_chain_layers"
+    },
+    {
+      "path": "ikev2_commands::update_ikev2_connection"
+    },
+    {
+      "path": "ipsec_commands::update_ipsec_connection"
+    },
+    {
+      "path": "l2tp_commands::update_l2tp_connection"
+    },
+    {
+      "path": "openvpn_commands::update_openvpn_connection"
+    },
+    {
+      "path": "openvpn_commands::update_openvpn_connection_auth"
+    },
+    {
+      "path": "pptp_commands::update_pptp_connection"
+    },
+    {
+      "path": "softether_commands::update_softether_connection",
+      "cfg": "feature = \"vpn-softether\""
+    },
+    {
+      "path": "sstp_commands::update_sstp_connection"
+    },
+    {
+      "path": "tailscale_commands::update_tailscale_connection"
+    },
+    {
+      "path": "wireguard_commands::update_wireguard_connection"
+    },
+    {
+      "path": "zerotier_commands::update_zerotier_connection"
+    },
+    {
+      "path": "openvpn_commands::validate_ovpn_config"
+    }
+  ]
+}

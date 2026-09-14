@@ -528,7 +528,7 @@ describe("typed domain-action invocation", () => {
   it("accounts for every current native command with UI or explicit safer replacement", () => {
     const commands = Array.from(
       readFileSync(
-        "src-tauri/crates/sorng-synology/src/commands.rs",
+        "src-tauri/crates/sorng-commands-nas/src/synology_commands/inner.rs",
         "utf8",
       ).matchAll(/pub async fn (syn_\w+)/g),
       (match) => match[1],

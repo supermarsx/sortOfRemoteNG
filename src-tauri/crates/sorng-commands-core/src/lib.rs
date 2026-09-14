@@ -73,8 +73,6 @@ mod biometrics_commands;
 mod cert_auth_commands;
 #[path = "../../../src/cert_gen_commands.rs"]
 mod cert_gen_commands;
-#[path = "../../../src/chaining_commands.rs"]
-mod chaining_commands;
 #[path = "../../../src/cloudflare_commands.rs"]
 mod cloudflare_commands;
 #[path = "../../../src/commander_commands.rs"]
@@ -98,22 +96,12 @@ mod ftp_commands;
 mod http_commands;
 #[path = "../../../src/https_trust_commands.rs"]
 mod https_trust_commands;
-#[path = "../../../src/ikev2_commands.rs"]
-mod ikev2_commands;
-#[path = "../../../src/ipsec_commands.rs"]
-mod ipsec_commands;
-#[path = "../../../src/l2tp_commands.rs"]
-mod l2tp_commands;
 #[path = "../../../src/legacy_crypto_commands.rs"]
 mod legacy_crypto_commands;
 #[path = "../../../src/meshcentral_commands.rs"]
 mod meshcentral_commands;
 #[path = "../../../src/network_commands.rs"]
 mod network_commands;
-#[path = "../../../src/openvpn_commands.rs"]
-mod openvpn_commands;
-#[path = "../../../src/openvpn_dedicated_commands.rs"]
-mod openvpn_dedicated_commands;
 #[cfg(feature = "opkssh")]
 #[path = "../../../src/opkssh_commands.rs"]
 mod opkssh_commands;
@@ -125,10 +113,6 @@ mod powershell_commands;
 #[cfg(feature = "ops")]
 #[path = "../../../src/powershell_session_commands.rs"]
 mod powershell_session_commands;
-#[path = "../../../src/pptp_commands.rs"]
-mod pptp_commands;
-#[path = "../../../src/proxy_commands.rs"]
-mod proxy_commands;
 #[path = "../../../src/qr_commands.rs"]
 mod qr_commands;
 #[path = "../../../src/raw_socket_commands.rs"]
@@ -153,15 +137,8 @@ mod serial_commands;
 mod sftp_commands;
 #[path = "../../../src/smb_commands.rs"]
 mod smb_commands;
-#[cfg(feature = "vpn-softether")]
-#[path = "../../../src/softether_commands.rs"]
-mod softether_commands;
-#[path = "../../../src/sstp_commands.rs"]
-mod sstp_commands;
 #[path = "../../../src/storage_commands.rs"]
 mod storage_commands;
-#[path = "../../../src/tailscale_commands.rs"]
-mod tailscale_commands;
 #[path = "../../../src/telnet_commands.rs"]
 mod telnet_commands;
 #[path = "../../../src/totp_commands.rs"]
@@ -189,8 +166,6 @@ mod ard_commands;
 mod nx_commands;
 #[path = "../../../src/spice_commands.rs"]
 mod spice_commands;
-#[path = "../../../src/wireguard_commands.rs"]
-mod wireguard_commands;
 #[path = "../../../src/wmi_commands.rs"]
 mod wmi_commands;
 #[path = "../../../src/wol_commands.rs"]
@@ -199,8 +174,6 @@ mod wol_commands;
 mod x2go_commands;
 #[path = "../../../src/xdmcp_commands.rs"]
 mod xdmcp_commands;
-#[path = "../../../src/zerotier_commands.rs"]
-mod zerotier_commands;
 
 #[path = "../../../src/ssh_commands.rs"]
 mod ssh_commands;

@@ -9,9 +9,8 @@
 //! from a log without a redesign. Every request shape lives in ONE table
 //! ([`endpoints`]).
 //!
-//! `commands.rs` exists but is deliberately NOT a module here — it is
-//! `include!`d by the command aggregator crate (same convention as
-//! `sorng-nginx-proxy-mgr`).
+//! Tauri command wrappers are owned and compiled by `sorng-commands-remote`;
+//! this domain crate owns the shared service and managed-state types.
 
 pub mod endpoints;
 pub mod error;

@@ -4,7 +4,7 @@
 //!
 //! Per the global threading requirement in `.orchestration/plans/t1.md`
 //! ("Global threading requirement"), all VPN protocol I/O is offloaded onto
-//! tokio tasks. Tauri command handlers (`softether_cmds.rs`) acquire the
+//! tokio tasks. Tauri adapters in `sorng-commands-vpn` acquire the
 //! service mutex, enqueue work onto a spawned task, and return quickly. The
 //! packet/session loop, once implemented, will live inside a
 //! `tokio::task::spawn(...)` supervised by a `JoinHandle` stored on

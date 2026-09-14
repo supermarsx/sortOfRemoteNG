@@ -1,0 +1,17 @@
+[package]
+publish = false
+name = "sorng-commands-nas"
+version.workspace = true
+edition = "2021"
+description = "Bounded nas native command registrar"
+
+[dependencies]
+sorng-synology = { path = "../sorng-synology" }
+tauri = { workspace = true }
+tauri-plugin-dialog = "=2.7.2"
+tokio = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tauri = { workspace = true, features = ["test"] }
+

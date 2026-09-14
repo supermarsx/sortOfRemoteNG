@@ -272,7 +272,7 @@ const RUST_PROXY_CASES = [
     name: "VMware vSphere",
     typeFile: "src-tauri/crates/sorng-vmware/src/types.rs",
     proxyFiles: [
-      "src-tauri/crates/sorng-vmware/src/commands.rs",
+      "src-tauri/crates/sorng-commands-virtualization/src/vmware_commands/inner.rs",
       "src-tauri/crates/sorng-vmware/src/vsphere.rs",
     ],
     wire: "commandArg",

@@ -1,0 +1,728 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "idrac_commands::idrac_connect"
+    },
+    {
+      "path": "idrac_commands::idrac_disconnect"
+    },
+    {
+      "path": "idrac_commands::idrac_check_session"
+    },
+    {
+      "path": "idrac_commands::idrac_is_connected"
+    },
+    {
+      "path": "idrac_commands::idrac_get_config"
+    },
+    {
+      "path": "idrac_commands::idrac_get_system_info"
+    },
+    {
+      "path": "idrac_commands::idrac_get_idrac_info"
+    },
+    {
+      "path": "idrac_commands::idrac_set_asset_tag"
+    },
+    {
+      "path": "idrac_commands::idrac_set_indicator_led"
+    },
+    {
+      "path": "idrac_commands::idrac_power_action"
+    },
+    {
+      "path": "idrac_commands::idrac_get_power_state"
+    },
+    {
+      "path": "idrac_commands::idrac_get_power_metrics"
+    },
+    {
+      "path": "idrac_commands::idrac_list_power_supplies"
+    },
+    {
+      "path": "idrac_commands::idrac_set_power_cap"
+    },
+    {
+      "path": "idrac_commands::idrac_get_thermal_data"
+    },
+    {
+      "path": "idrac_commands::idrac_get_thermal_summary"
+    },
+    {
+      "path": "idrac_commands::idrac_set_fan_offset"
+    },
+    {
+      "path": "idrac_commands::idrac_list_processors"
+    },
+    {
+      "path": "idrac_commands::idrac_list_memory"
+    },
+    {
+      "path": "idrac_commands::idrac_list_pcie_devices"
+    },
+    {
+      "path": "idrac_commands::idrac_get_total_memory"
+    },
+    {
+      "path": "idrac_commands::idrac_get_processor_count"
+    },
+    {
+      "path": "idrac_commands::idrac_list_storage_controllers"
+    },
+    {
+      "path": "idrac_commands::idrac_list_virtual_disks"
+    },
+    {
+      "path": "idrac_commands::idrac_list_physical_disks"
+    },
+    {
+      "path": "idrac_commands::idrac_list_enclosures"
+    },
+    {
+      "path": "idrac_commands::idrac_create_virtual_disk"
+    },
+    {
+      "path": "idrac_commands::idrac_delete_virtual_disk"
+    },
+    {
+      "path": "idrac_commands::idrac_assign_hotspare"
+    },
+    {
+      "path": "idrac_commands::idrac_initialize_virtual_disk"
+    },
+    {
+      "path": "idrac_commands::idrac_list_network_adapters"
+    },
+    {
+      "path": "idrac_commands::idrac_list_network_ports"
+    },
+    {
+      "path": "idrac_commands::idrac_get_network_config"
+    },
+    {
+      "path": "idrac_commands::idrac_update_network_config"
+    },
+    {
+      "path": "idrac_commands::idrac_list_firmware"
+    },
+    {
+      "path": "idrac_commands::idrac_update_firmware"
+    },
+    {
+      "path": "idrac_commands::idrac_get_component_version"
+    },
+    {
+      "path": "idrac_commands::idrac_list_jobs"
+    },
+    {
+      "path": "idrac_commands::idrac_get_job"
+    },
+    {
+      "path": "idrac_commands::idrac_delete_job"
+    },
+    {
+      "path": "idrac_commands::idrac_purge_job_queue"
+    },
+    {
+      "path": "idrac_commands::idrac_export_scp"
+    },
+    {
+      "path": "idrac_commands::idrac_import_scp"
+    },
+    {
+      "path": "idrac_commands::idrac_get_lc_status"
+    },
+    {
+      "path": "idrac_commands::idrac_wait_for_job"
+    },
+    {
+      "path": "idrac_commands::idrac_list_virtual_media"
+    },
+    {
+      "path": "idrac_commands::idrac_mount_virtual_media"
+    },
+    {
+      "path": "idrac_commands::idrac_unmount_virtual_media"
+    },
+    {
+      "path": "idrac_commands::idrac_boot_from_virtual_cd"
+    },
+    {
+      "path": "idrac_commands::idrac_get_console_info"
+    },
+    {
+      "path": "idrac_commands::idrac_set_console_enabled"
+    },
+    {
+      "path": "idrac_commands::idrac_set_console_type"
+    },
+    {
+      "path": "idrac_commands::idrac_set_vnc_enabled"
+    },
+    {
+      "path": "idrac_commands::idrac_set_vnc_password"
+    },
+    {
+      "path": "idrac_commands::idrac_get_sel_entries"
+    },
+    {
+      "path": "idrac_commands::idrac_get_lc_log_entries"
+    },
+    {
+      "path": "idrac_commands::idrac_clear_sel"
+    },
+    {
+      "path": "idrac_commands::idrac_clear_lc_log"
+    },
+    {
+      "path": "idrac_commands::idrac_list_users"
+    },
+    {
+      "path": "idrac_commands::idrac_create_or_update_user"
+    },
+    {
+      "path": "idrac_commands::idrac_delete_user"
+    },
+    {
+      "path": "idrac_commands::idrac_unlock_user"
+    },
+    {
+      "path": "idrac_commands::idrac_change_user_password"
+    },
+    {
+      "path": "idrac_commands::idrac_get_ldap_config"
+    },
+    {
+      "path": "idrac_commands::idrac_get_ad_config"
+    },
+    {
+      "path": "idrac_commands::idrac_get_bios_attributes"
+    },
+    {
+      "path": "idrac_commands::idrac_get_bios_attribute"
+    },
+    {
+      "path": "idrac_commands::idrac_set_bios_attributes"
+    },
+    {
+      "path": "idrac_commands::idrac_get_boot_order"
+    },
+    {
+      "path": "idrac_commands::idrac_set_boot_order"
+    },
+    {
+      "path": "idrac_commands::idrac_set_boot_once"
+    },
+    {
+      "path": "idrac_commands::idrac_set_boot_mode"
+    },
+    {
+      "path": "idrac_commands::idrac_list_certificates"
+    },
+    {
+      "path": "idrac_commands::idrac_generate_csr"
+    },
+    {
+      "path": "idrac_commands::idrac_import_certificate"
+    },
+    {
+      "path": "idrac_commands::idrac_delete_certificate"
+    },
+    {
+      "path": "idrac_commands::idrac_replace_ssl_certificate"
+    },
+    {
+      "path": "idrac_commands::idrac_get_health_rollup"
+    },
+    {
+      "path": "idrac_commands::idrac_get_component_health"
+    },
+    {
+      "path": "idrac_commands::idrac_is_healthy"
+    },
+    {
+      "path": "idrac_commands::idrac_get_power_telemetry"
+    },
+    {
+      "path": "idrac_commands::idrac_get_thermal_telemetry"
+    },
+    {
+      "path": "idrac_commands::idrac_list_telemetry_reports"
+    },
+    {
+      "path": "idrac_commands::idrac_get_telemetry_report"
+    },
+    {
+      "path": "idrac_commands::idrac_racadm_execute"
+    },
+    {
+      "path": "idrac_commands::idrac_reset"
+    },
+    {
+      "path": "idrac_commands::idrac_get_attribute"
+    },
+    {
+      "path": "idrac_commands::idrac_set_attribute"
+    },
+    {
+      "path": "idrac_commands::idrac_get_dashboard"
+    },
+    {
+      "path": "ilo_commands::ilo_connect"
+    },
+    {
+      "path": "ilo_commands::ilo_disconnect"
+    },
+    {
+      "path": "ilo_commands::ilo_check_session"
+    },
+    {
+      "path": "ilo_commands::ilo_is_connected"
+    },
+    {
+      "path": "ilo_commands::ilo_get_config"
+    },
+    {
+      "path": "ilo_commands::ilo_get_system_info"
+    },
+    {
+      "path": "ilo_commands::ilo_get_ilo_info"
+    },
+    {
+      "path": "ilo_commands::ilo_set_asset_tag"
+    },
+    {
+      "path": "ilo_commands::ilo_set_indicator_led"
+    },
+    {
+      "path": "ilo_commands::ilo_power_action"
+    },
+    {
+      "path": "ilo_commands::ilo_get_power_state"
+    },
+    {
+      "path": "ilo_commands::ilo_get_power_metrics"
+    },
+    {
+      "path": "ilo_commands::ilo_get_thermal_data"
+    },
+    {
+      "path": "ilo_commands::ilo_get_thermal_summary"
+    },
+    {
+      "path": "ilo_commands::ilo_get_processors"
+    },
+    {
+      "path": "ilo_commands::ilo_get_memory"
+    },
+    {
+      "path": "ilo_commands::ilo_get_storage_controllers"
+    },
+    {
+      "path": "ilo_commands::ilo_get_virtual_disks"
+    },
+    {
+      "path": "ilo_commands::ilo_get_physical_disks"
+    },
+    {
+      "path": "ilo_commands::ilo_get_network_adapters"
+    },
+    {
+      "path": "ilo_commands::ilo_get_ilo_network"
+    },
+    {
+      "path": "ilo_commands::ilo_get_firmware_inventory"
+    },
+    {
+      "path": "ilo_commands::ilo_get_virtual_media_status"
+    },
+    {
+      "path": "ilo_commands::ilo_insert_virtual_media"
+    },
+    {
+      "path": "ilo_commands::ilo_eject_virtual_media"
+    },
+    {
+      "path": "ilo_commands::ilo_set_vm_boot_once"
+    },
+    {
+      "path": "ilo_commands::ilo_get_console_info"
+    },
+    {
+      "path": "ilo_commands::ilo_get_html5_launch_url"
+    },
+    {
+      "path": "ilo_commands::ilo_get_iml"
+    },
+    {
+      "path": "ilo_commands::ilo_get_ilo_event_log"
+    },
+    {
+      "path": "ilo_commands::ilo_clear_iml"
+    },
+    {
+      "path": "ilo_commands::ilo_clear_ilo_event_log"
+    },
+    {
+      "path": "ilo_commands::ilo_get_users"
+    },
+    {
+      "path": "ilo_commands::ilo_create_user"
+    },
+    {
+      "path": "ilo_commands::ilo_update_password"
+    },
+    {
+      "path": "ilo_commands::ilo_delete_user"
+    },
+    {
+      "path": "ilo_commands::ilo_set_user_enabled"
+    },
+    {
+      "path": "ilo_commands::ilo_get_bios_attributes"
+    },
+    {
+      "path": "ilo_commands::ilo_set_bios_attributes"
+    },
+    {
+      "path": "ilo_commands::ilo_get_boot_config"
+    },
+    {
+      "path": "ilo_commands::ilo_set_boot_override"
+    },
+    {
+      "path": "ilo_commands::ilo_get_certificate"
+    },
+    {
+      "path": "ilo_commands::ilo_generate_csr"
+    },
+    {
+      "path": "ilo_commands::ilo_import_certificate"
+    },
+    {
+      "path": "ilo_commands::ilo_get_health_rollup"
+    },
+    {
+      "path": "ilo_commands::ilo_get_dashboard"
+    },
+    {
+      "path": "ilo_commands::ilo_get_license"
+    },
+    {
+      "path": "ilo_commands::ilo_activate_license"
+    },
+    {
+      "path": "ilo_commands::ilo_deactivate_license"
+    },
+    {
+      "path": "ilo_commands::ilo_get_security_status"
+    },
+    {
+      "path": "ilo_commands::ilo_set_min_tls_version"
+    },
+    {
+      "path": "ilo_commands::ilo_set_ipmi_over_lan"
+    },
+    {
+      "path": "ilo_commands::ilo_get_federation_groups"
+    },
+    {
+      "path": "ilo_commands::ilo_get_federation_peers"
+    },
+    {
+      "path": "ilo_commands::ilo_add_federation_group"
+    },
+    {
+      "path": "ilo_commands::ilo_remove_federation_group"
+    },
+    {
+      "path": "ilo_commands::ilo_reset"
+    },
+    {
+      "path": "lenovo_commands::lenovo_connect"
+    },
+    {
+      "path": "lenovo_commands::lenovo_disconnect"
+    },
+    {
+      "path": "lenovo_commands::lenovo_check_session"
+    },
+    {
+      "path": "lenovo_commands::lenovo_is_connected"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_config"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_system_info"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_xcc_info"
+    },
+    {
+      "path": "lenovo_commands::lenovo_set_asset_tag"
+    },
+    {
+      "path": "lenovo_commands::lenovo_set_indicator_led"
+    },
+    {
+      "path": "lenovo_commands::lenovo_power_action"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_power_state"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_power_metrics"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_thermal_data"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_thermal_summary"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_processors"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_memory"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_storage_controllers"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_virtual_disks"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_physical_disks"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_network_adapters"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_xcc_network"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_firmware_inventory"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_virtual_media_status"
+    },
+    {
+      "path": "lenovo_commands::lenovo_insert_virtual_media"
+    },
+    {
+      "path": "lenovo_commands::lenovo_eject_virtual_media"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_console_info"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_html5_launch_url"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_event_log"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_audit_log"
+    },
+    {
+      "path": "lenovo_commands::lenovo_clear_event_log"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_users"
+    },
+    {
+      "path": "lenovo_commands::lenovo_create_user"
+    },
+    {
+      "path": "lenovo_commands::lenovo_update_password"
+    },
+    {
+      "path": "lenovo_commands::lenovo_delete_user"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_bios_attributes"
+    },
+    {
+      "path": "lenovo_commands::lenovo_set_bios_attributes"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_boot_config"
+    },
+    {
+      "path": "lenovo_commands::lenovo_set_boot_override"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_certificate"
+    },
+    {
+      "path": "lenovo_commands::lenovo_generate_csr"
+    },
+    {
+      "path": "lenovo_commands::lenovo_import_certificate"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_health_rollup"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_dashboard"
+    },
+    {
+      "path": "lenovo_commands::lenovo_get_license"
+    },
+    {
+      "path": "lenovo_commands::lenovo_onecli_execute"
+    },
+    {
+      "path": "lenovo_commands::lenovo_reset_controller"
+    },
+    {
+      "path": "supermicro_commands::smc_connect"
+    },
+    {
+      "path": "supermicro_commands::smc_disconnect"
+    },
+    {
+      "path": "supermicro_commands::smc_check_session"
+    },
+    {
+      "path": "supermicro_commands::smc_is_connected"
+    },
+    {
+      "path": "supermicro_commands::smc_get_config"
+    },
+    {
+      "path": "supermicro_commands::smc_get_system_info"
+    },
+    {
+      "path": "supermicro_commands::smc_get_bmc_info"
+    },
+    {
+      "path": "supermicro_commands::smc_set_asset_tag"
+    },
+    {
+      "path": "supermicro_commands::smc_set_indicator_led"
+    },
+    {
+      "path": "supermicro_commands::smc_power_action"
+    },
+    {
+      "path": "supermicro_commands::smc_get_power_state"
+    },
+    {
+      "path": "supermicro_commands::smc_get_power_metrics"
+    },
+    {
+      "path": "supermicro_commands::smc_get_thermal_data"
+    },
+    {
+      "path": "supermicro_commands::smc_get_thermal_summary"
+    },
+    {
+      "path": "supermicro_commands::smc_get_processors"
+    },
+    {
+      "path": "supermicro_commands::smc_get_memory"
+    },
+    {
+      "path": "supermicro_commands::smc_get_storage_controllers"
+    },
+    {
+      "path": "supermicro_commands::smc_get_virtual_disks"
+    },
+    {
+      "path": "supermicro_commands::smc_get_physical_disks"
+    },
+    {
+      "path": "supermicro_commands::smc_get_network_adapters"
+    },
+    {
+      "path": "supermicro_commands::smc_get_bmc_network"
+    },
+    {
+      "path": "supermicro_commands::smc_get_firmware_inventory"
+    },
+    {
+      "path": "supermicro_commands::smc_get_virtual_media_status"
+    },
+    {
+      "path": "supermicro_commands::smc_insert_virtual_media"
+    },
+    {
+      "path": "supermicro_commands::smc_eject_virtual_media"
+    },
+    {
+      "path": "supermicro_commands::smc_get_console_info"
+    },
+    {
+      "path": "supermicro_commands::smc_get_html5_ikvm_url"
+    },
+    {
+      "path": "supermicro_commands::smc_get_event_log"
+    },
+    {
+      "path": "supermicro_commands::smc_get_audit_log"
+    },
+    {
+      "path": "supermicro_commands::smc_clear_event_log"
+    },
+    {
+      "path": "supermicro_commands::smc_get_users"
+    },
+    {
+      "path": "supermicro_commands::smc_create_user"
+    },
+    {
+      "path": "supermicro_commands::smc_update_password"
+    },
+    {
+      "path": "supermicro_commands::smc_delete_user"
+    },
+    {
+      "path": "supermicro_commands::smc_get_bios_attributes"
+    },
+    {
+      "path": "supermicro_commands::smc_set_bios_attributes"
+    },
+    {
+      "path": "supermicro_commands::smc_get_boot_config"
+    },
+    {
+      "path": "supermicro_commands::smc_set_boot_override"
+    },
+    {
+      "path": "supermicro_commands::smc_get_certificate"
+    },
+    {
+      "path": "supermicro_commands::smc_generate_csr"
+    },
+    {
+      "path": "supermicro_commands::smc_import_certificate"
+    },
+    {
+      "path": "supermicro_commands::smc_get_health_rollup"
+    },
+    {
+      "path": "supermicro_commands::smc_get_dashboard"
+    },
+    {
+      "path": "supermicro_commands::smc_get_security_status"
+    },
+    {
+      "path": "supermicro_commands::smc_get_licenses"
+    },
+    {
+      "path": "supermicro_commands::smc_activate_license"
+    },
+    {
+      "path": "supermicro_commands::smc_get_node_manager_policies"
+    },
+    {
+      "path": "supermicro_commands::smc_get_node_manager_stats"
+    },
+    {
+      "path": "supermicro_commands::smc_reset_bmc"
+    }
+  ]
+}

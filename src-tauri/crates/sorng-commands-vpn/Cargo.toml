@@ -1,0 +1,22 @@
+[package]
+publish = false
+name = "sorng-commands-vpn"
+version.workspace = true
+edition = "2021"
+description = "Bounded VPN, proxy, and connection-chain command adapters"
+
+[dependencies]
+sorng-vpn = { path = "../sorng-vpn", default-features = false }
+sorng-openvpn = { path = "../sorng-openvpn" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = []
+vpn-softether = ["sorng-vpn/vpn-softether"]
+
+[dev-dependencies]
+tauri = { workspace = true, features = ["test"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+chrono = { workspace = true }

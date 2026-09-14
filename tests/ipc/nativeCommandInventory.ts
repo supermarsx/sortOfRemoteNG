@@ -89,6 +89,18 @@ export function reachableNativeHandlers(root: string): string[] {
     visited.add(file);
     const text = withoutComments(fs.readFileSync(file, "utf8"));
     if (/handler\.rs$/.test(file)) files.add(file);
+    // Facades may route to separately compiled command crates. Follow actual
+    // builder calls, not every Cargo dependency or stale source directory.
+    for (const match of text.matchAll(/(sorng_commands_\w+)::build\(/g)) {
+      visit(
+        path.join(
+          root,
+          "src-tauri/crates",
+          match[1].replace(/_/g, "-"),
+          "src/lib.rs",
+        ),
+      );
+    }
     for (const match of text.matchAll(
       /(?:#\[path\s*=\s*"([^"]+)"\]\s*)?(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;/g,
     )) {

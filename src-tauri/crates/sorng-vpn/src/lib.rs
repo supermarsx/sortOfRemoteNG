@@ -17,10 +17,8 @@ pub mod ras_helper;
 pub mod routing;
 #[cfg(feature = "vpn-softether")]
 pub mod softether;
-// NOTE: softether_cmds.rs is NOT listed here. Like the other `_cmds.rs`
-// files (ikev2_cmds, pptp_cmds, etc.), it's included via `include!` from
-// the app crate (`src-tauri/src/softether_commands.rs`). sorng-vpn has no
-// tauri dep, so declaring it as a module would fail to compile.
+// Tauri adapters are owned and compiled by sorng-commands-vpn; this service
+// crate intentionally has no Tauri dependency.
 pub mod sstp;
 pub mod strongswan_helper;
 pub mod tailscale;

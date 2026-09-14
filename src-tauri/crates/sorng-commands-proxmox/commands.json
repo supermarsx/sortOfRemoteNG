@@ -1,0 +1,374 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "proxmox_commands::proxmox_connect"
+    },
+    {
+      "path": "proxmox_commands::proxmox_disconnect"
+    },
+    {
+      "path": "proxmox_commands::proxmox_check_session"
+    },
+    {
+      "path": "proxmox_commands::proxmox_is_connected"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_config"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_version"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_nodes"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_node_status"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_node_services"
+    },
+    {
+      "path": "proxmox_commands::proxmox_start_node_service"
+    },
+    {
+      "path": "proxmox_commands::proxmox_stop_node_service"
+    },
+    {
+      "path": "proxmox_commands::proxmox_restart_node_service"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_node_dns"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_node_syslog"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_apt_updates"
+    },
+    {
+      "path": "proxmox_commands::proxmox_reboot_node"
+    },
+    {
+      "path": "proxmox_commands::proxmox_shutdown_node"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_qemu_vms"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_qemu_status"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_qemu_config"
+    },
+    {
+      "path": "proxmox_commands::proxmox_create_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_delete_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_start_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_stop_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_shutdown_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_reboot_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_suspend_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_resume_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_reset_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_resize_qemu_disk"
+    },
+    {
+      "path": "proxmox_commands::proxmox_clone_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_migrate_qemu_vm"
+    },
+    {
+      "path": "proxmox_commands::proxmox_convert_qemu_to_template"
+    },
+    {
+      "path": "proxmox_commands::proxmox_qemu_agent_exec"
+    },
+    {
+      "path": "proxmox_commands::proxmox_qemu_agent_network"
+    },
+    {
+      "path": "proxmox_commands::proxmox_qemu_agent_osinfo"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_next_vmid"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_lxc_containers"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_lxc_status"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_lxc_config"
+    },
+    {
+      "path": "proxmox_commands::proxmox_create_lxc_container"
+    },
+    {
+      "path": "proxmox_commands::proxmox_delete_lxc_container"
+    },
+    {
+      "path": "proxmox_commands::proxmox_start_lxc_container"
+    },
+    {
+      "path": "proxmox_commands::proxmox_stop_lxc_container"
+    },
+    {
+      "path": "proxmox_commands::proxmox_shutdown_lxc_container"
+    },
+    {
+      "path": "proxmox_commands::proxmox_reboot_lxc_container"
+    },
+    {
+      "path": "proxmox_commands::proxmox_clone_lxc_container"
+    },
+    {
+      "path": "proxmox_commands::proxmox_migrate_lxc_container"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_storage"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_storage_content"
+    },
+    {
+      "path": "proxmox_commands::proxmox_delete_storage_volume"
+    },
+    {
+      "path": "proxmox_commands::proxmox_download_to_storage"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_network_interfaces"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_network_interface"
+    },
+    {
+      "path": "proxmox_commands::proxmox_create_network_interface"
+    },
+    {
+      "path": "proxmox_commands::proxmox_delete_network_interface"
+    },
+    {
+      "path": "proxmox_commands::proxmox_apply_network_changes"
+    },
+    {
+      "path": "proxmox_commands::proxmox_revert_network_changes"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_cluster_status"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_cluster_resources"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_cluster_next_id"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_users"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_roles"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_groups"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_tasks"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_task_status"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_task_log"
+    },
+    {
+      "path": "proxmox_commands::proxmox_stop_task"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_backup_jobs"
+    },
+    {
+      "path": "proxmox_commands::proxmox_vzdump"
+    },
+    {
+      "path": "proxmox_commands::proxmox_restore_backup"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_backups"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_cluster_firewall_options"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_cluster_firewall_rules"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_security_groups"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_firewall_aliases"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_firewall_ipsets"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_guest_firewall_rules"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_pools"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_pool"
+    },
+    {
+      "path": "proxmox_commands::proxmox_create_pool"
+    },
+    {
+      "path": "proxmox_commands::proxmox_delete_pool"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_ha_resources"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_ha_groups"
+    },
+    {
+      "path": "proxmox_commands::proxmox_get_ceph_status"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_ceph_pools"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_ceph_monitors"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_ceph_osds"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_sdn_zones"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_sdn_vnets"
+    },
+    {
+      "path": "proxmox_commands::proxmox_qemu_vnc_proxy"
+    },
+    {
+      "path": "proxmox_commands::proxmox_qemu_spice_proxy"
+    },
+    {
+      "path": "proxmox_commands::proxmox_qemu_termproxy"
+    },
+    {
+      "path": "proxmox_commands::proxmox_lxc_vnc_proxy"
+    },
+    {
+      "path": "proxmox_commands::proxmox_lxc_spice_proxy"
+    },
+    {
+      "path": "proxmox_commands::proxmox_lxc_termproxy"
+    },
+    {
+      "path": "proxmox_commands::proxmox_node_termproxy"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_qemu_snapshots"
+    },
+    {
+      "path": "proxmox_commands::proxmox_create_qemu_snapshot"
+    },
+    {
+      "path": "proxmox_commands::proxmox_rollback_qemu_snapshot"
+    },
+    {
+      "path": "proxmox_commands::proxmox_delete_qemu_snapshot"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_lxc_snapshots"
+    },
+    {
+      "path": "proxmox_commands::proxmox_create_lxc_snapshot"
+    },
+    {
+      "path": "proxmox_commands::proxmox_rollback_lxc_snapshot"
+    },
+    {
+      "path": "proxmox_commands::proxmox_delete_lxc_snapshot"
+    },
+    {
+      "path": "proxmox_commands::proxmox_node_rrd"
+    },
+    {
+      "path": "proxmox_commands::proxmox_qemu_rrd"
+    },
+    {
+      "path": "proxmox_commands::proxmox_lxc_rrd"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_appliance_templates"
+    },
+    {
+      "path": "proxmox_commands::proxmox_download_appliance"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_isos"
+    },
+    {
+      "path": "proxmox_commands::proxmox_list_container_templates"
+    },
+    {
+      "path": "proxmox_commands::proxmox_connect_ex"
+    },
+    {
+      "path": "proxmox_commands::proxmox_submit_tfa"
+    },
+    {
+      "path": "proxmox_commands::proxmox_probe_certificate"
+    },
+    {
+      "path": "proxmox_commands::proxmox_web_ui_url"
+    },
+    {
+      "path": "proxmox_commands::proxmox_console_open"
+    },
+    {
+      "path": "proxmox_commands::proxmox_console_send"
+    },
+    {
+      "path": "proxmox_commands::proxmox_console_resize"
+    },
+    {
+      "path": "proxmox_commands::proxmox_console_close"
+    },
+    {
+      "path": "proxmox_commands::proxmox_console_list"
+    },
+    {
+      "path": "proxmox_commands::proxmox_vnc_bridge_open"
+    },
+    {
+      "path": "proxmox_commands::proxmox_vnc_bridge_close"
+    }
+  ]
+}

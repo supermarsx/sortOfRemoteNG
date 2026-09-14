@@ -1,0 +1,12 @@
+[package]
+publish = false
+name = "sorng-commands-proxmox"
+version.workspace = true
+edition = "2021"
+description = "Bounded proxmox native command registrar"
+
+[dependencies]
+sorng-proxmox = { path = "../sorng-proxmox" }
+tauri = { workspace = true }
+serde_json = { workspace = true }
+

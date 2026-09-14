@@ -9,6 +9,7 @@ description = "Core command handlers — split from app crate to reduce coherenc
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
 sorng-app-shell = { path = "../sorng-app-shell" }
 sorng-core = { path = "../sorng-core" }
+sorng-commands-vpn = { path = "../sorng-commands-vpn", default-features = false }
 sorng-biometrics = { path = "../sorng-biometrics" }
 sorng-encryption = { path = "../sorng-encryption" }
 sorng-vault = { path = "../sorng-vault" }
@@ -75,9 +76,9 @@ ops = ["sorng-app-domains/ops"]
 opkssh = ["dep:sorng-opkssh"]
 script-engine = []
 # Forwards to `sorng-vpn/vpn-softether`. When off, the softether command
-# shim is not compiled and the 7 SoftEther commands are not registered
+# adapter is not compiled and the SoftEther commands are not registered
 # with the Tauri handler.
-vpn-softether = ["sorng-app-domains/vpn-softether"]
+vpn-softether = ["sorng-app-domains/vpn-softether", "sorng-commands-vpn/vpn-softether"]
 # Serial / RS-232 feature split (t3-e4). Self-contained: these only
 # gate the 31 serial_* command registrations in `core_handler.rs` via
 # `#[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]`.

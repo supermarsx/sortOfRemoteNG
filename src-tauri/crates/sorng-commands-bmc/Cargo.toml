@@ -1,0 +1,16 @@
+[package]
+publish = false
+name = "sorng-commands-bmc"
+version.workspace = true
+edition = "2021"
+description = "Bounded bmc native command registrar"
+
+[dependencies]
+sorng-idrac = { path = "../sorng-idrac" }
+sorng-ilo = { path = "../sorng-ilo" }
+sorng-lenovo = { path = "../sorng-lenovo" }
+sorng-supermicro = { path = "../sorng-supermicro" }
+tauri = { workspace = true }
+sorng-bmc-common = { path = "../sorng-bmc-common" }
+serde_json = { workspace = true }
+

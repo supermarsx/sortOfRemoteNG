@@ -1,0 +1,14 @@
+[package]
+publish = false
+name = "sorng-commands-virtualization"
+version.workspace = true
+edition = "2021"
+description = "Bounded virtualization native command registrar"
+
+[dependencies]
+sorng-hyperv = { path = "../sorng-hyperv" }
+sorng-vmware = { path = "../sorng-vmware" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+

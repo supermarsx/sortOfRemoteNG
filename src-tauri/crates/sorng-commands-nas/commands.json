@@ -1,0 +1,362 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "synology_commands::syn_fs_connect"
+    },
+    {
+      "path": "synology_commands::syn_fs_transport_capabilities"
+    },
+    {
+      "path": "synology_commands::syn_fs_cancel_connect"
+    },
+    {
+      "path": "synology_commands::syn_fs_create_share_link"
+    },
+    {
+      "path": "synology_commands::syn_fs_list_share_links"
+    },
+    {
+      "path": "synology_commands::syn_fs_delete_share_links"
+    },
+    {
+      "path": "synology_commands::syn_fs_camera_snapshot"
+    },
+    {
+      "path": "synology_commands::syn_fs_disconnect"
+    },
+    {
+      "path": "synology_commands::syn_fs_session_health"
+    },
+    {
+      "path": "synology_commands::syn_get_section_access"
+    },
+    {
+      "path": "synology_commands::syn_fs_preview_file"
+    },
+    {
+      "path": "synology_commands::syn_fs_close_preview"
+    },
+    {
+      "path": "synology_commands::syn_fs_open_external"
+    },
+    {
+      "path": "synology_commands::syn_fs_list"
+    },
+    {
+      "path": "synology_commands::syn_fs_create_folder"
+    },
+    {
+      "path": "synology_commands::syn_fs_rename"
+    },
+    {
+      "path": "synology_commands::syn_fs_start_task"
+    },
+    {
+      "path": "synology_commands::syn_fs_task_status"
+    },
+    {
+      "path": "synology_commands::syn_fs_stop_task"
+    },
+    {
+      "path": "synology_commands::syn_fs_upload"
+    },
+    {
+      "path": "synology_commands::syn_fs_download"
+    },
+    {
+      "path": "synology_commands::syn_connect"
+    },
+    {
+      "path": "synology_commands::syn_disconnect"
+    },
+    {
+      "path": "synology_commands::syn_is_connected"
+    },
+    {
+      "path": "synology_commands::syn_check_session"
+    },
+    {
+      "path": "synology_commands::syn_get_config"
+    },
+    {
+      "path": "synology_commands::syn_get_system_info"
+    },
+    {
+      "path": "synology_commands::syn_get_utilization"
+    },
+    {
+      "path": "synology_commands::syn_list_processes"
+    },
+    {
+      "path": "synology_commands::syn_reboot"
+    },
+    {
+      "path": "synology_commands::syn_shutdown"
+    },
+    {
+      "path": "synology_commands::syn_check_update"
+    },
+    {
+      "path": "synology_commands::syn_get_storage_overview"
+    },
+    {
+      "path": "synology_commands::syn_list_disks"
+    },
+    {
+      "path": "synology_commands::syn_list_volumes"
+    },
+    {
+      "path": "synology_commands::syn_get_smart_info"
+    },
+    {
+      "path": "synology_commands::syn_list_iscsi_luns"
+    },
+    {
+      "path": "synology_commands::syn_list_iscsi_targets"
+    },
+    {
+      "path": "synology_commands::syn_get_file_station_info"
+    },
+    {
+      "path": "synology_commands::syn_list_files"
+    },
+    {
+      "path": "synology_commands::syn_list_file_shared_folders"
+    },
+    {
+      "path": "synology_commands::syn_search_files"
+    },
+    {
+      "path": "synology_commands::syn_upload_file"
+    },
+    {
+      "path": "synology_commands::syn_download_file"
+    },
+    {
+      "path": "synology_commands::syn_create_folder"
+    },
+    {
+      "path": "synology_commands::syn_delete_files"
+    },
+    {
+      "path": "synology_commands::syn_rename_file"
+    },
+    {
+      "path": "synology_commands::syn_create_share_link"
+    },
+    {
+      "path": "synology_commands::syn_list_shared_folders"
+    },
+    {
+      "path": "synology_commands::syn_get_share_permissions"
+    },
+    {
+      "path": "synology_commands::syn_create_shared_folder"
+    },
+    {
+      "path": "synology_commands::syn_delete_shared_folder"
+    },
+    {
+      "path": "synology_commands::syn_mount_encrypted_share"
+    },
+    {
+      "path": "synology_commands::syn_unmount_encrypted_share"
+    },
+    {
+      "path": "synology_commands::syn_get_network_overview"
+    },
+    {
+      "path": "synology_commands::syn_list_network_interfaces"
+    },
+    {
+      "path": "synology_commands::syn_list_firewall_rules"
+    },
+    {
+      "path": "synology_commands::syn_list_dhcp_leases"
+    },
+    {
+      "path": "synology_commands::syn_list_users"
+    },
+    {
+      "path": "synology_commands::syn_create_user"
+    },
+    {
+      "path": "synology_commands::syn_delete_user"
+    },
+    {
+      "path": "synology_commands::syn_list_groups"
+    },
+    {
+      "path": "synology_commands::syn_list_packages"
+    },
+    {
+      "path": "synology_commands::syn_start_package"
+    },
+    {
+      "path": "synology_commands::syn_stop_package"
+    },
+    {
+      "path": "synology_commands::syn_install_package"
+    },
+    {
+      "path": "synology_commands::syn_uninstall_package"
+    },
+    {
+      "path": "synology_commands::syn_list_services"
+    },
+    {
+      "path": "synology_commands::syn_get_smb_config"
+    },
+    {
+      "path": "synology_commands::syn_get_nfs_config"
+    },
+    {
+      "path": "synology_commands::syn_get_ssh_config"
+    },
+    {
+      "path": "synology_commands::syn_set_ssh_enabled"
+    },
+    {
+      "path": "synology_commands::syn_list_docker_containers"
+    },
+    {
+      "path": "synology_commands::syn_start_docker_container"
+    },
+    {
+      "path": "synology_commands::syn_stop_docker_container"
+    },
+    {
+      "path": "synology_commands::syn_restart_docker_container"
+    },
+    {
+      "path": "synology_commands::syn_delete_docker_container"
+    },
+    {
+      "path": "synology_commands::syn_list_docker_images"
+    },
+    {
+      "path": "synology_commands::syn_pull_docker_image"
+    },
+    {
+      "path": "synology_commands::syn_list_docker_networks"
+    },
+    {
+      "path": "synology_commands::syn_list_docker_projects"
+    },
+    {
+      "path": "synology_commands::syn_start_docker_project"
+    },
+    {
+      "path": "synology_commands::syn_stop_docker_project"
+    },
+    {
+      "path": "synology_commands::syn_list_vms"
+    },
+    {
+      "path": "synology_commands::syn_vm_power_on"
+    },
+    {
+      "path": "synology_commands::syn_vm_shutdown"
+    },
+    {
+      "path": "synology_commands::syn_vm_force_shutdown"
+    },
+    {
+      "path": "synology_commands::syn_list_vm_snapshots"
+    },
+    {
+      "path": "synology_commands::syn_take_vm_snapshot"
+    },
+    {
+      "path": "synology_commands::syn_get_download_station_info"
+    },
+    {
+      "path": "synology_commands::syn_list_download_tasks"
+    },
+    {
+      "path": "synology_commands::syn_create_download_task"
+    },
+    {
+      "path": "synology_commands::syn_pause_download"
+    },
+    {
+      "path": "synology_commands::syn_resume_download"
+    },
+    {
+      "path": "synology_commands::syn_delete_download"
+    },
+    {
+      "path": "synology_commands::syn_get_download_stats"
+    },
+    {
+      "path": "synology_commands::syn_get_surveillance_info"
+    },
+    {
+      "path": "synology_commands::syn_list_cameras"
+    },
+    {
+      "path": "synology_commands::syn_get_camera_snapshot"
+    },
+    {
+      "path": "synology_commands::syn_list_recordings"
+    },
+    {
+      "path": "synology_commands::syn_list_backup_tasks"
+    },
+    {
+      "path": "synology_commands::syn_start_backup_task"
+    },
+    {
+      "path": "synology_commands::syn_cancel_backup_task"
+    },
+    {
+      "path": "synology_commands::syn_list_backup_versions"
+    },
+    {
+      "path": "synology_commands::syn_list_active_backup_devices"
+    },
+    {
+      "path": "synology_commands::syn_get_security_overview"
+    },
+    {
+      "path": "synology_commands::syn_list_blocked_ips"
+    },
+    {
+      "path": "synology_commands::syn_unblock_ip"
+    },
+    {
+      "path": "synology_commands::syn_list_certificates"
+    },
+    {
+      "path": "synology_commands::syn_get_auto_block_config"
+    },
+    {
+      "path": "synology_commands::syn_get_hardware_info"
+    },
+    {
+      "path": "synology_commands::syn_get_ups_info"
+    },
+    {
+      "path": "synology_commands::syn_get_power_schedule"
+    },
+    {
+      "path": "synology_commands::syn_get_system_logs"
+    },
+    {
+      "path": "synology_commands::syn_get_connection_logs"
+    },
+    {
+      "path": "synology_commands::syn_get_active_connections"
+    },
+    {
+      "path": "synology_commands::syn_get_notification_config"
+    },
+    {
+      "path": "synology_commands::syn_test_email_notification"
+    },
+    {
+      "path": "synology_commands::syn_get_dashboard"
+    }
+  ]
+}

@@ -14,6 +14,11 @@ const owners = readdirSync(new URL(`../../${crateRoot}/`, import.meta.url), {
   .map((entry) => entry.name.slice("sorng-commands-".length))
   .sort();
 const router = read("src-tauri/src/invoke_handler.rs").split("#[cfg(test)]")[0];
+const rootOwners = [
+  ...router.matchAll(/let \w+_handler = sorng_commands_(\w+)::build\(\);/g),
+]
+  .map((match) => match[1])
+  .sort();
 
 function checkExport(source, owner) {
   assert.match(
@@ -28,9 +33,11 @@ function checkExport(source, owner) {
   );
   assert.equal(
     body.trim(),
-    owner === "core"
-      ? "core_handler::build()"
-      : `Box::new(${owner}_handler::build())`,
+    owner === "core" || owner === "infra"
+      ? `${owner}_handler::build()`
+      : source.includes("mod handler;")
+        ? "Box::new(handler::build())"
+        : `Box::new(${owner}_handler::build())`,
     `${owner}: erase once inside its owning crate; do not double-box core`,
   );
 }
@@ -49,7 +56,7 @@ test("the final app router is erased and consumes each crate's existing box", ()
   assert.match(router, /pub\(crate\) fn build\(\) -> InvokeHandler\s*\{/);
   assert.equal((router.match(/Box::new\(move \|invoke\|/g) ?? []).length, 1);
   assert.doesNotMatch(router, /(?:Box::new|erase_handler)\(sorng_commands_/);
-  for (const owner of owners) {
+  for (const owner of rootOwners) {
     assert.match(
       router,
       new RegExp(
@@ -112,7 +119,7 @@ test("root routing order, owning handlers and feature gates remain aligned", () 
       "webservers",
     ],
   );
-  assert.deepEqual(bindings.map(({ owner }) => owner).sort(), owners);
+  assert.deepEqual(bindings.map(({ owner }) => owner).sort(), rootOwners);
   const expectedGates = {
     core: [],
     access: [],

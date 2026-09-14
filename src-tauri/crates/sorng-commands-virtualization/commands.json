@@ -1,0 +1,434 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "hyperv_commands::hyperv_check_module"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_config"
+    },
+    {
+      "path": "hyperv_commands::hyperv_set_config"
+    },
+    {
+      "path": "hyperv_commands::hyperv_list_vms"
+    },
+    {
+      "path": "hyperv_commands::hyperv_list_vms_summary"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_vm_by_id"
+    },
+    {
+      "path": "hyperv_commands::hyperv_create_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_start_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_stop_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_restart_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_pause_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_resume_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_save_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_update_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_rename_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_export_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_import_vm"
+    },
+    {
+      "path": "hyperv_commands::hyperv_live_migrate"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_integration_services"
+    },
+    {
+      "path": "hyperv_commands::hyperv_set_integration_service"
+    },
+    {
+      "path": "hyperv_commands::hyperv_add_dvd_drive"
+    },
+    {
+      "path": "hyperv_commands::hyperv_set_dvd_drive"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_dvd_drive"
+    },
+    {
+      "path": "hyperv_commands::hyperv_add_hard_drive"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_hard_drive"
+    },
+    {
+      "path": "hyperv_commands::hyperv_list_checkpoints"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_checkpoint"
+    },
+    {
+      "path": "hyperv_commands::hyperv_create_checkpoint"
+    },
+    {
+      "path": "hyperv_commands::hyperv_restore_checkpoint"
+    },
+    {
+      "path": "hyperv_commands::hyperv_restore_checkpoint_by_id"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_checkpoint"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_checkpoint_tree"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_all_checkpoints"
+    },
+    {
+      "path": "hyperv_commands::hyperv_rename_checkpoint"
+    },
+    {
+      "path": "hyperv_commands::hyperv_export_checkpoint"
+    },
+    {
+      "path": "hyperv_commands::hyperv_list_switches"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_switch"
+    },
+    {
+      "path": "hyperv_commands::hyperv_create_switch"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_switch"
+    },
+    {
+      "path": "hyperv_commands::hyperv_rename_switch"
+    },
+    {
+      "path": "hyperv_commands::hyperv_list_physical_adapters"
+    },
+    {
+      "path": "hyperv_commands::hyperv_list_vm_adapters"
+    },
+    {
+      "path": "hyperv_commands::hyperv_add_vm_adapter"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_vm_adapter"
+    },
+    {
+      "path": "hyperv_commands::hyperv_connect_adapter"
+    },
+    {
+      "path": "hyperv_commands::hyperv_disconnect_adapter"
+    },
+    {
+      "path": "hyperv_commands::hyperv_set_adapter_vlan"
+    },
+    {
+      "path": "hyperv_commands::hyperv_set_adapter_vlan_trunk"
+    },
+    {
+      "path": "hyperv_commands::hyperv_remove_adapter_vlan"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_test_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_create_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_resize_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_convert_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_compact_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_optimize_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_merge_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_mount_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_dismount_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_delete_vhd"
+    },
+    {
+      "path": "hyperv_commands::hyperv_list_vm_hard_drives"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_vm_metrics"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_all_vm_metrics"
+    },
+    {
+      "path": "hyperv_commands::hyperv_enable_metering"
+    },
+    {
+      "path": "hyperv_commands::hyperv_disable_metering"
+    },
+    {
+      "path": "hyperv_commands::hyperv_reset_metering"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_metering_report"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_host_info"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_events"
+    },
+    {
+      "path": "hyperv_commands::hyperv_set_host_paths"
+    },
+    {
+      "path": "hyperv_commands::hyperv_set_live_migration"
+    },
+    {
+      "path": "hyperv_commands::hyperv_set_numa_spanning"
+    },
+    {
+      "path": "hyperv_commands::hyperv_get_replication"
+    },
+    {
+      "path": "hyperv_commands::hyperv_list_replicated_vms"
+    },
+    {
+      "path": "hyperv_commands::hyperv_enable_replication"
+    },
+    {
+      "path": "hyperv_commands::hyperv_disable_replication"
+    },
+    {
+      "path": "hyperv_commands::hyperv_start_initial_replication"
+    },
+    {
+      "path": "hyperv_commands::hyperv_suspend_replication"
+    },
+    {
+      "path": "hyperv_commands::hyperv_resume_replication"
+    },
+    {
+      "path": "hyperv_commands::hyperv_planned_failover"
+    },
+    {
+      "path": "hyperv_commands::hyperv_unplanned_failover"
+    },
+    {
+      "path": "hyperv_commands::hyperv_complete_failover"
+    },
+    {
+      "path": "hyperv_commands::hyperv_cancel_failover"
+    },
+    {
+      "path": "hyperv_commands::hyperv_reverse_replication"
+    },
+    {
+      "path": "hyperv_commands::hyperv_start_test_failover"
+    },
+    {
+      "path": "hyperv_commands::hyperv_stop_test_failover"
+    },
+    {
+      "path": "vmware_commands::vmware_connect"
+    },
+    {
+      "path": "vmware_commands::vmware_disconnect"
+    },
+    {
+      "path": "vmware_commands::vmware_check_session"
+    },
+    {
+      "path": "vmware_commands::vmware_is_connected"
+    },
+    {
+      "path": "vmware_commands::vmware_get_config"
+    },
+    {
+      "path": "vmware_commands::vmware_list_vms"
+    },
+    {
+      "path": "vmware_commands::vmware_list_running_vms"
+    },
+    {
+      "path": "vmware_commands::vmware_get_vm"
+    },
+    {
+      "path": "vmware_commands::vmware_create_vm"
+    },
+    {
+      "path": "vmware_commands::vmware_delete_vm"
+    },
+    {
+      "path": "vmware_commands::vmware_power_on"
+    },
+    {
+      "path": "vmware_commands::vmware_power_off"
+    },
+    {
+      "path": "vmware_commands::vmware_suspend"
+    },
+    {
+      "path": "vmware_commands::vmware_reset"
+    },
+    {
+      "path": "vmware_commands::vmware_shutdown_guest"
+    },
+    {
+      "path": "vmware_commands::vmware_reboot_guest"
+    },
+    {
+      "path": "vmware_commands::vmware_get_guest_identity"
+    },
+    {
+      "path": "vmware_commands::vmware_update_cpu"
+    },
+    {
+      "path": "vmware_commands::vmware_update_memory"
+    },
+    {
+      "path": "vmware_commands::vmware_clone_vm"
+    },
+    {
+      "path": "vmware_commands::vmware_relocate_vm"
+    },
+    {
+      "path": "vmware_commands::vmware_find_vm_by_name"
+    },
+    {
+      "path": "vmware_commands::vmware_get_power_state"
+    },
+    {
+      "path": "vmware_commands::vmware_list_snapshots"
+    },
+    {
+      "path": "vmware_commands::vmware_create_snapshot"
+    },
+    {
+      "path": "vmware_commands::vmware_revert_snapshot"
+    },
+    {
+      "path": "vmware_commands::vmware_delete_snapshot"
+    },
+    {
+      "path": "vmware_commands::vmware_delete_all_snapshots"
+    },
+    {
+      "path": "vmware_commands::vmware_list_networks"
+    },
+    {
+      "path": "vmware_commands::vmware_get_network"
+    },
+    {
+      "path": "vmware_commands::vmware_list_datastores"
+    },
+    {
+      "path": "vmware_commands::vmware_get_datastore"
+    },
+    {
+      "path": "vmware_commands::vmware_list_hosts"
+    },
+    {
+      "path": "vmware_commands::vmware_get_host"
+    },
+    {
+      "path": "vmware_commands::vmware_disconnect_host"
+    },
+    {
+      "path": "vmware_commands::vmware_reconnect_host"
+    },
+    {
+      "path": "vmware_commands::vmware_list_clusters"
+    },
+    {
+      "path": "vmware_commands::vmware_list_datacenters"
+    },
+    {
+      "path": "vmware_commands::vmware_list_folders"
+    },
+    {
+      "path": "vmware_commands::vmware_list_resource_pools"
+    },
+    {
+      "path": "vmware_commands::vmware_get_vm_stats"
+    },
+    {
+      "path": "vmware_commands::vmware_get_all_vm_stats"
+    },
+    {
+      "path": "vmware_commands::vmware_get_inventory_summary"
+    },
+    {
+      "path": "vmware_commands::vmware_acquire_console_ticket"
+    },
+    {
+      "path": "vmware_commands::vmware_open_console"
+    },
+    {
+      "path": "vmware_commands::vmware_close_console"
+    },
+    {
+      "path": "vmware_commands::vmware_close_all_consoles"
+    },
+    {
+      "path": "vmware_commands::vmware_list_console_sessions"
+    },
+    {
+      "path": "vmware_commands::vmware_get_console_session"
+    },
+    {
+      "path": "vmware_commands::vmware_launch_vmrc"
+    },
+    {
+      "path": "vmware_commands::vmware_list_vmrc_sessions"
+    },
+    {
+      "path": "vmware_commands::vmware_close_vmrc_session"
+    },
+    {
+      "path": "vmware_commands::vmware_close_all_vmrc_sessions"
+    },
+    {
+      "path": "vmware_commands::vmware_is_vmrc_available"
+    },
+    {
+      "path": "vmware_commands::vmware_is_horizon_available"
+    }
+  ]
+}

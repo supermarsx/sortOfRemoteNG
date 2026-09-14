@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "meshcentral_dedicated_commands::mc_connect"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_disconnect"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_disconnect_all"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_get_session_info"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_list_sessions"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_ping"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_get_server_info"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_get_server_version"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_health_check"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_list_devices"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_get_device_info"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_add_local_device"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_add_amt_device"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_edit_device"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_remove_devices"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_move_device_to_group"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_list_device_groups"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_create_device_group"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_edit_device_group"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_remove_device_group"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_list_users"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_add_user"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_edit_user"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_remove_user"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_list_user_groups"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_create_user_group"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_remove_user_group"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_power_action"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_wake_devices"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_run_commands"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_run_command_on_device"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_upload_file"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_download_file"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_get_transfer_progress"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_get_active_transfers"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_cancel_transfer"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_list_events"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_create_device_share"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_list_device_shares"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_remove_device_share"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_send_toast"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_send_message_box"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_send_open_url"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_broadcast_message"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_download_agent_to_file"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_send_invite_email"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_generate_invite_link"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_generate_report"
+    },
+    {
+      "path": "meshcentral_dedicated_commands::mc_create_web_relay"
+    },
+    {
+      "path": "voip_phone_commands::voip_phone_probe"
+    },
+    {
+      "path": "voip_phone_commands::voip_phone_connect"
+    },
+    {
+      "path": "voip_phone_commands::voip_phone_disconnect"
+    },
+    {
+      "path": "voip_phone_commands::voip_phone_list"
+    },
+    {
+      "path": "voip_phone_commands::voip_phone_get_config"
+    },
+    {
+      "path": "voip_phone_commands::voip_phone_get_status"
+    },
+    {
+      "path": "voip_phone_commands::voip_phone_reboot"
+    },
+    {
+      "path": "voip_phone_commands::voip_phone_web_login_hint"
+    }
+  ]
+}

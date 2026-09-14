@@ -1,0 +1,13 @@
+[package]
+publish = false
+name = "sorng-commands-remote"
+version.workspace = true
+edition = "2021"
+description = "Bounded remote native command registrar"
+
+[dependencies]
+sorng-meshcentral = { path = "../sorng-meshcentral" }
+sorng-voip-phone = { path = "../sorng-voip-phone" }
+tauri = { workspace = true }
+
+
