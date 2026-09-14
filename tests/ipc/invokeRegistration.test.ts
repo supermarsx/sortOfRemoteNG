@@ -1022,6 +1022,7 @@ describe("frontend invoke registrations", () => {
       "src/hooks/protocol/useDocker.ts: cmd",
       "src/hooks/proxmox/useProxmox.ts: cmd",
       "src/hooks/session/useSessionDetach.ts: command",
+      "src/hooks/ssh/useYubiKey.ts: command",
       "src/hooks/sync/useBackupStatus.ts: command",
       "src/hooks/sync/useWindowsBackup.ts: cmd",
       "src/hooks/updater/useUpdater.ts: command",
