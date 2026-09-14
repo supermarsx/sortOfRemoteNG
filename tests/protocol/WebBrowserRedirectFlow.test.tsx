@@ -791,7 +791,7 @@ describe("actual website redirect review integration", () => {
     const icon = await screen.findByRole("button", {
       name: "Refresh saved login status",
     });
-    expect(icon).toHaveTextContent("Saved login: status unknown");
+    expect(icon).toHaveTextContent("Saved login: no native status");
     expect(icon).not.toHaveTextContent("waiting");
     const starts = h.invoke.mock.calls.filter(
       ([command]) => command === "start_basic_auth_proxy",
@@ -807,6 +807,41 @@ describe("actual website redirect review integration", () => {
     await act(async () => fireEvent.click(icon));
     expect(icon).toHaveTextContent("Auto-fill: waiting for DSM");
     next.unmount();
+  });
+  it("explains explicit status refresh failures separately from missing native sessions or attempts", async () => {
+    automaticSource();
+    h.loginStatuses = {
+      "proxy-1": "awaiting_nas",
+      "proxy-2": "waiting_for_form",
+    };
+    await mountContinuation();
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    const button = screen.getByRole("button", {
+      name: "Refresh saved login status",
+    });
+    const invoke = h.invoke.getMockImplementation()!;
+    for (const [response, expected] of [
+      [new Error("private backend detail"), "status read failed"],
+      [[], "session unavailable"],
+      [[{ session_id: "proxy-2" }], "no native status"],
+    ] as const) {
+      h.invoke.mockImplementation(async (command, args) => {
+        if (command === "get_proxy_session_details") {
+          if (response instanceof Error) throw response;
+          return response;
+        }
+        return invoke(command, args);
+      });
+      await act(async () => fireEvent.click(button));
+      expect(button).toHaveTextContent(`Saved login: ${expected}`);
+      expect(button.title).toContain(
+        "Last observed: Waiting for the DSM form (not current status)",
+      );
+      expect(button.title).not.toContain("private backend detail");
+    }
+    expect(
+      h.invoke.mock.calls.filter(([name]) => name === "start_basic_auth_proxy"),
+    ).toHaveLength(2);
   });
   it("keeps visible native auto-fill status and the original form lease over three anonymous same-tab hops", async () => {
     automaticSource();

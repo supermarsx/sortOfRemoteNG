@@ -88,8 +88,8 @@ describe("native deferred Synology status snapshots", () => {
         }),
       );
       expect(view.result.current.presentation?.status).toBeNull();
-      expect(view.result.current.presentation?.text).toBe(
-        "Saved login: status unknown",
+      expect(view.result.current.presentation?.reason).toBe(
+        status == null ? "status-missing" : "unsupported-status",
       );
       expect(view.result.current.presentation?.detail).toContain(
         "Saved login requested; native status unknown",
@@ -104,6 +104,10 @@ describe("native deferred Synology status snapshots", () => {
     await act(() => view.result.current.refresh());
     await act(() => vi.advanceTimersByTimeAsync(30_000));
     expect(view.result.current.presentation?.status).toBeNull();
+    expect(view.result.current.presentation?.reason).toBe("snapshot-aged");
+    expect(view.result.current.presentation?.text).toBe(
+      "Saved login: status needs refresh",
+    );
     expect(view.result.current.presentation?.detail).toContain(
       "Saved login requested; native status unknown",
     );
@@ -202,6 +206,54 @@ describe("native deferred Synology status snapshots", () => {
     await act(() => view.result.current.refresh());
     expect(view.result.current.presentation?.detail).not.toContain("private");
   });
+  it.each([
+    [null, "invalid-response"],
+    [[], "session-missing"],
+    [
+      [{ sessionId: "proxy-a", deferredLoginStatus: "waiting_for_form" }],
+      "session-missing",
+    ],
+    [[{ session_id: "proxy-a" }], "status-missing"],
+    [
+      [{ session_id: "proxy-a", deferred_login_status: "future" }],
+      "unsupported-status",
+    ],
+    [
+      [{ session_id: "proxy-a" }, { session_id: "proxy-a" }],
+      "ambiguous-session",
+    ],
+  ])(
+    "distinguishes a closed response diagnostic for %j",
+    async (response, reason) => {
+      const view = fixture();
+      h.invoke.mockResolvedValue(response);
+      await act(() => view.result.current.refresh());
+      expect(view.result.current.presentation).toMatchObject({
+        status: null,
+        reason,
+      });
+      expect(view.result.current.presentation?.detail).toContain(`[${reason}]`);
+    },
+  );
+  it("reports a failed native request without echoing an exception or arbitrary secret-bearing object", async () => {
+    const view = fixture();
+    for (const failure of [
+      "private token=hidden",
+      new Error("private hostname"),
+      { password: "private" },
+    ]) {
+      h.invoke.mockRejectedValue(failure);
+      await act(() => view.result.current.refresh());
+      expect(view.result.current.presentation).toMatchObject({
+        status: null,
+        reason: "request-failed",
+        text: "Saved login: status read failed",
+      });
+      expect(view.result.current.presentation?.detail).not.toMatch(
+        /private|hidden|hostname/,
+      );
+    }
+  });
   it("makes no requests for ordinary or revoked login contexts", async () => {
     const view = fixture();
     view.rerender({ ...view.options, requested: false });
@@ -213,5 +265,99 @@ describe("native deferred Synology status snapshots", () => {
       "access changed",
     );
     expect(h.invoke).not.toHaveBeenCalled();
+  });
+  it("bounds a stalled read, allows explicit retry and discards the old late reply", async () => {
+    const view = fixture();
+    act(() =>
+      view.result.current.receive({
+        session_id: "proxy-a",
+        deferred_login_status: "waiting_for_form",
+      }),
+    );
+    let resolve!: (value: unknown) => void;
+    h.invoke.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.refresh();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+      await pending;
+    });
+    expect(view.result.current.presentation).toMatchObject({
+      status: null,
+      reason: "request-timeout",
+    });
+    expect(view.result.current.presentation?.detail).toContain(
+      "Last observed: Waiting for the DSM form (not current status)",
+    );
+    h.invoke.mockResolvedValueOnce([
+      { session_id: "proxy-a", deferred_login_status: "credentials_released" },
+    ]);
+    await act(() => view.result.current.refresh());
+    await act(async () =>
+      resolve([{ session_id: "proxy-a", deferred_login_status: "expired" }]),
+    );
+    expect(view.result.current.presentation?.status).toBe(
+      "credentials_released",
+    );
+    expect(h.invoke).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("rejects an overdue reply even before the delayed timer callback runs", async () => {
+    const view = fixture();
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    let resolve!: (value: unknown) => void;
+    h.invoke.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.refresh();
+    });
+    now = 6001;
+    await act(async () => {
+      resolve([
+        {
+          session_id: "proxy-a",
+          deferred_login_status: "waiting_for_password",
+        },
+      ]);
+      await pending;
+    });
+    expect(view.result.current.presentation).toMatchObject({
+      status: null,
+      reason: "request-timeout",
+    });
+    vi.mocked(performance.now).mockRestore();
+  });
+  it("does not carry a timeout or last-observed phase into a replacement owner", async () => {
+    const view = fixture();
+    act(() =>
+      view.result.current.receive({
+        session_id: "proxy-a",
+        deferred_login_status: "waiting_for_form",
+      }),
+    );
+    h.invoke.mockReturnValue(new Promise(() => {}));
+    act(() => {
+      void view.result.current.refresh();
+    });
+    view.rerender({ ...view.options, scope: "replacement-owner" });
+    await act(() => vi.advanceTimersByTimeAsync(6000));
+    expect(view.result.current.presentation).toMatchObject({
+      status: null,
+      reason: "not-observed",
+    });
+    expect(view.result.current.presentation?.detail).not.toContain(
+      "Last observed",
+    );
   });
 });

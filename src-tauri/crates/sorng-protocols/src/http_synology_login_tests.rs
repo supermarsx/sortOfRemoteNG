@@ -346,3 +346,94 @@ fn status_serialization_is_a_closed_scalar_and_old_session_responses_remain_read
         assert!(!text.contains(private));
     }
 }
+
+#[test]
+fn status_wire_parity_between_start_and_session_details() {
+    use crate::http::{ProxyMediatorResponse, ProxySessionDetail};
+
+    for (status, wire) in [
+        (
+            Some(DeferredSynologyLoginStatus::AwaitingNas),
+            Some("awaiting_nas"),
+        ),
+        (
+            Some(DeferredSynologyLoginStatus::WaitingForForm),
+            Some("waiting_for_form"),
+        ),
+        (
+            Some(DeferredSynologyLoginStatus::WaitingForPassword),
+            Some("waiting_for_password"),
+        ),
+        (
+            Some(DeferredSynologyLoginStatus::CredentialsReleased),
+            Some("credentials_released"),
+        ),
+        (Some(DeferredSynologyLoginStatus::Expired), Some("expired")),
+        (
+            Some(DeferredSynologyLoginStatus::Cancelled),
+            Some("cancelled"),
+        ),
+        (None, None),
+    ] {
+        let start = ProxyMediatorResponse {
+            local_port: 1234,
+            session_id: "fixture-session".into(),
+            proxy_url: "http://fixture.localhost:1234/".into(),
+            deferred_login_status: status,
+        };
+        let details = vec![ProxySessionDetail {
+            session_id: start.session_id.clone(),
+            target_url: "https://fixture.invalid/".into(),
+            username: String::new(),
+            connection_id: "fixture-connection".into(),
+            proxy_url: start.proxy_url.clone(),
+            created_at: "2026-09-14T00:00:00Z".into(),
+            request_count: 3,
+            error_count: 0,
+            last_error: None,
+            deferred_login_status: status,
+        }];
+        let mut expected_start = serde_json::json!({
+            "local_port": 1234,
+            "session_id": "fixture-session",
+            "proxy_url": "http://fixture.localhost:1234/"
+        });
+        let mut expected_detail = serde_json::json!({
+            "session_id": "fixture-session",
+            "target_url": "https://fixture.invalid/",
+            "username": "",
+            "connection_id": "fixture-connection",
+            "proxy_url": "http://fixture.localhost:1234/",
+            "created_at": "2026-09-14T00:00:00Z",
+            "request_count": 3,
+            "error_count": 0,
+            "last_error": null
+        });
+        if let Some(wire) = wire {
+            expected_start["deferred_login_status"] = wire.into();
+            expected_detail["deferred_login_status"] = wire.into();
+        }
+
+        // Start returns one object; the details command returns an array. Both
+        // preserve the same snake_case field and closed scalar without a wrapper.
+        let start_wire = serde_json::to_value(&start).unwrap();
+        let details_wire = serde_json::to_value(&details).unwrap();
+        assert_eq!(start_wire, expected_start);
+        assert_eq!(details_wire, serde_json::json!([expected_detail]));
+        assert_eq!(
+            start_wire.get("deferred_login_status"),
+            details_wire[0].get("deferred_login_status")
+        );
+        assert_eq!(
+            serde_json::from_value::<ProxyMediatorResponse>(start_wire)
+                .unwrap()
+                .deferred_login_status,
+            status
+        );
+        assert_eq!(
+            serde_json::from_value::<Vec<ProxySessionDetail>>(details_wire).unwrap()[0]
+                .deferred_login_status,
+            status
+        );
+    }
+}
