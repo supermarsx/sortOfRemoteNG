@@ -2,12 +2,13 @@ import React, { useId } from "react";
 import { LogIn, ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
 import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
 import { DialogHeader } from "../../ui/overlays/DialogHeader";
+import { PasswordInput } from "../../ui/forms/PasswordInput";
+import { TextInput } from "../../ui/forms/TextInput";
 import type { SubProps } from "./types";
 import SynologyInitializationStatus from "./SynologyInitializationStatus";
 import SynologyApiFailure from "./SynologyApiFailure";
 
-const inputClass =
-  "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-3 py-2 text-sm text-[var(--color-text)]";
+const inputClass = "sor-form-input text-sm";
 const ConnectionForm: React.FC<
   SubProps & { runtimeVerified?: boolean; isActive?: boolean }
 > = ({ mgr, runtimeVerified = false, isActive = true }) => {
@@ -122,30 +123,31 @@ const ConnectionForm: React.FC<
             </div>
             <label className="block space-y-1 text-xs" htmlFor={`${id}-user`}>
               Username
-              <input
+              <TextInput
                 id={`${id}-user`}
                 autoComplete="username"
                 className={inputClass}
                 value={mgr.username}
-                onChange={(e) => mgr.setUsername(e.target.value)}
+                onChange={mgr.setUsername}
                 disabled={disabled || mgr.credentialsLocked}
               />
             </label>
-            <label
-              className="block space-y-1 text-xs"
-              htmlFor={`${id}-password`}
-            >
-              Password
-              <input
+            <div className="space-y-1 text-xs">
+              <label className="block" htmlFor={`${id}-password`}>
+                Password
+              </label>
+              <PasswordInput
                 id={`${id}-password`}
-                type="password"
                 autoComplete="current-password"
                 className={inputClass}
                 value={mgr.password}
                 onChange={(e) => mgr.setPassword(e.target.value)}
                 disabled={disabled || mgr.credentialsLocked}
+                revealable={
+                  disabled || mgr.credentialsLocked ? false : undefined
+                }
               />
-            </label>
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -225,7 +227,7 @@ const ConnectionForm: React.FC<
             <>
               <label htmlFor={`${id}-otp`} className="block space-y-1 text-sm">
                 One-time code
-                <input
+                <TextInput
                   id={`${id}-otp`}
                   className={inputClass}
                   inputMode="numeric"
@@ -233,7 +235,7 @@ const ConnectionForm: React.FC<
                   maxLength={8}
                   placeholder="123456"
                   value={mgr.otpCode}
-                  onChange={(e) => mgr.setOtpCode(e.target.value)}
+                  onChange={mgr.setOtpCode}
                   disabled={connecting}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {

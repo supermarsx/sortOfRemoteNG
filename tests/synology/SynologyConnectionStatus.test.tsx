@@ -24,6 +24,58 @@ const manager = (overrides: Partial<Mgr> = {}) =>
     ...overrides,
   }) as unknown as Mgr;
 describe("saved NAS status page", () => {
+  it("uses the app-themed password control and reveals only by explicit user action without submitting", () => {
+    const mgr = manager({
+      targetLocked: false,
+      connectionError: null,
+      setPassword: vi.fn(),
+      setUsername: vi.fn(),
+    });
+    const view = render(<ConnectionForm mgr={mgr} />);
+    const password = screen.getByLabelText("Password");
+    expect(password).toHaveClass("sor-form-input");
+    expect(password).toHaveStyle({ paddingRight: "2.25rem" });
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveAttribute("autocomplete", "current-password");
+    expect(screen.getByLabelText("Username")).toHaveClass("sor-form-input");
+    expect(screen.getByLabelText("Username")).toHaveAttribute(
+      "autocomplete",
+      "username",
+    );
+    const reveal = screen.getByRole("button", { name: "Show password" });
+    expect(reveal).toHaveAttribute("type", "button");
+    fireEvent.click(reveal);
+    expect(password).toHaveAttribute("type", "text");
+    expect(mgr.connect).not.toHaveBeenCalled();
+    expect(mgr.setPassword).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password).toHaveAttribute("type", "password");
+    fireEvent.change(password, { target: { value: "replacement" } });
+    expect(mgr.setPassword).toHaveBeenCalledExactlyOnceWith("replacement");
+    view.rerender(
+      <ConnectionForm mgr={{ ...mgr, connectionStatus: "connecting" }} />,
+    );
+    expect(password).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Show password" }),
+    ).not.toBeInTheDocument();
+  });
+  it("keeps vault-locked credentials disabled and unrevealable", () => {
+    render(
+      <ConnectionForm
+        mgr={manager({ targetLocked: false, credentialsLocked: true })}
+      />,
+    );
+    expect(screen.getByLabelText("Password")).toBeDisabled();
+    expect(screen.getByLabelText("Username")).toBeDisabled();
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "type",
+      "password",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Show password" }),
+    ).not.toBeInTheDocument();
+  });
   it.each([true, false])(
     "renders structured safe API errors in the saved=%s connection form",
     (targetLocked) => {
@@ -94,6 +146,17 @@ describe("saved NAS status page", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("One-time code")).toBeInTheDocument();
+    expect(screen.getByLabelText("One-time code")).toHaveClass(
+      "sor-form-input",
+    );
+    expect(screen.getByLabelText("One-time code")).toHaveAttribute(
+      "autocomplete",
+      "one-time-code",
+    );
+    expect(screen.getByLabelText("One-time code")).toHaveAttribute(
+      "inputmode",
+      "numeric",
+    );
     expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
   });
   it("shows code verification as one pending request inside the explicit challenge dialog", () => {

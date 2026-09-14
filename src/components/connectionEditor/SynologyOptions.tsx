@@ -224,6 +224,7 @@ export default function SynologyOptions({
             DSM password
             <PasswordInput
               aria-label="DSM API password"
+              className="sor-form-input"
               autoComplete="new-password"
               value={credentials?.password ?? ""}
               onChange={(event) =>

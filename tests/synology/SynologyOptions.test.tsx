@@ -42,6 +42,18 @@ function selectMode(name: string) {
   );
   fireEvent.mouseDown(screen.getByRole("option", { name }));
 }
+it("themes the DSM API password exactly like its username with protected reveal spacing", () => {
+  render(<Editor />);
+  selectMode("Synology NAS API");
+  const password = screen.getByLabelText("DSM API password");
+  expect(password).toHaveClass("sor-form-input");
+  expect(screen.getByLabelText("DSM API username")).toHaveClass(
+    "sor-form-input",
+  );
+  expect(password).toHaveAttribute("type", "password");
+  expect(password).toHaveAttribute("autocomplete", "new-password");
+  expect(password).toHaveStyle({ paddingRight: "2.25rem" });
+});
 const savedShape = () =>
   JSON.parse(screen.getByTestId("saved-shape").textContent!);
 describe("Synology HTTP application views", () => {
@@ -396,7 +408,7 @@ describe("Synology HTTP application views", () => {
       port: 5000,
       httpAutoLogin: false,
       httpVerifySsl: true,
-      httpsTrustPolicy: "always-ask",
+      httpsTrustPolicy: "inherit",
     });
     expect(target.basicAuthUsername).toBeUndefined();
     expect(target.basicAuthPassword).toBeUndefined();
