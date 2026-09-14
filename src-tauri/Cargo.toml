@@ -500,15 +500,31 @@ debug = 0
 # memory during the workspace build.
 [profile.dev.package."*"]
 debug = 0
-# Optimise third-party crates in dev builds.  opt-level 1 gives the
-# majority of the performance benefit of -O2 but uses significantly
-# less memory during LLVM codegen.
-opt-level = 1
+# Prioritize compilation for ordinary dependencies. Named runtime and macro
+# overrides below retain optimization where development responsiveness needs it.
+opt-level = 0
 
-# Optimise proc-macro / build-script crates at -O2.  These run on the
-# host during compilation — faster proc-macros = faster macro_expand_crate.
+# Build-time workspace code stays optimized. Cargo's named and wildcard package
+# overrides take precedence over this setting for non-workspace dependencies.
 [profile.dev.build-override]
 opt-level = 2
+
+# Preserve the previous effective optimization of the large command frontend's
+# macro engine. The wildcard above otherwise also deoptimizes proc macros.
+[profile.dev.package.tauri-macros]
+opt-level = 1
+
+[profile.dev.package.tauri-codegen]
+opt-level = 1
+
+[profile.dev.package.syn]
+opt-level = 1
+
+[profile.dev.package.quote]
+opt-level = 1
+
+[profile.dev.package.proc-macro2]
+opt-level = 1
 
 # Optimize RDP pixel loops and their protocol/decoder consumers in dev too.
 # Named overrides include the first-party crates where generic code is
@@ -558,42 +574,42 @@ opt-level = 2
 opt-level = 2
 
 # ── Per-crate overrides for memory-hungry deps ───────────────────────
-# These crates have extreme generic expansion during typeck/codegen.
-# A single codegen unit forces sequential LLVM work on one thread,
-# which caps peak memory.  debug=0 avoids emitting debug info for
-# crates we'll never step into.
+# Use modest codegen parallelism for SQLx and TLS without restoring debuginfo.
+# Four units can reduce serialized LLVM work; this is not a memory cap and
+# does not parallelize Rust's type checking. SQLx favors compilation in dev;
+# rustls keeps basic optimization for its shared TLS runtime path.
 [profile.dev.package.sqlx-postgres]
-codegen-units = 1
-opt-level = 1
+codegen-units = 4
+opt-level = 0
 debug = 0
 
 [profile.dev.package.sqlx-mysql]
-codegen-units = 1
-opt-level = 1
+codegen-units = 4
+opt-level = 0
 debug = 0
 
 [profile.dev.package.sqlx-core]
-codegen-units = 1
-opt-level = 1
+codegen-units = 4
+opt-level = 0
 debug = 0
 
 [profile.dev.package.sqlx-sqlite]
-codegen-units = 1
-opt-level = 1
+codegen-units = 4
+opt-level = 0
 debug = 0
 
 [profile.dev.package.sqlx-macros]
-codegen-units = 1
-opt-level = 1
+codegen-units = 4
+opt-level = 0
 debug = 0
 
 [profile.dev.package.sqlx-macros-core]
-codegen-units = 1
-opt-level = 1
+codegen-units = 4
+opt-level = 0
 debug = 0
 
 [profile.dev.package.rustls]
-codegen-units = 1
+codegen-units = 4
 opt-level = 1
 debug = 0
 

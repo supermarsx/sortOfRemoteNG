@@ -41,7 +41,7 @@ function writePackage(directory, name) {
 }
 
 const scenarios = [
-  { name: "dev", rootOpt: "0", dependencyOpt: "1" },
+  { name: "dev", rootOpt: "0", dependencyOpt: "0" },
   {
     name: "local-release",
     release: true,

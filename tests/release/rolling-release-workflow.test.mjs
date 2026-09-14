@@ -399,7 +399,7 @@ test("RDP runtime packages retain optimization inside bounded release profiles",
   assert.doesNotMatch(cargoManifest, /^\[profile\.release\.package\."\*"\]$/m);
   assert.match(
     activeTomlSection(cargoManifest, 'profile.dev.package."*"'),
-    /^opt-level = 1$/m,
+    /^opt-level = 0$/m,
   );
   assert.doesNotMatch(
     activeTomlSection(cargoManifest, "profile.dev"),
