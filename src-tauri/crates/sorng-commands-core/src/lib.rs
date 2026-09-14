@@ -218,6 +218,9 @@ pub fn is_command(command: &str) -> bool {
     core_handler::is_command(command)
 }
 
-pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+/// Keep generated command closure types inside their owning crate.
+pub type Handler = Box<tauri::ipc::InvokeHandler<tauri::Wry>>;
+
+pub fn build() -> Handler {
     core_handler::build()
 }

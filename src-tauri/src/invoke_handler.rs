@@ -11,39 +11,39 @@ fn is_tray_command(command: &str) -> bool {
     matches!(command, "set_tray_icon_visible")
 }
 
-pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+pub(crate) fn build() -> InvokeHandler {
     // Always-on command crates
     let tray_handler = erase_handler(tauri::generate_handler![crate::tray::set_tray_icon_visible]);
     let web_guard_handler = erase_handler(tauri::generate_handler![
         crate::web_network_guard::web_network_guard_status
     ]);
     let core_handler = sorng_commands_core::build();
-    let sessions_handler = erase_handler(sorng_commands_sessions::build());
-    let access_handler = erase_handler(sorng_commands_access::build());
+    let sessions_handler = sorng_commands_sessions::build();
+    let access_handler = sorng_commands_access::build();
 
     // Feature-gated command crates — compiled in separate coherence domains
-    // to reduce type-check time in the app crate. Type-erasing each concrete
-    // generated closure also keeps the final Builder monomorphization bounded.
+    // to reduce type-check time in the app crate. Each crate returns an already
+    // type-erased handler; do not box those values a second time here.
     #[cfg(feature = "cloud")]
-    let cloud_handler = erase_handler(sorng_commands_cloud::build());
+    let cloud_handler = sorng_commands_cloud::build();
     #[cfg(any(feature = "collab", feature = "platform"))]
-    let collab_handler = erase_handler(sorng_commands_collab::build());
+    let collab_handler = sorng_commands_collab::build();
     #[cfg(feature = "platform")]
-    let platform_handler = erase_handler(sorng_commands_platform::build());
+    let platform_handler = sorng_commands_platform::build();
     #[cfg(feature = "ops")]
-    let ops_handler = erase_handler(sorng_commands_ops::build());
+    let ops_handler = sorng_commands_ops::build();
     #[cfg(feature = "ops")]
-    let infra_handler = erase_handler(sorng_commands_infra::build());
+    let infra_handler = sorng_commands_infra::build();
     #[cfg(feature = "ops")]
-    let mail_handler = erase_handler(sorng_commands_mail::build());
+    let mail_handler = sorng_commands_mail::build();
     #[cfg(feature = "ops")]
-    let services_handler = erase_handler(sorng_commands_services::build());
+    let services_handler = sorng_commands_services::build();
     #[cfg(feature = "ops")]
-    let tools_handler = erase_handler(sorng_commands_tools::build());
+    let tools_handler = sorng_commands_tools::build();
     #[cfg(feature = "ops")]
-    let webservers_handler = erase_handler(sorng_commands_webservers::build());
+    let webservers_handler = sorng_commands_webservers::build();
 
-    move |invoke| {
+    Box::new(move |invoke| {
         let command = invoke.message.command();
         if command == "web_network_guard_status" {
             return web_guard_handler(invoke);
@@ -110,7 +110,7 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         }
 
         false
-    }
+    })
 }
 
 #[cfg(test)]
