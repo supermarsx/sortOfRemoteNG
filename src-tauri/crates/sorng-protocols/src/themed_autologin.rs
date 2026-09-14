@@ -59,6 +59,11 @@ use std::sync::{Arc, RwLock};
 use crate::http::{AxumProxyState, HttpAutoLoginSelectors};
 use crate::themed_auth::fresh_nonce;
 
+// Native lifetime of the nonce while the verified DSM page mounts its account
+// controls. The client performs a shorter bounded read-only readiness wait.
+pub(crate) const SYNOLOGY_FORM_READINESS_LIFETIME: std::time::Duration =
+    std::time::Duration::from_secs(120);
+
 #[path = "bitwarden_autologin.rs"]
 mod bitwarden;
 pub use bitwarden::{validate_config as validate_reviewed_login_config, BitwardenContinuation};
@@ -208,7 +213,7 @@ pub fn build_autologin_injection_from_slots(
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
 
-    Some(autologin_client_script(&nonce, &selectors_json))
+    Some(autologin_client_script(&nonce, &selectors_json, false))
 }
 
 /// `&AxumProxyState` wrapper over [`build_autologin_injection_from_slots`] for
@@ -220,7 +225,7 @@ pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64)
         .filter(|attempt| attempt.uses_deferred_synology_login())
     {
         let nonce = attempt.deferred_login_nonce(&state.network, document_sequence)?;
-        return Some(autologin_client_script(&nonce, "null"));
+        return Some(autologin_client_script(&nonce, "null", true));
     }
     let injection = build_autologin_injection_from_slots(
         &state.auto_login_armed,
@@ -232,6 +237,10 @@ pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64)
         crate::http::UpstreamAuthMode::BitwardenForm | crate::http::UpstreamAuthMode::SynologyForm
     ) {
         bitwarden::bind_document(state, document_sequence)?;
+    }
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::SynologyForm {
+        let nonce = state.auto_login_nonce.read().ok()?.clone()?;
+        return Some(autologin_client_script(&nonce, "null", true));
     }
     Some(injection)
 }
@@ -252,10 +261,12 @@ pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64)
 /// - fill + submit exactly once; never re-submit.
 ///
 /// The separately bundled full client defines
-/// `window.__sorng_autologin.fetchCredsAndRun(nonce, selectors)` (the validated
-/// `autologin-fill.js` routine), which this bootstrap auto-detects and defers
-/// to. No change to this injection wiring is needed.
-fn autologin_client_script(nonce: &str, selectors_json: &str) -> String {
+/// `window.__sorng_autologin.fetchCredsAndRun(nonce, selectors, flow?)` (the
+/// validated client routine), which this bootstrap auto-detects and defers to.
+/// Only native Synology authorization emits the fixed third argument; it asks
+/// that client to wait for reviewed account controls before reading a credential.
+/// Generic and Bitwarden dispatch remain unchanged. There is no inline fallback.
+fn autologin_client_script(nonce: &str, selectors_json: &str, synology: bool) -> String {
     format!(
         r#"<script>(function(){{
 'use strict';
@@ -264,7 +275,7 @@ var SEL={selectors_json};
 function report(r){{try{{window.parent.postMessage({{type:'proxy_autologin_result',result:r}},'*');}}catch(_){{}} window.__autologin_last=r;}}
 function go(){{
   if(window.__sorng_autologin&&typeof window.__sorng_autologin.fetchCredsAndRun==='function'){{
-    try{{window.__sorng_autologin.fetchCredsAndRun(NONCE,SEL);return;}}catch(_){{report({{ok:false,reason:'autologin-client-failed'}});return;}}
+    try{{window.__sorng_autologin.fetchCredsAndRun(NONCE,SEL{flow_hint});return;}}catch(_){{report({{ok:false,reason:'autologin-client-failed'}});return;}}
   }}
   report({{ok:false,reason:'autologin-client-unavailable'}});
 }}
@@ -272,6 +283,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
 }})();</script>"#,
         nonce = nonce,
         selectors_json = selectors_json,
+        flow_hint = if synology { ", 'synology'" } else { "" },
     )
 }
 
@@ -566,7 +578,8 @@ mod tests {
             "injected script carries the stashed nonce"
         );
         // The script targets the credential endpoint.
-        assert!(script.contains("fetchCredsAndRun"));
+        assert!(script.contains("fetchCredsAndRun(NONCE,SEL)"));
+        assert!(!script.contains("fetchCredsAndRun(NONCE,SEL, 'synology')"));
         assert!(script.contains("autologin-client-unavailable"));
         assert!(!script.contains("fetch("));
     }

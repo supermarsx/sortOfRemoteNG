@@ -124,7 +124,7 @@
     checkGuard(guard);
   }
 
-  function fillField(el, value, guard) {
+  function fillField(el, value, guard, postWriteGuard) {
     if (!el) return false;
     checkGuard(guard);
     try {
@@ -132,8 +132,11 @@
     } catch (_) {}
     checkGuard(guard);
     setNativeValue(el, value);
-    checkGuard(guard);
-    fireInputEvents(el, guard);
+    // Reviewed staged clients can allow their same owned field to become
+    // disabled during validation, but never before the actual value write.
+    var afterWrite = postWriteGuard || guard;
+    checkGuard(afterWrite);
+    fireInputEvents(el, afterWrite);
     return el.value === value;
   }
 
@@ -1059,7 +1062,7 @@
   }
 
   function report(result) {
-    // The ONLY signal back to the app — the parent React hook listens for this.
+    // Fixed diagnostic result only; no credentials are included in the event.
     // It never carries the credential, only the outcome.
     try {
       window.parent.postMessage(
@@ -1081,10 +1084,29 @@
   // ------------------------------------------------------------------------
   var AUTOLOGIN_PATH = "/__sortofremoteng_autologin";
 
-  function fetchCredsAndRun(nonce, selectors) {
+  function fetchCredsAndRun(nonce, selectors, loginFlow) {
     // Client single-shot: never fetch/fill/submit more than once per page.
     if (hasRun || stopped) return;
     hasRun = true;
+
+    // Native closed purpose hint: DSM must see a complete account panel before
+    // dispensing its username and starting the short password continuation.
+    if (loginFlow === "synology") {
+      var synology = window.__sorng_synology_login;
+      if (!synology || typeof synology.runWhenReady !== "function") {
+        report({ ok: false, reason: "autologin-client-unavailable" });
+        return;
+      }
+      return synology.runWhenReady(nonce, {
+        fillField: fillField,
+        isVisible: isVisible,
+        report: report,
+      });
+    }
+    if (loginFlow != null) {
+      report({ ok: false, reason: "invalid-login-flow" });
+      return;
+    }
 
     var injectedOv = normSel(selectors);
 

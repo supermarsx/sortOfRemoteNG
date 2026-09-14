@@ -244,6 +244,10 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
     );
     let html = crate::themed_autologin::build_autologin_injection(state, 1).unwrap();
     assert!(!html.contains("synthetic-user") && !html.contains("synthetic-master-password"));
+    assert_eq!(
+        html.contains("fetchCredsAndRun(NONCE,SEL, 'synology')"),
+        mode == UpstreamAuthMode::SynologyForm
+    );
     proxy
 }
 

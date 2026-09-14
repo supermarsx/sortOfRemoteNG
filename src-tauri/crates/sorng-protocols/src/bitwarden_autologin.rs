@@ -9,18 +9,30 @@ use std::time::{Duration, Instant};
 
 const GRANT_LIFETIME: Duration = Duration::from_secs(30);
 
+fn account_lifetime(mode: UpstreamAuthMode) -> Duration {
+    if mode == UpstreamAuthMode::SynologyForm {
+        super::SYNOLOGY_FORM_READINESS_LIFETIME
+    } else {
+        GRANT_LIFETIME
+    }
+}
+
 pub struct BitwardenContinuation {
     token: String,
     document_sequence: u64,
     issued: Instant,
     password_stage: bool,
+    lifetime: Duration,
 }
 impl BitwardenContinuation {
     fn valid(&self, token: &str, sequence: u64, password_stage: bool) -> bool {
         self.password_stage == password_stage
             && self.token == token
             && self.document_sequence == sequence
-            && self.issued.elapsed() < GRANT_LIFETIME
+            && !self.expired()
+    }
+    fn expired(&self) -> bool {
+        self.issued.elapsed() >= self.lifetime
     }
 }
 
@@ -34,6 +46,7 @@ pub fn bind_document(state: &AxumProxyState, sequence: u64) -> Option<()> {
         document_sequence: sequence,
         issued: Instant::now(),
         password_stage: false,
+        lifetime: account_lifetime(state.upstream_auth_mode),
     });
     Some(())
 }
@@ -98,9 +111,10 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
         if !valid {
             // A navigation/expiry permanently invalidates this attempt. A wrong
             // random token must not consume somebody else's still-valid grant.
-            if pending.as_ref().is_some_and(|grant| {
-                grant.document_sequence != sequence || grant.issued.elapsed() >= GRANT_LIFETIME
-            }) {
+            if pending
+                .as_ref()
+                .is_some_and(|grant| grant.document_sequence != sequence || grant.expired())
+            {
                 *pending = None;
             }
             return forbidden("reviewed login continuation expired or invalid");
@@ -140,6 +154,7 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
         document_sequence: sequence,
         issued: Instant::now(),
         password_stage: true,
+        lifetime: GRANT_LIFETIME,
     });
     json(serde_json::json!({"loginFlow":flow, "username": &*username, "continuation":token}))
 }
@@ -154,12 +169,38 @@ mod tests {
             document_sequence: 7,
             issued: Instant::now(),
             password_stage: true,
+            lifetime: GRANT_LIFETIME,
         };
         assert!(grant.valid("fixture", 7, true));
         assert!(!grant.valid("fixture", 7, false));
         assert!(!grant.valid("fixture", 8, true));
         grant.issued = Instant::now() - GRANT_LIFETIME;
         assert!(!grant.valid("fixture", 7, true));
+    }
+
+    #[test]
+    fn only_synology_account_readiness_uses_longer_nonrenewable_lifetime() {
+        for mode in [
+            UpstreamAuthMode::SynologyForm,
+            UpstreamAuthMode::BitwardenForm,
+        ] {
+            let mut grant = BitwardenContinuation {
+                token: "fixture".into(),
+                document_sequence: 7,
+                issued: Instant::now() - Duration::from_secs(61),
+                password_stage: false,
+                lifetime: account_lifetime(mode),
+            };
+            assert_eq!(
+                grant.valid("fixture", 7, false),
+                mode == UpstreamAuthMode::SynologyForm
+            );
+            assert!(!grant.valid("fixture", 8, false));
+            assert!(!grant.valid("fixture", 7, true));
+            assert!(!grant.valid("wrong", 7, false));
+            grant.issued = Instant::now() - grant.lifetime;
+            assert!(grant.expired());
+        }
     }
     #[test]
     fn reviewed_vault_config_requires_https_and_fixed_controls() {

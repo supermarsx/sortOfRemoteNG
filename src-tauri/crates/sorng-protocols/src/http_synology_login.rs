@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 pub(super) const INTENT_LIFETIME: Duration = Duration::from_secs(120);
+pub(super) const READINESS_LIFETIME: Duration =
+    crate::themed_autologin::SYNOLOGY_FORM_READINESS_LIFETIME;
 pub(super) const STAGE_LIFETIME: Duration = Duration::from_secs(30);
 const MAX_VERIFIED_ORIGINS: usize = 16;
 const UNAVAILABLE: &str = "The saved Synology login attempt is unavailable or expired. Reopen the original connection to try again.";
@@ -14,6 +16,8 @@ const UNAVAILABLE: &str = "The saved Synology login attempt is unavailable or ex
 enum Phase {
     Pending,
     Account {
+        // No credential has been released. This is a fixed page/form-readiness
+        // window, distinct from the password transition after account dispense.
         session: String,
         document: u64,
         nonce: String,
@@ -83,13 +87,13 @@ impl DeferredSynologyLogin {
     }
 
     pub(super) fn expire(&mut self) {
-        let stage_expired = match &self.phase {
-            Phase::Account { issued, .. } | Phase::Password { issued, .. } => {
-                issued.elapsed() >= STAGE_LIFETIME
-            }
-            _ => false,
+        let expired = match &self.phase {
+            Phase::Pending => self.created.elapsed() >= INTENT_LIFETIME,
+            Phase::Account { issued, .. } => issued.elapsed() >= READINESS_LIFETIME,
+            Phase::Password { issued, .. } => issued.elapsed() >= STAGE_LIFETIME,
+            Phase::Spent => false,
         };
-        if self.created.elapsed() >= INTENT_LIFETIME || stage_expired {
+        if expired {
             self.spend();
         }
     }

@@ -57,6 +57,14 @@ portals remain anonymous: the redirected connection does not receive a copied
 password/profile, HTTP Authorization, or another origin's cookies. This is not
 general saved-login forwarding, automatic 2FA consent, or proof of sign-in.
 
+The routing intent expires after 120 seconds if no admitted NAS page is reached.
+That page receives a separate, nonrenewable 120-second form-readiness window:
+the client waits up to 90 seconds for the complete account panel before asking
+for the username. Username release starts a fresh 30-second password grant;
+the client allows 25 seconds for the matching password panel and submission.
+These stages do not renew or retry a login. Direct DSM Automatic form login uses
+the same readiness and password windows; other website login flows are unchanged.
+
 After updating the app, changing the original credentials or database/vault
 access, or letting the attempt expire, **close the tab and reopen the original
 saved connection**. Reloading the anonymous redirected tab does not recover

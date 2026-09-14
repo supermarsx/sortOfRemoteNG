@@ -128,7 +128,7 @@ fn expiry_and_cancellation_erase_secrets_and_never_rearm() {
         } else {
             assert!(intent.bind("nas", 1, &target));
             if let Phase::Account { issued, .. } = &mut intent.phase {
-                *issued = Instant::now() - STAGE_LIFETIME;
+                *issued = Instant::now() - READINESS_LIFETIME;
             }
         }
         intent.expire();
@@ -159,4 +159,79 @@ fn original_explicit_nas_target_does_not_need_provider_probe_but_alias_does() {
         .unwrap()
         .unwrap();
     assert!(intent.bind("original-nas", 1, &target));
+}
+
+#[test]
+fn late_landing_has_independent_readiness_and_password_windows() {
+    let mut intent = intent();
+    let target = Url::parse(NAS).unwrap();
+    intent.created = Instant::now() - Duration::from_secs(119);
+    intent.record_probe(target.origin().ascii_serialization());
+    assert!(intent.bind("nas", 7, &target));
+    let nonce = intent.nonce("nas", 7).unwrap();
+    // Simulate the old routing timer firing after a late successful landing.
+    // It must inspect the current phase, not destroy the fresh page grant.
+    intent.created = Instant::now() - Duration::from_secs(180);
+    if let Phase::Account { issued, .. } = &mut intent.phase {
+        *issued = Instant::now() - Duration::from_secs(61);
+    }
+    intent.expire();
+    assert!(intent.username.is_some() && intent.password.is_some());
+    assert_eq!(intent.nonce("nas", 7).as_deref(), Some(nonce.as_str()));
+    let reply = intent.dispense("nas", 7, &nonce, None).unwrap();
+    assert!(reply.get("password").is_none());
+    let next = reply["continuation"].as_str().unwrap();
+    if let Phase::Password { issued, .. } = &mut intent.phase {
+        *issued = Instant::now() - Duration::from_secs(29);
+    }
+    intent.expire();
+    assert!(intent.password.is_some());
+    let password = intent.dispense("nas", 7, next, Some("password")).unwrap();
+    assert_eq!(password["password"], "synthetic-password");
+    assert!(intent.spent_for_test());
+}
+
+#[test]
+fn repeated_binding_or_readiness_reads_cannot_extend_page_deadline() {
+    let mut intent = intent();
+    let target = Url::parse(NAS).unwrap();
+    intent.record_probe(target.origin().ascii_serialization());
+    assert!(intent.bind("nas", 1, &target));
+    let issued = Instant::now() - Duration::from_secs(119);
+    if let Phase::Account {
+        issued: current, ..
+    } = &mut intent.phase
+    {
+        *current = issued;
+    }
+    for _ in 0..4 {
+        assert!(intent.bind("nas", 1, &target));
+        assert!(intent.nonce("nas", 1).is_some());
+        assert!(
+            matches!(&intent.phase, Phase::Account { issued: current, .. } if *current == issued)
+        );
+    }
+    if let Phase::Account { issued, .. } = &mut intent.phase {
+        *issued = Instant::now() - READINESS_LIFETIME;
+    }
+    assert!(intent.nonce("nas", 1).is_none());
+    assert!(intent.spent_for_test());
+    assert!(!intent.bind("nas", 1, &target));
+}
+
+#[test]
+fn password_deadline_still_expires_at_thirty_seconds_without_replay() {
+    let mut intent = intent();
+    let target = Url::parse(NAS).unwrap();
+    intent.record_probe(target.origin().ascii_serialization());
+    assert!(intent.bind("nas", 1, &target));
+    let nonce = intent.nonce("nas", 1).unwrap();
+    let account = intent.dispense("nas", 1, &nonce, None).unwrap();
+    let token = account["continuation"].as_str().unwrap();
+    if let Phase::Password { issued, .. } = &mut intent.phase {
+        *issued = Instant::now() - STAGE_LIFETIME;
+    }
+    assert!(intent.dispense("nas", 1, token, Some("password")).is_err());
+    assert!(intent.spent_for_test());
+    assert!(intent.dispense("nas", 1, &nonce, None).is_err());
 }

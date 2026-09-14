@@ -159,7 +159,7 @@ impl AttemptSession {
                 .is_some_and(|login| login.bind(&self.session_id, sequence, target))
         });
         if bound {
-            self.expire_login_after(super::synology_login::STAGE_LIFETIME);
+            self.expire_login_after(super::synology_login::READINESS_LIFETIME);
         }
     }
 

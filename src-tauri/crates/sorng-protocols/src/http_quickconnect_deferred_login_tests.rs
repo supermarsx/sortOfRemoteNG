@@ -401,6 +401,7 @@ async fn verified_same_nas_handoff_preserves_anonymous_transport_and_dispenses_s
         let token =
             nonce(&html).expect("verified primary DSM landing must have a staged bootstrap");
         assert!(html.contains("__sorng_synology_login"));
+        assert!(html.contains("fetchCredsAndRun(NONCE,SEL, 'synology')"));
         // A later child response neither rebinds nor invalidates the selected
         // parent's deferred grant. The native selected document remains 1.
         assert!(nonce(&page(&final_proxy, "/dsm", false, "iframe").await).is_none());

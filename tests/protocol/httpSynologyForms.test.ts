@@ -23,7 +23,11 @@ const automation = readFileSync(
 );
 const win = window as unknown as {
   __sorng_autologin: {
-    fetchCredsAndRun(nonce: string): Promise<unknown>;
+    fetchCredsAndRun(
+      nonce: string,
+      selectors?: null,
+      loginFlow?: string,
+    ): Promise<unknown>;
     cancel(): void;
   };
   __sorng_synology_login: { cancel(): void };
@@ -50,10 +54,17 @@ function showPassword(navigate = true) {
   if (navigate) route("#/signin/password");
 }
 function begin() {
-  return win.__sorng_autologin.fetchCredsAndRun("a".repeat(32));
+  return win.__sorng_autologin.fetchCredsAndRun(
+    "a".repeat(32),
+    null,
+    "synology",
+  );
 }
 beforeEach(() => {
   vi.useFakeTimers();
+  // Keep fake-timer accounting specific to the login lifecycle; jsdom's
+  // parent postMessage delivery schedules its own unrelated task.
+  vi.spyOn(window, "postMessage").mockImplementation(() => {});
   history.replaceState(null, "", "/#/signin");
   Object.defineProperty(document, "readyState", {
     configurable: true,
@@ -101,6 +112,294 @@ afterEach(() => {
 });
 
 describe("reviewed DSM website login", () => {
+  it("waits through replacement of an empty Vue mount before capturing the account form", async () => {
+    document.body.innerHTML = '<div id="sds-login-vue"></div>';
+    const pending = begin();
+    await vi.advanceTimersByTimeAsync(0);
+    showAccount();
+    const next = vi.fn();
+    document
+      .querySelector('[syno-id="account-panel-next-btn"]')!
+      .addEventListener("click", next);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(next).toHaveBeenCalledOnce();
+    showPassword();
+    await vi.advanceTimersByTimeAsync(0);
+    await pending;
+    expect(submit).toHaveBeenCalledOnce();
+  });
+  it.each(["load", "transitionend", "animationend", "resize"])(
+    "reacts to %s CSS visibility readiness without a DOM mutation",
+    async (event) => {
+      let visible = false;
+      vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(
+        function (this: HTMLElement) {
+          return visible && !this.closest("[hidden]") ? document.body : null;
+        },
+      );
+      const pending = begin();
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(fetchMock).not.toHaveBeenCalled();
+      visible = true;
+      if (event === "resize") window.dispatchEvent(new Event(event));
+      else document.dispatchEvent(new Event(event));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      showPassword();
+      await vi.advanceTimersByTimeAsync(0);
+      await pending;
+      expect(submit).toHaveBeenCalledOnce();
+    },
+  );
+  it("waits for DOMContentLoaded without consuming a username during parsing", async () => {
+    Object.defineProperty(document, "readyState", {
+      configurable: true,
+      value: "loading",
+    });
+    const pending = begin();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetchMock).not.toHaveBeenCalled();
+    Object.defineProperty(document, "readyState", {
+      configurable: true,
+      value: "interactive",
+    });
+    document.dispatchEvent(new Event("DOMContentLoaded"));
+    await vi.advanceTimersByTimeAsync(0);
+    showPassword();
+    await vi.advanceTimersByTimeAsync(0);
+    await pending;
+    expect(submit).toHaveBeenCalledOnce();
+  });
+  it("fills each field once while its button is disabled, waits for Vue validation, then clicks once", async () => {
+    const field = document.querySelector(
+      '[syno-id="username"]',
+    ) as HTMLInputElement;
+    const button = document.querySelector(
+      '[syno-id="account-panel-next-btn"]',
+    )!;
+    const next = vi.fn();
+    button.addEventListener("click", next);
+    button.classList.add("disable");
+    const accountInput = vi.fn(() => {
+      field.disabled = true;
+      button.classList.add("spin");
+      setTimeout(() => {
+        field.disabled = false;
+        button.classList.remove("disable", "spin");
+      }, 400);
+    });
+    field.addEventListener("input", accountInput);
+    const pending = begin();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(field.value).toBe(username);
+    expect(next).not.toHaveBeenCalled();
+    expect(
+      field.form!.dispatchEvent(new Event("submit", { cancelable: true })),
+    ).toBe(false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(next).toHaveBeenCalledOnce();
+    expect(accountInput).toHaveBeenCalledOnce();
+    showPassword(false);
+    const secret = document.querySelector(
+      '[name="current-password"]',
+    ) as HTMLInputElement;
+    const signIn = document.querySelector(
+      '[syno-id="password-panel-next-btn"]',
+    )!;
+    signIn.setAttribute("aria-disabled", "true");
+    const passwordInput = vi.fn(() => {
+      secret.readOnly = true;
+      setTimeout(() => {
+        secret.readOnly = false;
+        signIn.removeAttribute("aria-disabled");
+      }, 600);
+    });
+    secret.addEventListener("input", passwordInput);
+    route("#/signin/password");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(secret.value).toBe(password);
+    expect(submit).not.toHaveBeenCalled();
+    expect(
+      secret.form!.dispatchEvent(new Event("submit", { cancelable: true })),
+    ).toBe(false);
+    await vi.advanceTimersByTimeAsync(600);
+    await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(passwordInput).toHaveBeenCalledOnce();
+    expect(submit).toHaveBeenCalledOnce();
+    expect(
+      secret.form!.dispatchEvent(new Event("submit", { cancelable: true })),
+    ).toBe(true);
+  });
+  it("waits through a slow overlapping account/password Vue transition without requesting password early", async () => {
+    const pending = begin();
+    await vi.advanceTimersByTimeAsync(0);
+    const oldPanel = document.querySelector(".login-tabs-content-wrapper")!;
+    showPassword(false);
+    document.querySelector("#sds-login-vue")!.prepend(oldPanel);
+    route("#/signin/password");
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(submit).not.toHaveBeenCalled();
+    oldPanel.remove();
+    document.dispatchEvent(new Event("transitionend"));
+    await vi.advanceTimersByTimeAsync(0);
+    await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(submit).toHaveBeenCalledOnce();
+  });
+  it.each(["hidden", "disabled", "readonly"])(
+    "does not write a password when a focus handler makes the field %s before the write",
+    async (change) => {
+      const pending = begin();
+      await vi.advanceTimersByTimeAsync(0);
+      showPassword(false);
+      const field = document.querySelector(
+        '[name="current-password"]',
+      ) as HTMLInputElement;
+      field.addEventListener("focus", () => {
+        if (change === "hidden") field.hidden = true;
+        if (change === "disabled") field.disabled = true;
+        if (change === "readonly") field.readOnly = true;
+      });
+      route("#/signin/password");
+      await vi.advanceTimersByTimeAsync(0);
+      await pending;
+      expect(field.value).toBe("");
+      expect(submit).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["replacement", "timeout", "cancel"])(
+    "clears its unsent password and restores manual submit after %s while waiting for the button",
+    async (reason) => {
+      const pending = begin();
+      await vi.advanceTimersByTimeAsync(0);
+      showPassword(false);
+      const field = document.querySelector(
+        '[name="current-password"]',
+      ) as HTMLInputElement;
+      const button = document.querySelector(
+        '[syno-id="password-panel-next-btn"]',
+      )!;
+      button.classList.add("disable");
+      route("#/signin/password");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(field.value).toBe(password);
+      expect(
+        field.form!.dispatchEvent(new Event("submit", { cancelable: true })),
+      ).toBe(false);
+      if (reason === "replacement") button.replaceWith(button.cloneNode(true));
+      if (reason === "cancel") win.__sorng_autologin.cancel();
+      await vi.advanceTimersByTimeAsync(reason === "timeout" ? 25000 : 0);
+      await pending;
+      expect(field.value).toBe("");
+      expect(submit).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        field.form!.dispatchEvent(new Event("submit", { cancelable: true })),
+      ).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+  it("expires preflight once after 90s, does not renew on mutations, and removes readiness listeners", async () => {
+    document.body.innerHTML = '<div id="sds-login-vue"></div>';
+    const pending = begin();
+    await begin();
+    await vi.advanceTimersByTimeAsync(89999);
+    document.body.setAttribute("data-ready", "still-loading");
+    document.dispatchEvent(new Event("load"));
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(win.__autologin_last?.reason).toBe("reviewed-login-timeout");
+    showAccount();
+    document.dispatchEvent(new Event("transitionend"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it.each(["cancel", "timeout", "route-aba", "replacement", "action"])(
+    "rejects and clears a late first username body after %s without another request",
+    async (change) => {
+      let release!: (value: unknown) => void;
+      const reply = {
+        loginFlow: "synology",
+        username,
+        continuation: "b".repeat(32),
+      };
+      fetchMock.mockImplementation(async () => ({
+        ok: true,
+        json: () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      }));
+      const pending = begin();
+      await vi.advanceTimersByTimeAsync(0);
+      const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+      if (change === "cancel") win.__sorng_autologin.cancel();
+      if (change === "timeout") await vi.advanceTimersByTimeAsync(90000);
+      if (change === "route-aba") {
+        route("#/signin/select-auth");
+        route("#/signin");
+      }
+      if (change === "replacement") showAccount();
+      if (change === "action")
+        document
+          .querySelector("form")!
+          .setAttribute("action", "https://other.invalid/");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(signal.aborted).toBe(true);
+      release(reply);
+      await vi.advanceTimersByTimeAsync(0);
+      await pending;
+      expect(reply.username).toBeNull();
+      expect(reply.continuation).toBeNull();
+      expect(
+        (document.querySelector('[syno-id="username"]') as HTMLInputElement)
+          .value,
+      ).toBe("");
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+  it("rejects an overdue username microtask before a delayed deadline timer runs", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    let release!: (value: unknown) => void;
+    const reply = {
+      loginFlow: "synology",
+      username,
+      continuation: "b".repeat(32),
+    };
+    fetchMock.mockImplementation(async () => ({
+      ok: true,
+      json: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    }));
+    const pending = begin();
+    await vi.advanceTimersByTimeAsync(0);
+    now = 90001;
+    release(reply);
+    await vi.advanceTimersByTimeAsync(0);
+    await pending;
+    expect(reply.username).toBeNull();
+    expect(
+      (document.querySelector('[syno-id="username"]') as HTMLInputElement)
+        .value,
+    ).toBe("");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+  it("does not fall back to generic credential acquisition for an unknown purpose hint", async () => {
+    await win.__sorng_autologin.fetchCredsAndRun(
+      "a".repeat(32),
+      null,
+      "unknown",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(win.__autologin_last?.reason).toBe("invalid-login-flow");
+  });
   it("keeps manual browsing credential-free and derives explicit HTTPS staged login", () => {
     const manual = {
       protocol: "https" as const,
@@ -179,8 +478,8 @@ describe("reviewed DSM website login", () => {
   it("waits for the DSM SPA account panel after deferred activation without releasing its password early", async () => {
     document.body.innerHTML = '<div id="dsm-loading">Loading DSM</div>';
     const pending = begin();
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(fetchMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(submit).not.toHaveBeenCalled();
 
     showAccount();
@@ -242,7 +541,7 @@ describe("reviewed DSM website login", () => {
       .querySelector("form")!
       .setAttribute("action", "https://other.invalid/");
     await begin();
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(submit).not.toHaveBeenCalled();
   });
   it("waits for an initially disabled password panel without releasing the password early", async () => {
@@ -346,7 +645,7 @@ describe("reviewed DSM website login", () => {
       await vi.advanceTimersByTimeAsync(0);
       if (reason === "cancel") win.__sorng_autologin.cancel();
       if (reason === "password-error") showPassword();
-      await vi.advanceTimersByTimeAsync(16000);
+      await vi.advanceTimersByTimeAsync(26000);
       await pending;
       expect(submit).not.toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalledTimes(
