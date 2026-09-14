@@ -59,6 +59,9 @@
   });
   closeButton.addEventListener("click", () => closeNavigation());
   scrim.addEventListener("click", () => closeNavigation());
+  document.addEventListener("docs-search-open", () =>
+    closeNavigation({ restoreFocus: false }),
+  );
 
   sidebar.addEventListener("click", (event) => {
     if (event.target.closest("a") && !desktop.matches) {

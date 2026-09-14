@@ -1,0 +1,69 @@
+<dialog
+  id="docs-search"
+  class="docs-search"
+  aria-labelledby="docs-search-title"
+  data-docs-search
+  data-search-index="{{ '/search.json' | relative_url }}"
+>
+  <div class="search-heading">
+    <div>
+      <p class="eyebrow">Find your next step</p>
+      <h2 id="docs-search-title">Search documentation</h2>
+    </div>
+    <button
+      type="button"
+      class="search-close"
+      data-search-close
+      aria-label="Close search"
+    >
+      <span aria-hidden="true">×</span>
+    </button>
+  </div>
+  <form role="search" data-search-form autocomplete="off">
+    <label class="sr-only" for="docs-search-input"
+      >Search all documentation</label
+    >
+    <input
+      id="docs-search-input"
+      type="search"
+      placeholder="Try SSH, saved passwords, or Synology…"
+      maxlength="120"
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
+      aria-describedby="docs-search-help docs-search-status"
+      aria-controls="docs-search-results"
+      data-search-input
+    />
+  </form>
+  <p
+    id="docs-search-status"
+    class="search-status"
+    role="status"
+    aria-live="polite"
+    data-search-status
+  >
+    Search page titles and the full documentation text.
+  </p>
+  <button
+    type="button"
+    class="docs-button search-retry"
+    data-search-retry
+    hidden
+  >
+    Retry loading search
+  </button>
+  <ol
+    id="docs-search-results"
+    class="search-results"
+    aria-label="Search results"
+    data-search-results
+  ></ol>
+  <p id="docs-search-help" class="search-help">
+    <span
+      ><kbd>↑</kbd> <kbd>↓</kbd> Browse <kbd>Enter</kbd> Open
+      <kbd>Esc</kbd> Close</span
+    >
+    <span>Search stays in this tab.</span>
+  </p>
+</dialog>

@@ -1,3 +1,9 @@
+---
+title: NAS file viewers
+description: Preview Synology File Station files in isolated viewers or explicitly open temporary copies in external applications.
+hide_page_header: true
+---
+
 # NAS file viewers
 
 In a native Synology File Station session, select one file and choose **Preview file**. Use **Viewer settings** beside the file actions to configure app-wide preferences. No file is downloaded or opened merely by selecting it.

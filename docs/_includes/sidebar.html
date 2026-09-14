@@ -37,6 +37,18 @@
     >Download the app</a
   >
 
+  <button
+    class="docs-search-trigger sidebar-search"
+    type="button"
+    data-search-open
+    aria-haspopup="dialog"
+    aria-controls="docs-search"
+    hidden
+  >
+    <span>Search documentation</span>
+    <kbd aria-hidden="true">Ctrl K</kbd>
+  </button>
+
   <!-- prettier-ignore -->
   <nav class="sidebar-nav" aria-label="Primary">
     {% for section in site.data.navigation %}

@@ -1,3 +1,9 @@
+---
+title: Native build defaults
+description: Full-featured native builds, explicit lean alternatives, and platform-specific runtime prerequisites.
+hide_page_header: true
+---
+
 # Native build defaults
 
 Normal desktop development and direct Cargo builds include all supported native feature families by default. Both `npm run tauri dev` and `npm run tauri:dev` use the managed development launcher with matching frontend port, capability origin and native feature defaults. Restart/rebuild the desktop process to change compiled features; a web reload cannot update a running lean binary.

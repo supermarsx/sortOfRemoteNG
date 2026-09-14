@@ -1,3 +1,9 @@
+---
+title: Windows SSH in-memory keys
+description: Supported vault-backed SSH key formats and Windows in-memory authentication without plaintext key files or credential fallback.
+hide_page_header: true
+---
+
 # Windows SSH in-memory keys
 
 Rustls handles TLS; SSH uses a different protocol. Windows SSH keeps libssh2's

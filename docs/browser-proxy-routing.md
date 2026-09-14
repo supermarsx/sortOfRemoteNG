@@ -1,3 +1,9 @@
+---
+title: Embedded browser proxy routing
+description: Session-owned HTTP and WebSocket mediation, QuickConnect routing, and embedded browser security boundaries.
+hide_page_header: true
+---
+
 # Embedded browser proxy routing
 
 The embedded HTTP(S) browser uses a native, session-owned loopback proxy for

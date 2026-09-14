@@ -1,0 +1,28 @@
+---
+layout: null
+permalink: /search.json
+search: false
+---
+{%- assign separator = '' -%}
+{%- assign search_pages = site.pages | sort: 'url' -%}
+[
+{%- for entry in search_pages -%}
+  {%- assign directory = entry.path | split: '/' | first -%}
+  {%- assign url_tail = entry.url | slice: -1, 1 -%}
+  {%- assign url_extension = entry.url | slice: -5, 5 -%}
+  {%- if entry.title and entry.layout == 'default' and entry.search != false and entry.published != false -%}
+    {%- unless directory == 'plans' or directory == 'cedar-reference' or directory == 'assets' or entry.path == 'README.md' or entry.url == '/404.html' -%}
+      {%- if url_tail == '/' or url_extension == '.html' -%}
+        {{- separator -}}
+        {
+          "title": {{ entry.title | strip_html | normalize_whitespace | jsonify }},
+          "url": {{ entry.url | relative_url | jsonify }},
+          "description": {{ entry.description | default: '' | strip_html | normalize_whitespace | jsonify }},
+          "content": {{ entry.content | markdownify | strip_html | normalize_whitespace | jsonify }}
+        }
+        {%- assign separator = ',' -%}
+      {%- endif -%}
+    {%- endunless -%}
+  {%- endif -%}
+{%- endfor -%}
+]

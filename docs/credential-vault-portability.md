@@ -1,3 +1,9 @@
+---
+title: Encrypted credential vault archives
+description: Select reusable database credentials for supported login adapters and transfer protected vault archives.
+hide_page_header: true
+---
+
 # Encrypted credential vault archives
 
 ## Select a reusable credential for login

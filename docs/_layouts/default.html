@@ -35,6 +35,16 @@
         <span>sortOfRemoteNG</span>
       </a>
       <button
+        class="docs-search-trigger mobile-search"
+        type="button"
+        data-search-open
+        aria-haspopup="dialog"
+        aria-controls="docs-search"
+        hidden
+      >
+        Search
+      </button>
+      <button
         class="nav-toggle"
         type="button"
         data-nav-toggle
@@ -87,7 +97,12 @@
       </main>
     </div>
 
+    {% include search.html %}
     <script src="{{ '/assets/js/site.js' | relative_url }}" defer></script>
+    <script
+      type="module"
+      src="{{ '/assets/js/search.js' | relative_url }}"
+    ></script>
     {% if page.release_chooser %}
     <script
       type="module"

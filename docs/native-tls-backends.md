@@ -13,7 +13,7 @@ implicitly trusts a certificate or disables encryption.
 SQL Server uses the locally patched Tiberius 0.12.3 driver with Rustls 0.23.
 The published driver's Rustls 0.21 backend is not used. The patch and its exact
 upstream provenance are documented in
-[`PATCHES.md`](../src-tauri/vendor/tiberius-rustls/PATCHES.md).
+[`PATCHES.md`](https://github.com/supermarsx/sortOfRemoteNG/blob/main/src-tauri/vendor/tiberius-rustls/PATCHES.md).
 Platform roots are loaded once and verified hostname matching remains enabled.
 A configured PEM/CRT/DER CA is added to platform roots, not an exclusive pin.
 If no usable platform roots exist, configure a valid CA or repair the platform

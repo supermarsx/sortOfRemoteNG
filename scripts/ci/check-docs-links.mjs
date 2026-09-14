@@ -4,6 +4,11 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import {
+  isSearchableDocument,
+  validateGeneratedSearch,
+  validateSearchSource,
+} from "./lib/docs-search-validation.mjs";
 
 const root = process.cwd();
 const docsRoot = path.join(root, "docs");
@@ -183,6 +188,14 @@ function resolveRelativeRoute(baseRoute, target) {
 }
 
 const errors = [];
+const searchTemplatePath = path.join(docsRoot, "search.json");
+errors.push(
+  ...validateSearchSource(
+    existsSync(searchTemplatePath)
+      ? await readFile(searchTemplatePath, "utf8")
+      : null,
+  ),
+);
 const files = await walk(docsRoot);
 const documents = new Map();
 const routes = new Map();
@@ -603,6 +616,32 @@ if (siteFlagIndex >= 0 && !builtSiteRoot) {
       builtAnchorCount += anchors.size;
     }
 
+    const expectedSearchRoutes = new Set(
+      [...documents.values()]
+        .filter((document) =>
+          isSearchableDocument({
+            relativePath: toPosix(path.relative(docsRoot, document.file)),
+            route: document.route,
+            data: document.frontMatter.data,
+            hasFrontMatter: document.frontMatter.hasFrontMatter,
+          }),
+        )
+        .map((document) => document.route),
+    );
+    const generatedSearchPath = path.join(builtSiteRoot, "search.json");
+    errors.push(
+      ...validateGeneratedSearch(
+        existsSync(generatedSearchPath)
+          ? await readFile(generatedSearchPath, "utf8")
+          : null,
+        {
+          baseUrl,
+          generatedRoutes: new Set(builtDocuments.keys()),
+          expectedRoutes: expectedSearchRoutes,
+        },
+      ),
+    );
+
     for (const document of builtDocuments.values()) {
       for (const match of document.source.matchAll(
         /\b(?:href|src)=["']([^"']+)["']/gi,
@@ -669,6 +708,11 @@ if (errors.length > 0) {
 } else {
   console.log(
     `Checked ${documents.size} documentation files, ${linkCount} links, and ${anchorCount} anchors.`,
+  );
+  console.log(
+    builtSiteRoot
+      ? "Checked generated search index schema, URLs and searchable page coverage."
+      : "Checked search template contract; rendered JSON is checked only with --site.",
   );
   if (builtSiteRoot) {
     console.log(

@@ -1,3 +1,9 @@
+---
+title: Local password policy
+description: Configure requirements for new protection and export passwords without changing remote account credentials or existing unlock behavior.
+hide_page_header: true
+---
+
 # Local password policy
 
 Settings → Security → Local password policy configures requirements for **new or changed** application/database protection passwords and encrypted exports. It is off by default. Existing floors remain: four characters for databases, eight for application protection and portable master-key exports. Ordinary file exports retain their existing nonempty-password and configurable strength checks when this policy is off. Optional rules add a 4–128-character minimum and uppercase, lowercase, digit or ASCII punctuation requirements. Length counts Unicode characters; these rules do not measure resistance to guessing.

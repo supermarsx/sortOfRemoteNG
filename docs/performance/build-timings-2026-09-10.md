@@ -1,3 +1,9 @@
+---
+title: Full-featured native build timings — 10 September 2026
+description: Measured clean and incremental native build timings comparing static and dynamic-native modes, with evidence limitations.
+hide_page_header: true
+---
+
 # Full-featured native build timings — 10 September 2026
 
 ## Result

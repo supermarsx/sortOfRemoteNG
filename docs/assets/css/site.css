@@ -181,6 +181,228 @@ img.brand-mark {
   margin: 0 1.25rem 1rem;
   justify-content: center;
 }
+
+.docs-search-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-height: 2.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--bg-elevated);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.docs-search-trigger:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.docs-search-trigger[hidden] {
+  display: none;
+}
+
+.sidebar-search {
+  margin: 0 1.25rem 1rem;
+  text-align: left;
+}
+
+.docs-search kbd,
+.docs-search-trigger kbd {
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+body.search-open {
+  overflow: hidden;
+}
+
+.docs-search {
+  width: min(44rem, calc(100vw - 2rem));
+  max-height: min(46rem, calc(100dvh - min(12vh, 6rem) - 1rem));
+  margin: min(12vh, 6rem) auto auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.docs-search[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.docs-search::backdrop {
+  background: rgba(2, 7, 14, 0.82);
+  backdrop-filter: blur(5px);
+}
+
+.search-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.4rem 1rem;
+}
+
+.search-heading .eyebrow {
+  margin-bottom: 0.2rem;
+  font-size: 0.63rem;
+}
+
+.search-heading h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: -0.025em;
+}
+
+.search-close {
+  flex: 0 0 auto;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--bg-soft);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 1.6rem;
+  cursor: pointer;
+}
+
+.docs-search form {
+  padding: 0 1.4rem;
+}
+
+.docs-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 3rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.6rem;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.docs-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-status {
+  margin: 0;
+  padding: 0.8rem 1.4rem;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+}
+
+.search-retry {
+  align-self: flex-start;
+  flex: 0 0 auto;
+  margin: 0 1.4rem 1rem;
+}
+
+.search-results {
+  min-height: 0;
+  margin: 0;
+  padding: 0.25rem 0.75rem 0.75rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.search-results:empty {
+  padding: 0;
+}
+
+.search-results li + li {
+  margin-top: 0.3rem;
+}
+
+.search-results a {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.search-results a:hover,
+.search-results a:focus {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.search-results strong {
+  font-size: 0.95rem;
+}
+
+.search-results mark {
+  border-radius: 0.15rem;
+  background: rgba(125, 211, 252, 0.18);
+  color: var(--accent-bright);
+  font-weight: 700;
+}
+
+.search-snippet {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.search-results small {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.search-help {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem 1.4rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+@media (max-width: 40rem) {
+  .docs-search {
+    width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+    margin-top: 0.5rem;
+  }
+
+  .search-heading,
+  .search-status,
+  .search-help {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .docs-search form {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+}
 .docs-button {
   display: inline-flex;
   align-items: center;
@@ -792,6 +1014,11 @@ img.brand-mark {
     font-weight: 700;
   }
 
+  .mobile-search {
+    margin-left: auto;
+    margin-right: 0.6rem;
+  }
+
   .mobile-brand .brand-mark {
     width: 1.85rem;
     height: 1.85rem;
@@ -900,6 +1127,7 @@ img.brand-mark {
   .site-sidebar,
   .mobile-header,
   .nav-scrim,
+  .docs-search,
   .page-footer {
     display: none !important;
   }
