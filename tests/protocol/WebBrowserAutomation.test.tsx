@@ -93,23 +93,25 @@ vi.mock("../../src/utils/recording/macroService", () => ({}));
 vi.mock("../../src/hooks/integration/httpProxy", () => ({
   getGlobalHttpProxyUrl: () => undefined,
 }));
-vi.mock("../../src/utils/connection/databaseManager", () => ({
-  onCurrentDatabaseChange: () => () => undefined,
-  onDatabaseAccessChange: () => () => undefined,
-  DatabaseManager: {
-    getInstance: () => ({
-      getCurrentDatabase: () => ({ id: "owned-demo" }),
-      onCurrentDatabaseChange: () => () => undefined,
-      captureCurrentDatabaseDataTarget: () => ({
-        databaseId: "owned-demo",
-        assertAccessible: () => {
-          if (native.locked) throw new Error("locked");
-        },
-        readCurrent: async () => ({ connections: native.connections }),
-      }),
+vi.mock("../../src/utils/connection/databaseManager", () => {
+  // Match the production singleton so render dependencies retain their identity.
+  const manager = {
+    getCurrentDatabase: () => ({ id: "owned-demo" }),
+    onCurrentDatabaseChange: () => () => undefined,
+    captureCurrentDatabaseDataTarget: () => ({
+      databaseId: "owned-demo",
+      assertAccessible: () => {
+        if (native.locked) throw new Error("locked");
+      },
+      readCurrent: async () => ({ connections: native.connections }),
     }),
-  },
-}));
+  };
+  return {
+    onCurrentDatabaseChange: () => () => undefined,
+    onDatabaseAccessChange: () => () => undefined,
+    DatabaseManager: { getInstance: () => manager },
+  };
+});
 import { WebBrowser } from "../../src/components/protocol/WebBrowser";
 import { normalizeWebAutomationLibrary } from "../../src/utils/recording/webAutomationLibrary";
 import {
@@ -447,6 +449,7 @@ describe("real WebBrowser iframe and website automation integration", () => {
     view.unmount();
   });
   it("mounts the automatic MFA guard and retains manual fallback for a non-HTTPS session", async () => {
+    const consoleError = vi.spyOn(console, "error");
     native.connections[0].httpApplication = {
       version: 1,
       id: "wordpress",
@@ -474,6 +477,15 @@ describe("real WebBrowser iframe and website automation integration", () => {
     ).toBe(false);
     expect(
       view.post.mock.calls.some(([message]) => message.action === "totpSubmit"),
+    ).toBe(false);
+    expect(
+      consoleError.mock.calls.some((args) =>
+        args.some(
+          (message) =>
+            typeof message === "string" &&
+            message.includes("Maximum update depth exceeded"),
+        ),
+      ),
     ).toBe(false);
   });
   it("opens the web-only 2FA panel in an anchored portal without moving the browser header or exposing seed-management actions", async () => {
