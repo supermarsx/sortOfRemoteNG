@@ -45,6 +45,7 @@
 mod domains;
 pub(crate) mod event_bridge;
 mod invoke_handler;
+mod native_dialogs;
 mod splash;
 mod state_registry;
 mod tray;
@@ -178,7 +179,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--autostart"]),
         ))
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(native_dialogs::init())
         .plugin(webview_privacy::init())
         .plugin(tauri_plugin_fs::init())
         // Tauri updater plugin: the only production-authoritative signed
