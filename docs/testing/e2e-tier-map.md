@@ -97,6 +97,7 @@ deeper configuration or session behavior.
 - [e2e/specs/22-smart-filters/smart-filter-manager.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/22-smart-filters/smart-filter-manager.spec.ts)
 - [e2e/specs/22-smart-filters/smart-filter-presets.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/22-smart-filters/smart-filter-presets.spec.ts)
 - [e2e/specs/28-proxmox/proxmox-panel.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/28-proxmox/proxmox-panel.spec.ts)
+- [e2e/specs/26-synology/nas-api-permissions.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/26-synology/nas-api-permissions.spec.ts) (Synology NAS API permissions and 2FA; forked synthetic DSM fixture `e2e/helpers/fixtures/mock-dsm/server.mjs` on ports 18501/18502, no Docker; fixture checked by `node --test tests/e2e-mock-dsm/*.node-test.mjs`)
 - [e2e/specs/26-synology/dsm-web-autofill.spec.ts](https://github.com/supermarsx/sortOfRemoteNG/blob/main/e2e/specs/26-synology/dsm-web-autofill.spec.ts) (DSM website auto-fill; synthetic DSM website in Docker fixture service `test-dsm-web` on port 8446, skipped without Docker; fixture checked by `npx vitest run -c e2e/vitest.fixtures.config.ts e2e/fixtures/synology-dsm-web/`)
 
 Promoted from `lab-only` by t67: the suite no longer needs a real Proxmox VE
