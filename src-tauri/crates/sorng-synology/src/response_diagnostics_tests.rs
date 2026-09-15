@@ -1,10 +1,12 @@
 //! Real loopback response decoding; synthetic credentials only, no NAS access.
 use crate::{
     client::SynoClient,
+    download_station::DownloadStationManager,
     error::{command_error, SynologyError, SynologyErrorKind},
     scoped_files::FileStationLogin,
     service::SynologyService,
-    types::{SynoResponse, SynologyConfig},
+    system::SystemManager,
+    types::{ApiInfoEntry, SynoResponse, SynologyConfig},
 };
 use serde_json::{json, Value};
 use std::{
@@ -22,6 +24,13 @@ use tokio::{
 };
 
 const PRIVATE: &str = "synthetic-private-response-marker";
+/// The reply from the user's report: HTTP 200, JSON, exactly 38 bytes.
+const DENIED_105: &str = r#"{"error":{"code":105},"success":false}"#;
+/// What the user's report must read now (plan t84 §4.2).
+const USER_REPORT: &str = concat!(
+    "SYNO.Core.System.Utilization: requires a DSM administrator account (code 105)\n",
+    r#"synology-diagnostic:v1:{"stage":"api_response","category":"dsm_api","httpStatus":200,"contentType":"json","bytesRead":38,"dsmCode":105,"access":"administrator"}"#
+);
 
 #[derive(Clone)]
 struct Reply {
@@ -167,10 +176,34 @@ fn diagnostic(error: &SynologyError) -> Value {
         "httpStatus",
         "contentType",
         "bytesRead",
-        "dsmCode"
+        "dsmCode",
+        "access"
     ]
     .contains(&key.as_str())));
+    if value.get("access").is_some() {
+        assert_eq!(value["category"], "dsm_api");
+        assert_eq!(value["dsmCode"], 105);
+    }
     value
+}
+
+/// An authenticated client whose discovery lists `apis`.
+fn signed_in(peer: &Peer, apis: &[(&str, u32)]) -> SynoClient {
+    let mut client = SynoClient::new(&peer.config()).unwrap();
+    client.sid = Some(PRIVATE.into());
+    client.syno_token = Some(PRIVATE.into());
+    for (api, max_version) in apis {
+        client.api_info.insert(
+            (*api).into(),
+            ApiInfoEntry {
+                path: "entry.cgi".into(),
+                min_version: 1,
+                max_version: *max_version,
+                request_format: None,
+            },
+        );
+    }
+    client
 }
 
 #[tokio::test]
@@ -449,4 +482,195 @@ async fn legacy_typed_login_and_response_limit_also_keep_diagnostics() {
                 .unwrap();
         assert_eq!(value.error.unwrap().code, 400);
     }
+}
+
+#[tokio::test]
+async fn the_reported_utilization_refusal_names_the_administrator_requirement() {
+    assert_eq!(DENIED_105.len(), 38);
+    let peer = Peer::start(vec![Reply::body(DENIED_105, Some("application/json"))]).await;
+    let client = signed_in(&peer, &[("SYNO.Core.System.Utilization", 1)]);
+    let error = SystemManager::get_utilization(&client).await.unwrap_err();
+    assert!(matches!(error.kind, SynologyErrorKind::PermissionDenied));
+    assert_eq!(command_error(error.clone()), USER_REPORT);
+    assert_eq!(error.to_string(), USER_REPORT);
+    assert_eq!(diagnostic(&error)["access"], "administrator");
+    assert_eq!(peer.count(), 1);
+}
+
+#[tokio::test]
+async fn application_apis_name_the_application_privilege() {
+    let peer = Peer::start(vec![Reply::body(DENIED_105, Some("application/json"))]).await;
+    let client = signed_in(&peer, &[("SYNO.FileStation.List", 2)]);
+    let error = client
+        .file_call("SYNO.FileStation.List", 2, "list_share", &[])
+        .await
+        .unwrap_err();
+    assert_eq!(
+        diagnostic(&error),
+        json!({"stage":"authenticated_file_station","category":"dsm_api","httpStatus":200,"contentType":"json","bytesRead":38,"dsmCode":105,"access":"application_privilege"})
+    );
+
+    let peer = Peer::start(vec![Reply::json(
+        json!({"success":false,"error":{"code":105}}),
+    )])
+    .await;
+    let client = signed_in(&peer, &[("SYNO.DownloadStation.Task", 3)]);
+    let error = DownloadStationManager::list_tasks(&client)
+        .await
+        .unwrap_err();
+    assert!(matches!(error.kind, SynologyErrorKind::PermissionDenied));
+    assert_eq!(
+        error.message,
+        "SYNO.DownloadStation.Task: requires the Download Station application privilege (code 105)"
+    );
+    assert_eq!(diagnostic(&error)["access"], "application_privilege");
+}
+
+#[tokio::test]
+async fn refusals_without_a_privilege_class_and_code_120_carry_no_access() {
+    for (api, message) in [
+        (
+            "SYNO.Fixture.NotInTable",
+            "SYNO.Fixture.NotInTable: Permission denied (code 105)",
+        ),
+        (
+            "SYNO.DSM.Info",
+            "SYNO.DSM.Info: Permission denied (code 105)",
+        ),
+    ] {
+        let peer = Peer::start(vec![Reply::body(DENIED_105, Some("application/json"))]).await;
+        let client = signed_in(&peer, &[(api, 2)]);
+        let error = client
+            .api_call::<Value>(api, 1, "get", &[])
+            .await
+            .unwrap_err();
+        assert!(matches!(error.kind, SynologyErrorKind::PermissionDenied));
+        assert_eq!(error.message, message);
+        let facts = diagnostic(&error);
+        assert_eq!(facts["dsmCode"], 105);
+        assert!(facts.get("access").is_none(), "{api}");
+    }
+
+    // DSM answers 120 to invalid or missing parameters: not a permission refusal.
+    let peer = Peer::start(vec![Reply::json(
+        json!({"success":false,"error":{"code":120}}),
+    )])
+    .await;
+    let client = signed_in(&peer, &[("SYNO.Core.System.Utilization", 1)]);
+    let error = SystemManager::get_utilization(&client).await.unwrap_err();
+    assert!(matches!(error.kind, SynologyErrorKind::ApiError(120)));
+    assert_eq!(
+        error.message,
+        "SYNO.Core.System.Utilization: DSM rejected the request parameters (code 120)"
+    );
+    let facts = diagnostic(&error);
+    assert_eq!(facts["dsmCode"], 120);
+    assert!(facts.get("access").is_none());
+}
+
+#[tokio::test]
+async fn access_is_only_ever_attached_to_authenticated_dsm_refusals() {
+    let utilization = [("SYNO.Core.System.Utilization", 1)];
+    for (reply, category) in [
+        (
+            Reply::body(format!("<html>{PRIVATE}</html>"), Some("text/html")),
+            "html",
+        ),
+        (
+            Reply::json(json!({"success":true,"data":{"cpu":PRIVATE}})),
+            "json_schema",
+        ),
+        (
+            Reply::body(format!("{{\"{PRIVATE}\":"), Some("application/json")),
+            "json_syntax",
+        ),
+    ] {
+        let peer = Peer::start(vec![reply]).await;
+        let client = signed_in(&peer, &utilization);
+        let error = SystemManager::get_utilization(&client).await.unwrap_err();
+        let facts = diagnostic(&error);
+        assert_eq!(facts["category"], category);
+        assert!(facts.get("access").is_none(), "{category}");
+    }
+    let mut refused = Reply::body(DENIED_105, Some("application/json"));
+    refused.status = 403;
+    let peer = Peer::start(vec![refused]).await;
+    let error = SystemManager::get_utilization(&signed_in(&peer, &utilization))
+        .await
+        .unwrap_err();
+    let facts = diagnostic(&error);
+    assert_eq!(facts["category"], "http_status");
+    assert!(facts.get("access").is_none());
+
+    // Discovery and sign-in refusals never name an account class.
+    let peer = Peer::start(vec![Reply::body(DENIED_105, Some("application/json"))]).await;
+    let error = SynologyService::new()
+        .fs_connect(peer.config())
+        .await
+        .unwrap_err();
+    let facts = diagnostic(&error);
+    assert_eq!(facts["stage"], "api_discovery");
+    assert!(facts.get("access").is_none());
+    let peer = Peer::start(vec![
+        discovery(),
+        Reply::body(DENIED_105, Some("application/json")),
+    ])
+    .await;
+    let error = SynologyService::new()
+        .fs_connect(peer.config())
+        .await
+        .unwrap_err();
+    let facts = diagnostic(&error);
+    assert_eq!(facts["stage"], "api_login");
+    assert_eq!(facts["dsmCode"], 105);
+    assert!(facts.get("access").is_none());
+    assert_eq!(peer.count(), 2);
+}
+
+#[tokio::test]
+async fn session_expiry_on_an_administrator_api_is_unchanged() {
+    let peer = Peer::start(vec![Reply::json(
+        json!({"success":false,"error":{"code":106}}),
+    )])
+    .await;
+    let client = signed_in(&peer, &[("SYNO.Core.System.Utilization", 1)]);
+    let error = SystemManager::get_utilization(&client).await.unwrap_err();
+    assert!(matches!(error.kind, SynologyErrorKind::SessionExpired));
+    assert!(command_error(error.clone()).starts_with("SYNOLOGY_SESSION_EXPIRED: "));
+    let facts = diagnostic(&error);
+    assert_eq!(facts["dsmCode"], 106);
+    assert!(facts.get("access").is_none());
+}
+
+#[test]
+fn dsm_permission_messages_follow_the_api_privilege() {
+    let message = |code, api| SynologyError::from_dsm_code(code, api).message;
+    assert_eq!(
+        message(105, "SYNO.Core.User"),
+        "SYNO.Core.User: requires a DSM administrator account (code 105)"
+    );
+    assert_eq!(
+        message(105, "SYNO.Docker.Container"),
+        "SYNO.Docker.Container: requires a DSM administrator account (code 105)"
+    );
+    assert_eq!(
+        message(105, "SYNO.SurveillanceStation.Camera"),
+        "SYNO.SurveillanceStation.Camera: requires the Surveillance Station application privilege (code 105)"
+    );
+    assert_eq!(
+        message(105, "SYNO.Core.CurrentConnection"),
+        "SYNO.Core.CurrentConnection: Permission denied (code 105)"
+    );
+    assert_eq!(
+        message(120, "SYNO.Core.User"),
+        "SYNO.Core.User: DSM rejected the request parameters (code 120)"
+    );
+    assert!(matches!(
+        SynologyError::from_dsm_code(105, "SYNO.Core.User").kind,
+        SynologyErrorKind::PermissionDenied
+    ));
+    // Without a response there is no DSM code to classify.
+    assert!(SynologyError::from_dsm_code(105, "SYNO.Core.User")
+        .dsm_code()
+        .is_none());
 }

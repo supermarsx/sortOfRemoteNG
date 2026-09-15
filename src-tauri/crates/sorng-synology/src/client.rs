@@ -7,16 +7,31 @@
 //! 4. Handles SynoToken CSRF headers when required
 //! 5. Signs non-File-Station requests with `X-SYNO-HASH` after DSM 7's secure
 //!    login handshake (see `login_handshake`)
+//! 6. Offers deadline-bounded reads for the section access check
 
 use crate::error::{SynologyError, SynologyResult};
-use crate::login_handshake::{SessionIdentity, SessionRoute, SharedSigner, HASH_HEADER};
+use crate::login_handshake::{
+    RequestSigner, SessionIdentity, SessionRoute, SharedSigner, HASH_HEADER,
+};
 use crate::response_diagnostics::{Category, ResponseFacts, Stage, RESPONSE_LIMIT};
+use crate::section_access::AccountFacts;
 use crate::types::*;
 
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
+
+/// Time limits of one bounded read.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ReadBudget {
+    /// The call ends by this instant, including any wait for this session's
+    /// signed-request queue.
+    pub(crate) deadline: tokio::time::Instant,
+    /// How long DSM may take to answer once the request is sent.
+    pub(crate) response: Duration,
+}
 
 /// Synology DSM HTTP client.
 ///
@@ -37,6 +52,10 @@ pub struct SynoClient {
     pub(crate) identity: SessionIdentity,
     /// Present only after a finished secure login handshake.
     pub(crate) request_signer: Option<SharedSigner>,
+    /// Account role and application privileges DSM reported for this login,
+    /// looked up at most once and shared by clones. Every login builds a new
+    /// client, so a cached answer never outlives its session.
+    pub(crate) account: Arc<tokio::sync::OnceCell<AccountFacts>>,
     pub(crate) route: crate::http_route::NativeHttpRoute,
 }
 
@@ -114,6 +133,7 @@ impl SynoClient {
             config: config.clone(),
             identity: SessionIdentity::unauthenticated(SessionRoute::for_transport(&route)),
             request_signer: None,
+            account: Arc::default(),
             route,
         })
     }
@@ -355,21 +375,87 @@ impl SynoClient {
         api: &str,
         request: reqwest::RequestBuilder,
     ) -> SynologyResult<reqwest::Response> {
-        let Some(signer) = self
-            .request_signer
+        let signer = match self.signer_for(api) {
+            Some(signer) => Some(signer.lock().await),
+            None => None,
+        };
+        Self::send_signed(request, signer).await
+    }
+
+    fn signer_for(&self, api: &str) -> Option<&SharedSigner> {
+        self.request_signer
             .as_ref()
             .filter(|_| signs_requests_for(api))
-        else {
-            return Ok(request.send().await?);
-        };
-        let mut signer = signer.lock().await;
-        let request = match signer.next_header() {
+    }
+
+    /// Adds the next `X-SYNO-HASH` (when this session signs the request) and
+    /// holds the signer until DSM's response headers arrive.
+    async fn send_signed(
+        request: reqwest::RequestBuilder,
+        mut signer: Option<tokio::sync::MutexGuard<'_, RequestSigner>>,
+    ) -> SynologyResult<reqwest::Response> {
+        let request = match signer.as_mut().and_then(|signer| signer.next_header()) {
             Some(value) => request.header(HASH_HEADER, value),
             None => request,
         };
         let response = request.send().await;
         drop(signer);
         Ok(response?)
+    }
+
+    /// A read that ends by `budget.deadline`. Waiting for this session's
+    /// signed-request queue (one stalled signed call delays the next) counts
+    /// only against the deadline; DSM gets `budget.response` from dispatch.
+    /// Expiry of either limit is an ordinary timeout error.
+    pub(crate) async fn post_bounded<T: DeserializeOwned>(
+        &self,
+        api: &str,
+        version: u32,
+        method: &str,
+        form: &[(&str, &str)],
+        budget: ReadBudget,
+    ) -> SynologyResult<T> {
+        let timed_out = || {
+            SynologyError::connection(
+                "NAS request timed out; its outcome may be unknown. Refresh before retrying a change.",
+            )
+        };
+        let request = self.form_request(api, version, method, form)?;
+        let signer = match self.signer_for(api) {
+            Some(signer) => Some(
+                tokio::time::timeout_at(budget.deadline, signer.lock())
+                    .await
+                    .map_err(|_| timed_out())?,
+            ),
+            None => None,
+        };
+        let deadline = budget
+            .deadline
+            .min(tokio::time::Instant::now() + budget.response);
+        let exchange = async {
+            let (response, facts): (SynoResponse<T>, _) = Self::read_json_at(
+                Self::send_signed(request, signer).await?,
+                Stage::operation(api, method),
+            )
+            .await?;
+            match response {
+                SynoResponse {
+                    success: true,
+                    data: Some(data),
+                    ..
+                } => Ok(data),
+                SynoResponse { success: true, .. } => facts.decode_value(serde_json::Value::Null),
+                SynoResponse { error, .. } => Err(Self::dsm_error(facts, error, api)),
+            }
+        };
+        tokio::time::timeout_at(deadline, exchange)
+            .await
+            .map_err(|_| timed_out())?
+    }
+
+    fn dsm_error(facts: ResponseFacts, error: Option<SynoApiError>, api: &str) -> SynologyError {
+        let code = error.map_or(100, |error| error.code);
+        facts.annotate_dsm(SynologyError::from_dsm_code(code, api), api, code)
     }
 
     pub(crate) async fn read_json<T: DeserializeOwned>(
@@ -438,12 +524,7 @@ impl SynoClient {
         if resp.success {
             Ok((resp.data.unwrap_or(serde_json::Value::Null), facts))
         } else {
-            let code = resp.error.map(|e| e.code).unwrap_or(100);
-            Err(facts.annotate(
-                SynologyError::from_dsm_code(code, api),
-                Category::DsmApi,
-                Some(code),
-            ))
+            Err(Self::dsm_error(facts, resp.error, api))
         }
     }
 
@@ -501,11 +582,7 @@ impl SynoClient {
         } else {
             let code = response.error.map(|e| e.code).unwrap_or(100);
             // Do not forward NAS-provided nested errors, paths, URLs, or credentials.
-            Err(facts.annotate(
-                SynologyError::file_station(code),
-                Category::DsmApi,
-                Some(code),
-            ))
+            Err(facts.annotate_dsm(SynologyError::file_station(code), api, code))
         }
     }
 

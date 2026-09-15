@@ -23,6 +23,8 @@
 //! - **client**           — HTTP client, session management, API discovery
 //! - **auth**             — Login (password / one-time code / legacy SID reuse)
 //! - **login_handshake**  — DSM 7 secure login (Noise IK), request signing, session identity
+//! - **api_access**       — DSM privilege of every API called, panel read catalog
+//! - **section_access**   — Per-read access check: account role, session limits, packages
 //! - **system**           — System info, DSM info, utilization, processes
 //! - **storage**          — Volumes, pools, disks, SMART, iSCSI, SSD cache
 //! - **file_station**     — File management, upload, download, sharing
@@ -43,6 +45,7 @@
 //! - **service**          — Aggregate facade + Tauri state alias
 //! - **commands**         — `#[tauri::command]` handlers
 
+pub mod api_access;
 pub mod auth;
 pub mod backup;
 pub mod client;

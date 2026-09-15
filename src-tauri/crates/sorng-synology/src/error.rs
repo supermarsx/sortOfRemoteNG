@@ -2,6 +2,7 @@
 //!
 //! Maps DSM API error codes to structured Rust errors.
 
+use crate::api_access::ApiPrivilege;
 use std::fmt;
 
 /// Synology-specific error kinds.
@@ -99,6 +100,15 @@ impl SynologyError {
         self
     }
 
+    /// The DSM error code this error was built from, if DSM answered with one.
+    pub(crate) fn dsm_code(&self) -> Option<i32> {
+        self.diagnostic.and_then(|diagnostic| diagnostic.dsm_code())
+    }
+
+    pub(crate) fn response_category(&self) -> Option<crate::response_diagnostics::Category> {
+        self.diagnostic.map(|diagnostic| diagnostic.category())
+    }
+
     // ── Convenience constructors ────────────────────────────────────
 
     pub fn connection(msg: impl Into<String>) -> Self {
@@ -160,7 +170,24 @@ impl SynologyError {
                 code,
                 format!("{context}: Invalid API request (code {code})"),
             ),
-            105 | 120 => Self::permission(format!("{context}: Permission denied (code {code})")),
+            105 => Self::permission(
+                match crate::api_access::privilege_for(context).map(|spec| spec.privilege) {
+                    Some(ApiPrivilege::Administrator) => {
+                        format!("{context}: requires a DSM administrator account (code {code})")
+                    }
+                    Some(ApiPrivilege::Application(app)) => format!(
+                        "{context}: requires the {} application privilege (code {code})",
+                        app.name
+                    ),
+                    _ => format!("{context}: Permission denied (code {code})"),
+                },
+            ),
+            // Officially reserved; in practice DSM's answer to an invalid or
+            // missing request parameter, not a permission problem.
+            120 => Self::api(
+                code,
+                format!("{context}: DSM rejected the request parameters (code {code})"),
+            ),
             106 => Self::session_expired(format!("{context}: Session timeout")),
             107 => {
                 Self::session_expired(format!("{context}: Session interrupted by duplicate login"))

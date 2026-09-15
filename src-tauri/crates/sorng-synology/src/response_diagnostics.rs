@@ -1,4 +1,5 @@
 //! Closed response facts only: no body, URL, parser message, field name or token.
+use crate::api_access::{privilege_for, ApiPrivilege};
 use crate::error::{SynologyError, SynologyResult};
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -65,6 +66,33 @@ pub(crate) struct ResponseDiagnostic {
     bytes_read: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     dsm_code: Option<i32>,
+    /// Account class DSM requires for the refused API; only on a DSM 105.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    access: Option<DiagnosticAccess>,
+}
+
+/// Closed privilege class of a refused API, from the static table in
+/// `api_access`. It names no API, account or NAS value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DiagnosticAccess {
+    Administrator,
+    ApplicationPrivilege,
+}
+
+impl DiagnosticAccess {
+    /// Only 105 means the account or session lacks permission; DSM returns
+    /// 120 for invalid or missing request parameters.
+    fn for_refusal(api: &str, code: i32) -> Option<Self> {
+        if code != 105 {
+            return None;
+        }
+        match privilege_for(api)?.privilege {
+            ApiPrivilege::Administrator => Some(Self::Administrator),
+            ApiPrivilege::Application(_) => Some(Self::ApplicationPrivilege),
+            ApiPrivilege::AnyUser => None,
+        }
+    }
 }
 
 impl std::fmt::Display for ResponseDiagnostic {
@@ -75,6 +103,17 @@ impl std::fmt::Display for ResponseDiagnostic {
 }
 
 impl ResponseDiagnostic {
+    /// The DSM error code, when DSM itself answered with an error.
+    pub(crate) fn dsm_code(self) -> Option<i32> {
+        matches!(self.category, Category::DsmApi)
+            .then_some(self.dsm_code)
+            .flatten()
+    }
+
+    pub(crate) fn category(self) -> Category {
+        self.category
+    }
+
     pub(crate) fn discovery_fallback(self) -> bool {
         matches!(self.stage, Stage::ApiDiscovery)
             && (matches!(self.http_status, 404 | 405)
@@ -133,7 +172,25 @@ impl ResponseFacts {
             content_type: self.content_type,
             bytes_read: self.bytes_read,
             dsm_code: code.filter(|value| (0..=65535).contains(value)),
+            access: None,
         });
+        error
+    }
+
+    /// Annotates a DSM error answer to `api`. A 105 from an authenticated call
+    /// also records which account class the API requires; discovery and
+    /// sign-in never carry that key.
+    pub(crate) fn annotate_dsm(self, error: SynologyError, api: &str, code: i32) -> SynologyError {
+        let access = match self.stage {
+            Stage::ApiDiscovery | Stage::ApiLogin => None,
+            Stage::AuthenticatedFileStation | Stage::ApiResponse => {
+                DiagnosticAccess::for_refusal(api, code)
+            }
+        };
+        let mut error = self.annotate(error, Category::DsmApi, Some(code));
+        if let Some(diagnostic) = &mut error.diagnostic {
+            diagnostic.access = access;
+        }
         error
     }
 

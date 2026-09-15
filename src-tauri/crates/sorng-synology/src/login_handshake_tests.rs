@@ -48,8 +48,8 @@ const PROXIED_HOST: &str = "nas.example.test";
 /// The reply from the user's report: HTTP 200, JSON, exactly 38 bytes.
 const LIMITED_SESSION_105: &str = r#"{"error":{"code":105},"success":false}"#;
 const USER_REPORT: &str = concat!(
-    "SYNO.Core.System.Utilization: Permission denied (code 105)\n",
-    r#"synology-diagnostic:v1:{"stage":"api_response","category":"dsm_api","httpStatus":200,"contentType":"json","bytesRead":38,"dsmCode":105}"#
+    "SYNO.Core.System.Utilization: requires a DSM administrator account (code 105)\n",
+    r#"synology-diagnostic:v1:{"stage":"api_response","category":"dsm_api","httpStatus":200,"contentType":"json","bytesRead":38,"dsmCode":105,"access":"administrator"}"#
 );
 
 // ── Mock DSM ────────────────────────────────────────────────────────
