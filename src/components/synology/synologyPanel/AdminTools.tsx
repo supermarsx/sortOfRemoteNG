@@ -5,6 +5,10 @@ import { Settings2 } from "lucide-react";
 import type { SubProps } from "./types";
 import { SYNOLOGY_ADMIN_ACTIONS } from "./adminActions";
 import AdminTable from "./AdminTable";
+import {
+  SYNOLOGY_ADMINISTRATOR_ACTION_TOOLTIP,
+  synologyTabAccess,
+} from "./SynologySectionRestriction";
 
 function CameraImage({ value }: { value: unknown }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -186,6 +190,13 @@ export default function AdminTools({ mgr }: SubProps) {
   const actions = SYNOLOGY_ADMIN_ACTIONS.filter(
     (action) => action.tab === mgr.activeTab,
   );
+  // Only when DSM refused every read of this tab as administrator-only: partial or
+  // delegated access keeps actions available, and the NAS still decides.
+  const administratorOnly = synologyTabAccess(
+    mgr,
+    mgr.activeTab,
+  ).administratorOnly;
+  const gatedHintId = useId();
   const result = mgr.actions.result;
   return (
     <>
@@ -194,18 +205,43 @@ export default function AdminTools({ mgr }: SubProps) {
           className="flex flex-wrap gap-1.5"
           aria-label="NAS actions and details"
         >
-          {actions.map((action) => (
-            <button
-              key={action.id}
-              className="sor-btn-secondary-sm"
-              disabled={mgr.actions.busy}
-              data-tooltip={action.help}
-              onClick={() => mgr.actions.open(action.id)}
-            >
-              {action.label}
-            </button>
-          ))}
+          {actions.map((action) => {
+            const gated =
+              administratorOnly && action.requires === "administrator";
+            const button = (
+              <button
+                key={action.id}
+                className={`sor-btn-secondary-sm${gated ? " pointer-events-none" : ""}`}
+                data-testid={`synology-action-${action.id}`}
+                data-requires={action.requires}
+                disabled={mgr.actions.busy || gated}
+                data-tooltip={gated ? undefined : action.help}
+                aria-describedby={gated ? gatedHintId : undefined}
+                onClick={() => mgr.actions.open(action.id)}
+              >
+                {action.label}
+              </button>
+            );
+            // A disabled button receives no pointer events, so its wrapper shows the reason.
+            return gated ? (
+              <span
+                key={action.id}
+                className="inline-flex"
+                data-testid={`synology-action-gate-${action.id}`}
+                data-tooltip={SYNOLOGY_ADMINISTRATOR_ACTION_TOOLTIP}
+              >
+                {button}
+              </span>
+            ) : (
+              button
+            );
+          })}
         </div>
+        {administratorOnly && (
+          <span id={gatedHintId} hidden>
+            {SYNOLOGY_ADMINISTRATOR_ACTION_TOOLTIP}
+          </span>
+        )}
         {mgr.actions.message && (
           <p role="status" className="text-xs text-success">
             {mgr.actions.message}

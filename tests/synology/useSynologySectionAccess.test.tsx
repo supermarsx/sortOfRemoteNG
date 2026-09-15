@@ -5,6 +5,7 @@ import { useSynologySectionAccess } from "../../src/hooks/synology/useSynologySe
 import { invokeManagement } from "../../src/utils/security/managementInvoke";
 import { SessionRenderActivityContext } from "../../src/contexts/SessionRenderActivityContext";
 import type { SynologyTab } from "../../src/hooks/synology/synologyAdminData";
+import { SYNOLOGY_SECTION_READS } from "../../src/utils/synology/synologyAccess";
 vi.mock("../../src/utils/security/managementInvoke", () => ({
   invokeManagement: vi.fn(),
   toSafeManagementError: (error: unknown) =>
@@ -24,6 +25,42 @@ const available = (section: unknown) => ({
   status: "available",
   reason: "Primary read succeeded. Writes need separate permission.",
 });
+const account = {
+  signedInAs: "nas-admin",
+  role: "administrator",
+  portalSession: false,
+  sessionName: "FileStation",
+  loginHandshake: "ik",
+  authVersion: 7,
+  route: "quickconnect_relay",
+  secondFactor: "otp",
+};
+/** Full (per-read) native snapshot; utilization restricted when `restricted`. */
+const full = (section: SynologyTab, restricted = false) => {
+  const reads = SYNOLOGY_SECTION_READS[section].map((field) => ({
+    field,
+    api:
+      field === "utilization"
+        ? "SYNO.Core.System.Utilization"
+        : "SYNO.DSM.Info",
+    state:
+      restricted && field === "utilization"
+        ? "session_restricted"
+        : "available",
+    reason: "Read successfully.",
+  }));
+  const partial = reads.some((read) => read.state !== "available");
+  return {
+    section,
+    status: partial ? "partial" : "available",
+    requirement: partial ? "session" : null,
+    reason: partial
+      ? "Some data in this section needs additional DSM access; the parts you can read are shown."
+      : "All data in this section was read successfully.",
+    account,
+    reads,
+  };
+};
 const deferred = () => {
   let resolve!: (value: unknown) => void;
   let reject!: (value: unknown) => void;
@@ -123,6 +160,7 @@ describe("NAS section read-access discovery", () => {
     vi.mocked(invokeManagement).mockImplementation(() => new Promise(() => {}));
     rerender({ ...options(), connected: false, sessionId: null });
     expect(result.current.entries.system.status).toBe("checking");
+    expect(result.current.account).toBeNull();
     expect(result.current.checking).toBe(false);
     rerender({ ...options(), sessionId: "receipt-new" });
     expect(result.current.entries.system.status).toBe("checking");
@@ -189,6 +227,13 @@ describe("NAS section read-access discovery", () => {
     { section: "fileStation", status: "available", reason: "x".repeat(1025) },
     { section: "fileStation", status: "available", reason: "bad\nreason" },
     { section: "fileStation", status: "available", reason: "" },
+    { section: "fileStation", status: "partial", reason: "No reads." },
+    { ...full("fileStation"), account: { ...account, role: "root" } },
+    {
+      ...full("fileStation"),
+      account: { ...account, signedInAs: "nas\u0000admin" },
+    },
+    { ...full("fileStation"), reads: [] },
   ])(
     "treats malformed native results as unknown, not access granted or denied: %j",
     async (payload) => {
@@ -242,9 +287,13 @@ describe("NAS section read-access discovery", () => {
     expect(result.current.entries.fileStation.status).toBe("available");
     expect(result.current.entries.vms.status).toBe("checking");
   });
-  it.each(["denied", "unavailable", "unknown"])(
-    "preserves a verified native %s classification",
-    async (status) => {
+  it.each([
+    ["denied", "permission"],
+    ["unavailable", "dsm_version"],
+    ["unknown", null],
+  ])(
+    "preserves a verified legacy native %s classification",
+    async (status, requirement) => {
       vi.mocked(invokeManagement).mockImplementation(
         async (_command, args) =>
           ({
@@ -255,10 +304,150 @@ describe("NAS section read-access discovery", () => {
       );
       const { result } = renderHook(() => useSynologySectionAccess(options()));
       await waitFor(() => expect(result.current.checking).toBe(false));
-      expect(result.current.entries.system).toMatchObject({
+      expect(result.current.entries.system).toEqual({
+        section: "system",
         status,
+        requirement,
         reason: "Safe native explanation.",
+        account: null,
+        reads: [],
       });
+      expect(result.current.account).toBeNull();
     },
   );
+  it("publishes full per-read snapshots and the session identity", async () => {
+    vi.mocked(invokeManagement).mockImplementation(
+      async (_command, args) =>
+        full(args?.section as SynologyTab, args?.section === "system") as never,
+    );
+    const { result } = renderHook(() => useSynologySectionAccess(options()));
+    await waitFor(() => expect(result.current.checking).toBe(false));
+    expect(result.current.entries.system).toEqual(full("system", true));
+    expect(result.current.entries.system.reads[1]).toMatchObject({
+      field: "utilization",
+      state: "session_restricted",
+    });
+    expect(result.current.entries.storage.status).toBe("available");
+    expect(result.current.account).toEqual(account);
+  });
+  it("rechecks one section without resetting the others and ignores its older in-flight reply", async () => {
+    const pending: {
+      section: SynologyTab;
+      task: ReturnType<typeof deferred>;
+    }[] = [];
+    vi.mocked(invokeManagement).mockImplementation((_command, args) => {
+      const task = deferred();
+      pending.push({ section: args?.section as SynologyTab, task });
+      return task.promise as never;
+    });
+    const { result } = renderHook(() => useSynologySectionAccess(options()));
+    // Drain the initial queue but leave "system" unresolved to race a recheck.
+    let index = 0;
+    while (index < pending.length) {
+      const { section, task } = pending[index++];
+      if (section === "system") continue;
+      await act(async () => task.resolve(full(section)));
+    }
+    expect(pending).toHaveLength(18);
+    expect(result.current.entries.system.status).toBe("checking");
+    act(() => result.current.recheck("system"));
+    expect(pending).toHaveLength(19);
+    expect(pending[18].section).toBe("system");
+    const stale = pending.find(({ section }) => section === "system")!;
+    await act(async () => stale.task.resolve(full("system", true)));
+    expect(result.current.entries.system.status).toBe("checking");
+    await act(async () => pending[18].task.resolve(full("system")));
+    expect(result.current.entries.system.status).toBe("available");
+    // A settled section can be rechecked again; unrelated results stay published.
+    act(() => result.current.recheck("system"));
+    expect(pending).toHaveLength(20);
+    expect(result.current.entries.system.status).toBe("checking");
+    expect(result.current.entries.storage.status).toBe("available");
+    expect(result.current.checking).toBe(true);
+    await act(async () => pending[19].task.resolve(full("system", true)));
+    expect(result.current.entries.system.status).toBe("partial");
+    expect(
+      vi
+        .mocked(invokeManagement)
+        .mock.calls.slice(18)
+        .map(([, args]) => args?.section),
+    ).toEqual(["system", "system"]);
+  });
+  it("keeps the three-read limit for single-section rechecks", async () => {
+    const pending: ReturnType<typeof deferred>[] = [];
+    vi.mocked(invokeManagement).mockImplementation(() => {
+      const task = deferred();
+      pending.push(task);
+      return task.promise as never;
+    });
+    const { result } = renderHook(() => useSynologySectionAccess(options()));
+    expect(pending).toHaveLength(3);
+    act(() => {
+      result.current.recheck("fileStation");
+      result.current.recheck("fileStation");
+    });
+    expect(pending).toHaveLength(3);
+    await act(async () => pending[0].resolve(full("fileStation")));
+    expect(pending).toHaveLength(4);
+    // The stale first reply was ignored; fileStation is still being checked once more.
+    expect(result.current.entries.fileStation.status).toBe("checking");
+    const sections = vi
+      .mocked(invokeManagement)
+      .mock.calls.map(([, args]) => args?.section);
+    expect(sections.filter((section) => section === "fileStation")).toEqual([
+      "fileStation",
+    ]);
+    // The rechecked section is appended to the queue once, after the pending probes.
+    for (let i = 1; i < pending.length; i++) {
+      const section = vi.mocked(invokeManagement).mock.calls[i][1]
+        ?.section as SynologyTab;
+      await act(async () => pending[i].resolve(full(section)));
+    }
+    expect(result.current.checking).toBe(false);
+    const calls = vi.mocked(invokeManagement).mock.calls;
+    expect(calls[calls.length - 1][1]?.section).toBe("fileStation");
+    expect(
+      vi
+        .mocked(invokeManagement)
+        .mock.calls.filter(([, args]) => args?.section === "fileStation"),
+    ).toHaveLength(2);
+    expect(invokeManagement).toHaveBeenCalledTimes(19);
+  });
+  it("routes session expiry from a single-section recheck unchanged", async () => {
+    const props = options();
+    const { result } = renderHook(() => useSynologySectionAccess(props));
+    await waitFor(() => expect(result.current.checking).toBe(false));
+    vi.mocked(invokeManagement).mockRejectedValue(
+      new Error("SYNOLOGY_SESSION_EXPIRED: Sign in again"),
+    );
+    act(() => result.current.recheck("system"));
+    await waitFor(() =>
+      expect(props.onSessionExpired).toHaveBeenCalledWith(
+        "receipt-a",
+        "SYNOLOGY_SESSION_EXPIRED: Sign in again",
+      ),
+    );
+    expect(invokeManagement).toHaveBeenCalledTimes(19);
+    expect(invokeManagement).toHaveBeenLastCalledWith(
+      "syn_get_section_access",
+      {
+        instanceId: "instance-a",
+        expectedSessionId: "receipt-a",
+        section: "system",
+      },
+    );
+    expect(result.current.entries.system.status).toBe("unknown");
+    expect(result.current.entries.storage.status).toBe("available");
+  });
+  it("does not recheck a section after owner access is revoked", async () => {
+    const props = options();
+    const { result } = renderHook(() => useSynologySectionAccess(props));
+    await waitFor(() => expect(result.current.checking).toBe(false));
+    props.assertCurrent.mockImplementation(() => {
+      throw new Error("Owner locked");
+    });
+    act(() => result.current.recheck("system"));
+    expect(invokeManagement).toHaveBeenCalledTimes(18);
+    expect(result.current.entries.system.status).toBe("available");
+  });
 });

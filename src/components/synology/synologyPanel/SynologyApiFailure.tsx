@@ -8,9 +8,12 @@ import {
 export default function SynologyApiFailure({
   error,
   alert = true,
+  signInNote = true,
 }: {
   error: string;
   alert?: boolean;
+  /** Sign-in failures state that no retry was made; data reads omit it. */
+  signInNote?: boolean;
 }) {
   const diagnostic = parseSynologyApiFailure(error);
   const presentation = diagnostic
@@ -54,7 +57,9 @@ export default function SynologyApiFailure({
           </dl>
         </div>
       )}
-      <p className="text-xs">No automatic sign-in retry was made.</p>
+      {signInNote && (
+        <p className="text-xs">No automatic sign-in retry was made.</p>
+      )}
     </div>
   );
 }

@@ -1,4 +1,8 @@
 import type * as S from "../../types/hardware/synology";
+import type {
+  SynologyReadField,
+  SynologyReadState,
+} from "../../utils/synology/synologyAccess";
 
 export interface SynologyAdminData {
   dashboard: S.SynologyDashboard | null;
@@ -139,3 +143,28 @@ export const ADMIN_READS = {
   notifications: { notificationConfig: "syn_get_notification_config" },
 } as const;
 export type SynologyTab = keyof typeof ADMIN_READS | "fileStation";
+
+/** A read the loader does not invoke; views show the explanation instead of its rows. */
+export interface SynologyReadRestriction {
+  field: SynologyReadField;
+  state: Exclude<SynologyReadState, "available" | "unknown">;
+  /** `SYNOLOGY_READ_STATE_TITLES[state]`. */
+  title: string;
+  reason: string;
+  api?: string;
+  package?: string;
+  application?: string;
+  /**
+   * `access_check`: the validated section-access snapshot. `read_response`: DSM refused
+   * the read (105/120) before a snapshot classified it; kept until the next snapshot.
+   */
+  source: "access_check" | "read_response";
+}
+
+/** A read that failed for a reason other than access; its values were cleared. */
+export interface SynologyReadFailure {
+  field: keyof SynologyAdminData;
+  label: string;
+  /** Sanitized management error; may end with `synology-diagnostic:v1` metadata. */
+  error: string;
+}

@@ -1,4 +1,8 @@
 import { useId, useMemo, useState, type ReactNode } from "react";
+import {
+  SynologyReadRestrictionNotice,
+  type SynologyReadRestrictionView,
+} from "./SynologySectionRestriction";
 export type AdminColumn = readonly [
   string,
   string,
@@ -34,11 +38,17 @@ export default function AdminTable({
   rows,
   columns,
   actions,
+  restriction,
+  emptyMessage,
 }: {
   title: string;
   rows: readonly unknown[];
   columns: readonly AdminColumn[];
   actions?: (row: Record<string, unknown>) => ReactNode;
+  /** The session cannot read this table; a notice replaces the rows. */
+  restriction?: SynologyReadRestrictionView;
+  /** Shown instead of the generic text when there are no rows and no search. */
+  emptyMessage?: string;
 }) {
   const id = useId();
   const [search, setSearch] = useState("");
@@ -56,6 +66,13 @@ export default function AdminTable({
   );
   const pages = Math.max(1, Math.ceil(filtered.length / 25));
   const current = Math.min(page, pages - 1);
+  if (restriction)
+    return (
+      <section className="space-y-2 min-w-0">
+        <h3 className="font-medium text-sm">{title}</h3>
+        <SynologyReadRestrictionNotice restriction={restriction} />
+      </section>
+    );
   return (
     <section className="space-y-2 min-w-0">
       <div className="flex flex-wrap items-center gap-2">
@@ -123,8 +140,9 @@ export default function AdminTable({
         </table>
         {!filtered.length && (
           <p className="p-5 text-xs text-text-muted">
-            No matching rows. The package may be unavailable or this account may
-            have no entries.
+            {emptyMessage && !search
+              ? emptyMessage
+              : "No matching rows. The package may be unavailable or this account may have no entries."}
           </p>
         )}
       </div>

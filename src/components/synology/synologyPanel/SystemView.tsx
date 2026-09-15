@@ -1,13 +1,21 @@
 import type { SubProps } from "./types";
 import AdminTable from "./AdminTable";
+import SynologySectionRestriction, {
+  synologyTabAccess,
+} from "./SynologySectionRestriction";
 export default function SystemView({ mgr }: SubProps) {
+  const access = synologyTabAccess(mgr, "system");
+  if (access.section)
+    return <SynologySectionRestriction access={access.section} />;
   const info = mgr.systemInfo,
     util = mgr.utilization;
+  const utilization = access.restriction("utilization");
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6">
       <AdminTable
         title="System information"
         rows={info ? [info] : []}
+        restriction={access.restriction("systemInfo")}
         columns={[
           ["model", "Model"],
           ["serial", "Serial"],
@@ -21,6 +29,7 @@ export default function SystemView({ mgr }: SubProps) {
       <AdminTable
         title="CPU"
         rows={util?.cpu ? [util.cpu] : []}
+        restriction={utilization}
         columns={[
           ["systemLoad", "System %"],
           ["userLoad", "User %"],
@@ -33,6 +42,7 @@ export default function SystemView({ mgr }: SubProps) {
       <AdminTable
         title="Memory"
         rows={util?.memory ? [util.memory] : []}
+        restriction={utilization}
         columns={[
           ["totalReal", "Total"],
           ["availReal", "Available"],
@@ -44,6 +54,7 @@ export default function SystemView({ mgr }: SubProps) {
       <AdminTable
         title="Network utilization"
         rows={util?.network ?? []}
+        restriction={utilization}
         columns={[
           ["device", "Device"],
           ["rx", "Received"],
@@ -53,6 +64,7 @@ export default function SystemView({ mgr }: SubProps) {
       <AdminTable
         title="Disk utilization"
         rows={util?.disk ?? []}
+        restriction={utilization}
         columns={[
           ["device", "Device"],
           ["displayName", "Name"],

@@ -27,7 +27,8 @@ const identity: Record<string, readonly string[]> = {
   syn_list_active_backup_devices: ["deviceId"],
   syn_list_blocked_ips: ["ip"],
   syn_list_certificates: ["id"],
-  syn_get_system_logs: ["id", "time"],
+  // DSM log items carry no id (SYNO.Core.SyslogClient.Log); the native id is null.
+  syn_get_system_logs: ["time"],
   syn_get_connection_logs: ["time", "ip"],
   syn_get_active_connections: ["time", "ip"],
 };

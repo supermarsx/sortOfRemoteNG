@@ -102,7 +102,7 @@ export interface DiskUtilization {
 export interface ProcessInfo {
   pid: number;
   name: string;
-  user: string;
+  user?: string | null;
   cpu: number;
   memory: number;
   threads?: number | null;
@@ -179,12 +179,12 @@ export interface HotSpare {
 
 export interface SmartInfo {
   diskId: string;
-  diskName: string;
-  healthStatus: string;
+  diskName?: string | null;
+  healthStatus?: string | null;
   temperature?: number | null;
   powerOnHours?: number | null;
   reallocatedSectors?: number | null;
-  attributes: SmartAttribute[];
+  attributes?: SmartAttribute[] | null;
 }
 
 export interface SmartAttribute {
@@ -318,13 +318,13 @@ export interface NetworkOverview {
   workgroup?: string | null;
   dns: string[];
   gateway?: string | null;
-  interfaces: NetworkInterface[];
+  interfaces?: NetworkInterface[] | null;
 }
 
 export interface NetworkInterface {
   id: string;
   name?: string | null;
-  mac: string;
+  mac?: string | null;
   ip: string[];
   ipv6: string[];
   subnet?: string | null;
@@ -336,12 +336,13 @@ export interface NetworkInterface {
 
 export interface FirewallRule {
   id?: string | null;
-  srcIp: string;
-  srcPort: string;
-  direction: string;
-  action: string;
-  protocol: string;
-  enabled: boolean;
+  adapter?: string | null;
+  srcIp?: string | null;
+  srcPort?: string | null;
+  direction?: string | null;
+  action?: string | null;
+  protocol?: string | null;
+  enabled?: boolean | null;
 }
 
 export interface DhcpLease {
@@ -361,7 +362,7 @@ export interface VpnProfile {
 
 export interface SynoUser {
   name: string;
-  uid: number;
+  uid?: number | null;
   description?: string | null;
   email?: string | null;
   expired?: string | null;
@@ -372,7 +373,7 @@ export interface SynoGroup {
   name: string;
   gid: number;
   description?: string | null;
-  members: string[];
+  members?: string[] | null;
 }
 
 export interface UserQuota {
@@ -397,7 +398,7 @@ export interface PackageInfo {
   name: string;
   version: string;
   description?: string | null;
-  status: string;
+  status?: string | null;
   isUninstallPages?: boolean | null;
   updateVersion?: string | null;
   additional?: PackageAdditional | null;
@@ -414,9 +415,9 @@ export interface ServiceStatus {
   id: string;
   name: string;
   enabled: boolean;
-  running: boolean;
+  running?: boolean | null;
   port?: number | null;
-  serviceType: string;
+  serviceType?: string | null;
 }
 
 export interface SmbConfig {
@@ -452,8 +453,8 @@ export interface DockerContainer {
   cpuPercent?: number | null;
   memoryUsage?: number | null;
   memoryLimit?: number | null;
-  ports: DockerPortBinding[];
-  volumes: DockerVolumeMount[];
+  ports?: DockerPortBinding[] | null;
+  volumes?: DockerVolumeMount[] | null;
 }
 
 export interface DockerPortBinding {
@@ -489,13 +490,14 @@ export interface DockerNetwork {
   name: string;
   id: string;
   driver: string;
-  scope: string;
+  scope?: string | null;
   subnet?: string | null;
   gateway?: string | null;
   containers?: number | null;
 }
 
 export interface DockerProject {
+  id?: string | null;
   name: string;
   status: string;
   services: string[];
@@ -562,7 +564,7 @@ export interface DownloadStationStats {
 
 export interface SurveillanceInfo {
   version: SurveillanceVersion;
-  cameraCount: number;
+  cameraCount?: number | null;
   licenseCount?: number | null;
 }
 
@@ -575,12 +577,12 @@ export interface SurveillanceVersion {
 export interface Camera {
   id: number;
   name: string;
-  ip: string;
+  ip?: string | null;
   port: number;
   model?: string | null;
   vendor?: string | null;
   status: number;
-  enabled: boolean;
+  enabled?: boolean | null;
   recording?: boolean | null;
   resolution?: string | null;
   fps?: number | null;
@@ -592,8 +594,8 @@ export interface Recording {
   id: string;
   cameraId: number;
   cameraName?: string | null;
-  startTime: string;
-  stopTime: string;
+  startTime?: string | null;
+  stopTime?: string | null;
   fileSize: number;
   eventType?: string | null;
 }
@@ -601,7 +603,7 @@ export interface Recording {
 export interface BackupTaskInfo {
   taskId: number;
   name: string;
-  status: string;
+  status?: string | null;
   lastBackupTime?: string | null;
   nextBackupTime?: string | null;
   destType?: string | null;
@@ -620,25 +622,40 @@ export interface BackupVersion {
 export interface ActiveBackupDevice {
   deviceId: number;
   deviceName: string;
-  deviceType: string;
-  status: string;
+  deviceType?: string | null;
+  status?: string | null;
   lastBackup?: string | null;
   agentVersion?: string | null;
   ipAddress?: string | null;
+  osName?: string | null;
 }
 
 export interface SecurityOverview {
-  autoBlockEnabled: boolean;
-  firewallEnabled: boolean;
-  httpsEnabled: boolean;
+  autoBlockEnabled?: boolean | null;
+  firewallEnabled?: boolean | null;
+  httpsEnabled?: boolean | null;
   advisorScore?: number | null;
-  blockedIps: BlockedIp[];
+  blockedIps?: BlockedIp[] | null;
   certificateInfo?: CertificateInfo | null;
+  scanStatus?: string | null;
+  scanProgress?: number | null;
+  lastScanTime?: number | null;
+  categories?: SecurityScanCategory[] | null;
+}
+
+export interface SecurityScanCategory {
+  category: string;
+  severity?: string | null;
+  danger?: number | null;
+  risk?: number | null;
+  warning?: number | null;
+  info?: number | null;
+  outOfDate?: number | null;
 }
 
 export interface BlockedIp {
   ip: string;
-  blockedAt: string;
+  blockedAt?: string | null;
   reason?: string | null;
 }
 
@@ -660,6 +677,7 @@ export interface AutoBlockConfig {
   withinMinutes: number;
   blockForever: boolean;
   expireMinutes?: number | null;
+  expireDays?: number | null;
 }
 
 export interface HardwareInfo {
@@ -710,7 +728,7 @@ export interface PowerScheduleEntry {
 }
 
 export interface LogEntry {
-  id: number;
+  id?: number | null;
   time: string;
   msg: string;
   level: string;
@@ -724,8 +742,11 @@ export interface ConnectionEntry {
   ip: string;
   user: string;
   type: string;
-  isLogin: boolean;
-  success: boolean;
+  isLogin?: boolean | null;
+  success?: boolean | null;
+  description?: string | null;
+  protocol?: string | null;
+  canBeKicked?: boolean | null;
 }
 
 export interface NotificationConfig {

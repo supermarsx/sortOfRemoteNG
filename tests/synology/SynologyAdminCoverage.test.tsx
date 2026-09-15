@@ -435,7 +435,7 @@ describe("Synology native admin coverage", () => {
     });
     expect(screen.getByText("user-69")).toBeInTheDocument();
   });
-  it("clears failed sections and preserves safe actionable errors", async () => {
+  it("clears failed reads and lists safe actionable errors under a refresh banner", async () => {
     let fail = false;
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "syn_list_vms" && fail)
@@ -447,13 +447,21 @@ describe("Synology native admin coverage", () => {
     await screen.findByText("Build VM");
     fail = true;
     fireEvent.click(screen.getByTitle("Refresh"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Package unavailable",
-    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveAccessibleName("Some data could not be refreshed");
     expect(screen.queryByText("Build VM")).not.toBeInTheDocument();
-    expect(screen.getByRole("alert")).not.toHaveTextContent("private-token");
-    expect(screen.getByRole("alert")).toHaveTextContent("Virtual machines:");
-    expect(screen.getByRole("alert")).not.toHaveTextContent("vms:");
+    const failure = within(alert).getByTestId("synology-read-failure-vms");
+    expect(failure).toHaveTextContent("Virtual machines");
+    expect(failure).toHaveTextContent("Package unavailable");
+    expect(alert).not.toHaveTextContent("private-token");
+    expect(alert).not.toHaveTextContent("vms:");
+    expect(alert).toHaveTextContent(
+      "Values from these reads were cleared so stale data is not shown. Retry with Refresh.",
+    );
+    expect(alert).not.toHaveTextContent(/Failed sections have been cleared/);
+    expect(alert).not.toHaveTextContent(/Check the indicated package/);
+    fireEvent.click(within(alert).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
   it("definitive expiry revokes only captured receipt; generic 403 does not", async () => {
     const c = connection();

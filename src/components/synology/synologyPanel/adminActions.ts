@@ -18,7 +18,28 @@ export interface AdminAction {
   fields: AdminField[];
   columns?: readonly (readonly [string, string])[];
   image?: boolean;
+  /**
+   * DSM allows the action's API for administrators only (plan t84 §3b "A"/"pkg-A").
+   * A hint for gating the button; the NAS remains authoritative.
+   */
+  requires?: "administrator";
 }
+/** Tabs whose actions call administrator-only DSM APIs (§3b); File Station, Downloads, Cameras and Logs do not. */
+const ADMINISTRATOR_ACTION_TABS: ReadonlySet<SynologyTab> =
+  new Set<SynologyTab>([
+    "system",
+    "storage",
+    "shares",
+    "network",
+    "users",
+    "packages",
+    "services",
+    "docker",
+    "vms",
+    "backup",
+    "security",
+    "notifications",
+  ]);
 const text = (key: string, label: string, optional = false): AdminField => ({
   key,
   label,
@@ -58,6 +79,9 @@ const action = (
   help,
   mutation: !columns,
   columns,
+  ...(ADMINISTRATOR_ACTION_TABS.has(tab)
+    ? { requires: "administrator" as const }
+    : {}),
 });
 export const SYNOLOGY_ADMIN_ACTIONS: readonly AdminAction[] = [
   action(
@@ -84,10 +108,9 @@ export const SYNOLOGY_ADMIN_ACTIONS: readonly AdminAction[] = [
     [],
     "Checks availability only; does not install an update.",
     [
-      ["available", "Available"],
-      ["version", "Version"],
-      ["buildnumber", "Build"],
-      ["status", "Status"],
+      ["update.available", "Available"],
+      ["update.version", "Version"],
+      ["update.version_details.buildnumber", "Build"],
     ],
   ),
   action(
@@ -529,6 +552,8 @@ export const SYNOLOGY_ADMIN_ACTIONS: readonly AdminAction[] = [
       ["user", "Account"],
       ["ip", "IP"],
       ["type", "Type"],
+      ["protocol", "Protocol"],
+      ["description", "Description"],
       ["isLogin", "Login"],
       ["success", "Successful"],
       ["time", "Time"],

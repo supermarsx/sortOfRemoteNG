@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { useSynologyManager } from "../../hooks/synology/useSynologyManager";
 import Modal from "../ui/overlays/Modal";
@@ -12,6 +12,7 @@ import DashboardView from "./synologyPanel/DashboardView";
 import SystemView from "./synologyPanel/SystemView";
 import StorageView from "./synologyPanel/StorageView";
 import FileStationView from "./synologyPanel/FileStationView";
+import SynologyApiFailure from "./synologyPanel/SynologyApiFailure";
 import {
   SharesView,
   NetworkView,
@@ -41,6 +42,7 @@ export function SynologySessionContent({
 }) {
   const { t } = useTranslation();
   const mgr = useSynologyManager(isActive, connection);
+  const failuresTitle = useId();
   const renderContent = () => {
     switch (mgr.activeTab) {
       case "dashboard":
@@ -112,6 +114,45 @@ export function SynologySessionContent({
                 {connection.sessionHealth.status === "degraded"
                   ? connection.sessionHealth.message
                   : "API session active · Background keep-alive enabled"}
+              </div>
+            )}
+            {mgr.readFailures.length > 0 && (
+              <div
+                role="alert"
+                aria-labelledby={failuresTitle}
+                data-testid="synology-read-failures"
+                className="max-h-72 overflow-y-auto px-4 py-2 bg-error/10 border-b border-error/30 text-xs"
+              >
+                <div className="flex items-start gap-2 text-error">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <p id={failuresTitle} className="font-medium">
+                    Some data could not be refreshed
+                  </p>
+                  <button onClick={mgr.clearReadFailures} className="ml-auto">
+                    {t("common.dismiss", "Dismiss")}
+                  </button>
+                </div>
+                <ul className="mt-2 space-y-3">
+                  {mgr.readFailures.map((failure) => (
+                    <li
+                      key={failure.field}
+                      data-testid={`synology-read-failure-${failure.field}`}
+                    >
+                      <p className="mb-1 font-medium text-[var(--color-text)]">
+                        {failure.label}
+                      </p>
+                      <SynologyApiFailure
+                        error={failure.error}
+                        alert={false}
+                        signInNote={false}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-[var(--color-textSecondary)]">
+                  Values from these reads were cleared so stale data is not
+                  shown. Retry with Refresh.
+                </p>
               </div>
             )}
             {mgr.dataError && (

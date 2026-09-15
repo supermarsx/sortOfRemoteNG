@@ -24,11 +24,14 @@ import {
   CircleHelp,
   CircleCheck,
   Clock3,
-  ShieldX,
+  Lock,
+  ShieldAlert,
 } from "lucide-react";
 import type { SubProps } from "./types";
 import type { SynologyTab } from "../../../hooks/synology/useSynologyManager";
 import { SYNOLOGY_SECTION_LABELS } from "../../../utils/synology/synologySectionLabels";
+import { SYNOLOGY_REQUIREMENT_TITLES } from "../../../utils/synology/synologyAccess";
+import SynologyAccountAccess from "./SynologyAccountAccess";
 
 interface TabDef {
   key: SynologyTab;
@@ -60,10 +63,51 @@ const TABS: TabDef[] = [
 const Sidebar: React.FC<SubProps> = ({ mgr }) => {
   const { t } = useTranslation();
   const access = mgr.sectionAccess;
-  const unavailable = TABS.filter(({ key }) =>
-    ["denied", "unavailable"].includes(access.entries[key].status),
+  const needsAccess = TABS.filter(
+    ({ key }) => access.entries[key].status === "denied",
   );
-  const visible = TABS.filter((tab) => !unavailable.includes(tab));
+  const notProvided = TABS.filter(
+    ({ key }) => access.entries[key].status === "unavailable",
+  );
+  const visible = TABS.filter(
+    ({ key }) =>
+      !["denied", "unavailable"].includes(access.entries[key].status),
+  );
+  const restricted = (tabs: TabDef[], fallback: string) => (
+    <ul className="space-y-1 py-1">
+      {tabs.map(({ key, label }) => {
+        const entry = access.entries[key];
+        const title = entry.requirement
+          ? SYNOLOGY_REQUIREMENT_TITLES[entry.requirement]
+          : fallback;
+        return (
+          <li key={key}>
+            <button
+              type="button"
+              onClick={() => mgr.changeTab(key)}
+              data-testid={`synology-tab-${key}`}
+              data-access-status={entry.status}
+              data-tooltip={entry.reason}
+              aria-label={t(label, SYNOLOGY_SECTION_LABELS[key])}
+              aria-description={`${title}. ${entry.reason}`}
+              aria-current={mgr.activeTab === key ? "page" : undefined}
+              className={`sor-accent-choice w-full rounded-md px-2 py-1.5 text-left ${mgr.activeTab === key ? "font-medium" : ""}`}
+            >
+              <span className="flex items-center gap-1 font-medium">
+                <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 truncate">
+                  {t(label, SYNOLOGY_SECTION_LABELS[key])}
+                </span>
+              </span>
+              <span className="mt-0.5 block text-[10px] text-text-muted">
+                {title}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   return (
     <div className="w-36 md:w-48 shrink-0 border-r border-[var(--color-border)] flex flex-col bg-[var(--color-surfaceHover)]">
@@ -77,9 +121,11 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
           const StatusIcon =
             entry.status === "available"
               ? CircleCheck
-              : entry.status === "checking"
-                ? Clock3
-                : CircleHelp;
+              : entry.status === "partial"
+                ? ShieldAlert
+                : entry.status === "checking"
+                  ? Clock3
+                  : CircleHelp;
           return (
             <button
               key={key}
@@ -87,6 +133,7 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
               onClick={() => mgr.changeTab(key)}
               disabled={entry.status === "checking"}
               data-testid={`synology-tab-${key}`}
+              data-access-status={entry.status}
               data-tooltip={entry.reason}
               aria-label={t(label, SYNOLOGY_SECTION_LABELS[key])}
               aria-description={entry.reason}
@@ -103,10 +150,16 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
                     Could not verify
                   </span>
                 )}
+                {entry.status === "partial" && (
+                  <span className="block text-[10px] text-text-muted">
+                    Partial access
+                  </span>
+                )}
               </span>
               <StatusIcon
                 aria-hidden="true"
-                className="w-3 h-3 shrink-0 text-text-muted"
+                data-status-icon={entry.status}
+                className={`w-3 h-3 shrink-0 ${entry.status === "partial" ? "text-warning" : "text-text-muted"}`}
               />
               {entry.status === "checking" && (
                 <span className="sr-only">Checking access</span>
@@ -114,36 +167,37 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
             </button>
           );
         })}
-        {unavailable.length > 0 && (
-          <details className="border-t border-border mt-2 pt-2 text-xs">
+        {needsAccess.length > 0 && (
+          <details
+            data-testid="synology-sections-needs-access"
+            className="border-t border-border mt-2 pt-2 text-xs"
+          >
             <summary className="cursor-pointer px-2 py-1 text-text-muted">
-              Unavailable sections ({unavailable.length})
+              Needs more access ({needsAccess.length})
             </summary>
-            <ul className="space-y-3 px-2 py-2">
-              {unavailable.map(({ key, label }) => (
-                <li key={key}>
-                  <span className="flex items-center gap-1 font-medium">
-                    <ShieldX className="h-3 w-3 shrink-0" aria-hidden="true" />
-                    {t(label, SYNOLOGY_SECTION_LABELS[key])}
-                  </span>
-                  <p className="mt-1 text-[10px] text-text-muted">
-                    {access.entries[key].status === "denied"
-                      ? "Access denied. "
-                      : "Not available. "}
-                    {access.entries[key].reason}
-                  </p>
-                </li>
-              ))}
-            </ul>
+            {restricted(needsAccess, "Access denied")}
+          </details>
+        )}
+        {notProvided.length > 0 && (
+          <details
+            data-testid="synology-sections-not-provided"
+            className="border-t border-border mt-2 pt-2 text-xs"
+          >
+            <summary className="cursor-pointer px-2 py-1 text-text-muted">
+              Not installed or not provided ({notProvided.length})
+            </summary>
+            {restricted(notProvided, "Not available")}
           </details>
         )}
       </nav>
+
+      <SynologyAccountAccess mgr={mgr} />
 
       <div className="border-t border-border px-3 py-2 space-y-1">
         <button
           type="button"
           className="sor-btn-secondary-sm w-full"
-          onClick={access.recheck}
+          onClick={() => access.recheck()}
           disabled={access.checking || !access.active}
         >
           Recheck section access

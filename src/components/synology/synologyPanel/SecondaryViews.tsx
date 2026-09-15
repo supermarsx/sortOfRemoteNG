@@ -1,9 +1,26 @@
 import type { ReactNode } from "react";
+import type { SynologyTab } from "../../../hooks/synology/synologyAdminData";
 import type { SubProps } from "./types";
 import AdminTable, { type AdminColumn } from "./AdminTable";
-const panel = (children: ReactNode) => (
-  <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6">{children}</div>
-);
+import SynologySectionRestriction, {
+  synologyTabAccess,
+  type SynologyReadRestrictionView,
+  type SynologyTabAccess,
+} from "./SynologySectionRestriction";
+const panel = (
+  mgr: SubProps["mgr"],
+  tab: SynologyTab,
+  render: (access: SynologyTabAccess) => ReactNode,
+) => {
+  const access = synologyTabAccess(mgr, tab);
+  return access.section ? (
+    <SynologySectionRestriction access={access.section} />
+  ) : (
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6">
+      {render(access)}
+    </div>
+  );
+};
 const rows = (value: unknown) =>
   value && typeof value === "object" ? [value] : [];
 function RowActions({
@@ -34,12 +51,19 @@ const table = (
   title: string,
   data: readonly unknown[],
   columns: readonly AdminColumn[],
+  restriction: SynologyReadRestrictionView | undefined,
   actions?: (row: Record<string, unknown>) => ReactNode,
 ) => (
-  <AdminTable title={title} rows={data} columns={columns} actions={actions} />
+  <AdminTable
+    title={title}
+    rows={data}
+    columns={columns}
+    actions={actions}
+    restriction={restriction}
+  />
 );
 export function SharesView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "shares", (access) =>
     table(
       "Shared folders",
       mgr.sharedFolders,
@@ -51,6 +75,7 @@ export function SharesView({ mgr }: SubProps) {
         ["status", "Status"],
         ["encryption", "Encryption"],
       ],
+      access.restriction("sharedFolders"),
       (row) => (
         <RowActions
           mgr={mgr}
@@ -67,36 +92,52 @@ export function SharesView({ mgr }: SubProps) {
   );
 }
 export function NetworkView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "network", (access) => (
     <>
-      {table("Network", rows(mgr.networkOverview), [
-        ["hostname", "Host"],
-        ["gateway", "Gateway"],
-        ["dns", "DNS"],
-        ["workgroup", "Workgroup"],
-      ])}
-      {table("Interfaces", mgr.networkInterfaces, [
-        ["id", "ID"],
-        ["name", "Name"],
-        ["ip", "IP"],
-        ["mask", "Mask"],
-        ["mac", "MAC"],
-        ["status", "Status"],
-        ["speed", "Speed"],
-        ["mtu", "MTU"],
-      ])}
-      {table("Firewall rules", mgr.firewallRules, [
-        ["policy", "Policy"],
-        ["protocol", "Protocol"],
-        ["ports", "Ports"],
-        ["sourceIp", "Source"],
-        ["enabled", "Enabled"],
-      ])}
-    </>,
-  );
+      {table(
+        "Network",
+        rows(mgr.networkOverview),
+        [
+          ["hostname", "Host"],
+          ["gateway", "Gateway"],
+          ["dns", "DNS"],
+          ["workgroup", "Workgroup"],
+        ],
+        access.restriction("networkOverview"),
+      )}
+      {table(
+        "Interfaces",
+        mgr.networkInterfaces,
+        [
+          ["id", "ID"],
+          ["name", "Name"],
+          ["ip", "IP"],
+          ["subnet", "Mask"],
+          ["mac", "MAC"],
+          ["status", "Status"],
+          ["linkSpeed", "Speed"],
+          ["mtu", "MTU"],
+        ],
+        access.restriction("networkInterfaces"),
+      )}
+      {table(
+        "Firewall rules",
+        mgr.firewallRules,
+        [
+          ["adapter", "Adapter"],
+          ["action", "Action"],
+          ["protocol", "Protocol"],
+          ["srcPort", "Ports"],
+          ["srcIp", "Source"],
+          ["enabled", "Enabled"],
+        ],
+        access.restriction("firewallRules"),
+      )}
+    </>
+  ));
 }
 export function UsersView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "users", (access) => (
     <>
       {table(
         "Users",
@@ -108,6 +149,7 @@ export function UsersView({ mgr }: SubProps) {
           ["email", "Email"],
           ["expired", "Expires"],
         ],
+        access.restriction("users"),
         (row) => (
           <RowActions
             mgr={mgr}
@@ -116,17 +158,22 @@ export function UsersView({ mgr }: SubProps) {
           />
         ),
       )}
-      {table("Groups", mgr.groups, [
-        ["name", "Name"],
-        ["gid", "GID"],
-        ["description", "Description"],
-        ["members", "Members"],
-      ])}
-    </>,
-  );
+      {table(
+        "Groups",
+        mgr.groups,
+        [
+          ["name", "Name"],
+          ["gid", "GID"],
+          ["description", "Description"],
+          ["members", "Members"],
+        ],
+        access.restriction("groups"),
+      )}
+    </>
+  ));
 }
 export function PackagesView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "packages", (access) =>
     table(
       "Packages",
       mgr.packages,
@@ -137,6 +184,7 @@ export function PackagesView({ mgr }: SubProps) {
         ["status", "Status"],
         ["updateVersion", "Available version"],
       ],
+      access.restriction("packages"),
       (row) => (
         <RowActions
           mgr={mgr}
@@ -152,35 +200,55 @@ export function PackagesView({ mgr }: SubProps) {
   );
 }
 export function ServicesView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "services", (access) => (
     <>
-      {table("Services", mgr.services, [
-        ["name", "Service"],
-        ["enabled", "Enabled"],
-        ["running", "Running"],
-        ["port", "Port"],
-        ["serviceType", "Type"],
-      ])}
-      {table("SMB", rows(mgr.smbConfig), [
-        ["enabled", "Enabled"],
-        ["workgroup", "Workgroup"],
-        ["minProtocol", "Minimum protocol"],
-        ["maxProtocol", "Maximum protocol"],
-      ])}
-      {table("NFS", rows(mgr.nfsConfig), [
-        ["enabled", "Enabled"],
-        ["enableNfsV4", "NFS v4"],
-        ["domain", "Domain"],
-      ])}
-      {table("SSH", rows(mgr.sshConfig), [
-        ["enabled", "Enabled"],
-        ["port", "Port"],
-      ])}
-    </>,
-  );
+      {table(
+        "Services",
+        mgr.services,
+        [
+          ["name", "Service"],
+          ["enabled", "Enabled"],
+          ["running", "Running"],
+          ["port", "Port"],
+          ["serviceType", "Type"],
+        ],
+        access.restriction("services"),
+      )}
+      {table(
+        "SMB",
+        rows(mgr.smbConfig),
+        [
+          ["enabled", "Enabled"],
+          ["workgroup", "Workgroup"],
+          ["minProtocol", "Minimum protocol"],
+          ["maxProtocol", "Maximum protocol"],
+        ],
+        access.restriction("smbConfig"),
+      )}
+      {table(
+        "NFS",
+        rows(mgr.nfsConfig),
+        [
+          ["enabled", "Enabled"],
+          ["enableNfsV4", "NFS v4"],
+          ["domain", "Domain"],
+        ],
+        access.restriction("nfsConfig"),
+      )}
+      {table(
+        "SSH",
+        rows(mgr.sshConfig),
+        [
+          ["enabled", "Enabled"],
+          ["port", "Port"],
+        ],
+        access.restriction("sshConfig"),
+      )}
+    </>
+  ));
 }
 export function DockerView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "docker", (access) => (
     <>
       {table(
         "Containers",
@@ -194,6 +262,7 @@ export function DockerView({ mgr }: SubProps) {
           ["cpuPercent", "CPU %"],
           ["memoryUsage", "Memory bytes"],
         ],
+        access.restriction("dockerContainers"),
         (row) => (
           <RowActions
             mgr={mgr}
@@ -207,18 +276,28 @@ export function DockerView({ mgr }: SubProps) {
           />
         ),
       )}
-      {table("Images", mgr.dockerImages, [
-        ["repository", "Repository"],
-        ["tag", "Tag"],
-        ["id", "ID"],
-        ["size", "Bytes"],
-      ])}
-      {table("Container networks", mgr.dockerNetworks, [
-        ["name", "Name"],
-        ["driver", "Driver"],
-        ["subnet", "Subnet"],
-        ["gateway", "Gateway"],
-      ])}
+      {table(
+        "Images",
+        mgr.dockerImages,
+        [
+          ["repository", "Repository"],
+          ["tag", "Tag"],
+          ["id", "ID"],
+          ["size", "Bytes"],
+        ],
+        access.restriction("dockerImages"),
+      )}
+      {table(
+        "Container networks",
+        mgr.dockerNetworks,
+        [
+          ["name", "Name"],
+          ["driver", "Driver"],
+          ["subnet", "Subnet"],
+          ["gateway", "Gateway"],
+        ],
+        access.restriction("dockerNetworks"),
+      )}
       {table(
         "Projects",
         mgr.dockerProjects,
@@ -228,6 +307,7 @@ export function DockerView({ mgr }: SubProps) {
           ["path", "Path"],
           ["services", "Services"],
         ],
+        access.restriction("dockerProjects"),
         (row) => (
           <RowActions
             mgr={mgr}
@@ -239,11 +319,11 @@ export function DockerView({ mgr }: SubProps) {
           />
         ),
       )}
-    </>,
-  );
+    </>
+  ));
 }
 export function VmsView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "vms", (access) =>
     table(
       "Virtual machines",
       mgr.vms,
@@ -252,9 +332,10 @@ export function VmsView({ mgr }: SubProps) {
         ["guestName", "Name"],
         ["status", "Status"],
         ["vcpuNum", "vCPU"],
-        ["vramSize", "RAM bytes"],
+        ["vramSize", "RAM MB"],
         ["storageName", "Storage"],
       ],
+      access.restriction("vms"),
       (row) => (
         <RowActions
           mgr={mgr}
@@ -272,12 +353,17 @@ export function VmsView({ mgr }: SubProps) {
   );
 }
 export function DownloadsView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "downloads", (access) => (
     <>
-      {table("Transfer rates", rows(mgr.downloadStats), [
-        ["speedDownload", "Download bytes/s"],
-        ["speedUpload", "Upload bytes/s"],
-      ])}
+      {table(
+        "Transfer rates",
+        rows(mgr.downloadStats),
+        [
+          ["speedDownload", "Download bytes/s"],
+          ["speedUpload", "Upload bytes/s"],
+        ],
+        access.restriction("downloadStats"),
+      )}
       {table(
         "Downloads",
         mgr.downloadTasks,
@@ -290,6 +376,7 @@ export function DownloadsView({ mgr }: SubProps) {
           ["percentDn", "Progress %"],
           ["destination", "Destination"],
         ],
+        access.restriction("downloadTasks"),
         (row) => (
           <RowActions
             mgr={mgr}
@@ -302,11 +389,11 @@ export function DownloadsView({ mgr }: SubProps) {
           />
         ),
       )}
-    </>,
-  );
+    </>
+  ));
 }
 export function SurveillanceView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "surveillance", (access) =>
     table(
       "Cameras",
       mgr.cameras,
@@ -320,6 +407,7 @@ export function SurveillanceView({ mgr }: SubProps) {
         ["recording", "Recording"],
         ["resolution", "Resolution"],
       ],
+      access.restriction("cameras"),
       (row) => (
         <RowActions
           mgr={mgr}
@@ -334,7 +422,7 @@ export function SurveillanceView({ mgr }: SubProps) {
   );
 }
 export function BackupView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "backup", (access) => (
     <>
       {table(
         "Backup tasks",
@@ -348,6 +436,7 @@ export function BackupView({ mgr }: SubProps) {
           ["progress", "Progress"],
           ["destPath", "Destination"],
         ],
+        access.restriction("backupTasks"),
         (row) => (
           <RowActions
             mgr={mgr}
@@ -360,25 +449,38 @@ export function BackupView({ mgr }: SubProps) {
           />
         ),
       )}
-      {table("Active Backup devices", mgr.activeBackupDevices, [
-        ["deviceId", "ID"],
-        ["deviceName", "Name"],
-        ["osName", "OS"],
-        ["status", "Status"],
-        ["lastBackupTime", "Last backup"],
-      ])}
-    </>,
-  );
+      {table(
+        "Active Backup devices",
+        mgr.activeBackupDevices,
+        [
+          ["deviceId", "ID"],
+          ["deviceName", "Name"],
+          ["osName", "OS"],
+          ["status", "Status"],
+          ["lastBackup", "Last backup"],
+        ],
+        access.restriction("activeBackupDevices"),
+      )}
+    </>
+  ));
 }
 export function SecurityView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "security", (access) => (
     <>
-      {table("Security", rows(mgr.securityOverview), [
-        ["autoBlockEnabled", "Auto block"],
-        ["firewallEnabled", "Firewall"],
-        ["httpsEnabled", "HTTPS"],
-        ["advisorScore", "Advisor score"],
-      ])}
+      {table(
+        "Security",
+        rows(mgr.securityOverview),
+        [
+          ["autoBlockEnabled", "Auto block"],
+          ["firewallEnabled", "Firewall"],
+          ["httpsEnabled", "HTTPS"],
+          ["advisorScore", "Advisor score"],
+          ["scanStatus", "Security Advisor status"],
+          ["scanProgress", "Scan progress %"],
+          ["lastScanTime", "Last scan (Unix time)"],
+        ],
+        access.restriction("securityOverview"),
+      )}
       {table(
         "Blocked IPs",
         mgr.blockedIps,
@@ -387,6 +489,7 @@ export function SecurityView({ mgr }: SubProps) {
           ["blockedAt", "Blocked"],
           ["reason", "Reason"],
         ],
+        access.restriction("blockedIps"),
         (row) => (
           <RowActions
             mgr={mgr}
@@ -395,65 +498,104 @@ export function SecurityView({ mgr }: SubProps) {
           />
         ),
       )}
-      {table("Certificates", mgr.certificates, [
-        ["id", "ID"],
-        ["desc", "Description"],
-        ["subject", "Subject"],
-        ["issuer", "Issuer"],
-        ["validFrom", "Valid from"],
-        ["validTill", "Valid until"],
-        ["isDefault", "Default"],
-        ["isBroken", "Broken"],
-      ])}
-      {table("Auto block", rows(mgr.autoBlockConfig), [
-        ["enabled", "Enabled"],
-        ["attempts", "Attempts"],
-        ["withinMinutes", "Within minutes"],
-        ["blockForever", "Indefinite"],
-        ["expireMinutes", "Expiry minutes"],
-      ])}
-    </>,
-  );
+      {table(
+        "Certificates",
+        mgr.certificates,
+        [
+          ["id", "ID"],
+          ["desc", "Description"],
+          ["subject", "Subject"],
+          ["issuer", "Issuer"],
+          ["validFrom", "Valid from"],
+          ["validTill", "Valid until"],
+          ["isDefault", "Default"],
+          ["isBroken", "Broken"],
+        ],
+        access.restriction("certificates"),
+      )}
+      {table(
+        "Auto block",
+        rows(mgr.autoBlockConfig),
+        [
+          ["enabled", "Enabled"],
+          ["attempts", "Attempts"],
+          ["withinMinutes", "Within minutes"],
+          ["blockForever", "Indefinite"],
+          ["expireMinutes", "Expiry minutes"],
+          ["expireDays", "Expiry days"],
+        ],
+        access.restriction("autoBlockConfig"),
+      )}
+    </>
+  ));
 }
 export function HardwareView({ mgr }: SubProps) {
-  return panel(
-    <>
-      {table("Hardware", rows(mgr.hardwareInfo), [
-        ["fanSpeed", "Fan mode"],
-        ["beepEnabled", "Beeper"],
-        ["ledBrightness", "LED brightness"],
-      ])}
-      {table("Fans", mgr.hardwareInfo?.fanSpeeds ?? [], [
-        ["id", "ID"],
-        ["fanSpeed", "Speed"],
-        ["status", "Status"],
-      ])}
-      {table("Temperatures", mgr.hardwareInfo?.temperatures ?? [], [
-        ["name", "Sensor"],
-        ["temperature", "Temperature °C"],
-        ["warnThreshold", "Warning threshold"],
-        ["status", "Status"],
-      ])}
-      {table("UPS", rows(mgr.upsInfo), [
-        ["enabled", "Enabled"],
-        ["model", "Model"],
-        ["status", "Status"],
-        ["batteryCharge", "Battery %"],
-        ["loadPercent", "Load %"],
-        ["runtimeMinutes", "Runtime minutes"],
-      ])}
-      {table("Power schedule", mgr.powerSchedule?.entries ?? [], [
-        ["action", "Action"],
-        ["weekday", "Days"],
-        ["hour", "Hour"],
-        ["minute", "Minute"],
-        ["enabled", "Enabled"],
-      ])}
-    </>,
-  );
+  return panel(mgr, "hardware", (access) => {
+    const hardware = access.restriction("hardwareInfo");
+    return (
+      <>
+        {table(
+          "Hardware",
+          rows(mgr.hardwareInfo),
+          [
+            ["fanSpeed", "Fan mode"],
+            ["beepEnabled", "Beeper"],
+            ["ledBrightness", "LED brightness"],
+          ],
+          hardware,
+        )}
+        {table(
+          "Fans",
+          mgr.hardwareInfo?.fanSpeeds ?? [],
+          [
+            ["id", "ID"],
+            ["fanSpeed", "Speed"],
+            ["status", "Status"],
+          ],
+          hardware,
+        )}
+        {table(
+          "Temperatures",
+          mgr.hardwareInfo?.temperatures ?? [],
+          [
+            ["name", "Sensor"],
+            ["temperature", "Temperature °C"],
+            ["warnThreshold", "Warning threshold"],
+            ["status", "Status"],
+          ],
+          hardware,
+        )}
+        {table(
+          "UPS",
+          rows(mgr.upsInfo),
+          [
+            ["enabled", "Enabled"],
+            ["model", "Model"],
+            ["status", "Status"],
+            ["batteryCharge", "Battery %"],
+            ["loadPercent", "Load %"],
+            ["runtimeMinutes", "Runtime minutes"],
+          ],
+          access.restriction("upsInfo"),
+        )}
+        {table(
+          "Power schedule",
+          mgr.powerSchedule?.entries ?? [],
+          [
+            ["action", "Action"],
+            ["weekday", "Days"],
+            ["hour", "Hour"],
+            ["minute", "Minute"],
+            ["enabled", "Enabled"],
+          ],
+          access.restriction("powerSchedule"),
+        )}
+      </>
+    );
+  });
 }
 export function LogsView({ mgr }: SubProps) {
-  return panel(
+  return panel(mgr, "logs", (access) => (
     <>
       <div className="flex items-center gap-2 text-xs">
         <button
@@ -475,32 +617,49 @@ export function LogsView({ mgr }: SubProps) {
           Next log page
         </button>
       </div>
-      {table("System logs", mgr.systemLogs, [
-        ["time", "Time"],
-        ["level", "Level"],
-        ["user", "User"],
-        ["event", "Event"],
-        ["msg", "Message"],
-      ])}
-      {table("Connection logs", mgr.connectionLogs, [
-        ["time", "Time"],
-        ["user", "User"],
-        ["ip", "IP"],
-        ["type", "Type"],
-        ["isLogin", "Login"],
-        ["success", "Success"],
-      ])}
-    </>,
-  );
+      {table(
+        "System logs",
+        mgr.systemLogs,
+        [
+          ["time", "Time"],
+          ["level", "Level"],
+          ["user", "User"],
+          ["event", "Event"],
+          ["msg", "Message"],
+        ],
+        access.restriction("systemLogs"),
+      )}
+      {table(
+        "Connection logs",
+        mgr.connectionLogs,
+        [
+          ["time", "Time"],
+          ["user", "User"],
+          ["ip", "IP"],
+          ["type", "Type"],
+          ["protocol", "Protocol"],
+          ["description", "Description"],
+          ["isLogin", "Login"],
+          ["success", "Success"],
+        ],
+        access.restriction("connectionLogs"),
+      )}
+    </>
+  ));
 }
 export function NotificationsView({ mgr }: SubProps) {
-  return panel(
-    table("Notifications", rows(mgr.notificationConfig), [
-      ["emailEnabled", "Email"],
-      ["emailAddress", "Recipient"],
-      ["smtpServer", "SMTP server"],
-      ["smsEnabled", "SMS"],
-      ["pushEnabled", "Push"],
-    ]),
+  return panel(mgr, "notifications", (access) =>
+    table(
+      "Notifications",
+      rows(mgr.notificationConfig),
+      [
+        ["emailEnabled", "Email"],
+        ["emailAddress", "Recipient"],
+        ["smtpServer", "SMTP server"],
+        ["smsEnabled", "SMS"],
+        ["pushEnabled", "Push"],
+      ],
+      access.restriction("notificationConfig"),
+    ),
   );
 }

@@ -6,52 +6,40 @@ import {
 import { useSessionObservationActivity } from "../session/useSessionObservationActivity";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { SYNOLOGY_SECTION_LABELS } from "../../utils/synology/synologySectionLabels";
+import {
+  validateSectionAccessSnapshot,
+  type SynologyAccountAccess,
+  type SynologySectionAccessSnapshot,
+  type SynologySectionStatus,
+} from "../../utils/synology/synologyAccess";
 import type { SynologyTab } from "./synologyAdminData";
 
-export type SynologySectionAccessStatus =
-  "available" | "denied" | "unavailable" | "unknown";
-export interface SynologySectionAccess {
-  section: SynologyTab;
-  status: SynologySectionAccessStatus | "checking";
-  reason: string;
+export type SynologySectionAccessStatus = SynologySectionStatus;
+export interface SynologySectionAccess extends Omit<
+  SynologySectionAccessSnapshot,
+  "status"
+> {
+  status: SynologySectionStatus | "checking";
 }
-type Results = Partial<Record<SynologyTab, SynologySectionAccess>>;
-type Work = { key: string; queue: SynologyTab[]; results: Results };
+type Results = Partial<Record<SynologyTab, SynologySectionAccessSnapshot>>;
+type Work = {
+  key: string;
+  queue: SynologyTab[];
+  results: Results;
+  account: SynologyAccountAccess | null;
+  /** Bumped by a single-section recheck so an older in-flight reply is ignored. */
+  generation: Partial<Record<SynologyTab, number>>;
+};
 const sections = Object.keys(SYNOLOGY_SECTION_LABELS) as SynologyTab[];
-const unknown = (section: SynologyTab): SynologySectionAccess => ({
+const unknown = (section: SynologyTab): SynologySectionAccessSnapshot => ({
   section,
   status: "unknown",
+  requirement: null,
   reason:
     "Could not verify this section. You can try opening it or recheck access. Check the desktop version and NAS connection if this persists.",
+  account: null,
+  reads: [],
 });
-function validated(
-  section: SynologyTab,
-  value: unknown,
-): SynologySectionAccess {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return unknown(section);
-  const result = value as Record<string, unknown>;
-  if (
-    result.section !== section ||
-    typeof result.status !== "string" ||
-    !["available", "denied", "unavailable", "unknown"].includes(
-      String(result.status),
-    ) ||
-    typeof result.reason !== "string" ||
-    !result.reason.trim() ||
-    result.reason.length > 1024 ||
-    Array.from(result.reason).some((character) => {
-      const code = character.charCodeAt(0);
-      return code < 32 || code === 127;
-    })
-  )
-    return unknown(section);
-  return {
-    section,
-    status: result.status as SynologySectionAccessStatus,
-    reason: result.reason,
-  };
-}
 
 /** One bounded discovery queue per receipt. Read access is not write authority. */
 export function useSynologySectionAccess({
@@ -89,7 +77,8 @@ export function useSynologySectionAccess({
   const [snapshot, setSnapshot] = useState<{
     key: string | null;
     results: Results;
-  }>({ key: null, results: {} });
+    account: SynologyAccountAccess | null;
+  }>({ key: null, results: {}, account: null });
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -99,21 +88,30 @@ export function useSynologySectionAccess({
   useEffect(() => {
     if (!key || !sessionId) {
       work.current = null;
-      setSnapshot({ key, results: {} });
+      setSnapshot({ key, results: {}, account: null });
       return;
     }
     // React Strict Mode replays effects, not the native requests. Keep the
     // same queue/results across that replay; actual unmount stops scheduling.
     if (work.current?.key !== key)
-      work.current = { key, queue: [...sections], results: {} };
+      work.current = {
+        key,
+        queue: [...sections],
+        results: {},
+        account: null,
+        generation: {},
+      };
     const current = work.current;
-    setSnapshot({ key, results: current.results });
+    const show = () =>
+      setSnapshot({ key, results: current.results, account: current.account });
+    show();
     const valid = () =>
       mounted.current && work.current === current && latest.current.key === key;
-    const publish = (entry: SynologySectionAccess) => {
+    const publish = (entry: SynologySectionAccessSnapshot) => {
       if (!valid()) return;
       current.results = { ...current.results, [entry.section]: entry };
-      setSnapshot({ key, results: current.results });
+      if (entry.account) current.account = entry.account;
+      show();
     };
     pump.current = () => {
       if (!valid() || !latest.current.active) return;
@@ -126,6 +124,9 @@ export function useSynologySectionAccess({
           return;
         }
         const section = current.queue.shift()!;
+        const generation = current.generation[section] ?? 0;
+        const fresh = () =>
+          valid() && (current.generation[section] ?? 0) === generation;
         inFlight.current++;
         void invokeManagement<unknown>("syn_get_section_access", {
           instanceId,
@@ -133,12 +134,14 @@ export function useSynologySectionAccess({
           section,
         })
           .then((value) => {
-            if (!valid()) return;
+            if (!fresh()) return;
             latest.current.assertCurrent();
-            publish(validated(section, value));
+            publish(
+              validateSectionAccessSnapshot(section, value) ?? unknown(section),
+            );
           })
           .catch((error: unknown) => {
-            if (!valid()) return;
+            if (!fresh()) return;
             publish(unknown(section));
             const safe = toSafeManagementError(error);
             if (safe.startsWith("SYNOLOGY_SESSION_EXPIRED: "))
@@ -155,36 +158,66 @@ export function useSynologySectionAccess({
   useEffect(() => {
     pump.current();
   }, [active]);
-  const recheck = useCallback(() => {
+  /** Re-probes one section (keeping the others) or, without an argument, every section. */
+  const recheck = useCallback((section?: SynologyTab) => {
     try {
       latest.current.assertCurrent();
     } catch {
       return;
     }
-    if (latest.current.key) setRevision((value) => value + 1);
+    if (!latest.current.key) return;
+    const current = work.current;
+    if (
+      !section ||
+      !sections.includes(section) ||
+      !current ||
+      current.key !== latest.current.key
+    ) {
+      if (!section) setRevision((value) => value + 1);
+      return;
+    }
+    current.generation[section] = (current.generation[section] ?? 0) + 1;
+    current.results = { ...current.results };
+    delete current.results[section];
+    if (!current.queue.includes(section)) current.queue.push(section);
+    setSnapshot({
+      key: current.key,
+      results: current.results,
+      account: current.account,
+    });
+    pump.current();
   }, []);
-  const results = snapshot.key === key ? snapshot.results : {};
+  const current = snapshot.key === key ? snapshot : null;
+  const results = current?.results ?? {};
   const entries = Object.fromEntries(
-    sections.map((section) => [
+    sections.map((section): [SynologyTab, SynologySectionAccess] => [
       section,
       section === "fileStation" && connected && fileStationReady
         ? {
             section,
             status: "available",
+            requirement: null,
             reason:
               "The current File Station listing was read successfully. Individual file changes still require NAS permission.",
+            account: results.fileStation?.account ?? null,
+            reads: [],
           }
         : (results[section] ?? {
             section,
             status: "checking",
+            requirement: null,
             reason: active
               ? "Checking read access for this section…"
               : "Access checking pauses while this tab is inactive.",
+            account: null,
+            reads: [],
           }),
     ]),
   ) as Record<SynologyTab, SynologySectionAccess>;
   return {
     entries,
+    /** Latest session identity reported by a validated snapshot; `null` until one arrives. */
+    account: connected ? (current?.account ?? null) : null,
     recheck,
     checking:
       connected &&
