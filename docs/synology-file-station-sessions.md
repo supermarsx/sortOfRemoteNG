@@ -319,21 +319,28 @@ supported NAS administration tools such as system, storage, network, users and
 packages. Individual operations depend on DSM version, installed packages and
 account permissions; this is not coverage of every DSM API.
 
-The sidebar checks each section's primary read operations once per API session,
-with at most three checks in flight. File Station stays usable as soon as its
-listing is read; other sections are disabled only while their access check is
-pending. Checks pause when the session tab or app is hidden. There is no access
-polling; use **Recheck section access** after changing packages or permissions.
+The sidebar checks every read of each section once per API session, with at
+most three checks in flight. File Station stays usable as soon as its listing is
+read; other sections are disabled only while their access check is pending.
+Checks pause when the session tab or app is hidden. There is no access polling;
+use **Recheck section access** after changing packages or permissions.
 
-Sections with confirmed permission denial or unavailable APIs are grouped under
-**Unavailable sections**, with the reason. **Could not verify** is different:
-a network, compatibility or checking error does not prove denial, so you can
-still try that section or recheck. A successful read does not grant permission
-to change NAS settings; each action retains its own server-side permission check.
+**Partial access** sections stay in the list. Sections with nothing readable
+are grouped under **Needs more access** or **Not installed or not provided**,
+with the reason. Restricted tables show a notice with **Recheck access**
+instead of rows, and Refresh skips those reads. **Could not verify** is
+different: a network, compatibility or checking error does not prove denial, so
+you can still use that section or recheck. A successful read does not grant
+permission to change NAS settings; each action retains its own server-side
+permission check. See
+[access checks and restricted data](synology-file-station.md#access-checks-and-restricted-data)
+for every read state.
 
 The API view uses the credentials saved in Application, without a second
-username/password form in the session tab. A DSM authenticator challenge opens
-a one-time-code dialog. Browser cookies do not authenticate the API explorer.
+username/password form in the session tab. A DSM two-factor challenge opens a
+code dialog; see
+[one-time codes and trusted devices](#one-time-codes-and-trusted-devices).
+Browser cookies do not authenticate the API explorer.
 The API uses the selected app-wide route: direct access or the configured
 HTTP(S) proxy. The same route is retained through discovery, sign-in and later
 API calls; no environment proxy or direct fallback is used. Per-connection
@@ -344,7 +351,8 @@ app-wide proxy requires reconnecting, not silently moving an active NAS session.
 A reverse-proxy hostname is supported as the server address when it forwards
 DSM's `/webapi/` routes. The native client requests DSM's session cookie and
 keeps it in a private per-connection jar; it also sends SID/SynoToken parameters
-and the CSRF token header. These values never go in the request URL or browser
+and the CSRF token header, plus DSM's `X-SYNO-HASH` request signature after a
+secure login handshake. These values never go in the request URL or browser
 storage. The proxy must preserve session cookies and authentication headers and
 route login and subsequent calls to the same DSM server. API reverse-proxy
 access is different from configuring an outbound proxy/VPN inside this app.
@@ -353,6 +361,130 @@ Addresses may be hostnames, DNS subdomains, IP addresses, host:port pairs or
 root HTTP(S) URLs. An explicit URL uses its own scheme and port (80/443 when
 omitted). A plain host uses the configured port. URLs with credentials, query
 strings or application paths cannot be used as API server addresses.
+
+### Secure login handshake
+
+DSM 7 can limit an API session that signs in from a remote address, including
+through QuickConnect, without the secure login handshake DSM's own sign-in page
+performs. In such a session File Station and basic system information still
+work, but administration APIs answer code 105, even for an administrator.
+
+When DSM advertises the handshake, the native client:
+
+1. requests the NAS's login key on the same route and endpoint it signs in on,
+   within 4 seconds;
+2. sends the first handshake message with DSM's current sign-in request, using
+   a new key for every attempt, including each one-time-code retry;
+3. finishes the handshake from DSM's reply, then signs that session's
+   administration requests. File Station requests, uploads and downloads are not
+   signed.
+
+Handshake keys and state stay in the desktop process. They are never logged,
+shown, sent to the page or included in diagnostics. A missing, invalid or slow
+login key, or an unfinished reply, never fails the sign-in: the session
+continues unsigned, and **Login handshake** in the session panel records the
+outcome.
+
+| Login handshake                           | Meaning                                                                                                               |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **DSM 7 secure (IK)**                     | The handshake finished; administration requests are signed.                                                           |
+| **DSM 7 secure, incomplete**              | DSM accepted the sign-in without finishing the handshake. Requests are not signed, and DSM may limit the session.     |
+| **legacy (secure handshake unavailable)** | DSM advertises the handshake, but its login key was missing, invalid or too slow, so the app signed in without it.    |
+| **legacy**                                | This DSM does not offer the handshake (DSM 6 or an older DSM 7 release), so the app used the earlier sign-in request. |
+
+Signed requests of one session are sent one at a time so that they reach DSM in
+order. A slow administration request can therefore delay the next one in the
+same session; File Station transfers are not affected.
+
+### Session identity and reconnect
+
+Under the section list, **NAS API session** shows who is signed in and how,
+using only DSM's answers and the app's own record of the sign-in:
+
+```text
+Signed in as nas-admin · Administrator: yes · Session: FileStation · Login handshake: DSM 7 secure (IK) · Route: QuickConnect relay · 2FA: one-time code
+```
+
+- **Administrator** is **yes** or **no** as DSM reports it. When DSM does not
+  report it, the panel shows **no (delegated administration)** if some
+  administrator-only data is readable and some is not, **no** if none is, and
+  otherwise **unknown (DSM did not report it)**.
+- **Session** is **FileStation** for the normal API session, or
+  **DSM desktop (webui)** after **Reconnect as DSM session**. It adds
+  **(application portal)** when DSM says the sign-in came through an application
+  portal port.
+- **Login handshake** is described in
+  [secure login handshake](#secure-login-handshake).
+- **Route** is **Direct**, **HTTP proxy**, **QuickConnect relay** or
+  **QuickConnect direct**, meaning a QuickConnect address that reached the NAS
+  without the relay.
+- **2FA** is **none**, **one-time code** or **trusted device**.
+
+The panel header also shows **Signed in as** next to the NAS address, which
+reveals a saved connection that uses an unexpected account. On narrow views the
+details fold behind **Show session details**.
+
+**Copy session diagnostics** (the **Copy diagnostics** button) copies these
+lines, the authentication API version, and each checked section's status and
+requirement with the DSM API names and states of its restricted reads. It never
+includes explanations, hostnames, URLs, SIDs, tokens, handshake data or device
+ids, so you can share it when reporting restricted data.
+
+When DSM reports an administrator, or the session came through an application
+portal, and some data is **Session restricted**, the panel becomes a warning
+with an explanation and reconnect buttons. Restricted tables and section panels
+offer the same buttons, except for a portal session.
+
+- **Reconnect** releases this session, then signs in again once.
+- **Reconnect as DSM session** does the same, but asks DSM for a DSM desktop
+  (`webui`) session instead of a File Station session. It is offered only when
+  the secure handshake finished, the session is not already a DSM desktop
+  session, and it is not a portal session.
+
+Each reconnect is one sign-in you started: a trusted device skips the code, a
+selected vault authenticator is used at most once, and otherwise the code dialog
+opens. The DSM session choice applies to that sign-in only, and nothing is
+retried automatically. If DSM refuses a DSM desktop session for the account,
+reconnect normally. The standalone window does not keep the password, so its
+Reconnect asks you to enter it.
+
+### Session restricted or requires administrator
+
+Both come from DSM code 105, which DSM uses when the signed-in session lacks
+permission. They differ in what DSM reports about the account:
+
+- **Requires administrator**: DSM does not report the account as an
+  administrator. Sign in with an administrator account, or give this account a
+  DSM delegated administration role that covers the data. Reconnecting the same
+  account does not help.
+- **Session restricted**: DSM reports the account as an administrator, or the
+  session came through an application portal, yet refused the data for this
+  session. The explanation depends on the session:
+
+| Session                                              | Why                                                                                                                                         | What to do                                                                                               |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Application portal                                   | The sign-in went through a DSM application portal port, which limits the session to that application.                                       | Edit the connection to use the DSM port (for example 5001). Reconnecting on the same port does not help. |
+| Login handshake **legacy** or **incomplete**         | The session was signed in without DSM 7's secure login handshake, which DSM requires for full access over QuickConnect or remote addresses. | **Reconnect**. If the restriction remains, copy the session diagnostics.                                 |
+| Handshake **DSM 7 secure (IK)**, session FileStation | DSM still refused the data for this API session.                                                                                            | **Reconnect as DSM session**, then **Recheck access**. If it remains, copy the session diagnostics.      |
+| Handshake **DSM 7 secure (IK)**, DSM desktop session | DSM restricts the data even for a DSM desktop session.                                                                                      | Copy the session diagnostics and include them in your report.                                            |
+
+### One-time codes and trusted devices
+
+Codes, two-factor setup, unsupported methods and trusted devices are described
+in
+[sign in and two-factor authentication](synology-file-station.md#sign-in-and-two-factor-authentication).
+Each code you submit starts a complete new sign-in with a fresh secure
+handshake. DSM two-factor setup (code 406) shows no code field. Approve sign-in
+and security keys cannot complete an API sign-in: use the **DSM website** view,
+whose [two-factor and Secure SignIn steps](#two-factor-and-secure-signin-steps)
+hand them to you on DSM's own page. Signing in on either surface does not
+authenticate the other.
+
+With [Trust this device](synology-file-station.md#trust-this-device), an opt-in
+for vault-backed connections, later sign-ins from this computer skip the code
+and the session panel shows **2FA: trusted device**. That device token is
+separate from the DSM website's own "trust this device" option, which lives in
+the website view's cookies and which the website sign-in helper never selects.
 
 ### QuickConnect API resolution
 
@@ -366,11 +498,12 @@ resolution and selected NAS endpoint still use verified HTTPS.
 
 Provider cookies stay in separate origin-specific jars. The selected NAS keeps
 one private client and cookie jar from its identity probe through API discovery,
-sign-in and subsequent operations; failed candidates do not share that jar.
-Nothing imports the DSM website's cookies or credentials. Unsupported endpoints,
-certificate failures and redirects do not authorize a downgrade or an arbitrary
-destination. Synthetic CONNECT/TLS tests cover this flow; a successful live NAS
-or QuickConnect sign-in is not inferred from those fixtures.
+the secure login handshake, sign-in and subsequent operations; failed candidates
+do not share that jar. Nothing imports the DSM website's cookies or credentials.
+Unsupported endpoints, certificate failures and redirects do not authorize a
+downgrade or an arbitrary destination. Synthetic CONNECT/TLS tests cover this
+flow; a successful live NAS or QuickConnect sign-in is not inferred from those
+fixtures.
 
 Anonymous API discovery tries `/webapi/entry.cgi` first. A gateway compatibility
 failure (HTTP 404/405, HTML, or DSM API code 102/103) permits one anonymous
@@ -390,11 +523,12 @@ the current observed stage and elapsed time for that stage:
    marker is missing or outdated, restart/update the desktop app; refreshing its
    page or retrying credentials cannot upgrade an already-running native binary.
 2. **Resolving the NAS and signing in** waits for one native request on the
-   selected route. QuickConnect resolution, DSM discovery and authentication are
-   not reported as separate backend events, so the app does not invent
-   sub-stages or a percentage.
+   selected route. QuickConnect resolution, DSM discovery, the secure login
+   handshake and authentication are not reported as separate backend events, so
+   the app does not invent sub-stages or a percentage.
 3. **Loading shared folders** starts only after an API session is established.
-   Other administration data loads when its section is opened.
+   Other administration data loads when its section is opened, except reads the
+   access check has restricted.
 
 Folder loading stays inside the file list: the toolbar, breadcrumbs, table
 headers and footer remain visible. A new folder shows placeholder rows until
@@ -412,7 +546,9 @@ action; no password, OTP or file operation is automatically replayed.
 
 When the native client can classify a failed HTTP response, **API failure details**
 shows the failed step, HTTP status, response kind, content-type category, inspected
-byte count and any bounded DSM error code. HTML instead of JSON can indicate a
+byte count and any bounded DSM error code. When DSM refuses an API whose access
+class is known (code 105), a **Required access** row names **Administrator** or
+**Application privilege**. HTML instead of JSON can indicate a
 website login or portal rather than a usable API endpoint; HTTP 200 alone does
 not prove API success. **Copy diagnostics** copies only these safe fields and a
 fixed explanation, never response bodies, URLs, cookies, headers or credentials.

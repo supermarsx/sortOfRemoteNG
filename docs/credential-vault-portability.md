@@ -91,6 +91,31 @@ invalid code is not retried automatically; use the challenge dialog to enter a
 fresh code or cancel. Push approval, security keys and unsupported MFA require
 the supported interactive DSM flow, not an invented API bypass.
 
+A vault-backed NAS API connection can also remember DSM's **trusted device**
+token after a successful two-factor sign-in. This is off unless you choose to
+trust the device. Local-credential connections cannot use it. The token
+lets that DSM account skip the one-time code, so it is handled more strictly
+than other vault fields:
+
+- It is stored only in the connection's own vault entry, encrypted with the
+  owning database. It is matched to the saved NAS address (scheme, host and
+  port) and the DSM account name.
+- It is never included in encrypted vault archives. Import drops any trusted
+  device found in an archive. Generic database JSON exports and imports refuse
+  vault data entirely.
+- It is used only on the computer that enrolled it. The entry records DSM's
+  device name, which is built from this computer's name. Native sign-in sends
+  the token only when that name matches the local computer. A copied or synced
+  database on another computer, or a renamed computer, asks for a code again
+  and forgets the stale token. This computer-name check is a weak binding; it
+  prevents silent reuse rather than defeating a determined attacker who has
+  the unlocked database.
+- The token is never displayed, logged or included in error text. Open the
+  vault entry's **Trusted NAS devices** list to see the NAS address, account,
+  device name and date. Choose **Forget trusted device**, then save, to require
+  a code again. DSM can also revoke trusted devices from its own security
+  settings.
+
 This API session is separate from a **Synology DSM HTTP/HTTPS website** tab.
 Website form login and website automatic MFA use the profile/origin consent
 above; logging into either surface does not authenticate the other. Reverse
