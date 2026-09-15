@@ -9,6 +9,8 @@ import {
   anonymousRedirectConnection,
   parseHttpRedirectReview,
 } from "../../src/utils/protocol/httpRedirectReview";
+import { normalizeSynologySettings } from "../../src/types/protocols/synology";
+import { DEVICE_TRUST_VAULT_REQUIRED_MESSAGE } from "../../src/utils/security/runtimeCredentialVault";
 
 afterEach(cleanup);
 function Editor({
@@ -421,5 +423,88 @@ describe("Synology HTTP application views", () => {
         httpsOnly: true,
       }),
     ).toBeNull();
+  });
+});
+describe("Synology NAS API trusted-device preference", () => {
+  const nativeSeed: Partial<Connection> = {
+    protocol: "https",
+    synologySettings: { version: 1, useHttps: true, accessMode: "native" },
+  };
+  const vaultSeed: Partial<Connection> = {
+    ...nativeSeed,
+    credentialSource: {
+      kind: "vault",
+      credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    },
+  };
+  const preference = () =>
+    screen.getByRole("checkbox", {
+      name: "Trust this device after a successful two-factor sign-in",
+    });
+  it("saves an opt-in preference for vault connections and keeps it across transport changes", () => {
+    render(<Editor seed={vaultSeed} />);
+    expect(preference()).toBeEnabled();
+    expect(preference()).not.toBeChecked();
+    expect(screen.getByText(/Off by default\./)).toBeInTheDocument();
+    expect(savedShape().synologySettings).not.toHaveProperty("trustDevice");
+    fireEvent.click(preference());
+    expect(preference()).toBeChecked();
+    const saved = savedShape().synologySettings;
+    expect(saved).toEqual({
+      version: 1,
+      useHttps: true,
+      accessMode: "native",
+      trustDevice: true,
+    });
+    expect(normalizeSynologySettings(saved)).toEqual(saved);
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Synology transport" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "HTTP — unencrypted (trusted networks only)",
+      }),
+    );
+    expect(savedShape().synologySettings).toEqual({
+      version: 1,
+      useHttps: false,
+      accessMode: "native",
+      trustDevice: true,
+    });
+    fireEvent.click(preference());
+    // Off is stored as the pre-existing shape, not an extra key.
+    expect(savedShape().synologySettings).toEqual({
+      version: 1,
+      useHttps: false,
+      accessMode: "native",
+    });
+  });
+  it("is disabled with guidance for local credentials, even when a preference was saved", () => {
+    render(
+      <Editor
+        seed={{
+          ...nativeSeed,
+          synologySettings: {
+            version: 1,
+            useHttps: true,
+            accessMode: "native",
+            trustDevice: true,
+          },
+        }}
+      />,
+    );
+    expect(preference()).toBeDisabled();
+    expect(preference()).not.toBeChecked();
+    expect(
+      screen.getByText(DEVICE_TRUST_VAULT_REQUIRED_MESSAGE),
+    ).toBeInTheDocument();
+    fireEvent.click(preference());
+    expect(savedShape().synologySettings.trustDevice).toBe(true);
+    selectMode("Website — DSM in browser");
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Trust this device after a successful two-factor sign-in",
+      }),
+    ).not.toBeInTheDocument();
   });
 });

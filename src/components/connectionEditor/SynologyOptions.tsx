@@ -8,6 +8,30 @@ import {
 import { Select, PasswordInput, CheckboxField } from "../ui/forms";
 import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy";
+import { DEVICE_TRUST_VAULT_REQUIRED_MESSAGE } from "../../utils/security/runtimeCredentialVault";
+
+/** Saved preference only; `false` is stored by omitting the key. */
+function withTrustDevice(
+  previous: Partial<Connection>,
+  trustDevice: boolean,
+): Partial<Connection> {
+  if (
+    !isSynologyFileConnection(previous) ||
+    previous.credentialSource?.kind !== "vault"
+  )
+    return previous;
+  try {
+    const current = normalizeSynologySettings(previous.synologySettings);
+    delete current.trustDevice;
+    return {
+      ...previous,
+      synologySettings: trustDevice ? { ...current, trustDevice } : current,
+    };
+  } catch {
+    // Do not repair malformed saved settings through this checkbox.
+    return previous;
+  }
+}
 
 export default function SynologyOptions({
   formData,
@@ -32,6 +56,7 @@ export default function SynologyOptions({
           : savedSettings.useHttps,
   };
   const native = isSynologyFileConnection(formData);
+  const vault = formData.credentialSource?.kind === "vault";
   const website =
     !native &&
     (formData.protocol === "http" || formData.protocol === "https") &&
@@ -188,6 +213,9 @@ export default function SynologyOptions({
                   version: 1,
                   useHttps: value === "https",
                   accessMode: "native",
+                  ...(previous.synologySettings?.trustDevice === true
+                    ? { trustDevice: true }
+                    : {}),
                 },
                 port:
                   previous.port === 5000 ||
@@ -237,6 +265,23 @@ export default function SynologyOptions({
             />
           </label>
         </div>
+      )}
+      {native && (
+        <CheckboxField
+          variant="form"
+          label="Trust this device after a successful two-factor sign-in"
+          aria-label="Trust this device after a successful two-factor sign-in"
+          checked={vault && settings.trustDevice === true}
+          disabled={!vault}
+          description={
+            vault
+              ? "Off by default. When DSM accepts a one-time code, including one from a vault authenticator, it remembers this computer so later NAS API sign-ins skip the code. The device token is kept in this connection's vault entry and can be forgotten from the session or the vault entry. The code prompt can still change this for one sign-in."
+              : DEVICE_TRUST_VAULT_REQUIRED_MESSAGE
+          }
+          onChange={(trustDevice) =>
+            setFormData((previous) => withTrustDevice(previous, trustDevice))
+          }
+        />
       )}
       <p className="text-xs text-[var(--color-textSecondary)]">
         Synology NAS API provides File Station and supported NAS administration

@@ -1,20 +1,56 @@
 import React, { useId } from "react";
-import { LogIn, ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  LogIn,
+  ShieldCheck,
+  AlertCircle,
+  RefreshCw,
+  Info,
+  ShieldOff,
+} from "lucide-react";
 import { Modal, ModalBody, ModalFooter } from "../../ui/overlays/Modal";
 import { DialogHeader } from "../../ui/overlays/DialogHeader";
 import { PasswordInput } from "../../ui/forms/PasswordInput";
 import { TextInput } from "../../ui/forms/TextInput";
-import type { SubProps } from "./types";
+import type { Mgr, SubProps } from "./types";
 import SynologyInitializationStatus from "./SynologyInitializationStatus";
 import SynologyApiFailure from "./SynologyApiFailure";
+import {
+  acceptsSynologyOtp,
+  SYNOLOGY_API_SIGNIN_FALLBACK,
+  SYNOLOGY_AUTH_METHOD_LABELS,
+} from "../../../hooks/synology/useSynologyFileConnection";
 
 const inputClass = "sor-form-input text-sm";
+const challengeTitles = {
+  otp_required: "Two-factor authentication",
+  otp_invalid: "Two-factor authentication",
+  otp_enrollment_required: "Two-factor setup required",
+  unsupported_mfa: "Sign-in method not supported",
+};
 const ConnectionForm: React.FC<
   SubProps & { runtimeVerified?: boolean; isActive?: boolean }
 > = ({ mgr, runtimeVerified = false, isActive = true }) => {
   const id = useId();
   const connecting = mgr.connectionStatus === "connecting";
   const disabled = connecting || !!mgr.challenge;
+  const acceptsCode = acceptsSynologyOtp(mgr.challenge);
+  const methods =
+    mgr.challenge?.status === "otp_required" ||
+    mgr.challenge?.status === "unsupported_mfa"
+      ? mgr.challenge.methods
+      : undefined;
+  // Managers built without trusted-device support render no trust controls.
+  const trust: Partial<Mgr["deviceTrust"]> = mgr.deviceTrust ?? {};
+  const trustNotice = trust.notice && (
+    <p
+      role="status"
+      className="flex items-start gap-2 break-words text-sm text-[var(--color-textSecondary)]"
+      data-testid="synology-device-trust-notice"
+    >
+      <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+      {trust.notice}
+    </p>
+  );
   return (
     <>
       {mgr.targetLocked && connecting && !mgr.challenge ? (
@@ -54,7 +90,19 @@ const ConnectionForm: React.FC<
                 {mgr.challenge?.message ?? "The NAS session is disconnected."}
               </p>
             )}
-            <div className="flex justify-end">
+            {!mgr.challenge && trustNotice}
+            <div className="flex flex-wrap justify-end gap-2">
+              {trust.remembered && (
+                <button
+                  type="button"
+                  className="sor-btn sor-btn-secondary"
+                  disabled={!!mgr.challenge || trust.forgetting}
+                  onClick={() => void trust.forget?.()}
+                >
+                  <ShieldOff size={14} />
+                  {trust.forgetting ? "Forgetting…" : "Forget trusted device"}
+                </button>
+              )}
               <button
                 type="button"
                 className="sor-btn sor-btn-secondary"
@@ -186,9 +234,9 @@ const ConnectionForm: React.FC<
               />
             )}
             <p className="text-xs text-[var(--color-textSecondary)]">
-              Credentials are used for this session, not saved by this form. API
-              login supports DSM one-time codes; Approve sign-in and
-              security-key prompts require the DSM website.
+              Credentials are used for this session, not saved by this form. The
+              NAS API accepts DSM one-time codes from an authenticator app or
+              Synology Secure SignIn. {SYNOLOGY_API_SIGNIN_FALLBACK}
             </p>
           </form>
         </div>
@@ -201,14 +249,30 @@ const ConnectionForm: React.FC<
         contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
       >
         <DialogHeader
-          title="Two-factor authentication"
+          title={
+            mgr.challenge
+              ? challengeTitles[mgr.challenge.status]
+              : "Two-factor authentication"
+          }
           icon={ShieldCheck}
           variant="compact"
           onClose={mgr.cancelChallenge}
         />
         <ModalBody className="min-h-0 overflow-y-auto space-y-4 p-5">
           <p className="text-sm break-words">{mgr.challenge?.message}</p>
-          {connecting && (
+          {trustNotice}
+          {methods && (
+            <p
+              className="text-xs text-[var(--color-textSecondary)]"
+              data-testid="synology-auth-methods"
+            >
+              Sign-in methods DSM reported for this account:{" "}
+              {methods
+                .map((method) => SYNOLOGY_AUTH_METHOD_LABELS[method])
+                .join(", ")}
+            </p>
+          )}
+          {connecting && acceptsCode && (
             <SynologyInitializationStatus
               isActive={isActive}
               phase="verification"
@@ -216,12 +280,15 @@ const ConnectionForm: React.FC<
               compact
             />
           )}
-          {mgr.challenge?.status === "unsupported_mfa" ? (
+          {mgr.challenge?.status === "otp_enrollment_required" ? (
             <p className="text-sm text-[var(--color-textSecondary)]">
-              This NAS login requires a method the File Station API cannot
-              complete here. Sign in to DSM in your browser to review available
-              one-time-code methods. Browser approval does not authenticate this
-              API session.
+              No one-time code can finish this sign-in until setup is complete.
+              Nothing was retried automatically.
+            </p>
+          ) : !acceptsCode ? (
+            <p className="text-sm text-[var(--color-textSecondary)]">
+              Approving a sign-in in a browser does not authorize this NAS API
+              session. Nothing was retried automatically.
             </p>
           ) : (
             <>
@@ -247,9 +314,35 @@ const ConnectionForm: React.FC<
               </label>
               <p className="text-xs text-[var(--color-textSecondary)]">
                 Enter the current code from the authenticator enrolled with DSM.
-                The code is cleared after every attempt. This does not remember
-                a device or bypass future 2FA.
+                The code is cleared after every attempt.
               </p>
+              {(trust.available || trust.unavailableReason) && (
+                <div className="space-y-1">
+                  <label
+                    htmlFor={`${id}-trust`}
+                    className="flex items-start gap-2 text-sm"
+                  >
+                    <input
+                      id={`${id}-trust`}
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={!!(trust.available && trust.enabled)}
+                      disabled={connecting || !trust.available}
+                      aria-describedby={`${id}-trust-help`}
+                      onChange={(e) => trust.setEnabled?.(e.target.checked)}
+                    />
+                    Trust this device for this NAS account
+                  </label>
+                  <p
+                    id={`${id}-trust-help`}
+                    className="pl-6 text-xs text-[var(--color-textSecondary)]"
+                  >
+                    {trust.available
+                      ? "After this code is accepted, DSM remembers this computer, so later sign-ins from it skip the code. The device token is kept in this connection's vault entry, never in the connection itself, and you can forget it at any time."
+                      : trust.unavailableReason}
+                  </p>
+                </div>
+              )}
             </>
           )}
           {mgr.connectionError && (
@@ -261,9 +354,9 @@ const ConnectionForm: React.FC<
             className="sor-btn sor-btn-secondary"
             onClick={mgr.cancelChallenge}
           >
-            Cancel sign-in
+            {acceptsCode ? "Cancel sign-in" : "Dismiss"}
           </button>
-          {mgr.challenge?.status !== "unsupported_mfa" && (
+          {acceptsCode && (
             <button
               className="sor-btn sor-btn-primary"
               disabled={connecting || !/^[0-9]{6,8}$/.test(mgr.otpCode.trim())}

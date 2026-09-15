@@ -7,6 +7,11 @@ export interface SynologySettings {
   accessMode?: "native" | "website";
   /** Missing enables only the closed website redirect defaults, never login forwarding. */
   useDefaultRedirectDestinations?: boolean;
+  /**
+   * NAS API: ask DSM to trust this device after a successful two-factor sign-in.
+   * Only the preference is saved here; the device token lives in the vault.
+   */
+  trustDevice?: boolean;
 }
 
 export function normalizeSynologySettings(value: unknown): SynologySettings {
@@ -25,6 +30,8 @@ export function normalizeSynologySettings(value: unknown): SynologySettings {
       "useDefaultRedirectDestinations",
     ) &&
       typeof input.useDefaultRedirectDestinations !== "boolean") ||
+    (Object.prototype.hasOwnProperty.call(input, "trustDevice") &&
+      typeof input.trustDevice !== "boolean") ||
     Object.keys(input).some(
       (key) =>
         ![
@@ -32,11 +39,12 @@ export function normalizeSynologySettings(value: unknown): SynologySettings {
           "useHttps",
           "accessMode",
           "useDefaultRedirectDestinations",
+          "trustDevice",
         ].includes(key),
     )
   )
     throw new Error(
-      "Unsupported Synology connection settings. Only transport, view and website redirect preferences can be saved.",
+      "Unsupported Synology connection settings. Only transport, view, website redirect and trusted-device preferences can be saved.",
     );
   return {
     version: 1,
@@ -49,6 +57,9 @@ export function normalizeSynologySettings(value: unknown): SynologySettings {
           useDefaultRedirectDestinations:
             input.useDefaultRedirectDestinations as boolean,
         }
+      : {}),
+    ...(input.trustDevice !== undefined
+      ? { trustDevice: input.trustDevice as boolean }
       : {}),
   };
 }

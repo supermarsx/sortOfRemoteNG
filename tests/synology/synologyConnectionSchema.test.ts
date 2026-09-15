@@ -147,3 +147,71 @@ describe("saved Synology schema and access modes", () => {
     ).toBeNull();
   });
 });
+describe("saved Synology trusted-device preference", () => {
+  it("accepts only a boolean opt-in and keeps records without it unchanged", () => {
+    expect(normalizeSynologySettings({ version: 1, useHttps: true })).toEqual({
+      version: 1,
+      useHttps: true,
+    });
+    for (const trustDevice of [true, false])
+      expect(
+        normalizeSynologySettings({
+          version: 1,
+          useHttps: true,
+          accessMode: "native",
+          trustDevice,
+        }),
+      ).toEqual({
+        version: 1,
+        useHttps: true,
+        accessMode: "native",
+        trustDevice,
+      });
+    for (const trustDevice of ["yes", 1, null, {}])
+      expect(() =>
+        normalizeSynologySettings({ version: 1, useHttps: true, trustDevice }),
+      ).toThrow(/trusted-device preferences/);
+    // The token itself is never a connection setting.
+    for (const extra of [
+      { deviceId: "did" },
+      { deviceName: "SortOfRemoteNG · DESKTOP" },
+      { trustedDevice: { deviceId: "did" } },
+    ])
+      expect(() =>
+        normalizeSynologySettings({
+          version: 1,
+          useHttps: true,
+          trustDevice: true,
+          ...extra,
+        }),
+      ).toThrow();
+  });
+  it("survives protocol normalization and access-mode switches", () => {
+    const record = {
+      protocol: "https",
+      hostname: "nas.example.test",
+      port: 5001,
+      isGroup: false,
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "manual" },
+      synologySettings: {
+        version: 1,
+        useHttps: true,
+        accessMode: "native",
+        trustDevice: true,
+      },
+    } as const;
+    const normalized = normalizeAdvancedProtocolConnection(record);
+    expect(normalized.synologySettings).toEqual(record.synologySettings);
+    const website = setSynologyAccessMode(normalized, "website");
+    expect(website.synologySettings).toMatchObject({ trustDevice: true });
+    expect(setSynologyAccessMode(website, "native").synologySettings).toEqual(
+      record.synologySettings,
+    );
+    expect(
+      normalizeAdvancedProtocolConnection({
+        protocol: "SYNOLOGY",
+        isGroup: false,
+      }).synologySettings,
+    ).not.toHaveProperty("trustDevice");
+  });
+});

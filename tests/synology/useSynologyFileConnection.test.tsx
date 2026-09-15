@@ -587,3 +587,542 @@ describe("scoped Synology sign-in", () => {
     expect(result.current.password).toBe("");
   });
 });
+
+const savedLogin = {
+  host: "nas.example.test",
+  port: 5001,
+  useHttps: true,
+  username: "fixture-admin",
+  password: "fixture-password-9f3",
+};
+const healthy = {
+  status: "connected",
+  lastVerifiedAt: "",
+  consecutiveFailures: 0,
+  message: null,
+};
+/** Scripts `syn_fs_connect` outcomes in order; other commands succeed. */
+const scriptNative = (
+  ...outcomes: (unknown | (() => Promise<unknown>) | Error)[]
+) => {
+  const queue = [...outcomes];
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "syn_fs_session_health") return healthy;
+    if (command !== "syn_fs_connect") return true;
+    const next = queue.shift();
+    if (next instanceof Error) throw next;
+    return typeof next === "function" ? next() : next;
+  });
+};
+const connectCalls = () =>
+  vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "syn_fs_connect")
+    .map(([, args]) => args as Record<string, unknown>);
+const vaultOptions = () => ({
+  resolveCredentials: vi.fn(async (assertAttempt: () => void) => ({
+    username: "vault-admin",
+    password: "vault-password-7c1",
+    assertCurrent: assertAttempt,
+  })),
+  resolveOtp: vi.fn(async (assertAttempt: () => void) => ({
+    code: "246810",
+    assertCurrent: assertAttempt,
+  })),
+});
+const savedHook = (options: Parameters<typeof useSynologyFileConnection>[1]) =>
+  renderHook(() =>
+    useSynologyFileConnection(true, {
+      instanceId: "saved-tab",
+      initialConfig: savedLogin,
+      ...options,
+    }),
+  );
+
+describe("NAS API two-factor challenge states", () => {
+  it("403 asks for a manual code, then connects with the same credentials", async () => {
+    scriptNative(
+      { status: "otp_required", message: "native text", methods: ["otp"] },
+      { status: "connected", sessionId: "receipt-otp", message: "ok" },
+    );
+    const { result } = savedHook({});
+    await act(() => result.current.connect());
+    expect(result.current.challenge).toEqual({
+      status: "otp_required",
+      message: "Enter the current one-time code from your authenticator.",
+      methods: ["otp"],
+    });
+    act(() => result.current.setOtpCode(" 135790 "));
+    await act(() => result.current.submitOtp());
+    expect(result.current.connectionStatus).toBe("connected");
+    expect(result.current.challenge).toBeNull();
+    expect(connectCalls()).toHaveLength(2);
+    expect(connectCalls()[1]).toMatchObject({
+      username: "fixture-admin",
+      password: "fixture-password-9f3",
+      otpCode: "135790",
+    });
+    expect(connectCalls()[1]).not.toHaveProperty("sessionProfile");
+  });
+
+  it("403 with a vault authenticator generates exactly one code and one retry, even when DSM asks again", async () => {
+    const vault = vaultOptions();
+    scriptNative({ status: "otp_required" }, { status: "otp_required" });
+    const { result } = savedHook(vault);
+    await act(() => result.current.connect());
+    expect(vault.resolveOtp).toHaveBeenCalledOnce();
+    expect(connectCalls().map((args) => args.otpCode)).toEqual([
+      null,
+      "246810",
+    ]);
+    expect(result.current.challenge?.status).toBe("otp_required");
+    expect(result.current.connectionStatus).toBe("disconnected");
+  });
+
+  it("404 keeps the code dialog open for a fresh manual code", async () => {
+    scriptNative(
+      { status: "otp_invalid", message: "native" },
+      { status: "connected", sessionId: "receipt-404", message: "ok" },
+    );
+    const { result } = savedHook({});
+    await act(() => result.current.connect());
+    expect(result.current.challenge).toEqual({
+      status: "otp_invalid",
+      message: "The one-time code was not accepted. Enter a fresh code.",
+    });
+    act(() => result.current.setOtpCode("112233"));
+    await act(() => result.current.submitOtp());
+    expect(connectCalls()[1]).toMatchObject({ otpCode: "112233" });
+    expect(result.current.sessionId).toBe("receipt-404");
+  });
+
+  it("406 shows enrollment guidance, never asks the vault authenticator, and clears pending credentials", async () => {
+    const vault = vaultOptions();
+    scriptNative({ status: "otp_enrollment_required", message: "native" });
+    const { result } = savedHook(vault);
+    await act(() => result.current.connect());
+    expect(result.current.challenge).toEqual({
+      status: "otp_enrollment_required",
+      message:
+        "DSM requires this account to set up two-factor authentication before it can sign in. Complete setup once in DSM in your browser (the DSM website view works), then connect again.",
+    });
+    expect(vault.resolveOtp).not.toHaveBeenCalled();
+    expect(connectCalls()).toHaveLength(1);
+    act(() => result.current.setOtpCode("246810"));
+    await act(() => result.current.submitOtp());
+    expect(connectCalls()).toHaveLength(1);
+    expect(result.current.password).toBe("");
+    expect(JSON.stringify(result.current.challenge)).not.toContain("vault");
+  });
+
+  it("449 with methods names Secure SignIn approval and security keys, with no code path", async () => {
+    scriptNative({
+      status: "unsupported_mfa",
+      message: "native password=fixture-password-9f3",
+      methods: ["secure_signin_approval", "security_key", "carrier_pigeon", 7],
+    });
+    const { result } = savedHook(vaultOptions());
+    await act(() => result.current.connect());
+    expect(result.current.challenge).toEqual({
+      status: "unsupported_mfa",
+      message:
+        "DSM requires a sign-in method the NAS API can't complete. This account uses Secure SignIn approval and a security key. Approve-sign-in push and security keys can't complete an API sign-in; use the DSM website view for those.",
+      methods: ["secure_signin_approval", "security_key"],
+    });
+    act(() => result.current.setOtpCode("246810"));
+    await act(() => result.current.submitOtp());
+    expect(connectCalls()).toHaveLength(1);
+  });
+
+  it.each([undefined, [], "otp", [{ type: "fido" }]])(
+    "449 with unusable methods %j falls back to generic guidance",
+    async (methods) => {
+      scriptNative({ status: "unsupported_mfa", message: "native", methods });
+      const { result } = savedHook({});
+      await act(() => result.current.connect());
+      expect(result.current.challenge).toEqual({
+        status: "unsupported_mfa",
+        message:
+          "DSM requires a sign-in method the NAS API can't complete. Approve-sign-in push and security keys can't complete an API sign-in; use the DSM website view for those.",
+      });
+    },
+  );
+
+  it("403 with an approval method combines the code prompt with the website fallback and keeps trusted-device flags", async () => {
+    scriptNative({
+      status: "otp_required",
+      message: "native",
+      methods: ["secure_signin_approval", "otp"],
+      trustedDeviceRejected: true,
+      trustedDeviceMismatch: "yes",
+      deviceId: "fixture-did-should-not-survive",
+    });
+    const { result } = savedHook({});
+    await act(() => result.current.connect());
+    expect(result.current.challenge).toEqual({
+      status: "otp_required",
+      message:
+        "Enter the one-time code from your authenticator app or the code shown in Synology Secure SignIn. Approve-sign-in push and security keys can't complete an API sign-in; use the DSM website view for those.",
+      methods: ["otp", "secure_signin_approval"],
+      trustedDeviceRejected: true,
+    });
+    expect(JSON.stringify(result.current)).not.toContain("fixture-did");
+  });
+
+  it("cancel during a code prompt keeps the next sign-in a normal attempt", async () => {
+    scriptNative(
+      { status: "otp_required" },
+      { status: "connected", sessionId: "receipt-after-cancel", message: "" },
+    );
+    const { result } = savedHook({});
+    await act(() => result.current.connect());
+    act(() => result.current.cancelChallenge());
+    expect(result.current.challenge).toBeNull();
+    expect(result.current.connectionStatus).toBe("disconnected");
+    await act(() => result.current.connect());
+    expect(connectCalls()).toHaveLength(2);
+    expect(connectCalls()[1]).toMatchObject({ otpCode: null });
+    expect(result.current.sessionId).toBe("receipt-after-cancel");
+  });
+});
+
+describe("NAS API reconnect", () => {
+  const connectFirst = async (
+    options: Parameters<typeof useSynologyFileConnection>[1] = {},
+  ) => {
+    scriptNative({
+      status: "connected",
+      sessionId: "receipt-old",
+      message: "ok",
+    });
+    const hook = savedHook(options);
+    await act(() => hook.result.current.connect());
+    expect(hook.result.current.sessionId).toBe("receipt-old");
+    vi.mocked(invoke).mockClear();
+    return hook;
+  };
+
+  it("releases the previous receipt first, then makes exactly one DSM desktop sign-in", async () => {
+    const { result } = await connectFirst();
+    scriptNative({
+      status: "connected",
+      sessionId: "receipt-webui",
+      message: "ok",
+    });
+    await act(() =>
+      result.current.reconnect({ sessionProfile: "dsm_desktop" }),
+    );
+    const commands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    const released = commands.indexOf("syn_fs_disconnect");
+    expect(released).toBeGreaterThanOrEqual(0);
+    expect(vi.mocked(invoke).mock.calls[released][1]).toEqual({
+      instanceId: "saved-tab",
+      expectedSessionId: "receipt-old",
+    });
+    expect(released).toBeLessThan(commands.indexOf("syn_fs_connect"));
+    expect(connectCalls()).toHaveLength(1);
+    expect(connectCalls()[0]).toEqual({
+      ...savedLogin,
+      instanceId: "saved-tab",
+      requestId: expect.any(String),
+      otpCode: null,
+      route: { kind: "direct" },
+      sessionProfile: "dsm_desktop",
+    });
+    expect(result.current.sessionId).toBe("receipt-webui");
+    expect(result.current.connectionStatus).toBe("connected");
+  });
+
+  it("keeps the old payload for a plain reconnect and sends an explicit File Station profile only when asked", async () => {
+    const { result } = await connectFirst();
+    scriptNative(
+      { status: "connected", sessionId: "receipt-plain", message: "ok" },
+      { status: "connected", sessionId: "receipt-fs", message: "ok" },
+    );
+    await act(() => result.current.reconnect());
+    expect(connectCalls()[0]).not.toHaveProperty("sessionProfile");
+    expect(result.current.sessionId).toBe("receipt-plain");
+    await act(() =>
+      result.current.reconnect({ sessionProfile: "file_station" }),
+    );
+    expect(connectCalls()).toHaveLength(2);
+    expect(connectCalls()[1]).toMatchObject({ sessionProfile: "file_station" });
+    expect(invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+      instanceId: "saved-tab",
+      expectedSessionId: "receipt-plain",
+    });
+  });
+
+  it("shows the code prompt during reconnect and keeps the DSM desktop profile for the submitted code", async () => {
+    const { result } = await connectFirst();
+    scriptNative(
+      { status: "otp_required" },
+      { status: "otp_invalid" },
+      { status: "connected", sessionId: "receipt-webui", message: "ok" },
+    );
+    await act(() =>
+      result.current.reconnect({ sessionProfile: "dsm_desktop" }),
+    );
+    expect(result.current.sessionId).toBeNull();
+    expect(result.current.challenge?.status).toBe("otp_required");
+    act(() => result.current.setOtpCode("111111"));
+    await act(() => result.current.submitOtp());
+    expect(result.current.challenge?.status).toBe("otp_invalid");
+    act(() => result.current.setOtpCode("222222"));
+    await act(() => result.current.submitOtp());
+    expect(
+      connectCalls().map((args) => [args.otpCode, args.sessionProfile]),
+    ).toEqual([
+      [null, "dsm_desktop"],
+      ["111111", "dsm_desktop"],
+      ["222222", "dsm_desktop"],
+    ]);
+    expect(result.current.sessionId).toBe("receipt-webui");
+  });
+
+  it("uses a vault authenticator at most once during reconnect", async () => {
+    const vault = vaultOptions();
+    const { result } = await connectFirst(vault);
+    scriptNative({ status: "otp_required" }, { status: "otp_invalid" });
+    await act(() =>
+      result.current.reconnect({ sessionProfile: "dsm_desktop" }),
+    );
+    expect(vault.resolveOtp).toHaveBeenCalledOnce();
+    expect(
+      connectCalls().map((args) => [args.otpCode, args.sessionProfile]),
+    ).toEqual([
+      [null, "dsm_desktop"],
+      ["246810", "dsm_desktop"],
+    ]);
+    expect(result.current.challenge?.status).toBe("otp_invalid");
+  });
+
+  it("does not sign in when releasing the previous receipt fails", async () => {
+    const { result } = await connectFirst();
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "syn_fs_disconnect") throw new Error("release failed");
+      return { status: "connected", sessionId: "never", message: "" };
+    });
+    await act(() =>
+      result.current.reconnect({ sessionProfile: "dsm_desktop" }),
+    );
+    expect(connectCalls()).toHaveLength(0);
+    expect(result.current.connectionStatus).toBe("error");
+    expect(result.current.connectionError).toContain("NAS cleanup failed");
+  });
+
+  it("stops when the user cancels while the previous receipt is being released", async () => {
+    const { result } = await connectFirst();
+    const releasing = deferred<boolean>();
+    vi.mocked(invoke).mockImplementation((command) =>
+      command === "syn_fs_disconnect"
+        ? releasing.promise
+        : Promise.resolve({ status: "connected", sessionId: "never" }),
+    );
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.reconnect({ sessionProfile: "dsm_desktop" });
+    });
+    expect(result.current.connectionStatus).toBe("connecting");
+    await act(() => result.current.reconnect());
+    act(() => result.current.cancelChallenge());
+    await act(async () => {
+      releasing.resolve(true);
+      await pending;
+    });
+    expect(connectCalls()).toHaveLength(0);
+    expect(result.current.connectionStatus).toBe("disconnected");
+  });
+
+  it("does not reuse the DSM desktop profile after that reconnect attempt ends", async () => {
+    const { result } = await connectFirst();
+    scriptNative(new Error("DSM refused API sign-in for this account."), {
+      status: "connected",
+      sessionId: "receipt-normal",
+      message: "",
+    });
+    await act(() =>
+      result.current.reconnect({ sessionProfile: "dsm_desktop" }),
+    );
+    expect(result.current.connectionStatus).toBe("error");
+    await act(() => result.current.connect());
+    expect(connectCalls()[0]).toMatchObject({ sessionProfile: "dsm_desktop" });
+    expect(connectCalls()[1]).not.toHaveProperty("sessionProfile");
+  });
+
+  it("refuses an unknown profile and ignores reconnect while a code prompt is open", async () => {
+    const { result } = await connectFirst();
+    await act(() =>
+      result.current.reconnect({
+        sessionProfile: "admin" as unknown as "dsm_desktop",
+      }),
+    );
+    expect(invoke).not.toHaveBeenCalled();
+    expect(result.current.sessionId).toBe("receipt-old");
+    scriptNative({ status: "otp_required" });
+    await act(() => result.current.reconnect());
+    expect(result.current.challenge?.status).toBe("otp_required");
+    vi.mocked(invoke).mockClear();
+    await act(() =>
+      result.current.reconnect({ sessionProfile: "dsm_desktop" }),
+    );
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("asks a standalone form for the password again and applies the requested profile to that one sign-in", async () => {
+    scriptNative({ status: "connected", sessionId: "receipt-a", message: "" });
+    const { result } = setup();
+    await act(() => result.current.connect());
+    expect(result.current.password).toBe("");
+    vi.mocked(invoke).mockClear();
+    await act(() =>
+      result.current.reconnect({ sessionProfile: "dsm_desktop" }),
+    );
+    expect(invoke).toHaveBeenCalledWith("syn_fs_disconnect", {
+      instanceId: result.current.instanceId,
+      expectedSessionId: "receipt-a",
+    });
+    expect(connectCalls()).toHaveLength(0);
+    expect(result.current.connectionStatus).toBe("error");
+    expect(result.current.connectionError).toContain("to reconnect");
+    scriptNative(
+      { status: "connected", sessionId: "receipt-b", message: "" },
+      { status: "connected", sessionId: "receipt-c", message: "" },
+    );
+    act(() => result.current.setPassword("private-password"));
+    await act(() => result.current.connect());
+    expect(connectCalls()[0]).toMatchObject({
+      password: "private-password",
+      sessionProfile: "dsm_desktop",
+    });
+    await act(() => result.current.reconnect());
+    expect(connectCalls()).toHaveLength(1);
+    expect(result.current.connectionError).not.toContain("password=");
+  });
+
+  it("never exposes the password, code or trusted-device id in status, challenge or logs", async () => {
+    const logs = (["log", "info", "warn", "error", "debug"] as const).map(
+      (level) => vi.spyOn(console, level).mockImplementation(() => undefined),
+    );
+    try {
+      const vault = vaultOptions();
+      const { result } = await connectFirst(vault);
+      const secrets = [
+        "fixture-password-9f3",
+        "vault-password-7c1",
+        "246810",
+        "864200",
+        "fixture-did-secret",
+      ];
+      scriptNative(
+        {
+          status: "otp_required",
+          message: "password=vault-password-7c1 code 246810",
+          deviceId: "fixture-did-secret",
+        },
+        {
+          status: "otp_invalid",
+          message: "rejected 246810 for vault-password-7c1",
+        },
+        new Error(
+          "NAS said password vault-password-7c1 and code 864200 failed",
+        ),
+      );
+      await act(() =>
+        result.current.reconnect({ sessionProfile: "dsm_desktop" }),
+      );
+      const snapshots = [
+        JSON.stringify({
+          status: result.current.connectionStatus,
+          error: result.current.connectionError,
+          challenge: result.current.challenge,
+          health: result.current.sessionHealth,
+          otp: result.current.otpCode,
+          password: result.current.password,
+        }),
+      ];
+      act(() => result.current.setOtpCode("864200"));
+      await act(() => result.current.submitOtp());
+      snapshots.push(
+        JSON.stringify({
+          status: result.current.connectionStatus,
+          error: result.current.connectionError,
+          challenge: result.current.challenge,
+          health: result.current.sessionHealth,
+          otp: result.current.otpCode,
+          password: result.current.password,
+        }),
+      );
+      expect(result.current.connectionStatus).toBe("error");
+      expect(result.current.connectionError).toContain("[REDACTED]");
+      const logged = JSON.stringify(logs.map((spy) => spy.mock.calls));
+      for (const secret of secrets) {
+        for (const snapshot of snapshots)
+          expect(snapshot).not.toContain(secret);
+        expect(logged).not.toContain(secret);
+      }
+    } finally {
+      for (const spy of logs) spy.mockRestore();
+    }
+  });
+});
+describe("trusted-device payload compatibility", () => {
+  it("keeps the pre-trust sign-in payload and ignores a returned device without vault storage", async () => {
+    let connects = 0;
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === "syn_fs_connect"
+        ? ++connects === 1
+          ? { status: "otp_required", trustedDeviceRejected: true }
+          : {
+              status: "connected",
+              sessionId: "receipt",
+              trustedDevice: {
+                deviceName: "SortOfRemoteNG · DESKTOP",
+                deviceId: "fixture-did-secret",
+              },
+            }
+        : {
+            status: "connected",
+            lastVerifiedAt: "",
+            consecutiveFailures: 0,
+            message: null,
+          },
+    );
+    const { result } = setup();
+    await act(() => result.current.connect());
+    expect(result.current.deviceTrust.notice).toBeNull();
+    act(() => {
+      result.current.deviceTrust.setEnabled(true);
+      result.current.setOtpCode("123456");
+    });
+    await act(() => result.current.submitOtp());
+    expect(result.current.connectionStatus).toBe("connected");
+    const legacyKeys = [
+      "host",
+      "instanceId",
+      "otpCode",
+      "password",
+      "port",
+      "requestId",
+      "route",
+      "useHttps",
+      "username",
+    ];
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "syn_fs_connect")
+        .map(([, args]) => Object.keys(args as object).sort()),
+    ).toEqual([legacyKeys, legacyKeys]);
+    expect(result.current.deviceTrust).toEqual(
+      expect.objectContaining({
+        available: false,
+        unavailableReason: null,
+        enabled: false,
+        remembered: false,
+        notice: null,
+      }),
+    );
+    expect(JSON.stringify(result.current)).not.toContain("fixture-did-secret");
+  });
+});

@@ -74,6 +74,46 @@ describe("Synology database portability", () => {
       (await manager.loadDatabaseData(clone.id))?.connections[0],
     ).toMatchObject(connection);
   });
+  it("carries the trusted-device preference through export, import and clone without any device token", async () => {
+    const trusted: Connection = {
+      ...connection,
+      id: "nas-trusted",
+      name: "Trusted NAS",
+      synologySettings: { version: 1, useHttps: true, trustDevice: true },
+    };
+    await manager.saveDatabaseData(id, {
+      connections: [connection, trusted],
+      settings: {},
+      timestamp: 2,
+    });
+    const find = (rows: Connection[] | undefined) =>
+      rows?.find((row) => row.id === trusted.id);
+    for (const includePasswords of [true, false]) {
+      const exported = await manager.exportDatabase(id, includePasswords);
+      expect(exported).not.toMatch(/deviceId|trustedDevice|deviceTrust/);
+      const rows = JSON.parse(exported).connections as Connection[];
+      expect(find(rows)?.synologySettings).toEqual(trusted.synologySettings);
+      // Older records without the preference stay exactly as they were.
+      expect(
+        rows.find((row) => row.id === connection.id)?.synologySettings,
+      ).toEqual({ version: 1, useHttps: true });
+      const imported = await manager.importDatabase(exported, {
+        collectionName: `Trusted NAS import ${includePasswords}`,
+      });
+      expect(
+        find((await manager.loadDatabaseData(imported.id))?.connections)
+          ?.synologySettings,
+      ).toEqual(trusted.synologySettings);
+    }
+    const clone = await manager.duplicateDatabase(id, {
+      name: "Trusted NAS clone",
+      includeTrust: false,
+    });
+    expect(
+      find((await manager.loadDatabaseData(clone.id))?.connections)
+        ?.synologySettings,
+    ).toEqual(trusted.synologySettings);
+  });
   it("persists only safe session identity, never credentials or OTP", () => {
     const session: ConnectionSession = {
       id: "tab",

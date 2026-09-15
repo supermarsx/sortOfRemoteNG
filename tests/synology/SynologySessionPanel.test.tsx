@@ -226,6 +226,62 @@ describe("saved Synology session ownership", () => {
     );
     expect(connections[0].password).toBe("synthetic-private-password");
   });
+  it("wires vault trusted-device lookup without letting a failed lookup block the saved sign-in", async () => {
+    const credentialId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    connections[0].credentialSource = { kind: "vault", credentialId };
+    connections[0].synologySettings = {
+      version: 1,
+      useHttps: true,
+      trustDevice: true,
+    };
+    let lists = 0;
+    vaultApi = {
+      scope: { databaseId: "db-a", generation: 1 },
+      changeRevision: 1,
+      list: vi.fn<DatabaseCredentialVaultApi["list"]>(async () => {
+        // The login disclosure succeeds; the trusted-device lookup does not.
+        if (++lists > 1) throw new Error("vault busy");
+        return {
+          scope: { databaseId: "db-a", generation: 1 },
+          revision: 1,
+          receipt: "vault-receipt",
+          entries: [
+            {
+              id: credentialId,
+              name: "NAS account",
+              createdAt: "2026-09-01",
+              updatedAt: "2026-09-01",
+              availableFacets: ["username", "password", "deviceTrust"],
+            },
+          ],
+        };
+      }),
+      resolve: vi.fn(async () => ({
+        username: "VAULT_NAS_ACCOUNT",
+        password: "VAULT_NAS_SECRET",
+      })),
+      compareAndSwap: vi.fn(),
+    };
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(screen.getByText("connected")).toBeInTheDocument(),
+    );
+    expect(lists).toBe(2);
+    const connects = mocks.invoke.mock.calls.filter(
+      ([command]) => command === "syn_fs_connect",
+    );
+    expect(connects).toHaveLength(1);
+    expect(connects[0][1]).toMatchObject({
+      username: "VAULT_NAS_ACCOUNT",
+      otpCode: null,
+    });
+    for (const key of ["trustDevice", "deviceId", "deviceName"])
+      expect(connects[0][1]).not.toHaveProperty(key);
+    expect(vaultApi.compareAndSwap).not.toHaveBeenCalled();
+    expect(
+      screen.queryByTestId("synology-trusted-device"),
+    ).not.toBeInTheDocument();
+  });
   it("starts the initial saved sign-in after Strict Mode effect replay without requiring Retry", async () => {
     mocks.realContent = true;
     let resolveLogin!: (result: unknown) => void;

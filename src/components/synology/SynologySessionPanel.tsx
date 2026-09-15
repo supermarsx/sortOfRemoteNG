@@ -7,7 +7,7 @@ import React, {
   useState,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { PackageX, CircleHelp, X } from "lucide-react";
+import { PackageX, CircleHelp, X, ShieldCheck, ShieldOff } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import type {
   Connection,
@@ -37,6 +37,12 @@ import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 import SynologyInitializationStatus from "./synologyPanel/SynologyInitializationStatus";
 import { useRuntimeCredentialVault } from "../../hooks/security/useRuntimeCredentialVault";
 import { useRuntimeVaultTotp } from "../../hooks/security/useRuntimeVaultTotp";
+import {
+  DEVICE_TRUST_NOT_FORGOTTEN_MESSAGE,
+  DEVICE_TRUST_NOT_REMEMBERED_MESSAGE,
+  DEVICE_TRUST_VAULT_REQUIRED_MESSAGE,
+} from "../../utils/security/runtimeCredentialVault";
+import type { SynologyDeviceTrustAdapter } from "../../types/hardware/synologyFileStation";
 
 const unavailable =
   "Open and unlock this session's owning database, then reopen the Synology connection.";
@@ -219,6 +225,41 @@ function BoundSynologySession({
     },
     [totpId],
   );
+  // A fresh vault controller per call: each one is bound to the vault revision
+  // it opened, and a store or forget advances that revision.
+  const deviceTrust = useMemo<SynologyDeviceTrustAdapter | undefined>(() => {
+    if (!vault) return undefined;
+    const open = async (assertAttempt: () => void) => {
+      const value = await resolveVault(assertAttempt, false, "deviceTrust");
+      if (!value?.deviceTrust)
+        throw new Error("The selected vault credential is unavailable.");
+      return value.deviceTrust;
+    };
+    return {
+      resolve: async (assertAttempt, account) =>
+        (await open(assertAttempt)).resolve(account),
+      store: async (assertAttempt, account, device) => {
+        try {
+          return await (await open(assertAttempt)).store(account, device);
+        } catch {
+          return {
+            status: "not-saved",
+            message: DEVICE_TRUST_NOT_REMEMBERED_MESSAGE,
+          };
+        }
+      },
+      forget: async (assertAttempt, account) => {
+        try {
+          return await (await open(assertAttempt)).forget(account);
+        } catch {
+          return {
+            status: "not-saved",
+            message: DEVICE_TRUST_NOT_FORGOTTEN_MESSAGE,
+          };
+        }
+      },
+    };
+  }, [vault, resolveVault]);
   const credentials = vault
     ? null
     : resolveHttpBasicCredentials({
@@ -240,6 +281,11 @@ function BoundSynologySession({
     assertCurrent: access ?? undefined,
     resolveCredentials: vault ? resolveCredentials : undefined,
     resolveOtp: vault && totpId ? resolveOtp : undefined,
+    deviceTrust,
+    trustDevice: settings.trustDevice === true,
+    deviceTrustUnavailable: vault
+      ? undefined
+      : DEVICE_TRUST_VAULT_REQUIRED_MESSAGE,
   });
   const runtime = useRef(connection);
   runtime.current = connection;
@@ -350,7 +396,57 @@ function BoundSynologySession({
         <SynologyInitializationStatus phase="capabilities" />
       </div>
     );
-  return <SynologySessionContent connection={connection} runtimeVerified />;
+  const trust = connection.deviceTrust;
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+      {connection.connectionStatus === "connected" &&
+        (trust.remembered || trust.notice) && (
+          <TrustedDeviceBar trust={trust} />
+        )}
+      <SynologySessionContent connection={connection} runtimeVerified />
+    </div>
+  );
+}
+
+/** Signed-in trusted-device status. The sign-in view shows its own controls. */
+function TrustedDeviceBar({
+  trust,
+}: {
+  trust: ReturnType<typeof useSynologyFileConnection>["deviceTrust"];
+}) {
+  return (
+    <div
+      role="status"
+      data-testid="synology-trusted-device"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-border)] px-4 py-1.5 text-xs text-[var(--color-textSecondary)]"
+    >
+      <ShieldCheck size={14} className="shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1 break-words">
+        {trust.notice ??
+          "This computer is a trusted device for this NAS account."}
+      </span>
+      {trust.remembered && (
+        <button
+          type="button"
+          className="sor-btn sor-btn-secondary sor-btn-xs"
+          disabled={trust.forgetting}
+          onClick={() => void trust.forget()}
+        >
+          <ShieldOff size={12} aria-hidden="true" />
+          {trust.forgetting ? "Forgetting…" : "Forget this device"}
+        </button>
+      )}
+      {trust.notice && (
+        <button
+          type="button"
+          className="sor-btn sor-btn-secondary sor-btn-xs"
+          onClick={trust.dismissNotice}
+        >
+          Dismiss
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function SynologySessionPanel({
