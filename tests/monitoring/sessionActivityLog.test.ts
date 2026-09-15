@@ -142,3 +142,161 @@ describe("volatile session activity feed", () => {
     unsubscribe();
   });
 });
+
+describe("DSM page-helper auto-fill outcomes", () => {
+  it.each([
+    ["waiting_page", "info", "waiting for DSM to finish loading"],
+    ["filling_username", "info", "filling the username"],
+    ["filling_password", "info", "filling the password"],
+    ["verifying_sign_in", "info", "observing the page outcome"],
+    ["signed_in", "info", "not native proof of authentication"],
+    ["rejected", "warn", "No retry was made"],
+  ] as const)(
+    "records the %s phase with fixed text",
+    (code, level, summary) => {
+      recordSessionActivity(context, "autofill", code);
+      expect(getSessionActivityLog()[0]).toMatchObject({
+        code,
+        level,
+        action: "Website auto-fill",
+      });
+      expect(getSessionActivityLog()[0].details).toContain(summary);
+      recordSessionActivity(context, "ssh_script", code);
+      expect(getSessionActivityLog()).toHaveLength(1);
+    },
+  );
+  it.each([
+    ["route-pending", "settling its sign-in route"],
+    ["captcha-required", "CAPTCHA"],
+    ["interactive-step-required", "interactive sign-in step"],
+    ["user-input-detected", "Manual input"],
+    ["unsafe-form-target", "unreviewed action or target"],
+    ["account-mismatch", "did not match the saved username"],
+    ["layout-unrecognized", "reviewed layout"],
+    ["login-form-never-appeared", "login form never became ready"],
+    ["left-signin-page", "after Sign in"],
+    ["error-visible", "sign-in error"],
+    ["no-sign-in-page", "No DSM sign-in page"],
+  ])("appends the fixed explanation for %s", (reason, text) => {
+    recordSessionActivity(context, "autofill", "stopped", { reason });
+    expect(getSessionActivityLog()[0].details).toContain(text);
+  });
+  it.each([
+    ["otp", "asking for a 2FA code"],
+    ["approve", "approval in Synology Secure SignIn"],
+    ["select-auth", "choose a sign-in method"],
+    ["passkey", "passkey or hardware security key"],
+    ["other", "another interactive sign-in step"],
+  ])(
+    "names the %s hand-off and the closed fingerprint on a terminal entry",
+    (handoff, text) => {
+      recordSessionActivity(context, "autofill", "stopped", {
+        reason: "interactive-step-required",
+        trace: {
+          handoff,
+          fingerprint: {
+            root: 1,
+            panel: 1,
+            form: 1,
+            field: 1,
+            button: 12,
+            hash: handoff,
+            readyState: "complete",
+            stage: "submitted",
+          },
+        },
+      });
+      const { details } = getSessionActivityLog()[0];
+      expect(details).toContain(text);
+      expect(details).toContain(
+        `Page fingerprint: root 1, panel 1, form 1, field 1, button 9, route ${handoff}, document complete, stage submitted.`,
+      );
+    },
+  );
+  it("never copies secrets, URLs, tokens or page text from a trace", () => {
+    recordSessionActivity(context, "autofill", "stopped", {
+      reason: "interactive-step-required",
+      trace: {
+        handoff: "PRIVATE_STEP https://private.test/?token=PRIVATE_TOKEN",
+        fingerprint: {
+          root: "1",
+          panel: -1,
+          form: 1.5,
+          field: Number.NaN,
+          button: { valueOf: () => 1 },
+          hash: "#/signin/otp?code=PRIVATE_CODE",
+          readyState: "PRIVATE_STATE",
+          stage: "password PRIVATE",
+          username: "PRIVATE_USER",
+          password: "PRIVATE_PASSWORD",
+          text: "PRIVATE_PAGE_TEXT",
+        },
+        url: "https://user:PRIVATE_SECRET@private.test/",
+      } as never,
+    });
+    const entry = getSessionActivityLog()[0];
+    expect(JSON.stringify(entry)).not.toMatch(
+      /PRIVATE|private\.test|token|username|password|fingerprint/i,
+    );
+    expect(Object.keys(entry).sort()).toEqual(
+      [
+        "action",
+        "code",
+        "connectionId",
+        "databaseId",
+        "details",
+        "id",
+        "level",
+        "sessionId",
+        "source",
+        "timestamp",
+      ].sort(),
+    );
+    const hostile = {};
+    Object.defineProperty(hostile, "hash", {
+      get() {
+        throw new Error("PRIVATE_GETTER");
+      },
+    });
+    recordSessionActivity(context, "autofill", "timeout", {
+      reason: "page-never-ready",
+      trace: { fingerprint: hostile },
+    });
+    expect(getSessionActivityLog()).toHaveLength(2);
+    expect(getSessionActivityLog()[0].details).not.toContain("PRIVATE");
+  });
+  it("adds trace text only to terminal auto-fill entries", () => {
+    const trace = {
+      handoff: "otp",
+      fingerprint: { root: 1, hash: "otp", stage: "submitted" },
+    };
+    recordSessionActivity(context, "autofill", "waiting_page", {
+      reason: "route-pending",
+      trace,
+    });
+    recordSessionActivity(context, "autofill", "awaiting_nas", { trace });
+    recordSessionActivity(context, "ssh_macro", "failed", { trace });
+    expect(
+      getSessionActivityLog().some((entry) =>
+        /Page fingerprint|2FA code/.test(entry.details),
+      ),
+    ).toBe(false);
+    recordSessionActivity(context, "autofill", "signed_in", {
+      reason: "left-signin-page",
+      trace: { fingerprint: { hash: "other", readyState: "complete" } },
+    });
+    expect(getSessionActivityLog()[0].details).toBe(
+      "Page helper observed DSM leave the sign-in page. This is inferred from the page, not native proof of authentication. The page left the DSM sign-in page after Sign in. Page fingerprint: route other, document complete.",
+    );
+  });
+  it("keeps the existing reason-free and unknown-reason text unchanged", () => {
+    recordSessionActivity(context, "autofill", "stopped");
+    recordSessionActivity(context, "autofill", "stopped", {
+      reason: "not-a-reason",
+    });
+    expect(getSessionActivityLog().map((entry) => entry.details)).toEqual([
+      "Page helper stopped before completing submission.",
+      "Page helper stopped before completing submission.",
+    ]);
+  });
+});

@@ -66,6 +66,24 @@ const CODES = {
   ],
   timeout: ["warn", "Page helper reached its existing deadline."],
   stopped: ["warn", "Page helper stopped before completing submission."],
+  waiting_page: [
+    "info",
+    "Page helper is waiting for DSM to finish loading its sign-in page.",
+  ],
+  filling_username: ["info", "Page helper is filling the username."],
+  filling_password: ["info", "Page helper is filling the password."],
+  verifying_sign_in: [
+    "info",
+    "Page helper clicked Sign in and is observing the page outcome.",
+  ],
+  signed_in: [
+    "info",
+    "Page helper observed DSM leave the sign-in page. This is inferred from the page, not native proof of authentication.",
+  ],
+  rejected: [
+    "warn",
+    "Page helper observed DSM reject the sign-in. No retry was made.",
+  ],
   helper_reported: [
     "info",
     "The page sent an unscoped auto-fill result hint. This is not native status or proof of authentication.",
@@ -104,7 +122,117 @@ const REASONS = {
   "field-hidden": "The reviewed input is hidden.",
   "field-readonly": "The reviewed input is read-only.",
   "panel-transition": "The page is transitioning between reviewed panels.",
+  "route-pending": "DSM is still settling its sign-in route.",
+  "page-busy": "DSM is still loading or rendering its sign-in page.",
+  "controls-replaced": "DSM re-rendered the reviewed login controls.",
+  "value-refilled":
+    "DSM dropped a filled value, so the helper filled the current field again.",
+  "panel-quiet-wait": "The helper is waiting for the login panel to settle.",
+  "next-reclicked":
+    "Next was replaced before the page advanced, so it was clicked once more.",
+  "captcha-required": "DSM is showing a CAPTCHA in the login form.",
+  "interactive-step-required":
+    "Saved details were filled and DSM is asking for an interactive sign-in step.",
+  "user-input-detected": "Manual input in the login form was detected.",
+  "unsafe-form-target":
+    "The login form would submit to an unreviewed action or target.",
+  "account-mismatch":
+    "The account on the password step did not match the saved username.",
+  "left-login-page": "The page left the DSM login page before sign-in.",
+  "layout-unrecognized":
+    "The DSM login controls did not match the reviewed layout.",
+  "unsupported-login-path":
+    "The sign-in page was opened on an unsupported path.",
+  "page-never-ready": "The page never became interactive.",
+  "login-form-never-appeared": "The DSM login form never became ready.",
+  "password-panel-never-appeared": "The password step never appeared.",
+  "signin-button-never-enabled": "The Sign in button never became usable.",
+  "left-signin-page": "The page left the DSM sign-in page after Sign in.",
+  "error-visible": "DSM showed a sign-in error after Sign in.",
+  "sign-in-unconfirmed":
+    "Sign in was clicked, but the page did not confirm the outcome.",
+  "no-sign-in-page": "No DSM sign-in page was shown.",
 } as const;
+/** Closed page-helper trace values. The helper never reports ids, URLs or text. */
+export const PAGE_HELPER_TRACE_VALUES = Object.freeze({
+  counts: Object.freeze(["root", "panel", "form", "field", "button"] as const),
+  hashes: Object.freeze([
+    "empty",
+    "slash",
+    "signin",
+    "password",
+    "otp",
+    "approve",
+    "select-auth",
+    "passkey",
+    "other",
+  ] as const),
+  readyStates: Object.freeze(["loading", "interactive", "complete"] as const),
+  stages: Object.freeze(["account", "password", "submitted"] as const),
+  handoffs: Object.freeze([
+    "otp",
+    "approve",
+    "select-auth",
+    "passkey",
+    "other",
+  ] as const),
+});
+type TraceValues = typeof PAGE_HELPER_TRACE_VALUES;
+export type PageHelperFingerprint = Partial<
+  Record<TraceValues["counts"][number], number> & {
+    hash: TraceValues["hashes"][number];
+    readyState: TraceValues["readyStates"][number];
+    stage: TraceValues["stages"][number];
+  }
+>;
+export type PageHelperHandoff = TraceValues["handoffs"][number];
+const HANDOFFS: Record<PageHelperHandoff, string> = {
+  otp: "DSM is asking for a 2FA code.",
+  approve: "DSM is waiting for sign-in approval in Synology Secure SignIn.",
+  "select-auth": "DSM is asking to choose a sign-in method.",
+  passkey: "DSM is asking for a passkey or hardware security key.",
+  other: "DSM is asking for another interactive sign-in step.",
+};
+const TERMINAL_PAGE_CODES = new Set([
+  "submitted",
+  "timeout",
+  "stopped",
+  "cancelled",
+  "signed_in",
+  "rejected",
+]);
+const closed = <T extends string>(values: readonly T[], value: unknown) =>
+  values.find((candidate) => candidate === value);
+/** Fixed text for a page fingerprint; anything outside the closed values is omitted. */
+export function describePageHelperFingerprint(value: unknown): string {
+  try {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+    const source = value as Record<string, unknown>;
+    const parts: string[] = [];
+    for (const name of PAGE_HELPER_TRACE_VALUES.counts) {
+      const count = source[name];
+      if (typeof count === "number" && Number.isInteger(count) && count >= 0)
+        parts.push(`${name} ${Math.min(count, 9)}`);
+    }
+    const hash = closed(PAGE_HELPER_TRACE_VALUES.hashes, source.hash);
+    const readyState = closed(
+      PAGE_HELPER_TRACE_VALUES.readyStates,
+      source.readyState,
+    );
+    const stage = closed(PAGE_HELPER_TRACE_VALUES.stages, source.stage);
+    if (hash) parts.push(`route ${hash}`);
+    if (readyState) parts.push(`document ${readyState}`);
+    if (stage) parts.push(`stage ${stage}`);
+    return parts.length ? `Page fingerprint: ${parts.join(", ")}.` : "";
+  } catch {
+    return "";
+  }
+}
+/** Fixed text for an interactive sign-in hand-off; unknown values give "". */
+export function describePageHelperHandoff(value: unknown): string {
+  const handoff = closed(PAGE_HELPER_TRACE_VALUES.handoffs, value);
+  return handoff ? HANDOFFS[handoff] : "";
+}
 
 export interface SessionActivityEntry
   extends Omit<ActionLogEntry, "connectionId">, SessionActivityContext {
@@ -142,7 +270,12 @@ export function recordSessionActivity(
   context: SessionActivityContext | undefined,
   source: SessionActivitySource,
   code: SessionActivityCode,
-  options: { durationMs?: number; reason?: string } = {},
+  options: {
+    durationMs?: number;
+    reason?: string;
+    /** Terminal auto-fill only; re-validated against closed values. */
+    trace?: { fingerprint?: unknown; handoff?: unknown };
+  } = {},
 ): void {
   try {
     const settings = SettingsManager.getInstance().getSettings();
@@ -173,6 +306,13 @@ export function recordSessionActivity(
       Object.prototype.hasOwnProperty.call(REASONS, options.reason)
         ? REASONS[options.reason as keyof typeof REASONS]
         : "";
+    const trace =
+      source === "autofill" && TERMINAL_PAGE_CODES.has(code) && options.trace
+        ? [
+            describePageHelperHandoff(options.trace.handoff),
+            describePageHelperFingerprint(options.trace.fingerprint),
+          ].filter(Boolean)
+        : [];
     const duration =
       typeof options.durationMs === "number" &&
       Number.isFinite(options.durationMs)
@@ -193,7 +333,7 @@ export function recordSessionActivity(
       code,
       level,
       action: SOURCES[source],
-      details: reason ? `${summary} ${reason}` : summary,
+      details: [summary, reason, ...trace].filter(Boolean).join(" "),
       ...(duration === undefined ? {} : { duration }),
     });
     entries = Object.freeze([entry, ...entries].slice(0, limit));

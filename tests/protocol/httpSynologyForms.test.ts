@@ -64,8 +64,9 @@ function begin() {
   );
 }
 async function advanceRenderTurns() {
-  // Account readiness and post-input checks each span two 50ms timer turns.
-  await vi.advanceTimersByTimeAsync(200);
+  // Each action waits for 400ms of reviewed-panel quiet; one turn covers a
+  // readiness check, a fill and its click.
+  await vi.advanceTimersByTimeAsync(1000);
 }
 beforeEach(() => {
   vi.useFakeTimers();
@@ -119,7 +120,11 @@ afterEach(() => {
 });
 
 describe("reviewed DSM website login", () => {
-  it("waits for page load and separate input turns before clicking a delayed Next handler once", async () => {
+  // Sign in resolves the run; page-observed verification continues for 30s.
+  async function finishVerification() {
+    await vi.advanceTimersByTimeAsync(30000);
+  }
+  it("acts once interactive after panel quiet and input settling, then clicks a delayed Next handler once", async () => {
     Object.defineProperty(document, "readyState", {
       configurable: true,
       value: "interactive",
@@ -134,35 +139,28 @@ describe("reviewed DSM website login", () => {
     });
     const pending = begin();
     document.dispatchEvent(new Event("DOMContentLoaded"));
-    await vi.advanceTimersByTimeAsync(500);
-    expect(fetchMock).not.toHaveBeenCalled();
-    window.addEventListener(
-      "load",
-      () => {
-        expect(fetchMock).not.toHaveBeenCalled();
-        expect(next).not.toHaveBeenCalled();
-      },
-      { once: true },
-    );
-    Object.defineProperty(document, "readyState", {
-      configurable: true,
-      value: "complete",
-    });
-    window.dispatchEvent(new Event("load"));
-    await vi.advanceTimersByTimeAsync(99);
+    // A slow image may hold load; interactive reviewed controls are enough.
+    await vi.advanceTimersByTimeAsync(399);
     expect(fetchMock).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(next).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(99);
+    await vi.advanceTimersByTimeAsync(399);
     expect(next).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(next).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(400);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(submit).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(400);
     await pending;
     expect(submit).toHaveBeenCalledOnce();
+    await finishVerification();
+    expect(win.__sorng_synology_login.getStatus()).toEqual({
+      phase: "submitted",
+      reason: "sign-in-unconfirmed",
+    });
     expect(vi.getTimerCount()).toBe(0);
   });
   it("requires a visible Next and resamples a briefly disabled username without waiting for unrelated DOM quiet", async () => {
@@ -186,11 +184,16 @@ describe("reviewed DSM website login", () => {
     field.disabled = true;
     await vi.advanceTimersByTimeAsync(50);
     field.disabled = false;
-    for (let index = 0; index < 5; index++) {
+    // Mutations outside the reviewed panel do not restart its quiet period.
+    for (let index = 0; index < 3; index++) {
       document.body.append(document.createElement("span"));
-      await vi.advanceTimersByTimeAsync(20);
-      if (index < 4) expect(fetchMock).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(fetchMock).not.toHaveBeenCalled();
     }
+    document.body.append(document.createElement("span"));
+    await vi.advanceTimersByTimeAsync(99);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(field.value).toBe(username);
     // A disabled Next may need this username input before Vue enables it.
@@ -258,12 +261,13 @@ describe("reviewed DSM website login", () => {
       );
     },
   );
+  // Trusted (user) edits stop the helper: see synologyLoginTimeline.test.ts.
   it.each([
     ["account", "different"],
     ["password", "different"],
     ["password", "same-as-held"],
   ])(
-    "preserves the %s field's %s manual value before the helper writes",
+    "writes over a scripted %s field %s value once it is editable, with one grant per stage",
     async (stage, kind) => {
       let release!: (value: unknown) => void;
       fetchMock.mockImplementation(async (url: string) => ({
@@ -299,21 +303,25 @@ describe("reviewed DSM website login", () => {
           : { loginFlow: "synology", password },
       );
       await advanceRenderTurns();
-      const manualValue =
-        kind === "same-as-held" ? password : "manual-user-value";
-      field.value = manualValue;
+      const scriptedValue =
+        kind === "same-as-held" ? password : "scripted-prefill";
+      field.value = scriptedValue;
       field.dispatchEvent(new Event("input", { bubbles: true }));
+      await advanceRenderTurns();
+      expect(field.value).toBe(scriptedValue);
+      field.disabled = false;
+      await advanceRenderTurns();
+      expect(field.value).toBe(stage === "account" ? username : password);
+      if (stage === "account") {
+        showPassword();
+        await advanceRenderTurns();
+      }
       await pending;
-      expect(field.value).toBe(manualValue);
-      expect(win.__sorng_synology_login.getStatus()).toEqual({
-        phase: "stopped",
-        reason: "form-changed",
-      });
-      expect(submit).not.toHaveBeenCalled();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(submit).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     },
   );
-  it.each([50, 150, 250])(
+  it.each([50, 150, 250, 450, 900, 1300])(
     "cancels all settlement timers at %dms without another grant or click",
     async (at) => {
       const next = vi.fn(() => showPassword());
@@ -345,7 +353,8 @@ describe("reviewed DSM website login", () => {
     const pending = begin();
     await advanceRenderTurns();
     expect(next).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(25000);
+    // Username release to Sign in is capped at 85s, below the native 90s.
+    await vi.advanceTimersByTimeAsync(85000);
     await pending;
     expect(win.__sorng_synology_login.getStatus()).toEqual({
       phase: "timeout",
@@ -429,10 +438,12 @@ describe("reviewed DSM website login", () => {
     },
   );
   it("reports late form readiness with only fixed strings and freezes its terminal snapshot", async () => {
-    const events: { phase: string; reason: string }[] = [];
+    const events: { phase: string; reason: string; trace: unknown }[] = [];
     const listener = (event: Event) => {
       events.push((event as CustomEvent).detail);
     };
+    const statuses = () =>
+      events.map(({ phase, reason }) => ({ phase, reason }));
     document.addEventListener("sorng_synology_login_progress", listener);
     try {
       document.body.innerHTML = '<div id="sds-login-vue"></div>';
@@ -441,7 +452,7 @@ describe("reviewed DSM website login", () => {
       document.dispatchEvent(new Event("load"));
       document.body.setAttribute("data-diagnostic-secret", password);
       await advanceRenderTurns();
-      expect(events).toEqual([
+      expect(statuses()).toEqual([
         { phase: "waiting_account_form", reason: "form-missing" },
       ]);
       showAccount();
@@ -452,8 +463,13 @@ describe("reviewed DSM website login", () => {
       await advanceRenderTurns();
       await pending;
       expect(win.__sorng_synology_login.getStatus()).toEqual({
-        phase: "submitted",
+        phase: "verifying_sign_in",
         reason: "submitted",
+      });
+      await finishVerification();
+      expect(win.__sorng_synology_login.getStatus()).toEqual({
+        phase: "submitted",
+        reason: "sign-in-unconfirmed",
       });
       const complete = events.slice();
       win.__sorng_synology_login.cancel();
@@ -465,7 +481,7 @@ describe("reviewed DSM website login", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(submit).toHaveBeenCalledOnce();
       for (const event of events)
-        expect(Object.keys(event)).toEqual(["phase", "reason"]);
+        expect(Object.keys(event)).toEqual(["phase", "reason", "trace"]);
       const serialized = JSON.stringify(events);
       for (const secret of [username, password, "a".repeat(32), "b".repeat(32)])
         expect(serialized).not.toContain(secret);
@@ -485,7 +501,7 @@ describe("reviewed DSM website login", () => {
       await pending;
       expect(win.__sorng_synology_login.getStatus()).toEqual({
         phase: "stopped",
-        reason: "form-changed",
+        reason: "unsafe-form-target",
       });
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
@@ -531,7 +547,7 @@ describe("reviewed DSM website login", () => {
       expect(submit).toHaveBeenCalledOnce();
     },
   );
-  it("waits through DOMContentLoaded until the complete page has loaded", async () => {
+  it("waits while the document is loading, then proceeds once interactive without waiting for load", async () => {
     Object.defineProperty(document, "readyState", {
       configurable: true,
       value: "loading",
@@ -549,13 +565,7 @@ describe("reviewed DSM website login", () => {
     });
     document.dispatchEvent(new Event("DOMContentLoaded"));
     await advanceRenderTurns();
-    expect(fetchMock).not.toHaveBeenCalled();
-    Object.defineProperty(document, "readyState", {
-      configurable: true,
-      value: "complete",
-    });
-    window.dispatchEvent(new Event("load"));
-    await advanceRenderTurns();
+    expect(fetchMock).toHaveBeenCalledOnce();
     showPassword();
     await advanceRenderTurns();
     await pending;
@@ -655,12 +665,19 @@ describe("reviewed DSM website login", () => {
       });
       route("#/signin/password");
       await advanceRenderTurns();
+      expect(field.value).toBe("");
+      // The refused write is a wait; the field never becomes editable again.
+      await vi.advanceTimersByTimeAsync(85000);
       await pending;
+      expect(win.__sorng_synology_login.getStatus()).toEqual({
+        phase: "timeout",
+        reason: "password-panel-never-appeared",
+      });
       expect(field.value).toBe("");
       expect(submit).not.toHaveBeenCalled();
     },
   );
-  it.each(["replacement", "timeout", "cancel"])(
+  it.each(["foreign-action", "timeout", "cancel"])(
     "clears its unsent password and restores manual submit after %s while waiting for the button",
     async (reason) => {
       const pending = begin();
@@ -679,9 +696,10 @@ describe("reviewed DSM website login", () => {
       expect(
         field.form!.dispatchEvent(new Event("submit", { cancelable: true })),
       ).toBe(false);
-      if (reason === "replacement") button.replaceWith(button.cloneNode(true));
+      if (reason === "foreign-action")
+        field.form!.setAttribute("action", "https://other.invalid/");
       if (reason === "cancel") win.__sorng_autologin.cancel();
-      await vi.advanceTimersByTimeAsync(reason === "timeout" ? 25000 : 0);
+      await vi.advanceTimersByTimeAsync(reason === "timeout" ? 85000 : 0);
       await pending;
       expect(field.value).toBe("");
       expect(submit).not.toHaveBeenCalled();
@@ -692,19 +710,55 @@ describe("reviewed DSM website login", () => {
       expect(vi.getTimerCount()).toBe(0);
     },
   );
-  it("expires preflight once after 90s, does not renew on mutations, and removes readiness listeners", async () => {
+  it("keeps its filled password across a replaced Sign in button and clicks the current button once", async () => {
+    const pending = begin();
+    await advanceRenderTurns();
+    showPassword(false);
+    const field = document.querySelector(
+      '[name="current-password"]',
+    ) as HTMLInputElement;
+    const button = document.querySelector(
+      '[syno-id="password-panel-next-btn"]',
+    )!;
+    button.classList.add("disable");
+    route("#/signin/password");
+    await advanceRenderTurns();
+    expect(field.value).toBe(password);
+    button.replaceWith(button.cloneNode(true));
+    await advanceRenderTurns();
+    expect(field.value).toBe(password);
+    expect(
+      field.form!.dispatchEvent(new Event("submit", { cancelable: true })),
+    ).toBe(false);
+    const current = document.querySelector(
+      '[syno-id="password-panel-next-btn"]',
+    )!;
+    const signIn = vi.fn();
+    current.addEventListener("click", signIn);
+    current.classList.remove("disable");
+    await advanceRenderTurns();
+    await pending;
+    expect(signIn).toHaveBeenCalledOnce();
+    expect(submit).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it("stops an unrecognized login root after the 45s layout grace, does not renew on mutations, and removes readiness listeners", async () => {
     document.body.innerHTML = '<div id="sds-login-vue"></div>';
     const pending = begin();
     await begin();
-    await vi.advanceTimersByTimeAsync(89999);
+    await vi.advanceTimersByTimeAsync(44999);
     document.body.setAttribute("data-ready", "still-loading");
     document.dispatchEvent(new Event("load"));
+    expect(win.__sorng_synology_login.getStatus()).toEqual({
+      phase: "waiting_account_form",
+      reason: "form-missing",
+    });
     await vi.advanceTimersByTimeAsync(1);
     await pending;
-    expect(win.__autologin_last?.reason).toBe("reviewed-login-timeout");
+    expect(win.__autologin_last?.reason).toBe("reviewed-login-stopped");
     expect(win.__sorng_synology_login.getStatus()).toEqual({
-      phase: "timeout",
-      reason: "timeout",
+      phase: "stopped",
+      reason: "layout-unrecognized",
     });
     showAccount();
     document.dispatchEvent(new Event("transitionend"));
@@ -712,11 +766,11 @@ describe("reviewed DSM website login", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
     expect(win.__sorng_synology_login.getStatus()).toEqual({
-      phase: "timeout",
-      reason: "timeout",
+      phase: "stopped",
+      reason: "layout-unrecognized",
     });
   });
-  it.each(["cancel", "timeout", "route-aba", "replacement", "action"])(
+  it.each(["cancel", "timeout", "action"])(
     "rejects and clears a late first username body after %s without another request",
     async (change) => {
       let release!: (value: unknown) => void;
@@ -737,11 +791,6 @@ describe("reviewed DSM website login", () => {
       const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
       if (change === "cancel") win.__sorng_autologin.cancel();
       if (change === "timeout") await vi.advanceTimersByTimeAsync(90000);
-      if (change === "route-aba") {
-        route("#/signin/select-auth");
-        route("#/signin");
-      }
-      if (change === "replacement") showAccount();
       if (change === "action")
         document
           .querySelector("form")!
@@ -761,9 +810,47 @@ describe("reviewed DSM website login", () => {
       expect(vi.getTimerCount()).toBe(0);
     },
   );
+  it.each(["route-aba", "replacement"])(
+    "keeps a late first username body after %s and fills the current reviewed field with one request",
+    async (change) => {
+      let release!: (value: unknown) => void;
+      const reply = {
+        loginFlow: "synology",
+        username,
+        continuation: "b".repeat(32),
+      };
+      fetchMock.mockImplementation(async () => ({
+        ok: true,
+        json: () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      }));
+      const pending = begin();
+      await advanceRenderTurns();
+      const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+      if (change === "route-aba") {
+        route("#/signin/select-auth");
+        route("#/signin");
+      }
+      if (change === "replacement") showAccount();
+      await advanceRenderTurns();
+      expect(signal.aborted).toBe(false);
+      release(reply);
+      await advanceRenderTurns();
+      expect(reply.username).toBeNull();
+      expect(reply.continuation).toBeNull();
+      expect(
+        (document.querySelector('[syno-id="username"]') as HTMLInputElement)
+          .value,
+      ).toBe(username);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      win.__sorng_synology_login.cancel();
+      await pending;
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
   it("rejects an overdue username microtask before a delayed deadline timer runs", async () => {
-    let now = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => now);
     let release!: (value: unknown) => void;
     const reply = {
       loginFlow: "synology",
@@ -779,7 +866,10 @@ describe("reviewed DSM website login", () => {
     }));
     const pending = begin();
     await advanceRenderTurns();
-    now = 90001;
+    expect(fetchMock).toHaveBeenCalledOnce();
+    // The 30s request deadline has passed, but its timer has not run yet.
+    const late = performance.now() + 30000;
+    vi.spyOn(performance, "now").mockImplementation(() => late);
     release(reply);
     await advanceRenderTurns();
     await pending;
@@ -907,37 +997,63 @@ describe("reviewed DSM website login", () => {
         .value,
     ).toBe(password);
   });
-  it.each([
-    "foreign-action",
-    "wrong-user",
-    "changed-root",
-    "captcha",
-    "other-route",
-  ])("refuses %s without requesting the password", async (attack) => {
+  it.each(["foreign-action", "wrong-user", "captcha", "other-route"])(
+    "refuses %s without requesting the password",
+    async (attack) => {
+      const pending = begin();
+      await advanceRenderTurns();
+      showPassword(false);
+      if (attack === "foreign-action")
+        document
+          .querySelector("form")!
+          .setAttribute("action", "https://other.invalid/");
+      if (attack === "wrong-user")
+        (
+          document.querySelector('[name="username"]') as HTMLInputElement
+        ).value = "other";
+      if (attack === "captcha")
+        document
+          .querySelector("form")!
+          .insertAdjacentHTML("beforeend", '<input name="captcha">');
+      if (attack === "other-route") route("#/signin/select-auth");
+      else route("#/signin/password");
+      await vi.advanceTimersByTimeAsync(15000);
+      await pending;
+      expect(submit).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(win.__autologin_last?.ok).toBe(false);
+      expect(win.__sorng_synology_login.getStatus()).toEqual({
+        phase: "stopped",
+        reason: {
+          "foreign-action": "unsafe-form-target",
+          "wrong-user": "account-mismatch",
+          captcha: "captcha-required",
+          "other-route": "interactive-step-required",
+        }[attack],
+      });
+    },
+  );
+  it("re-acquires a replaced login root before requesting the password and clicks the current Sign in once", async () => {
     const pending = begin();
     await advanceRenderTurns();
     showPassword(false);
-    if (attack === "foreign-action")
-      document
-        .querySelector("form")!
-        .setAttribute("action", "https://other.invalid/");
-    if (attack === "wrong-user")
-      (document.querySelector('[name="username"]') as HTMLInputElement).value =
-        "other";
-    if (attack === "changed-root")
-      document.querySelector("#sds-login-vue")!.outerHTML =
-        document.querySelector("#sds-login-vue")!.outerHTML;
-    if (attack === "captcha")
-      document
-        .querySelector("form")!
-        .insertAdjacentHTML("beforeend", '<input name="captcha">');
-    if (attack === "other-route") route("#/signin/select-auth");
-    else route("#/signin/password");
-    await vi.advanceTimersByTimeAsync(15000);
+    document.querySelector("#sds-login-vue")!.outerHTML =
+      document.querySelector("#sds-login-vue")!.outerHTML;
+    const signIn = vi.fn();
+    document
+      .querySelector('[syno-id="password-panel-next-btn"]')!
+      .addEventListener("click", signIn);
+    route("#/signin/password");
+    await advanceRenderTurns();
     await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(signIn).toHaveBeenCalledOnce();
+    // The original button's listener went away with the replaced root.
     expect(submit).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(win.__autologin_last?.ok).toBe(false);
+    expect(
+      (document.querySelector('[name="current-password"]') as HTMLInputElement)
+        .value,
+    ).toBe(password);
   });
   it("refuses an account-stage external action before any click or password request", async () => {
     document
@@ -962,26 +1078,30 @@ describe("reviewed DSM website login", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(submit).toHaveBeenCalledOnce();
   });
-  it.each(["cancel", "navigation", "route-aba", "action", "replacement"])(
+  function latePassword() {
+    let release!: (value: unknown) => void;
+    fetchMock
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        json: async () => ({
+          loginFlow: "synology",
+          username,
+          continuation: "b".repeat(32),
+        }),
+      }))
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+    return (value: unknown) => release(value);
+  }
+  it.each(["cancel", "navigation", "route-aba", "action"])(
     "refuses a late password response after %s",
     async (change) => {
-      let release!: (value: unknown) => void;
+      const release = latePassword();
       const reply = { loginFlow: "synology", password };
-      fetchMock
-        .mockImplementationOnce(async () => ({
-          ok: true,
-          json: async () => ({
-            loginFlow: "synology",
-            username,
-            continuation: "b".repeat(32),
-          }),
-        }))
-        .mockImplementation(
-          () =>
-            new Promise((resolve) => {
-              release = resolve;
-            }),
-        );
       const pending = begin();
       await advanceRenderTurns();
       showPassword();
@@ -996,10 +1116,6 @@ describe("reviewed DSM website login", () => {
         document
           .querySelector("form")!
           .setAttribute("action", "https://other.invalid/");
-      if (change === "replacement") {
-        const control = document.querySelector('[name="current-password"]')!;
-        control.replaceWith(control.cloneNode(true));
-      }
       release({ ok: true, json: async () => reply });
       await advanceRenderTurns();
       await pending;
@@ -1014,6 +1130,27 @@ describe("reviewed DSM website login", () => {
       expect(submit).not.toHaveBeenCalled();
     },
   );
+  it("fills a late password response into a replaced reviewed field once", async () => {
+    const release = latePassword();
+    const reply = { loginFlow: "synology", password };
+    const pending = begin();
+    await advanceRenderTurns();
+    showPassword();
+    await advanceRenderTurns();
+    const control = document.querySelector('[name="current-password"]')!;
+    control.replaceWith(control.cloneNode(true));
+    release({ ok: true, json: async () => reply });
+    await advanceRenderTurns();
+    await pending;
+    const current = document.querySelector(
+      '[name="current-password"]',
+    ) as HTMLInputElement;
+    expect(current).not.toBe(control);
+    expect(current.value).toBe(password);
+    expect(reply.password).toBeNull();
+    expect(submit).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
   it("removes its unsent password if an input handler changes the captured form", async () => {
     const pending = begin();
     await advanceRenderTurns();
@@ -1048,7 +1185,7 @@ describe("reviewed DSM website login", () => {
       await advanceRenderTurns();
       if (reason === "cancel") win.__sorng_autologin.cancel();
       if (reason === "password-error") showPassword();
-      await vi.advanceTimersByTimeAsync(26000);
+      await vi.advanceTimersByTimeAsync(reason === "timeout" ? 86000 : 26000);
       await pending;
       expect(submit).not.toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalledTimes(

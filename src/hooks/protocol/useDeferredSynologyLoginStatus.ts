@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  describePageHelperFingerprint,
+  PAGE_HELPER_TRACE_VALUES,
   recordSessionActivity,
+  type PageHelperFingerprint,
+  type PageHelperHandoff,
   type SessionActivityContext,
 } from "../../utils/monitoring/sessionActivityLog";
 
@@ -85,21 +89,42 @@ interface Snapshot {
 }
 const READ_TIMEOUT = 6000;
 const PAGE_PHASES = {
-  waiting_document: "page loading",
+  waiting_document: "waiting for page",
+  waiting_page: "waiting for DSM",
   waiting_root: "finding DSM",
   waiting_account_form: "finding login form",
   waiting_account_editable: "username not ready",
   waiting_account_stable: "checking login form",
   requesting_username: "requesting username",
+  filling_username: "filling username",
   waiting_next_button: "waiting for Next",
-  waiting_password_form: "finding password form",
+  waiting_password_form: "waiting for password step",
   requesting_password: "requesting password",
+  filling_password: "filling password",
   waiting_signin_button: "waiting for Sign in",
+  verifying_sign_in: "signing in",
   submitted: "reported submission",
   timeout: "timed out",
   stopped: "stopped",
   cancelled: "cancelled",
+  signed_in: "signed in",
+  rejected: "sign-in rejected",
 } as const;
+type PagePhase = keyof typeof PAGE_PHASES;
+const TERMINAL_PAGE_PHASES: readonly PagePhase[] = Object.freeze([
+  "submitted",
+  "timeout",
+  "stopped",
+  "cancelled",
+  "signed_in",
+  "rejected",
+]);
+// Terminal outcomes whose pill also names the specific cause.
+const REASONED_PAGE_PHASES: readonly PagePhase[] = [
+  "stopped",
+  "timeout",
+  "rejected",
+];
 const PAGE_REASONS = {
   "not-started": "The page helper is installed but has not started.",
   "document-loading": "The document has not completed loading.",
@@ -140,27 +165,294 @@ const PAGE_REASONS = {
     "The credential response did not match the reviewed protocol.",
   "observation-limited":
     "Page-helper diagnostics changed too often. Intermediate observations are now limited; the terminal result can still be reported.",
+  "route-pending":
+    "DSM is still settling its sign-in route. The helper is waiting; this is not a failure.",
+  "page-busy":
+    "DSM is still loading or rendering its sign-in page. The helper is waiting; this is not a failure.",
+  "controls-replaced":
+    "DSM re-rendered the login controls. The helper is locating the current reviewed controls again.",
+  "value-refilled":
+    "DSM re-rendered the field and dropped the value the helper wrote, so the helper filled the current field again within its per-stage limit.",
+  "panel-quiet-wait":
+    "The helper is waiting for the login panel to stop changing before it requests a credential.",
+  "next-reclicked":
+    "The Next button was replaced before the page advanced, so the helper clicked Next once more. Sign in is never clicked twice.",
+  "captcha-required":
+    "DSM is showing a CAPTCHA in the login form. Complete it on the page; the helper does not answer CAPTCHAs.",
+  "interactive-step-required":
+    "The helper filled your saved sign-in details and DSM is now asking for an interactive sign-in step.",
+  "user-input-detected":
+    "You typed in the login form, so the helper stopped to avoid overwriting your input.",
+  "unsafe-form-target":
+    "The login form would send data to an unreviewed action or target, so the helper refused to fill it.",
+  "account-mismatch":
+    "The account shown on the password step did not match the saved username, so no password was filled.",
+  "left-login-page":
+    "The page left the DSM login page before sign-in finished.",
+  "layout-unrecognized":
+    "DSM loaded, but its login controls did not match the reviewed layout. This DSM version may use a different sign-in page.",
+  "unsupported-login-path":
+    "The sign-in page was opened on a path other than / or /webman/index.cgi, where saved sign-in is not released.",
+  "page-never-ready":
+    "The page never finished becoming interactive within the idle budget.",
+  "login-form-never-appeared":
+    "The DSM page loaded, but the login form never became ready within the idle budget.",
+  "password-panel-never-appeared":
+    "Next was clicked, but the password step never appeared before the deadline. Sign in was not clicked.",
+  "signin-button-never-enabled":
+    "The password was filled, but the Sign in button never became usable before the deadline. Sign in was not clicked.",
+  "left-signin-page":
+    "The page left the DSM sign-in page after Sign in was clicked, which usually means sign-in succeeded.",
+  "error-visible":
+    "After Sign in, DSM stayed on the password step and showed an error or cleared the password. No retry was attempted.",
+  "sign-in-unconfirmed":
+    "Sign in was clicked, but the page did not confirm the outcome while it was observed.",
+  "no-sign-in-page":
+    "No DSM sign-in page was shown, which usually means this browser session is already signed in. No credential was requested.",
 } as const;
-type PageProgress = {
-  phase: keyof typeof PAGE_PHASES;
-  reason: keyof typeof PAGE_REASONS;
+type PageReason = keyof typeof PAGE_REASONS;
+const PAGE_SHORT_REASONS: Record<PageReason, string> = {
+  "not-started": "not started",
+  "document-loading": "page still loading",
+  "form-settling": "login form settling",
+  "input-settling": "input settling",
+  "next-not-advanced": "Next did not advance",
+  "root-missing": "DSM page not found",
+  "root-ambiguous": "several DSM pages found",
+  "form-missing": "login form missing",
+  "form-ambiguous": "several login forms found",
+  "field-missing": "input missing",
+  "field-ambiguous": "several inputs found",
+  "button-missing": "button missing",
+  "button-ambiguous": "several buttons found",
+  "field-hidden": "input hidden",
+  "field-disabled": "input disabled",
+  "field-readonly": "input read-only",
+  "button-hidden": "button hidden",
+  "button-disabled": "button disabled",
+  "panel-transition": "login panel changing",
+  "password-route": "password step not ready",
+  "requesting-username": "requesting username",
+  "requesting-password": "requesting password",
+  submitted: "submitted",
+  timeout: "deadline reached",
+  stopped: "not completed",
+  cancelled: "cancelled",
+  "form-changed": "login form changed",
+  "route-changed": "page route changed",
+  captcha: "CAPTCHA detected",
+  "credentials-unavailable": "saved credentials unavailable",
+  "invalid-credential-response": "invalid credential response",
+  "observation-limited": "details limited",
+  "route-pending": "waiting for DSM route",
+  "page-busy": "page busy",
+  "controls-replaced": "controls replaced",
+  "value-refilled": "value refilled",
+  "panel-quiet-wait": "login form settling",
+  "next-reclicked": "Next clicked again",
+  "captcha-required": "CAPTCHA required",
+  "interactive-step-required": "interactive sign-in step",
+  "user-input-detected": "manual input detected",
+  "unsafe-form-target": "unsafe form target",
+  "account-mismatch": "account mismatch",
+  "left-login-page": "left the login page",
+  "layout-unrecognized": "login layout not recognized",
+  "unsupported-login-path": "unsupported login path",
+  "page-never-ready": "page never became ready",
+  "login-form-never-appeared": "login form never appeared",
+  "password-panel-never-appeared": "password step never appeared",
+  "signin-button-never-enabled": "Sign in never enabled",
+  "left-signin-page": "left the sign-in page",
+  "error-visible": "DSM showed an error",
+  "sign-in-unconfirmed": "sign-in not confirmed",
+  "no-sign-in-page": "no sign-in page",
 };
+// The closed trace values are shared with the Action Log, and mirrored by
+// synology_login_progress_client.js.
+const TRACE = PAGE_HELPER_TRACE_VALUES;
+// With 2FA or Secure SignIn, DSM's interactive step is the normal path, so the
+// pill reads as a hand-off to the user rather than as a failure.
+const INTERACTIVE_HANDOFFS: Record<
+  Exclude<PageHelperHandoff, "other">,
+  readonly [text: string, detail: string]
+> = {
+  otp: [
+    "enter your 2FA code",
+    "DSM is asking for the one-time 2FA code from your authenticator app.",
+  ],
+  approve: [
+    "approve sign-in in Secure SignIn",
+    "DSM sent a sign-in request to Synology Secure SignIn; approve it on your device.",
+  ],
+  "select-auth": [
+    "choose a sign-in method",
+    "DSM is asking you to choose how to verify this sign-in.",
+  ],
+  passkey: [
+    "use your passkey",
+    "DSM is asking for your passkey or hardware security key.",
+  ],
+};
+const AUTOMATIC_OTP_HANDOFF = [
+  "Automatic 2FA is entering the code",
+  "DSM is asking for a one-time 2FA code. Automatic 2FA is enabled for this connection and enters it separately; if it cannot, use 2FA Codes.",
+] as const;
+const GENERIC_HANDOFF = [
+  "finish sign-in on the page",
+  "Complete the remaining DSM sign-in step on the page.",
+] as const;
+const HANDOFF_STAGES = {
+  account: " DSM asked for it after the username step.",
+  password: " DSM asked for it during the password step.",
+  submitted: " DSM asked for it after Sign in.",
+} as const;
+export interface SynologyLoginTrace {
+  steps?: { t: number; phase: PagePhase; reason: PageReason }[];
+  fingerprint?: PageHelperFingerprint;
+  handoff?: PageHelperHandoff;
+}
+type PageProgress = {
+  phase: PagePhase;
+  reason: PageReason;
+  trace?: SynologyLoginTrace;
+};
+/** The closed page-helper vocabulary, for parity checks with the bridge and helper. */
+export const SYNOLOGY_LOGIN_PROGRESS_VOCABULARY = Object.freeze({
+  phases: Object.freeze(Object.keys(PAGE_PHASES) as PagePhase[]),
+  terminalPhases: TERMINAL_PAGE_PHASES,
+  reasons: Object.freeze(Object.keys(PAGE_REASONS) as PageReason[]),
+  ...TRACE,
+});
+const has = (record: object, key: string) =>
+  Object.prototype.hasOwnProperty.call(record, key);
+const integer = (value: unknown, max: number) =>
+  typeof value === "number" && value >= 0 && Number.isInteger(value)
+    ? Math.min(value, max)
+    : null;
+const closed = <T extends string>(values: readonly T[], value: unknown) =>
+  values.find((candidate) => candidate === value);
+// Rebuild the bridge-forwarded trace from closed values. Each property is read
+// once; malformed or hostile input omits the trace instead of the phase.
+function parseTrace(value: unknown): SynologyLoginTrace | null {
+  try {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return null;
+    const { steps, fingerprint, handoff } = value as Record<string, unknown>;
+    const trace: SynologyLoginTrace = {};
+    if (Array.isArray(steps)) {
+      const clean: NonNullable<SynologyLoginTrace["steps"]> = [];
+      const length = integer(steps.length, 2 ** 32 - 1) ?? 0;
+      for (let index = Math.max(0, length - 8); index < length; index++) {
+        const step: unknown = steps[index];
+        if (!step || typeof step !== "object") continue;
+        const { t, phase, reason } = step as Record<string, unknown>;
+        const time = integer(t, 86_400_000);
+        if (
+          time !== null &&
+          typeof phase === "string" &&
+          typeof reason === "string" &&
+          has(PAGE_PHASES, phase) &&
+          has(PAGE_REASONS, reason) &&
+          reason !== "observation-limited"
+        )
+          clean.push({
+            t: time,
+            phase: phase as PagePhase,
+            reason: reason as PageReason,
+          });
+      }
+      if (clean.length) trace.steps = clean;
+    }
+    if (
+      fingerprint &&
+      typeof fingerprint === "object" &&
+      !Array.isArray(fingerprint)
+    ) {
+      const source = fingerprint as Record<string, unknown>;
+      const print: PageHelperFingerprint = {};
+      for (const name of TRACE.counts) {
+        const count = integer(source[name], 9);
+        if (count !== null) print[name] = count;
+      }
+      const hash = closed(TRACE.hashes, source.hash);
+      const readyState = closed(TRACE.readyStates, source.readyState);
+      const stage = closed(TRACE.stages, source.stage);
+      if (hash) print.hash = hash;
+      if (readyState) print.readyState = readyState;
+      if (stage) print.stage = stage;
+      if (Object.keys(print).length) trace.fingerprint = print;
+    }
+    const named = closed(TRACE.handoffs, handoff);
+    if (named) trace.handoff = named;
+    return trace.steps || trace.fingerprint || trace.handoff ? trace : null;
+  } catch {
+    return null;
+  }
+}
 export function parseSynologyLoginProgress(
   value: unknown,
 ): PageProgress | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const { phase, reason } = value as Record<string, unknown>;
+  const { phase, reason, trace } = value as Record<string, unknown>;
   if (
     typeof phase !== "string" ||
     typeof reason !== "string" ||
-    !Object.prototype.hasOwnProperty.call(PAGE_PHASES, phase) ||
-    !Object.prototype.hasOwnProperty.call(PAGE_REASONS, reason)
+    !has(PAGE_PHASES, phase) ||
+    !has(PAGE_REASONS, reason)
   )
     return null;
+  const parsed = parseTrace(trace);
   return {
-    phase: phase as PageProgress["phase"],
-    reason: reason as PageProgress["reason"],
+    phase: phase as PagePhase,
+    reason: reason as PageReason,
+    ...(parsed ? { trace: parsed } : {}),
   };
+}
+function describeTrace(trace: SynologyLoginTrace | undefined): string {
+  const steps = trace?.steps
+    ? ` Recent page steps (ms since start): ${trace.steps
+        .map((step) => `${step.t} ${step.phase}/${step.reason}`)
+        .join("; ")}.`
+    : "";
+  const fingerprint = describePageHelperFingerprint(trace?.fingerprint);
+  return `${steps}${fingerprint ? ` ${fingerprint}` : ""}`;
+}
+const isInteractiveHandoff = (progress: PageProgress) =>
+  progress.phase === "stopped" &&
+  progress.reason === "interactive-step-required";
+function interactiveHandoff(progress: PageProgress, automaticOtp: boolean) {
+  // The helper names the hand-off; the route class is only a fallback.
+  const handoff =
+    progress.trace?.handoff ??
+    closed(TRACE.handoffs, progress.trace?.fingerprint?.hash);
+  if (handoff === "otp" && automaticOtp) return AUTOMATIC_OTP_HANDOFF;
+  return handoff && handoff !== "other"
+    ? INTERACTIVE_HANDOFFS[handoff]
+    : GENERIC_HANDOFF;
+}
+function pageText(progress: PageProgress, automaticOtp: boolean): string {
+  if (progress.reason === "observation-limited")
+    return "Auto-fill: details limited";
+  if (isInteractiveHandoff(progress))
+    return `Auto-fill: filled — ${interactiveHandoff(progress, automaticOtp)[0]}`;
+  if (progress.phase === "signed_in" && progress.reason === "no-sign-in-page")
+    return "Auto-fill: already signed in";
+  const label = `Auto-fill: ${PAGE_PHASES[progress.phase]}`;
+  return REASONED_PAGE_PHASES.includes(progress.phase)
+    ? `${label} — ${PAGE_SHORT_REASONS[progress.reason]}`
+    : label;
+}
+function pageExplanation(progress: PageProgress, automaticOtp: boolean) {
+  const explanation = `[${progress.phase}/${progress.reason}]: ${PAGE_REASONS[progress.reason]}`;
+  const stage = progress.trace?.fingerprint?.stage;
+  const handoff = isInteractiveHandoff(progress)
+    ? ` ${interactiveHandoff(progress, automaticOtp)[1]}${stage ? HANDOFF_STAGES[stage] : ""} The DSM sign-in helper never enters a 2FA code, approves a sign-in or uses a passkey, and does not retry sign-in.`
+    : "";
+  const caveat =
+    progress.phase === "signed_in"
+      ? " This is advisory page state inferred from the page, not native proof of authentication."
+      : " This is advisory page state, not native authorization or proof of sign-in.";
+  return `${explanation}${handoff}${caveat}`;
 }
 interface Context {
   sessionId: string;
@@ -174,6 +466,8 @@ interface Options {
   valid: boolean;
   context: () => Context | null;
   assertCurrent: () => void;
+  /** The connection has Automatic 2FA enabled, which answers DSM's code step. */
+  automaticOtp?: boolean;
 }
 
 /** Advisory native snapshots only. Never resolves, arms or retries credentials. */
@@ -196,7 +490,10 @@ export function useDeferredSynologyLoginStatus(options: Options) {
   const pageSeen = useRef<{
     key: string;
     last: string | null;
-    count: number;
+    lastPhase: PagePhase | null;
+    phaseChanges: number;
+    reasonChanges: number;
+    limited: boolean;
     terminal: boolean;
   } | null>(null);
   useEffect(() => {
@@ -368,32 +665,50 @@ export function useDeferredSynologyLoginStatus(options: Options) {
         pageSeen.current = {
           key: current.key,
           last: null,
-          count: 0,
+          lastPhase: null,
+          phaseChanges: 0,
+          reasonChanges: 0,
+          limited: false,
           terminal: false,
         };
       const seen = pageSeen.current;
       const key = `${progress.phase}:${progress.reason}`;
-      const terminal = [
-        "submitted",
-        "timeout",
-        "stopped",
-        "cancelled",
-      ].includes(progress.phase);
-      const limited = progress.reason === "observation-limited";
-      if (
-        seen.terminal ||
-        seen.last === key ||
-        (!terminal && seen.count >= 64 && !(limited && seen.count === 64))
-      )
-        return;
+      const terminal = TERMINAL_PAGE_PHASES.includes(progress.phase);
+      if (seen.terminal || seen.last === key) return;
+      if (!terminal) {
+        // Mirror the bridge: phase changes and reason-only churn are bounded
+        // apart, and its single limit notice is accepted only once a bound is hit.
+        const phaseChange = progress.phase !== seen.lastPhase;
+        const bounded = phaseChange
+          ? seen.phaseChanges >= 64
+          : seen.reasonChanges >= 256;
+        if (progress.reason === "observation-limited") {
+          if (seen.limited || !bounded) return;
+          seen.limited = true;
+        } else if (seen.limited || bounded) return;
+        else if (phaseChange) seen.phaseChanges++;
+        else seen.reasonChanges++;
+      }
       seen.last = key;
-      seen.count++;
+      seen.lastPhase = progress.phase;
       seen.terminal = terminal;
       recordSessionActivity(
         latest.current.activityContext,
         "autofill",
         progress.phase,
-        { reason: progress.reason },
+        {
+          reason: progress.reason,
+          ...(terminal && progress.trace
+            ? {
+                trace: {
+                  fingerprint: progress.trace.fingerprint,
+                  handoff: isInteractiveHandoff(progress)
+                    ? progress.trace.handoff
+                    : undefined,
+                },
+              }
+            : {}),
+        },
       );
       setPageSnapshot({ key: current.key, progress });
     },
@@ -411,7 +726,7 @@ export function useDeferredSynologyLoginStatus(options: Options) {
     ? `Native snapshot: ${LABELS[status]}. ${status === "expired" || status === "cancelled" ? "Reopen the original saved connection to start another attempt. " : ""}This is not proof of successful sign-in. Click to refresh status.`
     : `Saved login requested; native status unknown. [${reason ?? "not-observed"}] ${DIAGNOSTICS[reason ?? "not-observed"][1]} ${lastObserved ? `Last observed: ${LABELS[lastObserved]} (not current status). ` : ""}This is not proof of successful sign-in.`;
   const pageDetail = pageProgress
-    ? ` Page helper reports [${pageProgress.phase}/${pageProgress.reason}]: ${PAGE_REASONS[pageProgress.reason]} This is advisory page state, not native authorization or proof of sign-in.`
+    ? ` Page helper reports ${pageExplanation(pageProgress, options.automaticOtp === true)}${describeTrace(pageProgress.trace)}`
     : " No scoped page-helper progress has been received for this document.";
   return {
     receive,
@@ -424,9 +739,7 @@ export function useDeferredSynologyLoginStatus(options: Options) {
           text: !options.valid
             ? "Auto-fill: access changed"
             : pageProgress && status !== "expired" && status !== "cancelled"
-              ? pageProgress.reason === "observation-limited"
-                ? "Auto-fill: details limited"
-                : `Auto-fill: ${PAGE_PHASES[pageProgress.phase]}`
+              ? pageText(pageProgress, options.automaticOtp === true)
               : status === "waiting_for_form"
                 ? "Auto-fill: page helper unconfirmed"
                 : status
