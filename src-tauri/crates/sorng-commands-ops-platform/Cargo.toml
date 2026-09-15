@@ -1,0 +1,14 @@
+[package]
+publish = false
+name = "sorng-commands-ops-platform"
+version.workspace = true
+edition = "2021"
+description = "Bounded ops-platform native command registrar"
+
+[dependencies]
+sorng-about = { path = "../sorng-about" }
+sorng-cups = { path = "../sorng-cups" }
+sorng-netbox = { path = "../sorng-netbox" }
+sorng-remote-backup = { path = "../sorng-remote-backup" }
+tauri = { workspace = true }
+serde_json = { workspace = true }

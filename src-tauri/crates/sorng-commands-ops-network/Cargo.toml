@@ -1,0 +1,15 @@
+[package]
+publish = false
+name = "sorng-commands-ops-network"
+version.workspace = true
+edition = "2021"
+description = "Bounded ops-network native command registrar"
+
+[dependencies]
+sorng-draytek = { path = "../sorng-draytek" }
+sorng-fail2ban = { path = "../sorng-fail2ban" }
+sorng-pfsense = { path = "../sorng-pfsense" }
+sorng-port-knock = { path = "../sorng-port-knock" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

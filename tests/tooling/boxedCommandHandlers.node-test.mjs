@@ -33,7 +33,7 @@ function checkExport(source, owner) {
   );
   assert.equal(
     body.trim(),
-    owner === "core" || owner === "infra"
+    owner === "core" || owner === "infra" || owner === "ops"
       ? `${owner}_handler::build()`
       : source.includes("mod handler;")
         ? "Box::new(handler::build())"

@@ -1,0 +1,599 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "mysql_admin_commands::mysql_admin_connect"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_disconnect"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_connections"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_users"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_user"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_create_user"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_drop_user"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_set_password"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_flush_privileges"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_slave_status"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_start_slave"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_stop_slave"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_reset_slave"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_change_master"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_skip_counter"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_databases"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_create_database"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_drop_database"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_database_size"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_tables"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_describe_table"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_optimize_table"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_repair_table"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_analyze_table"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_check_table"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_explain_query"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_innodb_status"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_buffer_pool_stats"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_global_status"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_create_backup"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_restore_backup"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_backup_files"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_processes"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_kill_process"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_binlogs"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_rename_user"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_lock_user"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_unlock_user"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_grants"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_grant"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_revoke"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_master_status"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_configure_master"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_gtid_executed"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_gtid_purged"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_set_read_only"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_database"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_database_charset"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_alter_database_charset"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_database_tables"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_table"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_indexes"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_create_index"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_drop_index"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_truncate_table"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_create_statement"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_row_count"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_is_slow_log_enabled"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_enable_slow_log"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_disable_slow_log"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_slow_log_file"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_long_query_time"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_set_long_query_time"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_slow_queries"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_kill_query"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_query_cache_status"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_engine_status"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_innodb_locks"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_innodb_lock_waits"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_deadlock_info"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_innodb_io_stats"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_innodb_row_operations"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_innodb_force_recovery_check"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_global_variables"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_session_variables"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_global_variable"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_session_variable"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_set_global_variable"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_set_session_variable"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_status_variables"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_status_variable"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_server_info"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_backup_size"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_verify_backup"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_export_table"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_import_sql"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_process"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_kill_process_query"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_processes_by_user"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_processes_by_db"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_max_connections"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_thread_stats"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_current_binlog"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_list_binlog_events"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_purge_binlogs_to"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_purge_binlogs_before"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_binlog_format"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_set_binlog_format"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_get_binlog_expire_days"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_set_binlog_expire_days"
+    },
+    {
+      "path": "mysql_admin_commands::mysql_admin_flush_binlogs"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_connect"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_disconnect"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_connections"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_roles"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_role"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_create_role"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_drop_role"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_alter_role"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_set_role_password"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_grant_role"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_revoke_role"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_databases"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_database"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_create_database"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_drop_database"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_database_size"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_reload_hba"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_replication_status"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_replication_slots"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_create_replication_slot"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_drop_replication_slot"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_replication_lag"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_vacuum_table"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_vacuum_database"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_bloat"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_install_extension"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_uninstall_extension"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_extension"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_available_extensions"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_table_stats"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_index_stats"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_reset_stats"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_wal_files"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_switch_wal"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_tablespaces"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_tablespace"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_create_tablespace"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_drop_tablespace"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_tablespace_size"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_schemas"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_schema"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_create_schema"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_drop_schema"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_schema_tables"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_backup_files"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_add_hba"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_alter_database_owner"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_alter_schema_owner"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_alter_tablespace_owner"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_analyze"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_checkpoint"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_create_logical_replication_slot"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_create_physical_replication_slot"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_activity"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_archive_status"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_autovacuum_config"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_backup_size"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_current_lsn"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_database_connections"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_database_stats"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_hba_raw"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_locks"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_setting"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_settings"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_vacuum_stats"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_wal_info"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_wal_receiver_status"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_get_wal_size"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_grant_schema"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_database_schemas"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_hba"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_installed_extensions"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_role_memberships"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_schema_functions"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_schema_views"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_list_tablespace_objects"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_pg_basebackup"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_pg_dump"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_pg_dumpall"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_pg_restore"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_promote_standby"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_reindex"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_reload_config"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_remove_hba"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_rename_database"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_rename_role"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_rename_schema"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_rename_tablespace"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_revoke_schema"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_set_autovacuum_config"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_set_hba_raw"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_set_setting"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_terminate_connections"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_update_extension"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_update_hba"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_validate_hba"
+    },
+    {
+      "path": "pg_admin_commands::pg_admin_verify_backup"
+    }
+  ]
+}

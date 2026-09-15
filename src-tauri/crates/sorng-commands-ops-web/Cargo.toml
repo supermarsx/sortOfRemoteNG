@@ -1,0 +1,12 @@
+[package]
+publish = false
+name = "sorng-commands-ops-web"
+version.workspace = true
+edition = "2021"
+description = "Bounded ops-web native command registrar"
+
+[dependencies]
+sorng-cpanel = { path = "../sorng-cpanel" }
+sorng-php = { path = "../sorng-php" }
+tauri = { workspace = true }
+serde_json = { workspace = true }

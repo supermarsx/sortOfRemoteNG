@@ -4,7 +4,6 @@ mod ai_assist_commands;
 mod ansible_commands;
 mod command_palette_commands;
 mod docker_commands;
-mod docker_compose_commands;
 mod extensions_commands;
 mod fonts_commands;
 mod k8s_commands;

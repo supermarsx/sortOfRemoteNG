@@ -1,0 +1,17 @@
+[package]
+publish = false
+name = "sorng-commands-ops-system"
+version.workspace = true
+edition = "2021"
+description = "Bounded ops-system native command registrar"
+
+[dependencies]
+sorng-bootloader = { path = "../sorng-bootloader" }
+sorng-cron = { path = "../sorng-cron" }
+sorng-kernel = { path = "../sorng-kernel" }
+sorng-os-detect = { path = "../sorng-os-detect" }
+sorng-proc = { path = "../sorng-proc" }
+sorng-time-ntp = { path = "../sorng-time-ntp" }
+tauri = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }

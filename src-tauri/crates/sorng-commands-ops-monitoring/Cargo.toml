@@ -1,0 +1,15 @@
+[package]
+publish = false
+name = "sorng-commands-ops-monitoring"
+version.workspace = true
+edition = "2021"
+description = "Bounded ops-monitoring native command registrar"
+
+[dependencies]
+sorng-grafana = { path = "../sorng-grafana" }
+sorng-ipmi = { path = "../sorng-ipmi" }
+sorng-prometheus = { path = "../sorng-prometheus" }
+sorng-ups = { path = "../sorng-ups" }
+sorng-zabbix = { path = "../sorng-zabbix" }
+tauri = { workspace = true }
+serde_json = { workspace = true }

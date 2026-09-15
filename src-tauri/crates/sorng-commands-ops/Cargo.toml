@@ -3,55 +3,24 @@ publish = false
 name = "sorng-commands-ops"
 version.workspace = true
 edition = "2021"
-description = "Ops command handlers — infra/mail/services split into separate crates to reduce coherence checking time"
+description = "Compatibility facade for bounded operations command registrars"
 
 [dependencies]
-sorng-about = { path = "../sorng-about" }
-sorng-bootloader = { path = "../sorng-bootloader" }
-sorng-ceph = { path = "../sorng-ceph" }
-sorng-cicd = { path = "../sorng-cicd" }
-sorng-consul = { path = "../sorng-consul" }
-sorng-cpanel = { path = "../sorng-cpanel" }
-sorng-cron = { path = "../sorng-cron" }
-sorng-cups = { path = "../sorng-cups" }
-sorng-docker-compose = { path = "../sorng-docker-compose" }
-sorng-etcd = { path = "../sorng-etcd" }
-sorng-fail2ban = { path = "../sorng-fail2ban" }
-sorng-freeipa = { path = "../sorng-freeipa" }
-sorng-grafana = { path = "../sorng-grafana" }
-sorng-hashicorp-vault = { path = "../sorng-hashicorp-vault" }
-sorng-ipmi = { path = "../sorng-ipmi" }
-sorng-kafka = { path = "../sorng-kafka", optional = true, default-features = false }
-sorng-kernel = { path = "../sorng-kernel" }
-sorng-mac = { path = "../sorng-mac" }
-sorng-mysql-admin = { path = "../sorng-mysql-admin" }
-sorng-netbox = { path = "../sorng-netbox" }
-sorng-os-detect = { path = "../sorng-os-detect" }
-sorng-pam = { path = "../sorng-pam" }
-sorng-draytek = { path = "../sorng-draytek" }
-sorng-pfsense = { path = "../sorng-pfsense" }
-sorng-postgres-admin = { path = "../sorng-postgres-admin" }
-sorng-php = { path = "../sorng-php" }
-sorng-port-knock = { path = "../sorng-port-knock" }
-sorng-proc = { path = "../sorng-proc" }
-sorng-prometheus = { path = "../sorng-prometheus" }
-sorng-rabbitmq = { path = "../sorng-rabbitmq" }
-sorng-remote-backup = { path = "../sorng-remote-backup" }
-sorng-time-ntp = { path = "../sorng-time-ntp" }
-sorng-ups = { path = "../sorng-ups" }
-sorng-zabbix = { path = "../sorng-zabbix" }
+sorng-commands-ops-system = { path = "../sorng-commands-ops-system" }
+sorng-commands-ops-identity = { path = "../sorng-commands-ops-identity" }
+sorng-commands-ops-web = { path = "../sorng-commands-ops-web" }
+sorng-commands-ops-network = { path = "../sorng-commands-ops-network" }
+sorng-commands-ops-databases = { path = "../sorng-commands-ops-databases" }
+sorng-commands-ops-monitoring = { path = "../sorng-commands-ops-monitoring" }
+sorng-commands-ops-platform = { path = "../sorng-commands-ops-platform" }
+sorng-commands-ops-messaging = { path = "../sorng-commands-ops-messaging" }
+sorng-commands-ops-orchestration = { path = "../sorng-commands-ops-orchestration" }
 tauri = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-log = { workspace = true }
-chrono = { workspace = true }
-uuid = { workspace = true }
-base64 = { workspace = true }
 
 [features]
 # Forwarded from the top-level app crate via `sorng-commands-ops?/kafka` so
 # that enabling `kafka` / `kafka-dynamic` / `kafka-static` on the app crate
-# also pulls `sorng-kafka` into this ops commands crate and compiles the 39
-# `kafka_*` Tauri command handlers. Without this forwarding hop the commands
-# would remain unwired even when the app enables Kafka.
-kafka = ["dep:sorng-kafka"]
+# also compiles the 39 `kafka_*` Tauri command handlers in the messaging
+# child. Without this forwarding hop the commands would remain unwired even
+# when the app enables Kafka.
+kafka = ["sorng-commands-ops-messaging/kafka"]

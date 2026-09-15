@@ -1,0 +1,701 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "prometheus_commands::prometheus_connect"
+    },
+    {
+      "path": "prometheus_commands::prometheus_disconnect"
+    },
+    {
+      "path": "prometheus_commands::prometheus_list_connections"
+    },
+    {
+      "path": "prometheus_commands::prometheus_instant_query"
+    },
+    {
+      "path": "prometheus_commands::prometheus_range_query"
+    },
+    {
+      "path": "prometheus_commands::prometheus_label_values"
+    },
+    {
+      "path": "prometheus_commands::prometheus_label_names"
+    },
+    {
+      "path": "prometheus_commands::prometheus_series"
+    },
+    {
+      "path": "prometheus_commands::prometheus_list_targets"
+    },
+    {
+      "path": "prometheus_commands::prometheus_list_rules"
+    },
+    {
+      "path": "prometheus_commands::prometheus_list_alerts"
+    },
+    {
+      "path": "prometheus_commands::prometheus_get_config"
+    },
+    {
+      "path": "prometheus_commands::prometheus_reload_config"
+    },
+    {
+      "path": "prometheus_commands::prometheus_get_flags"
+    },
+    {
+      "path": "prometheus_commands::prometheus_get_tsdb_status"
+    },
+    {
+      "path": "prometheus_commands::prometheus_list_metadata"
+    },
+    {
+      "path": "prometheus_commands::prometheus_federate"
+    },
+    {
+      "path": "prometheus_commands::prometheus_list_recording_rules"
+    },
+    {
+      "path": "prometheus_commands::prometheus_list_silences"
+    },
+    {
+      "path": "prometheus_commands::prometheus_get_silence"
+    },
+    {
+      "path": "prometheus_commands::prometheus_create_silence"
+    },
+    {
+      "path": "prometheus_commands::prometheus_delete_silence"
+    },
+    {
+      "path": "grafana_commands::grafana_connect"
+    },
+    {
+      "path": "grafana_commands::grafana_disconnect"
+    },
+    {
+      "path": "grafana_commands::grafana_list_connections"
+    },
+    {
+      "path": "grafana_commands::grafana_search_dashboards"
+    },
+    {
+      "path": "grafana_commands::grafana_get_dashboard"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_dashboard"
+    },
+    {
+      "path": "grafana_commands::grafana_get_home_dashboard"
+    },
+    {
+      "path": "grafana_commands::grafana_list_datasources"
+    },
+    {
+      "path": "grafana_commands::grafana_get_datasource"
+    },
+    {
+      "path": "grafana_commands::grafana_create_datasource"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_datasource"
+    },
+    {
+      "path": "grafana_commands::grafana_test_datasource"
+    },
+    {
+      "path": "grafana_commands::grafana_list_folders"
+    },
+    {
+      "path": "grafana_commands::grafana_get_folder"
+    },
+    {
+      "path": "grafana_commands::grafana_create_folder"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_folder"
+    },
+    {
+      "path": "grafana_commands::grafana_get_current_org"
+    },
+    {
+      "path": "grafana_commands::grafana_list_orgs"
+    },
+    {
+      "path": "grafana_commands::grafana_get_org"
+    },
+    {
+      "path": "grafana_commands::grafana_create_org"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_org"
+    },
+    {
+      "path": "grafana_commands::grafana_list_users"
+    },
+    {
+      "path": "grafana_commands::grafana_get_user"
+    },
+    {
+      "path": "grafana_commands::grafana_create_user"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_user"
+    },
+    {
+      "path": "grafana_commands::grafana_list_teams"
+    },
+    {
+      "path": "grafana_commands::grafana_get_team"
+    },
+    {
+      "path": "grafana_commands::grafana_create_team"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_team"
+    },
+    {
+      "path": "grafana_commands::grafana_list_team_members"
+    },
+    {
+      "path": "grafana_commands::grafana_add_team_member"
+    },
+    {
+      "path": "grafana_commands::grafana_remove_team_member"
+    },
+    {
+      "path": "grafana_commands::grafana_list_alert_rules"
+    },
+    {
+      "path": "grafana_commands::grafana_get_alert_rule"
+    },
+    {
+      "path": "grafana_commands::grafana_create_alert_rule"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_alert_rule"
+    },
+    {
+      "path": "grafana_commands::grafana_pause_alert_rule"
+    },
+    {
+      "path": "grafana_commands::grafana_list_annotations"
+    },
+    {
+      "path": "grafana_commands::grafana_create_annotation"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_annotation"
+    },
+    {
+      "path": "grafana_commands::grafana_list_playlists"
+    },
+    {
+      "path": "grafana_commands::grafana_get_playlist"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_playlist"
+    },
+    {
+      "path": "grafana_commands::grafana_list_snapshots"
+    },
+    {
+      "path": "grafana_commands::grafana_create_snapshot"
+    },
+    {
+      "path": "grafana_commands::grafana_delete_snapshot"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_connect"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_disconnect"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_connections"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_devices"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_device"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_device_variables"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_device_variable"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_device_variable"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_device_commands"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_run_device_command"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_status"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_is_on_battery"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_is_online"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_load"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_input_voltage"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_output_voltage"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_temperature"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_all_status"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_battery_info"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_battery_charge"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_battery_runtime"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_battery_voltage"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_is_battery_low"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_battery_needs_replacement"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_battery_health"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_events"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_recent_events"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_clear_event_log"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_outlets"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_outlet"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_switch_outlet_on"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_switch_outlet_off"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_outlet_delay"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_outlet_delay"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_schedules"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_schedule"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_create_schedule"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_update_schedule"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_delete_schedule"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_enable_schedule"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_disable_schedule"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_thresholds"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_threshold"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_threshold"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_low_battery_threshold"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_low_battery_threshold"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_quick_test"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_deep_test"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_abort_test"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_last_test_result"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_calibrate_battery"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_test_history"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_nut_config"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_ups_conf"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_ups_conf"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_upsd_conf"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_upsd_conf"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_reload_upsd"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_reload_upsmon"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_restart_nut"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_nut_mode"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_nut_mode"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_list_notifications"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_notify_flags"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_notify_flags"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_notify_message"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_notify_message"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_get_notify_cmd"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_set_notify_cmd"
+    },
+    {
+      "path": "ups_mgmt_commands::ups_test_notification"
+    },
+    {
+      "path": "ipmi_commands::ipmi_connect"
+    },
+    {
+      "path": "ipmi_commands::ipmi_disconnect"
+    },
+    {
+      "path": "ipmi_commands::ipmi_disconnect_all"
+    },
+    {
+      "path": "ipmi_commands::ipmi_list_sessions"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_session"
+    },
+    {
+      "path": "ipmi_commands::ipmi_ping"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_chassis_status"
+    },
+    {
+      "path": "ipmi_commands::ipmi_chassis_control"
+    },
+    {
+      "path": "ipmi_commands::ipmi_power_on"
+    },
+    {
+      "path": "ipmi_commands::ipmi_power_off"
+    },
+    {
+      "path": "ipmi_commands::ipmi_power_cycle"
+    },
+    {
+      "path": "ipmi_commands::ipmi_hard_reset"
+    },
+    {
+      "path": "ipmi_commands::ipmi_soft_shutdown"
+    },
+    {
+      "path": "ipmi_commands::ipmi_chassis_identify"
+    },
+    {
+      "path": "ipmi_commands::ipmi_set_boot_device"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_device_id"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_all_sdr_records"
+    },
+    {
+      "path": "ipmi_commands::ipmi_read_sensor"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_sensor_thresholds"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_sel_info"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_all_sel_entries"
+    },
+    {
+      "path": "ipmi_commands::ipmi_clear_sel"
+    },
+    {
+      "path": "ipmi_commands::ipmi_delete_sel_entry"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_fru_info"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_sol_config"
+    },
+    {
+      "path": "ipmi_commands::ipmi_activate_sol"
+    },
+    {
+      "path": "ipmi_commands::ipmi_deactivate_sol"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_watchdog_timer"
+    },
+    {
+      "path": "ipmi_commands::ipmi_reset_watchdog_timer"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_lan_config"
+    },
+    {
+      "path": "ipmi_commands::ipmi_list_users"
+    },
+    {
+      "path": "ipmi_commands::ipmi_set_user_name"
+    },
+    {
+      "path": "ipmi_commands::ipmi_set_user_password"
+    },
+    {
+      "path": "ipmi_commands::ipmi_enable_user"
+    },
+    {
+      "path": "ipmi_commands::ipmi_disable_user"
+    },
+    {
+      "path": "ipmi_commands::ipmi_raw_command"
+    },
+    {
+      "path": "ipmi_commands::ipmi_bridged_command"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_pef_capabilities"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_channel_info"
+    },
+    {
+      "path": "ipmi_commands::ipmi_list_channels"
+    },
+    {
+      "path": "ipmi_commands::ipmi_get_channel_cipher_suites"
+    },
+    {
+      "path": "zabbix_commands::zabbix_connect"
+    },
+    {
+      "path": "zabbix_commands::zabbix_disconnect"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_connections"
+    },
+    {
+      "path": "zabbix_commands::zabbix_get_dashboard"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_hosts"
+    },
+    {
+      "path": "zabbix_commands::zabbix_get_host"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_host"
+    },
+    {
+      "path": "zabbix_commands::zabbix_update_host"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_hosts"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_templates"
+    },
+    {
+      "path": "zabbix_commands::zabbix_get_template"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_template"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_templates"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_items"
+    },
+    {
+      "path": "zabbix_commands::zabbix_get_item"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_item"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_items"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_triggers"
+    },
+    {
+      "path": "zabbix_commands::zabbix_get_trigger"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_trigger"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_triggers"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_actions"
+    },
+    {
+      "path": "zabbix_commands::zabbix_get_action"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_action"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_actions"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_alerts"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_graphs"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_graph"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_graphs"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_discovery_rules"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_discovery_rule"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_discovery_rules"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_maintenance"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_maintenance"
+    },
+    {
+      "path": "zabbix_commands::zabbix_update_maintenance"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_maintenance"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_users"
+    },
+    {
+      "path": "zabbix_commands::zabbix_get_user"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_user"
+    },
+    {
+      "path": "zabbix_commands::zabbix_update_user"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_users"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_media_types"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_media_type"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_media_types"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_host_groups"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_host_group"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_host_groups"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_proxies"
+    },
+    {
+      "path": "zabbix_commands::zabbix_get_proxy"
+    },
+    {
+      "path": "zabbix_commands::zabbix_create_proxy"
+    },
+    {
+      "path": "zabbix_commands::zabbix_delete_proxies"
+    },
+    {
+      "path": "zabbix_commands::zabbix_list_problems"
+    },
+    {
+      "path": "zabbix_commands::zabbix_acknowledge_problem"
+    }
+  ]
+}

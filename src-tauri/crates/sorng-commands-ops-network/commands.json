@@ -1,0 +1,614 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "pfsense_commands::pfsense_connect"
+    },
+    {
+      "path": "pfsense_commands::pfsense_disconnect"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_connections"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_interfaces"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_interface"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_interface"
+    },
+    {
+      "path": "pfsense_commands::pfsense_apply_interface_changes"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_interface_stats"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_interface"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_interface"
+    },
+    {
+      "path": "pfsense_commands::pfsense_apply_interfaces"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_interface_stats"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_firewall_rules"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_firewall_rule"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_firewall_rule"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_firewall_rule"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_firewall_rule"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_firewall_aliases"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_firewall_alias"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_firewall_alias"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_firewall_alias"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_firewall_alias"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_firewall_states"
+    },
+    {
+      "path": "pfsense_commands::pfsense_flush_firewall_states"
+    },
+    {
+      "path": "pfsense_commands::pfsense_apply_firewall_rules"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_nat_port_forwards"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_nat_port_forward"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_nat_port_forward"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_nat_port_forward"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_nat_outbound"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_nat_outbound"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_nat_outbound"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_nat_outbound"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_nat_1to1"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_nat_1to1"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_nat_1to1"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_nat_1to1"
+    },
+    {
+      "path": "pfsense_commands::pfsense_apply_nat"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_dhcp_config"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_dhcp_config"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_dhcp_leases"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_dhcp_static_mappings"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_dhcp_static_mapping"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_dhcp_static_mapping"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_dhcp_static_mapping"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_dhcp_relay"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_dns_resolver_config"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_dns_resolver_config"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_dns_host_overrides"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_dns_host_override"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_dns_host_override"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_dns_domain_overrides"
+    },
+    {
+      "path": "pfsense_commands::pfsense_flush_dns_cache"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_dns_cache_stats"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_openvpn_servers"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_openvpn_server"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_openvpn_server"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_openvpn_server"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_openvpn_clients"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_ipsec_tunnels"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_wireguard_tunnels"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_wireguard_peers"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_routes"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_route"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_route"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_gateways"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_gateway_status"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_routing_table"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_services"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_service_status"
+    },
+    {
+      "path": "pfsense_commands::pfsense_start_service"
+    },
+    {
+      "path": "pfsense_commands::pfsense_stop_service"
+    },
+    {
+      "path": "pfsense_commands::pfsense_restart_service"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_system_info"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_system_updates"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_general_config"
+    },
+    {
+      "path": "pfsense_commands::pfsense_update_general_config"
+    },
+    {
+      "path": "pfsense_commands::pfsense_reboot"
+    },
+    {
+      "path": "pfsense_commands::pfsense_halt"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_cas"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_certs"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_cert"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_cert"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_users"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_user"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_user"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_user"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_groups"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_arp_table"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_ndp_table"
+    },
+    {
+      "path": "pfsense_commands::pfsense_dns_lookup"
+    },
+    {
+      "path": "pfsense_commands::pfsense_ping"
+    },
+    {
+      "path": "pfsense_commands::pfsense_diag_ping"
+    },
+    {
+      "path": "pfsense_commands::pfsense_traceroute"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_pfinfo"
+    },
+    {
+      "path": "pfsense_commands::pfsense_get_system_log"
+    },
+    {
+      "path": "pfsense_commands::pfsense_list_backups"
+    },
+    {
+      "path": "pfsense_commands::pfsense_create_backup"
+    },
+    {
+      "path": "pfsense_commands::pfsense_delete_backup"
+    },
+    {
+      "path": "draytek_commands::draytek_connect"
+    },
+    {
+      "path": "draytek_commands::draytek_disconnect"
+    },
+    {
+      "path": "draytek_commands::draytek_list_connections"
+    },
+    {
+      "path": "draytek_commands::draytek_ping"
+    },
+    {
+      "path": "draytek_commands::draytek_get_status"
+    },
+    {
+      "path": "draytek_commands::draytek_reboot"
+    },
+    {
+      "path": "port_knock_commands::port_knock_add_host"
+    },
+    {
+      "path": "port_knock_commands::port_knock_remove_host"
+    },
+    {
+      "path": "port_knock_commands::port_knock_update_host"
+    },
+    {
+      "path": "port_knock_commands::port_knock_get_host"
+    },
+    {
+      "path": "port_knock_commands::port_knock_list_hosts"
+    },
+    {
+      "path": "port_knock_commands::port_knock_add_sequence"
+    },
+    {
+      "path": "port_knock_commands::port_knock_remove_sequence"
+    },
+    {
+      "path": "port_knock_commands::port_knock_get_sequence"
+    },
+    {
+      "path": "port_knock_commands::port_knock_list_sequences"
+    },
+    {
+      "path": "port_knock_commands::port_knock_generate_sequence"
+    },
+    {
+      "path": "port_knock_commands::port_knock_encode_sequence_base64"
+    },
+    {
+      "path": "port_knock_commands::port_knock_decode_sequence_base64"
+    },
+    {
+      "path": "port_knock_commands::port_knock_calculate_complexity"
+    },
+    {
+      "path": "port_knock_commands::port_knock_execute"
+    },
+    {
+      "path": "port_knock_commands::port_knock_send_spa"
+    },
+    {
+      "path": "port_knock_commands::port_knock_sequence_to_knockd"
+    },
+    {
+      "path": "port_knock_commands::port_knock_encrypt_payload"
+    },
+    {
+      "path": "port_knock_commands::port_knock_decrypt_payload"
+    },
+    {
+      "path": "port_knock_commands::port_knock_generate_key"
+    },
+    {
+      "path": "port_knock_commands::port_knock_detect_firewall"
+    },
+    {
+      "path": "port_knock_commands::port_knock_firewall_accept_rule"
+    },
+    {
+      "path": "port_knock_commands::port_knock_firewall_timed_rule"
+    },
+    {
+      "path": "port_knock_commands::port_knock_firewall_remove_rule"
+    },
+    {
+      "path": "port_knock_commands::port_knock_firewall_backup_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_parse_knockd_config"
+    },
+    {
+      "path": "port_knock_commands::port_knock_generate_knockd_config"
+    },
+    {
+      "path": "port_knock_commands::port_knock_knockd_status_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_knockd_install_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_knockd_log_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_parse_fwknop_access"
+    },
+    {
+      "path": "port_knock_commands::port_knock_generate_fwknop_access"
+    },
+    {
+      "path": "port_knock_commands::port_knock_build_fwknop_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_fwknop_install_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_generate_fwknop_keys"
+    },
+    {
+      "path": "port_knock_commands::port_knock_generate_fwknop_client_rc"
+    },
+    {
+      "path": "port_knock_commands::port_knock_create_profile"
+    },
+    {
+      "path": "port_knock_commands::port_knock_update_profile"
+    },
+    {
+      "path": "port_knock_commands::port_knock_delete_profile"
+    },
+    {
+      "path": "port_knock_commands::port_knock_get_profile"
+    },
+    {
+      "path": "port_knock_commands::port_knock_list_profiles"
+    },
+    {
+      "path": "port_knock_commands::port_knock_export_profiles"
+    },
+    {
+      "path": "port_knock_commands::port_knock_import_profiles"
+    },
+    {
+      "path": "port_knock_commands::port_knock_search_profiles"
+    },
+    {
+      "path": "port_knock_commands::port_knock_check_port_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_banner_grab_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_nmap_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_rtt_command"
+    },
+    {
+      "path": "port_knock_commands::port_knock_get_history"
+    },
+    {
+      "path": "port_knock_commands::port_knock_filter_history"
+    },
+    {
+      "path": "port_knock_commands::port_knock_get_statistics"
+    },
+    {
+      "path": "port_knock_commands::port_knock_clear_history"
+    },
+    {
+      "path": "port_knock_commands::port_knock_export_history_json"
+    },
+    {
+      "path": "port_knock_commands::port_knock_export_history_csv"
+    },
+    {
+      "path": "port_knock_commands::port_knock_get_recent_history"
+    },
+    {
+      "path": "fail2ban_commands::f2b_add_host"
+    },
+    {
+      "path": "fail2ban_commands::f2b_update_host"
+    },
+    {
+      "path": "fail2ban_commands::f2b_remove_host"
+    },
+    {
+      "path": "fail2ban_commands::f2b_list_hosts"
+    },
+    {
+      "path": "fail2ban_commands::f2b_get_host"
+    },
+    {
+      "path": "fail2ban_commands::f2b_ping"
+    },
+    {
+      "path": "fail2ban_commands::f2b_version"
+    },
+    {
+      "path": "fail2ban_commands::f2b_server_status"
+    },
+    {
+      "path": "fail2ban_commands::f2b_reload"
+    },
+    {
+      "path": "fail2ban_commands::f2b_reload_jail"
+    },
+    {
+      "path": "fail2ban_commands::f2b_restart_server"
+    },
+    {
+      "path": "fail2ban_commands::f2b_list_jails"
+    },
+    {
+      "path": "fail2ban_commands::f2b_jail_status"
+    },
+    {
+      "path": "fail2ban_commands::f2b_all_jail_statuses"
+    },
+    {
+      "path": "fail2ban_commands::f2b_start_jail"
+    },
+    {
+      "path": "fail2ban_commands::f2b_stop_jail"
+    },
+    {
+      "path": "fail2ban_commands::f2b_restart_jail"
+    },
+    {
+      "path": "fail2ban_commands::f2b_set_jail_bantime"
+    },
+    {
+      "path": "fail2ban_commands::f2b_set_jail_maxretry"
+    },
+    {
+      "path": "fail2ban_commands::f2b_ban_ip"
+    },
+    {
+      "path": "fail2ban_commands::f2b_unban_ip"
+    },
+    {
+      "path": "fail2ban_commands::f2b_unban_ip_all"
+    },
+    {
+      "path": "fail2ban_commands::f2b_list_banned"
+    },
+    {
+      "path": "fail2ban_commands::f2b_list_all_banned"
+    },
+    {
+      "path": "fail2ban_commands::f2b_is_banned"
+    },
+    {
+      "path": "fail2ban_commands::f2b_list_filters"
+    },
+    {
+      "path": "fail2ban_commands::f2b_read_filter"
+    },
+    {
+      "path": "fail2ban_commands::f2b_test_filter"
+    },
+    {
+      "path": "fail2ban_commands::f2b_test_regex"
+    },
+    {
+      "path": "fail2ban_commands::f2b_list_actions"
+    },
+    {
+      "path": "fail2ban_commands::f2b_read_action"
+    },
+    {
+      "path": "fail2ban_commands::f2b_list_ignored"
+    },
+    {
+      "path": "fail2ban_commands::f2b_add_ignored"
+    },
+    {
+      "path": "fail2ban_commands::f2b_remove_ignored"
+    },
+    {
+      "path": "fail2ban_commands::f2b_add_ignored_all_jails"
+    },
+    {
+      "path": "fail2ban_commands::f2b_tail_log"
+    },
+    {
+      "path": "fail2ban_commands::f2b_search_log_by_ip"
+    },
+    {
+      "path": "fail2ban_commands::f2b_search_log_by_jail"
+    },
+    {
+      "path": "fail2ban_commands::f2b_search_bans"
+    },
+    {
+      "path": "fail2ban_commands::f2b_log_info"
+    },
+    {
+      "path": "fail2ban_commands::f2b_host_stats"
+    },
+    {
+      "path": "fail2ban_commands::f2b_top_banned_ips"
+    },
+    {
+      "path": "fail2ban_commands::f2b_log_stats"
+    },
+    {
+      "path": "fail2ban_commands::f2b_ban_frequency"
+    }
+  ]
+}

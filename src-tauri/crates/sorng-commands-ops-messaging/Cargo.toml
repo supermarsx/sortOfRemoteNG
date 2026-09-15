@@ -1,0 +1,19 @@
+[package]
+publish = false
+name = "sorng-commands-ops-messaging"
+version.workspace = true
+edition = "2021"
+description = "Bounded ops-messaging native command registrar"
+
+[dependencies]
+sorng-kafka = { path = "../sorng-kafka", optional = true, default-features = false }
+sorng-rabbitmq = { path = "../sorng-rabbitmq" }
+tauri = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+# Forwarded from the ops facade (`kafka = ["sorng-commands-ops-messaging/kafka"]`),
+# which the app crate reaches via `sorng-commands-ops?/kafka` from its `kafka` /
+# `kafka-dynamic` / `kafka-static` features. Pulls in `sorng-kafka` and compiles
+# the 39 `kafka_*` Tauri command handlers; the app selects the librdkafka linking mode.
+kafka = ["dep:sorng-kafka"]

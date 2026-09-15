@@ -1,0 +1,335 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "rabbitmq_commands::rabbit_connect"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_disconnect"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_sessions"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_test_connection"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_vhosts"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_vhost"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_create_vhost"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_delete_vhost"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_exchanges"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_exchange"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_create_exchange"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_delete_exchange"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_queues"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_queue"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_create_queue"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_delete_queue"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_purge_queue"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_bindings"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_create_binding"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_delete_binding"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_users"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_create_user"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_delete_user"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_permissions"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_set_permission"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_policies"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_create_policy"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_delete_policy"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_shovels"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_create_shovel"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_delete_shovel"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_restart_shovel"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_federation_upstreams"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_create_federation_upstream"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_delete_federation_upstream"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_federation_links"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_nodes"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_node"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_cluster_name"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_set_cluster_name"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_check_alarms"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_connections"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_connection"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_close_connection"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_channels"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_channel"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_list_consumers"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_cancel_consumer"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_overview"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_message_rates"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_get_queue_rates"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_monitoring_snapshot"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_aliveness_test"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_export_definitions"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_import_definitions"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_export_vhost_definitions"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_clone_vhost"
+    },
+    {
+      "path": "rabbitmq_commands::rabbit_definitions_summary"
+    },
+    {
+      "path": "kafka_commands::kafka_connect",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_disconnect",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_test_connection",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_sessions",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_brokers",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_broker",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_broker_config",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_update_broker_config",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_cluster_id",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_topics",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_topic",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_create_topic",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_delete_topic",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_partitions",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_partition",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_consumer_groups",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_describe_consumer_group",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_consumer_group_offsets",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_produce_message",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_acls",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_create_acls",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_delete_acls",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_subjects",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_schema",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_register_schema",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_delete_subject",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_connectors",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_connector",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_create_connector",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_delete_connector",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_pause_connector",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_resume_connector",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_quotas",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_alter_quotas",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_start_reassignment",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_list_reassignments",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_cluster_metrics",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_broker_metrics",
+      "cfg": "feature = \"kafka\""
+    },
+    {
+      "path": "kafka_commands::kafka_get_topic_metrics",
+      "cfg": "feature = \"kafka\""
+    }
+  ]
+}

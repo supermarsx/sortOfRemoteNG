@@ -1,0 +1,11 @@
+[package]
+publish = false
+name = "sorng-commands-ops-databases"
+version.workspace = true
+edition = "2021"
+description = "Bounded ops-databases native command registrar"
+
+[dependencies]
+sorng-mysql-admin = { path = "../sorng-mysql-admin" }
+sorng-postgres-admin = { path = "../sorng-postgres-admin" }
+tauri = { workspace = true }

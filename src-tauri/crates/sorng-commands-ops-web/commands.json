@@ -1,0 +1,539 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "cpanel_commands::cpanel_connect"
+    },
+    {
+      "path": "cpanel_commands::cpanel_disconnect"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_connections"
+    },
+    {
+      "path": "cpanel_commands::cpanel_ping"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_accounts"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_suspend_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_unsuspend_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_terminate_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_modify_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_change_account_password"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_packages"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_account_summary"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_suspended_accounts"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_server_info"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_domains"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_all_domains"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_addon_domain"
+    },
+    {
+      "path": "cpanel_commands::cpanel_remove_addon_domain"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_subdomain"
+    },
+    {
+      "path": "cpanel_commands::cpanel_remove_subdomain"
+    },
+    {
+      "path": "cpanel_commands::cpanel_park_domain"
+    },
+    {
+      "path": "cpanel_commands::cpanel_unpark_domain"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_email_accounts"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_email_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_delete_email_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_change_email_password"
+    },
+    {
+      "path": "cpanel_commands::cpanel_set_email_quota"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_forwarders"
+    },
+    {
+      "path": "cpanel_commands::cpanel_add_forwarder"
+    },
+    {
+      "path": "cpanel_commands::cpanel_delete_forwarder"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_autoresponders"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_mailing_lists"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_spam_settings"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_mx_records"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_databases"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_database"
+    },
+    {
+      "path": "cpanel_commands::cpanel_delete_database"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_database_users"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_database_user"
+    },
+    {
+      "path": "cpanel_commands::cpanel_delete_database_user"
+    },
+    {
+      "path": "cpanel_commands::cpanel_grant_database_privileges"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_dns_zones"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_dns_zone"
+    },
+    {
+      "path": "cpanel_commands::cpanel_add_dns_record"
+    },
+    {
+      "path": "cpanel_commands::cpanel_edit_dns_record"
+    },
+    {
+      "path": "cpanel_commands::cpanel_remove_dns_record"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_files"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_directory"
+    },
+    {
+      "path": "cpanel_commands::cpanel_delete_file"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_disk_usage"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_ssl_certs"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_ssl_status"
+    },
+    {
+      "path": "cpanel_commands::cpanel_install_ssl"
+    },
+    {
+      "path": "cpanel_commands::cpanel_generate_csr"
+    },
+    {
+      "path": "cpanel_commands::cpanel_autossl_check"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_backups"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_full_backup"
+    },
+    {
+      "path": "cpanel_commands::cpanel_restore_file"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_backup_config"
+    },
+    {
+      "path": "cpanel_commands::cpanel_trigger_server_backup"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_ftp_accounts"
+    },
+    {
+      "path": "cpanel_commands::cpanel_create_ftp_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_delete_ftp_account"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_ftp_sessions"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_cron_jobs"
+    },
+    {
+      "path": "cpanel_commands::cpanel_add_cron_job"
+    },
+    {
+      "path": "cpanel_commands::cpanel_edit_cron_job"
+    },
+    {
+      "path": "cpanel_commands::cpanel_delete_cron_job"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_bandwidth"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_resource_usage"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_error_log"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_server_load"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_php_versions"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_domain_php_version"
+    },
+    {
+      "path": "cpanel_commands::cpanel_set_domain_php_version"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_php_config"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_php_extensions"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_blocked_ips"
+    },
+    {
+      "path": "cpanel_commands::cpanel_block_ip"
+    },
+    {
+      "path": "cpanel_commands::cpanel_unblock_ip"
+    },
+    {
+      "path": "cpanel_commands::cpanel_list_ssh_keys"
+    },
+    {
+      "path": "cpanel_commands::cpanel_import_ssh_key"
+    },
+    {
+      "path": "cpanel_commands::cpanel_delete_ssh_key"
+    },
+    {
+      "path": "cpanel_commands::cpanel_get_modsec_status"
+    },
+    {
+      "path": "cpanel_commands::cpanel_set_modsec"
+    },
+    {
+      "path": "php_mgmt_commands::php_connect"
+    },
+    {
+      "path": "php_mgmt_commands::php_disconnect"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_connections"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_versions"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_default_version"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_version_detail"
+    },
+    {
+      "path": "php_mgmt_commands::php_set_default_version"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_sapis"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_config_path"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_extension_dir"
+    },
+    {
+      "path": "php_mgmt_commands::php_check_version_installed"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_fpm_pools"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_fpm_pool"
+    },
+    {
+      "path": "php_mgmt_commands::php_create_fpm_pool"
+    },
+    {
+      "path": "php_mgmt_commands::php_update_fpm_pool"
+    },
+    {
+      "path": "php_mgmt_commands::php_delete_fpm_pool"
+    },
+    {
+      "path": "php_mgmt_commands::php_enable_fpm_pool"
+    },
+    {
+      "path": "php_mgmt_commands::php_disable_fpm_pool"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_fpm_pool_status"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_fpm_pool_processes"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_ini_file"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_ini_directives"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_ini_directive"
+    },
+    {
+      "path": "php_mgmt_commands::php_set_ini_directive"
+    },
+    {
+      "path": "php_mgmt_commands::php_remove_ini_directive"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_ini_scan_dir"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_loaded_ini_files"
+    },
+    {
+      "path": "php_mgmt_commands::php_backup_ini"
+    },
+    {
+      "path": "php_mgmt_commands::php_restore_ini"
+    },
+    {
+      "path": "php_mgmt_commands::php_validate_ini"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_modules"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_module"
+    },
+    {
+      "path": "php_mgmt_commands::php_enable_module"
+    },
+    {
+      "path": "php_mgmt_commands::php_disable_module"
+    },
+    {
+      "path": "php_mgmt_commands::php_install_module"
+    },
+    {
+      "path": "php_mgmt_commands::php_uninstall_module"
+    },
+    {
+      "path": "php_mgmt_commands::php_is_module_loaded"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_available_modules"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_pecl_packages"
+    },
+    {
+      "path": "php_mgmt_commands::php_install_pecl_package"
+    },
+    {
+      "path": "php_mgmt_commands::php_uninstall_pecl_package"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_opcache_status"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_opcache_config"
+    },
+    {
+      "path": "php_mgmt_commands::php_reset_opcache"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_cached_scripts"
+    },
+    {
+      "path": "php_mgmt_commands::php_invalidate_cached_script"
+    },
+    {
+      "path": "php_mgmt_commands::php_is_opcache_enabled"
+    },
+    {
+      "path": "php_mgmt_commands::php_update_opcache_config"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_session_config"
+    },
+    {
+      "path": "php_mgmt_commands::php_update_session_config"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_session_stats"
+    },
+    {
+      "path": "php_mgmt_commands::php_cleanup_sessions"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_session_files"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_session_save_path"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_composer_info"
+    },
+    {
+      "path": "php_mgmt_commands::php_is_composer_installed"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_composer_global_packages"
+    },
+    {
+      "path": "php_mgmt_commands::php_install_composer_global_package"
+    },
+    {
+      "path": "php_mgmt_commands::php_remove_composer_global_package"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_composer_project"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_install"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_update"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_require"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_remove"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_dump_autoload"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_validate"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_outdated"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_clear_cache"
+    },
+    {
+      "path": "php_mgmt_commands::php_composer_self_update"
+    },
+    {
+      "path": "php_mgmt_commands::php_read_log"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_log_config"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_fpm_log_config"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_log_path"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_fpm_log_path"
+    },
+    {
+      "path": "php_mgmt_commands::php_clear_log"
+    },
+    {
+      "path": "php_mgmt_commands::php_tail_log"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_log_size"
+    },
+    {
+      "path": "php_mgmt_commands::php_rotate_log"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_fpm_service_status"
+    },
+    {
+      "path": "php_mgmt_commands::php_start_fpm"
+    },
+    {
+      "path": "php_mgmt_commands::php_stop_fpm"
+    },
+    {
+      "path": "php_mgmt_commands::php_restart_fpm"
+    },
+    {
+      "path": "php_mgmt_commands::php_reload_fpm"
+    },
+    {
+      "path": "php_mgmt_commands::php_enable_fpm"
+    },
+    {
+      "path": "php_mgmt_commands::php_disable_fpm"
+    },
+    {
+      "path": "php_mgmt_commands::php_test_fpm_config"
+    },
+    {
+      "path": "php_mgmt_commands::php_get_fpm_master_process"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_fpm_worker_pids"
+    },
+    {
+      "path": "php_mgmt_commands::php_graceful_restart_fpm"
+    },
+    {
+      "path": "php_mgmt_commands::php_reopen_fpm_logs"
+    },
+    {
+      "path": "php_mgmt_commands::php_list_all_fpm_services"
+    }
+  ]
+}

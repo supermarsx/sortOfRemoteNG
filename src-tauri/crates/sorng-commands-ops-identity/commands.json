@@ -1,0 +1,539 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "pam_commands::pam_add_host"
+    },
+    {
+      "path": "pam_commands::pam_remove_host"
+    },
+    {
+      "path": "pam_commands::pam_update_host"
+    },
+    {
+      "path": "pam_commands::pam_get_host"
+    },
+    {
+      "path": "pam_commands::pam_list_hosts"
+    },
+    {
+      "path": "pam_commands::pam_list_services"
+    },
+    {
+      "path": "pam_commands::pam_get_service"
+    },
+    {
+      "path": "pam_commands::pam_create_service"
+    },
+    {
+      "path": "pam_commands::pam_update_service"
+    },
+    {
+      "path": "pam_commands::pam_delete_service"
+    },
+    {
+      "path": "pam_commands::pam_backup_service"
+    },
+    {
+      "path": "pam_commands::pam_restore_service"
+    },
+    {
+      "path": "pam_commands::pam_validate_service"
+    },
+    {
+      "path": "pam_commands::pam_list_modules"
+    },
+    {
+      "path": "pam_commands::pam_get_module_info"
+    },
+    {
+      "path": "pam_commands::pam_find_module_users"
+    },
+    {
+      "path": "pam_commands::pam_get_limits"
+    },
+    {
+      "path": "pam_commands::pam_set_limit"
+    },
+    {
+      "path": "pam_commands::pam_remove_limit"
+    },
+    {
+      "path": "pam_commands::pam_get_access_rules"
+    },
+    {
+      "path": "pam_commands::pam_add_access_rule"
+    },
+    {
+      "path": "pam_commands::pam_remove_access_rule"
+    },
+    {
+      "path": "pam_commands::pam_get_time_rules"
+    },
+    {
+      "path": "pam_commands::pam_add_time_rule"
+    },
+    {
+      "path": "pam_commands::pam_remove_time_rule"
+    },
+    {
+      "path": "pam_commands::pam_get_pwquality"
+    },
+    {
+      "path": "pam_commands::pam_set_pwquality"
+    },
+    {
+      "path": "pam_commands::pam_test_password"
+    },
+    {
+      "path": "pam_commands::pam_get_namespace_rules"
+    },
+    {
+      "path": "pam_commands::pam_add_namespace_rule"
+    },
+    {
+      "path": "pam_commands::pam_remove_namespace_rule"
+    },
+    {
+      "path": "pam_commands::pam_get_login_defs"
+    },
+    {
+      "path": "pam_commands::pam_set_login_def"
+    },
+    {
+      "path": "pam_commands::pam_get_password_policy"
+    },
+    {
+      "path": "freeipa_commands::freeipa_connect"
+    },
+    {
+      "path": "freeipa_commands::freeipa_disconnect"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_connections"
+    },
+    {
+      "path": "freeipa_commands::freeipa_get_dashboard"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_users"
+    },
+    {
+      "path": "freeipa_commands::freeipa_get_user"
+    },
+    {
+      "path": "freeipa_commands::freeipa_create_user"
+    },
+    {
+      "path": "freeipa_commands::freeipa_update_user"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_user"
+    },
+    {
+      "path": "freeipa_commands::freeipa_enable_user"
+    },
+    {
+      "path": "freeipa_commands::freeipa_disable_user"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_groups"
+    },
+    {
+      "path": "freeipa_commands::freeipa_get_group"
+    },
+    {
+      "path": "freeipa_commands::freeipa_create_group"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_group"
+    },
+    {
+      "path": "freeipa_commands::freeipa_add_group_member"
+    },
+    {
+      "path": "freeipa_commands::freeipa_remove_group_member"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_hosts"
+    },
+    {
+      "path": "freeipa_commands::freeipa_get_host"
+    },
+    {
+      "path": "freeipa_commands::freeipa_create_host"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_host"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_services"
+    },
+    {
+      "path": "freeipa_commands::freeipa_get_service"
+    },
+    {
+      "path": "freeipa_commands::freeipa_create_service"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_service"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_dns_zones"
+    },
+    {
+      "path": "freeipa_commands::freeipa_get_dns_zone"
+    },
+    {
+      "path": "freeipa_commands::freeipa_create_dns_zone"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_dns_zone"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_dns_records"
+    },
+    {
+      "path": "freeipa_commands::freeipa_add_dns_record"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_dns_record"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_roles"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_privileges"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_permissions"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_certificates"
+    },
+    {
+      "path": "freeipa_commands::freeipa_request_certificate"
+    },
+    {
+      "path": "freeipa_commands::freeipa_revoke_certificate"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_sudo_rules"
+    },
+    {
+      "path": "freeipa_commands::freeipa_create_sudo_rule"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_sudo_rule"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_hbac_rules"
+    },
+    {
+      "path": "freeipa_commands::freeipa_create_hbac_rule"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_hbac_rule"
+    },
+    {
+      "path": "freeipa_commands::freeipa_list_trusts"
+    },
+    {
+      "path": "freeipa_commands::freeipa_create_trust"
+    },
+    {
+      "path": "freeipa_commands::freeipa_delete_trust"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_connect"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_disconnect"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_list_connections"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_get_dashboard"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_seal_status"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_seal"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_unseal"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_health"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_leader"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_kv_read"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_kv_write"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_kv_delete"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_kv_list"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_kv_undelete"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_kv_destroy"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_kv_metadata"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_transit_create_key"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_transit_list_keys"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_transit_read_key"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_transit_encrypt"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_transit_decrypt"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_transit_rotate_key"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_transit_sign"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_transit_verify"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_pki_read_ca"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_pki_issue_cert"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_pki_list_certs"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_pki_revoke_cert"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_pki_list_roles"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_pki_create_role"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_list_auth_methods"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_enable_auth"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_disable_auth"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_userpass_create"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_userpass_list"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_userpass_delete"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_list_policies"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_read_policy"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_write_policy"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_delete_policy"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_list_audit_devices"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_enable_audit"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_disable_audit"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_create_token"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_lookup_token"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_revoke_token"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_renew_token"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_read_lease"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_list_leases"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_renew_lease"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_revoke_lease"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_list_secret_engines"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_mount_engine"
+    },
+    {
+      "path": "hashicorp_vault_commands::vault_unmount_engine"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_connect"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_disconnect"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_list_connections"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_detect_system"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_get_dashboard"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_status"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_get_mode"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_set_mode"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_list_booleans"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_get_boolean"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_set_boolean"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_list_modules"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_manage_module"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_list_file_contexts"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_add_file_context"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_remove_file_context"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_restorecon"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_list_ports"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_add_port_context"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_list_users"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_list_roles"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_get_policy_info"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_audit_log"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_selinux_audit2allow"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_status"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_list_profiles"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_set_profile_mode"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_reload_profile"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_create_profile"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_delete_profile"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_get_profile_content"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_update_profile_content"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_apparmor_audit_log"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_tomoyo_status"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_tomoyo_list_domains"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_tomoyo_set_domain_mode"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_tomoyo_list_rules"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_smack_status"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_smack_list_labels"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_smack_list_rules"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_smack_add_rule"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_smack_remove_rule"
+    },
+    {
+      "path": "mac_mgmt_commands::mac_compliance_check"
+    }
+  ]
+}

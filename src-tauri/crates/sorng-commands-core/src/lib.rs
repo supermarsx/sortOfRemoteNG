@@ -77,19 +77,10 @@ mod cert_gen_commands;
 mod cloudflare_commands;
 #[path = "../../../src/commander_commands.rs"]
 mod commander_commands;
-#[cfg(feature = "ops")]
-#[path = "../../../src/consul_commands.rs"]
-mod consul_commands;
 #[path = "../../../src/cryptojs_compat_commands.rs"]
 mod cryptojs_compat_commands;
 #[path = "../../../src/db_commands.rs"]
 mod db_commands;
-#[cfg(feature = "ops")]
-#[path = "../../../src/docker_compose_commands.rs"]
-mod docker_compose_commands;
-#[cfg(feature = "ops")]
-#[path = "../../../src/etcd_commands.rs"]
-mod etcd_commands;
 #[path = "../../../src/ftp_commands.rs"]
 mod ftp_commands;
 #[path = "../../../src/http_commands.rs"]

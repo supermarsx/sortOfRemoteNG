@@ -1,0 +1,725 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "ceph_commands::ceph_connect"
+    },
+    {
+      "path": "ceph_commands::ceph_disconnect"
+    },
+    {
+      "path": "ceph_commands::ceph_list_sessions"
+    },
+    {
+      "path": "ceph_commands::ceph_get_cluster_health"
+    },
+    {
+      "path": "ceph_commands::ceph_get_cluster_status"
+    },
+    {
+      "path": "ceph_commands::ceph_get_cluster_df"
+    },
+    {
+      "path": "ceph_commands::ceph_get_cluster_config"
+    },
+    {
+      "path": "ceph_commands::ceph_list_services"
+    },
+    {
+      "path": "ceph_commands::ceph_list_osds"
+    },
+    {
+      "path": "ceph_commands::ceph_get_osd"
+    },
+    {
+      "path": "ceph_commands::ceph_list_pools"
+    },
+    {
+      "path": "ceph_commands::ceph_get_pool"
+    },
+    {
+      "path": "ceph_commands::ceph_list_rbd_images"
+    },
+    {
+      "path": "ceph_commands::ceph_get_rbd_image"
+    },
+    {
+      "path": "ceph_commands::ceph_list_filesystems"
+    },
+    {
+      "path": "ceph_commands::ceph_get_filesystem"
+    },
+    {
+      "path": "ceph_commands::ceph_create_filesystem"
+    },
+    {
+      "path": "ceph_commands::ceph_remove_filesystem"
+    },
+    {
+      "path": "ceph_commands::ceph_list_subvolumes"
+    },
+    {
+      "path": "ceph_commands::ceph_evict_cephfs_client"
+    },
+    {
+      "path": "ceph_commands::ceph_list_rgw_users"
+    },
+    {
+      "path": "ceph_commands::ceph_get_rgw_user"
+    },
+    {
+      "path": "ceph_commands::ceph_create_rgw_user"
+    },
+    {
+      "path": "ceph_commands::ceph_delete_rgw_user"
+    },
+    {
+      "path": "ceph_commands::ceph_list_rgw_buckets"
+    },
+    {
+      "path": "ceph_commands::ceph_get_rgw_bucket"
+    },
+    {
+      "path": "ceph_commands::ceph_list_rgw_zones"
+    },
+    {
+      "path": "ceph_commands::ceph_get_crush_map"
+    },
+    {
+      "path": "ceph_commands::ceph_list_crush_rules"
+    },
+    {
+      "path": "ceph_commands::ceph_get_crush_tunables"
+    },
+    {
+      "path": "ceph_commands::ceph_list_monitors"
+    },
+    {
+      "path": "ceph_commands::ceph_get_quorum_status"
+    },
+    {
+      "path": "ceph_commands::ceph_get_monitor_map"
+    },
+    {
+      "path": "ceph_commands::ceph_compact_monitor_store"
+    },
+    {
+      "path": "ceph_commands::ceph_list_mds_servers"
+    },
+    {
+      "path": "ceph_commands::ceph_get_mds_perf"
+    },
+    {
+      "path": "ceph_commands::ceph_failover_mds"
+    },
+    {
+      "path": "ceph_commands::ceph_list_pgs"
+    },
+    {
+      "path": "ceph_commands::ceph_get_pg_summary"
+    },
+    {
+      "path": "ceph_commands::ceph_repair_pg"
+    },
+    {
+      "path": "ceph_commands::ceph_scrub_pg"
+    },
+    {
+      "path": "ceph_commands::ceph_deep_scrub_pg"
+    },
+    {
+      "path": "ceph_commands::ceph_list_stuck_pgs"
+    },
+    {
+      "path": "ceph_commands::ceph_get_perf_metrics"
+    },
+    {
+      "path": "ceph_commands::ceph_get_slow_requests"
+    },
+    {
+      "path": "ceph_commands::ceph_get_osd_perf"
+    },
+    {
+      "path": "ceph_commands::ceph_get_pool_perf"
+    },
+    {
+      "path": "ceph_commands::ceph_get_performance_counters"
+    },
+    {
+      "path": "ceph_commands::ceph_get_recovery_progress"
+    },
+    {
+      "path": "ceph_commands::ceph_list_health_checks"
+    },
+    {
+      "path": "ceph_commands::ceph_get_health_detail"
+    },
+    {
+      "path": "ceph_commands::ceph_mute_health_check"
+    },
+    {
+      "path": "ceph_commands::ceph_unmute_health_check"
+    },
+    {
+      "path": "ceph_commands::ceph_list_alerts"
+    },
+    {
+      "path": "ceph_commands::ceph_acknowledge_alert"
+    },
+    {
+      "path": "ceph_commands::ceph_clear_alert"
+    },
+    {
+      "path": "ceph_commands::ceph_get_health_summary"
+    },
+    {
+      "path": "cicd_commands::cicd_connect"
+    },
+    {
+      "path": "cicd_commands::cicd_disconnect"
+    },
+    {
+      "path": "cicd_commands::cicd_list_connections"
+    },
+    {
+      "path": "cicd_commands::cicd_ping"
+    },
+    {
+      "path": "cicd_commands::cicd_get_dashboard"
+    },
+    {
+      "path": "cicd_commands::cicd_list_pipelines"
+    },
+    {
+      "path": "cicd_commands::cicd_get_pipeline"
+    },
+    {
+      "path": "cicd_commands::cicd_list_builds"
+    },
+    {
+      "path": "cicd_commands::cicd_get_build"
+    },
+    {
+      "path": "cicd_commands::cicd_trigger_build"
+    },
+    {
+      "path": "cicd_commands::cicd_cancel_build"
+    },
+    {
+      "path": "cicd_commands::cicd_restart_build"
+    },
+    {
+      "path": "cicd_commands::cicd_get_build_logs"
+    },
+    {
+      "path": "cicd_commands::cicd_list_artifacts"
+    },
+    {
+      "path": "cicd_commands::cicd_get_artifact"
+    },
+    {
+      "path": "cicd_commands::cicd_list_secrets"
+    },
+    {
+      "path": "cicd_commands::cicd_create_secret"
+    },
+    {
+      "path": "cicd_commands::cicd_delete_secret"
+    },
+    {
+      "path": "cicd_commands::cicd_drone_list_repos"
+    },
+    {
+      "path": "cicd_commands::cicd_drone_get_repo"
+    },
+    {
+      "path": "cicd_commands::cicd_drone_activate_repo"
+    },
+    {
+      "path": "cicd_commands::cicd_drone_deactivate_repo"
+    },
+    {
+      "path": "cicd_commands::cicd_drone_list_cron_jobs"
+    },
+    {
+      "path": "cicd_commands::cicd_drone_create_cron_job"
+    },
+    {
+      "path": "cicd_commands::cicd_drone_delete_cron_job"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_list_jobs"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_get_job"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_create_job"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_delete_job"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_get_console_output"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_list_queue"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_cancel_queue"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_list_nodes"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_get_node"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_get_system_info"
+    },
+    {
+      "path": "cicd_commands::cicd_jenkins_list_plugins"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_list_workflows"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_get_workflow"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_dispatch_workflow"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_enable_workflow"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_disable_workflow"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_list_workflow_runs"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_get_workflow_run"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_cancel_run"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_rerun_run"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_rerun_failed_jobs"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_list_jobs"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_get_job"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_get_job_logs"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_list_artifacts"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_delete_artifact"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_list_secrets"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_create_or_update_secret"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_delete_secret"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_list_runners"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_get_runner"
+    },
+    {
+      "path": "cicd_commands::cicd_gha_delete_runner"
+    },
+    {
+      "path": "etcd_commands::etcd_connect"
+    },
+    {
+      "path": "etcd_commands::etcd_disconnect"
+    },
+    {
+      "path": "etcd_commands::etcd_list_connections"
+    },
+    {
+      "path": "etcd_commands::etcd_get_dashboard"
+    },
+    {
+      "path": "etcd_commands::etcd_kv_get"
+    },
+    {
+      "path": "etcd_commands::etcd_kv_put"
+    },
+    {
+      "path": "etcd_commands::etcd_kv_delete"
+    },
+    {
+      "path": "etcd_commands::etcd_kv_range"
+    },
+    {
+      "path": "etcd_commands::etcd_kv_get_history"
+    },
+    {
+      "path": "etcd_commands::etcd_lease_grant"
+    },
+    {
+      "path": "etcd_commands::etcd_lease_revoke"
+    },
+    {
+      "path": "etcd_commands::etcd_lease_list"
+    },
+    {
+      "path": "etcd_commands::etcd_lease_ttl"
+    },
+    {
+      "path": "etcd_commands::etcd_lease_keep_alive"
+    },
+    {
+      "path": "etcd_commands::etcd_member_list"
+    },
+    {
+      "path": "etcd_commands::etcd_member_add"
+    },
+    {
+      "path": "etcd_commands::etcd_member_remove"
+    },
+    {
+      "path": "etcd_commands::etcd_member_update"
+    },
+    {
+      "path": "etcd_commands::etcd_member_promote"
+    },
+    {
+      "path": "etcd_commands::etcd_cluster_health"
+    },
+    {
+      "path": "etcd_commands::etcd_endpoint_status"
+    },
+    {
+      "path": "etcd_commands::etcd_auth_enable"
+    },
+    {
+      "path": "etcd_commands::etcd_auth_disable"
+    },
+    {
+      "path": "etcd_commands::etcd_user_list"
+    },
+    {
+      "path": "etcd_commands::etcd_user_add"
+    },
+    {
+      "path": "etcd_commands::etcd_user_delete"
+    },
+    {
+      "path": "etcd_commands::etcd_user_get"
+    },
+    {
+      "path": "etcd_commands::etcd_user_change_password"
+    },
+    {
+      "path": "etcd_commands::etcd_user_grant_role"
+    },
+    {
+      "path": "etcd_commands::etcd_user_revoke_role"
+    },
+    {
+      "path": "etcd_commands::etcd_role_list"
+    },
+    {
+      "path": "etcd_commands::etcd_role_add"
+    },
+    {
+      "path": "etcd_commands::etcd_role_delete"
+    },
+    {
+      "path": "etcd_commands::etcd_role_get"
+    },
+    {
+      "path": "etcd_commands::etcd_role_grant_permission"
+    },
+    {
+      "path": "etcd_commands::etcd_role_revoke_permission"
+    },
+    {
+      "path": "etcd_commands::etcd_alarm_list"
+    },
+    {
+      "path": "etcd_commands::etcd_alarm_disarm"
+    },
+    {
+      "path": "etcd_commands::etcd_defragment"
+    },
+    {
+      "path": "etcd_commands::etcd_status"
+    },
+    {
+      "path": "etcd_commands::etcd_move_leader"
+    },
+    {
+      "path": "etcd_commands::etcd_compact"
+    },
+    {
+      "path": "consul_commands::consul_connect"
+    },
+    {
+      "path": "consul_commands::consul_disconnect"
+    },
+    {
+      "path": "consul_commands::consul_list_connections"
+    },
+    {
+      "path": "consul_commands::consul_get_dashboard"
+    },
+    {
+      "path": "consul_commands::consul_kv_get"
+    },
+    {
+      "path": "consul_commands::consul_kv_put"
+    },
+    {
+      "path": "consul_commands::consul_kv_delete"
+    },
+    {
+      "path": "consul_commands::consul_kv_list"
+    },
+    {
+      "path": "consul_commands::consul_kv_get_tree"
+    },
+    {
+      "path": "consul_commands::consul_list_services"
+    },
+    {
+      "path": "consul_commands::consul_get_service"
+    },
+    {
+      "path": "consul_commands::consul_register_service"
+    },
+    {
+      "path": "consul_commands::consul_deregister_service"
+    },
+    {
+      "path": "consul_commands::consul_list_nodes"
+    },
+    {
+      "path": "consul_commands::consul_get_node"
+    },
+    {
+      "path": "consul_commands::consul_list_datacenters"
+    },
+    {
+      "path": "consul_commands::consul_node_health"
+    },
+    {
+      "path": "consul_commands::consul_service_health"
+    },
+    {
+      "path": "consul_commands::consul_agent_info"
+    },
+    {
+      "path": "consul_commands::consul_agent_members"
+    },
+    {
+      "path": "consul_commands::consul_agent_join"
+    },
+    {
+      "path": "consul_commands::consul_agent_leave"
+    },
+    {
+      "path": "consul_commands::consul_agent_metrics"
+    },
+    {
+      "path": "consul_commands::consul_acl_list_tokens"
+    },
+    {
+      "path": "consul_commands::consul_acl_create_token"
+    },
+    {
+      "path": "consul_commands::consul_acl_list_policies"
+    },
+    {
+      "path": "consul_commands::consul_acl_create_policy"
+    },
+    {
+      "path": "consul_commands::consul_sessions_list"
+    },
+    {
+      "path": "consul_commands::consul_sessions_create"
+    },
+    {
+      "path": "consul_commands::consul_sessions_delete"
+    },
+    {
+      "path": "consul_commands::consul_fire_event"
+    },
+    {
+      "path": "consul_commands::consul_list_events"
+    },
+    {
+      "path": "compose_commands::compose_init"
+    },
+    {
+      "path": "compose_commands::compose_is_available"
+    },
+    {
+      "path": "compose_commands::compose_version"
+    },
+    {
+      "path": "compose_commands::compose_list_projects"
+    },
+    {
+      "path": "compose_commands::compose_up"
+    },
+    {
+      "path": "compose_commands::compose_down"
+    },
+    {
+      "path": "compose_commands::compose_ps"
+    },
+    {
+      "path": "compose_commands::compose_logs"
+    },
+    {
+      "path": "compose_commands::compose_build"
+    },
+    {
+      "path": "compose_commands::compose_pull"
+    },
+    {
+      "path": "compose_commands::compose_push"
+    },
+    {
+      "path": "compose_commands::compose_run"
+    },
+    {
+      "path": "compose_commands::compose_exec"
+    },
+    {
+      "path": "compose_commands::compose_create"
+    },
+    {
+      "path": "compose_commands::compose_start"
+    },
+    {
+      "path": "compose_commands::compose_stop"
+    },
+    {
+      "path": "compose_commands::compose_restart"
+    },
+    {
+      "path": "compose_commands::compose_pause"
+    },
+    {
+      "path": "compose_commands::compose_unpause"
+    },
+    {
+      "path": "compose_commands::compose_kill"
+    },
+    {
+      "path": "compose_commands::compose_rm"
+    },
+    {
+      "path": "compose_commands::compose_cp"
+    },
+    {
+      "path": "compose_commands::compose_top"
+    },
+    {
+      "path": "compose_commands::compose_port"
+    },
+    {
+      "path": "compose_commands::compose_images"
+    },
+    {
+      "path": "compose_commands::compose_events"
+    },
+    {
+      "path": "compose_commands::compose_config"
+    },
+    {
+      "path": "compose_commands::compose_watch"
+    },
+    {
+      "path": "compose_commands::compose_scale"
+    },
+    {
+      "path": "compose_commands::compose_parse_file"
+    },
+    {
+      "path": "compose_commands::compose_parse_yaml"
+    },
+    {
+      "path": "compose_commands::compose_discover_files"
+    },
+    {
+      "path": "compose_commands::compose_merge_files"
+    },
+    {
+      "path": "compose_commands::compose_validate"
+    },
+    {
+      "path": "compose_commands::compose_interpolate"
+    },
+    {
+      "path": "compose_commands::compose_parse_env_file"
+    },
+    {
+      "path": "compose_commands::compose_to_yaml"
+    },
+    {
+      "path": "compose_commands::compose_to_json"
+    },
+    {
+      "path": "compose_commands::compose_write_file"
+    },
+    {
+      "path": "compose_commands::compose_dependency_graph"
+    },
+    {
+      "path": "compose_commands::compose_startup_order"
+    },
+    {
+      "path": "compose_commands::compose_shutdown_order"
+    },
+    {
+      "path": "compose_commands::compose_dependents"
+    },
+    {
+      "path": "compose_commands::compose_list_profiles"
+    },
+    {
+      "path": "compose_commands::compose_profile_names"
+    },
+    {
+      "path": "compose_commands::compose_active_services"
+    },
+    {
+      "path": "compose_commands::compose_validate_profile_deps"
+    },
+    {
+      "path": "compose_commands::compose_list_templates"
+    },
+    {
+      "path": "compose_commands::compose_get_template"
+    },
+    {
+      "path": "compose_commands::compose_template_categories"
+    },
+    {
+      "path": "compose_commands::compose_templates_by_category"
+    },
+    {
+      "path": "compose_commands::compose_scaffold"
+    }
+  ]
+}

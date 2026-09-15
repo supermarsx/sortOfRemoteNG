@@ -1,0 +1,680 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "bootloader_commands::boot_add_host"
+    },
+    {
+      "path": "bootloader_commands::boot_remove_host"
+    },
+    {
+      "path": "bootloader_commands::boot_update_host"
+    },
+    {
+      "path": "bootloader_commands::boot_get_host"
+    },
+    {
+      "path": "bootloader_commands::boot_list_hosts"
+    },
+    {
+      "path": "bootloader_commands::boot_detect_bootloader"
+    },
+    {
+      "path": "bootloader_commands::boot_detect_boot_mode"
+    },
+    {
+      "path": "bootloader_commands::boot_get_partitions"
+    },
+    {
+      "path": "bootloader_commands::boot_get_grub_config"
+    },
+    {
+      "path": "bootloader_commands::boot_set_grub_param"
+    },
+    {
+      "path": "bootloader_commands::boot_get_grub_environment"
+    },
+    {
+      "path": "bootloader_commands::boot_list_grub_entries"
+    },
+    {
+      "path": "bootloader_commands::boot_set_default_grub_entry"
+    },
+    {
+      "path": "bootloader_commands::boot_update_grub"
+    },
+    {
+      "path": "bootloader_commands::boot_install_grub"
+    },
+    {
+      "path": "bootloader_commands::boot_get_custom_entries"
+    },
+    {
+      "path": "bootloader_commands::boot_set_custom_entries"
+    },
+    {
+      "path": "bootloader_commands::boot_list_grub_scripts"
+    },
+    {
+      "path": "bootloader_commands::boot_enable_grub_script"
+    },
+    {
+      "path": "bootloader_commands::boot_disable_grub_script"
+    },
+    {
+      "path": "bootloader_commands::boot_get_sd_config"
+    },
+    {
+      "path": "bootloader_commands::boot_set_sd_config"
+    },
+    {
+      "path": "bootloader_commands::boot_list_sd_entries"
+    },
+    {
+      "path": "bootloader_commands::boot_create_sd_entry"
+    },
+    {
+      "path": "bootloader_commands::boot_delete_sd_entry"
+    },
+    {
+      "path": "bootloader_commands::boot_set_default_sd"
+    },
+    {
+      "path": "bootloader_commands::boot_sd_status"
+    },
+    {
+      "path": "bootloader_commands::boot_list_uefi_entries"
+    },
+    {
+      "path": "bootloader_commands::boot_get_uefi_order"
+    },
+    {
+      "path": "bootloader_commands::boot_set_uefi_order"
+    },
+    {
+      "path": "bootloader_commands::boot_create_uefi_entry"
+    },
+    {
+      "path": "bootloader_commands::boot_delete_uefi_entry"
+    },
+    {
+      "path": "bootloader_commands::boot_set_next_boot"
+    },
+    {
+      "path": "bootloader_commands::boot_get_uefi_info"
+    },
+    {
+      "path": "bootloader_commands::boot_list_kernels"
+    },
+    {
+      "path": "bootloader_commands::boot_get_running_kernel"
+    },
+    {
+      "path": "bootloader_commands::boot_get_kernel_params"
+    },
+    {
+      "path": "bootloader_commands::boot_set_kernel_params"
+    },
+    {
+      "path": "bootloader_commands::boot_add_kernel_param"
+    },
+    {
+      "path": "bootloader_commands::boot_remove_kernel_param"
+    },
+    {
+      "path": "bootloader_commands::boot_list_initramfs"
+    },
+    {
+      "path": "bootloader_commands::boot_rebuild_initramfs"
+    },
+    {
+      "path": "bootloader_commands::boot_detect_initramfs_tool"
+    },
+    {
+      "path": "cron_commands::cron_add_host"
+    },
+    {
+      "path": "cron_commands::cron_remove_host"
+    },
+    {
+      "path": "cron_commands::cron_update_host"
+    },
+    {
+      "path": "cron_commands::cron_get_host"
+    },
+    {
+      "path": "cron_commands::cron_list_hosts"
+    },
+    {
+      "path": "cron_commands::cron_list_user_crontabs"
+    },
+    {
+      "path": "cron_commands::cron_get_crontab"
+    },
+    {
+      "path": "cron_commands::cron_add_job"
+    },
+    {
+      "path": "cron_commands::cron_remove_job"
+    },
+    {
+      "path": "cron_commands::cron_update_job"
+    },
+    {
+      "path": "cron_commands::cron_enable_job"
+    },
+    {
+      "path": "cron_commands::cron_disable_job"
+    },
+    {
+      "path": "cron_commands::cron_remove_crontab"
+    },
+    {
+      "path": "cron_commands::cron_backup_crontab"
+    },
+    {
+      "path": "cron_commands::cron_restore_crontab"
+    },
+    {
+      "path": "cron_commands::cron_list_system_files"
+    },
+    {
+      "path": "cron_commands::cron_get_system_file"
+    },
+    {
+      "path": "cron_commands::cron_create_system_file"
+    },
+    {
+      "path": "cron_commands::cron_delete_system_file"
+    },
+    {
+      "path": "cron_commands::cron_list_periodic"
+    },
+    {
+      "path": "cron_commands::cron_get_etc_crontab"
+    },
+    {
+      "path": "cron_commands::cron_list_at_jobs"
+    },
+    {
+      "path": "cron_commands::cron_get_at_job"
+    },
+    {
+      "path": "cron_commands::cron_schedule_at_job"
+    },
+    {
+      "path": "cron_commands::cron_schedule_batch_job"
+    },
+    {
+      "path": "cron_commands::cron_remove_at_job"
+    },
+    {
+      "path": "cron_commands::cron_get_at_access"
+    },
+    {
+      "path": "cron_commands::cron_get_anacrontab"
+    },
+    {
+      "path": "cron_commands::cron_add_anacron_entry"
+    },
+    {
+      "path": "cron_commands::cron_remove_anacron_entry"
+    },
+    {
+      "path": "cron_commands::cron_run_anacron"
+    },
+    {
+      "path": "cron_commands::cron_get_anacron_timestamps"
+    },
+    {
+      "path": "cron_commands::cron_validate_expression"
+    },
+    {
+      "path": "cron_commands::cron_next_runs"
+    },
+    {
+      "path": "cron_commands::cron_describe_expression"
+    },
+    {
+      "path": "cron_commands::cron_get_access"
+    },
+    {
+      "path": "cron_commands::cron_set_allow"
+    },
+    {
+      "path": "cron_commands::cron_set_deny"
+    },
+    {
+      "path": "cron_commands::cron_check_user_access"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_add_host"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_remove_host"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_update_host"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_host"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_list_hosts"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_list_modules"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_module_info"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_load_module"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_unload_module"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_module_params"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_set_module_param"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_list_available_modules"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_blacklist_module"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_unblacklist_module"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_list_blacklisted"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_list_autoload"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_add_autoload"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_remove_autoload"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_all_sysctl"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_sysctl"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_set_sysctl"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_set_sysctl_persistent"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_remove_sysctl_persistent"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_reload_sysctl"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_network_sysctl"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_vm_sysctl"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_config"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_check_feature"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_detect_cgroup_version"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_detect_namespace_support"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_detect_security_modules"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_detect_io_schedulers"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_command_line"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_power_state"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_list_thermal_zones"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_get_cpu_governor"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_set_cpu_governor"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_list_governors"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_read_sysfs"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_write_sysfs"
+    },
+    {
+      "path": "kernel_mgmt_commands::kernel_list_block_devices"
+    },
+    {
+      "path": "os_detect_commands::os_detect_add_host"
+    },
+    {
+      "path": "os_detect_commands::os_detect_remove_host"
+    },
+    {
+      "path": "os_detect_commands::os_detect_update_host"
+    },
+    {
+      "path": "os_detect_commands::os_detect_get_host"
+    },
+    {
+      "path": "os_detect_commands::os_detect_list_hosts"
+    },
+    {
+      "path": "os_detect_commands::os_detect_os_family"
+    },
+    {
+      "path": "os_detect_commands::os_detect_linux_distro"
+    },
+    {
+      "path": "os_detect_commands::os_detect_os_version"
+    },
+    {
+      "path": "os_detect_commands::os_detect_macos_version"
+    },
+    {
+      "path": "os_detect_commands::os_detect_bsd_version"
+    },
+    {
+      "path": "os_detect_commands::os_detect_init_system"
+    },
+    {
+      "path": "os_detect_commands::os_detect_init_services"
+    },
+    {
+      "path": "os_detect_commands::os_detect_default_target"
+    },
+    {
+      "path": "os_detect_commands::os_detect_package_managers"
+    },
+    {
+      "path": "os_detect_commands::os_detect_installed_packages"
+    },
+    {
+      "path": "os_detect_commands::os_detect_package_sources"
+    },
+    {
+      "path": "os_detect_commands::os_detect_updates_available"
+    },
+    {
+      "path": "os_detect_commands::os_detect_cpu"
+    },
+    {
+      "path": "os_detect_commands::os_detect_memory"
+    },
+    {
+      "path": "os_detect_commands::os_detect_disks"
+    },
+    {
+      "path": "os_detect_commands::os_detect_network_interfaces"
+    },
+    {
+      "path": "os_detect_commands::os_detect_gpus"
+    },
+    {
+      "path": "os_detect_commands::os_detect_virtualization"
+    },
+    {
+      "path": "os_detect_commands::os_detect_hardware_profile"
+    },
+    {
+      "path": "os_detect_commands::os_detect_kernel"
+    },
+    {
+      "path": "os_detect_commands::os_detect_architecture"
+    },
+    {
+      "path": "os_detect_commands::os_detect_loaded_modules"
+    },
+    {
+      "path": "os_detect_commands::os_detect_kernel_features"
+    },
+    {
+      "path": "os_detect_commands::os_detect_selinux"
+    },
+    {
+      "path": "os_detect_commands::os_detect_apparmor"
+    },
+    {
+      "path": "os_detect_commands::os_detect_firewall"
+    },
+    {
+      "path": "os_detect_commands::os_detect_available_services"
+    },
+    {
+      "path": "os_detect_commands::os_detect_service_capabilities"
+    },
+    {
+      "path": "os_detect_commands::os_detect_installed_runtimes"
+    },
+    {
+      "path": "os_detect_commands::os_detect_web_servers"
+    },
+    {
+      "path": "os_detect_commands::os_detect_databases"
+    },
+    {
+      "path": "os_detect_commands::os_detect_container_runtimes"
+    },
+    {
+      "path": "os_detect_commands::os_detect_default_shell"
+    },
+    {
+      "path": "os_detect_commands::os_detect_available_shells"
+    },
+    {
+      "path": "os_detect_commands::os_detect_locale"
+    },
+    {
+      "path": "os_detect_commands::os_detect_timezone"
+    },
+    {
+      "path": "os_detect_commands::os_detect_full_scan"
+    },
+    {
+      "path": "os_detect_commands::os_detect_quick_scan"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_add_host"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_remove_host"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_update_host"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_host"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_list_hosts"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_list_processes"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_process"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_process_tree"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_process_children"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_search_processes"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_top_processes"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_count_processes"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_kill_process"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_kill_processes"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_killall"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_renice"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_list_open_files"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_list_sockets"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_list_process_sockets"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_list_listening_ports"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_status"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_cmdline"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_environ"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_limits"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_maps"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_io"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_namespaces"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_cgroup"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_load_average"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_uptime"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_meminfo"
+    },
+    {
+      "path": "proc_mgmt_commands::proc_get_cpu_stats"
+    },
+    {
+      "path": "time_ntp_commands::time_add_host"
+    },
+    {
+      "path": "time_ntp_commands::time_remove_host"
+    },
+    {
+      "path": "time_ntp_commands::time_update_host"
+    },
+    {
+      "path": "time_ntp_commands::time_get_host"
+    },
+    {
+      "path": "time_ntp_commands::time_list_hosts"
+    },
+    {
+      "path": "time_ntp_commands::time_get_status"
+    },
+    {
+      "path": "time_ntp_commands::time_set_timezone"
+    },
+    {
+      "path": "time_ntp_commands::time_list_timezones"
+    },
+    {
+      "path": "time_ntp_commands::time_set_time"
+    },
+    {
+      "path": "time_ntp_commands::time_set_ntp"
+    },
+    {
+      "path": "time_ntp_commands::time_get_chrony_config"
+    },
+    {
+      "path": "time_ntp_commands::time_chrony_add_server"
+    },
+    {
+      "path": "time_ntp_commands::time_chrony_remove_server"
+    },
+    {
+      "path": "time_ntp_commands::time_chrony_get_sources"
+    },
+    {
+      "path": "time_ntp_commands::time_chrony_get_tracking"
+    },
+    {
+      "path": "time_ntp_commands::time_chrony_makestep"
+    },
+    {
+      "path": "time_ntp_commands::time_get_ntpd_config"
+    },
+    {
+      "path": "time_ntp_commands::time_ntpd_add_server"
+    },
+    {
+      "path": "time_ntp_commands::time_ntpd_remove_server"
+    },
+    {
+      "path": "time_ntp_commands::time_ntpd_get_peers"
+    },
+    {
+      "path": "time_ntp_commands::time_ntpd_get_status"
+    },
+    {
+      "path": "time_ntp_commands::time_get_hwclock"
+    },
+    {
+      "path": "time_ntp_commands::time_sync_hwclock_from_system"
+    },
+    {
+      "path": "time_ntp_commands::time_sync_system_from_hwclock"
+    },
+    {
+      "path": "time_ntp_commands::time_get_hwclock_drift"
+    },
+    {
+      "path": "time_ntp_commands::time_detect_ntp"
+    },
+    {
+      "path": "time_ntp_commands::time_is_synced"
+    }
+  ]
+}

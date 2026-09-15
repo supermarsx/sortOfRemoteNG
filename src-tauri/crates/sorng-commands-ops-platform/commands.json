@@ -1,0 +1,671 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "path": "netbox_commands::netbox_connect"
+    },
+    {
+      "path": "netbox_commands::netbox_disconnect"
+    },
+    {
+      "path": "netbox_commands::netbox_list_connections"
+    },
+    {
+      "path": "netbox_commands::netbox_ping"
+    },
+    {
+      "path": "netbox_commands::netbox_list_sites"
+    },
+    {
+      "path": "netbox_commands::netbox_get_site"
+    },
+    {
+      "path": "netbox_commands::netbox_create_site"
+    },
+    {
+      "path": "netbox_commands::netbox_update_site"
+    },
+    {
+      "path": "netbox_commands::netbox_partial_update_site"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_site"
+    },
+    {
+      "path": "netbox_commands::netbox_list_sites_by_region"
+    },
+    {
+      "path": "netbox_commands::netbox_list_sites_by_group"
+    },
+    {
+      "path": "netbox_commands::netbox_list_racks"
+    },
+    {
+      "path": "netbox_commands::netbox_get_rack"
+    },
+    {
+      "path": "netbox_commands::netbox_create_rack"
+    },
+    {
+      "path": "netbox_commands::netbox_update_rack"
+    },
+    {
+      "path": "netbox_commands::netbox_partial_update_rack"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_rack"
+    },
+    {
+      "path": "netbox_commands::netbox_get_rack_elevation"
+    },
+    {
+      "path": "netbox_commands::netbox_list_rack_reservations"
+    },
+    {
+      "path": "netbox_commands::netbox_list_devices"
+    },
+    {
+      "path": "netbox_commands::netbox_get_device"
+    },
+    {
+      "path": "netbox_commands::netbox_create_device"
+    },
+    {
+      "path": "netbox_commands::netbox_update_device"
+    },
+    {
+      "path": "netbox_commands::netbox_partial_update_device"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_device"
+    },
+    {
+      "path": "netbox_commands::netbox_list_devices_by_site"
+    },
+    {
+      "path": "netbox_commands::netbox_list_devices_by_rack"
+    },
+    {
+      "path": "netbox_commands::netbox_list_device_types"
+    },
+    {
+      "path": "netbox_commands::netbox_get_device_type"
+    },
+    {
+      "path": "netbox_commands::netbox_list_manufacturers"
+    },
+    {
+      "path": "netbox_commands::netbox_get_manufacturer"
+    },
+    {
+      "path": "netbox_commands::netbox_list_platforms"
+    },
+    {
+      "path": "netbox_commands::netbox_get_platform"
+    },
+    {
+      "path": "netbox_commands::netbox_list_device_roles"
+    },
+    {
+      "path": "netbox_commands::netbox_get_device_role"
+    },
+    {
+      "path": "netbox_commands::netbox_render_device_config"
+    },
+    {
+      "path": "netbox_commands::netbox_list_interfaces"
+    },
+    {
+      "path": "netbox_commands::netbox_get_interface"
+    },
+    {
+      "path": "netbox_commands::netbox_create_interface"
+    },
+    {
+      "path": "netbox_commands::netbox_update_interface"
+    },
+    {
+      "path": "netbox_commands::netbox_partial_update_interface"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_interface"
+    },
+    {
+      "path": "netbox_commands::netbox_list_interface_connections"
+    },
+    {
+      "path": "netbox_commands::netbox_list_ip_addresses"
+    },
+    {
+      "path": "netbox_commands::netbox_get_ip_address"
+    },
+    {
+      "path": "netbox_commands::netbox_create_ip_address"
+    },
+    {
+      "path": "netbox_commands::netbox_update_ip_address"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_ip_address"
+    },
+    {
+      "path": "netbox_commands::netbox_list_prefixes"
+    },
+    {
+      "path": "netbox_commands::netbox_get_prefix"
+    },
+    {
+      "path": "netbox_commands::netbox_create_prefix"
+    },
+    {
+      "path": "netbox_commands::netbox_update_prefix"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_prefix"
+    },
+    {
+      "path": "netbox_commands::netbox_get_available_ips"
+    },
+    {
+      "path": "netbox_commands::netbox_create_available_ip"
+    },
+    {
+      "path": "netbox_commands::netbox_get_available_prefixes"
+    },
+    {
+      "path": "netbox_commands::netbox_list_vrfs"
+    },
+    {
+      "path": "netbox_commands::netbox_get_vrf"
+    },
+    {
+      "path": "netbox_commands::netbox_create_vrf"
+    },
+    {
+      "path": "netbox_commands::netbox_update_vrf"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_vrf"
+    },
+    {
+      "path": "netbox_commands::netbox_list_aggregates"
+    },
+    {
+      "path": "netbox_commands::netbox_get_aggregate"
+    },
+    {
+      "path": "netbox_commands::netbox_list_rirs"
+    },
+    {
+      "path": "netbox_commands::netbox_get_rir"
+    },
+    {
+      "path": "netbox_commands::netbox_list_ipam_roles"
+    },
+    {
+      "path": "netbox_commands::netbox_get_ipam_role"
+    },
+    {
+      "path": "netbox_commands::netbox_list_services"
+    },
+    {
+      "path": "netbox_commands::netbox_list_vlans"
+    },
+    {
+      "path": "netbox_commands::netbox_get_vlan"
+    },
+    {
+      "path": "netbox_commands::netbox_create_vlan"
+    },
+    {
+      "path": "netbox_commands::netbox_update_vlan"
+    },
+    {
+      "path": "netbox_commands::netbox_partial_update_vlan"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_vlan"
+    },
+    {
+      "path": "netbox_commands::netbox_list_vlans_by_site"
+    },
+    {
+      "path": "netbox_commands::netbox_list_vlans_by_group"
+    },
+    {
+      "path": "netbox_commands::netbox_list_vlan_groups"
+    },
+    {
+      "path": "netbox_commands::netbox_get_vlan_group"
+    },
+    {
+      "path": "netbox_commands::netbox_create_vlan_group"
+    },
+    {
+      "path": "netbox_commands::netbox_update_vlan_group"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_vlan_group"
+    },
+    {
+      "path": "netbox_commands::netbox_list_circuits"
+    },
+    {
+      "path": "netbox_commands::netbox_get_circuit"
+    },
+    {
+      "path": "netbox_commands::netbox_create_circuit"
+    },
+    {
+      "path": "netbox_commands::netbox_update_circuit"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_circuit"
+    },
+    {
+      "path": "netbox_commands::netbox_list_circuit_providers"
+    },
+    {
+      "path": "netbox_commands::netbox_get_circuit_provider"
+    },
+    {
+      "path": "netbox_commands::netbox_create_circuit_provider"
+    },
+    {
+      "path": "netbox_commands::netbox_update_circuit_provider"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_circuit_provider"
+    },
+    {
+      "path": "netbox_commands::netbox_list_circuit_types"
+    },
+    {
+      "path": "netbox_commands::netbox_get_circuit_type"
+    },
+    {
+      "path": "netbox_commands::netbox_list_circuit_terminations"
+    },
+    {
+      "path": "netbox_commands::netbox_list_cables"
+    },
+    {
+      "path": "netbox_commands::netbox_get_cable"
+    },
+    {
+      "path": "netbox_commands::netbox_create_cable"
+    },
+    {
+      "path": "netbox_commands::netbox_update_cable"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_cable"
+    },
+    {
+      "path": "netbox_commands::netbox_trace_cable"
+    },
+    {
+      "path": "netbox_commands::netbox_list_tenants"
+    },
+    {
+      "path": "netbox_commands::netbox_get_tenant"
+    },
+    {
+      "path": "netbox_commands::netbox_create_tenant"
+    },
+    {
+      "path": "netbox_commands::netbox_update_tenant"
+    },
+    {
+      "path": "netbox_commands::netbox_partial_update_tenant"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_tenant"
+    },
+    {
+      "path": "netbox_commands::netbox_list_tenant_groups"
+    },
+    {
+      "path": "netbox_commands::netbox_get_tenant_group"
+    },
+    {
+      "path": "netbox_commands::netbox_create_tenant_group"
+    },
+    {
+      "path": "netbox_commands::netbox_update_tenant_group"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_tenant_group"
+    },
+    {
+      "path": "netbox_commands::netbox_list_contacts"
+    },
+    {
+      "path": "netbox_commands::netbox_get_contact"
+    },
+    {
+      "path": "netbox_commands::netbox_create_contact"
+    },
+    {
+      "path": "netbox_commands::netbox_update_contact"
+    },
+    {
+      "path": "netbox_commands::netbox_partial_update_contact"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_contact"
+    },
+    {
+      "path": "netbox_commands::netbox_list_contact_groups"
+    },
+    {
+      "path": "netbox_commands::netbox_get_contact_group"
+    },
+    {
+      "path": "netbox_commands::netbox_create_contact_group"
+    },
+    {
+      "path": "netbox_commands::netbox_update_contact_group"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_contact_group"
+    },
+    {
+      "path": "netbox_commands::netbox_list_contact_roles"
+    },
+    {
+      "path": "netbox_commands::netbox_list_contact_assignments"
+    },
+    {
+      "path": "netbox_commands::netbox_list_vms"
+    },
+    {
+      "path": "netbox_commands::netbox_get_vm"
+    },
+    {
+      "path": "netbox_commands::netbox_create_vm"
+    },
+    {
+      "path": "netbox_commands::netbox_update_vm"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_vm"
+    },
+    {
+      "path": "netbox_commands::netbox_list_vm_interfaces"
+    },
+    {
+      "path": "netbox_commands::netbox_create_vm_interface"
+    },
+    {
+      "path": "netbox_commands::netbox_update_vm_interface"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_vm_interface"
+    },
+    {
+      "path": "netbox_commands::netbox_list_clusters"
+    },
+    {
+      "path": "netbox_commands::netbox_get_cluster"
+    },
+    {
+      "path": "netbox_commands::netbox_create_cluster"
+    },
+    {
+      "path": "netbox_commands::netbox_update_cluster"
+    },
+    {
+      "path": "netbox_commands::netbox_delete_cluster"
+    },
+    {
+      "path": "netbox_commands::netbox_list_cluster_types"
+    },
+    {
+      "path": "netbox_commands::netbox_get_cluster_type"
+    },
+    {
+      "path": "netbox_commands::netbox_create_cluster_type"
+    },
+    {
+      "path": "netbox_commands::netbox_list_cluster_groups"
+    },
+    {
+      "path": "cups_commands::cups_connect"
+    },
+    {
+      "path": "cups_commands::cups_disconnect"
+    },
+    {
+      "path": "cups_commands::cups_list_sessions"
+    },
+    {
+      "path": "cups_commands::cups_list_printers"
+    },
+    {
+      "path": "cups_commands::cups_get_printer"
+    },
+    {
+      "path": "cups_commands::cups_modify_printer"
+    },
+    {
+      "path": "cups_commands::cups_delete_printer"
+    },
+    {
+      "path": "cups_commands::cups_pause_printer"
+    },
+    {
+      "path": "cups_commands::cups_resume_printer"
+    },
+    {
+      "path": "cups_commands::cups_set_default_printer"
+    },
+    {
+      "path": "cups_commands::cups_get_default_printer"
+    },
+    {
+      "path": "cups_commands::cups_accept_jobs"
+    },
+    {
+      "path": "cups_commands::cups_reject_jobs"
+    },
+    {
+      "path": "cups_commands::cups_discover_printers"
+    },
+    {
+      "path": "cups_commands::cups_list_jobs"
+    },
+    {
+      "path": "cups_commands::cups_get_job"
+    },
+    {
+      "path": "cups_commands::cups_submit_job"
+    },
+    {
+      "path": "cups_commands::cups_submit_job_uri"
+    },
+    {
+      "path": "cups_commands::cups_cancel_job"
+    },
+    {
+      "path": "cups_commands::cups_hold_job"
+    },
+    {
+      "path": "cups_commands::cups_release_job"
+    },
+    {
+      "path": "cups_commands::cups_cancel_all_jobs"
+    },
+    {
+      "path": "cups_commands::cups_move_job"
+    },
+    {
+      "path": "cups_commands::cups_list_classes"
+    },
+    {
+      "path": "cups_commands::cups_get_class"
+    },
+    {
+      "path": "cups_commands::cups_create_class"
+    },
+    {
+      "path": "cups_commands::cups_modify_class"
+    },
+    {
+      "path": "cups_commands::cups_delete_class"
+    },
+    {
+      "path": "cups_commands::cups_add_class_member"
+    },
+    {
+      "path": "cups_commands::cups_remove_class_member"
+    },
+    {
+      "path": "cups_commands::cups_list_ppds"
+    },
+    {
+      "path": "cups_commands::cups_search_ppds"
+    },
+    {
+      "path": "cups_commands::cups_get_ppd"
+    },
+    {
+      "path": "cups_commands::cups_get_ppd_options"
+    },
+    {
+      "path": "cups_commands::cups_upload_ppd"
+    },
+    {
+      "path": "cups_commands::cups_assign_ppd"
+    },
+    {
+      "path": "cups_commands::cups_list_drivers"
+    },
+    {
+      "path": "cups_commands::cups_get_driver"
+    },
+    {
+      "path": "cups_commands::cups_recommend_driver"
+    },
+    {
+      "path": "cups_commands::cups_get_driver_options"
+    },
+    {
+      "path": "cups_commands::cups_get_server_settings"
+    },
+    {
+      "path": "cups_commands::cups_update_server_settings"
+    },
+    {
+      "path": "cups_commands::cups_get_error_log"
+    },
+    {
+      "path": "cups_commands::cups_test_page"
+    },
+    {
+      "path": "cups_commands::cups_get_subscriptions_status"
+    },
+    {
+      "path": "cups_commands::cups_cleanup_jobs"
+    },
+    {
+      "path": "cups_commands::cups_restart"
+    },
+    {
+      "path": "cups_commands::cups_create_subscription"
+    },
+    {
+      "path": "cups_commands::cups_cancel_subscription"
+    },
+    {
+      "path": "cups_commands::cups_list_subscriptions"
+    },
+    {
+      "path": "cups_commands::cups_get_events"
+    },
+    {
+      "path": "cups_commands::cups_renew_subscription"
+    },
+    {
+      "path": "about_commands::about_get_info"
+    },
+    {
+      "path": "about_commands::about_get_app_info"
+    },
+    {
+      "path": "about_commands::about_get_license_summary"
+    },
+    {
+      "path": "about_commands::about_get_all_license_texts"
+    },
+    {
+      "path": "about_commands::about_get_license_text"
+    },
+    {
+      "path": "about_commands::about_get_rust_deps"
+    },
+    {
+      "path": "about_commands::about_get_rust_deps_by_category"
+    },
+    {
+      "path": "about_commands::about_get_js_deps"
+    },
+    {
+      "path": "about_commands::about_get_js_deps_by_category"
+    },
+    {
+      "path": "about_commands::about_get_workspace_crates"
+    },
+    {
+      "path": "about_commands::about_get_workspace_crates_by_category"
+    },
+    {
+      "path": "about_commands::about_get_credits"
+    },
+    {
+      "path": "about_commands::about_search_deps"
+    },
+    {
+      "path": "about_commands::about_get_deps_by_license"
+    },
+    {
+      "path": "remote_backup_commands::backup_add_job"
+    },
+    {
+      "path": "remote_backup_commands::backup_update_job"
+    },
+    {
+      "path": "remote_backup_commands::backup_remove_job"
+    },
+    {
+      "path": "remote_backup_commands::backup_get_job"
+    },
+    {
+      "path": "remote_backup_commands::backup_list_jobs"
+    },
+    {
+      "path": "remote_backup_commands::backup_run_job"
+    },
+    {
+      "path": "remote_backup_commands::backup_cancel_job"
+    },
+    {
+      "path": "remote_backup_commands::backup_job_history"
+    },
+    {
+      "path": "remote_backup_commands::backup_all_history"
+    },
+    {
+      "path": "remote_backup_commands::backup_job_progress"
+    },
+    {
+      "path": "remote_backup_commands::backup_aggregate_progress"
+    },
+    {
+      "path": "remote_backup_commands::backup_detect_tools"
+    },
+    {
+      "path": "remote_backup_commands::backup_evaluate_retention"
+    }
+  ]
+}

@@ -10165,47 +10165,123 @@ dependencies = [
 name = "sorng-commands-ops"
 version = "26.45.0"
 dependencies = [
- "base64 0.23.1",
- "chrono",
- "log",
- "serde",
- "serde_json",
- "sorng-about",
- "sorng-bootloader",
- "sorng-ceph",
- "sorng-cicd",
- "sorng-consul",
- "sorng-cpanel",
- "sorng-cron",
- "sorng-cups",
- "sorng-docker-compose",
- "sorng-draytek",
- "sorng-etcd",
- "sorng-fail2ban",
- "sorng-freeipa",
- "sorng-grafana",
- "sorng-hashicorp-vault",
- "sorng-ipmi",
- "sorng-kafka",
- "sorng-kernel",
- "sorng-mac",
+ "sorng-commands-ops-databases",
+ "sorng-commands-ops-identity",
+ "sorng-commands-ops-messaging",
+ "sorng-commands-ops-monitoring",
+ "sorng-commands-ops-network",
+ "sorng-commands-ops-orchestration",
+ "sorng-commands-ops-platform",
+ "sorng-commands-ops-system",
+ "sorng-commands-ops-web",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-ops-databases"
+version = "26.45.0"
+dependencies = [
  "sorng-mysql-admin",
- "sorng-netbox",
- "sorng-os-detect",
- "sorng-pam",
- "sorng-pfsense",
- "sorng-php",
- "sorng-port-knock",
  "sorng-postgres-admin",
- "sorng-proc",
- "sorng-prometheus",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-ops-identity"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-freeipa",
+ "sorng-hashicorp-vault",
+ "sorng-mac",
+ "sorng-pam",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-ops-messaging"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-kafka",
  "sorng-rabbitmq",
- "sorng-remote-backup",
- "sorng-time-ntp",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-ops-monitoring"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-grafana",
+ "sorng-ipmi",
+ "sorng-prometheus",
  "sorng-ups",
  "sorng-zabbix",
  "tauri",
+]
+
+[[package]]
+name = "sorng-commands-ops-network"
+version = "26.45.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sorng-draytek",
+ "sorng-fail2ban",
+ "sorng-pfsense",
+ "sorng-port-knock",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-ops-orchestration"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-ceph",
+ "sorng-cicd",
+ "sorng-consul",
+ "sorng-docker-compose",
+ "sorng-etcd",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-ops-platform"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-about",
+ "sorng-cups",
+ "sorng-netbox",
+ "sorng-remote-backup",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-ops-system"
+version = "26.45.0"
+dependencies = [
+ "chrono",
+ "sorng-bootloader",
+ "sorng-cron",
+ "sorng-kernel",
+ "sorng-os-detect",
+ "sorng-proc",
+ "sorng-time-ntp",
+ "tauri",
  "uuid",
+]
+
+[[package]]
+name = "sorng-commands-ops-web"
+version = "26.45.0"
+dependencies = [
+ "serde_json",
+ "sorng-cpanel",
+ "sorng-php",
+ "tauri",
 ]
 
 [[package]]

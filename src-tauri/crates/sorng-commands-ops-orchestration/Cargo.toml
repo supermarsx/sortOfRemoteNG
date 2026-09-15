@@ -1,0 +1,15 @@
+[package]
+publish = false
+name = "sorng-commands-ops-orchestration"
+version.workspace = true
+edition = "2021"
+description = "Bounded ops-orchestration native command registrar"
+
+[dependencies]
+sorng-ceph = { path = "../sorng-ceph" }
+sorng-cicd = { path = "../sorng-cicd" }
+sorng-consul = { path = "../sorng-consul" }
+sorng-docker-compose = { path = "../sorng-docker-compose" }
+sorng-etcd = { path = "../sorng-etcd" }
+tauri = { workspace = true }
+serde_json = { workspace = true }
