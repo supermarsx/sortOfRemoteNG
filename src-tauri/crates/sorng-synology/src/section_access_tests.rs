@@ -717,6 +717,91 @@ async fn unsupported_apis_versions_and_codes_are_not_permission_problems() {
     assert!(nas.apis().is_empty());
 }
 
+/// DSM answers 120 to a missing or invalid request parameter. A request bug
+/// must never tell an administrator (or anyone) that access is missing.
+#[tokio::test]
+async fn code_120_is_a_request_error_for_every_account() {
+    const REQUEST_REJECTED: &str = "DSM answered SYNO.Core.User with code 120, which does not identify a permission problem. Access could not be confirmed; retry explicitly.";
+    let refused_as_permission = |state: ReadState| {
+        matches!(
+            state,
+            ReadState::RequiresAdministrator
+                | ReadState::SessionRestricted
+                | ReadState::RequiresApplicationPrivilege
+                | ReadState::PermissionDenied
+        )
+    };
+    let users = ["SYNO.Core.User", "SYNO.Core.Group"];
+    for (initdata, role, handshake, portal) in [
+        (
+            admin(),
+            AccountRole::Administrator,
+            LoginHandshake::Ik,
+            false,
+        ),
+        (
+            admin(),
+            AccountRole::Administrator,
+            LoginHandshake::Legacy,
+            false,
+        ),
+        (
+            admin(),
+            AccountRole::Administrator,
+            LoginHandshake::Ik,
+            true,
+        ),
+        (standard(), AccountRole::Standard, LoginHandshake::Ik, false),
+        (code(105), AccountRole::Unknown, LoginHandshake::Ik, false),
+    ] {
+        let nas = Nas::start(vec![
+            (INITDATA, initdata),
+            (users[0], code(120)),
+            (users[1], code(120)),
+        ])
+        .await;
+        let mut client = nas.client(&[INITDATA, users[0], users[1]]);
+        client.identity.login_handshake = handshake;
+        client.identity.portal_session = portal;
+        let snapshot = probe(&lease(client), "users").await;
+        assert_eq!(snapshot.account.role, role);
+        for read in &snapshot.reads {
+            assert_eq!(read.state, ReadState::Unknown, "{role:?} {handshake:?}");
+            assert!(!refused_as_permission(read.state));
+        }
+        assert_eq!(read(&snapshot, "users").reason, REQUEST_REJECTED);
+        assert_eq!(snapshot.status, SectionAccessStatus::Unknown);
+        assert_eq!(snapshot.requirement, None);
+        assert_eq!(snapshot.reason, UNKNOWN_REASON);
+        assert_eq!(nas.apis(), [INITDATA, users[0], users[1]]);
+
+        // Next to a real 105, the 120 read stays a request error.
+        let nas = Nas::start(vec![(users[0], raw(DENIED_105)), (users[1], code(120))]).await;
+        let mut client = nas.client(&users);
+        client.identity.login_handshake = handshake;
+        let snapshot = probe(&lease(client), "users").await;
+        assert_eq!(read(&snapshot, "groups").state, ReadState::Unknown);
+        assert_eq!(snapshot.status, SectionAccessStatus::Unknown);
+    }
+
+    // Application-privilege APIs too.
+    let tasks = "SYNO.DownloadStation.Task";
+    let nas = Nas::start(vec![
+        (
+            INITDATA,
+            initdata(json!(false), json!({"SYNO.SDS.DownloadStation":false})),
+        ),
+        (tasks, code(120)),
+    ])
+    .await;
+    let snapshot = probe(&nas.context(&[INITDATA, tasks]), "downloads").await;
+    assert_eq!(read(&snapshot, "downloadTasks").state, ReadState::Unknown);
+    assert_eq!(
+        read(&snapshot, "downloadTasks").application,
+        Some("Download Station")
+    );
+}
+
 #[tokio::test]
 async fn shared_calls_are_requested_once_per_section() {
     let storage = "SYNO.Storage.CGI.Storage";

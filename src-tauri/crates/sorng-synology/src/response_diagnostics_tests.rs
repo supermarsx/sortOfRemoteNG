@@ -566,6 +566,29 @@ async fn refusals_without_a_privilege_class_and_code_120_carry_no_access() {
     let facts = diagnostic(&error);
     assert_eq!(facts["dsmCode"], 120);
     assert!(facts.get("access").is_none());
+    assert!(!command_error(error).contains("requires"));
+
+    for (api, maximum) in [
+        ("SYNO.FileStation.List", 2),
+        ("SYNO.DownloadStation.Task", 3),
+    ] {
+        let peer = Peer::start(vec![Reply::json(
+            json!({"success":false,"error":{"code":120}}),
+        )])
+        .await;
+        let client = signed_in(&peer, &[(api, maximum)]);
+        let error = if api.starts_with("SYNO.FileStation.") {
+            client.file_call(api, maximum, "list_share", &[]).await
+        } else {
+            client.api_call::<Value>(api, 1, "list", &[]).await
+        }
+        .unwrap_err();
+        assert!(matches!(error.kind, SynologyErrorKind::ApiError(120)));
+        let facts = diagnostic(&error);
+        assert_eq!(facts["dsmCode"], 120);
+        assert!(facts.get("access").is_none(), "{api}");
+        assert!(!command_error(error).contains("privilege"), "{api}");
+    }
 }
 
 #[tokio::test]
