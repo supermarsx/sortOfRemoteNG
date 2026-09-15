@@ -141,6 +141,7 @@ pub static API_PRIVILEGES: &[ApiSpec] = &[
     admin("SYNO.Core.Security.AutoBlock"),
     admin("SYNO.Core.Security.AutoBlock.Rules"),
     admin("SYNO.Core.Security.Firewall"),
+    admin("SYNO.Core.Security.Firewall.Adapter"),
     admin("SYNO.Core.Security.Firewall.Rules"),
     admin("SYNO.Core.SecurityScan.Status"),
     admin("SYNO.Core.Service"),

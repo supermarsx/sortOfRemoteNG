@@ -318,6 +318,29 @@ impl SynoClient {
         facts.decode_value(value)
     }
 
+    /// A DSM list, sent bare (`[...]`) or wrapped (`{"users":[...],"total":5}`).
+    /// `keys` are tried in order. A missing key is a `json_schema` failure,
+    /// never an empty list.
+    #[cfg_attr(not(test), allow(dead_code))] // adopted by the t84 decoder lanes
+    pub(crate) async fn api_list<T: DeserializeOwned>(
+        &self,
+        api: &str,
+        version: u32,
+        method: &str,
+        form: &[(&str, &str)],
+        keys: &[&str],
+    ) -> SynologyResult<Vec<T>> {
+        let (value, facts) = self.post_value_observed(api, version, method, form).await?;
+        let rows = match value {
+            serde_json::Value::Object(mut map) => keys
+                .iter()
+                .find_map(|key| map.remove(*key))
+                .unwrap_or(serde_json::Value::Null),
+            other => other,
+        };
+        facts.decode_value(rows)
+    }
+
     /// A void POST call (returns `SynoResponse<serde_json::Value>` and ignores data).
     pub async fn api_post_void(
         &self,

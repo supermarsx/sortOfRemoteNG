@@ -19,6 +19,7 @@
 //! ## Modules
 //!
 //! - **types**            — Synology-specific data structures
+//! - **wire**             — Lenient DSM wire decoders (string numbers, CSV lists, JSON string params)
 //! - **error**            — Error types with DSM error code mapping
 //! - **client**           — HTTP client, session management, API discovery
 //! - **auth**             — Login (password / one-time code / legacy SID reuse)
@@ -78,6 +79,7 @@ pub mod types;
 pub mod users;
 pub mod viewer_host;
 pub mod virtualization;
+pub(crate) mod wire;
 
 #[cfg(test)]
 mod scoped_files_tests;

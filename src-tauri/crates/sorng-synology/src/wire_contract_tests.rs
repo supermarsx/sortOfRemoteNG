@@ -124,3 +124,6 @@ async fn iscsi_vendor_wrappers_and_typed_identifiers_map_without_fabricated_data
     assert_eq!(targets[0].mapped_luns, ["lun-a"]);
     assert!(service.list_iscsi_luns().await.is_err());
 }
+
+#[path = "wire_shapes_tests/mod.rs"]
+mod wire_shapes_tests;

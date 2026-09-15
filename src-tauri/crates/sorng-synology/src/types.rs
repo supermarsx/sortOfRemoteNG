@@ -191,6 +191,8 @@ pub struct SystemUtilization {
     pub cpu: CpuUtilization,
     pub memory: MemoryUtilization,
     pub network: Vec<NetworkUtilization>,
+    /// DSM sends `{"disk":[...],"total":{...}}`; a flat array is accepted too.
+    #[serde(deserialize_with = "crate::wire::disk_rows")]
     pub disk: Vec<DiskUtilization>,
 }
 
@@ -271,7 +273,7 @@ pub struct DiskUtilization {
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,
-    pub user: String,
+    pub user: Option<String>,
     pub cpu: f64,
     pub memory: f64,
     pub threads: Option<u32>,
@@ -390,15 +392,15 @@ pub struct SmartInfo {
     #[serde(alias = "disk_id")]
     pub disk_id: String,
     #[serde(alias = "disk_name")]
-    pub disk_name: String,
+    pub disk_name: Option<String>,
     #[serde(alias = "health_status")]
-    pub health_status: String,
+    pub health_status: Option<String>,
     pub temperature: Option<i32>,
     #[serde(alias = "power_on_hours")]
     pub power_on_hours: Option<u64>,
     #[serde(alias = "reallocated_sectors")]
     pub reallocated_sectors: Option<u64>,
-    pub attributes: Vec<SmartAttribute>,
+    pub attributes: Option<Vec<SmartAttribute>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -454,7 +456,12 @@ pub struct FileStationInfo {
     pub is_manager: bool,
     #[serde(alias = "support_sharing")]
     pub support_sharing: bool,
-    #[serde(alias = "support_virtual_protocol")]
+    /// A CSV string in the File Station guide, an array on DSM 7.
+    #[serde(
+        alias = "support_virtual_protocol",
+        default,
+        deserialize_with = "crate::wire::opt_csv_or_list"
+    )]
     pub support_virtual_protocol: Option<Vec<String>>,
 }
 
@@ -598,7 +605,7 @@ pub struct NetworkOverview {
     pub workgroup: Option<String>,
     pub dns: Vec<String>,
     pub gateway: Option<String>,
-    pub interfaces: Vec<NetworkInterface>,
+    pub interfaces: Option<Vec<NetworkInterface>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -606,7 +613,7 @@ pub struct NetworkOverview {
 pub struct NetworkInterface {
     pub id: String,
     pub name: Option<String>,
-    pub mac: String,
+    pub mac: Option<String>,
     pub ip: Vec<String>,
     pub ipv6: Vec<String>,
     pub subnet: Option<String>,
@@ -622,14 +629,16 @@ pub struct NetworkInterface {
 #[serde(rename_all = "camelCase")]
 pub struct FirewallRule {
     pub id: Option<String>,
+    /// Firewall adapter (profile) the rule belongs to, e.g. `global`.
+    pub adapter: Option<String>,
     #[serde(alias = "src_ip")]
-    pub src_ip: String,
+    pub src_ip: Option<String>,
     #[serde(alias = "src_port")]
-    pub src_port: String,
-    pub direction: String,
-    pub action: String,
-    pub protocol: String,
-    pub enabled: bool,
+    pub src_port: Option<String>,
+    pub direction: Option<String>,
+    pub action: Option<String>,
+    pub protocol: Option<String>,
+    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -657,7 +666,7 @@ pub struct VpnProfile {
 #[serde(rename_all = "camelCase")]
 pub struct SynoUser {
     pub name: String,
-    pub uid: u32,
+    pub uid: Option<u32>,
     pub description: Option<String>,
     pub email: Option<String>,
     pub expired: Option<String>,
@@ -671,7 +680,7 @@ pub struct SynoGroup {
     pub name: String,
     pub gid: u32,
     pub description: Option<String>,
-    pub members: Vec<String>,
+    pub members: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -707,7 +716,7 @@ pub struct PackageInfo {
     pub name: String,
     pub version: String,
     pub description: Option<String>,
-    pub status: String, // "running", "stopped", "installed"
+    pub status: Option<String>, // "running", "stopped", "installed"
     #[serde(alias = "is_uninstall_pages")]
     pub is_uninstall_pages: Option<bool>,
     #[serde(alias = "update_version")]
@@ -734,10 +743,10 @@ pub struct ServiceStatus {
     pub id: String,
     pub name: String,
     pub enabled: bool,
-    pub running: bool,
+    pub running: Option<bool>,
     pub port: Option<u16>,
     #[serde(alias = "service_type")]
-    pub service_type: String,
+    pub service_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -793,8 +802,8 @@ pub struct DockerContainer {
     pub memory_usage: Option<u64>,
     #[serde(alias = "memory_limit")]
     pub memory_limit: Option<u64>,
-    pub ports: Vec<DockerPortBinding>,
-    pub volumes: Vec<DockerVolumeMount>,
+    pub ports: Option<Vec<DockerPortBinding>>,
+    pub volumes: Option<Vec<DockerVolumeMount>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -845,7 +854,7 @@ pub struct DockerNetwork {
     pub name: String,
     pub id: String,
     pub driver: String,
-    pub scope: String,
+    pub scope: Option<String>,
     pub subnet: Option<String>,
     pub gateway: Option<String>,
     pub containers: Option<u32>,
@@ -854,6 +863,8 @@ pub struct DockerNetwork {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerProject {
+    /// Container Manager project id; start and stop address a project by it.
+    pub id: Option<String>,
     pub name: String,
     pub status: String,
     pub services: Vec<String>,
@@ -941,6 +952,8 @@ pub struct DownloadTask {
 pub struct DownloadStationInfo {
     #[serde(alias = "is_manager")]
     pub is_manager: bool,
+    /// A number (`3543`) on devices, a string in the guide.
+    #[serde(deserialize_with = "crate::wire::string_or_number")]
     pub version: String,
     #[serde(alias = "version_string")]
     pub version_string: Option<String>,
@@ -966,7 +979,7 @@ pub struct DownloadStationStats {
 pub struct SurveillanceInfo {
     pub version: SurveillanceVersion,
     #[serde(alias = "camera_count")]
-    pub camera_count: u32,
+    pub camera_count: Option<u32>,
     #[serde(alias = "license_count")]
     pub license_count: Option<u32>,
 }
@@ -975,6 +988,8 @@ pub struct SurveillanceInfo {
 pub struct SurveillanceVersion {
     pub major: u32,
     pub minor: u32,
+    /// A number (`2250`) in the Surveillance Station guide.
+    #[serde(default, deserialize_with = "crate::wire::opt_string_or_number")]
     pub build: Option<String>,
 }
 
@@ -983,12 +998,12 @@ pub struct SurveillanceVersion {
 pub struct Camera {
     pub id: u32,
     pub name: String,
-    pub ip: String,
+    pub ip: Option<String>,
     pub port: u16,
     pub model: Option<String>,
     pub vendor: Option<String>,
     pub status: u32, // 1=normal, 0=disconnected, etc.
-    pub enabled: bool,
+    pub enabled: Option<bool>,
     pub recording: Option<bool>,
     pub resolution: Option<String>,
     pub fps: Option<u32>,
@@ -1007,9 +1022,9 @@ pub struct Recording {
     #[serde(alias = "camera_name")]
     pub camera_name: Option<String>,
     #[serde(alias = "start_time")]
-    pub start_time: String,
+    pub start_time: Option<String>,
     #[serde(alias = "stop_time")]
-    pub stop_time: String,
+    pub stop_time: Option<String>,
     #[serde(alias = "file_size")]
     pub file_size: u64,
     #[serde(alias = "event_type")]
@@ -1024,7 +1039,7 @@ pub struct BackupTaskInfo {
     #[serde(alias = "task_id")]
     pub task_id: u32,
     pub name: String,
-    pub status: String,
+    pub status: Option<String>,
     #[serde(alias = "last_backup_time")]
     pub last_backup_time: Option<String>,
     #[serde(alias = "next_backup_time")]
@@ -1058,14 +1073,16 @@ pub struct ActiveBackupDevice {
     #[serde(alias = "device_name")]
     pub device_name: String,
     #[serde(alias = "device_type")]
-    pub device_type: String,
-    pub status: String,
+    pub device_type: Option<String>,
+    pub status: Option<String>,
     #[serde(alias = "last_backup")]
     pub last_backup: Option<String>,
     #[serde(alias = "agent_version")]
     pub agent_version: Option<String>,
     #[serde(alias = "ip_address")]
     pub ip_address: Option<String>,
+    #[serde(alias = "os_name")]
+    pub os_name: Option<String>,
 }
 
 // ── Security ────────────────────────────────────────────────────────
@@ -1074,17 +1091,40 @@ pub struct ActiveBackupDevice {
 #[serde(rename_all = "camelCase")]
 pub struct SecurityOverview {
     #[serde(alias = "auto_block_enabled")]
-    pub auto_block_enabled: bool,
+    pub auto_block_enabled: Option<bool>,
     #[serde(alias = "firewall_enabled")]
-    pub firewall_enabled: bool,
+    pub firewall_enabled: Option<bool>,
     #[serde(alias = "https_enabled")]
-    pub https_enabled: bool,
+    pub https_enabled: Option<bool>,
     #[serde(alias = "advisor_score")]
     pub advisor_score: Option<u32>,
     #[serde(alias = "blocked_ips")]
-    pub blocked_ips: Vec<BlockedIp>,
+    pub blocked_ips: Option<Vec<BlockedIp>>,
     #[serde(alias = "certificate_info")]
     pub certificate_info: Option<CertificateInfo>,
+    /// Security Advisor scan state, e.g. `done` or `running`.
+    #[serde(alias = "scan_status")]
+    pub scan_status: Option<String>,
+    #[serde(alias = "scan_progress")]
+    pub scan_progress: Option<u32>,
+    /// Unix time of the last Security Advisor scan.
+    #[serde(alias = "last_scan_time")]
+    pub last_scan_time: Option<i64>,
+    pub categories: Option<Vec<SecurityScanCategory>>,
+}
+
+/// Findings of one Security Advisor category.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityScanCategory {
+    pub category: String,
+    pub severity: Option<String>,
+    pub danger: Option<u32>,
+    pub risk: Option<u32>,
+    pub warning: Option<u32>,
+    pub info: Option<u32>,
+    #[serde(alias = "out_of_date")]
+    pub out_of_date: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1092,7 +1132,7 @@ pub struct SecurityOverview {
 pub struct BlockedIp {
     pub ip: String,
     #[serde(alias = "blocked_at")]
-    pub blocked_at: String,
+    pub blocked_at: Option<String>,
     pub reason: Option<String>,
 }
 
@@ -1126,6 +1166,9 @@ pub struct AutoBlockConfig {
     pub block_forever: bool,
     #[serde(alias = "expire_minutes")]
     pub expire_minutes: Option<u32>,
+    /// DSM's own setting; `0` blocks forever.
+    #[serde(alias = "expire_days")]
+    pub expire_days: Option<u32>,
 }
 
 // ── Hardware ────────────────────────────────────────────────────────
@@ -1205,7 +1248,7 @@ pub struct PowerScheduleEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogEntry {
-    pub id: u64,
+    pub id: Option<u64>,
     pub time: String,
     pub msg: String,
     pub level: String,
@@ -1223,8 +1266,12 @@ pub struct ConnectionEntry {
     pub user: String,
     pub r#type: String,
     #[serde(alias = "is_login")]
-    pub is_login: bool,
-    pub success: bool,
+    pub is_login: Option<bool>,
+    pub success: Option<bool>,
+    pub description: Option<String>,
+    pub protocol: Option<String>,
+    #[serde(alias = "can_be_kicked")]
+    pub can_be_kicked: Option<bool>,
 }
 
 // ── Notifications ───────────────────────────────────────────────────
