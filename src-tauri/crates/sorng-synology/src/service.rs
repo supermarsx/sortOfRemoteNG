@@ -588,12 +588,24 @@ impl SynologyService {
     pub async fn get_dashboard(&self) -> SynologyResult<SynologyDashboard> {
         let client = self.require_client()?;
 
-        // Gather data from multiple sources, tolerating individual failures
-        let system_info = SystemManager::get_info(client).await.ok();
-        let utilization = SystemManager::get_utilization(client).await.ok();
-        let storage = StorageManager::get_overview(client).await.ok();
-        let network = NetworkManager::get_overview(client).await.ok();
-        let hardware = HardwareManager::get_info(client).await.ok();
+        // Gather data from multiple sources, tolerating individual failures.
+        // A failed part logs its closed error kind only: DSM messages can
+        // quote response values, and URLs or tokens never belong in logs.
+        fn part<T>(name: &str, result: SynologyResult<T>) -> Option<T> {
+            result
+                .inspect_err(|error| {
+                    log::warn!(
+                        "Synology dashboard part {name} unavailable ({:?})",
+                        error.kind
+                    )
+                })
+                .ok()
+        }
+        let system_info = part("system_info", SystemManager::get_info(client).await);
+        let utilization = part("utilization", SystemManager::get_utilization(client).await);
+        let storage = part("storage", StorageManager::get_overview(client).await);
+        let network = part("network", NetworkManager::get_overview(client).await);
+        let hardware = part("hardware", HardwareManager::get_info(client).await);
 
         Ok(SynologyDashboard {
             system_info,

@@ -16,13 +16,32 @@ fn actual_snake_case_system_and_utilization_fields_serialize_to_renderer_camel_c
     let usage:SystemUtilization=serde_json::from_value(json!({"cpu":{"user_load":7.5,"system_load":2.0,"15min_load":0.5},"memory":{"total_real":100,"avail_real":75,"total_swap":20,"avail_swap":20},"network":[],"disk":[]})).unwrap();
     assert_eq!(usage.cpu.user_load, 7.5);
     assert_eq!(usage.memory.avail_real, 75);
-    let storage: StorageOverview = serde_json::from_value(
-        json!({"disks":[],"volumes":[],"storage_pools":[],"ssd_caches":[],"hot_spares":[]}),
-    )
-    .unwrap();
-    assert!(storage.storage_pools.is_empty());
+    // DSM groups the disk rows with a total (addendum S§4 #2).
+    let grouped:SystemUtilization=serde_json::from_value(json!({"cpu":{"user_load":4,"system_load":2,"15min_load":51},"memory":{"total_real":3867268,"avail_real":156188,"total_swap":4415404,"avail_swap":4146316},"network":[{"device":"total","rx":109549,"tx":45097}],"disk":{"disk":[{"device":"sata1","display_name":"Drive 1","read_access":3,"read_byte":55261,"type":"internal","utilization":12,"write_access":15,"write_byte":419425}],"total":{"device":"total","read_access":3,"read_byte":55261,"utilization":12,"write_access":15,"write_byte":419425}}})).unwrap();
+    assert_eq!(grouped.disk.len(), 1);
+    assert_eq!(grouped.disk[0].display_name.as_deref(), Some("Drive 1"));
     assert!(serde_json::from_value::<DsmInfo>(json!({"model":"not-complete"})).is_err());
-    assert!(serde_json::from_value::<StorageOverview>(json!({"disks":[],"volumes":[]})).is_err());
+}
+/// Storage decodes DSM's `load_info` wire in the manager, so it is pinned
+/// through the transport rather than through the IPC DTO.
+#[tokio::test]
+async fn storage_overview_decodes_dsm_load_info_and_rejects_a_missing_disk_table() {
+    use wire_shapes_tests::{assert_schema_failure, service_with};
+    const STORAGE: &str = "SYNO.Storage.CGI.Storage";
+    // shape: vcf-content-factory api-maps/synology-storage.md load_info [observed DSM 7.3.2] (MIT), trimmed
+    let dsm_7_3_2 = json!({"disks":[{"id":"sata1","name":"Drive 1","longName":"Drive 1","device":"/dev/sata1","model":"FIXTURE-HDD-10T","vendor":"Seagate","serial":"SYNTH0001","firm":"SC60","size_total":"10000831348736","temp":35,"status":"normal","smart_status":"normal","diskType":"SATA","container":{"order":0,"str":"DS1520+","type":"internal"}}],"ssdCaches":[],"storagePools":[{"id":"reuse_1","status":"normal","device_type":"raid_6","raidType":"multiple","desc":"","disks":["sata1"],"size":{"total":"29987679764480","used":"29987679764480"}}],"volumes":[{"id":"volume_1","status":"normal","fs_type":"btrfs","vol_path":"/volume1","vol_desc":"","pool_path":"reuse_1","size":{"total":"28788160495616","used":"7632707117056"}}]});
+    let (service, nas) = service_with(
+        &[(STORAGE, 1)],
+        vec![ok(dsm_7_3_2), ok(json!({"volumes":[]}))],
+    )
+    .await;
+    let storage = service.get_storage_overview().await.unwrap();
+    assert_eq!(storage.disks[0].size_total, 10000831348736);
+    assert_eq!(storage.volumes[0].size_free, 21155453378560);
+    assert_eq!(storage.volumes[0].display_name.as_deref(), Some("volume1"));
+    assert!(storage.hot_spares.is_empty());
+    assert_schema_failure(&service.get_storage_overview().await.unwrap_err());
+    assert_eq!(nas.requests().len(), 2);
 }
 #[tokio::test]
 async fn sharing_creation_uses_documented_string_parameters_and_detects_item_failure() {

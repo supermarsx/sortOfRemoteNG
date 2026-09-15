@@ -3,16 +3,60 @@
 use crate::client::SynoClient;
 use crate::error::SynologyResult;
 use crate::types::*;
+use crate::wire::string_param;
+use serde::Deserialize;
+
+const SHARE: &str = "SYNO.Core.Share";
+const SHARE_PERMISSION: &str = "SYNO.Core.Share.Permission";
+
+/// One `SYNO.Core.Share list` row with DSM's field names. DSM flattens the
+/// requested `additional` keys into the row (`recyclebin` arrives as
+/// `enable_recycle_bin`) and never sends a `path`. The camelCase aliases keep
+/// the rows the pre-t84 `SharedFolder` decoder accepted.
+#[derive(Deserialize)]
+struct ShareWire {
+    name: String,
+    #[serde(default, alias = "volPath")]
+    vol_path: Option<String>,
+    #[serde(default)]
+    desc: Option<String>,
+    #[serde(default, alias = "isAclmode")]
+    is_aclmode: Option<bool>,
+    #[serde(default, alias = "enableRecycleBin")]
+    enable_recycle_bin: Option<bool>,
+    #[serde(default)]
+    encryption: Option<u32>,
+    #[serde(default, alias = "isShareMoving")]
+    is_share_moving: Option<bool>,
+}
+
+impl From<ShareWire> for SharedFolder {
+    fn from(wire: ShareWire) -> Self {
+        Self {
+            // A share's File Station path is `/<name>`, the `path` that
+            // `SYNO.FileStation.List list_share` reports; derived, not guessed.
+            path: format!("/{}", wire.name),
+            name: wire.name,
+            vol_path: wire.vol_path,
+            desc: wire.desc,
+            is_aclmode: wire.is_aclmode,
+            enable_recycle_bin: wire.enable_recycle_bin,
+            encryption: wire.encryption,
+            is_share_moving: wire.is_share_moving,
+            additional: None,
+        }
+    }
+}
 
 pub struct SharesManager;
 
 impl SharesManager {
-    /// List all shared folders.
+    /// List all shared folders. DSM answers `{"shares":[...],"total":n}`.
     pub async fn list(client: &SynoClient) -> SynologyResult<Vec<SharedFolder>> {
-        let v = client.best_version("SYNO.Core.Share", 1).unwrap_or(1);
-        client
-            .api_call(
-                "SYNO.Core.Share",
+        let v = client.best_version(SHARE, 1).unwrap_or(1);
+        let rows: Vec<ShareWire> = client
+            .api_list(
+                SHARE,
                 v,
                 "list",
                 &[
@@ -23,8 +67,10 @@ impl SharesManager {
                     ("offset", "0"),
                     ("limit", "1000"),
                 ],
+                &["shares"],
             )
-            .await
+            .await?;
+        Ok(rows.into_iter().map(SharedFolder::from).collect())
     }
 
     /// Get details of a specific shared folder.
@@ -61,16 +107,24 @@ impl SharesManager {
             .await
     }
 
-    /// Get permissions for a shared folder.
+    /// Get permissions for a shared folder. DSM answers
+    /// `{"items":[...],"total":n}` with rows that match the DTO.
     pub async fn get_permissions(
         client: &SynoClient,
         name: &str,
     ) -> SynologyResult<Vec<SharePermission>> {
-        let v = client
-            .best_version("SYNO.Core.Share.Permission", 1)
-            .unwrap_or(1);
+        let v = client.best_version(SHARE_PERMISSION, 1).unwrap_or(1);
+        // JSON-quoted under the JSON request format, as DSM's own UI sends
+        // string parameters, so a share named e.g. `2024` stays a string.
+        let name = string_param(client, SHARE_PERMISSION, name);
         client
-            .api_call("SYNO.Core.Share.Permission", v, "list", &[("name", name)])
+            .api_list(
+                SHARE_PERMISSION,
+                v,
+                "list",
+                &[("name", name.as_str())],
+                &["items"],
+            )
             .await
     }
 

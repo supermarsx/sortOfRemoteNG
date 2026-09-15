@@ -1,16 +1,155 @@
 //! Services management — SMB, NFS, FTP, SSH, rsync, WebDAV.
+//!
+//! DSM names these settings differently from the IPC DTOs: `SYNO.Core.Service`
+//! answers `{"service":[{service_id, display_name, enable_status, …}]}`, and the
+//! SMB, NFS and Terminal `get` replies use `enable_samba`, `enable_nfs` and
+//! `enable_ssh` (dsm_helper `Core/Service.dart`, `Core/FileServ/Smb.dart`,
+//! `Core/Terminal.dart`; synology-csi `NfsInfo`). Private wire structs keep
+//! DSM's names and map into the DTOs.
 
 use crate::client::SynoClient;
 use crate::error::SynologyResult;
 use crate::types::*;
+use crate::wire::string_param;
+use serde::{de::Error as _, Deserialize, Deserializer};
+
+const SERVICE: &str = "SYNO.Core.Service";
 
 pub struct ServicesManager;
 
+/// One `SYNO.Core.Service` row. DSM 7.4 at v1 sends `display_name` and no
+/// `additional`; v3 with `additional=["active_status"]` sends a
+/// `display_name_section_key` (a UI string key) and the run state.
+#[derive(Deserialize)]
+struct ServiceWire {
+    service_id: String,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    display_name_section_key: Option<String>,
+    /// `enabled`, `disabled` or `static` (always on, not switchable).
+    enable_status: String,
+    #[serde(default)]
+    additional: Option<ServiceAdditionalWire>,
+}
+
+#[derive(Deserialize)]
+struct ServiceAdditionalWire {
+    #[serde(default)]
+    active_status: Option<String>,
+}
+
+impl From<ServiceWire> for ServiceStatus {
+    fn from(wire: ServiceWire) -> Self {
+        let name = wire
+            .display_name
+            .or(wire.display_name_section_key)
+            .unwrap_or_else(|| wire.service_id.clone());
+        ServiceStatus {
+            enabled: wire.enable_status == "enabled",
+            running: wire
+                .additional
+                .and_then(|extra| extra.active_status)
+                .map(|status| status == "active"),
+            id: wire.service_id,
+            name,
+            port: None,
+            service_type: None,
+        }
+    }
+}
+
+/// `SYNO.Core.FileServ.SMB` `get`. The protocol levels are DSM's raw numbers;
+/// their labels are not public, so they are passed on as text, not guessed.
+#[derive(Deserialize)]
+struct SmbWire {
+    #[serde(deserialize_with = "crate::wire::bool_lenient")]
+    enable_samba: bool,
+    #[serde(default)]
+    workgroup: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::opt_string_or_number")]
+    smb_min_protocol: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::opt_string_or_number")]
+    smb_max_protocol: Option<String>,
+}
+
+impl From<SmbWire> for SmbConfig {
+    fn from(wire: SmbWire) -> Self {
+        SmbConfig {
+            enabled: wire.enable_samba,
+            workgroup: wire.workgroup,
+            description: None,
+            min_protocol: wire.smb_min_protocol,
+            max_protocol: wire.smb_max_protocol,
+            enable_smb2: None,
+            enable_smb3: None,
+        }
+    }
+}
+
+/// `SYNO.Core.FileServ.NFS` `get` (synology-csi `NfsInfo`).
+#[derive(Deserialize)]
+struct NfsWire {
+    #[serde(deserialize_with = "crate::wire::bool_lenient")]
+    enable_nfs: bool,
+    #[serde(default)]
+    enable_nfs_v4: Option<bool>,
+    #[serde(default)]
+    nfs_v4_domain: Option<String>,
+}
+
+impl From<NfsWire> for NfsConfig {
+    fn from(wire: NfsWire) -> Self {
+        NfsConfig {
+            enabled: wire.enable_nfs,
+            enable_nfs_v4: wire.enable_nfs_v4,
+            domain: wire.nfs_v4_domain.filter(|domain| !domain.is_empty()),
+        }
+    }
+}
+
+/// `SYNO.Core.Terminal` `get`. A port outside 0-65535 fails the decode, so it
+/// is reported as a `json_schema` failure instead of being truncated.
+#[derive(Deserialize)]
+struct SshWire {
+    #[serde(deserialize_with = "crate::wire::bool_lenient")]
+    enable_ssh: bool,
+    #[serde(deserialize_with = "tcp_port")]
+    ssh_port: u16,
+}
+
+fn tcp_port<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u16, D::Error> {
+    let number = crate::wire::u64_lenient(deserializer)?;
+    u16::try_from(number).map_err(|_| D::Error::custom("expected a TCP port"))
+}
+
+impl From<SshWire> for SshConfig {
+    fn from(wire: SshWire) -> Self {
+        SshConfig {
+            enabled: wire.enable_ssh,
+            port: wire.ssh_port,
+        }
+    }
+}
+
 impl ServicesManager {
     /// List all services and their status.
+    ///
+    /// DSM 7 catalogs list `SYNO.Core.Service` up to v3. The run state comes
+    /// only with `additional=["active_status"]` (dsm_helper); without it
+    /// `running` stays unknown.
     pub async fn list(client: &SynoClient) -> SynologyResult<Vec<ServiceStatus>> {
-        let v = client.best_version("SYNO.Core.Service", 1).unwrap_or(1);
-        client.api_call("SYNO.Core.Service", v, "get", &[]).await
+        let v = client.best_version(SERVICE, 3).unwrap_or(1);
+        let rows: Vec<ServiceWire> = client
+            .api_list(
+                SERVICE,
+                v,
+                "get",
+                &[("additional", "[\"active_status\"]")],
+                &["service"],
+            )
+            .await?;
+        Ok(rows.into_iter().map(ServiceStatus::from).collect())
     }
 
     /// Enable or disable a service.
@@ -19,15 +158,11 @@ impl ServicesManager {
         service_id: &str,
         enabled: bool,
     ) -> SynologyResult<()> {
-        let v = client.best_version("SYNO.Core.Service", 1).unwrap_or(1);
+        let v = client.best_version(SERVICE, 1).unwrap_or(1);
         let en = if enabled { "true" } else { "false" };
+        let id = string_param(client, SERVICE, service_id);
         client
-            .api_post_void(
-                "SYNO.Core.Service",
-                v,
-                "set",
-                &[("id", service_id), ("enable", en)],
-            )
+            .api_post_void(SERVICE, v, "set", &[("id", &id), ("enable", en)])
             .await
     }
 
@@ -38,9 +173,10 @@ impl ServicesManager {
         let v = client
             .best_version("SYNO.Core.FileServ.SMB", 3)
             .unwrap_or(1);
-        client
+        let wire: SmbWire = client
             .api_call("SYNO.Core.FileServ.SMB", v, "get", &[])
-            .await
+            .await?;
+        Ok(wire.into())
     }
 
     /// Enable / disable SMB.
@@ -61,9 +197,10 @@ impl ServicesManager {
         let v = client
             .best_version("SYNO.Core.FileServ.NFS", 2)
             .unwrap_or(1);
-        client
+        let wire: NfsWire = client
             .api_call("SYNO.Core.FileServ.NFS", v, "get", &[])
-            .await
+            .await?;
+        Ok(wire.into())
     }
 
     /// Enable / disable NFS.
@@ -105,7 +242,8 @@ impl ServicesManager {
     /// Get SSH configuration.
     pub async fn get_ssh_config(client: &SynoClient) -> SynologyResult<SshConfig> {
         let v = client.best_version("SYNO.Core.Terminal", 3).unwrap_or(1);
-        client.api_call("SYNO.Core.Terminal", v, "get", &[]).await
+        let wire: SshWire = client.api_call("SYNO.Core.Terminal", v, "get", &[]).await?;
+        Ok(wire.into())
     }
 
     /// Enable / disable SSH.

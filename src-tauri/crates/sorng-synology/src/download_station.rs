@@ -3,45 +3,61 @@
 use crate::client::SynoClient;
 use crate::error::{SynologyError, SynologyResult};
 use crate::types::*;
+use crate::wire;
 use serde::Deserialize;
 
-#[derive(Deserialize)]
-struct TaskList {
-    tasks: Vec<TaskWire>,
-}
+/// One `SYNO.DownloadStation.Task` `list`/`getinfo` row. The Download Station
+/// guide sends sizes and times as strings (`"9427312332"`); devices send
+/// numbers (py-synologydsm-api). `additional` parts are present only when
+/// requested and reported.
 #[derive(Deserialize)]
 struct TaskWire {
     id: String,
     title: String,
     status: String,
+    #[serde(deserialize_with = "wire::u64_lenient")]
     size: u64,
     #[serde(rename = "type")]
     kind: String,
     username: Option<String>,
+    #[serde(default)]
     additional: TaskAdditional,
 }
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct TaskAdditional {
-    transfer: TaskTransfer,
+    #[serde(default)]
+    transfer: Option<TaskTransfer>,
     detail: Option<TaskDetail>,
 }
 #[derive(Deserialize)]
 struct TaskTransfer {
+    #[serde(deserialize_with = "wire::u64_lenient")]
     size_downloaded: u64,
+    #[serde(default, deserialize_with = "wire::opt_u64_lenient")]
     size_uploaded: Option<u64>,
+    #[serde(default, deserialize_with = "wire::opt_u64_lenient")]
     speed_download: Option<u64>,
+    #[serde(default, deserialize_with = "wire::opt_u64_lenient")]
     speed_upload: Option<u64>,
 }
 #[derive(Deserialize)]
 struct TaskDetail {
     destination: Option<String>,
     uri: Option<String>,
+    #[serde(default, deserialize_with = "wire::opt_i64_lenient")]
     create_time: Option<i64>,
 }
 impl TryFrom<TaskWire> for DownloadTask {
     type Error = SynologyError;
     fn try_from(task: TaskWire) -> Result<Self, Self::Error> {
+        // Without a transfer report nothing is known to be downloaded, and no
+        // progress is invented.
         let transfer = task.additional.transfer;
+        let size_downloaded = transfer.as_ref().map_or(0, |t| t.size_downloaded);
+        let percent_dn = transfer
+            .as_ref()
+            .filter(|_| task.size > 0)
+            .map(|t| (t.size_downloaded as f64 / task.size as f64 * 100.0).min(100.0));
         let (destination, uri, created_time) = if let Some(detail) = task.additional.detail {
             let created = detail
                 .create_time
@@ -62,12 +78,11 @@ impl TryFrom<TaskWire> for DownloadTask {
             title: task.title,
             status: task.status,
             size: task.size,
-            size_downloaded: transfer.size_downloaded,
-            size_uploaded: transfer.size_uploaded,
-            speed_download: transfer.speed_download,
-            speed_upload: transfer.speed_upload,
-            percent_dn: (task.size > 0)
-                .then(|| (transfer.size_downloaded as f64 / task.size as f64 * 100.0).min(100.0)),
+            size_downloaded,
+            size_uploaded: transfer.as_ref().and_then(|t| t.size_uploaded),
+            speed_download: transfer.as_ref().and_then(|t| t.speed_download),
+            speed_upload: transfer.as_ref().and_then(|t| t.speed_upload),
+            percent_dn,
             r#type: task.kind,
             destination,
             uri,
@@ -154,8 +169,8 @@ impl DownloadStationManager {
         let v = client
             .best_version("SYNO.DownloadStation.Task", 3)
             .unwrap_or(1);
-        let response: TaskList = client
-            .api_call(
+        let tasks: Vec<TaskWire> = client
+            .api_list(
                 "SYNO.DownloadStation.Task",
                 v,
                 "list",
@@ -164,9 +179,10 @@ impl DownloadStationManager {
                     ("offset", "0"),
                     ("limit", "500"),
                 ],
+                &["tasks"],
             )
             .await?;
-        response.tasks.into_iter().map(TryInto::try_into).collect()
+        tasks.into_iter().map(TryInto::try_into).collect()
     }
 
     /// Get a specific task's info.
@@ -174,21 +190,21 @@ impl DownloadStationManager {
         let v = client
             .best_version("SYNO.DownloadStation.Task", 3)
             .unwrap_or(1);
-        let response: TaskList = client
-            .api_call(
+        let tasks: Vec<TaskWire> = client
+            .api_list(
                 "SYNO.DownloadStation.Task",
                 v,
                 "getinfo",
                 &[("id", task_id), ("additional", "detail,transfer,file")],
+                &["tasks"],
             )
             .await?;
-        if response.tasks.len() != 1 || response.tasks[0].id != task_id {
+        if tasks.len() != 1 || tasks[0].id != task_id {
             return Err(SynologyError::parse(
                 "NAS did not return the selected download task",
             ));
         }
-        response
-            .tasks
+        tasks
             .into_iter()
             .next()
             .ok_or_else(|| SynologyError::parse("Missing download task"))?

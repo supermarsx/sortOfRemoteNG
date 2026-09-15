@@ -7,11 +7,12 @@ use crate::types::*;
 pub struct UsersManager;
 
 impl UsersManager {
-    /// List all local users.
+    /// List all local users. DSM answers `{"users":[...],"offset":0,"total":n}`;
+    /// list rows carry no `uid` (only `get` reports it), so `uid` stays `None`.
     pub async fn list_users(client: &SynoClient) -> SynologyResult<Vec<SynoUser>> {
         let v = client.best_version("SYNO.Core.User", 1).unwrap_or(1);
         client
-            .api_call(
+            .api_list(
                 "SYNO.Core.User",
                 v,
                 "list",
@@ -20,6 +21,7 @@ impl UsersManager {
                     ("limit", "500"),
                     ("additional", "[\"email\",\"description\",\"expired\"]"),
                 ],
+                &["users"],
             )
             .await
     }
@@ -101,15 +103,17 @@ impl UsersManager {
             .await
     }
 
-    /// List all groups.
+    /// List all groups. DSM answers `{"groups":[...],"offset":0,"total":n}`;
+    /// members come from `SYNO.Core.Group.Member`, so `members` stays `None`.
     pub async fn list_groups(client: &SynoClient) -> SynologyResult<Vec<SynoGroup>> {
         let v = client.best_version("SYNO.Core.Group", 1).unwrap_or(1);
         client
-            .api_call(
+            .api_list(
                 "SYNO.Core.Group",
                 v,
                 "list",
                 &[("offset", "0"), ("limit", "500")],
+                &["groups"],
             )
             .await
     }

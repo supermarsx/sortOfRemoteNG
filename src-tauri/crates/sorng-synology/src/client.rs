@@ -321,7 +321,6 @@ impl SynoClient {
     /// A DSM list, sent bare (`[...]`) or wrapped (`{"users":[...],"total":5}`).
     /// `keys` are tried in order. A missing key is a `json_schema` failure,
     /// never an empty list.
-    #[cfg_attr(not(test), allow(dead_code))] // adopted by the t84 decoder lanes
     pub(crate) async fn api_list<T: DeserializeOwned>(
         &self,
         api: &str,

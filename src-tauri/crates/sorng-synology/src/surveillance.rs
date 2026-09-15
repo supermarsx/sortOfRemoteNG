@@ -3,6 +3,122 @@
 use crate::client::SynoClient;
 use crate::error::SynologyResult;
 use crate::types::*;
+use crate::wire;
+use serde::Deserialize;
+
+/// `SYNO.SurveillanceStation.Info getinfo` (Surveillance Station Web API
+/// guide, Info). The counts are reported to Surveillance-login users only.
+#[derive(Deserialize)]
+struct InfoWire {
+    version: SurveillanceVersion,
+    #[serde(rename = "cameraNumber")]
+    camera_number: Option<u32>,
+    #[serde(rename = "licenseNumber")]
+    license_number: Option<u32>,
+}
+
+impl From<InfoWire> for SurveillanceInfo {
+    fn from(info: InfoWire) -> Self {
+        Self {
+            version: info.version,
+            camera_count: info.camera_number,
+            license_count: info.license_number,
+        }
+    }
+}
+
+/// One `SYNO.SurveillanceStation.Camera List` row. Version 9 (the guide)
+/// sends `ip` and the stream settings in `stream1`; version 7 (py-synologydsm-api)
+/// sends `host`, `enabled`, `recStatus`, `resolution` and `fps` at the top level.
+#[derive(Deserialize)]
+struct CameraWire {
+    id: u32,
+    name: String,
+    ip: Option<String>,
+    // Decoded separately rather than as an alias of `ip`, so a row carrying
+    // both names is not a duplicate-field error.
+    host: Option<String>,
+    port: u16,
+    model: Option<String>,
+    vendor: Option<String>,
+    status: u32,
+    enabled: Option<bool>,
+    #[serde(rename = "recStatus")]
+    rec_status: Option<i64>,
+    resolution: Option<String>,
+    fps: Option<u32>,
+    snapshot_path: Option<String>,
+    stream1: Option<CameraStreamWire>,
+}
+
+#[derive(Deserialize)]
+struct CameraStreamWire {
+    resolution: Option<String>,
+    fps: Option<u32>,
+}
+
+impl From<CameraWire> for Camera {
+    fn from(camera: CameraWire) -> Self {
+        let (stream_resolution, stream_fps) = camera
+            .stream1
+            .map_or((None, None), |stream| (stream.resolution, stream.fps));
+        Self {
+            id: camera.id,
+            name: camera.name,
+            ip: camera.ip.or(camera.host),
+            port: camera.port,
+            model: camera.model,
+            vendor: camera.vendor,
+            status: camera.status,
+            enabled: camera.enabled,
+            recording: camera.rec_status.map(|status| status != 0),
+            resolution: camera.resolution.or(stream_resolution),
+            fps: camera.fps.or(stream_fps),
+            stream_path: None,
+            snapshot_path: camera.snapshot_path,
+        }
+    }
+}
+
+/// One `SYNO.SurveillanceStation.Recording List` row (guide, Recording List).
+/// The guide's table has no start or stop time; they are kept when present.
+#[derive(Deserialize)]
+struct RecordingWire {
+    #[serde(deserialize_with = "wire::string_or_number")]
+    id: String,
+    #[serde(rename = "cameraId")]
+    camera_id: u32,
+    #[serde(rename = "cameraName")]
+    camera_name: Option<String>,
+    #[serde(
+        rename = "startTime",
+        default,
+        deserialize_with = "wire::opt_string_or_number"
+    )]
+    start_time: Option<String>,
+    #[serde(
+        rename = "stopTime",
+        default,
+        deserialize_with = "wire::opt_string_or_number"
+    )]
+    stop_time: Option<String>,
+    #[serde(rename = "sizeByte", deserialize_with = "wire::u64_lenient")]
+    size_byte: u64,
+}
+
+impl From<RecordingWire> for Recording {
+    fn from(recording: RecordingWire) -> Self {
+        Self {
+            id: recording.id,
+            camera_id: recording.camera_id,
+            camera_name: recording.camera_name,
+            start_time: recording.start_time,
+            stop_time: recording.stop_time,
+            file_size: recording.size_byte,
+            event_type: None,
+        }
+    }
+}
 
 pub struct SurveillanceManager;
 
@@ -12,9 +128,10 @@ impl SurveillanceManager {
         let v = client
             .best_version("SYNO.SurveillanceStation.Info", 8)
             .unwrap_or(1);
-        client
+        let info: InfoWire = client
             .api_call("SYNO.SurveillanceStation.Info", v, "getinfo", &[])
-            .await
+            .await?;
+        Ok(info.into())
     }
 
     /// List all cameras.
@@ -22,8 +139,8 @@ impl SurveillanceManager {
         let v = client
             .best_version("SYNO.SurveillanceStation.Camera", 9)
             .unwrap_or(1);
-        client
-            .api_call(
+        let cameras: Vec<CameraWire> = client
+            .api_list(
                 "SYNO.SurveillanceStation.Camera",
                 v,
                 "List",
@@ -32,8 +149,10 @@ impl SurveillanceManager {
                     ("streamInfo", "true"),
                     ("privilege", "true"),
                 ],
+                &["cameras"],
             )
-            .await
+            .await?;
+        Ok(cameras.into_iter().map(Camera::from).collect())
     }
 
     /// Get camera details.
@@ -88,19 +207,26 @@ impl SurveillanceManager {
         offset: u64,
         limit: u64,
     ) -> SynologyResult<Vec<Recording>> {
-        let v = client
-            .best_version("SYNO.SurveillanceStation.Recording", 6)
-            .unwrap_or(1);
+        const RECORDING: &str = "SYNO.SurveillanceStation.Recording";
+        let v = client.best_version(RECORDING, 6).unwrap_or(1);
         let off = offset.to_string();
         let lim = limit.to_string();
-        client
-            .api_call(
-                "SYNO.SurveillanceStation.Recording",
+        // `cameraIds` is a string (a comma-separated id list).
+        let camera_ids = wire::string_param(client, RECORDING, cam_id);
+        let recordings: Vec<RecordingWire> = client
+            .api_list(
+                RECORDING,
                 v,
                 "List",
-                &[("cameraIds", cam_id), ("offset", &off), ("limit", &lim)],
+                &[
+                    ("cameraIds", camera_ids.as_str()),
+                    ("offset", &off),
+                    ("limit", &lim),
+                ],
+                &["recordings"],
             )
-            .await
+            .await?;
+        Ok(recordings.into_iter().map(Recording::from).collect())
     }
 
     /// Download a recording as raw bytes.

@@ -200,13 +200,34 @@ pub fn privilege_for(api: &str) -> Option<&'static ApiSpec> {
 
 /// One read-only DSM call. The probe sends exactly this API, method and
 /// parameters (never anything from the renderer) at
-/// `best_version(api, max_version)`.
+/// `best_version(api, max_version)`. It is the first request its manager
+/// sends, with a one-row page where the manager pages.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReadCall {
     pub api: &'static str,
     pub max_version: u32,
     pub method: &'static str,
+    /// Sent as written.
     pub params: &'static [(&'static str, &'static str)],
+    /// String values, sent after `params` and JSON-quoted when discovery
+    /// declares the API's `requestFormat: "JSON"`, as `wire::string_param`
+    /// does for the managers.
+    pub string_params: &'static [(&'static str, &'static str)],
+}
+
+impl ReadCall {
+    const fn with(mut self, params: &'static [(&'static str, &'static str)]) -> Self {
+        self.params = params;
+        self
+    }
+
+    const fn with_strings(
+        mut self,
+        string_params: &'static [(&'static str, &'static str)],
+    ) -> Self {
+        self.string_params = string_params;
+        self
+    }
 }
 
 /// A panel field and the calls that can read it. The first alternative present
@@ -225,15 +246,11 @@ const fn call(api: &'static str, max_version: u32, method: &'static str) -> Read
         max_version,
         method,
         params: &[],
+        string_params: &[],
     }
 }
 const fn page(api: &'static str, max_version: u32, method: &'static str) -> ReadCall {
-    ReadCall {
-        api,
-        max_version,
-        method,
-        params: PAGE,
-    }
+    call(api, max_version, method).with(PAGE)
 }
 const fn read(field: &'static str, alternatives: &'static [ReadCall]) -> ReadSpec {
     ReadSpec {
@@ -267,20 +284,25 @@ pub static READS: &[ReadSpec] = &[
         "networkInterfaces",
         &[call("SYNO.Core.Network.Interface", 1, "list")],
     ),
+    // Rules are read per adapter (`Firewall.Rules load`); the adapter list
+    // comes first.
     read(
         "firewallRules",
-        &[call("SYNO.Core.Security.Firewall.Rules", 1, "list_all")],
+        &[call("SYNO.Core.Security.Firewall.Adapter", 1, "list")],
     ),
     read("users", &[page("SYNO.Core.User", 1, "list")]),
     read("groups", &[page("SYNO.Core.Group", 1, "list")]),
     read("packages", &[call("SYNO.Core.Package", 1, "list")]),
-    read("services", &[call("SYNO.Core.Service", 1, "get")]),
+    read(
+        "services",
+        &[call("SYNO.Core.Service", 3, "get").with(&[("additional", r#"["active_status"]"#)])],
+    ),
     read("smbConfig", &[call("SYNO.Core.FileServ.SMB", 3, "get")]),
     read("nfsConfig", &[call("SYNO.Core.FileServ.NFS", 2, "get")]),
     read("sshConfig", &[call("SYNO.Core.Terminal", 3, "get")]),
     read(
         "dockerContainers",
-        &[page("SYNO.Docker.Container", 1, "list")],
+        &[page("SYNO.Docker.Container", 1, "list").with_strings(&[("type", "all")])],
     ),
     read("dockerImages", &[page("SYNO.Docker.Image", 1, "list")]),
     read("dockerNetworks", &[call("SYNO.Docker.Network", 1, "list")]),
@@ -304,18 +326,26 @@ pub static READS: &[ReadSpec] = &[
         "cameras",
         &[call("SYNO.SurveillanceStation.Camera", 9, "List")],
     ),
-    read("backupTasks", &[call("SYNO.Backup.Task", 1, "list")]),
+    read(
+        "backupTasks",
+        &[call("SYNO.Backup.Task", 1, "list").with(&[(
+            "additional",
+            r#"["last_bkp_time","next_bkp_time","last_bkp_result","is_modified"]"#,
+        )])],
+    ),
     read(
         "activeBackupDevices",
-        &[call("SYNO.ActiveBackup.Overview", 1, "list_device")],
+        &[call("SYNO.ActiveBackup.Device", 1, "list")],
     ),
     read(
         "securityOverview",
         &[call("SYNO.Core.SecurityScan.Status", 1, "system_get")],
     ),
+    // DSM answers the list without parameters with 5100; these names are
+    // unverified (audit S§7 #1), like the manager's.
     read(
         "blockedIps",
-        &[call("SYNO.Core.Security.AutoBlock.Rules", 1, "list")],
+        &[page("SYNO.Core.Security.AutoBlock.Rules", 1, "list").with_strings(&[("type", "deny")])],
     ),
     read(
         "certificates",
@@ -336,7 +366,9 @@ pub static READS: &[ReadSpec] = &[
     ),
     read(
         "systemLogs",
-        &[page("SYNO.Core.SyslogClient.Log", 1, "list")],
+        &[call("SYNO.Core.SyslogClient.Log", 1, "list")
+            .with(&[("start", "0"), ("offset", "0"), ("limit", "1")])
+            .with_strings(&[("target", "LOCAL"), ("logtype", "system")])],
     ),
     read(
         "connectionLogs",

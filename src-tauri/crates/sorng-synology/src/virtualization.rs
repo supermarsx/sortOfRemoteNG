@@ -3,23 +3,60 @@
 use crate::client::SynoClient;
 use crate::error::SynologyResult;
 use crate::types::*;
+use serde::Deserialize;
+
+/// One `SYNO.Virtualization.API.Guest list` row, with DSM's field names
+/// (Synology Virtual Machine Manager API guide, Guest list).
+#[derive(Deserialize)]
+struct GuestWire {
+    guest_id: String,
+    guest_name: String,
+    status: String,
+    description: Option<String>,
+    vcpu_num: u32,
+    /// Memory in MB, as the guide documents it.
+    vram_size: u64,
+    /// 0 = off, 1 = restore the last state, 2 = on.
+    autorun: Option<i64>,
+    storage_name: Option<String>,
+}
+
+impl From<GuestWire> for VmGuest {
+    fn from(guest: GuestWire) -> Self {
+        Self {
+            guest_id: guest.guest_id,
+            guest_name: guest.guest_name,
+            status: guest.status,
+            description: guest.description,
+            vcpu_num: guest.vcpu_num,
+            vram_size: guest.vram_size,
+            autorun: guest.autorun.map(|mode| mode != 0),
+            storage_name: guest.storage_name,
+            // The list reports virtual disks, not the size of the storage.
+            storage_size: None,
+            vnc_port: None,
+        }
+    }
+}
 
 pub struct VirtualizationManager;
 
 impl VirtualizationManager {
-    /// List all virtual machines.
+    /// List all virtual machines. `vramSize` is in MB.
     pub async fn list_guests(client: &SynoClient) -> SynologyResult<Vec<VmGuest>> {
         let v = client
             .best_version("SYNO.Virtualization.API.Guest", 1)
             .unwrap_or(1);
-        client
-            .api_call(
+        let guests: Vec<GuestWire> = client
+            .api_list(
                 "SYNO.Virtualization.API.Guest",
                 v,
                 "list",
                 &[("additional", "[\"status\",\"autorun\"]")],
+                &["guests"],
             )
-            .await
+            .await?;
+        Ok(guests.into_iter().map(VmGuest::from).collect())
     }
 
     /// Get details of a VM.

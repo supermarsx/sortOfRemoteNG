@@ -21,6 +21,7 @@ use crate::{
     },
     response_diagnostics::Category,
     service::SynologyService,
+    wire::string_param,
 };
 use serde::{Deserialize, Serialize};
 use std::{future::Future, sync::atomic::Ordering, time::Duration};
@@ -380,12 +381,23 @@ impl SectionAccessContext {
             deadline,
             response: per_read,
         };
+        let strings: Vec<(&str, String)> = call
+            .string_params
+            .iter()
+            .map(|(key, value)| (*key, string_param(client, call.api, value)))
+            .collect();
+        let form: Vec<(&str, &str)> = call
+            .params
+            .iter()
+            .copied()
+            .chain(strings.iter().map(|(key, value)| (*key, value.as_str())))
+            .collect();
         let result = self
             .while_active(client.post_bounded::<serde_json::Value>(
                 call.api,
                 version,
                 call.method,
-                call.params,
+                &form,
                 budget,
             ))
             .await?;

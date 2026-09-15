@@ -1160,7 +1160,7 @@ async fn every_section_uses_only_static_read_calls_and_never_returns_nas_data() 
             .iter()
             .map(|field| {
                 let call = &api_access::read_spec(field).unwrap().alternatives[0];
-                (call.api, call.method, call.params)
+                (call.api, call.method, call.params, call.string_params)
             })
             .collect();
         expected += calls.len();
@@ -1189,6 +1189,77 @@ async fn every_section_uses_only_static_read_calls_and_never_returns_nas_data() 
             assert!(request.text.contains("offset=0&limit=1"));
         }
         assert!(request.text.contains("_sid=fixture-private-sid"));
+    }
+}
+
+#[tokio::test]
+async fn probes_send_read_parameters_with_string_values_quoted_per_request_format() {
+    for json_format in [false, true] {
+        let nas = Nas::start(vec![(INITDATA, admin())]).await;
+        let mut apis: Vec<&str> = api_access::READS
+            .iter()
+            .map(|spec| spec.alternatives[0].api)
+            .collect();
+        apis.push(INITDATA);
+        let mut client = nas.client(&apis);
+        if json_format {
+            for entry in client.api_info.values_mut() {
+                entry.request_format = Some("JSON".into());
+            }
+        }
+        let context = lease(client);
+        for section in SECTIONS {
+            probe(&context, section).await;
+        }
+        let requests = nas.requests.lock().unwrap().clone();
+        for spec in api_access::READS {
+            let call = &spec.alternatives[0];
+            let request = requests
+                .iter()
+                .find(|request| request.api == call.api && request.method == call.method)
+                .unwrap_or_else(|| panic!("{} was not probed", spec.field));
+            let (_, body) = request.text.split_once("\r\n\r\n").unwrap();
+            let sent: Vec<(String, String)> = url::form_urlencoded::parse(body.as_bytes())
+                .into_owned()
+                .filter(|(key, _)| key != "_sid" && key != "SynoToken")
+                .collect();
+            let quoted = |value: &str| {
+                if json_format {
+                    format!("\"{value}\"")
+                } else {
+                    value.to_owned()
+                }
+            };
+            let expected: Vec<(String, String)> = call
+                .params
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .chain(
+                    call.string_params
+                        .iter()
+                        .map(|(key, value)| ((*key).to_owned(), quoted(value))),
+                )
+                .collect();
+            assert_eq!(
+                sent, expected,
+                "{} (JSON format: {json_format})",
+                spec.field
+            );
+        }
+        let logs = requests
+            .iter()
+            .find(|request| request.api == "SYNO.Core.SyslogClient.Log")
+            .unwrap();
+        let target = if json_format {
+            "target=%22LOCAL%22&logtype=%22system%22"
+        } else {
+            "target=LOCAL&logtype=system"
+        };
+        assert!(
+            logs.text.ends_with(&format!("start=0&offset=0&limit=1&{target}&_sid=fixture-private-sid&SynoToken=fixture-private-token")),
+            "{}",
+            logs.text
+        );
     }
 }
 

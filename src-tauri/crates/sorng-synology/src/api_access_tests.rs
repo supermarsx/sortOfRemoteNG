@@ -83,7 +83,7 @@ const TS_SECTION_READS: [(&str, &[&str]); 18] = [
 ];
 
 /// Read-only DSM methods; a probe must never call anything else.
-const READ_METHODS: [&str; 9] = [
+const READ_METHODS: [&str; 7] = [
     "get",
     "getinfo",
     "list",
@@ -91,8 +91,6 @@ const READ_METHODS: [&str; 9] = [
     "load_info",
     "List",
     "system_get",
-    "list_all",
-    "list_device",
 ];
 
 fn api_literals(source: &str) -> BTreeSet<String> {
@@ -318,11 +316,52 @@ fn read_calls_are_static_read_only_and_match_their_managers() {
             assert!(privilege_for(call.api).is_some(), "{}", call.api);
             assert!(READ_METHODS.contains(&call.method), "{}", call.method);
             assert!((1..=10).contains(&call.max_version));
-            assert!(
-                call.params.is_empty() || call.params == [("offset", "0"), ("limit", "1")],
-                "{}: only a one-row page is allowed",
+            let keys: Vec<&str> = call
+                .params
+                .iter()
+                .chain(call.string_params)
+                .map(|(key, _)| *key)
+                .collect();
+            assert_eq!(
+                keys.iter().collect::<BTreeSet<_>>().len(),
+                keys.len(),
+                "{}: parameters are unique",
                 spec.field
             );
+            assert_eq!(
+                keys.contains(&"offset"),
+                keys.contains(&"limit"),
+                "{}: a page has an offset and a limit",
+                spec.field
+            );
+            for (key, value) in call.params {
+                match *key {
+                    // Only a one-row page; DSM's logs also page with `start`.
+                    "limit" => assert_eq!(*value, "1", "{}", spec.field),
+                    "offset" | "start" => assert_eq!(*value, "0", "{}", spec.field),
+                    // Extra columns the manager asks for: a JSON list of names.
+                    "additional" => {
+                        let names: Vec<String> = serde_json::from_str(value)
+                            .unwrap_or_else(|_| panic!("{}: {value}", spec.field));
+                        assert!(!names.is_empty(), "{}", spec.field);
+                    }
+                    other => panic!("{}: unexpected read parameter {other}", spec.field),
+                }
+            }
+            for (key, value) in call.string_params {
+                // Static selectors the manager sends, never renderer input.
+                assert!(
+                    matches!(*key, "type" | "target" | "logtype"),
+                    "{}: {key}",
+                    spec.field
+                );
+                assert!(
+                    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_alphabetic()),
+                    "{}: {value}",
+                    spec.field
+                );
+                assert!(sources.contains(&format!("\"{value}\"")), "{value}");
+            }
             assert!(
                 sources.contains(&format!("\"{}\"", call.api)),
                 "{}",
@@ -369,12 +408,13 @@ fn shared_calls_and_alternatives_follow_the_managers() {
     assert_eq!(apis("utilization"), ["SYNO.Core.System.Utilization"]);
     let paged: BTreeSet<_> = READS
         .iter()
-        .filter(|spec| !spec.alternatives[0].params.is_empty())
+        .filter(|spec| spec.alternatives[0].params.contains(&("limit", "1")))
         .map(|spec| spec.field)
         .collect();
     assert_eq!(
         paged,
         BTreeSet::from([
+            "blockedIps",
             "connectionLogs",
             "dockerContainers",
             "dockerImages",
@@ -384,5 +424,109 @@ fn shared_calls_and_alternatives_follow_the_managers() {
             "systemLogs",
             "users",
         ])
+    );
+    let with_strings: BTreeSet<_> = READS
+        .iter()
+        .filter(|spec| !spec.alternatives[0].string_params.is_empty())
+        .map(|spec| spec.field)
+        .collect();
+    assert_eq!(
+        with_strings,
+        BTreeSet::from(["blockedIps", "dockerContainers", "systemLogs"])
+    );
+}
+
+#[test]
+fn reads_follow_the_calls_the_t84_decoders_send() {
+    type Params = &'static [(&'static str, &'static str)];
+    fn read_call(
+        api: &'static str,
+        max_version: u32,
+        method: &'static str,
+        params: Params,
+        string_params: Params,
+    ) -> ReadCall {
+        ReadCall {
+            api,
+            max_version,
+            method,
+            params,
+            string_params,
+        }
+    }
+    let first = |field| read_spec(field).unwrap().alternatives;
+    // Firewall rules: DSM has no rule list method; adapters come first, then
+    // `Firewall.Rules load` per adapter.
+    assert_eq!(
+        first("firewallRules"),
+        [read_call(
+            "SYNO.Core.Security.Firewall.Adapter",
+            1,
+            "list",
+            &[],
+            &[]
+        )]
+    );
+    // Active Backup devices come from the device API, not `Overview`.
+    assert_eq!(
+        first("activeBackupDevices"),
+        [read_call("SYNO.ActiveBackup.Device", 1, "list", &[], &[])]
+    );
+    assert_eq!(
+        privilege_for("SYNO.ActiveBackup.Device").unwrap().package,
+        Some("Active Backup for Business")
+    );
+    assert_eq!(
+        first("blockedIps"),
+        [read_call(
+            "SYNO.Core.Security.AutoBlock.Rules",
+            1,
+            "list",
+            &[("offset", "0"), ("limit", "1")],
+            &[("type", "deny")]
+        )]
+    );
+    assert_eq!(
+        first("systemLogs"),
+        [read_call(
+            "SYNO.Core.SyslogClient.Log",
+            1,
+            "list",
+            &[("start", "0"), ("offset", "0"), ("limit", "1")],
+            &[("target", "LOCAL"), ("logtype", "system")]
+        )]
+    );
+    assert_eq!(
+        first("services"),
+        [read_call(
+            "SYNO.Core.Service",
+            3,
+            "get",
+            &[("additional", r#"["active_status"]"#)],
+            &[]
+        )]
+    );
+    assert_eq!(
+        first("dockerContainers"),
+        [read_call(
+            "SYNO.Docker.Container",
+            1,
+            "list",
+            &[("offset", "0"), ("limit", "1")],
+            &[("type", "all")]
+        )]
+    );
+    assert_eq!(
+        first("backupTasks"),
+        [read_call(
+            "SYNO.Backup.Task",
+            1,
+            "list",
+            &[(
+                "additional",
+                r#"["last_bkp_time","next_bkp_time","last_bkp_result","is_modified"]"#
+            )],
+            &[]
+        )]
     );
 }

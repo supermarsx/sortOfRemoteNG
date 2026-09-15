@@ -8,10 +8,6 @@
 //! Managers decode a private `XxxWire` struct with DSM's field names and map it
 //! into the IPC DTO in `types`; the DTO's camelCase `Serialize` is unchanged.
 
-// The t84 decoder lanes adopt these helpers module by module; until every
-// manager uses them, some are called only from tests.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use crate::client::SynoClient;
 use crate::types::DiskUtilization;
 use serde::{de::Error as _, Deserialize, Deserializer};
