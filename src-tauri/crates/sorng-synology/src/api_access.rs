@@ -92,6 +92,7 @@ pub static API_PRIVILEGES: &[ApiSpec] = &[
     admin_package("SYNO.ActiveBackup.Device", ACTIVE_BACKUP),
     admin_package("SYNO.ActiveBackup.Overview", ACTIVE_BACKUP),
     any("SYNO.API.Auth"),
+    any("SYNO.API.Auth.Type"),
     any("SYNO.API.Auth.UIConfig"),
     any("SYNO.API.Info"),
     admin_package("SYNO.Backup.Repository", HYPER_BACKUP),

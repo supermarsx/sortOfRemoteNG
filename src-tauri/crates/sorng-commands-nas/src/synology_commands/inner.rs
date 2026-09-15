@@ -32,7 +32,20 @@ pub async fn syn_fs_connect(
     // `"file_station"` (default) or `"dsm_desktop"`; any other value is
     // rejected while decoding, before a request is made.
     session_profile: Option<sorng_synology::login_handshake::SessionProfile>,
+    // Trusted devices; all optional, so older payloads are unchanged.
+    // `trustDevice` asks DSM to trust this computer on a code sign-in.
+    // `deviceId` + `deviceName` reuse a saved device on a code-less sign-in.
+    // Both are checked before any request, and errors never repeat them.
+    trust_device: Option<bool>,
+    device_id: Option<String>,
+    device_name: Option<String>,
 ) -> Result<FileStationLogin, String> {
+    let device_trust = sorng_synology::device_trust::request_from_ipc(
+        trust_device,
+        device_name,
+        device_id.as_deref(),
+    )
+    .map_err(synology_command_error)?;
     let config = SynologyConfig {
         host,
         port,
@@ -42,11 +55,12 @@ pub async fn syn_fs_connect(
         insecure: false,
         timeout_secs: 30,
         otp_code,
-        device_token: None,
+        device_token: device_id,
         access_token: None,
     };
     let options = sorng_synology::login_handshake::LoginOptions::default()
-        .with_session_profile(session_profile.unwrap_or_default());
+        .with_session_profile(session_profile.unwrap_or_default())
+        .with_device_trust(device_trust);
     state
         .connect_with_route(
             &instance_id,

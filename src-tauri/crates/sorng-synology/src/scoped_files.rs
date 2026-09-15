@@ -1,8 +1,9 @@
 //! Receipt-bound File Station API. The renderer never receives a DSM SID or
 //! supplies a raw NAS task id. API geometry follows Synology's File Station guide.
 use crate::{
-    auth::AuthManager,
+    auth::{AuthManager, AuthMethod},
     client::SynoClient,
+    device_trust::{self, DeviceLogin, TrustedDevice},
     error::{SynologyError, SynologyErrorKind, SynologyResult},
     login_handshake::LoginOptions,
     service::SynologyService,
@@ -19,6 +20,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// `syn_fs_connect`'s result: a receipt, or the second-factor state DSM
+/// asked for. `Debug` never shows a device token (`TrustedDevice` redacts it).
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum FileStationLogin {
@@ -26,16 +29,104 @@ pub enum FileStationLogin {
         #[serde(rename = "sessionId")]
         session_id: String,
         message: String,
+        /// Present only when this sign-in asked DSM to trust the computer and
+        /// DSM issued a usable device token.
+        #[serde(rename = "trustedDevice", skip_serializing_if = "Option::is_none")]
+        trusted_device: Option<TrustedDevice>,
     },
+    /// DSM code 403.
     OtpRequired {
         message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        methods: Option<Vec<AuthMethod>>,
+        /// A saved device token was sent and DSM still asked for a code.
+        #[serde(
+            rename = "trustedDeviceRejected",
+            skip_serializing_if = "std::ops::Not::not"
+        )]
+        trusted_device_rejected: bool,
+        /// The saved device belongs to another computer, so it was not sent.
+        #[serde(
+            rename = "trustedDeviceMismatch",
+            skip_serializing_if = "std::ops::Not::not"
+        )]
+        trusted_device_mismatch: bool,
     },
-    OtpInvalid {
-        message: String,
-    },
+    /// DSM code 404.
+    OtpInvalid { message: String },
+    /// DSM code 406: two-factor setup must be completed in DSM first.
+    OtpEnrollmentRequired { message: String },
+    /// DSM code 449: a sign-in method this client cannot complete.
     UnsupportedMfa {
         message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        methods: Option<Vec<AuthMethod>>,
     },
+}
+
+const SIGN_IN_FALLBACK: &str = "Approve-sign-in push and security keys can't complete an API sign-in; use the DSM website view for those.";
+
+fn otp_required(methods: Option<Vec<AuthMethod>>, device: &DeviceLogin) -> FileStationLogin {
+    let rejected = device.sent_token();
+    let mismatch = device.is_mismatch();
+    let other_methods = methods
+        .as_deref()
+        .is_some_and(|methods| methods.iter().any(|method| *method != AuthMethod::Otp));
+    let lead = if rejected {
+        "This NAS no longer accepts the saved trusted device. Enter a code to continue."
+    } else if mismatch {
+        "The saved trusted device was set up on another computer, so it wasn't used. Enter a code to continue."
+    } else if other_methods {
+        "Enter the one-time code from your authenticator app or the code shown in Synology Secure SignIn."
+    } else {
+        "Enter the current one-time code from your authenticator."
+    };
+    FileStationLogin::OtpRequired {
+        message: if other_methods {
+            format!("{lead} {SIGN_IN_FALLBACK}")
+        } else {
+            lead.into()
+        },
+        methods,
+        trusted_device_rejected: rejected,
+        trusted_device_mismatch: mismatch,
+    }
+}
+
+/// Maps DSM's login refusal to a challenge or a safe error. Only 403 and 449
+/// look up the account's sign-in methods. Messages never repeat a password,
+/// code or device token, and diagnostics keep only closed metadata.
+async fn login_refusal(
+    client: &SynoClient,
+    device: &DeviceLogin,
+    error: SynologyError,
+    active: &AtomicBool,
+) -> SynologyResult<FileStationLogin> {
+    let refused = |message: &str| Err(SynologyError::auth(message).with_diagnostic_from(&error));
+    match error.kind {
+        SynologyErrorKind::ApiError(403) => Ok(otp_required(
+            AuthManager::sign_in_methods(client, active).await?,
+            device,
+        )),
+        SynologyErrorKind::ApiError(404) => Ok(FileStationLogin::OtpInvalid {
+            message: "The one-time code was not accepted. Enter a fresh code.".into(),
+        }),
+        SynologyErrorKind::ApiError(406) => Ok(FileStationLogin::OtpEnrollmentRequired {
+            message: "DSM requires this account to set up two-factor authentication before it can sign in. Complete setup once in DSM in your browser (the DSM website view works), then connect again.".into(),
+        }),
+        SynologyErrorKind::ApiError(449) => Ok(FileStationLogin::UnsupportedMfa {
+            message: format!("DSM requires a sign-in method the NAS API can't complete. {SIGN_IN_FALLBACK}"),
+            methods: AuthManager::sign_in_methods(client, active).await?,
+        }),
+        SynologyErrorKind::ApiError(400) => refused("NAS rejected the username or password"),
+        SynologyErrorKind::ApiError(401) => refused("The DSM account is disabled."),
+        SynologyErrorKind::ApiError(402) => refused("DSM refused API sign-in for this account. The NAS API view signs in as a File Station session, so check the account's File Station application privilege and DSM login restrictions."),
+        SynologyErrorKind::ApiError(407) => refused("This client IP is blocked by the NAS. Review DSM security settings before retrying."),
+        SynologyErrorKind::ApiError(408) => refused("The password has expired and this account cannot change it. Ask a DSM administrator to reset it."),
+        SynologyErrorKind::ApiError(409) => refused("The NAS password has expired. Change it in DSM, then reconnect."),
+        SynologyErrorKind::ApiError(410) => refused("DSM requires a password change. Complete it in your browser, then reconnect."),
+        _ => Err(error),
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -259,6 +350,10 @@ impl SynologyService {
                 "Enter a username, password, and a valid one-time code when requested",
             ));
         }
+        device_trust::check(
+            options.device_trust.as_ref(),
+            config.device_token.as_deref(),
+        )?;
         let mut client = SynoClient::new_with_route(&config, route)?;
         drop(config);
         crate::quickconnect::prepare(&mut client, active).await?;
@@ -267,19 +362,12 @@ impl SynologyService {
                 "Synology connection attempt was cancelled",
             ));
         }
-        match AuthManager::login_file_station(&mut client, &options, active).await {
-            Ok(()) => {},
-            Err(error) => return match error.kind {
-                SynologyErrorKind::ApiError(403 | 406) => Ok(FileStationLogin::OtpRequired { message: "Enter the current verification code from your authenticator.".into() }),
-                SynologyErrorKind::ApiError(404) => Ok(FileStationLogin::OtpInvalid { message: "The verification code was not accepted. Enter a new current code.".into() }),
-                SynologyErrorKind::ApiError(449) => Ok(FileStationLogin::UnsupportedMfa { message: "This NAS requires an authentication setup or approval that this API login cannot complete. Use DSM in your browser; Secure SignIn push and WebAuthn are not supported here.".into() }),
-                SynologyErrorKind::ApiError(407) => Err(SynologyError::auth("This client IP is blocked by the NAS. Review DSM security settings before retrying.").with_diagnostic_from(&error)),
-                SynologyErrorKind::ApiError(408 | 409) => Err(SynologyError::auth("The NAS password has expired. Change it in DSM, then reconnect.").with_diagnostic_from(&error)),
-                SynologyErrorKind::ApiError(410) => Err(SynologyError::auth("DSM requires a password change. Complete it in your browser, then reconnect.").with_diagnostic_from(&error)),
-                SynologyErrorKind::ApiError(400) => Err(SynologyError::auth("NAS rejected the username or password").with_diagnostic_from(&error)),
-                _ => Err(error),
-            },
-        }
+        let sign_in = AuthManager::login_file_station(&mut client, &options, active).await;
+        let trusted_device = match sign_in.result {
+            Ok(trusted_device) => trusted_device,
+            Err(error) => return login_refusal(&client, &sign_in.device, error, active).await,
+        };
+        drop(sign_in.device);
         if !active.load(Ordering::Acquire) {
             let _ = tokio::time::timeout(Duration::from_secs(2), AuthManager::logout(&mut client))
                 .await;
@@ -322,6 +410,7 @@ impl SynologyService {
         Ok(FileStationLogin::Connected {
             session_id,
             message: "Connected to Synology File Station".into(),
+            trusted_device,
         })
     }
 

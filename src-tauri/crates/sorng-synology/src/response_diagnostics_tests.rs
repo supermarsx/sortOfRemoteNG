@@ -347,9 +347,13 @@ async fn null_supplemental_errors_preserve_authentication_codes_and_mfa_flow() {
         .await;
         let result = SynologyService::new().fs_connect(peer.config()).await;
         match code {
-            403 | 406 => assert!(matches!(
+            403 => assert!(matches!(
                 result.unwrap(),
                 FileStationLogin::OtpRequired { .. }
+            )),
+            406 => assert!(matches!(
+                result.unwrap(),
+                FileStationLogin::OtpEnrollmentRequired { .. }
             )),
             404 => assert!(matches!(
                 result.unwrap(),

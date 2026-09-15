@@ -22,7 +22,8 @@
 //! - **wire**             — Lenient DSM wire decoders (string numbers, CSV lists, JSON string params)
 //! - **error**            — Error types with DSM error code mapping
 //! - **client**           — HTTP client, session management, API discovery
-//! - **auth**             — Login (password / one-time code / legacy SID reuse)
+//! - **auth**             — Login (password / one-time code / legacy SID reuse), sign-in methods
+//! - **device_trust**     — Trusted devices: enroll, reuse bound to this computer's name
 //! - **login_handshake**  — DSM 7 secure login (Noise IK), request signing, session identity
 //! - **api_access**       — DSM privilege of every API called, panel read catalog
 //! - **section_access**   — Per-read access check: account role, session limits, packages
@@ -50,6 +51,7 @@ pub mod api_access;
 pub mod auth;
 pub mod backup;
 pub mod client;
+pub mod device_trust;
 pub mod docker;
 pub mod download_station;
 pub mod error;
@@ -95,3 +97,6 @@ mod quickconnect_tests;
 
 #[cfg(test)]
 mod login_handshake_tests;
+
+#[cfg(test)]
+mod login_2fa_tests;

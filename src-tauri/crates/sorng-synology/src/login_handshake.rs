@@ -80,6 +80,10 @@ impl SessionProfile {
 #[derive(Clone, Debug, Default)]
 pub struct LoginOptions {
     pub session_profile: SessionProfile,
+    /// Trusted-device choices of this attempt. `None` sends no device
+    /// parameters. It holds no device token (that stays in
+    /// `SynologyConfig.device_token`), so `Debug` shows nothing secret.
+    pub device_trust: Option<crate::device_trust::DeviceTrustRequest>,
     /// Test-only: sign in the way the client did before the handshake existed.
     #[cfg(test)]
     pub(crate) force_legacy: bool,
@@ -89,6 +93,15 @@ impl LoginOptions {
     #[must_use]
     pub fn with_session_profile(mut self, session_profile: SessionProfile) -> Self {
         self.session_profile = session_profile;
+        self
+    }
+
+    #[must_use]
+    pub fn with_device_trust(
+        mut self,
+        device_trust: Option<crate::device_trust::DeviceTrustRequest>,
+    ) -> Self {
+        self.device_trust = device_trust;
         self
     }
 

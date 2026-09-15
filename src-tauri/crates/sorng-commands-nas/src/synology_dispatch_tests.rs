@@ -193,6 +193,60 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
             json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"sessionProfile":7}),
             Err("sessionProfile"),
         ),
+        // Trusted-device arguments are optional. Well-formed values decode
+        // and pass the device check, so the instance id is what fails.
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"otpCode":"123456","trustDevice":true}),
+            Err("Invalid Synology instance"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"otpCode":null,"deviceId":"private-device-valid","deviceName":"SortOfRemoteNG · FIXTURE"}),
+            Err("Invalid Synology instance"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"trustDevice":false,"deviceId":null,"deviceName":null}),
+            Err("Invalid Synology instance"),
+        ),
+        // Bad values are refused before the instance id or any request, and
+        // the error never repeats them.
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"deviceId":"private-device\u{7}id","deviceName":"SortOfRemoteNG · FIXTURE"}),
+            Err("trusted device is invalid"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"deviceId":format!("private-device-{}", "x".repeat(1024)),"deviceName":"SortOfRemoteNG · FIXTURE"}),
+            Err("trusted device is invalid"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"deviceId":"private-device-unnamed"}),
+            Err("trusted device is invalid"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"deviceId":"private-device-valid","deviceName":"private-device-name\u{1b}"}),
+            Err("trusted device is invalid"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"deviceId":"private-device-valid","deviceName":format!("private-device-{}", "n".repeat(64))}),
+            Err("trusted device is invalid"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"otpCode":"123456","trustDevice":"yes"}),
+            Err("trustDevice"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"deviceId":7,"deviceName":"SortOfRemoteNG · FIXTURE"}),
+            Err("deviceId"),
+        ),
     ] {
         assert!(
             crate::is_command(command),
@@ -224,6 +278,7 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
                 assert!(error.contains(fragment), "{command}: {error}");
                 assert!(!error.contains("not managed"));
                 assert!(!error.contains("not-real"));
+                assert!(!error.contains("private-device"), "{command}: {error}");
             }
         }
     }

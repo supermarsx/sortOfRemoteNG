@@ -313,7 +313,7 @@ async fn otp_challenges_are_typed_single_attempts_and_keep_existing_session() {
     for (code, status) in [
         (403, "otp_required"),
         (404, "otp_invalid"),
-        (406, "otp_required"),
+        (406, "otp_enrollment_required"),
         (449, "unsupported_mfa"),
     ] {
         let mut responses = login_responses(false);
