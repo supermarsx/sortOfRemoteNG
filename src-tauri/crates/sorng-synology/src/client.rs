@@ -5,8 +5,11 @@
 //! 2. Manages SID session tokens
 //! 3. Routes every call through `api_call()` → JSON → `SynoResponse<T>`
 //! 4. Handles SynoToken CSRF headers when required
+//! 5. Signs non-File-Station requests with `X-SYNO-HASH` after DSM 7's secure
+//!    login handshake (see `login_handshake`)
 
 use crate::error::{SynologyError, SynologyResult};
+use crate::login_handshake::{SessionIdentity, SessionRoute, SharedSigner, HASH_HEADER};
 use crate::response_diagnostics::{Category, ResponseFacts, Stage, RESPONSE_LIMIT};
 use crate::types::*;
 
@@ -16,6 +19,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 /// Synology DSM HTTP client.
+///
+/// Clones share one session: the same cookie jar and, after a secure login,
+/// the same request signer, so every copy draws nonces from one sequence.
 #[derive(Clone)]
 pub struct SynoClient {
     http: Client,
@@ -27,8 +33,32 @@ pub struct SynoClient {
     pub dsm_version: Option<String>,
     pub model: Option<String>,
     pub config: SynologyConfig,
-    pub(crate) auth_session: &'static str,
+    /// Who signed in, how, and over which kind of route. Replaced per login.
+    pub(crate) identity: SessionIdentity,
+    /// Present only after a finished secure login handshake.
+    pub(crate) request_signer: Option<SharedSigner>,
     pub(crate) route: crate::http_route::NativeHttpRoute,
+}
+
+impl std::fmt::Debug for SynoClient {
+    // SIDs, tokens, credentials, hosts and handshake state are never printed.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SynoClient")
+            .field("connected", &self.sid.is_some())
+            .field("identity", &self.identity)
+            .field("signed_requests", &self.request_signer.is_some())
+            .field("apis", &self.api_info.len())
+            .field("dsm_version", &self.dsm_version)
+            .field("model", &self.model)
+            .finish_non_exhaustive()
+    }
+}
+
+/// File Station calls (and uploads/downloads) stay unsigned: DSM grants the
+/// full session from the login's `ik_message`, and they need no ordering.
+fn signs_requests_for(api: &str) -> bool {
+    !api.starts_with("SYNO.FileStation.")
 }
 
 impl SynoClient {
@@ -82,13 +112,19 @@ impl SynoClient {
             dsm_version: None,
             model: None,
             config: config.clone(),
-            auth_session: "SortOfRemoteNG",
+            identity: SessionIdentity::unauthenticated(SessionRoute::for_transport(&route)),
+            request_signer: None,
             route,
         })
     }
 
     pub fn is_connected(&self) -> bool {
         self.sid.is_some()
+    }
+
+    /// Closed facts about the current login (no host, SID, token or key).
+    pub fn session_identity(&self) -> &SessionIdentity {
+        &self.identity
     }
 
     pub(crate) fn reset_anonymous_http(&mut self, referrer: Option<&str>) -> SynologyResult<()> {
@@ -310,6 +346,32 @@ impl SynoClient {
         Ok(request)
     }
 
+    /// Sends one API request. After a finished secure login every
+    /// non-File-Station request carries `X-SYNO-HASH`. Making the header and
+    /// waiting for the response headers happen under one per-session lock, so
+    /// DSM receives the nonces in order.
+    pub(crate) async fn send_api(
+        &self,
+        api: &str,
+        request: reqwest::RequestBuilder,
+    ) -> SynologyResult<reqwest::Response> {
+        let Some(signer) = self
+            .request_signer
+            .as_ref()
+            .filter(|_| signs_requests_for(api))
+        else {
+            return Ok(request.send().await?);
+        };
+        let mut signer = signer.lock().await;
+        let request = match signer.next_header() {
+            Some(value) => request.header(HASH_HEADER, value),
+            None => request,
+        };
+        let response = request.send().await;
+        drop(signer);
+        Ok(response?)
+    }
+
     pub(crate) async fn read_json<T: DeserializeOwned>(
         response: reqwest::Response,
     ) -> SynologyResult<T> {
@@ -368,8 +430,7 @@ impl SynoClient {
         form: &[(&str, &str)],
     ) -> SynologyResult<(serde_json::Value, ResponseFacts)> {
         let (resp, facts): (SynoResponse<serde_json::Value>, _) = Self::read_json_at(
-            self.form_request(api, version, method, form)?
-                .send()
+            self.send_api(api, self.form_request(api, version, method, form)?)
                 .await?,
             Stage::operation(api, method),
         )
@@ -430,8 +491,7 @@ impl SynoClient {
             .map(|(key, value)| (*key, value.as_str()))
             .collect();
         let (response, facts): (SynoResponse<serde_json::Value>, _) = Self::read_json_at(
-            self.form_request(api, version, method, &form)?
-                .send()
+            self.send_api(api, self.form_request(api, version, method, &form)?)
                 .await?,
             Stage::operation(api, method),
         )

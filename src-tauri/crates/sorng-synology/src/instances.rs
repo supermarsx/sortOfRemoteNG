@@ -224,6 +224,7 @@ impl SynologyInstances {
             request,
             config,
             crate::http_route::NativeHttpRoute::Direct {},
+            crate::login_handshake::LoginOptions::default(),
         )
         .await
     }
@@ -234,6 +235,7 @@ impl SynologyInstances {
         request: &str,
         config: SynologyConfig,
         route: crate::http_route::NativeHttpRoute,
+        options: crate::login_handshake::LoginOptions,
     ) -> Result<FileStationLogin, String> {
         validate_id(instance)?;
         validate_id(request)?;
@@ -271,7 +273,7 @@ impl SynologyInstances {
         // out an authenticated candidate before discarding it. Dropping a login
         // future mid-flight would lose the SID needed for best-effort logout.
         let outcome = candidate
-            .fs_connect_routed(config, &attempt.active, route)
+            .fs_connect_with_options(config, &attempt.active, route, options)
             .await;
         let mut retired = None;
         let accepted = {

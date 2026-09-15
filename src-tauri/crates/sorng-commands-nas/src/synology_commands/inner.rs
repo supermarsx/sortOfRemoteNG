@@ -29,6 +29,9 @@ pub async fn syn_fs_connect(
     use_https: bool,
     otp_code: Option<String>,
     route: Option<sorng_synology::http_route::NativeHttpRoute>,
+    // `"file_station"` (default) or `"dsm_desktop"`; any other value is
+    // rejected while decoding, before a request is made.
+    session_profile: Option<sorng_synology::login_handshake::SessionProfile>,
 ) -> Result<FileStationLogin, String> {
     let config = SynologyConfig {
         host,
@@ -42,8 +45,16 @@ pub async fn syn_fs_connect(
         device_token: None,
         access_token: None,
     };
+    let options = sorng_synology::login_handshake::LoginOptions::default()
+        .with_session_profile(session_profile.unwrap_or_default());
     state
-        .connect_with_route(&instance_id, &request_id, config, route.unwrap_or_default())
+        .connect_with_route(
+            &instance_id,
+            &request_id,
+            config,
+            route.unwrap_or_default(),
+            options,
+        )
         .await
 }
 

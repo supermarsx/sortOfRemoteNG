@@ -5,6 +5,7 @@ use crate::{
     client::SynoClient,
     error::{SynologyError, SynologyResult},
     http_route::NativeHttpRoute,
+    login_handshake::SessionRoute,
 };
 use reqwest::{
     cookie::{CookieStore, Jar},
@@ -120,7 +121,7 @@ impl Provider {
             ));
         }
         let json = read_json(response, CONTROL_LIMIT, active).await?;
-        if !json.as_array().is_some_and(|items| items.len() <= 16) {
+        if json.as_array().is_none_or(|items| items.len() > 16) {
             return Err(SynologyError::connection(
                 "QuickConnect returned an unsupported discovery response",
             ));
@@ -327,12 +328,29 @@ async fn try_candidates(
         let discovered = client.discover_apis_cancellable(active).await;
         current(active)?;
         match discovered {
-            Ok(()) if api_ready(client) => return Ok(true),
+            Ok(()) if api_ready(client) => {
+                client.identity.route = winning_route(probe, alias);
+                return Ok(true);
+            }
             Ok(()) => *last_api_error = Some(SynologyError::connection("The verified NAS did not advertise compatible DSM authentication and File Station APIs")),
             Err(error) => *last_api_error = Some(error),
         }
     }
     Ok(false)
+}
+
+/// Records only which kind of verified candidate won, never its host: a
+/// smart-DNS name of this NAS on a DSM port, or the provider relay.
+fn winning_route(probe: &Url, alias: &str) -> SessionRoute {
+    let direct = format!("{alias}.direct.quickconnect.to");
+    let host = probe.host_str().unwrap_or_default();
+    if (host == direct || host.ends_with(&format!(".{direct}")))
+        && matches!(probe.port(), Some(5001 | 5002))
+    {
+        SessionRoute::QuickconnectDirect
+    } else {
+        SessionRoute::QuickconnectRelay
+    }
 }
 
 fn api_ready(client: &SynoClient) -> bool {

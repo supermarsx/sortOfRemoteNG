@@ -93,13 +93,67 @@ pub struct SynologyConfigSafe {
     pub model: Option<String>,
 }
 
-/// Login result from `SYNO.API.Auth` login.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// Login result from `SYNO.API.Auth` login. It holds session secrets, so it is
+/// never serialized and its `Debug` output is redacted. Optional fields are
+/// lenient: an unexpected value never fails an otherwise accepted login.
+#[derive(Clone, Deserialize)]
 pub struct LoginResult {
     pub sid: String,
+    #[serde(default, deserialize_with = "lenient_login_string")]
     pub synotoken: Option<String>,
+    /// Trusted-device token, `did` in the official login guide.
+    #[serde(default, deserialize_with = "lenient_login_string")]
     pub did: Option<String>,
+    /// The same token under the name some DSM 7 builds use.
+    #[serde(default, deserialize_with = "lenient_login_string")]
+    pub device_id: Option<String>,
+    /// Noise IK message 2 of DSM 7's secure login handshake.
+    #[serde(default, deserialize_with = "lenient_login_string")]
+    pub ik_message: Option<String>,
+    /// DSM signed this session in through an application-portal port.
+    #[serde(default, deserialize_with = "lenient_login_flag")]
+    pub is_portal_port: bool,
+}
+
+impl LoginResult {
+    /// The trusted-device token under either DSM field name (`did` first).
+    pub fn device_token(&self) -> Option<&str> {
+        self.did.as_deref().or(self.device_id.as_deref())
+    }
+}
+
+impl std::fmt::Debug for LoginResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LoginResult")
+            .field("sid", &"<redacted>")
+            .field("synotoken", &self.synotoken.as_ref().map(|_| "<redacted>"))
+            .field("device_token", &self.device_token().map(|_| "<redacted>"))
+            .field(
+                "ik_message",
+                &self.ik_message.as_ref().map(|_| "<redacted>"),
+            )
+            .field("is_portal_port", &self.is_portal_port)
+            .finish()
+    }
+}
+
+fn lenient_login_string<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(value) => Some(value),
+        _ => None,
+    })
+}
+
+fn lenient_login_flag<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Bool(value) => value,
+        serde_json::Value::Number(value) => value.as_u64().is_some_and(|value| value != 0),
+        serde_json::Value::String(value) => matches!(value.as_str(), "true" | "yes" | "1"),
+        _ => false,
+    })
 }
 
 // ── System ──────────────────────────────────────────────────────────

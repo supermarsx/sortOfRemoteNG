@@ -22,6 +22,7 @@
 //! - **error**            — Error types with DSM error code mapping
 //! - **client**           — HTTP client, session management, API discovery
 //! - **auth**             — Login (password / one-time code / legacy SID reuse)
+//! - **login_handshake**  — DSM 7 secure login (Noise IK), request signing, session identity
 //! - **system**           — System info, DSM info, utilization, processes
 //! - **storage**          — Volumes, pools, disks, SMART, iSCSI, SSD cache
 //! - **file_station**     — File management, upload, download, sharing
@@ -54,6 +55,7 @@ pub mod file_viewers;
 pub mod hardware;
 pub mod http_route;
 pub mod instances;
+pub mod login_handshake;
 pub mod logs;
 pub mod network;
 pub mod notifications;
@@ -85,3 +87,6 @@ mod response_diagnostics_tests;
 
 #[cfg(test)]
 mod quickconnect_tests;
+
+#[cfg(test)]
+mod login_handshake_tests;

@@ -161,6 +161,38 @@ fn registered_synology_commands_decode_scopes_and_use_managed_registry_state() {
             json!({"host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false}),
             Err("instanceId"),
         ),
+        // `sessionProfile` is optional and closed. Reaching the instance-id
+        // check proves the value decoded; old payloads above are unchanged.
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"sessionProfile":"file_station"}),
+            Err("Invalid Synology instance"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"sessionProfile":"dsm_desktop"}),
+            Err("Invalid Synology instance"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"sessionProfile":null}),
+            Err("Invalid Synology instance"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"sessionProfile":"webui"}),
+            Err("sessionProfile"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"sessionProfile":"FileStation"}),
+            Err("sessionProfile"),
+        ),
+        (
+            "syn_fs_connect",
+            json!({"instanceId":"bad/id","requestId":"request","host":"127.0.0.1","port":1,"username":"synthetic","password":"not-real","useHttps":false,"sessionProfile":7}),
+            Err("sessionProfile"),
+        ),
     ] {
         assert!(
             crate::is_command(command),

@@ -19,6 +19,10 @@ url = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 tempfile = { workspace = true }
+# DSM 7 secure login handshake (Noise_IK_25519_ChaChaPoly_BLAKE2b). Only the
+# primitives that pattern needs: no AES-GCM, SHA-2, ring or `std` (which would
+# pull in ring). getrandom supplies the per-login static and ephemeral keys.
+snow = { version = "0.10.0", default-features = false, features = ["use-curve25519", "use-chacha20poly1305", "use-blake2", "use-getrandom"] }
 
 [dev-dependencies]
 rcgen = "0.12"

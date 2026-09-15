@@ -4,6 +4,7 @@ use crate::{
     auth::AuthManager,
     client::SynoClient,
     error::{SynologyError, SynologyErrorKind, SynologyResult},
+    login_handshake::LoginOptions,
     service::SynologyService,
     types::*,
 };
@@ -235,6 +236,17 @@ impl SynologyService {
         active: &AtomicBool,
         route: crate::http_route::NativeHttpRoute,
     ) -> SynologyResult<FileStationLogin> {
+        self.fs_connect_with_options(config, active, route, LoginOptions::default())
+            .await
+    }
+
+    pub(crate) async fn fs_connect_with_options(
+        &mut self,
+        config: SynologyConfig,
+        active: &AtomicBool,
+        route: crate::http_route::NativeHttpRoute,
+        options: LoginOptions,
+    ) -> SynologyResult<FileStationLogin> {
         if config.username.is_empty()
             || config.username.len() > 256
             || config.password.is_empty()
@@ -255,7 +267,7 @@ impl SynologyService {
                 "Synology connection attempt was cancelled",
             ));
         }
-        match AuthManager::login_file_station(&mut client).await {
+        match AuthManager::login_file_station(&mut client, &options, active).await {
             Ok(()) => {},
             Err(error) => return match error.kind {
                 SynologyErrorKind::ApiError(403 | 406) => Ok(FileStationLogin::OtpRequired { message: "Enter the current verification code from your authenticator.".into() }),
