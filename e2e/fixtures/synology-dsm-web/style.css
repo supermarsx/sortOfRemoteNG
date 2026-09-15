@@ -1,0 +1,54 @@
+/* Synthetic DSM look: enough layout for real, non-zero control rects. */
+body {
+  margin: 0;
+  min-height: 100vh;
+  font:
+    14px/1.4 system-ui,
+    sans-serif;
+  background: #20354f;
+  color: #1f2d3d;
+}
+.dsm-boot-splash {
+  padding: 48px;
+  color: #fff;
+}
+#sds-login-vue {
+  width: 360px;
+  margin: 72px auto;
+  padding: 32px;
+  border-radius: 8px;
+  background: #fff;
+}
+.login-tabs-content-wrapper input:not([type="checkbox"]) {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px;
+}
+.login-btn,
+[syno-id="otp-panel-next-btn"] {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 24px;
+  border-radius: 4px;
+  background: #0086e5;
+  color: #fff;
+  cursor: pointer;
+}
+.login-btn.spin {
+  opacity: 0.6;
+}
+.login-error-msg {
+  margin-top: 12px;
+  color: #d9534f;
+}
+#sds-desktop {
+  min-height: 100vh;
+  background: #3b6ea5;
+}
+#sds-taskbar {
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+}
