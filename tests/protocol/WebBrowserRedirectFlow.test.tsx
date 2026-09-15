@@ -2195,3 +2195,223 @@ describe("actual website redirect review integration", () => {
     expect(proxies).toHaveLength(1);
   });
 });
+
+describe("page readiness deadline after the document starts", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  // waitFor polls on timers; step the fake clock instead so deadlines stay exact.
+  async function mountedOnFakeClock() {
+    h.persistedConnections = structuredClone(h.connections);
+    const view = render(<Harness />);
+    for (
+      let step = 0;
+      step < 50 &&
+      !view.container.querySelector("iframe")?.src.includes("__sorng_");
+      step++
+    )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+    const iframe = view.container.querySelector("iframe")!;
+    expect(iframe.src).toContain(proxies[0].proxy_url);
+    const url = new URL(iframe.src);
+    const navigationToken = url.searchParams.get("__sorng_navigation_v1");
+    url.searchParams.delete("__sorng_navigation_v1");
+    const identity = {
+      version: 1,
+      sessionId: "proxy-1",
+      documentToken: "d".repeat(32),
+      documentSequence: 1,
+      navigationToken,
+      url: url.href,
+    };
+    const send = (data: Record<string, unknown>) =>
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: url.origin,
+            data,
+          }),
+        );
+      });
+    const advance = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    return { view, iframe, identity, send, advance };
+  }
+  const errorScreen = () => screen.queryByTestId("web-navigation-error-screen");
+
+  it("lets a slow document reach DOM-ready 45 seconds after it started", async () => {
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    await advance(20_000);
+    send({ ...identity, type: "proxy_document_start" });
+    await advance(45_000);
+    expect(errorScreen()).toBeNull();
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "true");
+    send({ ...identity, type: "proxy_dom_ready" });
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "false");
+    await advance(120_000);
+    expect(errorScreen()).toBeNull();
+    expect(iframe).not.toHaveClass("invisible");
+  });
+
+  it("still fails a navigation whose document does not start within 30 seconds", async () => {
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    await advance(29_000);
+    expect(errorScreen()).toBeNull();
+    await advance(1_000);
+    expect(errorScreen()).toHaveTextContent("Page did not become ready");
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "false");
+    // A document that only starts after the deadline cannot become current.
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    expect(errorScreen()).toHaveTextContent("Page did not become ready");
+    expect(h.activate).not.toHaveBeenCalled();
+  });
+
+  it("recovers the same document's DOM-ready after the deadline and accepts helper progress again", async () => {
+    h.connections[0] = {
+      ...h.connections[0],
+      hostname: "example-nas.fr3.quickconnect.to",
+      basicAuthUsername: "fixture-user",
+      basicAuthPassword: "fixture-password",
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "form" },
+    };
+    h.loginStatuses["proxy-1"] = "awaiting_nas";
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    await advance(119_000);
+    expect(errorScreen()).toBeNull();
+    await advance(1_000);
+    expect(errorScreen()).toHaveTextContent("Page did not become ready");
+    const status = screen.getByRole("button", {
+      name: "Refresh saved login status",
+    });
+    const progress = {
+      ...identity,
+      type: "proxy_synology_login_progress",
+      phase: "waiting_account_form",
+      reason: "button-missing",
+    };
+    send(progress);
+    expect(status).not.toHaveTextContent("Auto-fill: finding login form");
+    send({ ...identity, type: "proxy_dom_ready" });
+    await advance(0);
+    expect(errorScreen()).toBeNull();
+    expect(iframe).not.toHaveClass("invisible");
+    expect(iframe).not.toHaveAttribute("inert");
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "false");
+    send(progress);
+    expect(
+      screen.getByRole("button", { name: "Refresh saved login status" }),
+    ).toHaveTextContent("Auto-fill: finding login form");
+    await advance(120_000);
+    expect(errorScreen()).toBeNull();
+  });
+
+  it("keeps the deadline failure when DOM-ready comes from a different document", async () => {
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    await advance(120_000);
+    expect(errorScreen()).toHaveTextContent("Page did not become ready");
+    for (const other of [
+      { documentToken: "e".repeat(32) },
+      { documentSequence: 2 },
+      { navigationToken: null },
+      { url: `${new URL(identity.url).origin}/another-document` },
+    ]) {
+      send({ ...identity, ...other, type: "proxy_dom_ready" });
+      expect(errorScreen()).toHaveTextContent("Page did not become ready");
+      expect(iframe).toHaveClass("invisible");
+    }
+    // Control: the document that actually timed out still recovers.
+    send({ ...identity, type: "proxy_dom_ready" });
+    expect(errorScreen()).toBeNull();
+  });
+
+  const hop = (identity: Record<string, unknown>, sequence: number) => ({
+    ...identity,
+    documentToken: sequence.toString(16).repeat(32),
+    documentSequence: sequence,
+    navigationToken: null,
+    url: `${new URL(identity.url as string).origin}/hop-${sequence}`,
+  });
+
+  it("gives each redirect hop its own window so a slow QuickConnect chain reaches DSM", async () => {
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    // Relay page, tunnel page, then DSM: each hop starts 60 s after the last and
+    // announces its unload 2 s before the next document arrives.
+    const documents = [identity, hop(identity, 2), hop(identity, 3)];
+    for (const [index, document] of documents.entries()) {
+      send({ ...document, type: "proxy_document_start" });
+      expect(errorScreen()).toBeNull();
+      if (index === documents.length - 1) break;
+      await advance(58_000);
+      send({ ...document, type: "proxy_navigation_start" });
+      await advance(2_000);
+      expect(errorScreen()).toBeNull();
+      expect(iframe.parentElement).toHaveAttribute("aria-busy", "true");
+    }
+    await advance(80_000);
+    expect(errorScreen()).toBeNull();
+    send({ ...documents[2], type: "proxy_dom_ready" });
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "false");
+    await advance(300_000);
+    expect(errorScreen()).toBeNull();
+    expect(iframe).not.toHaveClass("invisible");
+  });
+
+  it("fails continuous new documents at the 300-second load cap", async () => {
+    const { identity, send, advance } = await mountedOnFakeClock();
+    const documents = [
+      identity,
+      hop(identity, 2),
+      hop(identity, 3),
+      hop(identity, 4),
+    ];
+    for (const [index, gap] of [100_000, 100_000, 80_000, 19_000].entries()) {
+      send({ ...documents[index], type: "proxy_document_start" });
+      if (index === 0) {
+        // An announced unload opens a no-document window, not a new cap.
+        await advance(gap - 2_000);
+        send({ ...documents[index], type: "proxy_navigation_start" });
+        await advance(2_000);
+      } else await advance(gap);
+      expect(errorScreen()).toBeNull();
+    }
+    // The last document started at 280 s; its own window would last until 400 s.
+    await advance(1_000);
+    expect(errorScreen()).toHaveTextContent("Page did not become ready");
+    expect(errorScreen()).toHaveTextContent("within 300 seconds");
+    send({ ...hop(identity, 5), type: "proxy_document_start" });
+    expect(errorScreen()).toHaveTextContent("Page did not become ready");
+    // The capped document can still finish and recover the page.
+    send({ ...documents[3], type: "proxy_dom_ready" });
+    expect(errorScreen()).toBeNull();
+  });
+
+  it("still gives an announced hop only 30 seconds to produce its next document", async () => {
+    const { identity, send, advance } = await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    await advance(10_000);
+    send({ ...identity, type: "proxy_navigation_start" });
+    await advance(29_000);
+    expect(errorScreen()).toBeNull();
+    await advance(1_000);
+    expect(errorScreen()).toHaveTextContent("Page did not become ready");
+    // Neither a document arriving after the failure nor the unloaded one recovers.
+    send({ ...hop(identity, 2), type: "proxy_document_start" });
+    send({ ...hop(identity, 2), type: "proxy_dom_ready" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    expect(errorScreen()).toHaveTextContent("Page did not become ready");
+    expect(h.activate).toHaveBeenCalledOnce();
+  });
+});

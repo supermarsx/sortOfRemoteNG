@@ -707,6 +707,7 @@ export function useWebBrowser(session: ConnectionSession) {
     ]),
     requested: !!redirectTrust.defaultSource?.formLogin,
     valid: redirectTrust.formLoginCurrent,
+    automaticOtp: noncredentialConnection?.httpAutoMfa?.enabled === true,
     assertCurrent: () => assertFormLoginCurrentRef.current?.(),
     context: () =>
       proxySessionIdRef.current
@@ -936,9 +937,28 @@ export function useWebBrowser(session: ConnectionSession) {
   const acceptedCertFingerprintRef = useRef<string | null>(null);
   const requireCaVerificationRef = useRef(false);
   const LOAD_TIMEOUT_MS = 30_000;
+  // Once the server has answered, slow applications (for example DSM) may
+  // stream and boot their document for much longer before DOM-ready. Each
+  // document of a load gets this window, within the load's absolute cap
+  // (kept below the native Synology readiness lifetimes).
+  const DOCUMENT_READY_TIMEOUT_MS = 120_000;
+  const NAVIGATION_READY_CAP_MS = 300_000;
+  const loadStartedAtRef = useRef(0);
   const armNavigationDeadline = useCallback(
-    (generation: number, url: string) => {
+    (
+      generation: number,
+      url: string,
+      windowMs = LOAD_TIMEOUT_MS,
+      continuesLoad = false,
+    ) => {
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      const now = Date.now();
+      if (!continuesLoad) loadStartedAtRef.current = now;
+      const startedAt = loadStartedAtRef.current;
+      const timeoutMs = Math.max(
+        0,
+        Math.min(windowMs, startedAt + NAVIGATION_READY_CAP_MS - now),
+      );
       loadTimeoutRef.current = setTimeout(() => {
         if (generation !== navGenRef.current || !pendingNavigationRef.current)
           return;
@@ -952,10 +972,10 @@ export function useWebBrowser(session: ConnectionSession) {
             "Page did not become ready",
             url,
             "The browser did not report a ready document before the navigation deadline.",
-            `Page readiness was not confirmed within ${LOAD_TIMEOUT_MS / 1000} seconds. Proxy startup, page scripts or resources, and browser loading can cause this; it does not prove the server failed to respond.`,
+            `Page readiness was not confirmed within ${Math.round((Date.now() - startedAt) / 1000)} seconds. Proxy startup, page scripts or resources, and browser loading can cause this; it does not prove the server failed to respond.`,
           ),
         );
-      }, LOAD_TIMEOUT_MS);
+      }, timeoutMs);
     },
     [applyNavigationFailure],
   );
@@ -2252,8 +2272,11 @@ export function useWebBrowser(session: ConnectionSession) {
         ].includes(event.data?.type)
       ) {
         const report = event.data;
+        const failed = navigationFailureRef.current;
         if (
-          navigationFailureRef.current ||
+          (failed &&
+            (report.type !== "proxy_dom_ready" ||
+              failed.kind !== "page_load_timeout")) ||
           report.version !== 1 ||
           report.sessionId !== proxySessionIdRef.current ||
           typeof report.documentToken !== "string" ||
@@ -2290,13 +2313,21 @@ export function useWebBrowser(session: ConnectionSession) {
           current.navigationToken === report.navigationToken &&
           current.url === url;
         const startInternalNavigation = () => {
+          // A document unloading before its app navigation became ready
+          // continues that load: a new no-document window, the same cap.
+          const continuesLoad = pendingNavigationRef.current;
           const generation = ++navGenRef.current;
           pendingFrameRef.current = null;
           pendingInternalNavigationRef.current = true;
           pendingNavigationRef.current = true;
           awaitingFrameGenerationRef.current = generation;
           beginLoadingPresentation(generation);
-          armNavigationDeadline(generation, activeNavigationUrlRef.current);
+          armNavigationDeadline(
+            generation,
+            activeNavigationUrlRef.current,
+            LOAD_TIMEOUT_MS,
+            continuesLoad,
+          );
         };
         if (report.type === "proxy_navigation_start") {
           // A prior document may unload while the app is already checking a new
@@ -2404,9 +2435,34 @@ export function useWebBrowser(session: ConnectionSession) {
           setInputUrl(realUrl);
           setIsSecure(realUrl.startsWith("https:"));
           if (report.navigationToken === null) appendHistory(realUrl);
+          // The server answered: this document (a redirect hop or the final
+          // page) gets its own readiness window within the load's cap.
+          armNavigationDeadline(
+            navGenRef.current,
+            realUrl,
+            DOCUMENT_READY_TIMEOUT_MS,
+            true,
+          );
           return;
         }
-        if (
+        if (failed) {
+          // Only the local deadline is recoverable, and only by the document
+          // it timed out. Its failure advanced the generation exactly once;
+          // any later navigation, owner or certificate change advances it again.
+          if (
+            failed.sessionId !== "local" ||
+            !sameDocument ||
+            !current ||
+            current.generation + 1 !== navGenRef.current ||
+            current.ownerScope !== trustOwnerScopeRef.current
+          )
+            return;
+          currentDocumentRef.current = {
+            ...current,
+            generation: navGenRef.current,
+          };
+          clearNavigationFailure();
+        } else if (
           !sameDocument ||
           current?.generation !== navGenRef.current ||
           !pendingNavigationRef.current ||
@@ -2459,6 +2515,7 @@ export function useWebBrowser(session: ConnectionSession) {
     return () => window.removeEventListener("message", handleMessage);
   }, [
     applyNavigationFailure,
+    clearNavigationFailure,
     clearLoadingIndicator,
     beginLoadingPresentation,
     armNavigationDeadline,
