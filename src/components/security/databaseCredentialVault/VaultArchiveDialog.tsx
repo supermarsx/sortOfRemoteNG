@@ -194,7 +194,9 @@ export default function VaultArchiveDialog({
           Password-encrypted credentials and optional linked connections only.
           Social sign-in and passkey entries are descriptive bindings, not
           transferable sessions or hardware keys; sign in or enroll again on the
-          destination.
+          destination. Trusted NAS devices are bound to the computer that
+          trusted them and are not included; any found in an archive are dropped
+          on import.
         </p>
         {!supported && (
           <p role="alert">

@@ -33,6 +33,27 @@ export interface VaultPasskeyBinding {
   portable: false;
 }
 
+/** Native Synology NAS API only; the DSM website keeps its own cookie-jar trust. */
+export type VaultDeviceTrustSurface = "synology-api";
+
+/**
+ * A DSM trusted-device token (`did`) is a bearer OTP bypass for one NAS account.
+ * It never leaves the owning database: archives drop it, the UI never renders
+ * `deviceId`, and native login reuses it only when `deviceName` matches the
+ * local computer that enrolled it.
+ */
+export interface VaultDeviceTrustFacet {
+  id: string;
+  surface: VaultDeviceTrustSurface;
+  /** Canonical http(s) origin of the saved NAS address. */
+  target: string;
+  account: string;
+  deviceName: string;
+  deviceId: string;
+  createdAt: string;
+  portable: false;
+}
+
 export interface DatabaseCredentialFacets {
   username?: string;
   password?: string;
@@ -42,6 +63,7 @@ export interface DatabaseCredentialFacets {
   totp?: VaultTotpFacet[];
   social?: VaultSocialBinding[];
   passkey?: VaultPasskeyBinding[];
+  deviceTrust?: VaultDeviceTrustFacet[];
 }
 
 export type DatabaseCredentialFacet = keyof DatabaseCredentialFacets;
@@ -65,7 +87,7 @@ export interface DatabaseCredentialScope {
   generation: number;
 }
 
-/** Safe picker rows: no account names, keys, seeds, passwords or provider bindings. */
+/** Safe picker rows: no account names, keys, seeds, passwords, provider bindings or device tokens. */
 export interface DatabaseCredentialMetadata {
   id: string;
   name: string;

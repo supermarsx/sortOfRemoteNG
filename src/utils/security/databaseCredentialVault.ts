@@ -6,10 +6,12 @@ import type {
   DatabaseCredentialFacets,
   DatabaseCredentialMetadata,
   DatabaseCredentialVault,
+  VaultDeviceTrustFacet,
   VaultPasskeyBinding,
   VaultSocialBinding,
   VaultTotpFacet,
 } from "../../types/security/databaseCredentialVault";
+import { normalizeHttpRedirectOrigin } from "../protocol/httpTrustedRedirectDestinations";
 
 export const MAX_DATABASE_CREDENTIALS = 1000;
 export const MAX_DATABASE_CREDENTIAL_VAULT_BYTES = 8 * 1024 * 1024;
@@ -22,7 +24,9 @@ export const DATABASE_CREDENTIAL_FACETS = [
   "totp",
   "social",
   "passkey",
+  "deviceTrust",
 ] as const satisfies readonly DatabaseCredentialFacet[];
+export const MAX_VAULT_DEVICE_TRUST_ROWS = 16;
 
 function invalid(): never {
   // Invalid input may itself be a secret: never interpolate it in diagnostics.
@@ -184,6 +188,36 @@ function binding(
     ? { ...shared, origin: raw }
     : { ...shared, rpId: raw };
 }
+function deviceTrust(value: unknown): VaultDeviceTrustFacet {
+  const row = object(value, [
+    "id",
+    "surface",
+    "target",
+    "account",
+    "deviceName",
+    "deviceId",
+    "createdAt",
+    "portable",
+  ]);
+  if (row.portable !== false || row.surface !== "synology-api")
+    return invalid();
+  const target = text(row.target, 2048);
+  try {
+    if (normalizeHttpRedirectOrigin(target) !== target) return invalid();
+  } catch {
+    return invalid();
+  }
+  return {
+    id: id(row.id),
+    surface: "synology-api",
+    target,
+    account: text(row.account, 256),
+    deviceName: text(row.deviceName, 64),
+    deviceId: text(row.deviceId, 1024),
+    createdAt: date(row.createdAt),
+    portable: false,
+  };
+}
 export function normalizeDatabaseCredentialEntry(
   value: unknown,
 ): DatabaseCredentialEntry {
@@ -224,7 +258,24 @@ export function normalizeDatabaseCredentialEntry(
       16,
       (item) => binding(item, "passkey") as VaultPasskeyBinding,
     );
-  if (!Object.keys(facets).length) return invalid();
+  if (hasOwn(raw, "deviceTrust")) {
+    const trusted = rows(
+      raw.deviceTrust,
+      MAX_VAULT_DEVICE_TRUST_ROWS,
+      deviceTrust,
+    );
+    // One token per NAS address and account; reuse must never guess between two.
+    if (
+      new Set(
+        trusted.map((item) => JSON.stringify([item.target, item.account])),
+      ).size !== trusted.length
+    )
+      return invalid();
+    facets.deviceTrust = trusted;
+  }
+  // A device token alone is not a credential: it cannot sign in without the account.
+  if (!Object.keys(facets).some((key) => key !== "deviceTrust"))
+    return invalid();
   const createdAt = date(row.createdAt),
     updatedAt = date(row.updatedAt);
   if (updatedAt < createdAt) return invalid();

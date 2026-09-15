@@ -105,6 +105,8 @@ export default function CredentialEntryForm({
   const toggle = (key: DatabaseCredentialFacet, checked: boolean) => {
     const facets = { ...entry.facets };
     if (!checked) delete facets[key];
+    // Trusted devices come only from a successful native NAS sign-in.
+    else if (key === "deviceTrust") return;
     else if (key === "totp")
       facets.totp = [
         {
@@ -254,7 +256,9 @@ export default function CredentialEntryForm({
       <fieldset>
         <legend className="mb-2 text-sm">Include credential types</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {DATABASE_CREDENTIAL_FACETS.map((key) => (
+          {DATABASE_CREDENTIAL_FACETS.filter(
+            (key) => key !== "deviceTrust",
+          ).map((key) => (
             <label key={key} className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={entry.facets[key] !== undefined}
@@ -409,6 +413,60 @@ export default function CredentialEntryForm({
       )}
       {bindingEditor("social")}
       {bindingEditor("passkey")}
+      {entry.facets.deviceTrust && (
+        <fieldset className="space-y-3 rounded border border-[var(--color-border)] p-3">
+          <legend className="px-1 text-sm">{FACET_LABELS.deviceTrust}</legend>
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            Remembered after a two-factor Synology NAS API sign-in, so that NAS
+            account can skip the one-time code on the computer named here.
+            Device tokens are never shown or exported. Forget a device and save
+            to require a code again; DSM can also revoke it.
+          </p>
+          <ul className="space-y-2">
+            {entry.facets.deviceTrust.map((row, index) => (
+              <li
+                key={row.id}
+                className="flex flex-wrap items-end justify-between gap-2 border-t border-[var(--color-border)] pt-2"
+              >
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                  <dt className="text-[var(--color-textSecondary)]">
+                    NAS address
+                  </dt>
+                  <dd className="break-all">{row.target}</dd>
+                  <dt className="text-[var(--color-textSecondary)]">Account</dt>
+                  <dd className="break-all">{row.account}</dd>
+                  <dt className="text-[var(--color-textSecondary)]">
+                    Device name
+                  </dt>
+                  <dd className="break-all">{row.deviceName}</dd>
+                  <dt className="text-[var(--color-textSecondary)]">
+                    Trusted since
+                  </dt>
+                  <dd>
+                    <time dateTime={row.createdAt}>
+                      {new Date(row.createdAt).toLocaleString()}
+                    </time>
+                  </dd>
+                </dl>
+                <button
+                  type="button"
+                  className="sor-btn sor-btn-danger"
+                  disabled={busy}
+                  onClick={() => {
+                    const next = entry.facets.deviceTrust!.filter(
+                      (item) => item.id !== row.id,
+                    );
+                    if (next.length) setFacet("deviceTrust", next);
+                    else toggle("deviceTrust", false);
+                  }}
+                >
+                  <Trash2 size={14} /> Forget trusted device {index + 1}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      )}
       {!valid && (
         <p role="status" className="text-sm text-[var(--color-textSecondary)]">
           Add a name and at least one valid credential type. Seeds must be

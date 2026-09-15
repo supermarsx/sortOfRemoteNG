@@ -7,6 +7,7 @@ import type {
 import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 import type { DatabaseDataTarget } from "../../src/utils/connection/databaseManager";
 import {
+  DEVICE_TRUST_NOT_REMEMBERED_MESSAGE,
   getVaultRuntimeUnsupportedMessage,
   resolveRuntimeVaultCredential,
   runtimeCredentialTargetKey,
@@ -513,6 +514,156 @@ describe("runtime database vault boundary", () => {
     expect(website.api.resolve).toHaveBeenCalledWith(expect.anything(), id, [
       "totp",
     ]);
+  });
+  describe("trusted NAS device intent", () => {
+    const DEVICE_ID = "PRIVATE_DEVICE_TOKEN_did";
+    const device = {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      surface: "synology-api" as const,
+      target: "https://example.test:5001",
+      account: "admin",
+      deviceName: "SortOfRemoteNG · DESKTOP-ONE",
+      deviceId: DEVICE_ID,
+      createdAt: "2026-09-12T00:00:00.000Z",
+      portable: false as const,
+    };
+    function nas() {
+      const input = fixture({
+        protocol: "https",
+        port: 5001,
+        httpApplication: {
+          version: 1,
+          id: "synology-dsm",
+          loginMode: "manual",
+        },
+        synologySettings: { version: 1, useHttps: true, accessMode: "native" },
+      });
+      vi.mocked(input.api.list).mockImplementation(async () => ({
+        scope: { databaseId: "database-a", generation: 1 },
+        revision: 1,
+        receipt: "receipt",
+        entries: [
+          {
+            id,
+            name: "NAS",
+            createdAt: "2026-09-10T00:00:00.000Z",
+            updatedAt: "2026-09-10T00:00:00.000Z",
+            availableFacets: ["username", "password", "deviceTrust"],
+          },
+        ],
+      }));
+      vi.mocked(input.api.resolve).mockImplementation(
+        async (_snapshot, _id, facets) =>
+          Object.fromEntries(
+            facets.map((facet) => [
+              facet,
+              facet === "deviceTrust"
+                ? [{ ...device }]
+                : facet === "username"
+                  ? "admin"
+                  : "VAULT_PASSWORD",
+            ]),
+          ),
+      );
+      return input;
+    }
+
+    it("resolves by NAS address and account through the hook without disclosing login facets", async () => {
+      const input = nas();
+      const view = renderHook(() =>
+        useRuntimeCredentialVault(input.session, input.connection),
+      );
+      const result = await view.result.current(
+        () => undefined,
+        false,
+        "deviceTrust",
+      );
+      expect(result!.facets).toEqual({});
+      expect(input.api.resolve).not.toHaveBeenCalled();
+      await expect(result!.deviceTrust!.resolve("admin")).resolves.toEqual({
+        deviceName: device.deviceName,
+        deviceId: DEVICE_ID,
+      });
+      expect(input.api.resolve).toHaveBeenCalledWith(expect.anything(), id, [
+        "deviceTrust",
+      ]);
+      await expect(result!.deviceTrust!.resolve("other")).resolves.toBeNull();
+      await expect(
+        result!.deviceTrust!.store("admin", {
+          deviceName: device.deviceName,
+          deviceId: "NEW_DEVICE_TOKEN",
+        }),
+      ).resolves.toEqual({ status: "saved" });
+      expect(input.api.compareAndSwap).toHaveBeenCalledWith(
+        expect.objectContaining({ receipt: "receipt" }),
+        [
+          {
+            operation: "put",
+            entry: expect.objectContaining({
+              facets: {
+                username: "admin",
+                password: "VAULT_PASSWORD",
+                deviceTrust: [
+                  expect.objectContaining({ deviceId: "NEW_DEVICE_TOKEN" }),
+                ],
+              },
+            }),
+          },
+        ],
+      );
+    });
+
+    it("stays inside the owning database scope and one vault revision", async () => {
+      const input = nas();
+      state.availability = {
+        status: "ready",
+        databaseId: "database-b",
+        generation: 1,
+      };
+      const other = renderHook(() =>
+        useRuntimeCredentialVault(input.session, input.connection),
+      );
+      await expect(
+        other.result.current(() => undefined, false, "deviceTrust"),
+      ).rejects.toThrow(/owning database/);
+      expect(input.api.list).not.toHaveBeenCalled();
+      other.unmount();
+      state.availability = {
+        status: "ready",
+        databaseId: "database-a",
+        generation: 1,
+      };
+      const view = renderHook(() =>
+        useRuntimeCredentialVault(input.session, input.connection),
+      );
+      const result = await view.result.current(
+        () => undefined,
+        false,
+        "deviceTrust",
+      );
+      state.api = { ...input.api, changeRevision: 2 };
+      view.rerender();
+      await expect(result!.deviceTrust!.resolve("admin")).rejects.toThrow(
+        /cancelled/,
+      );
+      await expect(
+        result!.deviceTrust!.store("admin", {
+          deviceName: device.deviceName,
+          deviceId: DEVICE_ID,
+        }),
+      ).resolves.toEqual({
+        status: "not-saved",
+        message: DEVICE_TRUST_NOT_REMEMBERED_MESSAGE,
+      });
+      expect(input.api.resolve).not.toHaveBeenCalled();
+      expect(input.api.compareAndSwap).not.toHaveBeenCalled();
+      await expect(
+        resolveRuntimeVaultCredential({
+          ...fixture({ credentialSource: { kind: "local" } }),
+          intent: "deviceTrust",
+        }),
+      ).rejects.toThrow("vault reference is required");
+    });
   });
   it("removes ignored local secrets from automation and redirect context without changing the saved row", () => {
     const input = fixture({

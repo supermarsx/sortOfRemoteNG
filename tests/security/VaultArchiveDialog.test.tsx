@@ -229,6 +229,34 @@ describe("vault archive native-dialog workflow", () => {
     );
     expect(reload).toHaveBeenCalledOnce();
   });
+  it.each(["export", "import"] as const)(
+    "tells the user trusted NAS devices do not travel (%s)",
+    async (mode) => {
+      render(
+        <VaultArchiveDialog
+          api={api()}
+          snapshot={snapshot}
+          mode={mode}
+          onClose={vi.fn()}
+          onImported={vi.fn()}
+        />,
+      );
+      if (mode === "import") {
+        fireEvent.change(screen.getByLabelText("Archive password"), {
+          target: { value: "password" },
+        });
+        fireEvent.click(
+          screen.getByRole("button", { name: "Open and review archive" }),
+        );
+        await screen.findByText("Review import");
+      } else await screen.findByRole("checkbox", { name: /Linked host/ });
+      const notice = screen.getByText(/Trusted NAS devices are bound/);
+      expect(notice).toHaveTextContent(
+        "Trusted NAS devices are bound to the computer that trusted them and are not included; any found in an archive are dropped on import.",
+      );
+      expect(document.body.textContent).not.toMatch(/did|SortOfRemoteNG ·/);
+    },
+  );
   it("rejects a deferreddecrypt afterownerscopechanges", async () => {
     let release!: (value: DatabaseVaultArchive) => void;
     h.decrypt.mockReturnValue(

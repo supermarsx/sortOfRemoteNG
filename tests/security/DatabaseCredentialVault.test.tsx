@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -320,6 +321,122 @@ describe("database vault manager", () => {
         },
       },
     });
+  });
+});
+
+describe("trusted NAS devices in the vault editor", () => {
+  const DEVICE_ID = "PRIVATE_DEVICE_TOKEN_did";
+  const trusted = (index: number, account: string) => ({
+    id: `bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb${index}`,
+    surface: "synology-api" as const,
+    target: `https://nas${index}.example.test:5001`,
+    account,
+    deviceName: `SortOfRemoteNG · DESKTOP-${index}`,
+    deviceId: `${DEVICE_ID}_${index}`,
+    createdAt: "2026-09-12T10:30:00.000Z",
+    portable: false as const,
+  });
+  const withDevices = (): DatabaseCredentialEntry => ({
+    ...entry(),
+    facets: {
+      username: "admin",
+      password: "PRIVATE_PASSWORD",
+      deviceTrust: [trusted(1, "admin"), trusted(2, "ops")],
+    },
+  });
+  const inputValues = () =>
+    [...document.querySelectorAll("input, textarea")].map(
+      (node) => (node as HTMLInputElement).value,
+    );
+
+  it("lists devices without their token, offers no manual creation, and forgets through the reviewed save", async () => {
+    const { api } = facade([withDevices()]);
+    mount(api);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit NAS operator" }),
+    );
+    const group = await screen.findByRole("group", {
+      name: "Trusted NAS devices",
+    });
+    for (const text of [
+      "https://nas1.example.test:5001",
+      "admin",
+      "SortOfRemoteNG · DESKTOP-1",
+      "https://nas2.example.test:5001",
+      "ops",
+      "SortOfRemoteNG · DESKTOP-2",
+      new Date("2026-09-12T10:30:00.000Z").toLocaleString(),
+    ])
+      expect(within(group).getAllByText(text).length).toBeGreaterThan(0);
+    expect(document.body.innerHTML).not.toContain(DEVICE_ID);
+    expect(inputValues().join(" ")).not.toContain(DEVICE_ID);
+    expect(
+      screen.queryByRole("checkbox", { name: "Trusted NAS devices" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(group).getByRole("button", { name: "Forget trusted device 1" }),
+    );
+    expect(group).not.toHaveTextContent("nas1.example.test");
+    expect(group).toHaveTextContent("nas2.example.test");
+    fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+    await screen.findByRole("button", { name: "Edit NAS operator" });
+    expect(api.compareAndSwap).toHaveBeenLastCalledWith(expect.anything(), [
+      {
+        operation: "put",
+        entry: expect.objectContaining({
+          facets: {
+            username: "admin",
+            password: "PRIVATE_PASSWORD",
+            deviceTrust: [trusted(2, "ops")],
+          },
+        }),
+      },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit NAS operator" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Forget trusted device 1" }),
+    );
+    expect(
+      screen.queryByRole("group", { name: "Trusted NAS devices" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+    await screen.findByRole("button", { name: "Edit NAS operator" });
+    const calls = vi.mocked(api.compareAndSwap).mock.calls;
+    const changes = calls[calls.length - 1][1];
+    expect(changes).toEqual([
+      {
+        operation: "put",
+        entry: expect.objectContaining({
+          facets: { username: "admin", password: "PRIVATE_PASSWORD" },
+        }),
+      },
+    ]);
+    expect(document.body.innerHTML).not.toContain(DEVICE_ID);
+  });
+
+  it("keeps trusted devices when other fields of the entry are edited", async () => {
+    const { api } = facade([withDevices()]);
+    mount(api);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit NAS operator" }),
+    );
+    fireEvent.change(await screen.findByLabelText("Credential name"), {
+      target: { value: "Renamed NAS" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+    await screen.findByRole("button", { name: "Edit Renamed NAS" });
+    expect(api.compareAndSwap).toHaveBeenCalledWith(expect.anything(), [
+      {
+        operation: "put",
+        entry: expect.objectContaining({
+          name: "Renamed NAS",
+          facets: expect.objectContaining({
+            deviceTrust: [trusted(1, "admin"), trusted(2, "ops")],
+          }),
+        }),
+      },
+    ]);
+    expect(document.body.innerHTML).not.toContain(DEVICE_ID);
   });
 });
 

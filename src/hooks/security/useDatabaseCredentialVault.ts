@@ -23,6 +23,7 @@ export const FACET_LABELS: Record<DatabaseCredentialFacet, string> = {
   totp: "TOTP authenticators",
   social: "Social sign-in bindings",
   passkey: "Passkey bindings",
+  deviceTrust: "Trusted NAS devices",
 };
 
 const failureMessage =

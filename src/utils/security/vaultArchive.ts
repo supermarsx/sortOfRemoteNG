@@ -126,6 +126,22 @@ function text(value: unknown, max = 1024): value is string {
   );
 }
 
+/** Trusted-device tokens bypass OTP and stay bound to the enrolling computer's database. */
+function withoutDeviceTrust(row: unknown): unknown {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+  const facets = (row as Record<string, unknown>).facets;
+  if (
+    !facets ||
+    typeof facets !== "object" ||
+    Array.isArray(facets) ||
+    !Object.prototype.hasOwnProperty.call(facets, "deviceTrust")
+  )
+    return row;
+  const kept = { ...(facets as Record<string, unknown>) };
+  delete kept.deviceTrust;
+  return { ...row, facets: kept };
+}
+
 /** IDs in supported inline routes must resolve inside the selected bundle. */
 function mapReferences(
   value: unknown,
@@ -191,10 +207,11 @@ export function normalizeDatabaseVaultArchive(
     raw.connections.length > MAX_VAULT_ARCHIVE_CONNECTIONS
   )
     return invalid();
+  // Dropped before validation: exports never write them and imports never keep them.
   const credentials = normalizeDatabaseCredentialVault({
     version: 1,
     revision: 0,
-    entries: raw.credentials,
+    entries: raw.credentials.map(withoutDeviceTrust),
   }).entries;
   const credentialIds = new Set(credentials.map((entry) => entry.id));
   const connections = raw.connections.map((value) => {

@@ -69,6 +69,51 @@ describe("vault portability guard", () => {
     },
   );
 
+  it("refuses generic database exports and imports that carry trusted NAS device tokens", () => {
+    const deviceId = "PRIVATE_DEVICE_TOKEN_did";
+    const credentialVault = {
+      version: 1,
+      revision: 3,
+      entries: [
+        {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          name: "NAS admin",
+          createdAt: "2026-09-15T00:00:00.000Z",
+          updatedAt: "2026-09-15T00:00:00.000Z",
+          facets: {
+            username: "admin",
+            deviceTrust: [
+              {
+                id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                surface: "synology-api",
+                target: "https://nas.example.test:5001",
+                account: "admin",
+                deviceName: "SortOfRemoteNG · DESKTOP-ONE",
+                deviceId,
+                createdAt: "2026-09-15T00:00:00.000Z",
+                portable: false,
+              },
+            ],
+          },
+        },
+      ],
+    };
+    for (const payload of [
+      { connections: [], credentialVault },
+      { databases: [{ connections: [], credentialVault }] },
+    ]) {
+      let message = "";
+      try {
+        assertNoVaultImport(payload);
+      } catch (error) {
+        message = String(error);
+      }
+      expect(message).toContain(VAULT_PORTABILITY_MESSAGE);
+      expect(message).not.toContain(deviceId);
+      expect(message).not.toContain("nas.example.test");
+    }
+  });
+
   it("does not mistake unrelated settings for connection sources", () => {
     expect(() =>
       assertNoVaultImport({

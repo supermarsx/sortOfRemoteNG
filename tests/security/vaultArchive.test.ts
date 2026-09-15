@@ -16,6 +16,18 @@ vi.mock("../../src/utils/security/passwordPolicy", () => ({
 const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   tid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const now = "2026-09-11T00:00:00.000Z";
+const DEVICE_ID = "PRIVATE_DEVICE_TOKEN_did";
+const trustedDevice = (patch: Record<string, unknown> = {}) => ({
+  id: tid,
+  surface: "synology-api" as const,
+  target: "https://nas.example.test:5001",
+  account: "admin",
+  deviceName: "SortOfRemoteNG · DESKTOP-ONE",
+  deviceId: DEVICE_ID,
+  createdAt: now,
+  portable: false as const,
+  ...patch,
+});
 function archive(): DatabaseVaultArchive {
   return {
     format: "sorng-vault-archive",
@@ -248,6 +260,50 @@ describe("encrypted credential vault archives", () => {
     expect(next.connections[0].security?.sshTunnel?.connectionId).toBe(
       next.connections[1].id,
     );
+  });
+  it("never exports trusted NAS device tokens, even when handed a vault entry that has them", async () => {
+    const source = archive();
+    source.credentials[0].facets.deviceTrust = [trustedDevice()];
+    const normalized = normalizeDatabaseVaultArchive(source);
+    expect(normalized.credentials[0].facets.deviceTrust).toBeUndefined();
+    expect(normalized.credentials[0].facets.password).toBe("PRIVATE_PASSWORD");
+    expect(JSON.stringify(normalized)).not.toMatch(
+      /PRIVATE_DEVICE_TOKEN|DESKTOP-ONE|synology-api/,
+    );
+    const file = await encryptVaultArchive(source, "separate archive password");
+    const opened = await decryptVaultArchive(file, "separate archive password");
+    expect(opened.credentials[0].facets).not.toHaveProperty("deviceTrust");
+    expect(JSON.stringify(opened)).not.toContain(DEVICE_ID);
+    expect(source.credentials[0].facets.deviceTrust).toHaveLength(1);
+  });
+  it("drops trusted devices from an imported archive, valid or malformed, and keeps local ones", () => {
+    const existing = archive().credentials[0];
+    existing.facets = { username: "local", deviceTrust: [trustedDevice()] };
+    for (const row of [
+      trustedDevice({ deviceId: "IMPORTED_DEVICE_TOKEN" }),
+      { deviceId: "IMPORTED_DEVICE_TOKEN", portable: true },
+    ]) {
+      const incoming = archive();
+      (incoming.credentials[0].facets as Record<string, unknown>).deviceTrust =
+        [row];
+      const next = prepareVaultArchiveImport(
+        [],
+        { version: 1, revision: 2, entries: [existing] },
+        incoming,
+      );
+      const [kept, added] = next.credentialVault.entries;
+      expect(kept.facets.deviceTrust).toEqual([trustedDevice()]);
+      expect(added.facets).not.toHaveProperty("deviceTrust");
+      expect(added.facets.totp).toHaveLength(1);
+      expect(JSON.stringify(added)).not.toContain("IMPORTED_DEVICE_TOKEN");
+      expect(next.credentialCount).toBe(1);
+    }
+  });
+  it("still rejects an archive entry whose only facet was a trusted device", () => {
+    const incoming = archive();
+    incoming.connections = [];
+    incoming.credentials[0].facets = { deviceTrust: [trustedDevice()] };
+    expect(() => normalizeDatabaseVaultArchive(incoming)).toThrow();
   });
   it("rejects activeunknownvalues andkeepsboundedemptyarchivesvalid", () => {
     expect(() =>
