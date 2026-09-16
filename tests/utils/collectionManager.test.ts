@@ -320,8 +320,8 @@ describe("DatabaseManager", () => {
   });
 
   it("closeCurrentDatabase clears current + cached password and returns the id", async () => {
-    const secure = await manager.createDatabase("S", "desc", true, "pw");
-    await manager.selectDatabase(secure.id, "pw");
+    const secure = await manager.createDatabase("S", "desc", true, "secret");
+    await manager.selectDatabase(secure.id, "secret");
 
     expect(manager.getCurrentDatabase()?.id).toBe(secure.id);
     expect(manager.isDatabaseUnlocked(secure.id)).toBe(true);
@@ -337,9 +337,9 @@ describe("DatabaseManager", () => {
 
   it("lockDatabase forgets a cached unlock without disturbing the current selection", async () => {
     const current = await manager.createDatabase("Current");
-    const other = await manager.createDatabase("Other", "desc", true, "pw");
+    const other = await manager.createDatabase("Other", "desc", true, "secret");
     await manager.selectDatabase(current.id);
-    await manager.unlockDatabase(other.id, "pw");
+    await manager.unlockDatabase(other.id, "secret");
 
     expect(manager.isDatabaseUnlocked(other.id)).toBe(true);
     expect(manager.getCurrentDatabase()?.id).toBe(current.id);
@@ -352,8 +352,8 @@ describe("DatabaseManager", () => {
   });
 
   it("lockDatabase on the current database delegates to close", async () => {
-    const secure = await manager.createDatabase("S", "desc", true, "pw");
-    await manager.selectDatabase(secure.id, "pw");
+    const secure = await manager.createDatabase("S", "desc", true, "secret");
+    await manager.selectDatabase(secure.id, "secret");
 
     manager.lockDatabase(secure.id);
 
@@ -362,7 +362,7 @@ describe("DatabaseManager", () => {
   });
 
   it("lockDatabase is a no-op on a non-unlocked database", async () => {
-    const secure = await manager.createDatabase("S", "desc", true, "pw");
+    const secure = await manager.createDatabase("S", "desc", true, "secret");
     // Never unlocked → nothing to forget; should not throw.
     expect(() => manager.lockDatabase(secure.id)).not.toThrow();
     expect(manager.isDatabaseUnlocked(secure.id)).toBe(false);

@@ -340,7 +340,7 @@ describe("native verified protection for documents", () => {
     const hook = await mount();
     const api = hook.result.current.documents!;
     await expect(api.read(api.scope!)).rejects.toThrow(
-      /Unlock the applicable global at-rest encryption key/,
+      /Unlock applicable global at-rest encryption in Settings → Security or managed protection in Settings → Current Database/,
     );
     expect(mock.verify).not.toHaveBeenCalled();
   });

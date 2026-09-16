@@ -323,7 +323,9 @@ describe("SessionViewer", () => {
     mockState.vaultScope = { databaseId: "vault-db", generation: 1 };
     render(<SessionViewer session={session} />);
     expect(
-      screen.getByText(/Database vault authentication is not supported/),
+      screen.getByText(
+        /Database vault authentication is unavailable for this protocol/,
+      ),
     ).toBeInTheDocument();
     expect(mockState.ftpClientProps).not.toHaveBeenCalled();
   });

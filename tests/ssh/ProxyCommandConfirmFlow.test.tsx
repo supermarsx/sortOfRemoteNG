@@ -26,6 +26,17 @@ const mockConnection = {
 };
 
 const mockDispatch = vi.fn();
+// Stable, fully shaped toast API: a bare vi.fn() breaks toast.error() calls and
+// a fresh object per render re-fires effects that depend on `toast`.
+const mockToast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  info: vi.fn(),
+  loading: vi.fn(() => "toast-id"),
+  update: vi.fn(),
+  remove: vi.fn(),
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -80,7 +91,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 vi.mock("../../src/contexts/ToastContext", () => ({
-  useToastContext: () => ({ toast: vi.fn() }),
+  useToastContext: () => ({ toast: mockToast }),
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({

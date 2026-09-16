@@ -92,7 +92,7 @@ function fixture(initial = [connection("a")], vault = true) {
         ...scope,
         generation: availabilityGeneration,
       },
-    }) as ConnectionContextType;
+    }) as unknown as ConnectionContextType;
   const edit = vi.fn();
   const view = () => (
     <ConnectionContext.Provider value={ctx()}>
