@@ -1196,10 +1196,11 @@ describe("reviewed DSM website login", () => {
 });
 
 describe("reviewed DSM OTP SPA container", () => {
-  function bridge() {
+  // DSM's Vue 2 mount replaces the served #sds-login-vue placeholder with
+  // #sds-login-vue-inst; older layouts keep #sds-login-vue as a wrapper.
+  function bridge(rootId = "sds-login-vue-inst") {
     history.replaceState(null, "", "/#/signin/otp");
-    document.body.innerHTML =
-      '<div id="sds-login-vue"><div class="login-tabs-content-wrapper"><div id="dsm-otp-fieldset"><input type="text" name="one-time-code" autocomplete="one-time-code"><input type="checkbox" name="trust-device"></div><div role="button" syno-id="otp-panel-next-btn">Verify</div></div></div>';
+    document.body.innerHTML = `<div id="${rootId}"><div class="login-tabs-content-wrapper"><div id="dsm-otp-fieldset"><input type="text" name="one-time-code" autocomplete="one-time-code"><input type="checkbox" name="trust-device"></div><div role="button" syno-id="otp-panel-next-btn">Verify</div></div></div>`;
     const handlers: EventListener[] = [],
       post = vi.fn();
     const parent = { postMessage: post };
@@ -1247,20 +1248,37 @@ describe("reviewed DSM OTP SPA container", () => {
       );
     return { send, post, payload };
   }
-  it("fills and submits one explicit code without enabling trust-device or echoing it", () => {
-    const { send, post, payload } = bridge();
+  it.each(["sds-login-vue-inst", "sds-login-vue"])(
+    "fills and submits one explicit code under #%s without enabling trust-device or echoing it",
+    (rootId) => {
+      const { send, post, payload } = bridge(rootId);
+      send("totpProbe", payload);
+      send("totpSubmit", {
+        nonce: payload.nonce,
+        code: "123456",
+        expires: Date.now() + 20000,
+      });
+      expect(submit).toHaveBeenCalledOnce();
+      expect(
+        (document.querySelector('[name="trust-device"]') as HTMLInputElement)
+          .checked,
+      ).toBe(false);
+      expect(JSON.stringify(post.mock.calls)).not.toContain("123456");
+      send("totpSubmit", {
+        nonce: payload.nonce,
+        code: "123456",
+        expires: Date.now() + 20000,
+      });
+      expect(submit).toHaveBeenCalledOnce();
+    },
+  );
+  it("fills one code under a mounted root beside a leftover empty placeholder", () => {
+    const { send, payload } = bridge();
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<div id="sds-login-vue"></div>',
+    );
     send("totpProbe", payload);
-    send("totpSubmit", {
-      nonce: payload.nonce,
-      code: "123456",
-      expires: Date.now() + 20000,
-    });
-    expect(submit).toHaveBeenCalledOnce();
-    expect(
-      (document.querySelector('[name="trust-device"]') as HTMLInputElement)
-        .checked,
-    ).toBe(false);
-    expect(JSON.stringify(post.mock.calls)).not.toContain("123456");
     send("totpSubmit", {
       nonce: payload.nonce,
       code: "123456",
@@ -1278,6 +1296,7 @@ describe("reviewed DSM OTP SPA container", () => {
     "panel-reparent",
     "root-reparent-input",
     "panel-reparent-input",
+    "duplicate-root",
   ])("refuses OTP after %s and does not click", (attack) => {
     const { send, payload } = bridge();
     send("totpProbe", payload);
@@ -1294,6 +1313,11 @@ describe("reviewed DSM OTP SPA container", () => {
       document
         .querySelector("#dsm-otp-fieldset")!
         .insertAdjacentHTML("beforeend", '<input name="captcha">');
+    if (attack === "duplicate-root")
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        '<div id="sds-login-vue-inst"></div>',
+      );
     if (
       attack.startsWith("root-reparent") ||
       attack.startsWith("panel-reparent")
@@ -1301,7 +1325,7 @@ describe("reviewed DSM OTP SPA container", () => {
       const reparent = () => {
         const old = document.querySelector(
           attack.startsWith("root-reparent")
-            ? "#sds-login-vue"
+            ? "#sds-login-vue-inst"
             : ".login-tabs-content-wrapper",
         )!;
         const replacement = old.cloneNode(false) as Element;

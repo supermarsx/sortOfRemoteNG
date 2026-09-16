@@ -16,7 +16,7 @@ use tokio::net::TcpListener;
 const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 const USERNAME: &str = "synthetic-direct-user";
 const PASSWORD: &str = "synthetic-direct-password";
-const DSM: &str = "<!doctype html><html><head><title>Synthetic DSM</title></head><body><div id=\"sds-login-vue\"><div class=\"login-tabs-content-wrapper\"><form id=\"dsm-user-fieldset\"><input syno-id=\"username\" name=\"username\" type=\"text\" autocomplete=\"username\"></form><div role=\"button\" syno-id=\"account-panel-next-btn\">Next</div></div></div></body></html>";
+const DSM: &str = "<!doctype html><html><head><title>Synthetic DSM</title></head><body><div id=\"sds-login-vue-inst\"><div class=\"login-tabs-content-wrapper\"><form id=\"dsm-user-fieldset\"><input syno-id=\"username\" name=\"username\" type=\"text\" autocomplete=\"username\"></form><div role=\"button\" syno-id=\"account-panel-next-btn\">Next</div></div></div></body></html>";
 const CHILD: &str =
     "<!doctype html><html><head></head><body>Synthetic DSM child frame</body></html>";
 

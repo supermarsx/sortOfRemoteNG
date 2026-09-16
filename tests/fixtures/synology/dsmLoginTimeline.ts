@@ -2,9 +2,17 @@
  * Synthetic DSM 7.2 desktop login fixture and scripted timeline driver (t85).
  *
  * Everything here is synthetic: markup follows the reviewed DSM 7 Vue login
- * contract (`#sds-login-vue`, `form#dsm-user-fieldset`, `form#dsm-pass-fieldset`,
+ * contract (`form#dsm-user-fieldset`, `form#dsm-pass-fieldset`,
  * `#dsm-otp-fieldset`), and no real or Virtual DSM is involved. The account
  * values are placeholders, never real credentials.
+ *
+ * Login root. DSM serves an empty `#sds-login-vue` placeholder and its Vue 2
+ * mount *replaces* it with `#sds-login-vue-inst` (Vue 2 `el` semantics), so a
+ * mounted page has no `#sds-login-vue` at all. That is the default layout
+ * here. The `{ type: "layout", root: "persistent" }` step selects the older
+ * persistent `#sds-login-vue` wrapper for regression coverage. Only ids and
+ * class names are modelled; the structure between root and panels is a
+ * simplified synthetic chain.
  *
  * Consumers:
  * - vitest/jsdom (`tests/protocol/synologyLoginTimeline.test.ts`): calls
@@ -76,14 +84,33 @@ export type DsmStep =
   | { type: "blank" }
   /** A streamed parser insertion while the document is still loading. */
   | { type: "parserChunk" }
+  /** Layout for later steps: the mounted (default) or persistent login root,
+   * and the narrow layout whose buttons carry no role or syno-id. No DOM
+   * change of its own. */
+  | {
+      type: "layout";
+      root?: "mounted" | "persistent";
+      compact?: boolean;
+    }
+  /** The served body: only the empty `#sds-login-vue` placeholder. */
+  | { type: "served" }
+  /** Mounted layout: the Vue mount replaces the placeholder with an empty
+   * `#sds-login-vue-inst` (serving the body first when needed). Persistent
+   * layout: an empty `#sds-login-vue` wrapper. */
   | { type: "mountRoot" }
+  /** An extra empty `#sds-login-vue` beside or around the mounted root. */
+  | { type: "leftoverPlaceholder"; placement: "sibling" | "enclosing" }
+  /** Gives the current login root an id the helper does not review, keeping
+   * the panels inside it (a renamed root in some other DSM build). */
+  | { type: "renameRoot" }
   | { type: "account"; prefill?: string }
   | { type: "rerenderAccount" }
   | { type: "replaceRoot" }
   | { type: "password"; hiddenUsername?: string }
   | { type: "otp" }
   | { type: "removeRoot" }
-  | { type: "desktop" }
+  /** Replaces the body with the desktop, or appends it when `append`. */
+  | { type: "desktop"; append?: boolean }
   | {
       type: "captcha";
       placement:
@@ -118,10 +145,13 @@ export interface DsmBehavior {
   swallowNextClicks?: number;
   /** Clicks lost to a Vue re-render: the Sign in button is replaced instead. */
   swallowSignInClicks?: number;
-  /** What DSM does after an accepted Sign in click. Default: desktop. */
+  /** What DSM does after an accepted Sign in click. Default: desktop.
+   * `error` clears the password and shows an error inside the panel;
+   * `message` keeps the password and shows the footer message box, which
+   * sits outside the panel. */
   signIn?: {
     delayMs: number;
-    outcome: "desktop" | "otp" | "approve" | "error" | "none";
+    outcome: "desktop" | "otp" | "approve" | "error" | "message" | "none";
   };
 }
 export interface DsmPageCounts {
@@ -157,18 +187,31 @@ export function createDsmMarkup() {
   function panel(inner: string) {
     return `<div class="login-tabs-content-wrapper">${inner}</div>`;
   }
+  // Desktop buttons are labelled; the narrow layout's are not.
+  function button(synoId: string, text: string, compact: boolean) {
+    return compact
+      ? `<div class="login-btn-mobile" tabindex="0"><div class="btn-text">${text}</div></div>`
+      : `<div role="button" syno-id="${synoId}" class="login-btn">${text}</div>`;
+  }
   return {
     splash: () =>
       '<div class="dsm-boot-splash" role="progressbar">Loading DSM</div>',
+    /** The served body before the login app mounts. */
+    served: () =>
+      '<div id="sds-wallpaper"></div><div id="sds-login-vue"></div><div id="framework-attach"></div>',
+    /** The mounted Vue root; panels render into `.tab-content-ct`. */
+    mounted: () =>
+      '<div id="sds-login-vue-inst"><div class="login-wrapper"><div class="login-body-section"><div class="login-tab-panel"><div class="tab-content-ct"></div></div></div></div></div>',
+    /** The older persistent wrapper; panels render directly inside it. */
     root: (inner = "") => `<div id="sds-login-vue">${inner}</div>`,
-    account: () =>
+    account: (compact = false) =>
       panel(
-        '<form id="dsm-user-fieldset"><input syno-id="username" type="text" placeholder="Username" name="username" autocomplete="username" tabindex="1"><input name="password" type="password" autocomplete="current-password" hidden></form><div role="button" syno-id="account-panel-next-btn" class="login-btn">Next</div>',
+        `<form id="dsm-user-fieldset"><input syno-id="username" type="text" placeholder="Username" name="username" autocomplete="username" tabindex="1"><input name="password" type="password" autocomplete="current-password" hidden></form>${button("account-panel-next-btn", "Next", compact)}`,
       ),
-    password: (username: string) =>
-      panel(
-        `<form id="dsm-pass-fieldset"><input name="username" autocomplete="username" hidden value="${attribute(username)}"><input syno-id="password" type="password" placeholder="Password" name="current-password" autocomplete="current-password" tabindex="1"></form><div role="button" syno-id="password-panel-next-btn" class="login-btn">Sign in</div>`,
-      ),
+    password: (username: string, compact = false) =>
+      `<div>${panel(
+        `<form id="dsm-pass-fieldset"><input name="username" autocomplete="username" hidden value="${attribute(username)}"><input syno-id="password" type="password" placeholder="Password" name="current-password" autocomplete="current-password" tabindex="1"></form>${button("password-panel-next-btn", "Sign in", compact)}`,
+      )}<div class="tab-footer"><div class="login-remain-section"><div class="login-msg-box info" style="display:none"></div></div></div></div>`,
     otp: () =>
       panel(
         '<div id="dsm-otp-fieldset"><input type="text" name="one-time-code" autocomplete="one-time-code"><input type="checkbox" name="trust-device"></div><div role="button" syno-id="otp-panel-next-btn">Verify</div>',
@@ -220,12 +263,35 @@ export function createDsmPage(win: Window, options: DsmPageOptions = {}) {
       view.HTMLInputElement.prototype,
       "value",
     )!.set!.call(field, value);
-  const root = () => doc.querySelector("#sds-login-vue");
-  const ensureRoot = () => {
-    const current = root();
-    if (current) return current;
-    doc.body.innerHTML = markup.root();
+  const layout = {
+    root: "mounted" as "mounted" | "persistent",
+    compact: false,
+  };
+  const placeholder = () => doc.querySelector("#sds-login-vue");
+  const root = () =>
+    layout.root === "persistent"
+      ? placeholder()
+      : doc.querySelector("#sds-login-vue-inst");
+  // Vue 2 mounts by replacing its target element, so the placeholder is gone.
+  // A fresh mount always replaces a freshly served placeholder.
+  const mount = () => {
+    if (layout.root === "persistent") {
+      doc.body.innerHTML = markup.root();
+      return placeholder()!;
+    }
+    if (!placeholder() || root()) doc.body.innerHTML = markup.served();
+    const holder = doc.createElement("div");
+    holder.innerHTML = markup.mounted();
+    placeholder()!.replaceWith(holder.firstElementChild!);
     return root()!;
+  };
+  /** Where panels render: the persistent wrapper itself, or the mounted
+   * root's content container. Mounts the root first when it is absent. */
+  const ensureRoot = () => {
+    const current = root() ?? mount();
+    return layout.root === "persistent"
+      ? current
+      : (current.querySelector(".tab-content-ct") ?? current);
   };
   const form = () =>
     doc.querySelector<HTMLFormElement>(
@@ -247,10 +313,23 @@ export function createDsmPage(win: Window, options: DsmPageOptions = {}) {
   };
   const replaceButton = (button: Element) =>
     button.replaceWith(button.cloneNode(true));
+  // Labelled buttons name their stage; an unlabelled narrow-layout button is
+  // Next or Sign in by the reviewed form in its own panel.
+  const action = (target: Element, synoId: string, form: string) => {
+    const labelled = target.closest(`[syno-id="${synoId}"]`);
+    if (labelled) return labelled;
+    const compact = target.closest(".login-btn-mobile");
+    const own = compact?.closest(".login-tabs-content-wrapper");
+    return own?.querySelector(form) ? compact : null;
+  };
   function onClick(event: Event) {
     const target = event.target as Element | null;
     if (!target || typeof target.closest !== "function") return;
-    const next = target.closest('[syno-id="account-panel-next-btn"]');
+    const next = action(
+      target,
+      "account-panel-next-btn",
+      "form#dsm-user-fieldset",
+    );
     if (next) {
       if (swallowNext > 0) {
         swallowNext--;
@@ -266,6 +345,7 @@ export function createDsmPage(win: Window, options: DsmPageOptions = {}) {
           route("#/signin/password", "push");
           ensureRoot().innerHTML = markup.password(
             plan.hiddenUsername ?? account.username,
+            layout.compact,
           );
         } else {
           route(`#/signin/${plan.outcome}`, "push");
@@ -274,7 +354,11 @@ export function createDsmPage(win: Window, options: DsmPageOptions = {}) {
       });
       return;
     }
-    const signIn = target.closest('[syno-id="password-panel-next-btn"]');
+    const signIn = action(
+      target,
+      "password-panel-next-btn",
+      "form#dsm-pass-fieldset",
+    );
     if (signIn) {
       if (swallowSignIn > 0) {
         swallowSignIn--;
@@ -304,6 +388,13 @@ export function createDsmPage(win: Window, options: DsmPageOptions = {}) {
           doc
             .querySelector(".login-tabs-content-wrapper")
             ?.insertAdjacentHTML("beforeend", markup.error());
+        } else if (plan.outcome === "message") {
+          const box = doc.querySelector<HTMLElement>(".login-msg-box");
+          if (box) {
+            box.classList.replace("info", "error");
+            box.style.removeProperty("display");
+            box.textContent = "Sign-in failed.";
+          }
         }
       });
       return;
@@ -348,16 +439,40 @@ export function createDsmPage(win: Window, options: DsmPageOptions = {}) {
         doc.body.append(chunk);
         return;
       }
-      case "mountRoot":
-        doc.body.innerHTML = markup.root();
+      case "layout":
+        if (step.root) layout.root = step.root;
+        if (step.compact !== undefined) layout.compact = step.compact;
         return;
+      case "served":
+        doc.body.innerHTML = markup.served();
+        return;
+      case "mountRoot":
+        mount();
+        return;
+      case "leftoverPlaceholder": {
+        const current = root();
+        if (!current) return;
+        const extra = doc.createElement("div");
+        extra.id = "sds-login-vue";
+        if (step.placement === "sibling") doc.body.append(extra);
+        else {
+          current.replaceWith(extra);
+          extra.append(current);
+        }
+        return;
+      }
+      case "renameRoot": {
+        const current = root();
+        if (current) current.id = "sds-login-renamed";
+        return;
+      }
       case "account": {
-        ensureRoot().innerHTML = markup.account();
+        ensureRoot().innerHTML = markup.account(layout.compact);
         if (step.prefill !== undefined) setValue(field()!, step.prefill);
         return;
       }
       case "rerenderAccount":
-        ensureRoot().innerHTML = markup.account();
+        ensureRoot().innerHTML = markup.account(layout.compact);
         return;
       case "replaceRoot": {
         const current = root();
@@ -370,6 +485,7 @@ export function createDsmPage(win: Window, options: DsmPageOptions = {}) {
       case "password":
         ensureRoot().innerHTML = markup.password(
           step.hiddenUsername ?? account.username,
+          layout.compact,
         );
         return;
       case "otp":
@@ -379,7 +495,9 @@ export function createDsmPage(win: Window, options: DsmPageOptions = {}) {
         root()?.remove();
         return;
       case "desktop":
-        doc.body.innerHTML = markup.desktop();
+        if (step.append)
+          doc.body.insertAdjacentHTML("beforeend", markup.desktop());
+        else doc.body.innerHTML = markup.desktop();
         return;
       case "captcha": {
         const html =
@@ -683,6 +801,8 @@ export interface DsmTimeline {
     handoff?: DsmInteractiveRoute | "other" | null;
     /** Reasons that must appear somewhere in the helper trace. */
     traceReasons?: readonly string[];
+    /** Reasons that must not appear anywhere in the helper trace. */
+    absentTraceReasons?: readonly string[];
     usernameInputs?: number;
   };
 }
@@ -745,6 +865,78 @@ export const DSM_LOGIN_TIMELINES: readonly DsmTimeline[] = [
       { at: 900, step: { type: "route", hash: "#/signin" } },
       { at: 1000, step: { type: "account" } },
     ],
+    behavior: {},
+    runMs: 7000,
+    expected: signedIn,
+  },
+  {
+    name: "vue2-mount-replaces-served-placeholder",
+    summary:
+      "the served empty #sds-login-vue placeholder is replaced by the mounted #sds-login-vue-inst, which then renders the account panel",
+    initial: [{ type: "served" }],
+    steps: [
+      { at: 300, step: { type: "route", hash: "#/signin" } },
+      { at: 600, step: { type: "mountRoot" } },
+      { at: 900, step: { type: "account" } },
+    ],
+    behavior: {},
+    runMs: 7000,
+    expected: {
+      ...signedIn,
+      traceReasons: ["form-missing"],
+      absentTraceReasons: ["root-missing", "root-ambiguous"],
+    },
+  },
+  {
+    name: "persistent-login-wrapper",
+    summary:
+      "an older layout keeps #sds-login-vue as a persistent wrapper around the panels",
+    path: "/#/signin",
+    initial: [
+      { type: "layout", root: "persistent" },
+      { type: "mountRoot" },
+      { type: "account" },
+    ],
+    steps: [],
+    behavior: {},
+    runMs: 7000,
+    expected: signedIn,
+  },
+  {
+    name: "mounted-root-beside-leftover-placeholder",
+    summary:
+      "an empty #sds-login-vue left beside the mounted root does not make the root ambiguous",
+    path: "/#/signin",
+    initial: [
+      { type: "account" },
+      { type: "leftoverPlaceholder", placement: "sibling" },
+    ],
+    steps: [],
+    behavior: {},
+    runMs: 7000,
+    expected: { ...signedIn, absentTraceReasons: ["root-ambiguous"] },
+  },
+  {
+    name: "mounted-root-inside-placeholder",
+    summary:
+      "a mounted root rendered inside the #sds-login-vue placeholder counts as one root",
+    path: "/#/signin",
+    initial: [
+      { type: "account" },
+      { type: "leftoverPlaceholder", placement: "enclosing" },
+    ],
+    steps: [],
+    behavior: {},
+    runMs: 7000,
+    expected: { ...signedIn, absentTraceReasons: ["root-ambiguous"] },
+  },
+  {
+    name: "narrow-layout-unlabelled-buttons",
+    summary:
+      "a narrow layout renders Next and Sign in without role or syno-id inside each reviewed panel",
+    path: "/#/signin",
+    initial: [{ type: "layout", compact: true }, { type: "account" }],
+    steps: [],
     behavior: {},
     runMs: 7000,
     expected: signedIn,
@@ -882,6 +1074,23 @@ export const DSM_LOGIN_TIMELINES: readonly DsmTimeline[] = [
     },
   },
   {
+    name: "already-signed-in-beside-served-placeholder",
+    summary:
+      "a signed-in DSM shows its desktop beside the never-mounted empty placeholder; no credential is requested",
+    path: "/#/",
+    initial: [{ type: "served" }, { type: "desktop", append: true }],
+    steps: [],
+    behavior: {},
+    runMs: 20000,
+    expected: {
+      phase: "signed_in",
+      reason: "no-sign-in-page",
+      usernameRequests: 0,
+      passwordRequests: 0,
+      signInClicks: 0,
+    },
+  },
+  {
     name: "zero-size-and-outside-captcha-markup",
     summary:
       "a zero-size captcha input, a captcha-class panel and a captcha outside the login root do not stop",
@@ -949,6 +1158,23 @@ export const DSM_LOGIN_TIMELINES: readonly DsmTimeline[] = [
     initial: [{ type: "account" }],
     steps: [],
     behavior: { signIn: { delayMs: 1200, outcome: "error" } },
+    runMs: 7000,
+    expected: {
+      phase: "rejected",
+      reason: "error-visible",
+      usernameRequests: 1,
+      passwordRequests: 1,
+      signInClicks: 1,
+    },
+  },
+  {
+    name: "post-submit-message-box-rejected",
+    summary:
+      "DSM keeps the password and shows its footer message box, outside the panel",
+    path: "/#/signin",
+    initial: [{ type: "account" }],
+    steps: [],
+    behavior: { signIn: { delayMs: 1200, outcome: "message" } },
     runMs: 7000,
     expected: {
       phase: "rejected",
@@ -1176,6 +1402,24 @@ export const DSM_LOGIN_TIMELINES: readonly DsmTimeline[] = [
       usernameRequests: 0,
       passwordRequests: 0,
       signInClicks: 0,
+    },
+  },
+  {
+    name: "reviewed-controls-without-login-root",
+    summary:
+      "the reviewed account controls render under a login root id the helper does not review; it stops as an unrecognised layout instead of waiting out the page budget",
+    path: "/#/signin",
+    initial: [{ type: "account" }, { type: "renameRoot" }],
+    steps: [],
+    behavior: {},
+    runMs: 45000,
+    expected: {
+      phase: "stopped",
+      reason: "layout-unrecognized",
+      usernameRequests: 0,
+      passwordRequests: 0,
+      signInClicks: 0,
+      traceReasons: ["root-missing"],
     },
   },
   {

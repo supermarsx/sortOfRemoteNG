@@ -162,6 +162,8 @@ describe("scripted DSM login timelines", () => {
       const reasons = trace().steps.map((step) => step.reason);
       for (const reason of expected.traceReasons ?? [])
         expect(reasons).toContain(reason);
+      for (const reason of expected.absentTraceReasons ?? [])
+        expect(reasons).not.toContain(reason);
       if (!expected.signInClicks)
         expect(field("password")?.value ?? "").toBe("");
       expect(last(events)).toMatchObject({
@@ -181,7 +183,9 @@ describe("scripted DSM login timelines", () => {
     ["page-never-appears", "waiting_root"],
     ["login-form-never-ready", "waiting_account_editable"],
     ["already-signed-in-desktop", "waiting_root"],
+    ["already-signed-in-beside-served-placeholder", "waiting_account_form"],
     ["empty-slash-without-desktop-marker", "waiting_root"],
+    ["reviewed-controls-without-login-root", "waiting_root"],
   ])(
     "%s waits for its whole budget before the terminal status",
     async (name, waiting) => {
@@ -196,6 +200,43 @@ describe("scripted DSM login timelines", () => {
       expect(vi.getTimerCount()).toBe(0);
     },
   );
+
+  it("models DSM's Vue 2 mount: the served placeholder is replaced, not wrapped", () => {
+    load();
+    page.apply({ type: "served" });
+    const served = document.querySelector("#sds-login-vue")!;
+    expect(served.childElementCount).toBe(0);
+    page.apply({ type: "mountRoot" });
+    expect(served.isConnected).toBe(false);
+    expect(document.querySelectorAll("#sds-login-vue")).toHaveLength(0);
+    expect(document.querySelectorAll("#sds-login-vue-inst")).toHaveLength(1);
+    page.apply({ type: "account" });
+    page.apply({ type: "password" });
+    expect(
+      document.querySelectorAll(
+        "#sds-login-vue-inst .login-tabs-content-wrapper form#dsm-pass-fieldset",
+      ),
+    ).toHaveLength(1);
+    expect(document.querySelectorAll("#sds-login-vue")).toHaveLength(0);
+  });
+
+  it("names a missing login root beside reviewed controls instead of timing out as not ready", async () => {
+    await play(timeline("reviewed-controls-without-login-root"));
+    const { steps, fingerprint } = trace();
+    expect(steps[steps.length - 2]).toMatchObject({
+      phase: "waiting_root",
+      reason: "root-missing",
+    });
+    expect(fingerprint).toMatchObject({
+      root: 0,
+      form: 1,
+      field: 1,
+      button: 1,
+      readyState: "complete",
+      stage: "account",
+    });
+    expect(steps.map((step) => step.reason)).not.toContain("page-never-ready");
+  });
 
   it("keeps waiting through a 35s QuickConnect splash on '#/' without claiming a session", async () => {
     // The scripted login form arrives at 35s; stop just before it.

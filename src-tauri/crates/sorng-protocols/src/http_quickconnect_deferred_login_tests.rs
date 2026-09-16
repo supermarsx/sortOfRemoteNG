@@ -6,7 +6,7 @@ const USERNAME: &str = "synthetic-deferred-user";
 const PASSWORD: &str = "synthetic-deferred-password";
 const DIRECT: &str = "https://example.direct.quickconnect.to:5001/";
 const GLOBAL: &str = "https://global.quickconnect.to/";
-const DSM: &str = "<!doctype html><html><head><title>Synthetic DSM</title></head><body><div id=\"sds-login-vue\"><div class=\"login-tabs-content-wrapper\"><form id=\"dsm-user-fieldset\"><input syno-id=\"username\" name=\"username\" type=\"text\" autocomplete=\"username\"><input name=\"password\" type=\"password\" autocomplete=\"current-password\" hidden></form><div role=\"button\" syno-id=\"account-panel-next-btn\">Next</div></div></div></body></html>";
+const DSM: &str = "<!doctype html><html><head><title>Synthetic DSM</title></head><body><div id=\"sds-login-vue-inst\"><div class=\"login-tabs-content-wrapper\"><form id=\"dsm-user-fieldset\"><input syno-id=\"username\" name=\"username\" type=\"text\" autocomplete=\"username\"><input name=\"password\" type=\"password\" autocomplete=\"current-password\" hidden></form><div role=\"button\" syno-id=\"account-panel-next-btn\">Next</div></div></div></body></html>";
 
 #[derive(Clone, Copy)]
 enum ProbeReply {
