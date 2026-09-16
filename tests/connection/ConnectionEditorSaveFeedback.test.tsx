@@ -187,13 +187,22 @@ describe("live connection editor save feedback", () => {
     fireEvent.click(screen.getByTestId("editor-save"));
     await waitFor(() => expect(fixture.save).toHaveBeenCalledTimes(1));
     fireEvent.change(input, { target: { value: initial.name } });
+    // Saving is single-flight: the reverted draft waits for the next Save.
+    expect(screen.getByTestId("editor-save")).toBeDisabled();
     fireEvent.click(screen.getByTestId("editor-save"));
+    expect(fixture.save).toHaveBeenCalledTimes(1);
     expect(fixture.toast.info).not.toHaveBeenCalled();
     expect(fixture.toast.success).not.toHaveBeenCalled();
     await act(async () => {
       pending.resolve();
       await pending.promise;
     });
+    await waitFor(() =>
+      expect(screen.getByTestId("editor-save")).not.toBeDisabled(),
+    );
+    expect(fixture.toast.info).not.toHaveBeenCalled();
+    expect(fixture.toast.success).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("editor-save"));
     await waitFor(() => expect(fixture.toast.success).toHaveBeenCalledTimes(1));
     expect(fixture.save).toHaveBeenCalledTimes(2);
     expect(fixture.save.mock.calls[1][0].connections[0].name).toBe(

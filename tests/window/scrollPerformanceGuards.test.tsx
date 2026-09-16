@@ -183,6 +183,24 @@ vi.mock("../../src/i18n", () => ({
   resolveSupportedLanguage: vi.fn((language?: string) => language ?? "en-US"),
 }));
 
+// The connection tree scroller renders only for an available database.
+const READY_DATABASE = vi.hoisted(() => ({
+  status: "ready" as const,
+  databaseId: "scroll-fixture",
+  generation: 1,
+}));
+vi.mock("../../src/contexts/useConnections", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/contexts/useConnections")>();
+  return {
+    ...actual,
+    useConnections: () => ({
+      ...actual.useConnections(),
+      databaseAvailability: READY_DATABASE,
+    }),
+  };
+});
+
 // ── Listener spies must be installed before the app module registers anything ──
 
 type ListenerRecord = {

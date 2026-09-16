@@ -78,7 +78,7 @@ describe("GeneralSection validation", () => {
     };
   });
 
-  it("uses the canonical grouped built-in and integration protocol options", () => {
+  it("uses the canonical grouped built-in options and keeps non-SQL Server integrations out of the picker", () => {
     render(<GeneralSection {...defaultProps} />);
 
     fireEvent.click(screen.getByTestId("editor-protocol"));
@@ -86,7 +86,9 @@ describe("GeneralSection validation", () => {
     expect(
       screen.getByRole("option", { name: "Consoles & Terminals" }),
     ).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("option", { name: /NetBox/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /NetBox/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps a saved protocol visible but disabled when this build omits it", () => {
@@ -161,7 +163,7 @@ describe("GeneralSection validation", () => {
     },
   );
 
-  it("omits unsupported integrations for new choices and permits them only when native capabilities enable them", () => {
+  it("omits unsupported integrations for new choices and permits SQL Server only when native capabilities enable it", () => {
     runtimeCapabilityState.value = {
       ...runtimeCapabilityState.value,
       ops: false,
@@ -183,13 +185,16 @@ describe("GeneralSection validation", () => {
     };
     view.rerender(<GeneralSection {...defaultProps} />);
     fireEvent.click(screen.getByTestId("editor-protocol"));
-    const proxmox = screen.getByRole("option", { name: /Proxmox/ });
-    expect(proxmox).not.toHaveAttribute("aria-disabled", "true");
-    fireEvent.mouseDown(proxmox);
+    expect(
+      screen.queryByRole("option", { name: /Proxmox/ }),
+    ).not.toBeInTheDocument();
+    const sqlServer = screen.getByRole("option", { name: /SQL Server/ });
+    expect(sqlServer).not.toHaveAttribute("aria-disabled", "true");
+    fireEvent.mouseDown(sqlServer);
     expect(mockSetFormData).toHaveBeenCalled();
     const updater =
       mockSetFormData.mock.calls[mockSetFormData.mock.calls.length - 1]?.[0];
-    expect(updater(defaultProps.formData).protocol).toBe("integration:proxmox");
+    expect(updater(defaultProps.formData).protocol).toBe("integration:mssql");
   });
 
   it("shows error on blur when name is empty", () => {

@@ -133,7 +133,11 @@ describe("database creation user flow (issue #240)", () => {
       ),
     );
     await waitFor(() =>
-      expect(onDatabaseSelect).toHaveBeenCalledWith("created-id", undefined),
+      expect(onDatabaseSelect).toHaveBeenCalledWith(
+        "created-id",
+        undefined,
+        expect.any(Function),
+      ),
     );
 
     expect(screen.queryByText("Create New Database")).not.toBeInTheDocument();

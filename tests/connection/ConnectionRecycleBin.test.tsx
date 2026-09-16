@@ -30,7 +30,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
 import ConnectionRecycleBinTab from "../../src/components/connection/ConnectionRecycleBinTab";
 import ConnectionRecycleBinSection from "../../src/components/SettingsDialog/sections/security/ConnectionRecycleBinSection";
 import { useConnectionRecycleBin } from "../../src/hooks/connection/useConnectionRecycleBin";
-import { SECURITY_SEARCH_ENTRIES } from "../../src/components/SettingsDialog/settingsSearchIndex/security";
+import { CURRENT_DATABASE_SEARCH_ENTRIES } from "../../src/components/SettingsDialog/settingsSearchIndex/currentDatabase";
 
 const scope = { databaseId: "db-a", generation: 1, revision: "revision-1" };
 const outcome = {
@@ -443,7 +443,7 @@ describe("current-database retention settings", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(fixture.api.commitReview).not.toHaveBeenCalled();
   });
-  it("keeps unavailable settings explicit and searchable in Security", () => {
+  it("keeps unavailable settings explicit and searchable in Current Database", () => {
     fixture.api = undefined;
     render(<ConnectionRecycleBinSection />);
     expect(
@@ -451,9 +451,9 @@ describe("current-database retention settings", () => {
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Retention in days")).toBeNull();
     expect(
-      SECURITY_SEARCH_ENTRIES.find(
+      CURRENT_DATABASE_SEARCH_ENTRIES.find(
         (entry) => entry.key === "currentDatabaseRecycleBin",
       )?.section,
-    ).toBe("security");
+    ).toBe("currentDatabase");
   });
 });

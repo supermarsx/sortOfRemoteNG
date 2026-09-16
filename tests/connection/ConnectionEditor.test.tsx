@@ -317,6 +317,15 @@ const renderSavedIntegration = (
   };
 };
 
+// The credential-source picker keeps its own vault-availability status.
+const searchStatus = () => {
+  const statuses = screen
+    .getAllByRole("status")
+    .filter((status) => !status.closest('[aria-label="Credential source"]'));
+  expect(statuses).toHaveLength(1);
+  return statuses[0];
+};
+
 describe("ConnectionEditor", () => {
   it("never keeps nested secret-shaped provider fields in saved integration settings", () => {
     const saved = toPersistableIntegrationSettings({
@@ -576,9 +585,7 @@ describe("ConnectionEditor", () => {
       ).toBeInTheDocument();
 
       fireEvent.change(searchInput, { target: { value: "no-such-protocol" } });
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "No protocols found",
-      );
+      expect(searchStatus()).toHaveTextContent("No protocols found");
       expect(
         screen.getByText("Try a protocol name or description."),
       ).toBeInTheDocument();
@@ -1014,10 +1021,8 @@ describe("ConnectionEditor", () => {
       fireEvent.change(searchInput, {
         target: { value: "not-a-real-protocol" },
       });
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "No protocols found",
-      );
-      expect(screen.getByRole("status").closest('[role="listbox"]')).toBeNull();
+      expect(searchStatus()).toHaveTextContent("No protocols found");
+      expect(searchStatus().closest('[role="listbox"]')).toBeNull();
 
       fireEvent.keyDown(searchInput, { key: "Escape" });
       expect(
@@ -1655,12 +1660,12 @@ describe("ConnectionEditor", () => {
         name: "Search connection settings",
       });
       fireEvent.change(search, { target: { value: "testpass" } });
-      expect(screen.getByRole("status")).toHaveTextContent("No settings found");
+      expect(searchStatus()).toHaveTextContent("No settings found");
       fireEvent.keyDown(search, { key: "Enter" });
       expect(onClose).not.toHaveBeenCalled();
 
       fireEvent.change(search, { target: { value: "Known Hosts Path" } });
-      expect(screen.getByRole("status")).toHaveTextContent("No settings found");
+      expect(searchStatus()).toHaveTextContent("No settings found");
       fireEvent.keyDown(search, { key: "Escape" });
 
       fireEvent.click(screen.getByTestId("editor-protocol"));
@@ -1747,7 +1752,7 @@ describe("ConnectionEditor", () => {
         name: "Search connection settings",
       });
       fireEvent.change(search, { target: { value: "Focus Behavior" } });
-      expect(screen.getByRole("status")).toHaveTextContent("No settings found");
+      expect(searchStatus()).toHaveTextContent("No settings found");
 
       fireEvent.change(search, { target: { value: "Description & Notes" } });
       expect(

@@ -287,13 +287,16 @@ describe("ProtocolSections", () => {
     expect(idsFor({ protocol: "ssh" })).toEqual([
       "authentication",
       "terminal",
+      "favorites",
       "network-path",
       "network",
       "recovery",
     ]);
     expect(idsFor({ protocol: "https" })).toEqual([
+      "application",
       "authentication",
       "security",
+      "favorites",
       "advanced",
       "recovery",
     ]);
@@ -397,8 +400,10 @@ describe("ProtocolSections", () => {
       "recovery",
     ]);
     expect(idsFor({ protocol: "https", osType: "windows" })).toEqual([
+      "application",
       "authentication",
       "security",
+      "favorites",
       "advanced",
       "network",
       "recovery",
@@ -701,10 +706,11 @@ describe("ProtocolSections", () => {
     expect(recovery).toHaveAttribute("aria-selected", "true");
 
     fireEvent.keyDown(recovery, { key: "Home" });
-    await waitFor(() => expect(authentication).toHaveFocus());
-    expect(authentication).toHaveAttribute("aria-selected", "true");
+    const application = screen.getByRole("tab", { name: "Application" });
+    await waitFor(() => expect(application).toHaveFocus());
+    expect(application).toHaveAttribute("aria-selected", "true");
 
-    fireEvent.keyDown(authentication, { key: "ArrowLeft" });
+    fireEvent.keyDown(application, { key: "ArrowLeft" });
     await waitFor(() => expect(recovery).toHaveFocus());
   });
 

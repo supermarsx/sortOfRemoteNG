@@ -198,7 +198,9 @@ describe("connection draft Favorites", () => {
         setFormData={vi.fn()}
       />,
     );
-    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    expect(
+      screen.getAllByRole("checkbox", { name: /^(Allow |Enable )/ }),
+    ).toHaveLength(3);
     expect(screen.queryByText(/missing-script/)).not.toBeInTheDocument();
   });
   it("offers Favorites only for supported protocols and routes bookmark and ref searches there", () => {
