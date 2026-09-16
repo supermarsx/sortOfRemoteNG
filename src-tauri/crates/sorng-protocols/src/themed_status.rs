@@ -26,6 +26,7 @@ use axum::http::{Response, StatusCode};
 
 use crate::themed_errors::{
     escape_html_public as escape_html, inject_proxy_failure_bridge, proxy_failure_bridge_script,
+    ProxyFailureBridge, UpstreamResponseFacts,
 };
 
 /// Visual tone of a themed status page. Drives the icon-container
@@ -342,6 +343,17 @@ pub fn presentation_for(code: u16) -> StatusPresentation {
     }
 }
 
+/// Canonical reason phrase for a status code ("Not Found"), used by the
+/// app-side error screen and its copied diagnostics. The upstream's own phrase
+/// is deliberately ignored: it is attacker-controlled free text, and the code is
+/// what identifies the response.
+pub fn reason_phrase(code: u16) -> &'static str {
+    StatusCode::from_u16(code)
+        .ok()
+        .and_then(|status| status.canonical_reason())
+        .unwrap_or("")
+}
+
 /// Map a [`StatusTone`] to its (rgb-triplet, hex) accent colour,
 /// pulled from the snapshotted theme so the page matches the user's
 /// current theme selection (P7).
@@ -576,20 +588,22 @@ pub fn themed_status_response(
     upstream_body: &[u8],
     theme: &crate::theme_tokens::ThemeTokens,
     session_id: &str,
+    upstream: &UpstreamResponseFacts,
 ) -> Response<Body> {
     let body = render_status_page(code, target, upstream_body, theme);
     let presentation = presentation_for(code);
     let detail = snippet_for(upstream_body)
         .unwrap_or_else(|| format!("The upstream server returned HTTP {code}."));
-    let bridge = proxy_failure_bridge_script(
+    let bridge = proxy_failure_bridge_script(&ProxyFailureBridge {
         session_id,
-        "http_status",
-        code,
-        presentation.title,
-        target,
-        presentation.hint,
-        &detail,
-    );
+        kind: "http_status",
+        status: code,
+        title: presentation.title,
+        url: target,
+        reason: presentation.hint,
+        detail: &detail,
+        upstream: Some(upstream),
+    });
     let body = inject_proxy_failure_bridge(body, &bridge);
     // Forward the upstream code if it's a valid HTTP status; fall
     // back to 502 if somehow we got something out of range.
@@ -739,9 +753,55 @@ mod tests {
         assert_ne!(e.1, i.1);
     }
 
+    fn facts() -> UpstreamResponseFacts {
+        UpstreamResponseFacts::new("GET", reason_phrase(404), Some("nginx"), None, 150, 12)
+    }
+
+    #[test]
+    fn reason_phrase_uses_the_canonical_text_for_known_codes() {
+        assert_eq!(reason_phrase(404), "Not Found");
+        assert_eq!(reason_phrase(502), "Bad Gateway");
+        assert_eq!(reason_phrase(499), "");
+    }
+
+    #[test]
+    fn response_bridges_non_secret_upstream_facts_but_never_the_body() {
+        let resp = themed_status_response(
+            404,
+            "https://x.test/packages/backup/backup.php",
+            b"<html><head><title>404 Not Found</title></head></html>",
+            &theme(),
+            "session-test",
+            &facts(),
+        );
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        // The rendered page keeps the upstream body; the facts block does not.
+        let rendered = render_status_page(
+            404,
+            "https://x.test/packages/backup/backup.php",
+            b"<html><head><title>404 Not Found</title></head></html>",
+            &theme(),
+        );
+        assert!(rendered.contains("Show upstream response body"));
+        let script = proxy_failure_bridge_script(&ProxyFailureBridge {
+            session_id: "session-test",
+            kind: "http_status",
+            status: 404,
+            title: "Not found",
+            url: "https://x.test/packages/backup/backup.php",
+            reason: "hint",
+            detail: "detail",
+            upstream: Some(&facts()),
+        });
+        assert!(script.contains(r#""reasonPhrase":"Not Found""#));
+        assert!(script.contains(r#""server":"nginx""#));
+        assert!(!script.contains("404 Not Found\\u003c/title"));
+    }
+
     #[test]
     fn response_forwards_upstream_status_code() {
-        let resp = themed_status_response(429, "https://x", b"", &theme(), "session-test");
+        let resp =
+            themed_status_response(429, "https://x", b"", &theme(), "session-test", &facts());
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
         let ct = resp
             .headers()
@@ -756,7 +816,8 @@ mod tests {
     #[test]
     fn response_handles_unusual_status_code() {
         // 477 isn't standard but is a valid u16 status code.
-        let resp = themed_status_response(477, "https://x", b"", &theme(), "session-test");
+        let resp =
+            themed_status_response(477, "https://x", b"", &theme(), "session-test", &facts());
         assert_eq!(resp.status().as_u16(), 477);
     }
 

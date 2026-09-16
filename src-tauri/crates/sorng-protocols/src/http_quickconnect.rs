@@ -34,13 +34,17 @@ pub(super) fn pending_response(state: &AxumProxyState, source: &str) -> Response
     let title = "Preparing destination handoff";
     let detail = "The destination matches this connection's Synology defaults. Waiting for the app to finish certificate and connection checks. Any additional approval is shown in the app; no destination request or login transfer has been authorized by this page.";
     let bridge = crate::themed_errors::proxy_failure_bridge_script(
-        &state.session_id,
-        "redirect_review",
-        202,
-        title,
-        source,
-        detail,
-        detail,
+        &crate::themed_errors::ProxyFailureBridge {
+            session_id: &state.session_id,
+            kind: "redirect_review",
+            status: 202,
+            title,
+            url: source,
+            reason: detail,
+            detail,
+            // A pending handoff has made no upstream request, so it has no facts.
+            upstream: None,
+        },
     );
     let html = format!(
         r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} — sortOfRemoteNG</title><style>{theme_css}

@@ -42,6 +42,66 @@ struct ProxyFailureBridgePayload<'a> {
     url: &'a str,
     reason: &'a str,
     detail: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    upstream: Option<&'a UpstreamResponseFacts>,
+}
+
+/// Non-secret facts about an upstream response, carried to the owning React tab
+/// so its error screen can show them and copy them into a diagnostics summary.
+///
+/// Deliberately a closed set. Request headers, response headers that can carry
+/// credentials (`Set-Cookie`, `WWW-Authenticate`, `Authorization` echoes), the
+/// response body and anything derived from saved credentials never belong here —
+/// the page offers a one-click copy, so every field has to be safe to paste into
+/// a ticket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamResponseFacts {
+    /// Request method the upstream answered (`GET`, `POST`, …).
+    pub method: String,
+    /// Canonical reason phrase for the status ("Not Found"), not the upstream's.
+    pub reason_phrase: String,
+    /// Upstream `Server` header, when it sent one ("nginx").
+    pub server: Option<String>,
+    /// Upstream `Content-Type`, when it sent one.
+    pub content_type: Option<String>,
+    /// Decoded response body size in bytes.
+    pub body_bytes: u64,
+    /// How long the proxy's upstream request took, in milliseconds.
+    pub elapsed_ms: u64,
+}
+
+impl UpstreamResponseFacts {
+    pub fn new(
+        method: &str,
+        reason_phrase: &str,
+        server: Option<&str>,
+        content_type: Option<&str>,
+        body_bytes: u64,
+        elapsed_ms: u64,
+    ) -> Self {
+        Self {
+            method: bounded_token(Some(method)).unwrap_or_else(|| "GET".into()),
+            reason_phrase: bounded_token(Some(reason_phrase)).unwrap_or_default(),
+            server: bounded_token(server),
+            content_type: bounded_token(content_type),
+            body_bytes,
+            elapsed_ms,
+        }
+    }
+}
+
+/// Header values are attacker-influenced text. Drop control characters (which
+/// would break the JSON bridge's single-line shape) and bound the length before
+/// anything reaches the app.
+fn bounded_token(value: Option<&str>) -> Option<String> {
+    let cleaned: String = value?
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(128)
+        .collect();
+    let trimmed = cleaned.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 /// Discriminator for the kind of upstream failure that caused the
@@ -208,31 +268,37 @@ impl ProxyErrorKind {
     }
 }
 
+/// What a proxy-owned failure document reports back to its owning React tab.
+pub(crate) struct ProxyFailureBridge<'a> {
+    pub session_id: &'a str,
+    pub kind: &'a str,
+    pub status: u16,
+    pub title: &'a str,
+    pub url: &'a str,
+    pub reason: &'a str,
+    pub detail: &'a str,
+    /// Only a document whose upstream actually answered has these.
+    pub upstream: Option<&'a UpstreamResponseFacts>,
+}
+
 /// Build the tiny inline bridge used by proxy-owned failure documents.
 ///
 /// `serde_json` guarantees JSON string quoting, while the replacements below
 /// make the result safe inside a classic `<script>` element too. In
 /// particular, an upstream URL or error containing `</script>` must never be
 /// able to terminate the bridge and inject markup into the loopback page.
-pub(crate) fn proxy_failure_bridge_script(
-    session_id: &str,
-    kind: &str,
-    status: u16,
-    title: &str,
-    url: &str,
-    reason: &str,
-    detail: &str,
-) -> String {
+pub(crate) fn proxy_failure_bridge_script(bridge: &ProxyFailureBridge<'_>) -> String {
     let payload = ProxyFailureBridgePayload {
         r#type: PROXY_FAILURE_MESSAGE_TYPE,
         version: 1,
-        session_id,
-        kind,
-        status,
-        title,
-        url,
-        reason,
-        detail,
+        session_id: bridge.session_id,
+        kind: bridge.kind,
+        status: bridge.status,
+        title: bridge.title,
+        url: bridge.url,
+        reason: bridge.reason,
+        detail: bridge.detail,
+        upstream: bridge.upstream,
     };
     let json = serde_json::to_string(&payload)
         .unwrap_or_else(|_| r#"{"type":"sorng_proxy_failure","version":1}"#.to_string())
@@ -486,15 +552,17 @@ pub fn themed_error_response(
     session_id: &str,
 ) -> Response<Body> {
     let body = render_error_page(kind, target, detail, theme);
-    let bridge = proxy_failure_bridge_script(
+    let bridge = proxy_failure_bridge_script(&ProxyFailureBridge {
         session_id,
-        kind.code(),
-        kind.status().as_u16(),
-        kind.title(),
-        target,
-        kind.hint(),
+        kind: kind.code(),
+        status: kind.status().as_u16(),
+        title: kind.title(),
+        url: target,
+        reason: kind.hint(),
         detail,
-    );
+        // No response was ever received, so there are no upstream facts.
+        upstream: None,
+    });
     let body = inject_proxy_failure_bridge(body, &bridge);
     Response::builder()
         .status(kind.status())
@@ -675,20 +743,86 @@ mod tests {
 
     #[test]
     fn failure_bridge_is_session_scoped_and_script_safe() {
-        let script = proxy_failure_bridge_script(
-            "session-123",
-            "dns_failure",
-            502,
-            "Server not found",
-            "https://example.test/</script><script>alert(1)</script>",
-            "The host did not resolve.",
-            "lookup failed </script>",
-        );
+        let script = proxy_failure_bridge_script(&ProxyFailureBridge {
+            session_id: "session-123",
+            kind: "dns_failure",
+            status: 502,
+            title: "Server not found",
+            url: "https://example.test/</script><script>alert(1)</script>",
+            reason: "The host did not resolve.",
+            detail: "lookup failed </script>",
+            upstream: None,
+        });
 
         assert!(script.contains(r#""type":"sorng_proxy_failure""#));
         assert!(script.contains(r#""sessionId":"session-123""#));
         assert!(script.contains(r#""kind":"dns_failure""#));
         assert!(script.contains("\\u003c/script\\u003e"));
         assert!(!script.contains("</script><script>alert"));
+        // A transport failure has no response, so the key must be absent
+        // entirely rather than present and null.
+        assert!(!script.contains("upstream"));
+    }
+
+    #[test]
+    fn transport_failure_pages_carry_no_upstream_facts() {
+        let response = themed_error_response(
+            ProxyErrorKind::ConnectionRefused,
+            "https://x.test/",
+            "refused",
+            &theme(),
+            "session-test",
+        );
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn upstream_facts_are_bounded_and_control_free() {
+        let facts = UpstreamResponseFacts::new(
+            "GET",
+            "Not Found",
+            Some("nginx\r\nX-Injected: 1"),
+            Some(&"a".repeat(400)),
+            150,
+            12,
+        );
+        assert_eq!(facts.method, "GET");
+        assert_eq!(facts.reason_phrase, "Not Found");
+        // Control characters are dropped, not escaped into a second header line.
+        assert_eq!(facts.server.as_deref(), Some("nginxX-Injected: 1"));
+        assert_eq!(facts.content_type.as_deref().map(str::len), Some(128));
+        assert_eq!(facts.body_bytes, 150);
+        assert_eq!(facts.elapsed_ms, 12);
+    }
+
+    #[test]
+    fn upstream_facts_drop_blank_headers_and_keep_a_method() {
+        let facts = UpstreamResponseFacts::new("", "", Some("   "), None, 0, 0);
+        assert_eq!(facts.method, "GET");
+        assert_eq!(facts.reason_phrase, "");
+        assert!(facts.server.is_none());
+        assert!(facts.content_type.is_none());
+    }
+
+    #[test]
+    fn bridge_serializes_upstream_facts_as_a_nested_object() {
+        let facts = UpstreamResponseFacts::new("POST", "Not Found", Some("nginx"), None, 150, 1250);
+        let script = proxy_failure_bridge_script(&ProxyFailureBridge {
+            session_id: "session-123",
+            kind: "http_status",
+            status: 404,
+            title: "Not found",
+            url: "https://example.test/missing",
+            reason: "The page or resource doesn't exist at this address.",
+            detail: "404 body",
+            upstream: Some(&facts),
+        });
+        assert!(script.contains(r#""upstream":{"#));
+        assert!(script.contains(r#""method":"POST""#));
+        assert!(script.contains(r#""reasonPhrase":"Not Found""#));
+        assert!(script.contains(r#""server":"nginx""#));
+        assert!(script.contains(r#""contentType":null"#));
+        assert!(script.contains(r#""bodyBytes":150"#));
+        assert!(script.contains(r#""elapsedMs":1250"#));
     }
 }

@@ -2357,12 +2357,26 @@ pub async fn axum_proxy_handler(
                     }
                     // P7: snapshot theme tokens for this render.
                     let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
+                    // t99: non-secret facts the owning tab shows on its own error
+                    // screen and copies into diagnostics. `Server` and
+                    // `Content-Type` are the only upstream headers forwarded —
+                    // never `Set-Cookie`, `WWW-Authenticate` or anything else that
+                    // can carry a credential.
+                    let upstream_facts = crate::themed_errors::UpstreamResponseFacts::new(
+                        &method_str,
+                        crate::themed_status::reason_phrase(status_u16),
+                        resp_hdrs.get("server").and_then(|v| v.to_str().ok()),
+                        content_type.as_deref(),
+                        raw_bytes.len() as u64,
+                        req_start.elapsed().as_millis() as u64,
+                    );
                     return crate::themed_status::themed_status_response(
                         status_u16,
                         &full_url,
                         &raw_bytes,
                         &theme,
                         &state.session_id,
+                        &upstream_facts,
                     );
                 }
                 // Non-HTML 4xx/5xx — pass through as-is so JSON/XML
