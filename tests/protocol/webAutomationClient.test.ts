@@ -462,7 +462,9 @@ describe("actual injected page-only automation client", () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetch);
     command("dark", { enabled: true });
-    await Promise.resolve();
+    // The engine load is resolved but still asynchronous: the controller now
+    // answers it with which path themed the page, which costs one more tick.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const fetchResource = dark.setFetchMethod.mock.calls[0][0];
     await expect(
       fetchResource("https://external.example.test/style.css"),
@@ -476,6 +478,29 @@ describe("actual injected page-only automation client", () => {
     });
     command("dark", { enabled: false });
     expect(dark.disable).toHaveBeenCalledOnce();
+  });
+  it("acknowledges dark mode with which path themed the page, and nothing else", async () => {
+    const dark = { enable: vi.fn(), disable: vi.fn(), setFetchMethod: vi.fn() };
+    Object.defineProperty(window, "DarkReader", {
+      configurable: true,
+      value: dark,
+    });
+    command("dark", { enabled: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(reports()[0]).toMatchObject({ status: "ok", darkOutcome: "engine" });
+
+    command("dark", { enabled: true, cssOnly: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(reports()[1]).toMatchObject({
+      status: "ok",
+      darkOutcome: "cssOnly",
+    });
+
+    // Turning it off themed nothing, so the acknowledgement carries no outcome.
+    command("dark", { enabled: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(reports()[2].status).toBe("ok");
+    expect(reports()[2]).not.toHaveProperty("darkOutcome");
   });
   it("stops all recording and commands after pagehide", () => {
     setupPage('<button type="button">Action</button>');

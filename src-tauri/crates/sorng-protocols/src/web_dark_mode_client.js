@@ -1,6 +1,13 @@
 /* Private page-only controller. Included inside the native readiness closure,
  * never exposed as a native API. Dynamic mode uses the pinned local DarkReader
  * API; filter modes use reversible CSS and do not require its dynamic engine.
+ *
+ * The app only ever addresses the outermost proxied document, but a legacy
+ * device page keeps what the user sees in child frames and may paint nothing at
+ * all itself. Every proxied document therefore installs its own controller at
+ * document start and joins a registry owned by the outermost same-origin realm:
+ * see sorngWebDarkMode() at the bottom of this file, which is called eagerly so
+ * a frame themes itself before the app knows it exists.
  */
 function createWebDarkModeController() {
   "use strict";
@@ -8,9 +15,22 @@ function createWebDarkModeController() {
     revision = 0,
     disposed = false,
     dynamicOwned = false,
+    // The app says so when the connection's page-script policy forbids loading
+    // the engine asset. It is never inferred here and never relaxes a policy:
+    // it only decides that this document themes itself with plain CSS.
+    cssOnly = false,
     style = null,
     loading = null,
-    abortLoading = null;
+    abortLoading = null,
+    // Only the outermost proxied document carries the filter layer: a filter on
+    // its root element composites over every frame below it.
+    outermost = isOutermostDocument(),
+    framesetStyled = false,
+    borders = null,
+    adopted = [],
+    watched = [],
+    observer = null,
+    scanQueued = false;
   var defaults = {
     mode: "dynamic",
     brightness: 100,
@@ -69,9 +89,21 @@ function createWebDarkModeController() {
     }
     return Object.assign({}, value);
   }
+  // A frameset document paints no content of its own, and the element is not in
+  // the DOM yet while the readiness script runs, so this is asked again later.
+  function frameset() {
+    try {
+      return !!document.querySelector("frameset");
+    } catch (_) {
+      return false;
+    }
+  }
   function removeStyles() {
     if (style) style.remove();
     style = null;
+    framesetStyled = false;
+    restoreBorders();
+    releaseAdopted();
     var owned = dynamicOwned;
     dynamicOwned = false;
     if (owned && window.DarkReader) window.DarkReader.disable();
@@ -111,24 +143,86 @@ function createWebDarkModeController() {
       ")"
     );
   }
+  function borderColor(theme) {
+    var parts = [];
+    for (var offset = 1; offset < 7; offset += 2)
+      parts.push(
+        Math.round(
+          parseInt(theme.backgroundColor.slice(offset, offset + 2), 16) * 0.72 +
+            parseInt(theme.textColor.slice(offset, offset + 2), 16) * 0.28,
+        ),
+      );
+    return "rgb(" + parts.join(",") + ")";
+  }
+  // bgcolor, text, link and font color are presentational attributes, not inline
+  // styles, so the dynamic engine's inline-style pass is what normally rewrites
+  // them. Without an engine they survive every base rule and leave old device
+  // pages black on near-black, so spell them out on the engine-less paths only.
+  function legacyCss(theme) {
+    return (
+      "[bgcolor]{background-color:" +
+      theme.backgroundColor +
+      "!important;}[background]{background-image:none!important;}" +
+      "body[text],body[text] td,body[text] th,body[text] p,body[text] div," +
+      "body[text] span,body[text] li{color:" +
+      theme.textColor +
+      "!important;}font[color],font[color] *{color:inherit!important;}" +
+      "table,td,th,hr{border-color:" +
+      borderColor(theme) +
+      "!important;}"
+    );
+  }
+  // What a document gets when nothing can convert it: flat base colors plus the
+  // readability rules above. Used for frames the proxy never served and for the
+  // dynamic modes when the engine asset is refused.
+  function baseCss(theme) {
+    return (
+      "html,body{background-color:" +
+      theme.backgroundColor +
+      "!important;color:" +
+      theme.textColor +
+      "!important;}" +
+      legacyCss(theme)
+    );
+  }
+  // Both dynamic modes are the engine; without it they would leave the page
+  // untouched, so they fall back to the CSS path instead of doing nothing.
+  function engineless(theme) {
+    return (
+      cssOnly && (theme.mode === "dynamic" || theme.mode === "dynamicFilter")
+    );
+  }
   function installStyles(theme) {
     var css = "";
+    framesetStyled = frameset();
     if (theme.mode === "filter") {
-      css =
-        "html{color-scheme:dark!important;background-color:" +
-        inverseColor(theme.backgroundColor) +
-        "!important;color:" +
-        inverseColor(theme.textColor) +
-        "!important;filter:invert(100%) hue-rotate(180deg) " +
-        adjustments(theme) +
-        "!important;}";
+      if (outermost)
+        css =
+          "html{color-scheme:dark!important;background-color:" +
+          inverseColor(theme.backgroundColor) +
+          "!important;color:" +
+          inverseColor(theme.textColor) +
+          "!important;filter:invert(100%) hue-rotate(180deg) " +
+          adjustments(theme) +
+          "!important;}";
       if (theme.preserveMedia)
         css +=
           "img,video,canvas,svg image{filter:invert(100%) hue-rotate(180deg)!important;}";
+    } else if (engineless(theme)) {
+      // The adjustment layer post-processes an engine-converted page; over the
+      // flat colors below it would only wash them out, so it is left off here.
+      css = baseCss(theme);
     } else if (theme.mode === "dynamicFilter") {
       // Dynamic conversion already fixes background and text: do NOT invert twice.
-      css = "html{filter:" + adjustments(theme) + "!important;}";
-    }
+      if (outermost) css = "html{filter:" + adjustments(theme) + "!important;}";
+    } else if (theme.mode === "customCss") css = legacyCss(theme);
+    // Pure filter mode inverts the whole document, gutters included, and this
+    // controller's approximate pre-inversion would tint them instead.
+    if (framesetStyled && theme.mode !== "filter")
+      css +=
+        "html,frameset{background-color:" +
+        theme.backgroundColor +
+        "!important;}";
     css += "\n" + theme.customCss;
     if (!css.trim()) return;
     style = document.createElement("style");
@@ -137,6 +231,231 @@ function createWebDarkModeController() {
     style.textContent = css;
     (document.head || document.documentElement).appendChild(style);
   }
+  // The gutters between frames are painted from the frameset's `bordercolor`
+  // presentational attribute; no stylesheet reaches them.
+  function paintBorders(theme) {
+    if (theme.mode === "filter") return;
+    var sets;
+    try {
+      sets = document.querySelectorAll("frameset");
+    } catch (_) {
+      return;
+    }
+    if (!sets.length) return;
+    if (!borders) borders = [];
+    var colour = theme.backgroundColor;
+    for (var index = 0; index < sets.length; index++) {
+      var element = sets[index],
+        known = false;
+      for (var seen = 0; seen < borders.length; seen++)
+        if (borders[seen].element === element) known = true;
+      if (!known)
+        borders.push({
+          element: element,
+          value: element.hasAttribute("bordercolor")
+            ? element.getAttribute("bordercolor")
+            : null,
+        });
+      try {
+        element.setAttribute("bordercolor", colour);
+      } catch (_) {
+        // A page may seal its own elements; the frames themselves still theme.
+      }
+    }
+  }
+  function restoreBorders() {
+    var entries = borders;
+    borders = null;
+    if (!entries) return;
+    for (var index = 0; index < entries.length; index++)
+      try {
+        if (entries[index].value === null)
+          entries[index].element.removeAttribute("bordercolor");
+        else
+          entries[index].element.setAttribute(
+            "bordercolor",
+            entries[index].value,
+          );
+      } catch (_) {
+        // The element may already be gone with its document.
+      }
+  }
+  // Frames the proxy never served — document.write, srcdoc, about:blank — carry
+  // no controller of their own. The dynamic engine is document-global and cannot
+  // be pointed at a foreign document, so their parent styles them with CSS only.
+  function adoptedCss(theme) {
+    var css = "";
+    if (theme.mode === "filter") {
+      // The outermost document's inversion already composites over these.
+      if (theme.preserveMedia)
+        css =
+          "img,video,canvas,svg image{filter:invert(100%) hue-rotate(180deg)!important;}";
+    } else css = baseCss(theme);
+    return css + "\n" + theme.customCss;
+  }
+  function adopt(target, theme) {
+    var node = null;
+    for (var index = 0; index < adopted.length; index++)
+      if (adopted[index].ownerDocument === target && adopted[index].isConnected)
+        node = adopted[index];
+    var css = adoptedCss(theme);
+    if (!css.trim()) return;
+    if (!node) {
+      if (adopted.length >= 64) return;
+      try {
+        node = target.createElement("style");
+        node.className = "sorng-website-dark-mode";
+        (target.head || target.documentElement).appendChild(node);
+      } catch (_) {
+        return;
+      }
+      adopted.push(node);
+    }
+    try {
+      node.setAttribute("data-mode", theme.mode);
+      node.textContent = css;
+    } catch (_) {
+      // The foreign document may have been replaced mid-scan.
+    }
+  }
+  // A frame is styled from here only until its own document takes over, which
+  // is what happens when an empty frame is replaced by a proxied navigation.
+  function abandon(target) {
+    var keep = [];
+    for (var index = 0; index < adopted.length; index++)
+      if (adopted[index].ownerDocument === target)
+        try {
+          adopted[index].remove();
+        } catch (_) {
+          // Its document is gone, which removed the node with it.
+        }
+      else keep.push(adopted[index]);
+    adopted = keep;
+  }
+  function releaseAdopted() {
+    var nodes = adopted;
+    adopted = [];
+    for (var index = 0; index < nodes.length; index++)
+      try {
+        nodes[index].remove();
+      } catch (_) {
+        // Its document is gone, which removed the node with it.
+      }
+    var elements = watched;
+    watched = [];
+    for (var frame = 0; frame < elements.length; frame++)
+      try {
+        elements[frame].removeEventListener("load", rescan);
+      } catch (_) {
+        // Same: the element went away with the document that held it.
+      }
+    if (observer) observer.disconnect();
+    observer = null;
+  }
+  function scanFrames(node, depth, budget) {
+    var frames;
+    try {
+      frames = node.querySelectorAll("iframe, frame");
+    } catch (_) {
+      return budget;
+    }
+    for (var index = 0; index < frames.length && budget > 0; index++) {
+      var element = frames[index],
+        target = null,
+        realm = null;
+      try {
+        target = element.contentDocument;
+        realm = target ? element.contentWindow : null;
+      } catch (_) {
+        continue;
+      }
+      if (!realm || !target || !target.documentElement) continue;
+      var owner = null;
+      try {
+        owner = realm[SORNG_DARK_DOCUMENT_KEY];
+      } catch (_) {
+        continue;
+      }
+      // A proxied document themes itself from the registry; never touch it.
+      if (owner) {
+        abandon(target);
+        continue;
+      }
+      budget--;
+      if (watched.indexOf(element) < 0 && watched.length < 64) {
+        watched.push(element);
+        try {
+          element.addEventListener("load", rescan);
+        } catch (_) {
+          // A load listener is an optimisation; the observer still fires.
+        }
+      }
+      adopt(target, desired);
+      if (depth < 8) budget = scanFrames(target, depth + 1, budget);
+    }
+    return budget;
+  }
+  function rescan() {
+    if (disposed || !desired) return;
+    var live = [];
+    for (var index = 0; index < adopted.length; index++)
+      if (adopted[index].isConnected) live.push(adopted[index]);
+    adopted = live;
+    scanFrames(document, 1, 64);
+  }
+  function queueScan() {
+    if (scanQueued || disposed || !desired) return;
+    scanQueued = true;
+    Promise.resolve().then(function () {
+      scanQueued = false;
+      try {
+        rescan();
+      } catch (_) {
+        // One malformed frame must not stop the rest of the page theming.
+      }
+    });
+  }
+  function observe() {
+    if (observer || typeof MutationObserver !== "function") return;
+    try {
+      observer = new MutationObserver(queueScan);
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    } catch (_) {
+      observer = null;
+    }
+  }
+  // The document keeps growing after the readiness script runs: the frameset
+  // element, the frames, and the documents those frames write themselves all
+  // arrive later, so the shape-dependent work is redone as the page settles.
+  function refresh() {
+    if (disposed || !desired) return;
+    var theme = desired;
+    if (frameset() !== framesetStyled) {
+      if (style) style.remove();
+      style = null;
+      installStyles(theme);
+    }
+    paintBorders(theme);
+    observe();
+    rescan();
+  }
+  function settle() {
+    try {
+      refresh();
+    } catch (_) {
+      // Late theming is best effort; the document itself is already themed.
+    }
+  }
+  // The engine did not install. Marked so the caller can theme the document
+  // with CSS instead; a closed document, by contrast, must still reject.
+  function unavailable(message) {
+    var error = new Error(message);
+    error.sorngEngineUnavailable = true;
+    return error;
+  }
   function loadDynamic() {
     if (window.DarkReader) return Promise.resolve();
     if (loading) return loading;
@@ -144,9 +463,12 @@ function createWebDarkModeController() {
       var script = document.createElement("script"),
         done = false;
       script.src = location.origin + "/__sortofremoteng_web_darkreader_v1.js";
+      // The asset is served by this same proxy session, so this budget only
+      // bounds a hung fetch. A refusal — this connection's policy or the
+      // website's own CSP — fails in milliseconds through onerror instead.
       var timer = setTimeout(function () {
-        finish(new Error("Dark-mode engine timed out"));
-      }, 10000);
+        finish(unavailable("Dark-mode engine timed out"));
+      }, 4000);
       function finish(error) {
         if (done) return;
         done = true;
@@ -162,11 +484,13 @@ function createWebDarkModeController() {
       }
       script.onload = function () {
         finish(
-          window.DarkReader ? null : new Error("Dark-mode engine unavailable"),
+          window.DarkReader
+            ? null
+            : unavailable("Dark-mode engine unavailable"),
         );
       };
       script.onerror = function () {
-        finish(new Error("Dark-mode engine could not load"));
+        finish(unavailable("Dark-mode engine could not load"));
       };
       abortLoading = function () {
         finish(new Error("The document was closed"));
@@ -208,13 +532,20 @@ function createWebDarkModeController() {
       { ignoreImageAnalysis: theme.preserveMedia ? ["*"] : [] },
     );
   }
+  document.addEventListener("DOMContentLoaded", settle);
+  window.addEventListener("load", settle);
   return {
     set: function (payload) {
       if (disposed) return Promise.reject(new Error("The document was closed"));
       var ticket = ++revision;
       desired = null;
+      cssOnly = false;
       removeStyles();
-      if (!payload || typeof payload.enabled !== "boolean")
+      if (
+        !payload ||
+        typeof payload.enabled !== "boolean" ||
+        (payload.cssOnly !== undefined && typeof payload.cssOnly !== "boolean")
+      )
         return Promise.reject(new Error("Invalid dark-mode extension command"));
       if (!payload.enabled) return Promise.resolve();
       var theme;
@@ -224,12 +555,40 @@ function createWebDarkModeController() {
         return Promise.reject(error);
       }
       desired = theme;
-      var dynamic = theme.mode === "dynamic" || theme.mode === "dynamicFilter";
-      return (dynamic ? loadDynamic() : Promise.resolve())
-        .then(function () {
-          if (disposed || ticket !== revision || desired !== theme) return;
-          if (dynamic) applyDynamic(theme);
+      cssOnly = payload.cssOnly === true;
+      var wanted = theme.mode === "dynamic" || theme.mode === "dynamicFilter";
+      // A frameset paints nothing but its gutters, so converting it is wasted
+      // work: the content is themed by the controllers inside its frames. A
+      // refused engine asset is not requested at all rather than left to fail.
+      var dynamic = wanted && !frameset() && !cssOnly;
+      // An engine that cannot install — refused by this connection's policy or
+      // by the website's own content security policy — leaves the document
+      // themed with CSS rather than light. Anything else still rejects.
+      var load = dynamic
+        ? loadDynamic().then(
+            function () {
+              return true;
+            },
+            function (error) {
+              if (!error || error.sorngEngineUnavailable !== true) throw error;
+              cssOnly = true;
+              return false;
+            },
+          )
+        : Promise.resolve(false);
+      return load
+        .then(function (engine) {
+          if (disposed || ticket !== revision || desired !== theme)
+            return undefined;
+          if (engine) applyDynamic(theme);
           installStyles(theme);
+          paintBorders(theme);
+          observe();
+          rescan();
+          // A frameset root that skipped the engine on purpose reports nothing:
+          // its frames answer for the content the user actually sees.
+          if (engine) return "engine";
+          return wanted && cssOnly ? "cssOnly" : undefined;
         })
         .catch(function (error) {
           if (ticket === revision) {
@@ -244,6 +603,8 @@ function createWebDarkModeController() {
       desired = null;
       revision++;
       if (abortLoading) abortLoading();
+      document.removeEventListener("DOMContentLoaded", settle);
+      window.removeEventListener("load", settle);
       try {
         removeStyles();
       } catch (_) {
@@ -253,3 +614,230 @@ function createWebDarkModeController() {
     },
   };
 }
+
+/* Per-document delivery. The app posts the `dark` command to the outermost
+ * proxied document only, and the page-side identity check makes a relay to a
+ * frame impossible by design. Every proxied document instead walks `parent`
+ * while it stays same-origin, joins a registry owned by the document it lands
+ * on, and applies whatever that registry already holds — so frames that load
+ * later theme themselves before they paint, and the outermost document fans a
+ * change out to the frames that are already open.
+ */
+var SORNG_DARK_REGISTRY_KEY = "__sorngWebDarkMode_v1";
+var SORNG_DARK_DOCUMENT_KEY = "__sorngWebDarkModeDocument_v1";
+
+/* Is this the document the app addresses, i.e. the top of the proxied tree? */
+function isOutermostDocument() {
+  try {
+    return sorngDarkRoot() === window;
+  } catch (_) {
+    return true;
+  }
+}
+
+/* The outermost proxied document. The only cross-realm read is the guarded
+ * `location.href` probe, and the first hop that fails it is the app window.
+ * Never reads `top`: with t95's `parent` override the walk stops one step
+ * earlier, on `p === w`, and lands on the same document either way.
+ */
+function sorngDarkRoot() {
+  var w = window;
+  for (var depth = 0; depth < 32; depth++) {
+    var p;
+    try {
+      p = w.parent;
+    } catch (_) {
+      break;
+    }
+    if (!p || p === w) break;
+    try {
+      void p.location.href;
+    } catch (_) {
+      break;
+    }
+    w = p;
+  }
+  return w;
+}
+
+function sorngDarkRegistry(root) {
+  var existing = null;
+  try {
+    existing = root[SORNG_DARK_REGISTRY_KEY];
+  } catch (_) {
+    return null;
+  }
+  if (existing && typeof existing === "object") return existing;
+  // Build the registry with the root realm's constructors so it outlives any
+  // frame that happened to install first.
+  var object = Object,
+    list = Array;
+  try {
+    if (root !== window && typeof root.Object === "function")
+      object = root.Object;
+    if (root !== window && typeof root.Array === "function") list = root.Array;
+  } catch (_) {
+    object = Object;
+    list = Array;
+  }
+  var registry = new object();
+  registry.payload = null;
+  registry.revision = 0;
+  registry.subscribers = new list();
+  try {
+    Object.defineProperty(root, SORNG_DARK_REGISTRY_KEY, { value: registry });
+  } catch (_) {
+    try {
+      existing = root[SORNG_DARK_REGISTRY_KEY];
+    } catch (_) {
+      existing = null;
+    }
+    return existing && typeof existing === "object" ? existing : null;
+  }
+  return registry;
+}
+
+/* Called eagerly as this file's last statement, inside the readiness closure
+ * and ahead of the automation client, so it must never throw: a failure here
+ * would take the whole page-side bridge down with it.
+ */
+function sorngWebDarkMode() {
+  var installed = null;
+  try {
+    installed = window[SORNG_DARK_DOCUMENT_KEY];
+  } catch (_) {
+    installed = null;
+  }
+  // A disposed controller belongs to a document that is on its way out; the
+  // marker outlives it only where a realm is reused, never after a navigation.
+  if (installed && !installed.disposed) return installed;
+  try {
+    return sorngInstallWebDarkMode();
+  } catch (_) {
+    // Fall back to this document theming only itself, as it did before.
+    return createWebDarkModeController();
+  }
+}
+
+function sorngInstallWebDarkMode() {
+  var root = window,
+    registry = null;
+  try {
+    root = sorngDarkRoot();
+    registry = sorngDarkRegistry(root);
+  } catch (_) {
+    registry = null;
+  }
+  var controller = createWebDarkModeController(),
+    released = false;
+  var entry = {
+    apply: function (payload) {
+      return controller.set(payload);
+    },
+  };
+  function release() {
+    if (released || !registry) return;
+    released = true;
+    try {
+      var subscribers = registry.subscribers;
+      for (var index = subscribers.length - 1; index >= 0; index--)
+        if (subscribers[index] === entry) subscribers.splice(index, 1);
+    } catch (_) {
+      // The root document is unloading too; its registry goes with it.
+    }
+  }
+  var facade = {
+    // A parent scan reads this to tell a document that themes itself from one
+    // the proxy never served, so the flag stays readable after teardown.
+    disposed: false,
+    // Record the command where every frame can read it, then drive the frames
+    // that are already open. One odd frame is reported but must not fail the
+    // whole request, or a single broken panel would disable the toggle.
+    set: function (payload) {
+      if (!registry) return controller.set(payload);
+      try {
+        registry.payload = payload;
+        registry.revision++;
+      } catch (_) {
+        // A sealed registry still drives this document.
+      }
+      var targets = [];
+      try {
+        for (var index = 0; index < registry.subscribers.length; index++)
+          targets.push(registry.subscribers[index]);
+      } catch (_) {
+        targets = [entry];
+      }
+      var mine = null,
+        others = [],
+        failure = null,
+        outcomes = [];
+      function record(value) {
+        if (value === "engine" || value === "cssOnly") outcomes.push(value);
+      }
+      for (var target = 0; target < targets.length; target++) {
+        var result;
+        try {
+          result = Promise.resolve(targets[target].apply(payload));
+        } catch (error) {
+          result = Promise.reject(error);
+        }
+        if (targets[target] === entry) mine = result;
+        else
+          others.push(
+            result.then(record, function () {
+              // Reported by the frame itself; the page keeps its theme.
+            }),
+          );
+      }
+      if (!mine) mine = controller.set(payload);
+      return Promise.all(
+        [
+          mine.then(record, function (error) {
+            failure = error;
+          }),
+        ].concat(others),
+      ).then(function () {
+        if (failure) throw failure;
+        // One frame falling back is the whole page's answer: a page where any
+        // document missed the engine is never reported as fully converted.
+        if (outcomes.indexOf("cssOnly") >= 0) return "cssOnly";
+        return outcomes.indexOf("engine") >= 0 ? "engine" : undefined;
+      });
+    },
+    dispose: function () {
+      facade.disposed = true;
+      release();
+      controller.dispose();
+    },
+  };
+  if (registry)
+    try {
+      registry.subscribers.push(entry);
+    } catch (_) {
+      registry = null;
+    }
+  try {
+    Object.defineProperty(window, SORNG_DARK_DOCUMENT_KEY, {
+      value: facade,
+      configurable: true,
+    });
+  } catch (_) {
+    // Without the marker a parent would style this document twice; both are
+    // reversible, so keep the controller rather than dropping the document.
+  }
+  window.addEventListener("pagehide", function () {
+    facade.dispose();
+  });
+  if (registry && registry.payload)
+    try {
+      controller.set(registry.payload).then(null, function () {
+        // The outermost document already reported this theme's failure.
+      });
+    } catch (_) {
+      // Same: a late frame never turns a settled command back into an error.
+    }
+  return facade;
+}
+
+sorngWebDarkMode();

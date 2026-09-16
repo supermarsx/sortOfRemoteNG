@@ -474,7 +474,7 @@
     element.dispatchEvent(new Event("change", { bubbles: true }));
   }
   function setDark(payload) {
-    if (!darkMode) darkMode = createWebDarkModeController();
+    if (!darkMode) darkMode = sorngWebDarkMode();
     return darkMode.set(payload);
   }
   window.addEventListener("message", function (event) {
@@ -539,8 +539,17 @@
         case "dark":
           if (!payload || typeof payload.enabled !== "boolean") return;
           setDark(payload).then(
-            function () {
-              reply(request, event.origin, "ok");
+            function (outcome) {
+              // A closed two-member enum, never page text: it only says which
+              // path themed the page so the app can word the difference.
+              reply(
+                request,
+                event.origin,
+                "ok",
+                outcome === "engine" || outcome === "cssOnly"
+                  ? { darkOutcome: outcome }
+                  : undefined,
+              );
             },
             function () {
               reply(request, event.origin, "failed");
