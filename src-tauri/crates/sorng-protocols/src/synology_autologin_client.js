@@ -28,8 +28,15 @@
     DESKTOP_CONFIRM_MS = 20000, // no login root, DSM desktop marker shown
     MAX_FILLS = 3, // writes per field stage, including refills
     TRACE_LIMIT = 40;
-  var ROOT = "#sds-login-vue",
+  // DSM serves an empty #sds-login-vue placeholder that its Vue 2 mount
+  // replaces with #sds-login-vue-inst; older layouts keep the first id as a
+  // persistent wrapper. See loginRoots() for how exactly one root is chosen.
+  var ROOT = "#sds-login-vue-inst, #sds-login-vue",
+    MOUNTED_ROOT = "#sds-login-vue-inst",
+    PLACEHOLDER_ROOT = "#sds-login-vue",
     PANEL = ".login-tabs-content-wrapper",
+    // Narrow (mobile) layouts render Next and Sign in without role or syno-id.
+    COMPACT_BUTTON = "login-btn-mobile",
     // Best-effort DSM desktop markers (no live capture). A boot splash or an
     // empty mount is never evidence of an existing session.
     DESKTOP = "#sds-desktop, #sds-taskbar, .sds-desktop, .sds-taskbar",
@@ -137,6 +144,39 @@
   }
   function accountRoute(kind) {
     return kind === "empty" || kind === "slash" || kind === "signin";
+  }
+  // A mounted root wins, so a leftover or enclosing placeholder never makes
+  // one mounted root ambiguous; without one, the placeholder or wrapper counts.
+  function loginRoots() {
+    var mounted = document.querySelectorAll(MOUNTED_ROOT);
+    return mounted.length
+      ? mounted
+      : document.querySelectorAll(PLACEHOLDER_ROOT);
+  }
+  // The served placeholder before (or without) a login mount, as on a DSM
+  // page that is already signed in.
+  function emptyPlaceholder(root) {
+    return !!(
+      root &&
+      root.matches(PLACEHOLDER_ROOT) &&
+      !root.firstElementChild
+    );
+  }
+  // The reviewed button, else in a narrow layout the single unlabelled
+  // compact button that is a direct child of the reviewed form's own panel.
+  function actionButtons(selector, forms) {
+    var reviewed = document.querySelectorAll(selector);
+    if (reviewed.length || forms.length !== 1) return reviewed;
+    var panel = forms[0].closest(PANEL);
+    return panel
+      ? Array.prototype.filter.call(panel.children, function (child) {
+          return (
+            child.localName === "div" &&
+            child.classList.contains(COMPACT_BUTTON) &&
+            !child.hasAttribute("syno-id")
+          );
+        })
+      : [];
   }
   function shown(element) {
     if (!element || !element.isConnected) return false;
@@ -318,10 +358,10 @@
       // can enable Next only after input, or overlap panels during transition.
       function locate(side) {
         var spec = CONTROLS[side],
-          roots = document.querySelectorAll(ROOT),
+          roots = loginRoots(),
           forms = document.querySelectorAll(spec.form),
           fields = document.querySelectorAll(spec.field),
-          buttons = document.querySelectorAll(spec.button),
+          buttons = actionButtons(spec.button, forms),
           found = {
             roots: roots.length,
             panels: document.querySelectorAll(PANEL).length,
@@ -842,10 +882,12 @@
           return pageBudget(now, "page-never-ready");
         }
         // Advisory and credential-free: only a visible DSM desktop marker,
-        // held without a login root, counts as an existing session. A slow
-        // QuickConnect boot on "#/" keeps waiting under the page budgets.
+        // held without a login root (or beside the never-mounted empty
+        // placeholder), counts as an existing session. A slow QuickConnect
+        // boot on "#/" keeps waiting under the page budgets.
         if (
-          found.roots === 0 &&
+          (found.roots === 0 ||
+            (found.roots === 1 && emptyPlaceholder(found.root))) &&
           (kind === "empty" || kind === "slash" || kind === "other") &&
           desktopShown()
         ) {
@@ -865,7 +907,11 @@
         if (!found.target) {
           readySince = null;
           publish(found.waiting, found.missing);
-          if (!found.roots) return pageBudget(now, "page-never-ready");
+          // Reviewed controls without a recognised login root are a layout
+          // this helper does not know, not a page that never became ready;
+          // the trace keeps root-missing and the control counts.
+          if (!found.roots && !(found.forms || found.fields || found.buttons))
+            return pageBudget(now, "page-never-ready");
           if (completeAt !== null) {
             var layoutFrom = Math.max(completeAt, progressAt);
             if (now - layoutFrom >= LAYOUT_GRACE_MS)
@@ -1061,12 +1107,16 @@
         if (interactive(kind)) return handOff(kind);
         if (kind === "step") return unknownStep(now);
         var found = locate("password"),
-          roots = document.querySelectorAll(ROOT);
+          roots = loginRoots();
         fingerprint(found);
         if (found.root && captcha(found.root))
           return finish("stopped", "captcha-required");
+        // An empty placeholder is not a login page, whatever its styling.
         var rootShown =
-          roots.length > 1 || (roots.length === 1 && shown(roots[0]));
+          roots.length > 1 ||
+          (roots.length === 1 &&
+            shown(roots[0]) &&
+            !emptyPlaceholder(roots[0]));
         // Left the sign-in page: confirmed at once by the desktop marker,
         // otherwise only if it persists; a splash re-render is not enough.
         if (!rootShown && kind !== "signin" && kind !== "password") {
@@ -1086,6 +1136,11 @@
                 target.panel.querySelectorAll(
                   '[role="alert"], .login-error-msg, [class*="error-msg" i]',
                 ),
+                shown,
+              ) ||
+              // DSM's message box sits in the panel footer, outside the panel.
+              Array.prototype.some.call(
+                target.root.querySelectorAll(".login-msg-box.error"),
                 shown,
               ));
         if (rejected) {

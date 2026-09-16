@@ -18,7 +18,11 @@
   // DSM's reviewed desktop OTP panel is deliberately not a form. Keep this
   // fixed contract separate from generic POST/SPA form validation.
   function synologyTotpTarget(payload, field, button) {
-    var root = document.querySelector("#sds-login-vue"),
+    // DSM's Vue 2 mount replaces the served #sds-login-vue placeholder with
+    // #sds-login-vue-inst; a mounted root wins over a leftover placeholder.
+    var roots = document.querySelectorAll("#sds-login-vue-inst");
+    if (!roots.length) roots = document.querySelectorAll("#sds-login-vue");
+    var root = roots.length === 1 ? roots[0] : null,
       panel = field.closest(".login-tabs-content-wrapper"),
       container = field.closest("#dsm-otp-fieldset");
     if (
@@ -29,7 +33,7 @@
       location.hash !== "#/signin/otp" ||
       !["/", "/webman/index.cgi"].includes(location.pathname) ||
       document.querySelector("base") ||
-      document.querySelectorAll("#sds-login-vue").length !== 1 ||
+      roots.length !== 1 ||
       document.querySelectorAll("#dsm-otp-fieldset").length !== 1 ||
       !root ||
       !panel ||
