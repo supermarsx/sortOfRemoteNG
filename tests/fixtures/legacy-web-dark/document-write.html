@@ -1,0 +1,60 @@
+<!doctype html>
+<html data-doc="document-write">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+    <title>Device Web Interface</title>
+  </head>
+  <body bgcolor="#ffffff" text="#000000">
+    <table
+      id="sorng-swatch"
+      width="300"
+      height="32"
+      border="0"
+      cellspacing="0"
+      cellpadding="4"
+      bgcolor="#ffffff"
+    >
+      <tr>
+        <td bgcolor="#ffffff">
+          <font id="sorng-ink" face="Arial" size="2" color="#000000">
+            Outer document (proxied)
+          </font>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Built by document.write: the proxy never sees this document. -->
+    <iframe
+      name="written"
+      id="written"
+      width="300"
+      height="90"
+      frameborder="1"
+      scrolling="no"
+    ></iframe>
+
+    <!-- srcdoc: parsed from an attribute, so the proxy never sees it either. -->
+    <iframe
+      name="inline"
+      id="inline"
+      width="300"
+      height="90"
+      frameborder="1"
+      scrolling="no"
+      srcdoc='<html data-doc="srcdoc-frame"><body bgcolor="#ffffff" text="#000000"><table id="sorng-swatch" width="260" height="32" border="0" cellspacing="0" cellpadding="4" bgcolor="#ffffff"><tr><td bgcolor="#ffffff"><font id="sorng-ink" face="Arial" size="2" color="#000000">srcdoc frame</font></td></tr></table></body></html>'
+    ></iframe>
+
+    <script type="text/javascript">
+      var written = document.getElementById("written").contentDocument;
+      written.open();
+      written.write(
+        '<html data-doc="written-frame"><head><title>written</title></head>' +
+          '<body bgcolor="#ffffff" text="#000000">' +
+          '<table id="sorng-swatch" width="260" height="32" border="0" cellspacing="0" cellpadding="4" bgcolor="#ffffff">' +
+          '<tr><td bgcolor="#ffffff"><font id="sorng-ink" face="Arial" size="2" color="#000000">' +
+          "document.write frame</font></td></tr></table></body></html>",
+      );
+      written.close();
+    </script>
+  </body>
+</html>
