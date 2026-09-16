@@ -233,7 +233,7 @@ describe("industrial, business, VPN and ISP icon additions", () => {
     expect(PREVIOUS_KEYS).toHaveLength(680);
     for (const key of PREVIOUS_KEYS)
       expect(getConnectionIconDefinition(key)?.key, key).toBe(key);
-    expect(Object.keys(PROTOCOL_ICON_DEFAULTS)).toHaveLength(37);
+    expect(Object.keys(PROTOCOL_ICON_DEFAULTS)).toHaveLength(38);
     expect(integrationRegistry).toHaveLength(27);
     for (const protocol of Object.keys(PROTOCOL_ICON_DEFAULTS)) {
       expect(

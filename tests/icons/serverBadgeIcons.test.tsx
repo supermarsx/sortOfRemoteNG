@@ -36,6 +36,7 @@ const plainServerChoices = new Set([
   "mini-server-tower",
   "mini-server-rack",
   "mini-server-cluster",
+  "bare-metal-server",
   // These product names denote pure vendor marks, not hardware compositions.
   "mssql",
   "apache",
@@ -130,7 +131,7 @@ describe("consistent server corner badges", () => {
         expect(svg.querySelector("[data-role-frame]")).toBeNull();
         return svg.innerHTML;
       });
-    expect(geometries).toHaveLength(11);
+    expect(geometries).toHaveLength(12);
     expect(new Set(geometries).size).toBe(geometries.length);
   });
 });

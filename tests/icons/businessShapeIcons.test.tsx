@@ -65,7 +65,7 @@ const BUSINESS_KEYS = [
 
 describe("dedicated Business shapes category", () => {
   it("moves the coherent business inventory without dropping, duplicating, or renaming saved keys", () => {
-    expect(BUSINESS_KEYS).toHaveLength(38);
+    expect(BUSINESS_KEYS).toHaveLength(40);
     expect(BUSINESS_SHAPE_ICONS.map(({ key }) => key)).toEqual(BUSINESS_KEYS);
     expect(CONNECTION_ICON_CATEGORY_LABELS["business-shapes"]).toBe(
       "Business shapes",
@@ -198,7 +198,7 @@ describe("dedicated Business shapes category", () => {
       "business-shapes",
     );
     const catalog = screen.getByRole("list", { name: "Icon catalog" });
-    expect(within(catalog).getAllByRole("listitem")).toHaveLength(38);
+    expect(within(catalog).getAllByRole("listitem")).toHaveLength(40);
     expect(
       within(catalog).queryByRole("button", { name: "Inspect Star" }),
     ).toBeNull();

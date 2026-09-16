@@ -204,7 +204,7 @@ describe("protocol-native icon wiring", () => {
 
   it.each([
     ["rdp", /RDP/, "microsoft"],
-    ["exchange", /Exchange/, "exchange"],
+    ["postgres", /PostgreSQL/, "postgresql"],
   ])(
     "renders and selects the plain %s icon in the real editor dropdown",
     async (query, name, key) => {

@@ -205,6 +205,7 @@ describe("platform and network icon requests", () => {
       lenovo: "lenovo",
       supermicro: "supermicro",
       "voip-phone": "voip",
+      synology: "synology",
     });
   });
 });
