@@ -5,7 +5,6 @@ mod exchange_commands;
 mod gcp_commands;
 mod hetzner_commands;
 mod oracle_cloud_commands;
-mod powershell_commands;
 mod smtp_commands;
 
 mod cloud_handler;

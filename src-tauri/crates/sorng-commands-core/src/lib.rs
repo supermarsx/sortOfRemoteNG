@@ -93,7 +93,7 @@ mod legacy_crypto_commands;
 mod meshcentral_commands;
 #[path = "../../../src/network_commands.rs"]
 mod network_commands;
-#[cfg(feature = "opkssh")]
+#[cfg(all(feature = "opkssh", not(feature = "ops")))]
 #[path = "../../../src/opkssh_commands.rs"]
 mod opkssh_commands;
 #[path = "../../../src/passkey_commands.rs"]
