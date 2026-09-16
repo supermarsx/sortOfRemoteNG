@@ -20,10 +20,11 @@ import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   DEFAULT_MOCK_DSM_PORT,
+  DEFAULT_MOCK_DSM_TOTP_SEED,
   MOCK_DSM_ACCOUNTS,
   MOCK_DSM_CPU,
   MOCK_DSM_DEVICE_ID,
@@ -36,6 +37,8 @@ import {
   MOCK_DSM_SMART_DISK,
   PERMISSION_DENIED_BODY,
   WIRE_MODES,
+  decodeBase32,
+  mockDsmTotpCode,
   startMockDsm,
 } from "../../e2e/helpers/fixtures/mock-dsm/server.mjs";
 
@@ -1434,6 +1437,366 @@ test("approve is 449 and Auth.Type reports sign-in methods without a session", a
   });
 });
 
+// ──────────────────────────────────────── t93 authenticator-generated codes ──
+
+/** RFC 6238 Appendix B SHA-1 seed, the ASCII bytes "12345678901234567890". */
+const RFC6238_SHA1_SEED = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+const RFC6238_SHA1_VECTORS = [
+  [59, "94287082"],
+  [1111111109, "07081804"],
+  [1111111111, "14050471"],
+  [1234567890, "89005924"],
+  [2000000000, "69279037"],
+  [20000000000, "65353130"],
+];
+/** Mid-step instant, so ±1 step stays inside the same neighbours. */
+const TOTP_NOW_MS = 1_789_466_415_000;
+const STEP_MS = 30_000;
+
+/** A pinned-clock fixture whose `otp-seed` codes are deterministic. */
+async function totpMock(context, options = {}) {
+  const clock = { ms: TOTP_NOW_MS };
+  const handle = await mock(context, { now: () => clock.ms, ...options });
+  return { handle, clock };
+}
+
+/** A six-digit code the seed does not produce within ±`spread` steps of `atMs`. */
+function codeNotProducedBy(seed, atMs, spread = 2) {
+  const produced = new Set();
+  for (let step = -spread; step <= spread; step += 1) {
+    produced.add(mockDsmTotpCode(seed, atMs + step * STEP_MS));
+  }
+  for (let candidate = 0; ; candidate += 1) {
+    const code = String(candidate).padStart(6, "0");
+    if (!produced.has(code)) return code;
+  }
+}
+
+const loginRows = (handle, account = "otp-seed") =>
+  handle
+    .snapshot()
+    .logins.filter((entry) => entry.account === account)
+    .map((entry) => [entry.otpCode, entry.code]);
+
+test("TOTP: the fixture's generator matches the RFC 6238 SHA-1 vectors and reads Base32 like authenticator apps", () => {
+  for (const [seconds, expected] of RFC6238_SHA1_VECTORS) {
+    assert.equal(
+      mockDsmTotpCode(RFC6238_SHA1_SEED, seconds * 1000, { digits: 8 }),
+      expected,
+      `T=${seconds}`,
+    );
+    // Six digits are the same truncation modulo 10^6.
+    assert.equal(
+      mockDsmTotpCode(RFC6238_SHA1_SEED, seconds * 1000),
+      expected.slice(2),
+      `T=${seconds} (6 digits)`,
+    );
+  }
+  assert.deepEqual(
+    decodeBase32(DEFAULT_MOCK_DSM_TOTP_SEED),
+    Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x21, 0xde, 0xad, 0xbe, 0xef]),
+  );
+  assert.deepEqual(
+    decodeBase32("jbsw y3dp ehpk 3pxp===="),
+    decodeBase32(DEFAULT_MOCK_DSM_TOTP_SEED),
+  );
+  for (const malformed of ["", "   ", "JBSWY3DP1", "JBSW-Y3DP", "====="]) {
+    assert.equal(decodeBase32(malformed), null, JSON.stringify(malformed));
+  }
+  // The error never echoes the seed it could not read.
+  assert.throws(
+    () => mockDsmTotpCode("PRIVATE-SEED-1", 0),
+    (error) =>
+      /not Base32/u.test(error.message) &&
+      !error.message.includes("PRIVATE-SEED-1"),
+  );
+});
+
+test("TOTP: the TypeScript helper computes the same codes a spec types", async () => {
+  const helper = await import(
+    pathToFileURL(path.join(repoRoot, "e2e", "helpers", "mock-dsm.ts")).href
+  );
+  assert.equal(helper.DEFAULT_MOCK_DSM_TOTP_SEED, DEFAULT_MOCK_DSM_TOTP_SEED);
+  for (const [seconds, expected] of RFC6238_SHA1_VECTORS) {
+    assert.equal(
+      helper.mockDsmTotpCode(RFC6238_SHA1_SEED, seconds * 1000),
+      expected.slice(2),
+      `T=${seconds}`,
+    );
+  }
+  for (let step = -3; step <= 3; step += 1) {
+    const atMs = TOTP_NOW_MS + step * STEP_MS;
+    assert.equal(
+      helper.mockDsmTotpCode("jbsw y3dp ehpk 3pxp", atMs),
+      mockDsmTotpCode(DEFAULT_MOCK_DSM_TOTP_SEED, atMs),
+    );
+  }
+  assert.throws(
+    () => helper.mockDsmTotpCode("PRIVATE-SEED-1"),
+    (error) => !error.message.includes("PRIVATE-SEED-1"),
+  );
+});
+
+test("otp-seed: 403 without a code, the current step and one either side sign in, anything else is 404", async (t) => {
+  const { handle } = await totpMock(t);
+  assert.equal(handle.totpSeed, DEFAULT_MOCK_DSM_TOTP_SEED);
+  assert.equal(handle.rejectReusedStep, false);
+  const seed = DEFAULT_MOCK_DSM_TOTP_SEED;
+  const at = (steps) => mockDsmTotpCode(seed, TOTP_NOW_MS + steps * STEP_MS);
+  const accepted = new Set([at(-1), at(0), at(1)]);
+  // The fixed instant must not make two steps share a code, or the rows lie.
+  assert.equal(new Set([at(-2), ...accepted, at(2)]).size, 5);
+
+  assertDsmCode(await login(handle, "otp-seed"), 403);
+  assertDsmCode(
+    await login(handle, "otp-seed", {
+      otp_code: codeNotProducedBy(seed, TOTP_NOW_MS),
+    }),
+    404,
+  );
+  assertDsmCode(await login(handle, "otp-seed", { otp_code: at(-2) }), 404);
+  assertDsmCode(await login(handle, "otp-seed", { otp_code: at(2) }), 404);
+  // `otp`'s fixed code is not a TOTP for this seed at this instant.
+  assert.equal(accepted.has(MOCK_DSM_OTP_CODE), false);
+  assertDsmCode(
+    await login(handle, "otp-seed", { otp_code: MOCK_DSM_OTP_CODE }),
+    404,
+  );
+  // Only digits of the right length are compared.
+  assertDsmCode(
+    await login(handle, "otp-seed", { otp_code: `${at(0)}0` }),
+    404,
+  );
+
+  for (const steps of [0, -1, 1]) {
+    const signedIn = await session(handle, "otp-seed", {
+      otp_code: at(steps),
+    });
+    assert.equal(signedIn.response.json.data.device_id, undefined);
+    assert.equal(
+      (await signedIn.request("SYNO.Core.System.Utilization", "get")).json
+        .success,
+      true,
+    );
+  }
+  // Without `rejectReusedStep` the same code signs in again.
+  assert.equal(
+    (await login(handle, "otp-seed", { otp_code: at(0) })).json.success,
+    true,
+  );
+
+  assert.deepEqual(loginRows(handle), [
+    ["absent", 403],
+    ["invalid", 404],
+    ["invalid", 404],
+    ["invalid", 404],
+    ["invalid", 404],
+    ["invalid", 404],
+    ["valid", 0],
+    ["valid", 0],
+    ["valid", 0],
+    ["valid", 0],
+  ]);
+  assert.deepEqual(
+    (
+      await call(handle, {
+        api: "SYNO.API.Auth.Type",
+        method: "get",
+        form: { account: "otp-seed" },
+      })
+    ).json,
+    { data: [{ type: "otp" }], success: true },
+  );
+  // The other accounts keep their fixed behaviour.
+  assertDsmCode(await login(handle, "otp", { otp_code: at(0) }), 404);
+  assert.equal(
+    (await login(handle, "otp", { otp_code: MOCK_DSM_OTP_CODE })).json.success,
+    true,
+  );
+  assert.deepEqual(handle.snapshot().unexpected, []);
+});
+
+test("otp-seed follows the clock: a code ages out after one extra step", async (t) => {
+  const { handle, clock } = await totpMock(t);
+  const code = mockDsmTotpCode(DEFAULT_MOCK_DSM_TOTP_SEED, TOTP_NOW_MS);
+  clock.ms = TOTP_NOW_MS + STEP_MS;
+  assert.equal(
+    (await login(handle, "otp-seed", { otp_code: code })).json.success,
+    true,
+  );
+  clock.ms = TOTP_NOW_MS + 2 * STEP_MS;
+  assertDsmCode(await login(handle, "otp-seed", { otp_code: code }), 404);
+  clock.ms = TOTP_NOW_MS - STEP_MS;
+  assert.equal(
+    (await login(handle, "otp-seed", { otp_code: code })).json.success,
+    true,
+  );
+  assert.deepEqual(loginRows(handle), [
+    ["valid", 0],
+    ["invalid", 404],
+    ["valid", 0],
+  ]);
+});
+
+test("otp-seed with rejectReusedStep refuses a second sign-in from the same step with 404", async (t) => {
+  const { handle, clock } = await totpMock(t, { rejectReusedStep: true });
+  assert.equal(handle.rejectReusedStep, true);
+  const seed = DEFAULT_MOCK_DSM_TOTP_SEED;
+  const current = mockDsmTotpCode(seed, TOTP_NOW_MS);
+  const previous = mockDsmTotpCode(seed, TOTP_NOW_MS - STEP_MS);
+
+  // A rejected or code-less attempt uses no step.
+  assertDsmCode(await login(handle, "otp-seed"), 403);
+  assertDsmCode(
+    await login(handle, "otp-seed", {
+      otp_code: codeNotProducedBy(seed, TOTP_NOW_MS),
+    }),
+    404,
+  );
+  assert.equal(
+    (await login(handle, "otp-seed", { otp_code: current })).json.success,
+    true,
+  );
+  assertDsmCode(await login(handle, "otp-seed", { otp_code: current }), 404);
+  // Another step is still unused.
+  assert.equal(
+    (await login(handle, "otp-seed", { otp_code: previous })).json.success,
+    true,
+  );
+  // Thirty seconds later the used code is the previous step: still reused.
+  clock.ms = TOTP_NOW_MS + STEP_MS;
+  assertDsmCode(await login(handle, "otp-seed", { otp_code: current }), 404);
+  const next = mockDsmTotpCode(seed, clock.ms);
+  assert.equal(
+    (await login(handle, "otp-seed", { otp_code: next })).json.success,
+    true,
+  );
+
+  assert.deepEqual(loginRows(handle), [
+    ["absent", 403],
+    ["invalid", 404],
+    ["valid", 0],
+    // A reuse is a matching code DSM refused, unlike a wrong seed.
+    ["valid", 404],
+    ["valid", 0],
+    ["valid", 404],
+    ["valid", 0],
+  ]);
+  assert.equal(
+    handle.snapshot().activeSessions.filter((s) => s.account === "otp-seed")
+      .length,
+    3,
+  );
+
+  // A trusted device signs in without spending a step.
+  const deviceName = "SortOfRemoteNG · E2E-HOST";
+  clock.ms = TOTP_NOW_MS + 4 * STEP_MS;
+  const enrolled = await login(handle, "otp-seed", {
+    otp_code: mockDsmTotpCode(seed, clock.ms),
+    enable_device_token: "yes",
+    device_name: deviceName,
+  });
+  assert.equal(enrolled.json.data.device_id, MOCK_DSM_DEVICE_ID);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const reused = await login(handle, "otp-seed", {
+      device_id: MOCK_DSM_DEVICE_ID,
+      device_name: deviceName,
+    });
+    assert.equal(reused.json.success, true);
+  }
+
+  // reset() forgets the used steps with everything else.
+  handle.reset();
+  clock.ms = TOTP_NOW_MS;
+  assert.equal(
+    (await login(handle, "otp-seed", { otp_code: current })).json.success,
+    true,
+  );
+  assert.deepEqual(loginRows(handle), [["valid", 0]]);
+});
+
+test("otp-seed verifies against a configured seed, and an unreadable seed is refused at start without echoing it", async (t) => {
+  const seed = "gezd gnbv gy3t qojq gezd gnbv gy3t qojq";
+  const { handle } = await totpMock(t, { totpSeed: seed });
+  assert.equal(handle.totpSeed, seed);
+  const ownCode = mockDsmTotpCode(RFC6238_SHA1_SEED, TOTP_NOW_MS);
+  const defaultCode = mockDsmTotpCode(DEFAULT_MOCK_DSM_TOTP_SEED, TOTP_NOW_MS);
+  assert.notEqual(ownCode, defaultCode);
+  assertDsmCode(
+    await login(handle, "otp-seed", { otp_code: defaultCode }),
+    404,
+  );
+  assert.equal(
+    (await login(handle, "otp-seed", { otp_code: ownCode })).json.success,
+    true,
+  );
+
+  await assert.rejects(
+    startMockDsm({ port: 0, totpSeed: "PRIVATE-SEED-1" }),
+    (error) =>
+      /TOTP seed is not Base32/u.test(error.message) &&
+      !error.message.includes("PRIVATE-SEED-1"),
+  );
+  await assert.rejects(startMockDsm({ port: 0, totpSeed: "" }), /Base32/u);
+});
+
+test("otp-seed snapshots keep the value-free shape: no seed, code or password", async (t) => {
+  const { handle } = await totpMock(t, { rejectReusedStep: true });
+  const seed = DEFAULT_MOCK_DSM_TOTP_SEED;
+  const current = mockDsmTotpCode(seed, TOTP_NOW_MS);
+  const wrong = codeNotProducedBy(seed, TOTP_NOW_MS);
+  await login(handle, "otp-seed");
+  await login(handle, "otp-seed", { otp_code: wrong });
+  const signedIn = await session(handle, "otp-seed", { otp_code: current });
+  await login(handle, "otp-seed", { otp_code: current });
+  await login(handle, "otp", { otp_code: MOCK_DSM_OTP_CODE });
+  // A code under a parameter name the API does not take stays out too.
+  await signedIn.request("SYNO.Backup.Task", "list", 1, { otp_code: current });
+
+  const snapshot = handle.snapshot();
+  assert.deepEqual(Object.keys(snapshot), [
+    "uiConfig",
+    "wire",
+    "uiConfigRequests",
+    "activeSessions",
+    "logins",
+    "calls",
+    "unexpected",
+  ]);
+  const [seedLogin] = snapshot.logins;
+  const otpLogin = snapshot.logins.find((entry) => entry.account === "otp");
+  assert.deepEqual(Object.keys(seedLogin), Object.keys(otpLogin));
+  assert.deepEqual(
+    snapshot.logins.map((entry) => [entry.account, entry.otpCode, entry.code]),
+    [
+      ["otp-seed", "absent", 403],
+      ["otp-seed", "invalid", 404],
+      ["otp-seed", "valid", 0],
+      ["otp-seed", "valid", 404],
+      ["otp", "valid", 0],
+    ],
+  );
+  assert.deepEqual(
+    snapshot.unexpected.map((entry) => [entry.kind, entry.param]),
+    [["unexpected_param", "otp_code"]],
+  );
+
+  const text = JSON.stringify(snapshot);
+  for (const secret of [
+    seed,
+    seed.toLowerCase(),
+    decodeBase32(seed).toString("hex"),
+    decodeBase32(seed).toString("base64"),
+    current,
+    wrong,
+    MOCK_DSM_ACCOUNTS["otp-seed"].password,
+    signedIn.sid,
+    signedIn.synotoken,
+  ]) {
+    assert.equal(text.includes(secret), false, `snapshot leaked ${secret}`);
+  }
+});
+
 // ──────────────────────────────────────────────── remote policy (root cause) ──
 
 test("remote-admin without the IK handshake reproduces the user's 105 byte for byte", async (t) => {
@@ -1705,6 +2068,125 @@ test("the forked CLI reports ready, answers snapshot/reset over IPC and exits cl
   }
 });
 
+test("the forked CLI reads the TOTP seed and reuse rule from the environment", async () => {
+  const seed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+  const child = fork(serverPath, [], {
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+    env: {
+      ...process.env,
+      MOCK_DSM_PORT: "0",
+      MOCK_DSM_TOTP_SEED: seed,
+      MOCK_DSM_REJECT_REUSED_STEP: "1",
+    },
+  });
+  child.stdout.resume();
+  child.stderr.resume();
+  try {
+    const ready = await waitForMessage(
+      child,
+      (message) => message?.type === "mock-dsm-ready",
+      "ready",
+    );
+    assert.equal(ready.totpSeed, seed);
+    assert.equal(ready.rejectReusedStep, true);
+    assert.deepEqual(ready.accounts["otp-seed"], {
+      username: "otp-seed",
+      password: "otp-seed-pass",
+    });
+
+    const handle = { host: ready.host, port: ready.port };
+    // Real clock: one step of skew either side absorbs a boundary crossing.
+    const code = mockDsmTotpCode(seed);
+    assert.equal(
+      (await login(handle, "otp-seed", { otp_code: code })).json.success,
+      true,
+    );
+    assertDsmCode(await login(handle, "otp-seed", { otp_code: code }), 404);
+
+    child.send({ type: "snapshot", id: 1 });
+    const { snapshot } = await waitForMessage(
+      child,
+      (message) => message?.type === "mock-dsm-snapshot" && message.id === 1,
+      "snapshot",
+    );
+    assert.deepEqual(
+      snapshot.logins.map((entry) => [entry.otpCode, entry.code]),
+      [
+        ["valid", 0],
+        ["valid", 404],
+      ],
+    );
+    assert.equal(JSON.stringify(snapshot).includes(seed), false);
+
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.send("stop");
+    assert.equal(await exited, 0);
+  } finally {
+    if (child.exitCode === null) child.kill();
+  }
+
+  // Default: the synthetic seed, reuse allowed.
+  const plain = fork(serverPath, [], {
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+    env: {
+      ...process.env,
+      MOCK_DSM_PORT: "0",
+      MOCK_DSM_TOTP_SEED: "",
+      MOCK_DSM_REJECT_REUSED_STEP: "",
+    },
+  });
+  plain.stdout.resume();
+  plain.stderr.resume();
+  try {
+    const ready = await waitForMessage(
+      plain,
+      (message) => message?.type === "mock-dsm-ready",
+      "ready",
+    );
+    assert.equal(ready.totpSeed, DEFAULT_MOCK_DSM_TOTP_SEED);
+    assert.equal(ready.rejectReusedStep, false);
+    const exited = new Promise((resolve) => plain.once("exit", resolve));
+    plain.send("stop");
+    assert.equal(await exited, 0);
+  } finally {
+    if (plain.exitCode === null) plain.kill();
+  }
+
+  // An unreadable seed stops the CLI without printing it.
+  const broken = fork(serverPath, [], {
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+    env: {
+      ...process.env,
+      MOCK_DSM_PORT: "0",
+      MOCK_DSM_TOTP_SEED: "PRIVATE-SEED-1",
+    },
+  });
+  let output = "";
+  broken.stdout.on("data", (chunk) => {
+    output += chunk.toString("utf8");
+  });
+  broken.stderr.on("data", (chunk) => {
+    output += chunk.toString("utf8");
+  });
+  // `close` waits for the piped output; a fixture that starts anyway is
+  // killed instead of stalling the suite.
+  const code = await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      broken.kill();
+      resolve("still running");
+    }, 15_000);
+    broken.once("close", (exitCode) => {
+      clearTimeout(timer);
+      resolve(exitCode);
+    });
+  });
+  assert.notEqual(code, "still running", "fixture started with a bad seed");
+  assert.notEqual(code, 0);
+  assert.match(output, /TOTP seed is not Base32/u);
+  assert.equal(output.includes("PRIVATE-SEED-1"), false);
+  assert.equal(output.includes("MOCK_DSM_READY"), false);
+});
+
 test("the TypeScript helper mirrors the fixture defaults", () => {
   const helper = readFileSync(
     path.join(repoRoot, "e2e", "helpers", "mock-dsm.ts"),
@@ -1713,6 +2195,16 @@ test("the TypeScript helper mirrors the fixture defaults", () => {
   assert.match(helper, new RegExp(`"${DEFAULT_MOCK_DSM_PORT}"`, "u"));
   assert.match(helper, /fixtures",\s*"mock-dsm",\s*"server\.mjs"/u);
   assert.ok(helper.includes("MOCK_DSM_WIRE"), "helper forwards MOCK_DSM_WIRE");
+  for (const variable of [
+    "MOCK_DSM_TOTP_SEED",
+    "MOCK_DSM_REJECT_REUSED_STEP",
+  ]) {
+    assert.ok(helper.includes(variable), `helper forwards ${variable}`);
+  }
+  assert.ok(
+    helper.includes(`"${DEFAULT_MOCK_DSM_TOTP_SEED}"`),
+    "helper names the fixture's default seed",
+  );
   for (const type of [
     "mock-dsm-ready",
     "mock-dsm-snapshot",

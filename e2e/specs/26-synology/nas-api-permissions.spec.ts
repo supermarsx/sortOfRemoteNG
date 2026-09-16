@@ -20,7 +20,12 @@
 //   - Trusted-device (device token) reuse needs a vault-backed connection and
 //     `e2e/helpers` has no vault-credential setup helper, so it is not
 //     e2e-covered; the fixture's did issue/reuse is node-tested and the app
-//     side is unit-covered (plan t84 §7.10, e11 + e10 suites).
+//     side is unit-covered (plan t84 §7.10, e11 + e10 suites). For the same
+//     reason automatic codes are e2e-covered for connection-local
+//     authenticators only (t93); the vault authenticator path is unit-covered.
+//   - Automatic one-time codes (t93) use the `otp-seed` account, which checks
+//     real RFC 6238 codes over the fixture's synthetic seed; the spec computes
+//     valid codes in Node with `mockDsmTotpCode`.
 //
 // Response shapes: the fixture serves DSM's real shapes by default (t84-r1
 // audit, `.orchestration/scratch/t84/dsm-response-shapes.md` §6). The
@@ -42,6 +47,7 @@ import {
 import { selectCustomOption } from "../../helpers/forms";
 import {
   startMockDsm,
+  mockDsmTotpCode,
   MOCK_DSM_PORT,
   type MockDsmAccountName,
   type MockDsmCall,
@@ -96,7 +102,22 @@ const SEL = {
     '[role="dialog"][aria-label="Synology two-factor authentication"]',
   otpInput: 'input[autocomplete="one-time-code"]',
   verifyCode: './/button[normalize-space(.)="Verify code"]',
+  // t93-e1: why the dialog opened after an automatic code (role="status").
+  automaticCodeNotice: '[data-testid="synology-automatic-code-notice"]',
+  // t93-e2: NAS API authenticator section in Synology access settings. The
+  // select and secret field are matched by the `aria-label` the shared `Select`
+  // and `PasswordInput` render on their control.
+  authenticatorSection: '[data-testid="synology-authenticator-section"]',
+  authenticatorSelect: '[aria-label="NAS API authenticator"]',
+  authenticatorSecret: 'input[aria-label="Authenticator secret"]',
+  saveAuthenticator: './/button[normalize-space(.)="Save authenticator"]',
+  checkCode: './/button[normalize-space(.)="Check code"]',
+  authenticatorCode: '[data-testid="synology-authenticator-code"]',
 } as const;
+
+/** DSM's authenticator period; the fixture's `otp-seed` uses the same. */
+const TOTP_PERIOD_MS = 30_000;
+const totpStep = (atMs: number) => Math.floor(atMs / TOTP_PERIOD_MS);
 
 let mockDsm: MockDsmHandle;
 
@@ -117,12 +138,14 @@ async function setInput(selector: string, value: string): Promise<void> {
 /**
  * Save a Synology NAS API connection for one fixture account through the real
  * connection editor: HTTP → Application "Synology DSM" → "Synology NAS API",
- * HTTP transport, saved DSM username/password.
+ * HTTP transport, saved DSM username/password. `configureAccess` runs on the
+ * same Synology access settings before the connection is saved.
  */
 async function createNasApiConnection(
   name: string,
   accountName: MockDsmAccountName,
   target: MockDsmHandle = mockDsm,
+  configureAccess?: () => Promise<void>,
 ): Promise<void> {
   const account = target.accounts[accountName];
   await (await $(S.toolbarNewConnection)).click();
@@ -150,6 +173,7 @@ async function createNasApiConnection(
   }
   await setInput(SEL.dsmUsername, account.username);
   await setInput(SEL.dsmPassword, account.password);
+  await configureAccess?.();
 
   // Transport changes only reset the DSM default ports; the fixture port stays.
   await (
@@ -259,6 +283,75 @@ const callsFor = async (
   (await target.snapshot()).calls.filter(
     (entry: MockDsmCall) => entry.account === account && entry.api === api,
   );
+
+const loginRows = async (account: MockDsmAccountName, target = mockDsm) =>
+  (await loginsFor(account, target)).map((entry) => [
+    entry.otpCode,
+    entry.code,
+  ]);
+
+/** Pause until the current TOTP window has at least `minRemainingMs` left. */
+async function waitForTotpWindow(minRemainingMs: number): Promise<void> {
+  const remaining = TOTP_PERIOD_MS - (Date.now() % TOTP_PERIOD_MS);
+  if (remaining < minRemainingMs) await browser.pause(remaining + 250);
+}
+
+/**
+ * Add an authenticator secret in Synology access → "Two-factor authentication
+ * — automatic one-time codes" and select it for the NAS API. Synthetic seeds
+ * only.
+ */
+async function addNasApiAuthenticator(seed: string): Promise<void> {
+  const section = await $(SEL.authenticatorSection);
+  await section.waitForExist({ timeout: 10_000 });
+  await section.scrollIntoView();
+  await selectCustomOption(SEL.authenticatorSelect, "Add authenticator secret");
+  await setInput(SEL.authenticatorSecret, seed);
+  const save = await section.$(SEL.saveAuthenticator);
+  await save.waitForEnabled({ timeout: 5_000 });
+  await save.click();
+  // Saving clears and closes the add form; the seed stays only in the draft.
+  await browser.waitUntil(
+    async () => !(await $(SEL.authenticatorSecret).isExisting()),
+    {
+      timeout: 5_000,
+      timeoutMsg: "Expected the authenticator secret field to close on save",
+    },
+  );
+  expect(await textContent(await $(SEL.authenticatorSelect))).toContain(
+    "Synology DSM",
+  );
+}
+
+/**
+ * "Check code" shows the app's native code for the saved authenticator; it
+ * must be one the fixture accepts right now.
+ */
+async function expectCheckCodeAcceptedBy(target: MockDsmHandle) {
+  await waitForTotpWindow(5_000);
+  const section = await $(SEL.authenticatorSection);
+  const check = await section.$(SEL.checkCode);
+  await check.waitForClickable({ timeout: 5_000 });
+  await check.click();
+  let shown = "";
+  await browser.waitUntil(
+    async () => {
+      const code = await $(SEL.authenticatorCode);
+      shown = (await code.isExisting()) ? (await textContent(code)).trim() : "";
+      return /^\d{6}$/u.test(shown);
+    },
+    {
+      timeout: 5_000,
+      timeoutMsg: "Expected Check code to show a six-digit code",
+    },
+  );
+  const now = Date.now();
+  expect(
+    [-TOTP_PERIOD_MS, 0, TOTP_PERIOD_MS].map((offset) =>
+      mockDsmTotpCode(target.totpSeed, now + offset),
+    ),
+  ).toContain(shown);
+}
 
 /**
  * The four System-tab Utilization notices (CPU, Memory, Network, Disk) all
@@ -520,6 +613,71 @@ describe("Synology NAS API — permissions and 2FA against the mock DSM", () => 
     expect(logins.some((entry) => entry.deviceTokenIssued)).toBe(false);
   });
 
+  it("generates the one-time code from the saved authenticator secret without asking", async () => {
+    const name = "NAS API otp-seed automatic code";
+    await createNasApiConnection(name, "otp-seed", mockDsm, async () => {
+      await addNasApiAuthenticator(mockDsm.totpSeed);
+      await expectCheckCodeAcceptedBy(mockDsm);
+    });
+    await openConnection(name);
+
+    await waitForConnected();
+    expect(await $(SEL.twoFactorDialog).isExisting()).toBe(false);
+    // DSM asked once; the app answered with one generated code.
+    expect(await loginRows("otp-seed")).toEqual([
+      ["absent", 403],
+      ["valid", 0],
+    ]);
+    expect(
+      (await loginsFor("otp-seed")).some((entry) => entry.deviceTokenIssued),
+    ).toBe(false);
+  });
+
+  it("falls back to the code dialog with a notice when DSM rejects the generated code", async () => {
+    // Valid Base32 (RFC 6238's SHA-1 test key), but not the fixture's seed.
+    const wrongSeed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    expect(wrongSeed).not.toBe(mockDsm.totpSeed);
+    const name = "NAS API otp-seed wrong secret";
+    await createNasApiConnection(name, "otp-seed", mockDsm, () =>
+      addNasApiAuthenticator(wrongSeed),
+    );
+    await openConnection(name);
+
+    // The previous scenario's code may make the app wait for a fresh step.
+    const dialog = await $(SEL.twoFactorDialog);
+    await dialog.waitForDisplayed({ timeout: 60_000 });
+    const notice = await dialog.$(SEL.automaticCodeNotice);
+    await notice.waitForExist({ timeout: 10_000 });
+    const noticeText = await textContent(notice);
+    expect(noticeText).toContain(
+      "DSM rejected the code generated from the saved authenticator.",
+    );
+    expect(noticeText).toMatch(/clock/u);
+    expect(await $(SEL.systemTab).isExisting()).toBe(false);
+
+    // One automatic attempt only: no second generated code follows the 404.
+    await browser.pause(2_000);
+    expect(await loginRows("otp-seed")).toEqual([
+      ["absent", 403],
+      ["invalid", 404],
+    ]);
+
+    const code = await dialog.$(SEL.otpInput);
+    await code.waitForDisplayed({ timeout: 10_000 });
+    await waitForTotpWindow(5_000);
+    await code.setValue(mockDsmTotpCode(mockDsm.totpSeed));
+    const verify = await dialog.$(SEL.verifyCode);
+    await verify.waitForEnabled({ timeout: 5_000 });
+    await verify.click();
+
+    await waitForConnected();
+    expect(await loginRows("otp-seed")).toEqual([
+      ["absent", 403],
+      ["invalid", 404],
+      ["valid", 0],
+    ]);
+  });
+
   it("names Secure SignIn approval and security keys when DSM requires approval", async () => {
     await openNasApiSession("approve");
 
@@ -597,5 +755,74 @@ describe("Synology NAS API — secure handshake offered but never completed", ()
     await expectSessionRestrictedUtilization();
     await browser.pause(1_000);
     await expectNoRawFailureBanner();
+  });
+});
+
+describe("Synology NAS API — automatic codes never reuse a time step", () => {
+  let reuseMock: MockDsmHandle;
+
+  before(async () => {
+    // Own fixture: this one refuses a second sign-in with the same step, as
+    // DSM may, so a reused automatic code would show as ["valid", 404].
+    reuseMock = await startMockDsm({
+      port: MOCK_DSM_PORT + 2,
+      rejectReusedStep: true,
+    });
+  });
+
+  after(async () => {
+    await reuseMock?.stop();
+  });
+
+  beforeEach(async () => {
+    await resetAppState();
+    await reuseMock.reset();
+    await createCollection("Synology NAS API reuse");
+    await (await $(S.connectionTree)).waitForExist({ timeout: 10_000 });
+  });
+
+  afterEach(async () => {
+    await closeAllSessions();
+  });
+
+  it("waits for a fresh step when the session is reopened within the same window", async () => {
+    const name = "NAS API otp-seed reopen";
+    await createNasApiConnection(name, "otp-seed", reuseMock, () =>
+      addNasApiAuthenticator(reuseMock.totpSeed),
+    );
+
+    // Start early in a window so the reopen lands in the step the first
+    // automatic code used; otherwise this scenario proves nothing.
+    await waitForTotpWindow(25_000);
+    const firstOpenedAt = Date.now();
+    await openConnection(name);
+    await waitForConnected();
+    expect(await loginRows("otp-seed", reuseMock)).toEqual([
+      ["absent", 403],
+      ["valid", 0],
+    ]);
+
+    await closeAllSessions();
+    const reopenedAt = Date.now();
+    expect(totpStep(reopenedAt)).toBe(totpStep(firstOpenedAt));
+    await openConnection(name);
+
+    // The app holds the second code until the next step (≤ 30 s).
+    await browser.waitUntil(
+      async () => (await loginsFor("otp-seed", reuseMock)).length >= 4,
+      {
+        timeout: 75_000,
+        interval: 250,
+        timeoutMsg: "Expected the reopened session to sign in again",
+      },
+    );
+    expect(await loginRows("otp-seed", reuseMock)).toEqual([
+      ["absent", 403],
+      ["valid", 0],
+      ["absent", 403],
+      ["valid", 0],
+    ]);
+    await waitForConnected();
+    expect(await $(SEL.twoFactorDialog).isExisting()).toBe(false);
   });
 });

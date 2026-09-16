@@ -70,6 +70,16 @@
  *     device token `mock-did-1` (`device_id` on the real wire, `did` on the
  *     legacy wire); a later `device_id=mock-did-1` with the same `device_name`
  *     signs in without a code, anything else is 403.
+ *   - `otp-seed` (t93): the same 403/404 sign-in, but the code is a real RFC
+ *     6238 TOTP (HMAC-SHA-1, 6 digits, 30 s steps) over the synthetic Base32
+ *     seed `totpSeed` (env `MOCK_DSM_TOTP_SEED`, default `JBSWY3DPEHPK3PXP`),
+ *     accepted for the current step and one step either side, so the app's
+ *     saved-authenticator codes can be checked end to end. With
+ *     `rejectReusedStep` (env `MOCK_DSM_REJECT_REUSED_STEP=1`) a code for a
+ *     step that already signed this account in is refused with 404; its login
+ *     record keeps `otpCode: "valid"` (the code matched the seed) with code
+ *     404, which tells a reuse apart from a wrong seed (`"invalid"`, 404).
+ *     Device tokens work as for `otp`.
  *   - `approve`: 449 (Secure SignIn approval), `Auth.Type` reports
  *     `authenticator` + `fido`.
  *   - `remote-admin`: the community-documented DSM 7 "remote" policy. A login
@@ -141,6 +151,10 @@ const scriptPath = fileURLToPath(import.meta.url);
 export const DEFAULT_MOCK_DSM_HOST = "127.0.0.1";
 export const DEFAULT_MOCK_DSM_PORT = 18501;
 export const MOCK_DSM_OTP_CODE = "246810";
+/** Synthetic Base32 seed the `otp-seed` account verifies codes against. */
+export const DEFAULT_MOCK_DSM_TOTP_SEED = "JBSWY3DPEHPK3PXP";
+export const MOCK_DSM_TOTP_DIGITS = 6;
+export const MOCK_DSM_TOTP_PERIOD_SECONDS = 30;
 export const MOCK_DSM_DEVICE_ID = "mock-did-1";
 /** Private NAS metadata that must never reach the app's access diagnostics. */
 export const MOCK_DSM_HOSTNAME = "dsm-mock-e2e-private-host";
@@ -157,7 +171,7 @@ const account = (username, password, overrides = {}) =>
     username,
     password,
     administrator: false,
-    /** "password" | "otp" | "enrollment_required" | "approval_required" */
+    /** "password" | "otp" | "totp" | "enrollment_required" | "approval_required" */
     login: "password",
     portal: false,
     remotePolicy: false,
@@ -176,6 +190,11 @@ export const MOCK_DSM_ACCOUNTS = Object.freeze({
   otp: account("otp", "otp-pass", {
     administrator: true,
     login: "otp",
+    authTypes: Object.freeze([{ type: "otp" }]),
+  }),
+  "otp-seed": account("otp-seed", "otp-seed-pass", {
+    administrator: true,
+    login: "totp",
     authTypes: Object.freeze([{ type: "otp" }]),
   }),
   approve: account("approve", "approve-pass", {
@@ -983,6 +1002,77 @@ function advertisedApis(state) {
   return data;
 }
 
+// ──────────────────────────────────────────────────────────────────── TOTP ──
+
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/**
+ * RFC 4648 Base32 as authenticator apps accept it (case-insensitive, spaces
+ * and `=` padding ignored). `null` when the text is not Base32.
+ */
+export function decodeBase32(text) {
+  const clean = String(text).replace(/[\s=]/gu, "").toUpperCase();
+  if (!clean || /[^A-Z2-7]/u.test(clean)) return null;
+  const bytes = [];
+  let buffer = 0;
+  let bits = 0;
+  for (const char of clean) {
+    buffer = ((buffer << 5) | BASE32_ALPHABET.indexOf(char)) & 0xffff;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >>> bits) & 0xff);
+    }
+  }
+  return bytes.length ? Buffer.from(bytes) : null;
+}
+
+/** RFC 4226 HOTP (HMAC-SHA-1, dynamic truncation) for one counter value. */
+function hotp(key, counter, digits) {
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const mac = crypto.createHmac("sha1", key).update(message).digest();
+  const offset = mac[mac.length - 1] & 0x0f;
+  const binary = mac.readUInt32BE(offset) & 0x7fffffff;
+  return String(binary % 10 ** digits).padStart(digits, "0");
+}
+
+/** The RFC 6238 time step `atMs` falls in. */
+export function totpStep(atMs, periodSeconds = MOCK_DSM_TOTP_PERIOD_SECONDS) {
+  return Math.floor(atMs / 1000 / periodSeconds);
+}
+
+/**
+ * RFC 6238 TOTP (SHA-1) for a Base32 seed at `atMs`. Errors never echo the
+ * seed.
+ */
+export function mockDsmTotpCode(
+  seed,
+  atMs = Date.now(),
+  {
+    digits = MOCK_DSM_TOTP_DIGITS,
+    periodSeconds = MOCK_DSM_TOTP_PERIOD_SECONDS,
+  } = {},
+) {
+  const key = decodeBase32(seed);
+  if (!key) throw new Error("[mock-dsm] the TOTP seed is not Base32");
+  return hotp(key, totpStep(atMs, periodSeconds), digits);
+}
+
+/**
+ * The step a submitted code belongs to: the current step first, then one
+ * step back and one ahead (the usual clock-skew window). `null` when none
+ * matches.
+ */
+function matchTotpStep(state, code) {
+  if (!/^[0-9]{6}$/u.test(code)) return null;
+  const current = totpStep(state.now());
+  for (const step of [current, current - 1, current + 1]) {
+    if (hotp(state.totpKey, step, MOCK_DSM_TOTP_DIGITS) === code) return step;
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────── state ──
 
 function createState(options) {
@@ -994,17 +1084,29 @@ function createState(options) {
   if (!WIRE_MODES.includes(wire)) {
     throw new Error(`[mock-dsm] unsupported wire mode: ${wire}`);
   }
+  const totpSeed = options.totpSeed ?? DEFAULT_MOCK_DSM_TOTP_SEED;
+  const totpKey = decodeBase32(totpSeed);
+  if (!totpKey) {
+    throw new Error("[mock-dsm] the TOTP seed is not Base32");
+  }
   // A real X25519 static key, so a client can import the `_SSID` value; the
   // private half is never used because this fixture has no Noise responder.
   const { publicKey } = crypto.generateKeyPairSync("x25519");
   return {
     uiConfig,
     wire,
+    totpSeed,
+    totpKey,
+    rejectReusedStep: options.rejectReusedStep === true,
+    /** Clock for TOTP steps, in ms (tests pin it). */
+    now: typeof options.now === "function" ? options.now : Date.now,
     serverStaticKey: publicKey.export({ format: "jwk" }).x,
     /** sid -> { account, token, kind, sessionName } */
     sessions: new Map(),
     /** account -> { deviceId, deviceName } issued by a verified OTP login */
     trustedDevices: new Map(),
+    /** account -> Set of TOTP steps that signed it in */
+    usedTotpSteps: new Map(),
     /** project id -> "RUNNING" | "STOPPED" */
     projects: initialProjectStatuses(),
     /** Raw requests (in-process tests only; contains throwaway secrets). */
@@ -1024,6 +1126,7 @@ function createState(options) {
 function resetState(state) {
   state.sessions.clear();
   state.trustedDevices.clear();
+  state.usedTotpSteps.clear();
   state.projects = initialProjectStatuses();
   state.requests.length = 0;
   state.logins.length = 0;
@@ -1187,18 +1290,23 @@ function login(state, version, values) {
   const deviceName = values.device_name || null;
   const enableDeviceToken = values.enable_device_token === "yes";
   const ikMessage = values.ik_message || null;
+  const known = Object.hasOwn(MOCK_DSM_ACCOUNTS, username)
+    ? MOCK_DSM_ACCOUNTS[username]
+    : null;
+  // `otp-seed` checks a real TOTP; every other account the fixed code.
+  const totp = known?.login === "totp";
+  const totpStepMatched =
+    totp && otpCode !== null ? matchTotpStep(state, otpCode) : null;
+  const codeMatches = totp
+    ? totpStepMatched !== null
+    : otpCode === MOCK_DSM_OTP_CODE;
   const record = {
     account: username,
     version,
     session: values.session ?? null,
     format: values.format ?? null,
     enableSynoToken: values.enable_syno_token === "yes",
-    otpCode:
-      otpCode === null
-        ? "absent"
-        : otpCode === MOCK_DSM_OTP_CODE
-          ? "valid"
-          : "invalid",
+    otpCode: otpCode === null ? "absent" : codeMatches ? "valid" : "invalid",
     enableDeviceToken,
     deviceName: deviceName !== null,
     deviceId: "absent",
@@ -1213,15 +1321,12 @@ function login(state, version, values) {
     return code ? { payload: failure(code) } : result;
   };
 
-  const known = Object.hasOwn(MOCK_DSM_ACCOUNTS, username)
-    ? MOCK_DSM_ACCOUNTS[username]
-    : null;
   if (!known || !password || password !== known.password) return done(400);
   if (known.login === "enrollment_required") return done(406);
   if (known.login === "approval_required") return done(449);
 
   let secondFactor = "none";
-  if (known.login === "otp") {
+  if (known.login === "otp" || totp) {
     const trusted = state.trustedDevices.get(known.username);
     if (deviceId !== null) {
       record.deviceId =
@@ -1234,6 +1339,15 @@ function login(state, version, values) {
     if (record.deviceId === "trusted") {
       secondFactor = "trusted_device";
     } else if (record.otpCode === "valid") {
+      if (totp) {
+        const used = state.usedTotpSteps.get(known.username) ?? new Set();
+        // A code for a step that already signed in (`rejectReusedStep`).
+        if (state.rejectReusedStep && used.has(totpStepMatched)) {
+          return done(404);
+        }
+        used.add(totpStepMatched);
+        state.usedTotpSteps.set(known.username, used);
+      }
       secondFactor = "otp";
     } else if (record.otpCode === "invalid") {
       return done(404);
@@ -1568,6 +1682,7 @@ function route(state, gateway, params, headers) {
  * @param {{
  *   port?: number, host?: string,
  *   uiConfig?: "absent" | "no_reply", wire?: "real" | "legacy",
+ *   totpSeed?: string, rejectReusedStep?: boolean, now?: () => number,
  *   onUnexpected?: (entry: object) => void,
  * }} [options]
  */
@@ -1660,6 +1775,8 @@ export async function startMockDsm(options = {}) {
     url: `http://${host}:${boundPort}`,
     uiConfig: state.uiConfig,
     wire: state.wire,
+    totpSeed: state.totpSeed,
+    rejectReusedStep: state.rejectReusedStep,
     snapshot: () => snapshotState(state),
     reset: () => resetState(state),
     async stop() {
@@ -1686,6 +1803,8 @@ export function describeMockDsm(handle) {
       ]),
     ),
     otpCode: MOCK_DSM_OTP_CODE,
+    totpSeed: handle.totpSeed,
+    rejectReusedStep: handle.rejectReusedStep,
     cpu: { ...MOCK_DSM_CPU },
     hostname: MOCK_DSM_HOSTNAME,
     serial: MOCK_DSM_SERIAL,
@@ -1706,6 +1825,8 @@ if (invokedDirectly) {
     host: process.env.MOCK_DSM_HOST ?? DEFAULT_MOCK_DSM_HOST,
     uiConfig: process.env.MOCK_DSM_UI_CONFIG || "absent",
     wire: process.env.MOCK_DSM_WIRE || "real",
+    totpSeed: process.env.MOCK_DSM_TOTP_SEED || DEFAULT_MOCK_DSM_TOTP_SEED,
+    rejectReusedStep: process.env.MOCK_DSM_REJECT_REUSED_STEP === "1",
     onUnexpected: (entry) =>
       process.stderr.write(`MOCK_DSM_UNEXPECTED ${JSON.stringify(entry)}\n`),
   });

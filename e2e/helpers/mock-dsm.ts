@@ -7,6 +7,7 @@
 // `e2e/helpers/fixtures/mock-dsm/server.mjs`; this module owns its lifecycle
 // and the value-free IPC snapshots a spec uses to assert what the app sent.
 import { fork, type ChildProcess } from "node:child_process";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,7 +27,54 @@ export const MOCK_DSM_PORT = Number.parseInt(
 export const MOCK_DSM_HOST = process.env.MOCK_DSM_HOST ?? "127.0.0.1";
 
 export type MockDsmAccountName =
-  "admin" | "viewer" | "enroll" | "portal" | "otp" | "approve" | "remote-admin";
+  | "admin"
+  | "viewer"
+  | "enroll"
+  | "portal"
+  | "otp"
+  | "otp-seed"
+  | "approve"
+  | "remote-admin";
+
+/**
+ * Synthetic Base32 seed the `otp-seed` account checks codes against (RFC 6238,
+ * HMAC-SHA-1, 6 digits, 30 s, current step ±1). Override with
+ * `MOCK_DSM_TOTP_SEED` or the `totpSeed` option; never a real authenticator.
+ */
+export const DEFAULT_MOCK_DSM_TOTP_SEED = "JBSWY3DPEHPK3PXP";
+
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/**
+ * The RFC 6238 code (HMAC-SHA-1, 6 digits, 30 s) the fixture's `otp-seed`
+ * account accepts at `atMs`, so a spec can type or compare a valid code. Same
+ * algorithm as `mockDsmTotpCode` in the fixture (node-tested for parity).
+ */
+export function mockDsmTotpCode(seed: string, atMs: number = Date.now()) {
+  const clean = seed.replace(/[\s=]/gu, "").toUpperCase();
+  if (!clean || /[^A-Z2-7]/u.test(clean)) {
+    throw new Error("[mock-dsm] the TOTP seed is not Base32");
+  }
+  const bytes: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (const char of clean) {
+    buffer = ((buffer << 5) | BASE32_ALPHABET.indexOf(char)) & 0xffff;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >>> bits) & 0xff);
+    }
+  }
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(atMs / 30_000)));
+  const mac = crypto
+    .createHmac("sha1", Buffer.from(bytes))
+    .update(message)
+    .digest();
+  const binary = mac.readUInt32BE(mac[mac.length - 1] & 0x0f) & 0x7fffffff;
+  return String(binary % 1_000_000).padStart(6, "0");
+}
 
 /**
  * - `absent`: no `SYNO.API.Auth.UIConfig`, so the app must sign in legacy.
@@ -61,6 +109,10 @@ export interface MockDsmInfo {
   accounts: Record<MockDsmAccountName, MockDsmCredentials>;
   /** The only one-time code the `otp` account accepts. */
   otpCode: string;
+  /** The synthetic Base32 seed behind the `otp-seed` account's codes. */
+  totpSeed: string;
+  /** Whether `otp-seed` refuses a code for a step that already signed in. */
+  rejectReusedStep: boolean;
   /** `SYNO.Core.System.Utilization` CPU values served to full sessions. */
   cpu: Record<string, number | string>;
   /** Private NAS metadata that must never appear in access diagnostics. */
@@ -75,6 +127,11 @@ export interface MockDsmLogin {
   session: string | null;
   format: string | null;
   enableSynoToken: boolean;
+  /**
+   * Whether the code matched: `246810` for `otp`, the seed's TOTP (±1 step)
+   * for `otp-seed`. A reused step refused by `rejectReusedStep` is `"valid"`
+   * with code 404.
+   */
   otpCode: "absent" | "valid" | "invalid";
   enableDeviceToken: boolean;
   deviceName: boolean;
@@ -212,6 +269,10 @@ export async function startMockDsm(
     host?: string;
     uiConfig?: MockDsmUiConfig;
     wire?: MockDsmWire;
+    /** Base32 seed for `otp-seed`; defaults to `MOCK_DSM_TOTP_SEED` or the synthetic default. */
+    totpSeed?: string;
+    /** Refuse a second sign-in with a code from the same TOTP step. */
+    rejectReusedStep?: boolean;
   } = {},
 ): Promise<MockDsmHandle> {
   const child = fork(MOCK_DSM_SERVER_PATH, [], {
@@ -222,6 +283,15 @@ export async function startMockDsm(
       MOCK_DSM_HOST: options.host ?? MOCK_DSM_HOST,
       MOCK_DSM_UI_CONFIG: options.uiConfig ?? "absent",
       MOCK_DSM_WIRE: options.wire ?? MOCK_DSM_WIRE,
+      MOCK_DSM_TOTP_SEED:
+        options.totpSeed ??
+        process.env.MOCK_DSM_TOTP_SEED ??
+        DEFAULT_MOCK_DSM_TOTP_SEED,
+      MOCK_DSM_REJECT_REUSED_STEP:
+        (options.rejectReusedStep ??
+        process.env.MOCK_DSM_REJECT_REUSED_STEP === "1")
+          ? "1"
+          : "0",
     },
   });
 
