@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,11 @@ export interface SelectOption {
   disabled?: boolean;
   title?: string;
   icon?: LucideIcon;
+  /**
+   * Secondary detail shown under the label while the dropdown is open; the
+   * `searchable` filter matches it too.
+   */
+  description?: string;
 }
 
 export interface SelectProps {
@@ -54,6 +60,23 @@ export interface SelectProps {
    * that joins the search index to the rendered controls.
    */
   settingKey?: string;
+}
+
+/** Lower-case and strip diacritics so `cote` matches `Côte`. */
+function foldSearchText(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+/**
+ * Every whitespace-separated query token must appear in the option's label or
+ * description (case- and accent-insensitive).
+ */
+function matchesSearch(option: SelectOption, query: string): boolean {
+  const tokens = foldSearchText(query).split(/\s+/).filter(Boolean);
+  const haystack = foldSearchText(
+    `${option.label}\n${option.description ?? ""}`,
+  );
+  return tokens.every((token) => haystack.includes(token));
 }
 
 /**
@@ -85,12 +108,14 @@ export const Select: React.FC<SelectProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const optionsScrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const baseId = useId();
+  const listboxId = `${baseId}-listbox`;
+  const optionId = (index: number) => `${listboxId}-option-${index}`;
 
-  // Options visible after the search filter (case-insensitive label match).
+  // Options visible after the search filter.
   const visibleOptions = useMemo(() => {
     if (!searchable || !search.trim()) return options;
-    const q = search.trim().toLowerCase();
-    return options.filter((o) => o.label.toLowerCase().includes(q));
+    return options.filter((o) => matchesSearch(o, search));
   }, [searchable, search, options]);
   const itemsRef = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -296,6 +321,7 @@ export const Select: React.FC<SelectProps> = ({
         role="combobox"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
+        aria-controls={isOpen ? listboxId : undefined}
         aria-label={label}
         disabled={disabled}
         onClick={() => (isOpen ? close() : open())}
@@ -328,7 +354,6 @@ export const Select: React.FC<SelectProps> = ({
         createPortal(
           <div
             ref={dropdownRef}
-            role="listbox"
             className="sor-select-dropdown sor-popover-panel"
             style={{
               position: "fixed",
@@ -353,10 +378,22 @@ export const Select: React.FC<SelectProps> = ({
                   onKeyDown={handleKeyDown}
                   className="sor-select-search-input"
                   aria-label={searchPlaceholder ?? "Search options"}
+                  aria-controls={listboxId}
+                  aria-autocomplete="list"
+                  aria-activedescendant={
+                    highlightIdx >= 0 && highlightIdx < visibleOptions.length
+                      ? optionId(highlightIdx)
+                      : undefined
+                  }
                 />
               </div>
             )}
-            <div ref={optionsScrollRef} className="sor-select-dropdown-scroll">
+            <div
+              ref={optionsScrollRef}
+              id={listboxId}
+              role="listbox"
+              className="sor-select-dropdown-scroll"
+            >
               {visibleOptions.length === 0 && (
                 <div className="sor-select-option sor-select-option-disabled">
                   <span className="sor-select-option-label">No matches</span>
@@ -371,6 +408,7 @@ export const Select: React.FC<SelectProps> = ({
                     ref={(el) => {
                       itemsRef.current[i] = el;
                     }}
+                    id={optionId(i)}
                     role="option"
                     aria-selected={isSelected}
                     aria-disabled={opt.disabled}
@@ -394,7 +432,16 @@ export const Select: React.FC<SelectProps> = ({
                           className="flex-shrink-0 text-[var(--color-textSecondary)]"
                         />
                       )}
-                      <span className="truncate">{opt.label}</span>
+                      {opt.description ? (
+                        <span className="sor-select-option-text">
+                          <span className="truncate">{opt.label}</span>
+                          <span className="sor-select-option-description truncate">
+                            {opt.description}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="truncate">{opt.label}</span>
+                      )}
                     </span>
                     {isSelected && (
                       <Check size={14} className="sor-select-option-check" />

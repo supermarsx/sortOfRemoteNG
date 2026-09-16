@@ -466,6 +466,18 @@ input[type="radio"][aria-disabled="true"] {
   min-width: 0;
 }
 
+.sor-select-option-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sor-select-option-description {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--color-textMuted);
+}
+
 .sor-select-option-check {
   flex-shrink: 0;
   color: var(--color-primary);
