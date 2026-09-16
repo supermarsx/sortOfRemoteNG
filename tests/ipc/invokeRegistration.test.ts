@@ -366,7 +366,10 @@ function collectModuleFacts(file: string): ModuleFacts {
 
   // Second pass over every scope: nested `const CMD = "…"` bindings and the
   // `const core = await import("@tauri-apps/api/core")` form, which almost
-  // always appears inside a function body.
+  // always appears inside a function body. Both only matter in a file that
+  // spells `invoke` itself: nested constants are visible only to that file's
+  // own call sites, and a nested core binding is only used as `ns.invoke`.
+  if (!readSource(file)?.includes("invoke")) return facts;
   const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && !recordTauriBinding(node, facts)) {
       recordConstants(node, facts.localConstants);
@@ -607,6 +610,8 @@ function localWrappers(file: string): Map<string, Wrapper[]> {
   if (cached) return cached;
   const wrappers = new Map<string, Wrapper[]>();
   wrapperCache.set(file, wrappers);
+  // A wrapper forwards to an `invoke` callee, which needs this substring.
+  if (!readSource(file)?.includes("invoke")) return wrappers;
   const source = parseFile(file);
   if (!source) return wrappers;
   const facts = collectModuleFacts(file);
@@ -802,15 +807,24 @@ function collectInvokes(roots: string[]): {
 
   const files = roots.flatMap((root) => walkFiles(root, isFrontendSource));
   for (const file of files) {
-    // A call to `invoke` necessarily contains this identifier. Avoid building a
-    // full TypeScript AST for the large majority of frontend files that cannot
-    // contribute a command registration.
     const text = readSource(file);
     if (text === null) continue;
 
     const sourceFile = parseFile(file);
     if (!sourceFile) continue;
     const facts = collectModuleFacts(file);
+    // A direct `invoke` call or a local wrapper necessarily spells `invoke`.
+    // Any other file can only reach a command by calling a wrapper through an
+    // import or an `export *` barrel, which is exactly when `resolveWrapper`
+    // can succeed. Skip the full AST walk for the large majority of frontend
+    // files that have neither.
+    if (
+      !text.includes("invoke") &&
+      facts.starExports.length === 0 &&
+      ![...facts.imports.keys()].some((name) => resolveWrapper(file, name))
+    ) {
+      continue;
+    }
     const relative = path
       .relative(PROJECT_ROOT, file)
       .split(path.sep)
