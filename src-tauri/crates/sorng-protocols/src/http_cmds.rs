@@ -1289,12 +1289,14 @@ pub async fn restart_proxy_session(
 /// Fetch the TLS certificate presented by a remote server.
 /// Captures self-signed/untrusted chains for manual review, while separately
 /// recording real CA validation and checking TLS handshake signatures.
+/// Failures are structured: failing stage, measured timings, expired budget.
 #[tauri::command]
+#[allow(clippy::result_large_err)]
 pub async fn get_tls_certificate_info(
     host: String,
     port: u16,
     proxy_url: Option<String>,
-) -> Result<TlsCertificateInfo, String> {
+) -> Result<TlsCertificateInfo, CertificateInspectionError> {
     fetch_tls_certificate_info(&host, port, proxy_url.as_deref()).await
 }
 

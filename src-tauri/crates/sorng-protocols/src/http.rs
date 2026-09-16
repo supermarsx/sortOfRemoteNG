@@ -20,7 +20,7 @@ pub use tls_ca::{
 
 #[path = "http_proxy_transport.rs"]
 mod proxy_transport;
-pub use proxy_transport::fetch_tls_certificate_info;
+pub use proxy_transport::{fetch_tls_certificate_info, CertificateInspectionError};
 
 #[path = "http_log_diagnostics.rs"]
 mod log_diagnostics;

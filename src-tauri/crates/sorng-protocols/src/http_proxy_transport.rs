@@ -1,19 +1,187 @@
 //! Certificate inspection over the same explicit route used by the web mediator.
 //! No direct fallback is allowed when a proxy is configured.
+//!
+//! Every network stage has its own budget inside one overall deadline, and a
+//! failure reports the stage it stopped in with measured timings.
+
+// The structured error is built once, on the failure path of a user-visible
+// inspection; boxing it would only obscure the IPC contract.
+#![allow(clippy::result_large_err)]
 
 use super::{
     build_tls_config, capture_peer_certificate_chain, tls_server_name, TlsCertificateInfo,
 };
 use base64::Engine;
-use std::time::Duration;
+use serde::Serialize;
+use std::future::Future;
+use std::io;
+use std::net::SocketAddr;
+use std::pin::Pin;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 trait CertificateSocket: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> CertificateSocket for T {}
 type Socket = Box<dyn CertificateSocket>;
 
-const CERTIFICATE_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_CONNECT_HEADER_BYTES: usize = 16 * 1024;
+// Keeps `addresses_tried` bounded; the overall deadline already bounds time.
+const MAX_ADDRESSES: usize = 16;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InspectionStage {
+    Target,
+    Resolve,
+    Connect,
+    ProxyConnect,
+    ProxyTls,
+    ProxyTunnel,
+    TlsHandshake,
+    Certificate,
+    Verifier,
+}
+
+impl InspectionStage {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Target => "target",
+            Self::Resolve => "name resolution",
+            Self::Connect => "TCP connect",
+            Self::ProxyConnect => "proxy connect",
+            Self::ProxyTls => "proxy TLS",
+            Self::ProxyTunnel => "proxy tunnel",
+            Self::TlsHandshake => "TLS handshake",
+            Self::Certificate => "certificate",
+            Self::Verifier => "verifier",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InspectionFailureKind {
+    InvalidTarget,
+    DnsFailure,
+    ConnectTimeout,
+    ConnectionRefused,
+    HostUnreachable,
+    ConnectFailed,
+    ProxyInvalid,
+    ProxyUnreachable,
+    ProxyTlsFailed,
+    ProxyAuthRejected,
+    ProxyTunnelRejected,
+    ProxyTunnelTimeout,
+    ProxyProtocolError,
+    TlsHandshakeTimeout,
+    TlsHandshakeFailed,
+    CertificateUnreadable,
+    InspectionUnavailable,
+    DeadlineExceeded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InspectionRoute {
+    Direct,
+    Proxy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TlsFailureReason {
+    NotTls,
+    PeerClosed,
+    Alert,
+    Certificate,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CompletedStage {
+    pub stage: InspectionStage,
+    pub elapsed_ms: u64,
+}
+
+/// Structured inspection failure sent over IPC. It never carries the proxy
+/// URL, proxy credentials, or upstream response text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CertificateInspectionError {
+    pub kind: InspectionFailureKind,
+    pub stage: InspectionStage,
+    pub route: InspectionRoute,
+    /// Requested authority (`host:port`, `[v6]:port`); empty for an invalid target.
+    pub target: String,
+    /// Last socket address dialled on the direct route.
+    pub address: Option<String>,
+    pub addresses_tried: u16,
+    /// Measured since inspection start.
+    pub elapsed_ms: u64,
+    /// Measured time in the failing stage.
+    pub stage_elapsed_ms: u64,
+    /// The budget that expired, if any.
+    pub timeout_ms: Option<u64>,
+    pub proxy_status: Option<u16>,
+    pub tls_reason: Option<TlsFailureReason>,
+    /// Stages that finished, in order, with their durations.
+    pub completed: Vec<CompletedStage>,
+    pub message: String,
+}
+
+impl std::fmt::Display for CertificateInspectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for CertificateInspectionError {}
+
+/// Rust-only budgets. There is deliberately no IPC option to change them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct InspectionTimeouts {
+    pub(super) resolve: Duration,
+    pub(super) connect: Duration,
+    pub(super) per_address_floor: Duration,
+    pub(super) proxy_tunnel: Duration,
+    pub(super) tls_handshake: Duration,
+    pub(super) overall: Duration,
+}
+
+impl InspectionTimeouts {
+    // Windows abandons a silent SYN after about 21 s; 10 s still covers four
+    // transmissions and matches the other native web connect timeouts.
+    pub(super) const DEFAULT: Self = Self {
+        resolve: Duration::from_secs(10),
+        connect: Duration::from_secs(10),
+        per_address_floor: Duration::from_secs(3),
+        proxy_tunnel: Duration::from_secs(10),
+        tls_handshake: Duration::from_secs(10),
+        overall: Duration::from_secs(25),
+    };
+}
+
+pub(super) type NetFuture<T> = Pin<Box<dyn Future<Output = io::Result<T>> + Send>>;
+
+/// Name resolution and TCP dialing. Replaced only by Rust tests.
+pub(super) trait InspectionNet: Sync {
+    fn resolve(&self, authority: &str) -> NetFuture<Vec<SocketAddr>>;
+    fn dial(&self, address: SocketAddr) -> NetFuture<TcpStream>;
+}
+
+pub(super) struct SystemNet;
+
+impl InspectionNet for SystemNet {
+    fn resolve(&self, authority: &str) -> NetFuture<Vec<SocketAddr>> {
+        let authority = authority.to_owned();
+        Box::pin(async move { Ok(tokio::net::lookup_host(authority).await?.collect()) })
+    }
+
+    fn dial(&self, address: SocketAddr) -> NetFuture<TcpStream> {
+        Box::pin(TcpStream::connect(address))
+    }
+}
 
 fn parse_proxy(proxy_url: &str) -> Result<url::Url, String> {
     let url =
@@ -69,42 +237,344 @@ fn decode_user_info(value: &str) -> String {
     .unwrap_or_default()
 }
 
-async fn open_certificate_socket(
-    host: &str,
-    port: u16,
-    proxy_url: Option<&str>,
-) -> Result<Socket, String> {
-    let target = authority(host, port)?;
-    let Some(proxy_url) = proxy_url else {
-        return tokio::net::TcpStream::connect(target)
-            .await
-            .map(|stream| Box::new(stream) as Socket)
-            .map_err(|_| "Certificate TCP connection failed".to_string());
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+/// `N ms` below one second, otherwise tenths of a second rounded half up.
+/// Integer math keeps this identical to JavaScript `toFixed(1)` on whole ms.
+fn format_elapsed(ms: u64) -> String {
+    if ms < 1000 {
+        return format!("{ms} ms");
+    }
+    let tenths = ms.saturating_add(50) / 100;
+    format!("{}.{} s", tenths / 10, tenths % 10)
+}
+
+// Scope ids are dropped so the address stays a plain `ip:port` authority.
+fn socket_address(address: SocketAddr) -> String {
+    match address {
+        SocketAddr::V4(address) => address.to_string(),
+        SocketAddr::V6(address) => format!("[{}]:{}", address.ip(), address.port()),
+    }
+}
+
+fn connect_failure_kind(error: &io::Error) -> InspectionFailureKind {
+    match error.kind() {
+        io::ErrorKind::TimedOut => InspectionFailureKind::ConnectTimeout,
+        io::ErrorKind::ConnectionRefused => InspectionFailureKind::ConnectionRefused,
+        io::ErrorKind::HostUnreachable | io::ErrorKind::NetworkUnreachable => {
+            InspectionFailureKind::HostUnreachable
+        }
+        _ => InspectionFailureKind::ConnectFailed,
+    }
+}
+
+fn tls_failure_reason(error: &io::Error) -> TlsFailureReason {
+    // tokio-rustls wraps protocol failures as io::Error(InvalidData, rustls::Error).
+    if let Some(error) = error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+    {
+        return match error {
+            rustls::Error::InvalidMessage(_) => TlsFailureReason::NotTls,
+            rustls::Error::AlertReceived(_) => TlsFailureReason::Alert,
+            rustls::Error::InvalidCertificate(_)
+            | rustls::Error::PeerMisbehaved(_)
+            | rustls::Error::General(_) => TlsFailureReason::Certificate,
+            _ => TlsFailureReason::Other,
+        };
+    }
+    match error.kind() {
+        io::ErrorKind::UnexpectedEof
+        | io::ErrorKind::ConnectionReset
+        | io::ErrorKind::ConnectionAborted
+        | io::ErrorKind::BrokenPipe => TlsFailureReason::PeerClosed,
+        _ => TlsFailureReason::Other,
+    }
+}
+
+/// Technical sentence built only from the structured fields. Proxy-route
+/// messages name neither the proxy nor the target.
+fn describe(error: &CertificateInspectionError) -> String {
+    use InspectionFailureKind as Kind;
+    let stage_elapsed = format_elapsed(error.stage_elapsed_ms);
+    let limit = error
+        .timeout_ms
+        .map_or_else(|| stage_elapsed.clone(), format_elapsed);
+    let peer = match &error.address {
+        Some(address) if *address != error.target => format!("{} ({address})", error.target),
+        _ => error.target.clone(),
     };
-    let proxy = parse_proxy(proxy_url)?;
-    let proxy_host = proxy
-        .host_str()
-        .expect("validated proxy host")
-        .trim_start_matches('[')
-        .trim_end_matches(']');
-    let proxy_port = proxy
-        .port_or_known_default()
-        .expect("HTTP(S) has a default port");
-    let tcp = tokio::net::TcpStream::connect((proxy_host, proxy_port))
-        .await
-        .map_err(|_| "Certificate proxy TCP connection failed".to_string())?;
-    let mut socket: Socket = if proxy.scheme() == "https" {
-        // Inspecting the target certificate must NEVER disable verification of
-        // a separate HTTPS proxy's own certificate.
-        let connector = tokio_rustls::TlsConnector::from(build_tls_config(true)?);
-        let stream = connector
-            .connect(tls_server_name(proxy_host)?, tcp)
-            .await
-            .map_err(|_| "Certificate proxy TLS verification failed".to_string())?;
-        Box::new(stream)
+    let tried = if error.addresses_tried > 1 {
+        format!(" ({} addresses tried)", error.addresses_tried)
     } else {
-        Box::new(tcp)
+        String::new()
     };
+    let website = match error.route {
+        InspectionRoute::Direct => peer.clone(),
+        InspectionRoute::Proxy => "The website behind the configured proxy".to_string(),
+    };
+    let status = error.proxy_status.unwrap_or_default();
+    match error.kind {
+        Kind::InvalidTarget => "Invalid certificate target authority".into(),
+        Kind::DnsFailure => {
+            let host = error
+                .target
+                .rsplit_once(':')
+                .map_or(error.target.as_str(), |(host, _)| host);
+            match error.timeout_ms {
+                Some(_) => format!("Could not resolve {host} within {limit}"),
+                None => format!("Could not resolve {host} after {stage_elapsed}"),
+            }
+        }
+        Kind::ConnectTimeout => format!("TCP connect to {peer} timed out after {limit}{tried}"),
+        Kind::ConnectionRefused => {
+            format!("{peer} refused the TCP connection after {stage_elapsed}{tried}")
+        }
+        Kind::HostUnreachable => {
+            format!("No route to {peer} (host unreachable) after {stage_elapsed}{tried}")
+        }
+        Kind::ConnectFailed => format!("TCP connect to {peer} failed after {stage_elapsed}{tried}"),
+        Kind::ProxyInvalid => "The configured proxy is not a valid HTTP(S) proxy authority".into(),
+        Kind::ProxyUnreachable => match error.timeout_ms {
+            Some(_) => format!("The configured proxy could not be reached within {limit}"),
+            None => format!("The configured proxy could not be reached after {stage_elapsed}"),
+        },
+        Kind::ProxyTlsFailed => match error.timeout_ms {
+            Some(_) => format!("The configured HTTPS proxy did not complete TLS within {limit}"),
+            None => "The configured HTTPS proxy failed TLS verification".into(),
+        },
+        Kind::ProxyAuthRejected => {
+            format!("The configured proxy rejected authentication (HTTP {status})")
+        }
+        Kind::ProxyTunnelRejected => {
+            format!("The configured proxy could not open a tunnel (HTTP {status})")
+        }
+        Kind::ProxyTunnelTimeout => {
+            format!("The configured proxy did not open a tunnel within {limit}")
+        }
+        Kind::ProxyProtocolError => {
+            "The configured proxy returned an invalid CONNECT response".into()
+        }
+        Kind::TlsHandshakeTimeout => match error.route {
+            InspectionRoute::Direct => {
+                format!("{peer} accepted TCP but did not complete a TLS handshake within {limit}")
+            }
+            InspectionRoute::Proxy => {
+                format!("{website} did not complete a TLS handshake within {limit}")
+            }
+        },
+        Kind::TlsHandshakeFailed => match error.tls_reason {
+            Some(TlsFailureReason::NotTls) => {
+                format!("{website} answered with data that is not TLS")
+            }
+            Some(TlsFailureReason::PeerClosed) => {
+                format!("{website} closed the connection during the TLS handshake")
+            }
+            Some(TlsFailureReason::Alert) => {
+                format!("{website} rejected the TLS handshake with an alert")
+            }
+            Some(TlsFailureReason::Certificate) => {
+                format!("{website} sent a certificate or handshake signature that could not be verified")
+            }
+            Some(TlsFailureReason::Other) | None => {
+                format!("{website} could not complete a TLS handshake")
+            }
+        },
+        Kind::CertificateUnreadable => "The server certificate could not be read".into(),
+        Kind::InspectionUnavailable => "The local TLS inspection verifier is unavailable".into(),
+        Kind::DeadlineExceeded => format!(
+            "Certificate inspection did not finish within {limit} ({})",
+            error.stage.label()
+        ),
+    }
+}
+
+/// A failure whose message is composed once every field is known.
+struct Failure(CertificateInspectionError);
+
+impl Failure {
+    fn timeout(mut self, budget: Duration) -> Self {
+        self.0.timeout_ms = Some(millis(budget));
+        self
+    }
+
+    fn proxy_status(mut self, status: u16) -> Self {
+        self.0.proxy_status = Some(status);
+        self
+    }
+
+    fn tls_reason(mut self, reason: TlsFailureReason) -> Self {
+        self.0.tls_reason = Some(reason);
+        self
+    }
+}
+
+impl From<Failure> for CertificateInspectionError {
+    fn from(Failure(mut error): Failure) -> Self {
+        error.message = describe(&error);
+        error
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Expired {
+    Stage(Duration),
+    Overall,
+}
+
+enum DialError {
+    Io(io::Error),
+    TimedOut(Duration),
+    Overall,
+}
+
+enum TunnelError {
+    Status(u16),
+    Protocol,
+}
+
+/// Measured progress of one inspection.
+struct Attempt {
+    timeouts: InspectionTimeouts,
+    started: Instant,
+    route: InspectionRoute,
+    target: String,
+    address: Option<SocketAddr>,
+    addresses_tried: u16,
+    stage: InspectionStage,
+    stage_started: Instant,
+    completed: Vec<CompletedStage>,
+}
+
+impl Attempt {
+    fn new(route: InspectionRoute, timeouts: InspectionTimeouts) -> Self {
+        let now = Instant::now();
+        Self {
+            timeouts,
+            started: now,
+            route,
+            target: String::new(),
+            address: None,
+            addresses_tried: 0,
+            stage: InspectionStage::Target,
+            stage_started: now,
+            completed: Vec::new(),
+        }
+    }
+
+    fn begin(&mut self, stage: InspectionStage) {
+        self.stage = stage;
+        self.stage_started = Instant::now();
+    }
+
+    fn complete(&mut self) {
+        self.completed.push(CompletedStage {
+            stage: self.stage,
+            elapsed_ms: millis(self.stage_started.elapsed()),
+        });
+    }
+
+    /// Runs a step within its stage budget, or the remaining overall budget
+    /// when that is shorter.
+    async fn within<T>(
+        &self,
+        budget: Duration,
+        step: impl Future<Output = T>,
+    ) -> Result<T, Expired> {
+        let remaining = self.timeouts.overall.saturating_sub(self.started.elapsed());
+        let (limit, expired) = if remaining < budget {
+            (remaining, Expired::Overall)
+        } else {
+            (budget, Expired::Stage(budget))
+        };
+        tokio::time::timeout(limit, step).await.map_err(|_| expired)
+    }
+
+    fn fail(&self, kind: InspectionFailureKind) -> Failure {
+        let now = Instant::now();
+        Failure(CertificateInspectionError {
+            kind,
+            stage: self.stage,
+            route: self.route,
+            target: self.target.clone(),
+            address: self.address.map(socket_address),
+            addresses_tried: self.addresses_tried,
+            elapsed_ms: millis(now.saturating_duration_since(self.started)),
+            stage_elapsed_ms: millis(now.saturating_duration_since(self.stage_started)),
+            timeout_ms: None,
+            proxy_status: None,
+            tls_reason: None,
+            completed: self.completed.clone(),
+            message: String::new(),
+        })
+    }
+
+    fn expired(&self, expired: Expired, kind: InspectionFailureKind) -> Failure {
+        match expired {
+            Expired::Stage(budget) => self.fail(kind).timeout(budget),
+            Expired::Overall => self
+                .fail(InspectionFailureKind::DeadlineExceeded)
+                .timeout(self.timeouts.overall),
+        }
+    }
+
+    async fn resolve(
+        &self,
+        net: &dyn InspectionNet,
+        authority: &str,
+    ) -> Result<Vec<SocketAddr>, Option<Expired>> {
+        match self
+            .within(self.timeouts.resolve, net.resolve(authority))
+            .await
+        {
+            Ok(Ok(mut addresses)) if !addresses.is_empty() => {
+                addresses.truncate(MAX_ADDRESSES);
+                Ok(addresses)
+            }
+            Ok(_) => Err(None),
+            Err(expired) => Err(Some(expired)),
+        }
+    }
+
+    /// Dials addresses in order. Each gets an equal share of the connect
+    /// budget, never below the floor, and never past the overall deadline.
+    async fn dial(
+        &mut self,
+        net: &dyn InspectionNet,
+        addresses: &[SocketAddr],
+        record: bool,
+    ) -> Result<TcpStream, DialError> {
+        let count = u32::try_from(addresses.len()).unwrap_or(u32::MAX).max(1);
+        let floor = self.timeouts.per_address_floor.min(self.timeouts.connect);
+        let share = (self.timeouts.connect / count).max(floor);
+        let mut waited = Duration::ZERO;
+        let mut last = DialError::Overall;
+        for &address in addresses {
+            if record {
+                self.address = Some(address);
+                self.addresses_tried = self.addresses_tried.saturating_add(1);
+            }
+            match self.within(share, net.dial(address)).await {
+                Ok(Ok(stream)) => return Ok(stream),
+                Ok(Err(error)) => last = DialError::Io(error),
+                Err(Expired::Stage(budget)) => {
+                    waited += budget;
+                    last = DialError::TimedOut(waited);
+                }
+                Err(Expired::Overall) => return Err(DialError::Overall),
+            }
+        }
+        Err(last)
+    }
+}
+
+async fn open_tunnel(
+    socket: &mut Socket,
+    target: &str,
+    proxy: &url::Url,
+) -> Result<(), TunnelError> {
     let mut request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n");
     if !proxy.username().is_empty() || proxy.password().is_some() {
         let credentials = format!(
@@ -119,36 +589,143 @@ async fn open_certificate_socket(
     socket
         .write_all(request.as_bytes())
         .await
-        .map_err(|_| "Certificate proxy CONNECT write failed".to_string())?;
+        .map_err(|_| TunnelError::Protocol)?;
     let mut header = Vec::with_capacity(512);
     while !header.ends_with(b"\r\n\r\n") {
         if header.len() == MAX_CONNECT_HEADER_BYTES {
-            return Err("Certificate proxy CONNECT response headers exceed the limit".into());
+            return Err(TunnelError::Protocol);
         }
-        let byte = socket
-            .read_u8()
-            .await
-            .map_err(|_| "Certificate proxy CONNECT response ended early".to_string())?;
-        header.push(byte);
+        header.push(socket.read_u8().await.map_err(|_| TunnelError::Protocol)?);
     }
     let status_line = header
         .split(|byte| *byte == b'\n')
         .next()
         .unwrap_or_default();
-    let status_line = std::str::from_utf8(status_line)
-        .map_err(|_| "Invalid certificate proxy CONNECT response".to_string())?;
+    let status_line = std::str::from_utf8(status_line).map_err(|_| TunnelError::Protocol)?;
     let mut parts = status_line.split_whitespace();
     let version = parts.next().unwrap_or_default();
     let status = parts.next().and_then(|value| value.parse::<u16>().ok());
-    if !matches!(version, "HTTP/1.0" | "HTTP/1.1") || !matches!(status, Some(200..=299)) {
-        // Never echo an upstream response or proxy URL: either can contain secrets.
-        return Err(match status {
-            Some(407) => "Certificate proxy authentication was rejected (HTTP 407)".into(),
-            Some(code) => format!("Certificate proxy CONNECT was rejected (HTTP {code})"),
-            None => "Invalid certificate proxy CONNECT response".into(),
-        });
+    // Only the numeric status leaves this function: an upstream response or
+    // proxy URL can contain secrets.
+    match status {
+        _ if !matches!(version, "HTTP/1.0" | "HTTP/1.1") => Err(TunnelError::Protocol),
+        Some(200..=299) => Ok(()),
+        Some(code @ 100..=599) => Err(TunnelError::Status(code)),
+        _ => Err(TunnelError::Protocol),
     }
-    Ok(socket)
+}
+
+async fn connect_direct(attempt: &mut Attempt, net: &dyn InspectionNet) -> Result<Socket, Failure> {
+    use InspectionFailureKind as Kind;
+    attempt.begin(InspectionStage::Resolve);
+    let addresses = match attempt.resolve(net, &attempt.target).await {
+        Ok(addresses) => addresses,
+        Err(Some(expired)) => return Err(attempt.expired(expired, Kind::DnsFailure)),
+        Err(None) => return Err(attempt.fail(Kind::DnsFailure)),
+    };
+    attempt.complete();
+
+    attempt.begin(InspectionStage::Connect);
+    match attempt.dial(net, &addresses, true).await {
+        Ok(stream) => {
+            attempt.complete();
+            Ok(Box::new(stream))
+        }
+        Err(DialError::Io(error)) => Err(attempt.fail(connect_failure_kind(&error))),
+        Err(DialError::TimedOut(waited)) => Err(attempt.fail(Kind::ConnectTimeout).timeout(waited)),
+        Err(DialError::Overall) => Err(attempt.expired(Expired::Overall, Kind::ConnectTimeout)),
+    }
+}
+
+async fn connect_through_proxy(
+    attempt: &mut Attempt,
+    net: &dyn InspectionNet,
+    proxy_url: &str,
+) -> Result<Socket, Failure> {
+    use InspectionFailureKind as Kind;
+    attempt.begin(InspectionStage::ProxyConnect);
+    let proxy = parse_proxy(proxy_url).map_err(|_| attempt.fail(Kind::ProxyInvalid))?;
+    let proxy_host = proxy
+        .host_str()
+        .expect("validated proxy host")
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    let proxy_port = proxy
+        .port_or_known_default()
+        .expect("HTTP(S) has a default port");
+    let proxy_authority =
+        authority(proxy_host, proxy_port).map_err(|_| attempt.fail(Kind::ProxyInvalid))?;
+    let proxy_name = if proxy.scheme() == "https" {
+        Some(tls_server_name(proxy_host).map_err(|_| attempt.fail(Kind::ProxyInvalid))?)
+    } else {
+        None
+    };
+
+    // The proxy is resolved and dialled; the target never is on this route.
+    let addresses = match attempt.resolve(net, &proxy_authority).await {
+        Ok(addresses) => addresses,
+        Err(Some(expired)) => return Err(attempt.expired(expired, Kind::ProxyUnreachable)),
+        Err(None) => return Err(attempt.fail(Kind::ProxyUnreachable)),
+    };
+    let tcp = match attempt.dial(net, &addresses, false).await {
+        Ok(tcp) => tcp,
+        Err(DialError::Io(_)) => return Err(attempt.fail(Kind::ProxyUnreachable)),
+        Err(DialError::TimedOut(waited)) => {
+            return Err(attempt.fail(Kind::ProxyUnreachable).timeout(waited))
+        }
+        Err(DialError::Overall) => {
+            return Err(attempt.expired(Expired::Overall, Kind::ProxyUnreachable))
+        }
+    };
+    attempt.complete();
+
+    let mut socket: Socket = match proxy_name {
+        Some(proxy_name) => {
+            attempt.begin(InspectionStage::ProxyTls);
+            // Inspecting the target certificate must NEVER disable verification of
+            // a separate HTTPS proxy's own certificate.
+            let config =
+                build_tls_config(true).map_err(|_| attempt.fail(Kind::InspectionUnavailable))?;
+            let connector = tokio_rustls::TlsConnector::from(config);
+            let handshake = attempt
+                .within(
+                    attempt.timeouts.tls_handshake,
+                    connector.connect(proxy_name, tcp),
+                )
+                .await;
+            match handshake {
+                Ok(Ok(stream)) => {
+                    attempt.complete();
+                    Box::new(stream)
+                }
+                Ok(Err(_)) => return Err(attempt.fail(Kind::ProxyTlsFailed)),
+                Err(expired) => return Err(attempt.expired(expired, Kind::ProxyTlsFailed)),
+            }
+        }
+        None => Box::new(tcp),
+    };
+
+    attempt.begin(InspectionStage::ProxyTunnel);
+    let tunnel = attempt
+        .within(
+            attempt.timeouts.proxy_tunnel,
+            open_tunnel(&mut socket, &attempt.target, &proxy),
+        )
+        .await;
+    match tunnel {
+        Ok(Ok(())) => {
+            attempt.complete();
+            Ok(socket)
+        }
+        Ok(Err(TunnelError::Status(407))) => {
+            Err(attempt.fail(Kind::ProxyAuthRejected).proxy_status(407))
+        }
+        Ok(Err(TunnelError::Status(status))) => {
+            Err(attempt.fail(Kind::ProxyTunnelRejected).proxy_status(status))
+        }
+        Ok(Err(TunnelError::Protocol)) => Err(attempt.fail(Kind::ProxyProtocolError)),
+        Err(expired) => Err(attempt.expired(expired, Kind::ProxyTunnelTimeout)),
+    }
 }
 
 /// Fetch the leaf and chain without sending an HTTP request to the target.
@@ -156,26 +733,7 @@ pub async fn fetch_tls_certificate_info(
     host: &str,
     port: u16,
     proxy_url: Option<&str>,
-) -> Result<TlsCertificateInfo, String> {
-    inspect_with_timeout(host, port, proxy_url, CERTIFICATE_TIMEOUT).await
-}
-
-async fn inspect_with_timeout(
-    host: &str,
-    port: u16,
-    proxy_url: Option<&str>,
-    timeout: Duration,
-) -> Result<TlsCertificateInfo, String> {
-    tokio::time::timeout(timeout, inspect_certificate(host, port, proxy_url))
-        .await
-        .map_err(|_| "Certificate inspection timed out after 15 seconds".to_string())?
-}
-
-async fn inspect_certificate(
-    host: &str,
-    port: u16,
-    proxy_url: Option<&str>,
-) -> Result<TlsCertificateInfo, String> {
+) -> Result<TlsCertificateInfo, CertificateInspectionError> {
     inspect_certificate_with_roots(host, port, proxy_url, super::native_root_store()).await
 }
 
@@ -185,249 +743,94 @@ pub(super) async fn inspect_certificate_with_roots(
     port: u16,
     proxy_url: Option<&str>,
     roots: Result<rustls::RootCertStore, String>,
-) -> Result<TlsCertificateInfo, String> {
-    let socket = open_certificate_socket(host, port, proxy_url).await?;
-    let (config, verification) = super::tls_ca::inspection_tls_config(roots)?;
-    let connector = tokio_rustls::TlsConnector::from(config);
-    let host = host.trim_start_matches('[').trim_end_matches(']');
-    let tls = connector
-        .connect(tls_server_name(host)?, socket)
+) -> Result<TlsCertificateInfo, CertificateInspectionError> {
+    inspect_certificate_with(
+        host,
+        port,
+        proxy_url,
+        roots,
+        InspectionTimeouts::DEFAULT,
+        &SystemNet,
+    )
+    .await
+}
+
+// Budget and network injection are Rust-internal test seams, never IPC options.
+pub(super) async fn inspect_certificate_with(
+    host: &str,
+    port: u16,
+    proxy_url: Option<&str>,
+    roots: Result<rustls::RootCertStore, String>,
+    timeouts: InspectionTimeouts,
+    net: &dyn InspectionNet,
+) -> Result<TlsCertificateInfo, CertificateInspectionError> {
+    let route = match proxy_url {
+        Some(_) => InspectionRoute::Proxy,
+        None => InspectionRoute::Direct,
+    };
+    let mut attempt = Attempt::new(route, timeouts);
+    inspect(&mut attempt, host, port, proxy_url, roots, net)
         .await
-        .map_err(|_| "Target certificate TLS handshake failed".to_string())?;
+        .map_err(Into::into)
+}
+
+async fn inspect(
+    attempt: &mut Attempt,
+    host: &str,
+    port: u16,
+    proxy_url: Option<&str>,
+    roots: Result<rustls::RootCertStore, String>,
+    net: &dyn InspectionNet,
+) -> Result<TlsCertificateInfo, Failure> {
+    use InspectionFailureKind as Kind;
+    let name_host = host.trim_start_matches('[').trim_end_matches(']');
+    // Never echo a rejected target: it can carry injected header text.
+    let (Ok(target), Ok(server_name)) = (authority(host, port), tls_server_name(name_host)) else {
+        return Err(attempt.fail(Kind::InvalidTarget));
+    };
+    attempt.target = target;
+
+    attempt.begin(InspectionStage::Verifier);
+    let (config, verification) = super::tls_ca::inspection_tls_config(roots)
+        .map_err(|_| attempt.fail(Kind::InspectionUnavailable))?;
+
+    let socket = match proxy_url {
+        Some(proxy_url) => connect_through_proxy(attempt, net, proxy_url).await?,
+        None => connect_direct(attempt, net).await?,
+    };
+
+    attempt.begin(InspectionStage::TlsHandshake);
+    let connector = tokio_rustls::TlsConnector::from(config);
+    let handshake = attempt
+        .within(
+            attempt.timeouts.tls_handshake,
+            connector.connect(server_name, socket),
+        )
+        .await;
+    let tls = match handshake {
+        Ok(Ok(tls)) => tls,
+        Ok(Err(error)) => {
+            return Err(attempt
+                .fail(Kind::TlsHandshakeFailed)
+                .tls_reason(tls_failure_reason(&error)))
+        }
+        Err(expired) => return Err(attempt.expired(expired, Kind::TlsHandshakeTimeout)),
+    };
+    attempt.complete();
+
+    attempt.begin(InspectionStage::Certificate);
     let mut info =
-        capture_peer_certificate_chain(tls.get_ref().1.peer_certificates().unwrap_or_default())?;
-    info.ca_validation = verification.completed(host, port, proxy_url, &info.fingerprint)?;
+        capture_peer_certificate_chain(tls.get_ref().1.peer_certificates().unwrap_or_default())
+            .map_err(|_| attempt.fail(Kind::CertificateUnreadable))?;
+    attempt.complete();
+
+    attempt.begin(InspectionStage::Verifier);
+    info.ca_validation = verification
+        .completed(name_host, port, proxy_url, &info.fingerprint)
+        .map_err(|_| attempt.fail(Kind::InspectionUnavailable))?;
     Ok(info)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::tls_test_fixture::{test_acceptor, TEST_CERT};
-    use super::*;
-    use sha2::{Digest, Sha256};
-    use tokio::net::TcpListener;
-
-    async fn read_request<S: AsyncRead + Unpin>(socket: &mut S) -> String {
-        let mut bytes = Vec::new();
-        while !bytes.ends_with(b"\r\n\r\n") {
-            bytes.push(socket.read_u8().await.unwrap());
-            assert!(bytes.len() < MAX_CONNECT_HEADER_BYTES);
-        }
-        String::from_utf8(bytes).unwrap()
-    }
-
-    #[test]
-    fn rejects_header_injection_and_non_authority_proxy_routes() {
-        for host in ["host\r\nX-Injected: yes", "user@host", "host/path", ""] {
-            assert!(authority(host, 443).is_err());
-        }
-        assert_eq!(
-            authority("2001:db8::1", 8443).unwrap(),
-            "[2001:db8::1]:8443"
-        );
-        for proxy in [
-            "socks5://localhost:1",
-            "http://localhost/path",
-            "http://localhost:0",
-            " http://localhost:1",
-            "http://localhost/?x=1",
-        ] {
-            assert!(parse_proxy(proxy).is_err());
-        }
-        assert_eq!(decode_user_info("a+b%3Ac%0D%0A"), "a+b:c\r\n");
-        assert_eq!(decode_user_info("a&b+c%26d%2Be"), "a&b+c&d+e");
-    }
-
-    #[tokio::test]
-    async fn authenticates_connect_and_inspects_target_without_local_target_dns() {
-        let acceptor = test_acceptor();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let proxy = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let request = read_request(&mut socket).await;
-            assert_eq!(request,
-                "CONNECT private.invalid:8443 HTTP/1.1\r\nHost: private.invalid:8443\r\nProxy-Authorization: Basic dXNlcituYW1lOnNlY3JldDoNCg==\r\n\r\n");
-            socket
-                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
-                .await
-                .unwrap();
-            let mut tls = acceptor.accept(socket).await.unwrap();
-            let _ = tls.read_u8().await; // Inspection sends no HTTP application request.
-        });
-        let info = fetch_tls_certificate_info(
-            "private.invalid",
-            8443,
-            Some(&format!(
-                "http://user+name:secret%3A%0D%0A@127.0.0.1:{port}"
-            )),
-        )
-        .await
-        .unwrap();
-        let der = base64::engine::general_purpose::STANDARD
-            .decode(TEST_CERT)
-            .unwrap();
-        assert_eq!(info.fingerprint, hex::encode(Sha256::digest(&der)));
-        assert_eq!(info.chain.len(), 1);
-        assert_eq!(info.chain[0].fingerprint, info.fingerprint);
-        let wire = serde_json::to_value(&info).unwrap();
-        assert_eq!(wire["chain"][0]["fingerprint"], wire["fingerprint"]);
-        // Identical rich parsing in lean/default and the compatibility feature.
-        assert!(wire["chain"][0]["subject"]
-            .as_str()
-            .unwrap()
-            .contains("localhost"));
-        assert!(!wire["chain"][0]["valid_from"].as_str().unwrap().is_empty());
-        assert_eq!(wire["details"]["public_key"]["bits"], 2048);
-        assert_eq!(wire["details"]["signature_parameters_der_base64"], "BQA=");
-        assert_eq!(wire["capture"]["source"], "peer-presented");
-        assert_eq!(wire["chain"][0]["details"]["der_base64"], TEST_CERT);
-        assert!(info.warnings.is_empty(), "{:?}", info.warnings);
-        proxy.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn direct_ip_inspection_returns_real_fingerprint_without_sending_credentials() {
-        let acceptor = test_acceptor();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let peer = tokio::spawn(async move {
-            let (socket, _) = listener.accept().await.unwrap();
-            let mut tls = acceptor.accept(socket).await.unwrap();
-            // Inspection is TLS-only: no HTTP request or stored credentials.
-            assert_eq!(tls.read(&mut [0; 1]).await.unwrap_or_default(), 0);
-        });
-        let info = fetch_tls_certificate_info("127.0.0.1", port, None)
-            .await
-            .unwrap();
-        let der = base64::engine::general_purpose::STANDARD
-            .decode(TEST_CERT)
-            .unwrap();
-        assert_eq!(info.fingerprint, hex::encode(Sha256::digest(&der)));
-        assert_eq!(info.chain[0].fingerprint, info.fingerprint);
-        assert_eq!(info.subject_cn.as_deref(), Some("localhost"));
-        assert_eq!(info.san, ["DNS:localhost", "IP:127.0.0.1"]);
-        assert_eq!(info.capture.certificate_count, 1);
-        assert!(info.pem.unwrap().starts_with("-----BEGIN CERTIFICATE-----"));
-        peer.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn failed_authentication_has_no_direct_fallback_or_secret_echo() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let proxy = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let _ = read_request(&mut socket).await;
-            socket
-                .write_all(b"HTTP/1.1 407 secret-password\r\nX-Secret: sensitive\r\n\r\n")
-                .await
-                .unwrap();
-        });
-        let error = fetch_tls_certificate_info(
-            "private.invalid",
-            443,
-            Some(&format!("http://user:secret-password@127.0.0.1:{port}")),
-        )
-        .await
-        .unwrap_err();
-        assert!(error.contains("407"));
-        assert!(!error.contains("secret-password"));
-        assert!(!error.contains("sensitive"));
-        assert!(!error.contains("private.invalid"));
-        proxy.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn bounds_connect_response_headers() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let proxy = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let _ = read_request(&mut socket).await;
-            let _ = socket
-                .write_all(&vec![b'x'; MAX_CONNECT_HEADER_BYTES + 1])
-                .await;
-        });
-        let error = open_certificate_socket(
-            "private.invalid",
-            443,
-            Some(&format!("http://127.0.0.1:{port}")),
-        )
-        .await
-        .err()
-        .unwrap();
-        assert!(error.contains("exceed the limit"));
-        proxy.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn cancellation_drops_an_unresponsive_proxy_socket() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let (seen_tx, seen_rx) = tokio::sync::oneshot::channel();
-        let proxy = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let _ = read_request(&mut socket).await;
-            seen_tx.send(()).unwrap();
-            assert_eq!(socket.read(&mut [0]).await.unwrap(), 0);
-        });
-        let task = tokio::spawn(async move {
-            fetch_tls_certificate_info(
-                "private.invalid",
-                443,
-                Some(&format!("http://127.0.0.1:{port}")),
-            )
-            .await
-        });
-        seen_rx.await.unwrap();
-        task.abort();
-        assert!(task.await.unwrap_err().is_cancelled());
-        tokio::time::timeout(Duration::from_secs(2), proxy)
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn inspection_deadline_bounds_an_unresponsive_proxy() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let proxy = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let _ = read_request(&mut socket).await;
-            assert_eq!(socket.read(&mut [0]).await.unwrap(), 0);
-        });
-        let error = inspect_with_timeout(
-            "private.invalid",
-            443,
-            Some(&format!("http://127.0.0.1:{port}")),
-            Duration::from_millis(100),
-        )
-        .await
-        .unwrap_err();
-        assert!(error.contains("timed out"));
-        assert_eq!(CERTIFICATE_TIMEOUT, Duration::from_secs(15));
-        proxy.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn https_proxy_certificate_is_not_exempted_by_target_inspection() {
-        let acceptor = test_acceptor();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let proxy = tokio::spawn(async move {
-            let (socket, _) = listener.accept().await.unwrap();
-            assert!(acceptor.accept(socket).await.is_err());
-        });
-        let error = fetch_tls_certificate_info(
-            "private.invalid",
-            443,
-            Some(&format!("https://127.0.0.1:{port}")),
-        )
-        .await
-        .unwrap_err();
-        assert!(error.contains("proxy TLS verification failed"));
-        proxy.await.unwrap();
-    }
-}
+#[path = "http_proxy_transport_tests.rs"]
+mod tests;
