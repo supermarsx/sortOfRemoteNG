@@ -1,6 +1,9 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Connection } from "../../types/connection/connection";
+import {
+  Connection,
+  ConnectionFilter,
+} from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
@@ -16,6 +19,63 @@ export interface ConnectOptionsData {
   privateKey: string;
   passphrase: string;
   saveToConnection: boolean;
+}
+
+type SortBy = NonNullable<ConnectionFilter["sortBy"]>;
+type SortDirection = NonNullable<ConnectionFilter["sortDirection"]>;
+
+/* ── Sibling ordering ──────────────────────────────────────────── */
+
+/**
+ * The single comparator a sibling group is displayed with. `buildTree` renders
+ * each group through it and `handleItemDrop` measures a drop against the same
+ * list, so a "third row from the top" means the same thing to both. Anything
+ * that reads sibling order for a position must use this, not raw `order`: a
+ * group whose members have never been dragged shares the implicit order 0 and
+ * is displayed alphabetically, in no relation to the persisted array.
+ */
+export function createSiblingComparator(
+  sortBy: SortBy,
+  sortDirection: SortDirection,
+): (a: Connection, b: Connection) => number {
+  const multiplier = sortDirection === "desc" ? -1 : 1;
+  return (a, b) => {
+    if (a.isGroup && !b.isGroup) return -1;
+    if (!a.isGroup && b.isGroup) return 1;
+
+    if (sortBy === "custom") {
+      const orderA = a.order ?? 0;
+      const orderB = b.order ?? 0;
+      if (orderA !== orderB) return (orderA - orderB) * multiplier;
+    }
+
+    switch (sortBy) {
+      case "protocol":
+        return a.protocol.localeCompare(b.protocol) * multiplier;
+      case "hostname":
+        return (a.hostname || "").localeCompare(b.hostname || "") * multiplier;
+      case "createdAt": {
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return (dateA - dateB) * multiplier;
+      }
+      case "updatedAt": {
+        const dateA = new Date(a.updatedAt).getTime();
+        const dateB = new Date(b.updatedAt).getTime();
+        return (dateA - dateB) * multiplier;
+      }
+      case "recentlyUsed": {
+        const dateA = a.lastConnected ? new Date(a.lastConnected).getTime() : 0;
+        const dateB = b.lastConnected ? new Date(b.lastConnected).getTime() : 0;
+        return (dateB - dateA) * (sortDirection === "asc" ? -1 : 1);
+      }
+      case "custom":
+        return a.name.localeCompare(b.name) * multiplier;
+      case "name":
+      default:
+        return a.name.localeCompare(b.name) * multiplier;
+    }
+  };
 }
 
 /* ── Hook ──────────────────────────────────────────────────────── */
@@ -269,9 +329,10 @@ export function useConnectionTree(
     (connections: Connection[], parentId?: string): Connection[] => {
       const cached = treeIndexes.get(connections);
       if (cached) return cached.get(parentId) ?? [];
-      const sortBy = state.filter.sortBy || "name";
-      const sortDirection = state.filter.sortDirection || "asc";
-      const multiplier = sortDirection === "desc" ? -1 : 1;
+      const compareSiblings = createSiblingComparator(
+        state.filter.sortBy || "name",
+        state.filter.sortDirection || "asc",
+      );
 
       const index = new Map<string | undefined, Connection[]>();
       for (const connection of connections) {
@@ -280,49 +341,7 @@ export function useConnectionTree(
         else index.set(connection.parentId, [connection]);
       }
       for (const siblings of index.values()) {
-        siblings.sort((a, b) => {
-          if (a.isGroup && !b.isGroup) return -1;
-          if (!a.isGroup && b.isGroup) return 1;
-
-          if (sortBy === "custom") {
-            const orderA = a.order ?? 0;
-            const orderB = b.order ?? 0;
-            if (orderA !== orderB) return (orderA - orderB) * multiplier;
-          }
-
-          switch (sortBy) {
-            case "protocol":
-              return a.protocol.localeCompare(b.protocol) * multiplier;
-            case "hostname":
-              return (
-                (a.hostname || "").localeCompare(b.hostname || "") * multiplier
-              );
-            case "createdAt": {
-              const dateA = new Date(a.createdAt).getTime();
-              const dateB = new Date(b.createdAt).getTime();
-              return (dateA - dateB) * multiplier;
-            }
-            case "updatedAt": {
-              const dateA = new Date(a.updatedAt).getTime();
-              const dateB = new Date(b.updatedAt).getTime();
-              return (dateA - dateB) * multiplier;
-            }
-            case "recentlyUsed": {
-              const dateA = a.lastConnected
-                ? new Date(a.lastConnected).getTime()
-                : 0;
-              const dateB = b.lastConnected
-                ? new Date(b.lastConnected).getTime()
-                : 0;
-              return (dateB - dateA) * (sortDirection === "asc" ? -1 : 1);
-            }
-            case "custom":
-              return a.name.localeCompare(b.name) * multiplier;
-            case "name":
-            default:
-              return a.name.localeCompare(b.name) * multiplier;
-          }
-        });
+        siblings.sort(compareSiblings);
       }
       treeIndexes.set(connections, index);
       return index.get(parentId) ?? [];
@@ -582,46 +601,52 @@ export function useConnectionTree(
         return;
       }
 
-      const targetSiblings = state.connections.filter(
-        (c) => c.parentId === newParentId,
-      );
+      const sortBy = state.filter.sortBy || "name";
+      const sortDirection = state.filter.sortDirection || "asc";
 
-      let newOrder: number;
+      // The list the drop is measured against is the one on screen: the target
+      // group as `buildTree` renders it, minus the dragged row, which is about
+      // to be re-inserted. Sorting by raw `order` here instead left siblings
+      // that have never been dragged in persisted order, so the index the drop
+      // computed described no row the user could see.
+      const displayedSiblings = state.connections
+        .filter((c) => c.parentId === newParentId && c.id !== draggedId)
+        .sort(createSiblingComparator(sortBy, sortDirection));
+
+      // Where the dragged row lands among them, top-down.
+      const lastIndex = displayedSiblings.length;
+      let insertIndex: number;
       if (position === "inside") {
-        newOrder = 0;
-        targetSiblings.forEach((sibling) => {
-          if (sibling.id !== draggedId) {
-            dispatch({
-              type: "UPDATE_CONNECTION",
-              payload: { ...sibling, order: (sibling.order ?? 0) + 1 },
-            });
-          }
-        });
+        insertIndex = 0;
       } else {
-        const sortedSiblings = [...targetSiblings].sort(
-          (a, b) => (a.order ?? 0) - (b.order ?? 0),
+        const targetIndex = displayedSiblings.findIndex(
+          (s) => s.id === targetId,
         );
-        const targetIndex = sortedSiblings.findIndex((s) => s.id === targetId);
-
-        if (position === "before") {
-          newOrder = targetIndex >= 0 ? targetIndex : 0;
-        } else {
-          newOrder = targetIndex >= 0 ? targetIndex + 1 : sortedSiblings.length;
-        }
-
-        const filteredSiblings = sortedSiblings.filter(
-          (s) => s.id !== draggedId,
-        );
-        filteredSiblings.forEach((sibling, index) => {
-          const adjustedOrder = index >= newOrder ? index + 1 : index;
-          if (sibling.order !== adjustedOrder) {
-            dispatch({
-              type: "UPDATE_CONNECTION",
-              payload: { ...sibling, order: adjustedOrder },
-            });
-          }
-        });
+        if (targetIndex < 0)
+          insertIndex = position === "before" ? 0 : lastIndex;
+        else
+          insertIndex = position === "before" ? targetIndex : targetIndex + 1;
       }
+
+      // Dense orders are written from the top of the displayed list down. Only
+      // a descending *custom* sort reads `order` back-to-front, so only there
+      // do the values have to run backwards for the group to stay as rendered;
+      // every other sort mode ignores `order` until the user picks custom, and
+      // should then show them the list they dragged into shape.
+      const descending = sortBy === "custom" && sortDirection === "desc";
+      const orderAt = (displayIndex: number) =>
+        descending ? lastIndex - displayIndex : displayIndex;
+
+      displayedSiblings.forEach((sibling, index) => {
+        const nextOrder = orderAt(index >= insertIndex ? index + 1 : index);
+        if (sibling.order !== nextOrder) {
+          dispatch({
+            type: "UPDATE_CONNECTION",
+            payload: { ...sibling, order: nextOrder },
+          });
+        }
+      });
+      const newOrder = orderAt(insertIndex);
 
       dispatch({
         type: "UPDATE_CONNECTION",
@@ -648,7 +673,13 @@ export function useConnectionTree(
       setDragOverId(null);
       setDropPosition(null);
     },
-    [draggedId, state.connections, dispatch],
+    [
+      draggedId,
+      state.connections,
+      state.filter.sortBy,
+      state.filter.sortDirection,
+      dispatch,
+    ],
   );
 
   return {
