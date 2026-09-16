@@ -5,12 +5,18 @@ export interface WebsiteDiagnosticsCopyButtonProps {
   /** Already-sanitized diagnostic summary. Never pass raw URLs, headers or bodies. */
   text: string;
   disabled?: boolean;
+  /** Renders a labelled button instead of the compact icon-only control. */
+  label?: string;
+  /** Button classes for the labelled variant, so it can match its action bar. */
+  className?: string;
 }
 
 /** Clipboard access follows the app's user-initiated navigator.clipboard convention. */
 export function WebsiteDiagnosticsCopyButton({
   text,
   disabled = false,
+  label,
+  className,
 }: WebsiteDiagnosticsCopyButtonProps) {
   const [feedback, setFeedback] = useState<{
     source: string;
@@ -73,17 +79,18 @@ export function WebsiteDiagnosticsCopyButton({
         data-tooltip={message || "Copy diagnostics"}
         title={message || "Copy diagnostics"}
         disabled={disabled || busy || !text.trim()}
-        className="sor-icon-btn-sm"
+        className={label ? className : "sor-icon-btn-sm"}
         onClick={(event) => {
           event.stopPropagation();
           void copy();
         }}
       >
         <Icon
-          size={14}
+          size={label ? 15 : 14}
           aria-hidden="true"
           className={busy ? "animate-spin" : undefined}
         />
+        {label}
       </button>
       <span
         role="status"
