@@ -34,11 +34,14 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: ".node-version"
-          package-manager-cache: false
+          cache: "npm"
       - name: Enforce Node toolchain contract
         run: npm run toolchain:test
+      # The dev launcher tests resolve the pinned `@tauri-apps/cli` package.
+      - name: Install pinned launcher dependencies
+        run: npm ci
       - name: Verify full-feature native defaults and launchers
-        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs
+        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs tests/tooling/sourcePathCitations.node-test.mjs
       - name: Verify generated cache exclusions
         run: node --test tests/tooling/buildCacheExclusions.node-test.mjs
       - name: Check generated command registrar inventories
@@ -99,7 +102,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      # Every Rust toolchain in this workflow must equal the rust-toolchain.toml
+      # channel (guarded by tests/tooling/nodeToolchain.node-test.mjs).
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
+        with:
+          toolchain: "1.98.1"
       - name: Test valid, wrong-key, and tampered updater signatures
         run: >-
           cargo test --locked --manifest-path src-tauri/Cargo.toml
@@ -313,8 +320,9 @@ jobs:
       CLIPPY_NO_DEPS: ${{ matrix.clippy_no_deps }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
         with:
+          toolchain: "1.98.1"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -411,7 +419,9 @@ jobs:
       - name: Install pinned file-viewer build assets
         working-directory: .
         run: npm ci
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
+        with:
+          toolchain: "1.98.1"
       - name: Install librdkafka build prerequisites
         # libcurl/sasl/zstd/zlib -dev are needed by the `kafka-static` cmake
         # build of librdkafka from source (see kafka step below).
@@ -445,9 +455,9 @@ jobs:
       - name: Pin MSVC host toolchain (explicit)
         shell: pwsh
         run: rustup set default-host x86_64-pc-windows-msvc
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
         with:
-          toolchain: stable-x86_64-pc-windows-msvc
+          toolchain: "1.98.1-x86_64-pc-windows-msvc"
           targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
       - name: Verify MSVC host active
@@ -506,12 +516,14 @@ jobs:
         run: rustup set default-host x86_64-pc-windows-msvc
       - name: Install Rust toolchain (non-Windows)
         if: runner.os != 'Windows'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
+        with:
+          toolchain: "1.98.1"
       - name: Install Rust toolchain (Windows MSVC)
         if: runner.os == 'Windows'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
         with:
-          toolchain: stable-x86_64-pc-windows-msvc
+          toolchain: "1.98.1-x86_64-pc-windows-msvc"
           targets: x86_64-pc-windows-msvc
       - name: Verify MSVC host active
         if: runner.os == 'Windows'
@@ -576,12 +588,14 @@ jobs:
         run: rustup set default-host x86_64-pc-windows-msvc
       - name: Install Rust toolchain (Linux)
         if: runner.os == 'Linux'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
+        with:
+          toolchain: "1.98.1"
       - name: Install Rust toolchain (Windows MSVC)
         if: runner.os == 'Windows'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
         with:
-          toolchain: stable-x86_64-pc-windows-msvc
+          toolchain: "1.98.1-x86_64-pc-windows-msvc"
           targets: x86_64-pc-windows-msvc
       - name: Install Linux build prerequisites
         if: runner.os == 'Linux'
@@ -615,7 +629,9 @@ jobs:
         working-directory: src-tauri
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
+        with:
+          toolchain: "1.98.1"
       - name: Install librdkafka build prerequisites
         # libcurl/sasl/zstd/zlib -dev feed the `kafka-static` cmake build of
         # librdkafka from source (the feature set below uses kafka-static).
@@ -644,8 +660,9 @@ jobs:
       RUSTFLAGS: "-D warnings"
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
         with:
+          toolchain: "1.98.1"
           components: clippy
       - name: Install librdkafka build prerequisites
         # libcurl/sasl/zstd/zlib -dev feed the `kafka-static` cmake build of

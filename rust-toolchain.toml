@@ -1,7 +1,13 @@
 # Pinned Rust toolchain for sortOfRemoteNG.
 #
-# `channel = "stable"` keeps the file cross-platform so Linux/macOS dev
-# environments and CI runners install the normal stable host toolchain.
+# `channel = "1.98.1"` pins an exact release so local builds, clippy lint
+# sets and CI all run the same compiler. A floating `stable` let new lints
+# land locally (or in CI) without anyone changing the repo. Bumping the
+# toolchain is an explicit change: edit this file, fix the new lints in the
+# same change, and keep the CI workflows aligned with the pin.
+#
+# The pin is still cross-platform: rustup installs the 1.98.1 host
+# toolchain for Linux/macOS dev environments and CI runners.
 #
 # The `targets` entry ensures the MSVC *target* std is available on every
 # platform. Windows hosts MUST additionally use the MSVC *host* toolchain —
@@ -13,10 +19,10 @@
 #
 # To switch a Windows machine to MSVC host:
 #   rustup set default-host x86_64-pc-windows-msvc
-#   rustup default stable-x86_64-pc-windows-msvc
+#   rustup toolchain install 1.98.1-x86_64-pc-windows-msvc
 
 [toolchain]
-channel = "stable"
+channel = "1.98.1"
 components = ["rustfmt", "clippy"]
 targets = ["x86_64-pc-windows-msvc"]
 profile = "minimal"

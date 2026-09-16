@@ -37,6 +37,7 @@ export default defineConfig({
       "**/node_modules/**",
       "**/dist/**",
       "**/.claude/**",
+      "**/.orchestration/**",
       ".cache/**",
       "**/e2e/**",
       ...NODE_TEST_SUITE_EXCLUDES,

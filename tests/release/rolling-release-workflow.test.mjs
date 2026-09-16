@@ -782,7 +782,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       os: "ubuntu-24.04",
       platform: "linux",
       rust_target: "x86_64-unknown-linux-gnu",
-      rust_toolchain: "stable",
+      rust_toolchain: "1.98.1",
       bundles: "appimage,deb,rpm",
       cargo_build_jobs: "1",
       release_lto: "off",
@@ -793,7 +793,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       os: "ubuntu-24.04-arm",
       platform: "linux",
       rust_target: "aarch64-unknown-linux-gnu",
-      rust_toolchain: "stable",
+      rust_toolchain: "1.98.1",
       bundles: "appimage,deb,rpm",
       cargo_build_jobs: "1",
       release_lto: "off",
@@ -804,7 +804,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       os: "macos-15",
       platform: "macos",
       rust_target: "aarch64-apple-darwin",
-      rust_toolchain: "stable",
+      rust_toolchain: "1.98.1",
       bundles: "dmg,app",
       cargo_build_jobs: "1",
       release_lto: "off",
@@ -815,7 +815,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       os: "macos-15-intel",
       platform: "macos",
       rust_target: "x86_64-apple-darwin",
-      rust_toolchain: "stable",
+      rust_toolchain: "1.98.1",
       bundles: "dmg,app",
       cargo_build_jobs: "1",
       release_lto: "off",
@@ -943,7 +943,7 @@ test("Windows release compiler is pinned and verified without changing other pla
   assert.ok(toolchainStart >= 0);
   assert.ok(checkoutStart > toolchainStart);
   assert.equal(
-    (buildJob.match(/^\s+rust_toolchain: "stable"$/gm) ?? []).length,
+    (buildJob.match(/^\s+rust_toolchain: "1\.98\.1"$/gm) ?? []).length,
     4,
   );
   assert.equal(
