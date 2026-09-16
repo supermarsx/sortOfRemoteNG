@@ -1273,7 +1273,15 @@ export function useConnectionEditor(
           getDefaultConnectionPort(effectiveFormData.protocol as string),
         isGroup: effectiveFormData.isGroup || false,
         tags: effectiveFormData.tags || [],
-        order: connection?.order ?? Date.now(),
+        // Saving is not a reordering gesture. Carry the stored `order`
+        // through untouched — including its absence, which the tree reads as
+        // the implicit 0 shared by every connection that predates drag and
+        // drop. Stamping a value here (it used to default to `Date.now()`)
+        // lifted such a connection out of that block and dropped it at the
+        // bottom of its folder the first time it was edited. Only a brand-new
+        // connection gets an order, and a wall-clock one so it appends past
+        // every sibling.
+        order: connection ? connection.order : Date.now(),
         createdAt: connection?.createdAt || now,
         updatedAt: now,
       } as Connection;
