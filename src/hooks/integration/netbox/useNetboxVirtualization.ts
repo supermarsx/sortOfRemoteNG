@@ -2,7 +2,7 @@
 // integration (t42 category exec c3, t42-netbox-c3).
 //
 // `netboxVirtualizationApi` pairs 1:1 with the 31 Virtualization/Circuits
-// commands in `src-tauri/crates/sorng-netbox/src/commands.rs`
+// commands that `sorng-commands-ops-platform` lists in `commands.json`
 // (VMs + interfaces 9, Clusters 9, Circuits 13). Invoke argument names use the
 // crate-wide camelCase convention (`vmId`, `ifaceId`, `clusterId`, `circuitId`,
 // `providerId`, `typeId`) that Tauri maps to the snake_case Rust parameters.
@@ -36,7 +36,10 @@ export type NetboxData = Record<string, unknown>;
 export const netboxVirtualizationApi = {
   // Virtual machines (5) + VM interfaces (4)
   listVms: (id: string, params: NetboxParams = []) =>
-    invoke<PaginatedResponse<VirtualMachine>>("netbox_list_vms", { id, params }),
+    invoke<PaginatedResponse<VirtualMachine>>("netbox_list_vms", {
+      id,
+      params,
+    }),
   getVm: (id: string, vmId: number) =>
     invoke<VirtualMachine>("netbox_get_vm", { id, vmId }),
   createVm: (id: string, data: NetboxData) =>
@@ -91,9 +94,12 @@ export const netboxVirtualizationApi = {
   deleteCircuit: (id: string, circuitId: number) =>
     invoke<void>("netbox_delete_circuit", { id, circuitId }),
   listCircuitProviders: (id: string) =>
-    invoke<PaginatedResponse<CircuitProvider>>("netbox_list_circuit_providers", {
-      id,
-    }),
+    invoke<PaginatedResponse<CircuitProvider>>(
+      "netbox_list_circuit_providers",
+      {
+        id,
+      },
+    ),
   getCircuitProvider: (id: string, providerId: number) =>
     invoke<CircuitProvider>("netbox_get_circuit_provider", { id, providerId }),
   createCircuitProvider: (id: string, data: NetboxData) =>
@@ -221,7 +227,9 @@ export function useNetboxVirtualization(
   const [circuitTypes, setCircuitTypes] = useState<CircuitType[]>([]);
   const [vmDetail, setVmDetail] = useState<VmDetail | null>(null);
   const [clusterDetail, setClusterDetail] = useState<Cluster | null>(null);
-  const [circuitDetail, setCircuitDetail] = useState<CircuitDetail | null>(null);
+  const [circuitDetail, setCircuitDetail] = useState<CircuitDetail | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

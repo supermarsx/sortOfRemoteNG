@@ -3,8 +3,8 @@
 // across five blocks:
 //   Versions (8) · FPM Pools (9) · FPM Process/Service (13) · OPcache (7) · Sessions (6)
 //
-// Pairs 1:1 with the matching command blocks in
-//   src-tauri/crates/sorng-php/src/commands.rs
+// Pairs 1:1 with the matching `php_*` commands registered by
+//   `sorng-commands-ops-web` (see its `commands.json`)
 // Every command's first arg is the live connection `id` (= the shell's
 // `connectionId`); most also take a `version` string. Tauri camelCases the
 // top-level fn params (`max_age_secs -> maxAgeSecs`), but request/config STRUCT
@@ -67,7 +67,8 @@ export const phpRuntimeApi = {
     version: string,
     name: string,
     request: UpdateFpmPoolRequest,
-  ) => invoke<PhpFpmPool>("php_update_fpm_pool", { id, version, name, request }),
+  ) =>
+    invoke<PhpFpmPool>("php_update_fpm_pool", { id, version, name, request }),
   deleteFpmPool: (id: string, version: string, name: string) =>
     invoke<void>("php_delete_fpm_pool", { id, version, name }),
   enableFpmPool: (id: string, version: string, name: string) =>
@@ -159,7 +160,9 @@ export function usePhpRuntime() {
   const clearError = useCallback(() => setError(null), []);
 
   const run = useCallback(
-    async <T>(fn: (api: PhpRuntimeApi) => Promise<T>): Promise<T | undefined> => {
+    async <T>(
+      fn: (api: PhpRuntimeApi) => Promise<T>,
+    ): Promise<T | undefined> => {
       setIsLoading(true);
       setError(null);
       try {

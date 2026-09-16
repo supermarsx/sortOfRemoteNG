@@ -1,7 +1,7 @@
 // useNetboxConnection — connection-lifecycle slice for the NetBox integration.
 //
-// Pairs 1:1 with the "Connection lifecycle" commands in
-// `src-tauri/crates/sorng-netbox/src/commands.rs` (netbox_connect /
+// Pairs 1:1 with the "Connection lifecycle" commands that
+// `sorng-commands-ops-platform` lists in `commands.json` (netbox_connect /
 // netbox_disconnect / netbox_list_connections / netbox_ping). Argument names
 // match the Rust `#[tauri::command]` signatures exactly so Tauri's arg mapping
 // works without custom serializers.

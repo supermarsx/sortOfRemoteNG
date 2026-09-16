@@ -2,7 +2,7 @@
 //
 // `cpanelAccountApi` is a thin 1:1 wrapper over the 44 single-account
 // `cpanel_*` commands (Domains 8, Email 12, Databases 7, Files 4, SSL 5, FTP 4,
-// Cron 4) in `src-tauri/crates/sorng-cpanel/src/commands.rs`.
+// Cron 4) registered by `sorng-commands-ops-web` (see its `commands.json`).
 //
 // Every command's first arg is the live connection `id`; account-scope commands
 // additionally take the cPanel account username `user`. Tauri camelCases command
@@ -63,8 +63,11 @@ export const cpanelAccountApi = {
     invoke<DomainInfo[]>("cpanel_list_domains", { id, user }),
   listAllDomains: (id: string) =>
     invoke<DomainInfo[]>("cpanel_list_all_domains", { id }),
-  createAddonDomain: (id: string, user: string, req: CreateAddonDomainRequest) =>
-    invoke<string>("cpanel_create_addon_domain", { id, user, req }),
+  createAddonDomain: (
+    id: string,
+    user: string,
+    req: CreateAddonDomainRequest,
+  ) => invoke<string>("cpanel_create_addon_domain", { id, user, req }),
   removeAddonDomain: (
     id: string,
     user: string,
@@ -125,12 +128,8 @@ export const cpanelAccountApi = {
       fwdopt,
       fwdemail,
     }),
-  deleteForwarder: (
-    id: string,
-    user: string,
-    address: string,
-    dest: string,
-  ) => invoke<string>("cpanel_delete_forwarder", { id, user, address, dest }),
+  deleteForwarder: (id: string, user: string, address: string, dest: string) =>
+    invoke<string>("cpanel_delete_forwarder", { id, user, address, dest }),
   listAutoresponders: (id: string, user: string, domain: string) =>
     invoke<EmailAutoresponder[]>("cpanel_list_autoresponders", {
       id,

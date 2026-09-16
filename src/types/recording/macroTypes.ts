@@ -1,8 +1,8 @@
-// Mirror Rust types (from src-tauri/src/ssh/types.rs)
+// Mirror Rust types (from the sorng-ssh crate's `ssh::types` module)
 export interface SessionRecordingEntry {
   timestamp_ms: number;
   data: string;
-  entry_type: 'Output' | 'Input' | { Resize: { cols: number; rows: number } };
+  entry_type: "Output" | "Input" | { Resize: { cols: number; rows: number } };
 }
 
 export interface SessionRecordingMetadata {
@@ -55,7 +55,7 @@ export interface RecordingConfig {
   recordInput: boolean;
   maxRecordingDurationMinutes: number;
   maxStoredRecordings: number;
-  defaultExportFormat: 'json' | 'asciicast' | 'script' | 'gif';
+  defaultExportFormat: "json" | "asciicast" | "script" | "gif";
 }
 
 // ─── RDP Screen Recording ─────────────────────────────────────────
@@ -84,7 +84,7 @@ export interface RDPRecordingConfig {
   /** Auto-record RDP sessions on connect */
   autoRecordRdpSessions: boolean;
   /** Default video format: 'webm' | 'mp4' | 'gif' */
-  defaultVideoFormat: 'webm' | 'mp4' | 'gif';
+  defaultVideoFormat: "webm" | "mp4" | "gif";
   /** Recording FPS */
   recordingFps: number;
   /** Video bitrate in Mbps */
@@ -169,5 +169,5 @@ export interface WebRecordingConfig {
   recordHeaders: boolean;
   maxWebRecordingDurationMinutes: number;
   maxStoredWebRecordings: number;
-  defaultExportFormat: 'json' | 'har';
+  defaultExportFormat: "json" | "har";
 }

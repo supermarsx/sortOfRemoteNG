@@ -3,8 +3,8 @@
 // commands across six blocks:
 //   Accounts (12) · DNS (5) · Backups (5) · Security (8) · Monitoring (4) · PHP (5)
 //
-// Pairs 1:1 with the matching command blocks in
-//   src-tauri/crates/sorng-cpanel/src/commands.rs
+// Pairs 1:1 with the matching `cpanel_*` commands registered by
+//   `sorng-commands-ops-web` (see its `commands.json`)
 // Every command's first arg is the live connection `id` (= the shell's
 // `connectionId`). Account-scope commands additionally take a cPanel account
 // `user`. Tauri camelCases the top-level fn params, so two-word Rust params map
@@ -104,7 +104,8 @@ export const cpanelServerApi = {
     name: string,
     key: string,
     keyType: string,
-  ) => invoke<string>("cpanel_import_ssh_key", { id, user, name, key, keyType }),
+  ) =>
+    invoke<string>("cpanel_import_ssh_key", { id, user, name, key, keyType }),
   deleteSshKey: (id: string, user: string, name: string, keyType: string) =>
     invoke<string>("cpanel_delete_ssh_key", { id, user, name, keyType }),
   getModsecStatus: (id: string, domain: string) =>

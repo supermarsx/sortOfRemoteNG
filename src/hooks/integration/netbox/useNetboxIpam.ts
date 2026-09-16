@@ -1,7 +1,7 @@
 // useNetboxIpam — IPAM category slice for the NetBox integration (t42 `c2`).
 //
-// `netboxIpamApi` pairs 1:1 with the 38 IPAM commands in
-// `src-tauri/crates/sorng-netbox/src/commands.rs` (IP addresses, prefixes +
+// `netboxIpamApi` pairs 1:1 with the 38 IPAM commands that
+// `sorng-commands-ops-platform` lists in `commands.json` (IP addresses, prefixes +
 // available-ip/prefix helpers, VRFs, aggregates, RIRs, IPAM roles, services,
 // VLANs + groups). Argument keys are the camelCase form of each Rust
 // `#[tauri::command]` param — Tauri maps them to the snake_case params
@@ -208,7 +208,7 @@ export function useNetboxIpam(): UseNetboxIpam {
   );
 
   const run = useCallback(
-    async <T,>(action: () => Promise<T>): Promise<T | null> => {
+    async <T>(action: () => Promise<T>): Promise<T | null> => {
       setBusy(true);
       setError(null);
       try {

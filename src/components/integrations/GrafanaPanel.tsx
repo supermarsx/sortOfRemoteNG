@@ -1,13 +1,13 @@
 // Grafana integration panel (t42-grafana).
 //
 // Full panel for the sorng-grafana crate — binds every one of the 46 Grafana
-// commands registered in the Tauri handler (`sorng-commands-ops/src/ops_handler.rs`)
+// commands registered by `sorng-commands-ops-monitoring` (see its `commands.json`)
 // through `useGrafana()` / `grafanaApi`. Connect form maps to `grafana_connect`
 // (host + API key OR user/password + org id); sub-tabs cover dashboards,
 // datasources, folders, organizations, users, teams, alert rules, annotations,
 // playlists and snapshots.
 //
-// NOTE: the crate's `commands.rs` defines 10 additional functions (ping,
+// NOTE: the Grafana command module defines 10 additional functions (ping,
 // save_dashboard, list_dashboard_versions, get_dashboard_tags, switch_org,
 // get_current_user, set_user_admin, list_alert_notifications, list_panel_plugins,
 // get_panel_plugin) that are NOT registered in the handler. They are a backend

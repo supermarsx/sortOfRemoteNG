@@ -1,7 +1,7 @@
 // usePortainer — real Tauri `invoke(...)` wrappers for the sorng-portainer backend.
 //
 // Binds all 14 Portainer commands registered in the Tauri handler
-// (`sorng-commands-ops` / `sorng-commands-services` services_handler.rs). Every
+// (the `sorng-commands-services` registrar crate). Every
 // command after connect is keyed by a connection `id` (the backend holds a map
 // of live clients). Argument keys are camelCase — Tauri v2 maps them to the
 // snake_case Rust `#[tauri::command]` params (e.g. `endpointId` → `endpoint_id`).
@@ -82,10 +82,7 @@ export type PortainerApi = typeof portainerApi;
 // ─── React hook ──────────────────────────────────────────────────────────────
 
 export type PortainerStatus =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "error";
+  "disconnected" | "connecting" | "connected" | "error";
 
 function errMsg(e: unknown): string {
   if (typeof e === "string") return e;

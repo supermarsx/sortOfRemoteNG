@@ -1,8 +1,8 @@
 // NetBox DCIM invoke slice + hook (t42-netbox-c1).
 //
 // `netboxDcimApi` is a thin 1:1 wrapper over the 46 DCIM `netbox_*` commands
-// (Sites 8, Racks 8, Devices 17, Interfaces 7, Cables 6) in
-// `src-tauri/crates/sorng-netbox/src/commands.rs`. Every command's first arg is
+// (Sites 8, Racks 8, Devices 17, Interfaces 7, Cables 6) registered by
+// `sorng-commands-ops-platform` (see its `commands.json`). Every command's first arg is
 // the live connection `id`. Tauri camelCases command params, so the Rust
 // signatures map as: `site_id -> siteId`, `rack_id -> rackId`,
 // `device_id -> deviceId`, `type_id -> typeId`, `mfg_id -> mfgId`,
@@ -55,7 +55,10 @@ export const netboxDcimApi = {
       region,
     }),
   listSitesByGroup: (id: string, group: string) =>
-    invoke<PaginatedResponse<Site>>("netbox_list_sites_by_group", { id, group }),
+    invoke<PaginatedResponse<Site>>("netbox_list_sites_by_group", {
+      id,
+      group,
+    }),
 
   // ── Racks (8) ──────────────────────────────────────────────────
   listRacks: (id: string, siteId?: number | null) =>
@@ -76,10 +79,13 @@ export const netboxDcimApi = {
   getRackElevation: (id: string, rackId: number) =>
     invoke<RackUnit[]>("netbox_get_rack_elevation", { id, rackId }),
   listRackReservations: (id: string, rackId: number) =>
-    invoke<PaginatedResponse<RackReservation>>("netbox_list_rack_reservations", {
-      id,
-      rackId,
-    }),
+    invoke<PaginatedResponse<RackReservation>>(
+      "netbox_list_rack_reservations",
+      {
+        id,
+        rackId,
+      },
+    ),
 
   // ── Devices (17) ───────────────────────────────────────────────
   listDevices: (id: string, params: NbParams = []) =>
@@ -109,7 +115,9 @@ export const netboxDcimApi = {
   getDeviceType: (id: string, typeId: number) =>
     invoke<DeviceType>("netbox_get_device_type", { id, typeId }),
   listManufacturers: (id: string) =>
-    invoke<PaginatedResponse<Manufacturer>>("netbox_list_manufacturers", { id }),
+    invoke<PaginatedResponse<Manufacturer>>("netbox_list_manufacturers", {
+      id,
+    }),
   getManufacturer: (id: string, mfgId: number) =>
     invoke<Manufacturer>("netbox_get_manufacturer", { id, mfgId }),
   listPlatforms: (id: string) =>

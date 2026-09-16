@@ -4,8 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 /**
  * Thin wrapper for Postgres admin Tauri commands (sorng-postgres-admin).
  *
- * Covers all 94 `pg_admin_*` commands registered via slot `b` in
- * `sorng-commands-ops::ops_handler`. Types are intentionally loose
+ * Covers all 97 `pg_admin_*` commands registered by
+ * `sorng-commands-ops-databases` (see its `commands.json`). Types are intentionally loose
  * (`unknown` / explicit request object) to keep this hook lightweight;
  * callers that need strong typing can cast results at the call site.
  */
@@ -14,18 +14,21 @@ export function usePostgresAdmin() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const wrap = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | null> => {
-    setLoading(true);
-    setError(null);
-    try {
-      return await fn();
-    } catch (e) {
-      setError(String(e));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const wrap = useCallback(
+    async <T>(fn: () => Promise<T>): Promise<T | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        return await fn();
+      } catch (e) {
+        setError(String(e));
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   // --- Connection ---
   const connect = (config: unknown) =>
@@ -57,9 +60,13 @@ export function usePostgresAdmin() {
   const revokeRole = (id: string, spec: unknown) =>
     wrap(() => invoke<void>("pg_admin_revoke_role", { id, spec }));
   const setRolePassword = (id: string, name: string, password: string) =>
-    wrap(() => invoke<void>("pg_admin_set_role_password", { id, name, password }));
+    wrap(() =>
+      invoke<void>("pg_admin_set_role_password", { id, name, password }),
+    );
   const listRoleMemberships = (id: string, name: string) =>
-    wrap(() => invoke<unknown[]>("pg_admin_list_role_memberships", { id, name }));
+    wrap(() =>
+      invoke<unknown[]>("pg_admin_list_role_memberships", { id, name }),
+    );
 
   // --- Databases ---
   const listDatabases = (id: string) =>
@@ -71,17 +78,25 @@ export function usePostgresAdmin() {
   const dropDatabase = (id: string, name: string) =>
     wrap(() => invoke<void>("pg_admin_drop_database", { id, name }));
   const renameDatabase = (id: string, oldName: string, newName: string) =>
-    wrap(() => invoke<void>("pg_admin_rename_database", { id, oldName, newName }));
+    wrap(() =>
+      invoke<void>("pg_admin_rename_database", { id, oldName, newName }),
+    );
   const alterDatabaseOwner = (id: string, name: string, owner: string) =>
-    wrap(() => invoke<void>("pg_admin_alter_database_owner", { id, name, owner }));
+    wrap(() =>
+      invoke<void>("pg_admin_alter_database_owner", { id, name, owner }),
+    );
   const getDatabaseSize = (id: string, name: string) =>
     wrap(() => invoke<number>("pg_admin_get_database_size", { id, name }));
   const getDatabaseConnections = (id: string, name: string) =>
-    wrap(() => invoke<unknown[]>("pg_admin_get_database_connections", { id, name }));
+    wrap(() =>
+      invoke<unknown[]>("pg_admin_get_database_connections", { id, name }),
+    );
   const terminateConnections = (id: string, name: string) =>
     wrap(() => invoke<void>("pg_admin_terminate_connections", { id, name }));
   const listDatabaseSchemas = (id: string, name: string) =>
-    wrap(() => invoke<unknown[]>("pg_admin_list_database_schemas", { id, name }));
+    wrap(() =>
+      invoke<unknown[]>("pg_admin_list_database_schemas", { id, name }),
+    );
 
   // --- pg_hba ---
   const listHba = (id: string) =>
@@ -107,12 +122,17 @@ export function usePostgresAdmin() {
   const listReplicationSlots = (id: string) =>
     wrap(() => invoke<unknown[]>("pg_admin_list_replication_slots", { id }));
   const createReplicationSlot = (id: string, spec: unknown) =>
-    wrap(() => invoke<unknown>("pg_admin_create_replication_slot", { id, spec }));
+    wrap(() =>
+      invoke<unknown>("pg_admin_create_replication_slot", { id, spec }),
+    );
   const dropReplicationSlot = (id: string, name: string) =>
     wrap(() => invoke<void>("pg_admin_drop_replication_slot", { id, name }));
   const createPhysicalReplicationSlot = (id: string, name: string) =>
     wrap(() =>
-      invoke<unknown>("pg_admin_create_physical_replication_slot", { id, name }),
+      invoke<unknown>("pg_admin_create_physical_replication_slot", {
+        id,
+        name,
+      }),
     );
   const createLogicalReplicationSlot = (
     id: string,
@@ -171,7 +191,9 @@ export function usePostgresAdmin() {
   const getDatabaseStats = (id: string) =>
     wrap(() => invoke<unknown>("pg_admin_get_database_stats", { id }));
   const getTableStats = (id: string, schema: string, table: string) =>
-    wrap(() => invoke<unknown>("pg_admin_get_table_stats", { id, schema, table }));
+    wrap(() =>
+      invoke<unknown>("pg_admin_get_table_stats", { id, schema, table }),
+    );
   const getIndexStats = (id: string, schema: string) =>
     wrap(() => invoke<unknown[]>("pg_admin_get_index_stats", { id, schema }));
   const getLocks = (id: string) =>
@@ -225,7 +247,9 @@ export function usePostgresAdmin() {
   const getTablespaceSize = (id: string, name: string) =>
     wrap(() => invoke<number>("pg_admin_get_tablespace_size", { id, name }));
   const listTablespaceObjects = (id: string, name: string) =>
-    wrap(() => invoke<unknown[]>("pg_admin_list_tablespace_objects", { id, name }));
+    wrap(() =>
+      invoke<unknown[]>("pg_admin_list_tablespace_objects", { id, name }),
+    );
 
   // --- Schemas ---
   const listSchemas = (id: string) =>
@@ -241,13 +265,17 @@ export function usePostgresAdmin() {
       invoke<void>("pg_admin_rename_schema", { id, oldName, newName }),
     );
   const alterSchemaOwner = (id: string, name: string, owner: string) =>
-    wrap(() => invoke<void>("pg_admin_alter_schema_owner", { id, name, owner }));
+    wrap(() =>
+      invoke<void>("pg_admin_alter_schema_owner", { id, name, owner }),
+    );
   const grantSchema = (id: string, spec: unknown) =>
     wrap(() => invoke<void>("pg_admin_grant_schema", { id, spec }));
   const revokeSchema = (id: string, spec: unknown) =>
     wrap(() => invoke<void>("pg_admin_revoke_schema", { id, spec }));
   const listSchemaTables = (id: string, schema: string) =>
-    wrap(() => invoke<unknown[]>("pg_admin_list_schema_tables", { id, schema }));
+    wrap(() =>
+      invoke<unknown[]>("pg_admin_list_schema_tables", { id, schema }),
+    );
   const listSchemaViews = (id: string, schema: string) =>
     wrap(() => invoke<unknown[]>("pg_admin_list_schema_views", { id, schema }));
   const listSchemaFunctions = (id: string, schema: string) =>

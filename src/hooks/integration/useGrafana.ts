@@ -1,7 +1,7 @@
 // useGrafana — real Tauri `invoke(...)` wrappers for the sorng-grafana backend.
 //
 // Binds the 46 Grafana commands actually registered in the Tauri handler
-// (`sorng-commands-ops/src/ops_handler.rs`). The crate's `commands.rs` defines
+// (`sorng-commands-ops-monitoring`, see its `commands.json`). The command module defines
 // 10 further functions (ping, save_dashboard, list_dashboard_versions,
 // get_dashboard_tags, switch_org, get_current_user, set_user_admin,
 // list_alert_notifications, list_panel_plugins, get_panel_plugin) that are NOT

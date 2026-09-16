@@ -1,7 +1,7 @@
 // useBudibase — real Tauri `invoke(...)` wrappers for the sorng-budibase backend.
 //
 // Binds all 58 Budibase commands registered in the Tauri handler
-// (`sorng-commands-ops` / `sorng-commands-services` services_handler.rs). Every
+// (the `sorng-commands-services` registrar crate). Every
 // command after connect is keyed by a connection `id` (the backend holds a map
 // of live clients). Argument keys are camelCase — Tauri v2 maps them to the
 // snake_case Rust `#[tauri::command]` params (e.g. `appId` → `app_id`). The

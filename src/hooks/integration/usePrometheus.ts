@@ -2,7 +2,7 @@
 // backend.
 //
 // Binds the 22 Prometheus commands actually registered in the Tauri handler
-// (`sorng-commands-ops/src/ops_handler.rs`). The crate's `commands.rs` defines
+// (`sorng-commands-ops-monitoring`, see its `commands.json`). The command module defines
 // 16 further functions (ping, exemplars, active/dropped targets, target
 // metadata, alerting/recording-group rules, alertmanagers, TSDB snapshot/delete/
 // clean, get_metadata, update/expire silence) that are NOT wired into the

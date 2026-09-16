@@ -5,10 +5,10 @@
 // / `prometheusApi`. Connect form maps to `prometheus_connect`; sub-tabs cover
 // queries, targets, rules & alerts, silences and server status.
 //
-// NOTE: the crate's `commands.rs` defines 16 additional functions (ping,
+// NOTE: the Prometheus command module defines 16 additional functions (ping,
 // exemplars, active/dropped targets, target metadata, alerting/recording-group
 // rules, alertmanagers, TSDB snapshot/delete/clean, get_metadata, update/expire
-// silence) that are NOT registered in `sorng-commands-ops/src/ops_handler.rs`.
+// silence) that are NOT in `sorng-commands-ops-monitoring`'s `commands.json`.
 // They are a backend wiring gap (t42 plan R4) and are deliberately not surfaced
 // here — calling them would fail at runtime.
 

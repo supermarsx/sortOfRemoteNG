@@ -6,9 +6,9 @@ SoftEther VPN server, verify it is healthy, and structure the test
 scenarios SE-7 needs to cover.
 
 SE-7 is about testing the **sorng-vpn** Rust port against a real upstream
-SoftEther implementation. The port lives in
-`src-tauri/crates/sorng-vpn/src/softether.rs` (and whatever submodules
-SE-5 / SE-6 add). The server below is the **target**, not the port.
+SoftEther implementation. The port lives in the `sorng-vpn` crate's
+`softether` module (`src-tauri/crates/sorng-vpn/src/softether/`). The
+server below is the **target**, not the port.
 
 ## 1. Start the server
 

@@ -1,8 +1,8 @@
 // useNetboxTenancy — Tenancy & Contacts slice for the NetBox integration
 // (t42-netbox-c4).
 //
-// Pairs 1:1 with the 24 Tenancy/Contacts commands in
-// `src-tauri/crates/sorng-netbox/src/commands.rs`:
+// Pairs 1:1 with the 24 Tenancy/Contacts commands registered by
+// `sorng-commands-ops-platform` (see its `commands.json`):
 //   Tenants (+ groups): 11   Contacts (+ groups/roles/assignments): 13
 // Argument names are camelCase — Tauri maps them to the snake_case Rust
 // `#[tauri::command]` parameters (e.g. `tenantId` -> `tenant_id`), matching the
@@ -40,11 +40,7 @@ export const netboxTenancyApi = {
     invoke<Tenant>("netbox_create_tenant", { id, data }),
   updateTenant: (id: string, tenantId: number, data: Partial<Tenant>) =>
     invoke<Tenant>("netbox_update_tenant", { id, tenantId, data }),
-  partialUpdateTenant: (
-    id: string,
-    tenantId: number,
-    data: Partial<Tenant>,
-  ) =>
+  partialUpdateTenant: (id: string, tenantId: number, data: Partial<Tenant>) =>
     invoke<Tenant>("netbox_partial_update_tenant", { id, tenantId, data }),
   deleteTenant: (id: string, tenantId: number) =>
     invoke<void>("netbox_delete_tenant", { id, tenantId }),
@@ -62,8 +58,7 @@ export const netboxTenancyApi = {
     id: string,
     groupId: number,
     data: Partial<TenantGroup>,
-  ) =>
-    invoke<TenantGroup>("netbox_update_tenant_group", { id, groupId, data }),
+  ) => invoke<TenantGroup>("netbox_update_tenant_group", { id, groupId, data }),
   deleteTenantGroup: (id: string, groupId: number) =>
     invoke<void>("netbox_delete_tenant_group", { id, groupId }),
 
@@ -172,7 +167,9 @@ export function useNetboxTenancy(connectionId: string): UseNetboxTenancy {
       try {
         switch (view) {
           case "tenants":
-            setTenants((await netboxTenancyApi.listTenants(connectionId)).results);
+            setTenants(
+              (await netboxTenancyApi.listTenants(connectionId)).results,
+            );
             break;
           case "tenantGroups":
             setTenantGroups(

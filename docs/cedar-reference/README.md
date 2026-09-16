@@ -4,8 +4,8 @@
 
 This directory holds a **reference-only** snapshot of the relevant C source
 files from [SoftEtherVPN_Stable][upstream] that the SE-5..SE-7 executors need
-in order to clean-room port the SoftEther protocol data-plane into
-`src-tauri/crates/sorng-vpn/src/softether.rs`.
+in order to clean-room port the SoftEther protocol data-plane into the
+`sorng-vpn` crate's `softether` module (`src-tauri/crates/sorng-vpn/src/softether/`).
 
 **This is NOT a build dependency.** Nothing in the Rust workspace links to,
 includes, or compiles any file under this directory. It exists purely so

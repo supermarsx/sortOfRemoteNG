@@ -10,7 +10,7 @@
 //     (`use_tls`, `org_id`, `org_name`, `user_count`, ...). Mirrored exactly.
 //
 // Only the types reachable from the 46 REGISTERED commands
-// (`sorng-commands-ops/src/ops_handler.rs`) are included. The crate defines a
+// (`sorng-commands-ops-monitoring`'s `commands.json`) are included. The crate defines a
 // few more structs (HealthResponse, DashboardVersion, SaveDashboard*,
 // AlertNotification, PanelPlugin*) bound only to unregistered commands — those
 // are intentionally omitted (see the hook header / t42 plan R4).

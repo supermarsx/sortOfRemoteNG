@@ -3,8 +3,8 @@
 // commands across four blocks:
 //   php.ini (10) · Modules/Extensions/PECL (11) · Composer (15) · Logs (9)
 //
-// Pairs 1:1 with the matching command blocks in
-//   src-tauri/crates/sorng-php/src/commands.rs
+// Pairs 1:1 with the matching `php_*` commands registered by
+//   `sorng-commands-ops-web` (see its `commands.json`)
 // Every command's first arg is the live connection `id` (= the shell's
 // `connectionId`); most also take a `version` string. Tauri camelCases the
 // top-level fn params, so two-word Rust params map as `backup_path -> backupPath`,
@@ -62,7 +62,12 @@ export const phpConfigApi = {
   listIniDirectives: (id: string, version: string, sapi: string) =>
     invoke<PhpIniDirective[]>("php_list_ini_directives", { id, version, sapi }),
   getIniDirective: (id: string, version: string, sapi: string, key: string) =>
-    invoke<PhpIniDirective>("php_get_ini_directive", { id, version, sapi, key }),
+    invoke<PhpIniDirective>("php_get_ini_directive", {
+      id,
+      version,
+      sapi,
+      key,
+    }),
   setIniDirective: (id: string, request: SetIniDirectiveRequest) =>
     invoke<void>("php_set_ini_directive", { id, request }),
   removeIniDirective: (
@@ -112,7 +117,9 @@ export const phpConfigApi = {
   isComposerInstalled: (id: string) =>
     invoke<boolean>("php_is_composer_installed", { id }),
   listComposerGlobalPackages: (id: string) =>
-    invoke<ComposerGlobalPackage[]>("php_list_composer_global_packages", { id }),
+    invoke<ComposerGlobalPackage[]>("php_list_composer_global_packages", {
+      id,
+    }),
   installComposerGlobalPackage: (
     id: string,
     packageName: string,
@@ -191,7 +198,9 @@ export function usePhpConfig() {
   const clearError = useCallback(() => setError(null), []);
 
   const run = useCallback(
-    async <T>(fn: (api: PhpConfigApi) => Promise<T>): Promise<T | undefined> => {
+    async <T>(
+      fn: (api: PhpConfigApi) => Promise<T>,
+    ): Promise<T | undefined> => {
       setIsLoading(true);
       setError(null);
       try {
