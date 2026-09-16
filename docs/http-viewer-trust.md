@@ -118,6 +118,18 @@ The certificate is checked on the port the page actually loads from. Previously,
 
 Support for older devices that only offer outdated SSL/TLS versions is planned as a follow-up. Until then, such devices usually fail with **TLS handshake failed**, and the app does not relax TLS to reach them.
 
+## When the website answers with an error
+
+The checks above cover failures that happen before the website answers. When it does answer a page navigation with a 4xx or 5xx status, the tab shows the same error screen instead of the bare server page, with the same actions: **Retry**, **Back**, **Open externally**, **Deep diagnostics** and **Copy diagnostics**. The headline reads, for example, **Server returned HTTP 404** with the status beside it, and the address shown is the request that failed — a link you clicked, not the page you clicked it on — so Retry repeats that request and Back returns to where you came from.
+
+This applies to page navigations whose response is HTML, or carries no content type. A 4xx or 5xx with a JSON or XML body is passed through untouched, because a device's API is expected to answer in its own format.
+
+Under the headline, a row of facts from the response: the request **method**, the server's **`Server`** header, the **content type**, the **response size** in bytes and how long the request **took**. The server's own page is not discarded — **Show the server's response** expands it, because device firmware often explains the real problem there (a maintenance notice, a licence error, a path that moved) in text the status code alone does not carry.
+
+**Copy diagnostics** puts a short plain-text summary on the clipboard for pasting into a ticket. It contains the address with any username and password removed and every query **value** dropped (only the key names remain, since a session id or token is usually a value); the status and its standard reason; the request method; the `Server` header; the content type; the response size; the request duration; the attempt's measured time when a connection timeline exists; the connection's name and id; and the application version. It never contains credentials, cookies, `Authorization` or other request headers, `Set-Cookie`, query values, or the server's response body — the body stays on screen rather than on the clipboard. The same button appears on the connection-failure pages above, where it reports that no response was received.
+
+One limit: this applies to the page the tab navigates. A frame nested inside a page reports its failure to its own parent document rather than to the application, so an error inside such a frame still shows the internal proxy's own page, without these actions.
+
 ## Loading, bookmarks and history
 
 Pages stay visible and interactive while loading. After a 200 ms grace period, a thin line at the top moves and pulses; fast bookmark clicks do not flash a loader. Reduced-motion settings show a static line. The toolbar's **Stop loading** button cancels the navigation; it becomes Refresh again afterward. A certificate decision still blocks page interaction until you approve or decline, and time spent reviewing that decision does not consume the navigation deadline.
