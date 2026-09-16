@@ -4,11 +4,13 @@ import {
   normalizeSynologySettings,
   setSynologyAccessMode,
   isSynologyFileConnection,
+  isValidSynologyOtpAuthenticatorId,
 } from "../../types/protocols/synology";
 import { Select, PasswordInput, CheckboxField } from "../ui/forms";
 import { resolveHttpBasicCredentials } from "../../utils/auth/httpCredentials";
 import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy";
 import { DEVICE_TRUST_VAULT_REQUIRED_MESSAGE } from "../../utils/security/runtimeCredentialVault";
+import SynologyAuthenticatorSection from "./synologyOptions/SynologyAuthenticatorSection";
 
 /** Saved preference only; `false` is stored by omitting the key. */
 function withTrustDevice(
@@ -216,6 +218,14 @@ export default function SynologyOptions({
                   ...(previous.synologySettings?.trustDevice === true
                     ? { trustDevice: true }
                     : {}),
+                  ...(isValidSynologyOtpAuthenticatorId(
+                    previous.synologySettings?.otpAuthenticatorId,
+                  )
+                    ? {
+                        otpAuthenticatorId:
+                          previous.synologySettings.otpAuthenticatorId,
+                      }
+                    : {}),
                 },
                 port:
                   previous.port === 5000 ||
@@ -267,6 +277,12 @@ export default function SynologyOptions({
         </div>
       )}
       {native && (
+        <SynologyAuthenticatorSection
+          formData={formData}
+          setFormData={setFormData}
+        />
+      )}
+      {native && (
         <CheckboxField
           variant="form"
           label="Trust this device after a successful two-factor sign-in"
@@ -286,12 +302,16 @@ export default function SynologyOptions({
       <p className="text-xs text-[var(--color-textSecondary)]">
         Synology NAS API provides File Station and supported NAS administration
         tools, subject to account permissions and installed packages. It uses
-        the saved username/password and asks for one-time codes interactively.
-        Codes are never saved. Native proxy/VPN routes and browser certificate
-        overrides are not supported; configured overrides are refused, not
-        ignored. Website sign-in does not unlock the native API. The website
-        redirect exception does not apply to the NAS API; it never forwards an
-        authenticated API request to an insecure redirect.
+        the saved username/password. After DSM asks for a code, the app
+        generates one from the selected authenticator and submits it once; if
+        it&apos;s rejected, or no authenticator is selected, you&apos;re asked
+        to type a code. One-time codes are never saved; the authenticator secret
+        is stored with this connection&apos;s credentials like the DSM password,
+        and database exports remove it. Native proxy/VPN routes and browser
+        certificate overrides are not supported; configured overrides are
+        refused, not ignored. Website sign-in does not unlock the native API.
+        The website redirect exception does not apply to the NAS API; it never
+        forwards an authenticated API request to an insecure redirect.
       </p>
     </section>
   );

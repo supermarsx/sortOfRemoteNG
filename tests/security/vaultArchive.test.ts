@@ -299,6 +299,94 @@ describe("encrypted credential vault archives", () => {
       expect(next.credentialCount).toBe(1);
     }
   });
+  describe("NAS API authenticator reference", () => {
+    const kept = {
+      version: 1 as const,
+      useHttps: true,
+      accessMode: "native" as const,
+      useDefaultRedirectDestinations: false,
+      trustDevice: true,
+    };
+    const nas = (otpAuthenticatorId: unknown = "local-authenticator") => {
+      const source = archive();
+      Object.assign(source.connections[0], {
+        port: 5001,
+        httpApplication: {
+          version: 1,
+          id: "synology-dsm",
+          loginMode: "manual",
+        },
+        synologySettings: { ...kept, otpAuthenticatorId },
+      });
+      return source;
+    };
+
+    it("is removed on export with the local authenticators it names, keeping the other Synology settings", async () => {
+      const source = {
+        ...nas().connections[0],
+        totpConfigs: [
+          {
+            id: "local-authenticator",
+            secret: "LOCALSEEDLOCALSEED",
+            issuer: "Synology DSM",
+            account: "admin",
+            digits: 6,
+            period: 30,
+            algorithm: "sha1",
+          },
+        ],
+      } as Connection;
+      const before = structuredClone(source);
+      const exported = prepareVaultArchiveConnection(source);
+      expect(exported.synologySettings).toEqual(kept);
+      expect(exported).not.toHaveProperty("totpConfigs");
+      expect(JSON.stringify(exported)).not.toMatch(
+        /local-authenticator|LOCALSEED/,
+      );
+      expect(exported.credentialSource).toEqual(source.credentialSource);
+      expect(source).toEqual(before);
+
+      const file = await encryptVaultArchive(
+        nas(),
+        "separate archive password",
+      );
+      const opened = await decryptVaultArchive(
+        file,
+        "separate archive password",
+      );
+      expect(opened.connections[0].synologySettings).toEqual(kept);
+    });
+
+    it.each([
+      ["a valid reference", "local-authenticator"],
+      ["a malformed reference", "bad\u0000id"],
+      ["a non-string reference", 42],
+    ])(
+      "is dropped from %s on import, keeping the other Synology settings",
+      (_name, reference) => {
+        const incoming = nas(reference);
+        expect(
+          normalizeDatabaseVaultArchive(incoming).connections[0]
+            .synologySettings,
+        ).toEqual(kept);
+        const next = prepareVaultArchiveImport(
+          [],
+          { version: 1, revision: 0, entries: [] },
+          incoming,
+        );
+        const [connection] = next.connections;
+        expect(connection.synologySettings).toEqual(kept);
+        expect(connection.credentialSource).toEqual({
+          kind: "vault",
+          credentialId: next.credentialVault.entries[0].id,
+          totpId: next.credentialVault.entries[0].facets.totp![0].id,
+        });
+        expect(
+          incoming.connections[0].synologySettings?.otpAuthenticatorId,
+        ).toBe(reference);
+      },
+    );
+  });
   it("still rejects an archive entry whose only facet was a trusted device", () => {
     const incoming = archive();
     incoming.connections = [];

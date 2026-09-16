@@ -139,6 +139,9 @@ describe("Synology HTTP application views", () => {
         /provides File Station and supported NAS administration/,
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("synology-authenticator-section"),
+    ).toBeInTheDocument();
     expect(savedShape()).toMatchObject({
       protocol: "https",
       hostname: "nas.example.test",
@@ -165,6 +168,21 @@ describe("Synology HTTP application views", () => {
       basicAuthPassword: "synthetic-secret",
     });
     expect(screen.queryByLabelText("DSM API password")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("synology-authenticator-section"),
+    ).not.toBeInTheDocument();
+  });
+  it("describes automatic one-time codes instead of interactive-only prompts", () => {
+    render(<Editor />);
+    expect(screen.queryByTestId("synology-authenticator-section")).toBeNull();
+    selectMode("Synology NAS API");
+    const copy = screen.getByText(
+      /provides File Station and supported NAS administration/,
+    );
+    expect(copy).toHaveTextContent(
+      "After DSM asks for a code, the app generates one from the selected authenticator and submits it once; if it's rejected, or no authenticator is selected, you're asked to type a code. One-time codes are never saved; the authenticator secret is stored with this connection's credentials like the DSM password, and database exports remove it.",
+    );
+    expect(copy).not.toHaveTextContent(/asks for one-time codes interactively/);
   });
   it("follows the selected HTTP transport, retaining a custom NAS port", () => {
     render(
@@ -478,6 +496,58 @@ describe("Synology NAS API trusted-device preference", () => {
       useHttps: false,
       accessMode: "native",
     });
+  });
+  it("keeps the NAS API authenticator reference and the trusted-device preference across transport changes", () => {
+    const settings = {
+      version: 1 as const,
+      useHttps: true,
+      accessMode: "native" as const,
+      trustDevice: true,
+      otpAuthenticatorId: "dsm-authenticator",
+    };
+    render(
+      <Editor
+        seed={{
+          ...nativeSeed,
+          synologySettings: settings,
+          totpConfigs: [
+            {
+              id: "dsm-authenticator",
+              secret: "JBSWY3DPEHPK3PXP",
+              issuer: "Synology DSM",
+              account: "admin",
+              digits: 6,
+              period: 30,
+              algorithm: "sha1",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "NAS API authenticator" }),
+    ).toHaveTextContent("Synology DSM — admin");
+    for (const [option, useHttps] of [
+      ["HTTP — unencrypted (trusted networks only)", false],
+      ["HTTPS — verified system certificates", true],
+    ] as const) {
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Synology transport" }),
+      );
+      fireEvent.mouseDown(screen.getByRole("option", { name: option }));
+      expect(savedShape().synologySettings).toEqual({ ...settings, useHttps });
+    }
+    expect(normalizeSynologySettings(savedShape().synologySettings)).toEqual(
+      settings,
+    );
+    // Switching views keeps the reference for the next NAS API sign-in.
+    selectMode("Website — DSM in browser");
+    expect(savedShape().synologySettings).toEqual({
+      ...settings,
+      accessMode: "website",
+    });
+    selectMode("Synology NAS API");
+    expect(savedShape().synologySettings).toEqual(settings);
   });
   it("is disabled with guidance for local credentials, even when a preference was saved", () => {
     render(

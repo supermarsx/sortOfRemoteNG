@@ -8,6 +8,7 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import { serializePersistedConnectionSession } from "../../src/utils/session/sessionPersistence";
+import { resolveLocalSynologyAuthenticator } from "../../src/utils/synology/synologyAuthenticator";
 vi.mock("../../src/utils/tauri/invoke", () => ({
   getInvoke: async () => null,
 }));
@@ -113,6 +114,94 @@ describe("Synology database portability", () => {
       find((await manager.loadDatabaseData(clone.id))?.connections)
         ?.synologySettings,
     ).toEqual(trusted.synologySettings);
+  });
+  it("keeps the NAS API authenticator reference while a redacted export removes its secret", async () => {
+    const seed = "JBSWY3DPEHPK3PXPSYNTHETICSEED234";
+    const automatic: Connection = {
+      ...connection,
+      id: "nas-automatic",
+      name: "Automatic NAS",
+      protocol: "https",
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "manual" },
+      synologySettings: {
+        version: 1,
+        useHttps: true,
+        accessMode: "native",
+        otpAuthenticatorId: "dsm-authenticator",
+      },
+      totpConfigs: [
+        {
+          id: "dsm-authenticator",
+          secret: seed,
+          issuer: "Synology DSM",
+          account: "nas-user",
+          digits: 6,
+          period: 30,
+          algorithm: "sha1",
+        },
+      ],
+    };
+    await manager.saveDatabaseData(id, {
+      connections: [connection, automatic],
+      settings: {},
+      timestamp: 3,
+    });
+    const find = (rows: Connection[] | undefined) =>
+      rows?.find((row) => row.id === automatic.id);
+
+    const safe = await manager.exportDatabase(id, false);
+    expect(safe).not.toContain(seed);
+    const exported = find(JSON.parse(safe).connections)!;
+    expect(exported.synologySettings).toEqual(automatic.synologySettings);
+    expect(exported.totpConfigs).toEqual([
+      {
+        id: "dsm-authenticator",
+        issuer: "Synology DSM",
+        account: "nas-user",
+        digits: 6,
+        period: 30,
+        algorithm: "sha1",
+      },
+    ]);
+    expect(resolveLocalSynologyAuthenticator(exported)).toEqual({
+      kind: "unavailable",
+      reason: "no-secret",
+    });
+    const redacted = find(
+      (
+        await manager.loadDatabaseData(
+          (
+            await manager.importDatabase(safe, {
+              collectionName: "Redacted automatic NAS import",
+            })
+          ).id,
+        )
+      )?.connections,
+    )!;
+    expect(redacted.synologySettings).toEqual(automatic.synologySettings);
+    expect(JSON.stringify(redacted)).not.toContain(seed);
+    expect(resolveLocalSynologyAuthenticator(redacted)).toEqual({
+      kind: "unavailable",
+      reason: "no-secret",
+    });
+
+    // A full export and a clone carry the secret with the connection's other credentials.
+    const full = await manager.importDatabase(
+      await manager.exportDatabase(id, true),
+      { collectionName: "Full automatic NAS import" },
+    );
+    const clone = await manager.duplicateDatabase(id, {
+      name: "Automatic NAS clone",
+      includeTrust: false,
+    });
+    for (const copy of [full.id, clone.id]) {
+      const row = find((await manager.loadDatabaseData(copy))?.connections)!;
+      expect(row.synologySettings).toEqual(automatic.synologySettings);
+      expect(resolveLocalSynologyAuthenticator(row)).toEqual({
+        kind: "ready",
+        config: automatic.totpConfigs![0],
+      });
+    }
   });
   it("persists only safe session identity, never credentials or OTP", () => {
     const session: ConnectionSession = {

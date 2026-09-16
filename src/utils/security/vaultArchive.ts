@@ -142,6 +142,25 @@ function withoutDeviceTrust(row: unknown): unknown {
   return { ...row, facets: kept };
 }
 
+/**
+ * A NAS API authenticator reference names a connection-local `totpConfigs`
+ * entry, which archives never carry; automatic codes need a fresh choice.
+ */
+function withoutLocalAuthenticatorReference<T>(row: T): T {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+  const settings = (row as Record<string, unknown>).synologySettings;
+  if (
+    !settings ||
+    typeof settings !== "object" ||
+    Array.isArray(settings) ||
+    !Object.prototype.hasOwnProperty.call(settings, "otpAuthenticatorId")
+  )
+    return row;
+  const kept = { ...(settings as Record<string, unknown>) };
+  delete kept.otpAuthenticatorId;
+  return { ...row, synologySettings: kept };
+}
+
 /** IDs in supported inline routes must resolve inside the selected bundle. */
 function mapReferences(
   value: unknown,
@@ -215,7 +234,7 @@ export function normalizeDatabaseVaultArchive(
   }).entries;
   const credentialIds = new Set(credentials.map((entry) => entry.id));
   const connections = raw.connections.map((value) => {
-    const row = object(value);
+    const row = object(withoutLocalAuthenticatorReference(value));
     if (
       !text(row.id, 128) ||
       !ID.test(row.id) ||
@@ -287,7 +306,9 @@ export function prepareVaultArchiveConnection(
       dates[key] = descriptor.value.toISOString();
     }
   }
-  const result = plain({ ...connection, ...dates }) as Connection;
+  const result = withoutLocalAuthenticatorReference(
+    plain({ ...connection, ...dates }) as Connection,
+  );
   for (const key of LOCAL_CREDENTIAL_FIELDS) delete result[key];
   return result;
 }
