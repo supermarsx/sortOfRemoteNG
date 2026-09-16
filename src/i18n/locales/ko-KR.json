@@ -3645,6 +3645,8 @@
     "importExport": "가져오기/내보내기",
     "importExportTooltip": "연결 데이터 가져오기 및 내보내기 아이콘 표시",
     "settingsIconTooltip": "보조 막대에 설정 아이콘 표시",
+    "trustCenter": "트러스트 센터",
+    "trustCenterIconTooltip": "인증서 및 SSH 호스트 ID 관리를 열거나 앞으로 가져오는 트러스트 센터 아이콘 표시",
     "proxyVpnMenu": "프록시/VPN 메뉴",
     "proxyVpnMenuTooltip": "��록시 및 VPN 관리 아이콘 표시",
     "internalProxyManager": "내부 프록시 관리자",

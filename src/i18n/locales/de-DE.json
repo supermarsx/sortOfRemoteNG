@@ -3645,6 +3645,8 @@
     "importExport": "Importieren / Exportieren",
     "importExportTooltip": "Symbol zum Importieren und Exportieren von Verbindungsdaten anzeigen",
     "settingsIconTooltip": "Zeigen Sie das Einstellungssymbol in der sekundären Leiste an",
+    "trustCenter": "Trust Center",
+    "trustCenterIconTooltip": "Zeigt das Trust-Center-Symbol an, um die Verwaltung von Zertifikaten und SSH-Hostidentitäten zu öffnen oder in den Vordergrund zu holen",
     "proxyVpnMenu": "Proxy-/VPN-Menü",
     "proxyVpnMenuTooltip": "Zeigen Sie das Proxy- und VPN-Verwaltungssymbol an",
     "internalProxyManager": "Interner Proxy-Manager",

@@ -3645,6 +3645,8 @@
     "importExport": "Импорт/Экспорт",
     "importExportTooltip": "Отображение значка для импорта и экспорта данных подключения",
     "settingsIconTooltip": "Показывать значок настроек на дополнительной панели",
+    "trustCenter": "Trust Center",
+    "trustCenterIconTooltip": "Показывать значок Trust Center, чтобы открыть или вывести на передний план управление сертификатами и идентификаторами SSH-узлов",
     "proxyVpnMenu": "Меню прокси/VPN",
     "proxyVpnMenuTooltip": "Показывать значок управления прокси и VPN",
     "internalProxyManager": "Внутренний прокси-менеджер",

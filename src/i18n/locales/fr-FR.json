@@ -3645,6 +3645,8 @@
     "importExport": "Importer/Exporter",
     "importExportTooltip": "Afficher l'icône d'importation et d'exportation des données de connexion",
     "settingsIconTooltip": "Afficher l'icône des paramètres dans la barre secondaire",
+    "trustCenter": "Trust Center",
+    "trustCenterIconTooltip": "Afficher l'icône du Trust Center pour ouvrir ou mettre au premier plan la gestion des certificats et des identités d'hôtes SSH",
     "proxyVpnMenu": "Menu Proxy/VPN",
     "proxyVpnMenuTooltip": "Afficher l'icône de gestion proxy et VPN",
     "internalProxyManager": "Gestionnaire de proxy interne",

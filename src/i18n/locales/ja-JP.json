@@ -3645,6 +3645,8 @@
     "importExport": "インポート/エクスポート",
     "importExportTooltip": "接続データをインポートおよびエクスポートするためのアイコンを表示します",
     "settingsIconTooltip": "セカンダリバーに設定アイコンを表示します",
+    "trustCenter": "トラストセンター",
+    "trustCenterIconTooltip": "トラストセンターのアイコンを表示し、証明書とSSHホストIDの管理を開くか前面に表示します",
     "proxyVpnMenu": "プロキシ/VPNメニュー",
     "proxyVpnMenuTooltip": "プロキシと VPN 管理アイコンを表示する",
     "internalProxyManager": "内部プロキシ マネージャー",

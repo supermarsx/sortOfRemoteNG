@@ -3875,6 +3875,8 @@
     "importExport": "Import / Export",
     "importExportTooltip": "Show the icon for importing and exporting voyage data",
     "settingsIconTooltip": "Show the ship's settings icon in the secondary bar",
+    "trustCenter": "Trust Center",
+    "trustCenterIconTooltip": "Show the Trust Center icon to unfurl or focus certificate and SSH host identity management",
     "proxyVpnMenu": "Proxy / VPN Menu",
     "proxyVpnMenuTooltip": "Show the proxy and VPN management icon",
     "internalProxyManager": "Internal Proxy Manager",
