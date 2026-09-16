@@ -5,6 +5,7 @@ import { WifiOff, RefreshCw } from "lucide-react";
 import progressStyles from "./NavigationProgress.module.css";
 import { EMPTY_WEB_FRAME_SANDBOX } from "../../../utils/protocol/webBrowserFrame";
 import RedirectReviewPanel from "./RedirectReviewPanel";
+import TrustCheckStatus from "./TrustCheckStatus";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
   const reviewing = !!(mgr.redirectReview?.review || mgr.redirectReview?.error);
@@ -44,6 +45,18 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           >
             <span className={progressStyles.segment} aria-hidden="true" />
           </div>
+        )}
+
+      {/* Keyed by attempt so a retried check counts from zero again. */}
+      {mgr.trustCheck &&
+        mgr.isLoading &&
+        !mgr.trustPrompt &&
+        !mgr.loadError &&
+        !reviewing && (
+          <TrustCheckStatus
+            key={mgr.trustCheck.startedAt}
+            trustCheck={mgr.trustCheck}
+          />
         )}
 
       {/* No browsing context exists before a validated proxy navigation is ready.

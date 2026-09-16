@@ -7,6 +7,8 @@ import type {
 
 import React from "react";
 import progressStyles from "./NavigationProgress.module.css";
+import NavigationFailureTimeline from "./NavigationFailureTimeline";
+import { ElapsedSeconds } from "./TrustCheckStatus";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -63,6 +65,61 @@ function presentationFor(
           "Confirm the web service is running on the saved port.",
           "Check whether a firewall is rejecting connections to this host.",
           "Verify that HTTP versus HTTPS matches the service configuration.",
+        ],
+      };
+    case "host_unreachable":
+      return {
+        eyebrow: "Host unreachable",
+        icon: WifiOff,
+        tone: "error",
+        suggestions: [
+          "Check that the device is on and reachable from this computer (network, VPN, routing).",
+          "Confirm the web interface listens on the saved port; a firewall may be silently dropping connections.",
+          "If a browser on this computer opens the address, check firewall or VPN rules that apply only to this app.",
+        ],
+      };
+    case "connection_failed":
+      return {
+        eyebrow: "Connection failed",
+        icon: WifiOff,
+        tone: "error",
+        suggestions: [
+          "Check that the host is online and the saved port is correct.",
+          "Check your VPN, firewall, and network routes to this host.",
+          "Run deep diagnostics to see which network stage fails.",
+        ],
+      };
+    case "proxy_route_failure":
+      return {
+        eyebrow: "Proxy route failed",
+        icon: RouteOff,
+        tone: "error",
+        suggestions: [
+          "Check the global HTTP(S) proxy address and credentials in Settings.",
+          "HTTP 502 or 504 from the proxy means the proxy could not reach the website.",
+          "The configured proxy is never bypassed; correct or disable it to connect directly.",
+        ],
+      };
+    case "tls_handshake_failure":
+      return {
+        eyebrow: "TLS handshake failed",
+        icon: ShieldAlert,
+        tone: "warning",
+        suggestions: [
+          "Confirm this port serves HTTPS; plain HTTP or another service cannot complete a TLS handshake.",
+          "Check the TLS versions the server supports.",
+          "Run deep diagnostics to see whether TCP succeeds and where TLS stops.",
+        ],
+      };
+    case "inspection_unavailable":
+      return {
+        eyebrow: "Certificate check unavailable",
+        icon: ShieldAlert,
+        tone: "warning",
+        suggestions: [
+          "Restart the app and retry.",
+          "Check that the Windows trusted root certificate store is available.",
+          "TLS verification was not bypassed.",
         ],
       };
     case "tls_failure":
@@ -275,6 +332,7 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   const iconTone = isWarning
     ? "border-warning/40 bg-warning/10 text-warning"
     : "border-error/40 bg-error/10 text-error";
+  const hasProbeTimeout = Number.isFinite(mgr.diagnosticConnectTimeoutSecs);
 
   return (
     <div
@@ -291,6 +349,8 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
             <div className="flex items-start gap-4">
               <div
                 className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${iconTone}`}
+                data-testid="web-navigation-error-icon"
+                data-tone={presentation.tone}
               >
                 <FailureIcon size={24} />
               </div>
@@ -385,6 +445,10 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
           </div>
         </section>
 
+        {failure.timeline && (
+          <NavigationFailureTimeline timeline={failure.timeline} />
+        )}
+
         <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <h3 className="text-sm font-semibold">What to check</h3>
@@ -418,18 +482,39 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
                   authentication challenge, not evidence that your saved
                   password failed.
                 </p>
+                {hasProbeTimeout && (
+                  <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                    Runs separately from the page load, with its own start time
+                    and a {mgr.diagnosticConnectTimeoutSecs} s TCP connect
+                    timeout.
+                  </p>
+                )}
               </div>
               {mgr.diagnosticReport && (
                 <span className="whitespace-nowrap font-mono text-[11px] text-[var(--color-textMuted)]">
-                  {mgr.diagnosticReport.totalDurationMs} ms
+                  Separate probe · took {mgr.diagnosticReport.totalDurationMs}{" "}
+                  ms
                 </span>
               )}
             </div>
 
             {mgr.isRunningDiagnostics && (
               <div className="mt-4 flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-3 text-sm text-info">
-                <Loader2 size={16} className="animate-spin" />
-                Testing each connection stage…
+                <Loader2 size={16} className="shrink-0 animate-spin" />
+                <span data-testid="web-diagnostics-running">
+                  Testing each connection stage…
+                  {typeof mgr.diagnosticsStartedAt === "number" && (
+                    <>
+                      {" "}
+                      <ElapsedSeconds
+                        key={mgr.diagnosticsStartedAt}
+                        startedAt={mgr.diagnosticsStartedAt}
+                      />
+                    </>
+                  )}
+                  {hasProbeTimeout &&
+                    ` (TCP connect waits up to ${mgr.diagnosticConnectTimeoutSecs} s)`}
+                </span>
               </div>
             )}
 

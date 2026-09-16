@@ -607,6 +607,38 @@ describe("embedded web failure recovery screen", () => {
     expect(
       screen.getByText("The service may not be listening on port 443."),
     ).toBeVisible();
-    expect(screen.getByText("84 ms")).toBeVisible();
+    expect(screen.getByText("Separate probe · took 84 ms")).toBeVisible();
+    expect(screen.queryByText("84 ms")).toBeNull();
+  });
+
+  it("gives a generic TCP connection failure network advice, not the default or certificate copy", () => {
+    render(
+      <ErrorPage
+        mgr={manager({
+          navigationFailure: {
+            ...failure,
+            kind: "connection_failed",
+            status: null,
+            title: "Can't connect to device.example.test:443",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("Connection failed")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Check that the host is online and the saved port is correct.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText("Web connection failed")).toBeNull();
+    expect(screen.queryByText("Secure connection failed")).toBeNull();
+    expect(
+      screen.queryByText(
+        "Check the certificate expiry date and issuing chain.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByTestId("web-navigation-error-icon").querySelector("svg"),
+    ).toHaveClass("lucide-wifi-off");
   });
 });
