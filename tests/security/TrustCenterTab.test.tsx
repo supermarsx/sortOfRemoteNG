@@ -181,6 +181,21 @@ async function mount() {
     expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled(),
   );
 }
+/**
+ * The import dialog clears its acknowledgment in a passive effect whenever the
+ * review changes. When React yields before that effect (a slow frame on a
+ * loaded worker), a click made as soon as the review renders is undone by it,
+ * so acknowledge again until the checkbox stays checked.
+ */
+async function acknowledgeReview() {
+  const acknowledgment = screen.getByRole<HTMLInputElement>("checkbox", {
+    name: /I reviewed these fingerprints/,
+  });
+  await waitFor(() => {
+    if (!acknowledgment.checked) fireEvent.click(acknowledgment);
+    expect(acknowledgment).toBeChecked();
+  });
+}
 beforeEach(() => {
   vi.resetAllMocks();
   fixture.databaseId = "db-a";
@@ -267,9 +282,7 @@ describe("dedicated Trust Center", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Import identities" }));
     await screen.findByRole("button", { name: "Merge reviewed identities" });
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: /I reviewed these fingerprints/ }),
-    );
+    await acknowledgeReview();
     fireEvent.click(
       screen.getByRole("button", { name: "Merge reviewed identities" }),
     );
@@ -784,6 +797,10 @@ describe("dedicated Trust Center", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  // The 1,005-row fixture is inherent: the bounded page DOM is what this test
+  // proves. Role queries across a page of row actions dominate the runtime, so
+  // they are scoped to the owning toolbar, pager or dialog. It takes ~3 s
+  // unloaded, and CI coverage workers run 2-4x slower than that.
   it("bounds large tables and preserves distinct page/all-filtered selection scopes", async () => {
     fixture.records = Array.from({ length: 1_005 }, (_, index) =>
       record(`host-${String(index).padStart(4, "0")}:443`),
@@ -791,23 +808,35 @@ describe("dedicated Trust Center", () => {
     fixture.connectionRecords = [];
     await mount();
     expect(screen.getAllByRole("row")).toHaveLength(101);
-    fireEvent.click(screen.getByRole("button", { name: "Select page" }));
+    fireEvent.click(screen.getByText("Select page", { selector: "button" }));
     expect(screen.getByText(/100 selected/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: "Trust identity pages" }),
+      ).getByRole("button", { name: "Next page" }),
+    );
     expect(
       screen.getByRole("checkbox", { name: "Select identities on this page" }),
     ).not.toBeChecked();
     fireEvent.click(
-      screen.getByRole("button", { name: "Select all filtered" }),
+      screen.getByText("Select all filtered", { selector: "button" }),
     );
     expect(screen.getByText(/1005 selected/)).toBeInTheDocument();
     expect(screen.getAllByRole("row")).toHaveLength(101);
-    fireEvent.click(screen.getByRole("button", { name: "Revoke selected" }));
+    fireEvent.click(
+      within(
+        screen.getByRole("group", { name: "Selected identity actions" }),
+      ).getByRole("button", { name: "Revoke selected" }),
+    );
     expect(screen.getByRole("dialog")).toHaveTextContent(
       "1005 identities in Team database",
     );
     expect(fixture.revoke).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Revoke",
+      }),
+    );
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
         "1005 identities updated",
@@ -823,7 +852,7 @@ describe("dedicated Trust Center", () => {
         (call) => call[0] === "trust_get_summary",
       ),
     ).toHaveLength(2);
-  });
+  }, 20_000);
   it("searches certificate and connection names, selects visible without selecting hidden records", async () => {
     await mount();
     fireEvent.change(screen.getByRole("searchbox"), {
@@ -924,9 +953,7 @@ describe("dedicated Trust Center", () => {
       "trust_import_database",
       expect.anything(),
     );
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: /I reviewed these fingerprints/ }),
-    );
+    await acknowledgeReview();
     fireEvent.click(apply);
     await waitFor(() =>
       expect(fixture.invoke).toHaveBeenCalledWith(
@@ -1130,9 +1157,7 @@ describe("dedicated Trust Center", () => {
       "trust_import_database",
       expect.anything(),
     );
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: /I reviewed these fingerprints/ }),
-    );
+    await acknowledgeReview();
     fireEvent.click(
       screen.getByRole("button", { name: "Merge reviewed identities" }),
     );
