@@ -260,6 +260,20 @@ const ConnectionForm: React.FC<
         />
         <ModalBody className="min-h-0 overflow-y-auto space-y-4 p-5">
           <p className="text-sm break-words">{mgr.challenge?.message}</p>
+          {acceptsCode && mgr.automaticCode && (
+            <p
+              role="status"
+              className="flex items-start gap-2 break-words text-sm text-warning"
+              data-testid="synology-automatic-code-notice"
+            >
+              <AlertCircle
+                size={14}
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
+              {mgr.automaticCode.message}
+            </p>
+          )}
           {trustNotice}
           {methods && (
             <p

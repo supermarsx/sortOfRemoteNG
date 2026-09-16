@@ -43,6 +43,12 @@ import {
   DEVICE_TRUST_VAULT_REQUIRED_MESSAGE,
 } from "../../utils/security/runtimeCredentialVault";
 import type { SynologyDeviceTrustAdapter } from "../../types/hardware/synologyFileStation";
+import {
+  generateSynologyTotpCode,
+  resolveLocalSynologyAuthenticator,
+  SYNOLOGY_AUTOMATIC_CODE_UNAVAILABLE_MESSAGE,
+  waitForSynologyTotpWindow,
+} from "../../utils/synology/synologyAuthenticator";
 
 const unavailable =
   "Open and unlock this session's owning database, then reopen the Synology connection.";
@@ -212,18 +218,44 @@ function BoundSynologySession({
     [resolveVault],
   );
   const resolveOtp = useCallback(
-    async (assertAttempt: () => void) => {
+    async (assertAttempt: () => void, { replayKey }: { replayKey: string }) => {
       assertAttempt();
       if (!totpId)
         throw new Error(
           "Select a vault authenticator before automatic NAS verification.",
         );
+      // Metadata only: the period decides whether to wait for a fresh window.
+      const entries = await latestTotp.current.load();
+      assertAttempt();
+      const matches = entries.filter((entry) => entry.id === totpId);
+      if (matches.length !== 1)
+        throw new Error("The chosen vault authenticator is unavailable.");
+      await waitForSynologyTotpWindow(
+        { period: matches[0].period, replayKey },
+        assertAttempt,
+      );
       const value = await latestTotp.current.generate(totpId);
       assertAttempt();
       value.assertCurrent();
       return value;
     },
     [totpId],
+  );
+  // A local reference only counts for local credentials; the vault keeps `totpId`.
+  const localAuthenticator = resolveLocalSynologyAuthenticator(saved).kind;
+  const resolveLocalOtp = useCallback(
+    async (assertAttempt: () => void, { replayKey }: { replayKey: string }) => {
+      assertAttempt();
+      const authenticator = resolveLocalSynologyAuthenticator(saved);
+      if (authenticator.kind !== "ready")
+        throw new Error(SYNOLOGY_AUTOMATIC_CODE_UNAVAILABLE_MESSAGE);
+      const { secret, algorithm, digits, period } = authenticator.config;
+      return generateSynologyTotpCode(
+        { secret, algorithm, digits: digits as 6 | 8, period, replayKey },
+        assertAttempt,
+      );
+    },
+    [saved],
   );
   // A fresh vault controller per call: each one is bound to the vault revision
   // it opened, and a store or forget advances that revision.
@@ -280,7 +312,14 @@ function BoundSynologySession({
     },
     assertCurrent: access ?? undefined,
     resolveCredentials: vault ? resolveCredentials : undefined,
-    resolveOtp: vault && totpId ? resolveOtp : undefined,
+    // An unusable local reference still answers, so the code dialog explains it.
+    resolveOtp: vault
+      ? totpId
+        ? resolveOtp
+        : undefined
+      : localAuthenticator !== "none"
+        ? resolveLocalOtp
+        : undefined,
     deviceTrust,
     trustDevice: settings.trustDevice === true,
     deviceTrustUnavailable: vault

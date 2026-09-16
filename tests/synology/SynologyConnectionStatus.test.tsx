@@ -14,6 +14,10 @@ import {
   useSynologyFileConnection,
   type SynologyFileConnectionOptions,
 } from "../../src/hooks/synology/useSynologyFileConnection";
+import {
+  SYNOLOGY_AUTOMATIC_CODE_REJECTED_MESSAGE,
+  SYNOLOGY_AUTOMATIC_CODE_UNAVAILABLE_MESSAGE,
+} from "../../src/utils/synology/synologyAuthenticator";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../src/hooks/synology/synologyApiCapabilities", () => ({
   verifySynologyApiTransportCapabilities: vi.fn().mockResolvedValue(undefined),
@@ -416,5 +420,118 @@ describe("NAS API two-factor dialog states", () => {
       [null, "dsm_desktop"],
       ["246810", "dsm_desktop"],
     ]);
+  });
+});
+
+describe("NAS API automatic code notices", () => {
+  const notice = (dialog: HTMLElement) =>
+    within(dialog).queryByTestId("synology-automatic-code-notice");
+
+  it("explains an authenticator that couldn't produce a code, beside the code field", async () => {
+    scriptConnect(
+      { status: "otp_required", message: "native" },
+      { status: "connected", sessionId: "receipt-typed", message: "ok" },
+    );
+    const resolveOtp = vi.fn(async () => {
+      throw new Error("vault locked");
+    });
+    render(<SavedNas resolveOtp={resolveOtp} />);
+    const dialog = await openChallenge();
+    const shown = notice(dialog)!;
+    expect(shown).toHaveAttribute("role", "status");
+    expect(shown).toHaveTextContent(
+      SYNOLOGY_AUTOMATIC_CODE_UNAVAILABLE_MESSAGE,
+    );
+    expect(dialog).not.toHaveTextContent("vault locked");
+    expect(within(dialog).getByLabelText("One-time code")).toBeEnabled();
+    expect(connectCount()).toBe(1);
+    fireEvent.change(within(dialog).getByLabelText("One-time code"), {
+      target: { value: "135790" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Verify code" }),
+    );
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("status")).toHaveTextContent("connected"),
+    );
+    expect(resolveOtp).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByTestId("synology-automatic-code-notice"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("explains a rejected automatic code, then drops the notice for a typed code", async () => {
+    scriptConnect(
+      { status: "otp_required", message: "native" },
+      { status: "otp_invalid", message: "native" },
+      { status: "otp_invalid", message: "native" },
+    );
+    const resolveOtp = vi.fn(async (assertAttempt: () => void) => ({
+      code: "246810",
+      assertCurrent: assertAttempt,
+    }));
+    render(<SavedNas resolveOtp={resolveOtp} />);
+    const dialog = await openChallenge();
+    await vi.waitFor(() =>
+      expect(notice(dialog)).toHaveTextContent(
+        SYNOLOGY_AUTOMATIC_CODE_REJECTED_MESSAGE,
+      ),
+    );
+    expect(notice(dialog)).toHaveAttribute("role", "status");
+    expect(dialog).toHaveTextContent(
+      "The one-time code was not accepted. Enter a fresh code.",
+    );
+    expect(dialog).not.toHaveTextContent("246810");
+    expect(connectCount()).toBe(2);
+    fireEvent.change(within(dialog).getByLabelText("One-time code"), {
+      target: { value: "111111" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Verify code" }),
+    );
+    await vi.waitFor(() => expect(connectCount()).toBe(3));
+    await vi.waitFor(() => expect(notice(dialog)).toBeNull());
+    expect(resolveOtp).toHaveBeenCalledOnce();
+  });
+
+  it("shows no automatic notice for a manual-only sign-in", async () => {
+    scriptConnect(
+      { status: "otp_required", message: "native" },
+      { status: "otp_invalid", message: "native" },
+    );
+    render(<SavedNas />);
+    const dialog = await openChallenge();
+    expect(notice(dialog)).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText("One-time code"), {
+      target: { value: "111111" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Verify code" }),
+    );
+    await within(dialog).findByText(
+      "The one-time code was not accepted. Enter a fresh code.",
+    );
+    expect(notice(dialog)).toBeNull();
+  });
+
+  it.each([
+    { status: "otp_enrollment_required", message: "Set up 2FA." },
+    { status: "unsupported_mfa", message: "Unsupported." },
+  ] as const)("never shows it without a code field ($status)", (challenge) => {
+    render(
+      <ConnectionForm
+        mgr={manager({
+          connectionError: null,
+          challenge,
+          automaticCode: {
+            status: "rejected",
+            message: SYNOLOGY_AUTOMATIC_CODE_REJECTED_MESSAGE,
+          },
+        } as Partial<Mgr>)}
+      />,
+    );
+    expect(
+      screen.queryByTestId("synology-automatic-code-notice"),
+    ).not.toBeInTheDocument();
   });
 });

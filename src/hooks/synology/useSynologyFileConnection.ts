@@ -15,6 +15,12 @@ import type {
 } from "../../types/hardware/synologyFileStation";
 import { normalizeSynologyEndpoint } from "../../utils/connection/synologyEndpoint";
 import { redactSynologyFailureSecrets } from "../../utils/synology/apiFailureDiagnostic";
+import {
+  recordSynologyOtpSubmission,
+  SYNOLOGY_AUTOMATIC_CODE_REJECTED_MESSAGE,
+  SYNOLOGY_AUTOMATIC_CODE_UNAVAILABLE_MESSAGE,
+  synologyOtpReplayKey,
+} from "../../utils/synology/synologyAuthenticator";
 import { verifySynologyApiTransportCapabilities } from "./synologyApiCapabilities";
 import {
   captureSynologyApiRoute,
@@ -33,9 +39,14 @@ export interface SynologyFileConnectionOptions {
     password: string;
     assertCurrent: () => void;
   }>;
-  /** Explicit selected vault authenticator; only invoked after DSM requests OTP. */
+  /**
+   * The saved authenticator (vault or connection-local); invoked at most once,
+   * only after DSM requests a code. `replayKey` names the DSM account for the
+   * in-memory same-time-step guard.
+   */
   resolveOtp?: (
     assertAttempt: () => void,
+    context: { replayKey: string },
   ) => Promise<{ code: string; assertCurrent: () => void }>;
   /** Vault trusted-device storage; absent for local credentials and the standalone form. */
   deviceTrust?: SynologyDeviceTrustAdapter;
@@ -214,6 +225,10 @@ export function useSynologyFileConnection(
   /** A saved device is known for the last signed-in account. Never the device itself. */
   const [trustRemembered, setTrustRemembered] = useState(false);
   const [trustForgetting, setTrustForgetting] = useState(false);
+  /** Why the code dialog follows an automatic attempt; never the code. */
+  const [automaticCode, setAutomaticCode] = useState<
+    "unavailable" | "rejected" | null
+  >(null);
   const current = useRef({
     isOpen,
     assertCurrent: options.assertCurrent,
@@ -335,6 +350,7 @@ export function useSynologyFileConnection(
       setOtpCode("");
       setTrustChoice(current.current.trustDefault);
       setTrustNotice(null);
+      setAutomaticCode(null);
       setChallenge(null);
       setConnectionStatus("disconnected");
       setConnectionError(null);
@@ -499,6 +515,7 @@ export function useSynologyFileConnection(
     let issued: SynologyTrustedDevice | null = null;
     let staleTrust: "rejected" | "mismatch" | null = null;
     let enrolled = false;
+    let automatic: "unavailable" | "rejected" | null = null;
     let followUp: (() => void) | null = null;
     try {
       access?.();
@@ -533,6 +550,7 @@ export function useSynologyFileConnection(
       }
     };
     setConnectionError(null);
+    setAutomaticCode(null);
     setConnectionStatus("connecting");
     setOtpCode("");
     let routeSnapshot: SynologyApiRouteSnapshot | null = null;
@@ -588,6 +606,7 @@ export function useSynologyFileConnection(
       }
       assertAttempt();
       const account = config.username;
+      const replayKey = synologyOtpReplayKey(config.host, config.port, account);
       if (deviceTrust && !otp) {
         try {
           device = readTrustedDevice(
@@ -609,15 +628,30 @@ export function useSynologyFileConnection(
           ? { deviceId: device.deviceId, deviceName: device.deviceName }
           : {};
       };
-      let result = await invoke<SynologyFileAuthResult>("syn_fs_connect", {
-        ...config,
-        instanceId,
-        requestId,
-        otpCode: otp || null,
-        route: routeSnapshot.route,
-        ...profileArgs,
-        ...trustArgs(otp),
-      });
+      const signIn = async (code?: string) => {
+        const request = invoke<SynologyFileAuthResult>("syn_fs_connect", {
+          ...config,
+          instanceId,
+          requestId,
+          otpCode: code || null,
+          route: routeSnapshot!.route,
+          ...profileArgs,
+          ...trustArgs(code),
+        });
+        if (!code) return request;
+        // A code DSM may have accepted: no automatic code reuses its time step.
+        let refused = false;
+        try {
+          const answer = await request;
+          refused =
+            answer?.status === "otp_invalid" ||
+            answer?.status === "otp_required";
+          return answer;
+        } finally {
+          if (!refused) recordSynologyOtpSubmission(replayKey);
+        }
+      };
+      let result = await signIn(otp);
       await checkReturnedRoute(result);
       if (device && result?.status === "otp_required")
         staleTrust =
@@ -628,25 +662,35 @@ export function useSynologyFileConnection(
               : null;
       if (result?.status === "otp_required" && !otp && resolveOtp && valid()) {
         // One server-requested factor, never an automatic retry of a rejected code.
-        const generated = await resolveOtp(assertAttempt);
-        assertAttempt();
-        generated.assertCurrent();
-        otp = generated.code;
-        if (!/^\d{6,8}$/.test(otp))
-          throw new Error("The vault authenticator returned an invalid code.");
-        requestId = crypto.randomUUID();
-        pendingRequest.current = requestId;
-        generated.assertCurrent();
-        result = await invoke<SynologyFileAuthResult>("syn_fs_connect", {
-          ...config,
-          instanceId,
-          requestId,
-          otpCode: otp,
-          route: routeSnapshot.route,
-          ...profileArgs,
-          ...trustArgs(otp),
-        });
-        await checkReturnedRoute(result);
+        let generated: string | null = null;
+        try {
+          const value = await resolveOtp(assertAttempt, { replayKey });
+          assertAttempt();
+          value.assertCurrent();
+          if (typeof value.code !== "string" || !/^\d{6,8}$/.test(value.code))
+            throw new Error(
+              "The saved authenticator returned an invalid code.",
+            );
+          generated = value.code;
+        } catch (error) {
+          // Cancellation and a changed route still end this attempt.
+          if (!valid()) throw error;
+          routeSnapshot.assertCurrent();
+          // Anything else leaves DSM's code prompt for a typed code.
+          automatic = "unavailable";
+        }
+        if (generated) {
+          otp = generated;
+          requestId = crypto.randomUUID();
+          pendingRequest.current = requestId;
+          result = await signIn(otp);
+          await checkReturnedRoute(result);
+          if (
+            result?.status === "otp_invalid" ||
+            result?.status === "otp_required"
+          )
+            automatic = "rejected";
+        }
       }
       if (
         !result ||
@@ -678,6 +722,7 @@ export function useSynologyFileConnection(
         pendingCredentials.current = null;
         setPassword("");
         setChallenge(null);
+        setAutomaticCode(null);
         setConnectionStatus("connected");
         if (deviceTrust) {
           trustAccount.current = account;
@@ -712,6 +757,7 @@ export function useSynologyFileConnection(
       } else if (challengeStatuses.includes(result.status)) {
         const next = toChallenge(result);
         setChallenge(next);
+        setAutomaticCode(acceptsSynologyOtp(next) ? automatic : null);
         setPassword("");
         // Enrollment and unsupported methods end this sign-in: no code can follow.
         if (!acceptsSynologyOtp(next)) pendingCredentials.current = null;
@@ -752,6 +798,7 @@ export function useSynologyFileConnection(
         pendingCredentials.current = null;
         activeRoute.current = null;
         setChallenge(null);
+        setAutomaticCode(null);
         setPassword("");
         if (deviceTrust && staleTrust) {
           const account = config.username;
@@ -863,7 +910,7 @@ export function useSynologyFileConnection(
   };
   /**
    * User-initiated only: releases the current receipt, then makes one normal
-   * sign-in. A vault authenticator is still tried at most once and a code prompt
+   * sign-in. A saved authenticator is still tried at most once and a code prompt
    * still appears; nothing is retried automatically.
    */
   const reconnect = async (
@@ -982,6 +1029,16 @@ export function useSynologyFileConnection(
     submitOtp,
     notifySessionExpired,
     cancelChallenge: reset,
+    /** Set while the code dialog follows an automatic code that couldn't be used. */
+    automaticCode: automaticCode
+      ? {
+          status: automaticCode,
+          message:
+            automaticCode === "rejected"
+              ? SYNOLOGY_AUTOMATIC_CODE_REJECTED_MESSAGE
+              : SYNOLOGY_AUTOMATIC_CODE_UNAVAILABLE_MESSAGE,
+        }
+      : null,
     /** Trusted-device state only; the device token never leaves the attempt. */
     deviceTrust: {
       available: !!options.deviceTrust,

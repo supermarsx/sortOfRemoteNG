@@ -17,6 +17,7 @@ import {
   UNAVAILABLE_RUNTIME_CAPABILITIES,
 } from "../../src/utils/runtime/runtimeCapabilities";
 import { getProtocolSubtabs } from "../../src/components/connection/editor/protocolSubtabs";
+import type { TOTPConfig } from "../../src/types/settings/settings";
 
 describe("saved Synology schema and access modes", () => {
   it("initializes versioned verified HTTPS without auth artifacts", () => {
@@ -213,5 +214,101 @@ describe("saved Synology trusted-device preference", () => {
         isGroup: false,
       }).synologySettings,
     ).not.toHaveProperty("trustDevice");
+  });
+});
+describe("saved Synology NAS API authenticator reference", () => {
+  it("accepts only a bounded printable id and keeps records without it unchanged", () => {
+    const base = { version: 1, useHttps: true, accessMode: "native" } as const;
+    expect(normalizeSynologySettings(base)).toEqual(base);
+    expect(normalizeSynologySettings(base)).not.toHaveProperty(
+      "otpAuthenticatorId",
+    );
+    for (const otpAuthenticatorId of [
+      "totp-1",
+      "3f2c9a7e-8a41-4a57-9f7e-0f1b2c3d4e5f",
+      "x".repeat(128),
+      "Synology DSM · admin",
+    ])
+      expect(
+        normalizeSynologySettings({
+          ...base,
+          trustDevice: true,
+          otpAuthenticatorId,
+        }),
+      ).toEqual({ ...base, trustDevice: true, otpAuthenticatorId });
+    for (const otpAuthenticatorId of [
+      123,
+      "",
+      "x".repeat(129),
+      "totp\n1",
+      "totp\u00001",
+      "totp\u007f",
+      "totp\u0085",
+      null,
+      undefined,
+      {},
+      ["totp-1"],
+    ])
+      expect(() =>
+        normalizeSynologySettings({ ...base, otpAuthenticatorId }),
+      ).toThrow(
+        "Unsupported Synology connection settings. Only transport, view, website redirect, trusted-device preferences and an authenticator reference can be saved.",
+      );
+  });
+  it("never accepts the authenticator secret or a code as a setting", () => {
+    for (const extra of [
+      { otpSecret: "JBSWY3DPEHPK3PXP" },
+      { secret: "JBSWY3DPEHPK3PXP" },
+      { totpSecret: "JBSWY3DPEHPK3PXP" },
+      { otpAuthenticator: { id: "totp-1", secret: "JBSWY3DPEHPK3PXP" } },
+      { otpCode: "123456" },
+    ])
+      expect(() =>
+        normalizeSynologySettings({
+          version: 1,
+          useHttps: true,
+          otpAuthenticatorId: "totp-1",
+          ...extra,
+        }),
+      ).toThrow(/authenticator reference/);
+  });
+  it("survives protocol normalization and access-mode switches", () => {
+    const totpConfigs: TOTPConfig[] = [
+      {
+        id: "totp-1",
+        secret: "JBSWY3DPEHPK3PXP",
+        issuer: "Synology DSM",
+        account: "admin",
+        digits: 6,
+        period: 30,
+        algorithm: "sha1",
+      },
+    ];
+    const record = {
+      protocol: "https",
+      hostname: "nas.example.test",
+      port: 5001,
+      isGroup: false,
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "manual" },
+      synologySettings: {
+        version: 1,
+        useHttps: true,
+        accessMode: "native",
+        otpAuthenticatorId: "totp-1",
+      },
+    } as const;
+    const normalized = normalizeAdvancedProtocolConnection({
+      ...record,
+      totpConfigs,
+    });
+    expect(normalized.synologySettings).toEqual(record.synologySettings);
+    const website = setSynologyAccessMode(normalized, "website");
+    expect(website.synologySettings).toMatchObject({
+      otpAuthenticatorId: "totp-1",
+    });
+    expect(website.totpConfigs).toEqual(totpConfigs);
+    expect(setSynologyAccessMode(website, "native").synologySettings).toEqual(
+      record.synologySettings,
+    );
   });
 });

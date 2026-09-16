@@ -2,6 +2,13 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useSynologyFileConnection } from "../../src/hooks/synology/useSynologyFileConnection";
+import {
+  clearSynologyOtpSubmissions,
+  SYNOLOGY_AUTOMATIC_CODE_REJECTED_MESSAGE,
+  SYNOLOGY_AUTOMATIC_CODE_UNAVAILABLE_MESSAGE,
+  synologyOtpReplayKey,
+  waitForSynologyTotpWindow,
+} from "../../src/utils/synology/synologyAuthenticator";
 import type { SynologyFileAuthResult } from "../../src/types/hardware/synologyFileStation";
 import {
   parseSynologyApiFailure,
@@ -676,6 +683,7 @@ describe("NAS API two-factor challenge states", () => {
       "246810",
     ]);
     expect(result.current.challenge?.status).toBe("otp_required");
+    expect(result.current.automaticCode?.status).toBe("rejected");
     expect(result.current.connectionStatus).toBe("disconnected");
   });
 
@@ -783,6 +791,246 @@ describe("NAS API two-factor challenge states", () => {
     expect(connectCalls()).toHaveLength(2);
     expect(connectCalls()[1]).toMatchObject({ otpCode: null });
     expect(result.current.sessionId).toBe("receipt-after-cancel");
+  });
+});
+
+describe("NAS API automatic one-time codes", () => {
+  const replayKey = synologyOtpReplayKey(
+    "nas.example.test",
+    5001,
+    "fixture-admin",
+  );
+  const snapshot = (result: { current: unknown }) =>
+    JSON.stringify(result.current);
+
+  it("falls back to the code dialog when the saved authenticator can't produce a code, and a typed code connects", async () => {
+    const resolveOtp = vi.fn(async () => {
+      throw new Error("vault locked; last code 246810 from JBSWY3DPEHPK3PXP");
+    });
+    scriptNative(
+      { status: "otp_required", methods: ["otp"] },
+      { status: "connected", sessionId: "receipt-typed", message: "ok" },
+    );
+    const { result } = savedHook({ resolveOtp });
+    await act(() => result.current.connect());
+    expect(resolveOtp).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+      replayKey,
+    });
+    expect(result.current.challenge?.status).toBe("otp_required");
+    expect(result.current.automaticCode).toEqual({
+      status: "unavailable",
+      message: SYNOLOGY_AUTOMATIC_CODE_UNAVAILABLE_MESSAGE,
+    });
+    expect(result.current.connectionError).toBeNull();
+    expect(result.current.connectionStatus).toBe("disconnected");
+    expect(connectCalls()).toHaveLength(1);
+    expect(snapshot(result)).not.toContain("246810");
+    expect(snapshot(result)).not.toContain("JBSWY3DPEHPK3PXP");
+    act(() => result.current.setOtpCode("135790"));
+    await act(() => result.current.submitOtp());
+    expect(result.current.connectionStatus).toBe("connected");
+    expect(result.current.automaticCode).toBeNull();
+    expect(resolveOtp).toHaveBeenCalledOnce();
+    expect(connectCalls().map((args) => args.otpCode)).toEqual([
+      null,
+      "135790",
+    ]);
+    expect(connectCalls()[1]).toMatchObject({
+      username: "fixture-admin",
+      password: "fixture-password-9f3",
+    });
+  });
+
+  it.each([
+    ["a non-numeric code", "12a456", () => {}],
+    ["a 5-digit code", "12345", () => {}],
+    [
+      "an expired code",
+      "246810",
+      () => {
+        throw new Error("This authenticator code expired.");
+      },
+    ],
+  ])(
+    "treats %s as unavailable without sending it",
+    async (_name, code, assertCurrent) => {
+      scriptNative({ status: "otp_required" });
+      const resolveOtp = vi.fn(async () => ({ code, assertCurrent }));
+      const { result } = savedHook({ resolveOtp });
+      await act(() => result.current.connect());
+      expect(result.current.challenge?.status).toBe("otp_required");
+      expect(result.current.automaticCode?.status).toBe("unavailable");
+      expect(connectCalls()).toHaveLength(1);
+      expect(result.current.connectionError).toBeNull();
+    },
+  );
+
+  it("shows the rejected notice after DSM refuses the automatic code (404) and never tries it again", async () => {
+    const vault = vaultOptions();
+    scriptNative(
+      { status: "otp_required" },
+      { status: "otp_invalid", message: "native" },
+      { status: "otp_invalid", message: "native" },
+      { status: "connected", sessionId: "receipt-404", message: "ok" },
+    );
+    const { result } = savedHook(vault);
+    await act(() => result.current.connect());
+    expect(result.current.challenge?.status).toBe("otp_invalid");
+    expect(result.current.automaticCode).toEqual({
+      status: "rejected",
+      message: SYNOLOGY_AUTOMATIC_CODE_REJECTED_MESSAGE,
+    });
+    expect(connectCalls().map((args) => args.otpCode)).toEqual([
+      null,
+      "246810",
+    ]);
+    act(() => result.current.setOtpCode("111111"));
+    await act(() => result.current.submitOtp());
+    // A rejected typed code is the ordinary prompt, not an automatic failure.
+    expect(result.current.challenge?.status).toBe("otp_invalid");
+    expect(result.current.automaticCode).toBeNull();
+    act(() => result.current.setOtpCode("222222"));
+    await act(() => result.current.submitOtp());
+    expect(result.current.connectionStatus).toBe("connected");
+    expect(vault.resolveOtp).toHaveBeenCalledOnce();
+    expect(connectCalls().map((args) => args.otpCode)).toEqual([
+      null,
+      "246810",
+      "111111",
+      "222222",
+    ]);
+  });
+
+  it("shows the rejected notice when DSM asks for a code again after the automatic one", async () => {
+    const vault = vaultOptions();
+    scriptNative({ status: "otp_required" }, { status: "otp_required" });
+    const { result } = savedHook(vault);
+    await act(() => result.current.connect());
+    expect(result.current.challenge?.status).toBe("otp_required");
+    expect(result.current.automaticCode?.status).toBe("rejected");
+    expect(connectCalls()).toHaveLength(2);
+    expect(vault.resolveOtp).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a manual-only sign-in free of automatic notices", async () => {
+    scriptNative({ status: "otp_required" }, { status: "otp_invalid" });
+    const { result } = savedHook({});
+    await act(() => result.current.connect());
+    expect(result.current.automaticCode).toBeNull();
+    act(() => result.current.setOtpCode("111111"));
+    await act(() => result.current.submitOtp());
+    expect(result.current.challenge?.status).toBe("otp_invalid");
+    expect(result.current.automaticCode).toBeNull();
+  });
+
+  it.each([
+    ["checks the attempt", true],
+    ["ignores the attempt guard", false],
+  ])(
+    "cancel while the authenticator %s sends nothing more and shows no error",
+    async (_name, checks) => {
+      const held = deferred<void>();
+      const resolveOtp = vi.fn(async (assertAttempt: () => void) => {
+        await held.promise;
+        if (checks) assertAttempt();
+        return { code: "246810", assertCurrent: () => {} };
+      });
+      scriptNative(
+        { status: "otp_required" },
+        { status: "connected", sessionId: "never", message: "ok" },
+      );
+      const { result } = savedHook({ resolveOtp });
+      let pending!: Promise<void>;
+      act(() => {
+        pending = result.current.connect();
+      });
+      await vi.waitFor(() => expect(resolveOtp).toHaveBeenCalledOnce());
+      act(() => result.current.cancelChallenge());
+      await act(async () => {
+        held.resolve();
+        await pending;
+      });
+      expect(connectCalls()).toHaveLength(1);
+      expect(result.current.connectionError).toBeNull();
+      expect(result.current.challenge).toBeNull();
+      expect(result.current.automaticCode).toBeNull();
+      expect(result.current.connectionStatus).toBe("disconnected");
+    },
+  );
+
+  it("redacts the automatic code from a failed sign-in", async () => {
+    const vault = vaultOptions();
+    scriptNative(
+      { status: "otp_required" },
+      new Error("NAS rejected request with code 246810"),
+    );
+    const { result } = savedHook(vault);
+    await act(() => result.current.connect());
+    expect(result.current.connectionStatus).toBe("error");
+    expect(result.current.connectionError).toContain("[REDACTED]");
+    expect(result.current.connectionError).not.toContain("246810");
+    expect(result.current.automaticCode).toBeNull();
+    expect(snapshot(result)).not.toContain("246810");
+  });
+
+  describe("same time-step record", () => {
+    // Date only: promises and the hook's timers stay real.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(59_633_334 * 30_000 + 1_000);
+      clearSynologyOtpSubmissions();
+    });
+    afterEach(() => vi.useRealTimers());
+    /** The vault credential's account, not the saved form's username. */
+    const reused = () =>
+      waitForSynologyTotpWindow(
+        {
+          period: 30,
+          replayKey: synologyOtpReplayKey(
+            "nas.example.test",
+            5001,
+            "vault-admin",
+          ),
+        },
+        () => {},
+        {
+          sleep: async () => {
+            throw new Error("waited for the next time step");
+          },
+        },
+      ).then(
+        () => false,
+        () => true,
+      );
+
+    it("records a code DSM may have accepted, never one it refused", async () => {
+      const vault = vaultOptions();
+      scriptNative(
+        { status: "otp_required" },
+        { status: "otp_invalid" },
+        { status: "connected", sessionId: "receipt-typed", message: "ok" },
+      );
+      const { result } = savedHook(vault);
+      await act(() => result.current.connect());
+      expect(result.current.automaticCode?.status).toBe("rejected");
+      expect(await reused()).toBe(false);
+      act(() => result.current.setOtpCode("135790"));
+      await act(() => result.current.submitOtp());
+      expect(result.current.connectionStatus).toBe("connected");
+      expect(await reused()).toBe(true);
+    });
+
+    it("records an accepted automatic code for the next automatic sign-in", async () => {
+      const vault = vaultOptions();
+      scriptNative(
+        { status: "otp_required" },
+        { status: "connected", sessionId: "receipt-auto", message: "ok" },
+      );
+      const { result } = savedHook(vault);
+      await act(() => result.current.connect());
+      expect(result.current.connectionStatus).toBe("connected");
+      expect(await reused()).toBe(true);
+    });
   });
 });
 

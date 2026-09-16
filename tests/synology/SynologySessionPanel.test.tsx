@@ -16,9 +16,28 @@ import type { DatabaseAvailability } from "../../src/contexts/ConnectionContextT
 import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 import SynologySessionPanel from "../../src/components/synology/SynologySessionPanel";
 import { disconnectSynologySession } from "../../src/utils/session/synologySessionLifecycle";
+import {
+  clearSynologyOtpSubmissions,
+  synologyOtpReplayKey,
+  waitForSynologyTotpWindow,
+} from "../../src/utils/synology/synologyAuthenticator";
 vi.mock("../../src/hooks/synology/synologyApiCapabilities", () => ({
   verifySynologyApiTransportCapabilities: vi.fn().mockResolvedValue(undefined),
 }));
+// The vault pre-wait is observable; the local generator keeps its own wait.
+vi.mock(
+  "../../src/utils/synology/synologyAuthenticator",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../src/utils/synology/synologyAuthenticator")
+      >();
+    return {
+      ...actual,
+      waitForSynologyTotpWindow: vi.fn(actual.waitForSynologyTotpWindow),
+    };
+  },
+);
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -750,5 +769,236 @@ describe("saved Synology session ownership", () => {
         ([command]) => command === "syn_fs_connect",
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe("saved NAS API authenticators", () => {
+  const LOCAL_SEED = "LOCALSEEDJBSWY3DPEHPK3PXP";
+  const VAULT_SEED = "VAULTSEEDJBSWY3DPEHPK3PXP";
+  const VAULT_TOTP_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  /** 1 s into a 30-second (and 45-second) window. */
+  const WINDOW = 19_877_778 * 90_000;
+  let logs: ReturnType<typeof vi.spyOn>[] = [];
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(WINDOW + 1_000);
+    clearSynologyOtpSubmissions();
+    logs = (["log", "info", "warn", "error", "debug"] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const spy of logs) spy.mockRestore();
+  });
+  const localAuthenticator = (
+    patch: Partial<Connection> = {},
+    settings: Connection["synologySettings"] = {
+      version: 1,
+      useHttps: true,
+      otpAuthenticatorId: "totp-dsm",
+    },
+  ) => {
+    connections[0] = {
+      ...saved("one"),
+      totpConfigs: [
+        {
+          id: "totp-dsm",
+          secret: LOCAL_SEED,
+          issuer: "Synology DSM",
+          account: "user",
+          digits: 6,
+          period: 30,
+          algorithm: "sha1",
+        },
+      ],
+      synologySettings: settings,
+      ...patch,
+    };
+  };
+  /** `syn_fs_connect` asks for a code first; `totp_compute_code` answers. */
+  const scriptCodeChallenge = (events: string[] = []) => {
+    let connects = 0;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "totp_compute_code") {
+        events.push("compute");
+        return "123456";
+      }
+      if (command !== "syn_fs_connect") return undefined;
+      return ++connects === 1
+        ? { status: "otp_required" }
+        : { status: "connected", sessionId: "receipt-one", message: "ok" };
+    });
+  };
+  const calls = (name: string) =>
+    mocks.invoke.mock.calls
+      .filter(([command]) => command === name)
+      .map(([, args]) => args as Record<string, unknown>);
+  const expectSeedHidden = (seed: string) => {
+    expect(JSON.stringify(calls("syn_fs_connect"))).not.toContain(seed);
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(seed);
+    expect(document.body.innerHTML).not.toContain(seed);
+    expect(JSON.stringify(logs.map((spy) => spy.mock.calls))).not.toContain(
+      seed,
+    );
+  };
+  const vaultWithTotp = (
+    events: string[],
+    source: Connection["credentialSource"],
+  ) => {
+    const credentialId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    connections[0].credentialSource = source ?? {
+      kind: "vault",
+      credentialId,
+      totpId: VAULT_TOTP_ID,
+    };
+    const facets = {
+      username: "VAULT_ADMIN",
+      password: "VAULT_PASSWORD",
+      totp: [
+        {
+          id: VAULT_TOTP_ID,
+          label: "DSM",
+          secret: VAULT_SEED,
+          digits: 6 as const,
+          period: 45,
+          algorithm: "sha1" as const,
+        },
+      ],
+    };
+    vaultApi = {
+      scope: { databaseId: "db-a", generation: 1 },
+      changeRevision: 1,
+      list: vi.fn<DatabaseCredentialVaultApi["list"]>(async () => ({
+        scope: { databaseId: "db-a", generation: 1 },
+        revision: 1,
+        receipt: "vault-receipt",
+        entries: [
+          {
+            id: credentialId,
+            name: "NAS account",
+            createdAt: "2026-09-01",
+            updatedAt: "2026-09-01",
+            availableFacets: ["username", "password", "totp"],
+          },
+        ],
+      })),
+      resolve: vi.fn<DatabaseCredentialVaultApi["resolve"]>(
+        async (_snapshot, _id, requested) => {
+          events.push(`resolve ${requested.join("+")}`);
+          return Object.fromEntries(
+            requested.map((facet) => [
+              facet,
+              facet === "totp"
+                ? facets.totp.map((entry) => ({ ...entry }))
+                : facets[facet as "username" | "password"],
+            ]),
+          );
+        },
+      ),
+      compareAndSwap: vi.fn(),
+    };
+    return credentialId;
+  };
+
+  it("answers DSM's code request once from the connection's own authenticator", async () => {
+    localAuthenticator();
+    scriptCodeChallenge();
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(screen.getByText("connected")).toBeInTheDocument(),
+    );
+    expect(calls("totp_compute_code")).toEqual([
+      { secret: LOCAL_SEED, algorithm: "SHA1", digits: 6, period: 30 },
+    ]);
+    expect(calls("syn_fs_connect").map((args) => args.otpCode)).toEqual([
+      null,
+      "123456",
+    ]);
+    expectSeedHidden(LOCAL_SEED);
+  });
+
+  it("offers no automatic code for local credentials without a selected authenticator", async () => {
+    localAuthenticator({}, { version: 1, useHttps: true });
+    scriptCodeChallenge();
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(screen.getByText("disconnected")).toBeInTheDocument(),
+    );
+    await act(async () => {});
+    expect(calls("syn_fs_connect")).toHaveLength(1);
+    expect(calls("totp_compute_code")).toHaveLength(0);
+  });
+
+  it("never uses a local reference for vault credentials without a vault authenticator", async () => {
+    localAuthenticator();
+    vaultWithTotp([], {
+      kind: "vault",
+      credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    });
+    scriptCodeChallenge();
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(screen.getByText("disconnected")).toBeInTheDocument(),
+    );
+    await act(async () => {});
+    expect(calls("syn_fs_connect")).toHaveLength(1);
+    expect(calls("syn_fs_connect")[0]).toMatchObject({
+      username: "VAULT_ADMIN",
+      otpCode: null,
+    });
+    expect(calls("totp_compute_code")).toHaveLength(0);
+  });
+
+  it("reads vault authenticator metadata first and waits for a fresh window before generating", async () => {
+    const events: string[] = [];
+    vaultWithTotp(events, undefined);
+    scriptCodeChallenge(events);
+    // 1.5 s left in the 45-second window: the vault generator alone would refuse.
+    vi.setSystemTime(WINDOW + 45_000 - 1_500);
+    const actual = await vi.importActual<
+      typeof import("../../src/utils/synology/synologyAuthenticator")
+    >("../../src/utils/synology/synologyAuthenticator");
+    vi.mocked(waitForSynologyTotpWindow).mockImplementationOnce(
+      async (options, assertAttempt) => {
+        events.push("wait");
+        return actual.waitForSynologyTotpWindow(options, assertAttempt, {
+          sleep: async (ms) => {
+            vi.setSystemTime(Date.now() + ms);
+          },
+        });
+      },
+    );
+    render(<SynologySessionPanel session={session("one")} />);
+    await waitFor(() =>
+      expect(screen.getByText("connected")).toBeInTheDocument(),
+    );
+    expect(waitForSynologyTotpWindow).toHaveBeenCalledExactlyOnceWith(
+      {
+        period: 45,
+        replayKey: synologyOtpReplayKey(
+          "one.example.test",
+          5001,
+          "VAULT_ADMIN",
+        ),
+      },
+      expect.any(Function),
+    );
+    expect(events).toEqual([
+      "resolve username+password",
+      "resolve totp",
+      "wait",
+      "resolve totp",
+      "compute",
+    ]);
+    expect(Date.now()).toBeGreaterThanOrEqual(WINDOW + 45_000);
+    expect(calls("totp_compute_code")).toEqual([
+      { secret: VAULT_SEED, algorithm: "SHA1", digits: 6, period: 45 },
+    ]);
+    expect(calls("syn_fs_connect").map((args) => args.otpCode)).toEqual([
+      null,
+      "123456",
+    ]);
+    expectSeedHidden(VAULT_SEED);
   });
 });

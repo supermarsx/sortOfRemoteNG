@@ -12,6 +12,27 @@ export interface SynologySettings {
    * Only the preference is saved here; the device token lives in the vault.
    */
   trustDevice?: boolean;
+  /**
+   * NAS API: id of the connection-local authenticator (`totpConfigs[].id`)
+   * that answers DSM code challenges. Only the reference is saved here; the
+   * secret stays in `totpConfigs`. Vault credentials use `credentialSource.totpId`.
+   */
+  otpAuthenticatorId?: string;
+}
+
+/** Longest accepted `otpAuthenticatorId`. */
+export const SYNOLOGY_OTP_AUTHENTICATOR_ID_MAX_LENGTH = 128;
+
+export function isValidSynologyOtpAuthenticatorId(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= SYNOLOGY_OTP_AUTHENTICATOR_ID_MAX_LENGTH &&
+    // eslint-disable-next-line no-control-regex -- rejects C0/C1 control characters.
+    !/[\u0000-\u001f\u007f-\u009f]/.test(value)
+  );
 }
 
 export function normalizeSynologySettings(value: unknown): SynologySettings {
@@ -32,6 +53,8 @@ export function normalizeSynologySettings(value: unknown): SynologySettings {
       typeof input.useDefaultRedirectDestinations !== "boolean") ||
     (Object.prototype.hasOwnProperty.call(input, "trustDevice") &&
       typeof input.trustDevice !== "boolean") ||
+    (Object.prototype.hasOwnProperty.call(input, "otpAuthenticatorId") &&
+      !isValidSynologyOtpAuthenticatorId(input.otpAuthenticatorId)) ||
     Object.keys(input).some(
       (key) =>
         ![
@@ -40,11 +63,12 @@ export function normalizeSynologySettings(value: unknown): SynologySettings {
           "accessMode",
           "useDefaultRedirectDestinations",
           "trustDevice",
+          "otpAuthenticatorId",
         ].includes(key),
     )
   )
     throw new Error(
-      "Unsupported Synology connection settings. Only transport, view, website redirect and trusted-device preferences can be saved.",
+      "Unsupported Synology connection settings. Only transport, view, website redirect, trusted-device preferences and an authenticator reference can be saved.",
     );
   return {
     version: 1,
@@ -60,6 +84,9 @@ export function normalizeSynologySettings(value: unknown): SynologySettings {
       : {}),
     ...(input.trustDevice !== undefined
       ? { trustDevice: input.trustDevice as boolean }
+      : {}),
+    ...(input.otpAuthenticatorId !== undefined
+      ? { otpAuthenticatorId: input.otpAuthenticatorId as string }
       : {}),
   };
 }
