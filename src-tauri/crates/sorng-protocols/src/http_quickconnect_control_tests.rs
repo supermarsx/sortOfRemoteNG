@@ -210,7 +210,7 @@ async fn discovery_posts_only_validated_anonymous_json_through_configured_connec
     }
     let seen = server.seen.lock().unwrap();
     assert_eq!(seen.len(), 4);
-    for (index, pair) in seen.chunks_exact(2).enumerate() {
+    for (index, pair) in seen.as_chunks::<2>().0.iter().enumerate() {
         assert!(pair[0].starts_with("CONNECT global.quickconnect.to:443 "));
         assert!(pair[0]
             .to_ascii_lowercase()

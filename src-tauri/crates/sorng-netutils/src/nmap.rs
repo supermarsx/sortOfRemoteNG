@@ -173,14 +173,13 @@ fn parse_nmap_host(block: &str) -> Option<NmapHost> {
     };
 
     // Primary address (first <address>)
-    let ip = if let Some(addr_start) = block.find("<address") {
+    let ip = {
+        let addr_start = block.find("<address")?;
         let addr_end = block[addr_start..]
             .find("/>")
             .or_else(|| block[addr_start..].find('>'))?;
         let addr_tag = &block[addr_start..addr_start + addr_end + 2];
         extract_attr(addr_tag, "addr").unwrap_or("").to_string()
-    } else {
-        return None;
     };
 
     // MAC address (second <address> with addrtype="mac")

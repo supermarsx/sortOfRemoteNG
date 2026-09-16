@@ -270,7 +270,7 @@ async fn encrypted_database_is_an_envelope_and_survives_a_lock_unlock_cycle() {
     let error = store
         .verify_identity_blocking("vault.example:443", "tls", tls_identity("cc33"))
         .expect_err("locked verify must fail");
-    assert!(error.contains("encrypted"), "{error}");
+    assert!(error.contains("locked"), "{error}");
     assert!(store
         .trust_identity_blocking(
             "other.example:443".into(),
@@ -369,6 +369,7 @@ async fn legacy_sidecars_seed_each_database_with_its_own_connection_scope() {
         },
         records: Default::default(),
         legacy_suppressed_keys: Default::default(),
+        fresh_approval_required_keys: None,
         legacy_migration_receipt: None,
     };
     for (key, host, kind, identity) in [

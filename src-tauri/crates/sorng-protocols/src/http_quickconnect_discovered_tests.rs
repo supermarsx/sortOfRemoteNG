@@ -110,7 +110,7 @@ async fn verified_regional_to_browser_shaped_anonymous_probe_routes_and_logs_exa
     let seen = server.seen.lock().unwrap();
     assert_eq!(seen.len(), 6);
     assert!(seen[0].starts_with("CONNECT dec.quickconnect.to:443 "));
-    for pair in seen.chunks_exact(2) {
+    for pair in seen.as_chunks::<2>().0 {
         assert!(pair[0].contains("CONNECT "));
         let request = pair[1].to_ascii_lowercase();
         for secret in [

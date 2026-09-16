@@ -230,7 +230,7 @@ async fn public_fonts_are_anonymous_fixed_binary_gets_through_configured_proxy()
         }
         let requests = server.seen.lock().unwrap();
         assert_eq!(requests.len(), 4);
-        for pair in requests.chunks_exact(2) {
+        for pair in requests.as_chunks::<2>().0 {
             assert!(pair[0].starts_with("CONNECT synostatic.synology.com:443 HTTP/1.1"));
             assert!(pair[0]
                 .to_ascii_lowercase()

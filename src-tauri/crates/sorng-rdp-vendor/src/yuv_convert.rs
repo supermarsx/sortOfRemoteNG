@@ -1973,7 +1973,7 @@ mod tests {
         let nv12 = make_nv12(0, 128, 128, 4, 4);
         let rgba = nv12_to_rgba(&nv12, 4, 4);
         assert_eq!(rgba.len(), 4 * 4 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[0], 0);
             assert_eq!(pixel[1], 0);
             assert_eq!(pixel[2], 0);
@@ -1985,7 +1985,7 @@ mod tests {
     fn nv12_pure_white() {
         let nv12 = make_nv12(255, 128, 128, 4, 4);
         let rgba = nv12_to_rgba(&nv12, 4, 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[0], 255);
             assert_eq!(pixel[1], 255);
             assert_eq!(pixel[2], 255);
@@ -1997,7 +1997,7 @@ mod tests {
     fn nv12_mid_gray() {
         let nv12 = make_nv12(128, 128, 128, 2, 2);
         let rgba = nv12_to_rgba(&nv12, 2, 2);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert!((pixel[1] as i32 - 128).abs() <= 1);
             assert!((pixel[2] as i32 - 128).abs() <= 1);
@@ -2009,7 +2009,7 @@ mod tests {
     fn nv12_alpha_always_opaque() {
         let nv12 = make_nv12(100, 200, 50, 6, 6);
         let rgba = nv12_to_rgba(&nv12, 6, 6);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[3], 255);
         }
     }
@@ -2031,7 +2031,7 @@ mod tests {
         let nv12 = make_nv12(128, 128, 128, 4, 3);
         let rgba = nv12_to_rgba(&nv12, 4, 3);
         assert_eq!(rgba.len(), 4 * 3 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert_eq!(pixel[3], 255);
         }
@@ -2087,7 +2087,7 @@ mod tests {
         let yuv = make_i420(0, 128, 128, 4, 4);
         let rgba = i420_to_rgba(&yuv, 4, 4);
         assert_eq!(rgba.len(), 4 * 4 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[0], 0);
             assert_eq!(pixel[1], 0);
             assert_eq!(pixel[2], 0);
@@ -2099,7 +2099,7 @@ mod tests {
     fn i420_pure_white() {
         let yuv = make_i420(255, 128, 128, 4, 4);
         let rgba = i420_to_rgba(&yuv, 4, 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[0], 255);
             assert_eq!(pixel[1], 255);
             assert_eq!(pixel[2], 255);
@@ -2147,7 +2147,7 @@ mod tests {
         let rgba =
             yuv420_planar_to_rgba(&y, &u, &v, y_stride, u_stride, v_stride, w as u32, h as u32);
         assert_eq!(rgba.len(), w * h * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert_eq!(pixel[3], 255);
         }
@@ -2162,7 +2162,7 @@ mod tests {
         let v = vec![128u8; (w / 2) * h.div_ceil(2)];
         let rgba = yuv420_planar_to_rgba(&y, &u, &v, w, w / 2, w / 2, w as u32, h as u32);
         assert_eq!(rgba.len(), w * h * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[3], 255);
         }
     }
@@ -2186,7 +2186,7 @@ mod tests {
         let rgba = nv12_to_rgba(&nv12, 2, 2);
         // All channels are u8, so they're inherently in 0..=255.
         // Verify none got wrapped to garbage by the fixed-point math.
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_ne!(pixel[3], 0, "Alpha must be 255");
         }
     }
@@ -2198,7 +2198,7 @@ mod tests {
         let nv12 = make_nv12(128, 128, 128, 32, 4);
         let rgba = nv12_to_rgba(&nv12, 32, 4);
         assert_eq!(rgba.len(), 32 * 4 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert_eq!(pixel[3], 255);
         }
@@ -2209,7 +2209,7 @@ mod tests {
         let nv12 = make_nv12(0, 128, 128, 17, 2);
         let rgba = nv12_to_rgba(&nv12, 17, 2);
         assert_eq!(rgba.len(), 17 * 2 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[0], 0);
             assert_eq!(pixel[3], 255);
         }
@@ -2220,7 +2220,7 @@ mod tests {
         let yuv = make_i420(128, 128, 128, 32, 4);
         let rgba = i420_to_rgba(&yuv, 32, 4);
         assert_eq!(rgba.len(), 32 * 4 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert_eq!(pixel[3], 255);
         }
@@ -2232,7 +2232,7 @@ mod tests {
         let nv12 = make_nv12(128, 128, 128, 1920, 2);
         let rgba = nv12_to_rgba(&nv12, 1920, 2);
         assert_eq!(rgba.len(), 1920 * 2 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert_eq!(pixel[3], 255);
         }
@@ -2301,7 +2301,7 @@ mod tests {
         let nv12 = make_nv12(128, 128, 128, 64, 4);
         let rgba = nv12_to_rgba(&nv12, 64, 4);
         assert_eq!(rgba.len(), 64 * 4 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert_eq!(pixel[3], 255);
         }
@@ -2312,7 +2312,7 @@ mod tests {
         let yuv = make_i420(128, 128, 128, 64, 4);
         let rgba = i420_to_rgba(&yuv, 64, 4);
         assert_eq!(rgba.len(), 64 * 4 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert_eq!(pixel[3], 255);
         }
@@ -2324,7 +2324,7 @@ mod tests {
         let nv12 = make_nv12(200, 100, 150, 48, 2);
         let rgba = nv12_to_rgba(&nv12, 48, 2);
         assert_eq!(rgba.len(), 48 * 2 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[3], 255);
         }
     }
@@ -2354,7 +2354,7 @@ mod tests {
         let nv12 = make_nv12(128, 128, 128, 3840, 2);
         let rgba = nv12_to_rgba(&nv12, 3840, 2);
         assert_eq!(rgba.len(), 3840 * 2 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert!((pixel[0] as i32 - 128).abs() <= 1);
             assert_eq!(pixel[3], 255);
         }
@@ -2367,7 +2367,7 @@ mod tests {
         let nv12 = make_nv12(0, 128, 128, 33, 2);
         let rgba = nv12_to_rgba(&nv12, 33, 2);
         assert_eq!(rgba.len(), 33 * 2 * 4);
-        for pixel in rgba.chunks_exact(4) {
+        for pixel in rgba.as_chunks::<4>().0 {
             assert_eq!(pixel[0], 0);
             assert_eq!(pixel[3], 255);
         }

@@ -125,7 +125,7 @@ pub fn install(
         core.add_FrameNavigationStarting(
             &NavigationStartingEventHandler::create(Box::new(move |_, args| {
                 let result = (|| {
-                    let args = args.ok_or_else(|| windows61::core::Error::from_win32())?;
+                    let args = args.ok_or_else(windows61::core::Error::from_win32)?;
                     let mut uri = PWSTR::null();
                     args.Uri(&mut uri)?;
                     let uri = take_pwstr(uri);

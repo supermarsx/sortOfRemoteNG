@@ -2166,7 +2166,9 @@ mod tests {
         assert_eq!(
             copied
                 .pixels
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .take(4)
                 .map(|pixel| pixel[0])
                 .collect::<Vec<_>>(),
@@ -2393,7 +2395,8 @@ mod tests {
         while let Some(frame) = receiver.drain_frame_only().unwrap() {
             assert_eq!(frame.delivery_epoch, resumed.delivery_epoch);
             assert!(frame.frame_token > 0);
-            assert!(frame.rect.pixels.chunks_exact(4).all(|pixel| pixel[0] == 9));
+            let (pixels, _) = frame.rect.pixels.as_chunks::<4>();
+            assert!(pixels.iter().all(|pixel| pixel[0] == 9));
             let ack = sender
                 .acknowledge_rendered_tile("session", frame.delivery_epoch, frame.frame_token)
                 .unwrap();

@@ -398,7 +398,7 @@ mod tests {
         );
         assert_eq!(pick(&[virt.clone(), bt.clone(), native.clone()]), "COM4");
         assert_eq!(pick(&[virt.clone(), bt.clone()]), "COM3");
-        assert_eq!(pick(&[virt.clone()]), "COM2");
+        assert_eq!(pick(std::slice::from_ref(&virt)), "COM2");
         // Pci and Unknown rank with Native; lowest natural name wins.
         assert_eq!(
             pick(&[port("COM5", PortType::Pci), port("COM4", PortType::Unknown)]),

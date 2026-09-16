@@ -257,6 +257,10 @@ async fn load_existing_storage_dek() -> VaultResult<Vec<u8>> {
     require_existing_storage_dek(keychain::read_dek().await)
 }
 
+fn vault_meta_path(storage_path: &Path) -> PathBuf {
+    storage_path.with_extension("vault-meta")
+}
+
 #[cfg(test)]
 mod existing_dek_tests {
     use super::*;
@@ -295,8 +299,4 @@ mod existing_dek_tests {
             2
         );
     }
-}
-
-fn vault_meta_path(storage_path: &Path) -> PathBuf {
-    storage_path.with_extension("vault-meta")
 }

@@ -39,7 +39,7 @@ async fn write_tds(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()> 
 async fn server(mut stream: TcpStream, config: Arc<ServerConfig>) -> std::io::Result<bool> {
     let prelogin = read_tds(&mut stream).await?;
     let mut encryption = None;
-    for option in prelogin.chunks_exact(5) {
+    for option in prelogin.as_chunks::<5>().0 {
         if option[0] == 0xff {
             break;
         }

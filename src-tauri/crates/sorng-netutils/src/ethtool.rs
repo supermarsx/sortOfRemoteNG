@@ -40,11 +40,10 @@ pub fn parse_ethtool_output(output: &str) -> Option<EthtoolInfo> {
 
     // Extract interface from "Settings for <iface>:"
     let first_line = lines[0].trim();
-    let interface = if let Some(rest) = first_line.strip_prefix("Settings for ") {
-        rest.trim_end_matches(':').to_string()
-    } else {
-        return None;
-    };
+    let interface = first_line
+        .strip_prefix("Settings for ")?
+        .trim_end_matches(':')
+        .to_string();
 
     let mut info = EthtoolInfo {
         interface,

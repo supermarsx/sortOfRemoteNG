@@ -44,47 +44,6 @@ pub fn original_alias(host: &str) -> Option<&str> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn original_alias_preserves_exact_saved_smart_dns_forms() {
-        for host in [
-            "test-nas.quickconnect.to",
-            "test-nas.fr3.quickconnect.to",
-            "test-nas.direct.quickconnect.to",
-            "192-168-50-10.test-nas.direct.quickconnect.to",
-        ] {
-            assert_eq!(original_alias(host), Some("test-nas"));
-        }
-        let host = "192-168-50-10.test-nas.direct.quickconnect.to";
-        let probe = Url::parse(&format!("https://{host}:5001{PROBE_PATH}?{PROBE_QUERY}")).unwrap();
-        assert_eq!(
-            classify(&probe, original_alias(host).unwrap()),
-            Some(Route::Probe)
-        );
-        assert_eq!(classify(&probe, "other-nas"), None);
-    }
-
-    #[test]
-    fn saved_smart_dns_lookalikes_and_extra_prefixes_are_not_aliases() {
-        for host in [
-            "a.b.test-nas.direct.quickconnect.to",
-            "-lan.test-nas.direct.quickconnect.to",
-            "lan..direct.quickconnect.to",
-            "lan.test-nas.direct.quickconnect.to.evil.invalid",
-            "lan.test-nas.direct.quickconnect.to.",
-            "https://lan.test-nas.direct.quickconnect.to",
-            "test-nas.fr3x.quickconnect.to",
-            "global.quickconnect.to",
-            "www.quickconnect.to",
-        ] {
-            assert_eq!(original_alias(host), None);
-        }
-    }
-}
-
 fn regional_label(region: &str) -> bool {
     let bytes = region.as_bytes();
     (3..=63).contains(&bytes.len())
@@ -151,4 +110,45 @@ pub fn discovery_server_id(item: &Value) -> Option<&str> {
     item.pointer("/server/serverID")
         .and_then(Value::as_str)
         .filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn original_alias_preserves_exact_saved_smart_dns_forms() {
+        for host in [
+            "test-nas.quickconnect.to",
+            "test-nas.fr3.quickconnect.to",
+            "test-nas.direct.quickconnect.to",
+            "192-168-50-10.test-nas.direct.quickconnect.to",
+        ] {
+            assert_eq!(original_alias(host), Some("test-nas"));
+        }
+        let host = "192-168-50-10.test-nas.direct.quickconnect.to";
+        let probe = Url::parse(&format!("https://{host}:5001{PROBE_PATH}?{PROBE_QUERY}")).unwrap();
+        assert_eq!(
+            classify(&probe, original_alias(host).unwrap()),
+            Some(Route::Probe)
+        );
+        assert_eq!(classify(&probe, "other-nas"), None);
+    }
+
+    #[test]
+    fn saved_smart_dns_lookalikes_and_extra_prefixes_are_not_aliases() {
+        for host in [
+            "a.b.test-nas.direct.quickconnect.to",
+            "-lan.test-nas.direct.quickconnect.to",
+            "lan..direct.quickconnect.to",
+            "lan.test-nas.direct.quickconnect.to.evil.invalid",
+            "lan.test-nas.direct.quickconnect.to.",
+            "https://lan.test-nas.direct.quickconnect.to",
+            "test-nas.fr3x.quickconnect.to",
+            "global.quickconnect.to",
+            "www.quickconnect.to",
+        ] {
+            assert_eq!(original_alias(host), None);
+        }
+    }
 }

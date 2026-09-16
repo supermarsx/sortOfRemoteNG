@@ -83,7 +83,7 @@ async fn cached_discovery_and_fresh_handoffs_need_no_probe_enrollment() {
         48,
         "four fresh sources, two documents, three exact GET probes"
     );
-    for pair in seen.chunks_exact(2) {
+    for pair in seen.as_chunks::<2>().0 {
         assert!(pair[0].starts_with("CONNECT "));
         assert!(
             pair[0].contains(".test-nas.direct.quickconnect.to:")
