@@ -290,6 +290,12 @@ describe("VoipPhoneSessionPanel", () => {
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "ADD_SESSION" }),
     );
+    // The runtime connection is unsaved, so per-website settings such as the
+    // dark-mode extension cannot attach to it. Say so before the user tries.
+    const note = screen.getByTestId("voip-phone-web-ui-note").textContent ?? "";
+    expect(note).toContain("temporary session");
+    expect(note).toContain("dark-mode extension");
+    expect(note).toContain("Save an HTTP or HTTPS connection");
   });
 
   it("falls back to dispatching an http session without credentials", async () => {

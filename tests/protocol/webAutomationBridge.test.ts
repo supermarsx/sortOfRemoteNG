@@ -274,4 +274,31 @@ describe("website automation parent-owned bridge", () => {
       /ready/,
     );
   });
+  it.each(["engine", "cssOnly"])(
+    "passes the closed dark outcome %s back to the caller",
+    async (outcome) => {
+      const pending = bridge.request("dark", { enabled: true });
+      response({ darkOutcome: outcome });
+      expect(await pending).toBe(outcome);
+    },
+  );
+  it.each([
+    { darkOutcome: "engine ran" },
+    { darkOutcome: "<b>themed</b>" },
+    { darkOutcome: 7 },
+    { darkOutcome: { kind: "engine" } },
+    {},
+  ])(
+    "drops anything outside that set, so no page wording reaches the app: %j",
+    async (overrides) => {
+      const pending = bridge.request("dark", { enabled: true });
+      response(overrides);
+      expect(await pending).toBeUndefined();
+    },
+  );
+  it("never returns an outcome for an action that is not dark", async () => {
+    const pending = bridge.request("script", { code: "1" });
+    response({ darkOutcome: "engine" });
+    expect(await pending).toBeUndefined();
+  });
 });

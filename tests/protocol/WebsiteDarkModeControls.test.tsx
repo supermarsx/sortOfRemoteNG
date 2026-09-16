@@ -22,6 +22,7 @@ function controller(
     available: true,
     busy: false,
     error: null,
+    status: { kind: "off", message: "The dark-mode extension is off." },
     unavailableReason: "",
     configuration: normalizeWebsiteDarkModeConfig(undefined),
     theme: { ...DEFAULT_WEBSITE_DARK_THEME },
@@ -172,6 +173,64 @@ describe("Dark-mode extension UI", () => {
     expect(
       screen.getByText("Unlock the owning database first."),
     ).toHaveAttribute("role", "status");
+  });
+  it.each([
+    ["off", false, "Dark-mode extension disabled"],
+    ["engine", true, "Dark-mode extension enabled"],
+    ["cssOnly", true, "Dark-mode extension enabled, CSS only"],
+    ["failed", true, "Dark-mode extension could not theme this page"],
+  ] as const)(
+    "tells the %s state apart in the toolbar",
+    (kind, enabled, tooltip) => {
+      render(
+        <WebsiteDarkModeControls
+          controller={controller({
+            enabled,
+            status: { kind, message: "Because of this." },
+          })}
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: "Dark-mode extension" }),
+      ).toHaveAttribute("data-tooltip", tooltip);
+    },
+  );
+  it("separates a themed-with-CSS page from one it could not theme", () => {
+    const view = render(
+      <WebsiteDarkModeControls
+        controller={controller({
+          enabled: true,
+          status: {
+            kind: "cssOnly",
+            message: "Themed with CSS only: external script files are blocked.",
+          },
+        })}
+      />,
+    );
+    open();
+    expect(
+      screen.getByText(
+        "Themed with CSS only: external script files are blocked.",
+      ),
+    ).toHaveAttribute("role", "status");
+    expect(screen.queryByRole("alert")).toBeNull();
+    view.unmount();
+
+    render(
+      <WebsiteDarkModeControls
+        controller={controller({
+          enabled: true,
+          status: {
+            kind: "failed",
+            message: "Cannot theme this page: website scripts are blocked.",
+          },
+        })}
+      />,
+    );
+    open();
+    expect(
+      screen.getByText("Cannot theme this page: website scripts are blocked."),
+    ).toHaveAttribute("role", "alert");
   });
   it("shows a shared unavailable error only once without claiming a setting was saved", () => {
     render(

@@ -1,10 +1,21 @@
 import React, { useState } from "react";
 import { Moon, X } from "lucide-react";
-import type { WebsiteDarkModeController } from "../../../hooks/protocol/useWebsiteDarkMode";
+import type {
+  WebsiteDarkModeController,
+  WebsiteDarkModeStatus,
+} from "../../../hooks/protocol/useWebsiteDarkMode";
 import { normalizeWebsiteDarkModeConfig } from "../../../utils/connection/websiteDarkMode";
 import { WebsiteDarkModeFields } from "../../websites/WebsiteDarkModeFields";
 import { Checkbox } from "../../ui/forms";
 import { Modal } from "../../ui/overlays/Modal";
+
+/** Enabled is not one state: the page may be converted, flattened, or untouched. */
+const TOOLTIPS: Record<WebsiteDarkModeStatus["kind"], string> = {
+  off: "Dark-mode extension disabled",
+  engine: "Dark-mode extension enabled",
+  cssOnly: "Dark-mode extension enabled, CSS only",
+  failed: "Dark-mode extension could not theme this page",
+};
 
 export default function WebsiteDarkModeControls({
   controller,
@@ -19,11 +30,7 @@ export default function WebsiteDarkModeControls({
         aria-label="Dark-mode extension"
         aria-pressed={controller.enabled}
         aria-haspopup="dialog"
-        data-tooltip={
-          controller.enabled
-            ? "Dark-mode extension enabled"
-            : "Dark-mode extension disabled"
-        }
+        data-tooltip={TOOLTIPS[controller.status.kind]}
         onClick={() => setOpen(true)}
         className={`sor-icon-btn-sm ${controller.enabled ? "text-primary ring-1 ring-inset ring-primary/40" : ""}`}
       >
@@ -51,6 +58,11 @@ function AppearanceDialog({
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const busy = controller.busy || saving;
+  // A save problem is about what the user just did, so it outranks the page's.
+  const alert =
+    failure ??
+    controller.error ??
+    (controller.status.kind === "failed" ? controller.status.message : null);
   const apply = async () => {
     setFailure(null);
     setSaving(true);
@@ -129,9 +141,19 @@ function AppearanceDialog({
               {controller.unavailableReason}
             </p>
           )}
-        {(failure || controller.error) && (
+        {alert && (
           <p role="alert" className="text-sm text-error">
-            {failure || controller.error}
+            {alert}
+          </p>
+        )}
+        {/* Themed, but not by the engine: say so, and say why, where the
+            unexpectedly plain page is being configured. */}
+        {controller.status.kind === "cssOnly" && (
+          <p
+            role="status"
+            className="text-sm text-[var(--color-textSecondary)]"
+          >
+            {controller.status.message}
           </p>
         )}
         <label className="flex items-center gap-2 text-sm">

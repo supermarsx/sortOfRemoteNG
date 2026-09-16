@@ -391,6 +391,15 @@ export function VoipPhoneSessionPanel({
                 )}
               </p>
             )}
+            <p
+              className="mt-3 text-sm leading-6 text-slate-400"
+              data-testid="voip-phone-web-ui-note"
+            >
+              {t(
+                "voipPhone.webUiAppearanceNote",
+                "Open Web UI opens a temporary session, so per-website settings saved on a connection — the dark-mode extension among them — stay unavailable there. Save an HTTP or HTTPS connection to this phone and open that to use them.",
+              )}
+            </p>
           </div>
 
           {phone.statusError && (

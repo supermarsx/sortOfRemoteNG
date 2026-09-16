@@ -98,6 +98,7 @@ export function Demo() {
       available: false,
       busy: false,
       error: null,
+      status: { kind: "off", message: "The dark-mode extension is off." },
       unavailableReason:
         "Extension unavailable in the synthetic recording fixture.",
       configuration: normalizeWebsiteDarkModeConfig(undefined),

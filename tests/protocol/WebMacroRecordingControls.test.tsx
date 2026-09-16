@@ -27,6 +27,7 @@ function model(overrides: Partial<Automation> = {}): Automation {
       available: true,
       busy: false,
       error: null,
+      status: { kind: "off", message: "The dark-mode extension is off." },
       unavailableReason: "",
       configuration: normalizeWebsiteDarkModeConfig(undefined),
       theme: normalizeWebsiteDarkModeConfig(undefined).theme,

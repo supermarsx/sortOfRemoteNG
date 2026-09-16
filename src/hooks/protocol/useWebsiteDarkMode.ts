@@ -8,7 +8,10 @@ import type {
   WebsiteDarkTheme,
 } from "../../types/connection/websiteDarkMode";
 import type { WebAutomationDocument } from "../../types/recording/webAutomation";
-import type { WebAutomationBridge } from "../../utils/recording/webAutomationBridge";
+import type {
+  WebAutomationBridge,
+  WebDarkOutcome,
+} from "../../utils/recording/webAutomationBridge";
 import {
   DatabaseManager,
   onDatabaseAccessChange,
@@ -23,9 +26,20 @@ import {
   normalizeWebsiteDarkModeSettings,
 } from "../../utils/connection/websiteDarkMode";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
+import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy";
 import { normalizeAdvancedProtocolConnection } from "../../utils/connection/normalizeAdvancedProtocolConnection";
 import { getRuntimeWebNavigation } from "../../utils/session/runtimeConnectionRegistry";
 import { httpRedirectConnectionOrigin } from "../../utils/protocol/httpRedirectTrustIdentity";
+
+/**
+ * What the open page actually got, and why. `engine` and `cssOnly` both mean
+ * the page is themed; they differ in how, which is what makes an unexpectedly
+ * plain page explainable instead of looking like a broken extension.
+ */
+export interface WebsiteDarkModeStatus {
+  kind: "off" | "engine" | "cssOnly" | "failed";
+  message: string;
+}
 
 export interface WebsiteDarkModeController {
   scopeKey: string;
@@ -34,6 +48,7 @@ export interface WebsiteDarkModeController {
   busy: boolean;
   error: string | null;
   unavailableReason: string;
+  status: WebsiteDarkModeStatus;
   /** Appearance is saved only to this original connection, never a runtime ID. */
   savedConnectionName?: string;
   configuration: WebsiteDarkModeConfig;
@@ -66,11 +81,45 @@ const UNAVAILABLE =
 const SAVE_FAILED =
   "The dark-mode extension setting could not be confirmed saved. Retry after restoring database access.";
 const UNSAVED =
-  "Save the original website connection before configuring its dark-mode extension. This page is not a saved connection in the current database.";
+  "The dark-mode extension is stored on a saved website connection, and this page is a temporary session: the phone panel's “Open Web UI” button and redirect handoffs both open one. Open a saved HTTP or HTTPS connection to this address to configure it.";
 const changed = () =>
   new Error(
     "The website or its database changed. Review the extension settings again.",
   );
+
+/** The connection editor's own wording, so the message names what to change. */
+const SCRIPTS_SETTING = "Internal proxy controls → Website scripts";
+const ENGINE_REFUSED =
+  `This page is themed with CSS only: ${SCRIPTS_SETTING} is set to “Block external script files” for this connection, so the dark-mode engine cannot load. ` +
+  "Choose “Allow website scripts” there for full conversion.";
+const SCRIPTS_BLOCKED = `The extension cannot theme this page: ${SCRIPTS_SETTING} is set to “Block website scripts and automation” for this connection.`;
+/** The page refused the engine itself. Name no setting: the user has none. */
+const PAGE_REFUSED =
+  "This page is themed with CSS only: the website's own content security policy refused the dark-mode engine. That restriction belongs to the site, not to your settings.";
+const NOT_APPLIED_YET =
+  "The extension is not applied while this page is loading or waiting for a security decision.";
+const ENGINE_APPLIED = "This page is themed by the dark-mode engine.";
+const OFF = "The dark-mode extension is off for this page.";
+const MODE_NAMES: Record<WebsiteDarkTheme["mode"], string> = {
+  dynamic: "Dynamic colors",
+  filter: "Filter",
+  dynamicFilter: "Dynamic + filter",
+  customCss: "Custom CSS",
+};
+
+/**
+ * The page-script policy this proxy session runs under. `inline-only` emits a
+ * `script-src` without `'self'`, which is what stops the dark-mode engine asset
+ * from loading. Read-only: nothing here ever widens the policy.
+ */
+function pageScriptsPolicy(connection: Connection | undefined) {
+  try {
+    return normalizeHttpProxyPolicy(connection?.httpProxyPolicy).pageScripts;
+  } catch {
+    // An unusable policy blocks the whole session upstream of this hook.
+    return "allow" as const;
+  }
+}
 
 /** Private identity: retain target/auth/policy fields; never expose this key. */
 function sourceIdentity(connection: Connection): string {
@@ -142,6 +191,9 @@ export function useWebsiteDarkMode(
     !context.state.connections.some((row) => row.id === runtimeConnection.id)
   )
     sourceProblem = UNSAVED;
+  // The policy of the connection this session opened, not of the saved row a
+  // redirected page stores its appearance on.
+  const scriptsPolicy = pageScriptsPolicy(runtimeConnection);
   const latest = useRef({ options, context });
   latest.current = { options, context };
   const mounted = useRef(false);
@@ -153,6 +205,16 @@ export function useWebsiteDarkMode(
     message: string;
   } | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [applyFailure, setApplyFailure] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
+  /** Only what the page-side apply reported, so a save failure is never cleared. */
+  const applyError = useRef<string | null>(null);
+  const [applied, setApplied] = useState<{
+    key: string;
+    outcome: WebDarkOutcome;
+  } | null>(null);
   const [knownSavedScope, setKnownSavedScope] = useState<string | null>(null);
   const [verified, setVerified] = useState<{
     scope: string;
@@ -396,7 +458,23 @@ export function useWebsiteDarkMode(
   const theme = configuration.useGlobalDefaults
     ? global.defaults
     : configuration.theme;
-  const payloadKey = stableJsonStringify({ enabled: enabled === true, theme });
+  // The page-side engine asset is CSP-refused under `inline-only`, so the page
+  // is told to theme itself with CSS instead of watching the script fail. This
+  // reports the policy; it never changes it.
+  const engineRefused = enabled === true && scriptsPolicy === "inline-only";
+  const payloadKey = stableJsonStringify({
+    enabled: enabled === true,
+    theme,
+    ...(engineRefused ? { cssOnly: true } : {}),
+  });
+  const applyKey = stableJsonStringify([
+    scope,
+    payloadKey,
+    options.blocked,
+    options.settingsReady,
+    options.navigationKey,
+    options.resetKey,
+  ]);
   useEffect(() => {
     const current = latest.current.options;
     if (
@@ -407,21 +485,46 @@ export function useWebsiteDarkMode(
     )
       return;
     let alive = true;
-    void current.bridge
-      .request("dark", JSON.parse(payloadKey))
-      .catch((failure) => {
-        if (alive && enabled)
-          setError(
-            failure instanceof Error
-              ? failure.message
-              : "The extension could not be applied to this page.",
+    void current.bridge.request("dark", JSON.parse(payloadKey)).then(
+      (outcome) => {
+        if (!alive) return;
+        // Which path the page took. The value is a closed enum checked by the
+        // bridge; the wording shown for it is the app's own.
+        setApplied((previous) =>
+          previous?.key === applyKey && previous.outcome === outcome
+            ? previous
+            : outcome
+              ? { key: applyKey, outcome }
+              : null,
+        );
+        setApplyFailure((previous) => (previous ? null : previous));
+        // The page is themed now, so retire that failure — and nothing else.
+        const stale = applyError.current;
+        applyError.current = null;
+        if (stale)
+          setFailureState((current) =>
+            current?.message === stale ? null : current,
           );
-      });
+      },
+      (failure) => {
+        if (!alive || !enabled) return;
+        // One sentence, used for both the alert and the status, so the page's
+        // own reason is never shown stripped of what it was trying to do.
+        const message =
+          failure instanceof Error
+            ? `The extension could not theme this page: ${failure.message}`
+            : "The extension could not be applied to this page.";
+        applyError.current = message;
+        setError(message);
+        setApplyFailure({ key: applyKey, message });
+      },
+    );
     return () => {
       alive = false;
     };
   }, [
     payloadKey,
+    applyKey,
     enabled,
     scope,
     options.blocked,
@@ -499,12 +602,34 @@ export function useWebsiteDarkMode(
     }
   };
 
+  // Four states, in the order a user would ask about them: off, refused
+  // outright, failed on the page, themed the simple way, themed by the engine.
+  const statusOf = (): WebsiteDarkModeStatus => {
+    if (!enabled) return { kind: "off", message: OFF };
+    if (scriptsPolicy === "block")
+      return { kind: "failed", message: SCRIPTS_BLOCKED };
+    if (applyFailure?.key === applyKey)
+      return { kind: "failed", message: applyFailure.message };
+    if (options.blocked) return { kind: "failed", message: NOT_APPLIED_YET };
+    if (theme.mode === "filter" || theme.mode === "customCss")
+      return {
+        kind: "cssOnly",
+        message: `This page is themed with CSS only: the “${MODE_NAMES[theme.mode]}” conversion mode does not use the dark-mode engine.`,
+      };
+    if (engineRefused) return { kind: "cssOnly", message: ENGINE_REFUSED };
+    // Nothing in the app blocked the engine, so the page itself did.
+    if (applied?.key === applyKey && applied.outcome === "cssOnly")
+      return { kind: "cssOnly", message: PAGE_REFUSED };
+    return { kind: "engine", message: ENGINE_APPLIED };
+  };
+
   return {
     scopeKey: `${options.ownerDatabaseId ?? ""}:${options.scopeKey}:${capturedRevision}`,
     enabled: enabled === true,
     available: !problem && knownSavedScope === scope,
     busy,
     error,
+    status: statusOf(),
     unavailableReason:
       problem ||
       (knownSavedScope === scope

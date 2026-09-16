@@ -18,9 +18,17 @@ export interface WebAutomationContext {
   frame: Window;
   document: WebAutomationDocument;
 }
+/**
+ * Which path themed the page, for `dark` acknowledgements only. A fixed,
+ * two-member enum: the page supplies no wording, and an unrecognized value is
+ * dropped, so nothing a page controls can reach app chrome as text.
+ */
+export type WebDarkOutcome = "engine" | "cssOnly";
+const DARK_OUTCOMES: readonly unknown[] = ["engine", "cssOnly"];
 type Pending = {
   context: WebAutomationContext;
-  resolve: () => void;
+  action: WebAutomationAction;
+  resolve: (outcome?: WebDarkOutcome) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
   stopRecordingId?: string;
@@ -89,7 +97,7 @@ export class WebAutomationBridge {
       onStep: (step: WebInteractionStep) => void;
       onStop: () => void;
     },
-  ): Promise<void> {
+  ): Promise<WebDarkOutcome | undefined> {
     const context = this.current();
     if (!context)
       return Promise.reject(
@@ -117,6 +125,7 @@ export class WebAutomationBridge {
       }, 15000);
       this.pending.set(id, {
         context,
+        action,
         resolve,
         reject,
         timer,
@@ -194,7 +203,12 @@ export class WebAutomationBridge {
     clearTimeout(pending.timer);
     this.pending.delete(data.requestId);
     this.disarmRecording(pending.stopRecordingId);
-    if (data.status === "ok") pending.resolve();
+    if (data.status === "ok")
+      pending.resolve(
+        pending.action === "dark" && DARK_OUTCOMES.includes(data.darkOutcome)
+          ? (data.darkOutcome as WebDarkOutcome)
+          : undefined,
+      );
     else {
       this.disarmRecording(data.requestId);
       pending.reject(

@@ -322,6 +322,7 @@ describe("embedded web failure recovery screen", () => {
           available: false,
           busy: false,
           error: null,
+          status: { kind: "off", message: "The dark-mode extension is off." },
           unavailableReason: "Open a saved connection first.",
           configuration: normalizeWebsiteDarkModeConfig(undefined),
           theme: { ...DEFAULT_WEBSITE_DARK_THEME },
