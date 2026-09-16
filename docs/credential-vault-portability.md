@@ -85,15 +85,31 @@ profile-specific routing and challenge limits.
 ### Synology API versus DSM website
 
 For **Synology NAS API / File Station**, save a vault entry containing the NAS
-username and password. An explicitly selected vault authenticator is generated
-only after DSM returns an OTP-required challenge, and is submitted once. An
-invalid code is not retried automatically; use the challenge dialog to enter a
-fresh code or cancel. Push approval, security keys and unsupported MFA require
-the supported interactive DSM flow, not an invented API bypass.
+username and password. To answer DSM's code request automatically, choose one of
+the entry's authenticators in the connection's Synology access settings under
+**Two-factor authentication — automatic one-time codes**. It is the same choice
+as **Vault authenticator for login challenges**. A connection with local
+credentials can use a connection-local authenticator instead. Its secret is
+stored with the connection like the DSM password, and database exports remove
+it; it is never copied into the vault. Either way the Synology access settings
+store only which authenticator to use, never its secret. An encrypted archive
+keeps a vault authenticator choice with its entry and drops a connection-local
+one.
+
+A code is generated only after DSM returns an OTP-required challenge, and is
+submitted once. The app waits for a fresh time window rather than send an
+automatic code from a window in which a code may already have signed in to the
+same NAS address and account. If DSM rejects the code, or no code can be
+generated (for example, the vault is locked or the authenticator is gone), the
+challenge dialog opens with a notice and nothing is retried automatically.
+Enter a fresh code or cancel. Push approval, security keys and unsupported MFA
+require the supported interactive DSM flow, not an invented API bypass. See
+[automatic one-time codes](synology-file-station.md#automatic-one-time-codes).
 
 A vault-backed NAS API connection can also remember DSM's **trusted device**
 token after a successful two-factor sign-in. This is off unless you choose to
-trust the device. Local-credential connections cannot use it. The token
+trust the device. Local-credential connections cannot use it, even with a
+connection-local authenticator. The token
 lets that DSM account skip the one-time code, so it is handled more strictly
 than other vault fields:
 
@@ -118,8 +134,14 @@ than other vault fields:
 
 This API session is separate from a **Synology DSM HTTP/HTTPS website** tab.
 Website form login and website automatic MFA use the profile/origin consent
-above; logging into either surface does not authenticate the other. Reverse
-proxy redirects, TLS trust and destination approvals remain separate controls.
+above; logging into either surface does not authenticate the other. The NAS API
+authenticator needs no origin consent because its code goes only into the API
+sign-in request. With vault credentials both surfaces read the same vault
+authenticator, and changing it from the NAS API settings turns website automatic
+codes off until they are enabled again. With local credentials each surface keeps
+its own authenticator choice. Choosing an authenticator for one surface never
+enables automatic codes on the other. Reverse proxy redirects, TLS trust and
+destination approvals remain separate controls.
 
 ### Social sign-in and passkeys
 
