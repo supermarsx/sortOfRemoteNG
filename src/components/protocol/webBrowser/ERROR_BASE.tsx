@@ -9,6 +9,9 @@ import React from "react";
 import progressStyles from "./NavigationProgress.module.css";
 import NavigationFailureTimeline from "./NavigationFailureTimeline";
 import { ElapsedSeconds } from "./TrustCheckStatus";
+import { WebsiteDiagnosticsCopyButton } from "./WebsiteDiagnosticsCopyButton";
+import { websiteFailureDiagnosticsText } from "../../../utils/protocol/websiteFailureDiagnostics";
+import { APP_VERSION } from "../../../generated/version";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -333,6 +336,14 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
     ? "border-warning/40 bg-warning/10 text-warning"
     : "border-error/40 bg-error/10 text-error";
   const hasProbeTimeout = Number.isFinite(mgr.diagnosticConnectTimeoutSecs);
+  const upstream = failure.upstream;
+  // Non-secret summary only: the builder drops userinfo and every query value,
+  // and never copies the response body that the toggle below still shows.
+  const diagnosticsText = websiteFailureDiagnosticsText(failure, {
+    connectionId: mgr.connection?.id,
+    connectionName: mgr.connection?.name,
+    appVersion: APP_VERSION,
+  });
 
   return (
     <div
@@ -386,6 +397,30 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
               </span>
             </div>
 
+            {upstream && (
+              <dl
+                className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-textMuted)]"
+                data-testid="web-upstream-response-facts"
+              >
+                {(
+                  [
+                    ["Method", upstream.method],
+                    ["Server", upstream.server ?? "not reported"],
+                    ["Content type", upstream.contentType ?? "not reported"],
+                    ["Response size", `${upstream.bodyBytes} bytes`],
+                    ["Took", `${upstream.elapsedMs} ms`],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label} className="flex min-w-0 gap-1.5">
+                    <dt>{label}</dt>
+                    <dd className="min-w-0 break-all font-mono text-[var(--color-textSecondary)]">
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+
             <div className="mt-5 flex flex-wrap gap-2">
               {isRedirectReview && mgr.redirectReview && (
                 <button
@@ -428,6 +463,11 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
                 )}
                 {mgr.isRunningDiagnostics ? "Diagnosing…" : "Deep diagnostics"}
               </button>
+              <WebsiteDiagnosticsCopyButton
+                text={diagnosticsText}
+                label="Copy diagnostics"
+                className={ERROR_SECONDARY}
+              />
               {!mgr.proxyAlive && (
                 <button
                   onClick={mgr.handleRestartProxy}
@@ -589,7 +629,7 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
 
         <details className="mt-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
           <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-textSecondary)]">
-            Technical details
+            {upstream ? "Show the server's response" : "Technical details"}
           </summary>
           <pre className="mt-3 whitespace-pre-wrap break-words rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3 font-mono text-[11px] leading-5 text-[var(--color-textMuted)]">
             {failure.detail}

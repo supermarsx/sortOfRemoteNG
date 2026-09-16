@@ -140,6 +140,22 @@ export type {
   WebTrustCheck,
 } from "../../types/security/certificateInspection";
 
+/**
+ * Non-secret facts about an upstream response, reported by the proxy alongside
+ * a themed 4xx/5xx page. Closed by construction: the native side forwards only
+ * `Server` and `Content-Type`, never a header that can carry a credential, and
+ * never the response body.
+ */
+export interface WebUpstreamResponseFacts {
+  method: string;
+  /** Canonical reason phrase for the status, not the upstream's own text. */
+  reasonPhrase: string;
+  server: string | null;
+  contentType: string | null;
+  bodyBytes: number;
+  elapsedMs: number;
+}
+
 export interface ProxyNavigationFailure {
   version: 1;
   sessionId: string;
@@ -151,6 +167,8 @@ export interface ProxyNavigationFailure {
   detail: string;
   /** Measured attempt timeline for failures before the certificate trust check. */
   timeline?: WebNavigationTimeline;
+  /** Present only when the upstream actually answered with an error status. */
+  upstream?: WebUpstreamResponseFacts;
 }
 
 const PROXY_FAILURE_KINDS = new Set<ProxyFailureKind>([
@@ -174,6 +192,104 @@ function boundedString(value: unknown, maxLength: number): string | undefined {
     value.length <= maxLength
     ? value
     : undefined;
+}
+
+/** Methods the proxy can forward; anything else is normalized to GET natively. */
+const UPSTREAM_METHODS = new Set([
+  "GET",
+  "POST",
+  "PUT",
+  "DELETE",
+  "HEAD",
+  "PATCH",
+  "OPTIONS",
+]);
+const UPSTREAM_FACT_KEYS = [
+  "method",
+  "reasonPhrase",
+  "server",
+  "contentType",
+  "bodyBytes",
+  "elapsedMs",
+];
+
+/**
+ * True when the text carries a C0 control or DEL. Header values reach a
+ * copyable summary and an on-screen list, so a newline or an escape sequence
+ * inside one must reject the report rather than forge a line in either.
+ */
+function hasControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/** Printable ASCII only; the proxy builds this text from a fixed status list. */
+function isPrintableAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code > 0x7e) return false;
+  }
+  return true;
+}
+
+function boundedHeaderText(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 128 &&
+    !hasControlCharacters(value)
+    ? value
+    : undefined;
+}
+
+function boundedCount(value: unknown, maxValue: number): number | undefined {
+  return typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= maxValue
+    ? value
+    : undefined;
+}
+
+/**
+ * Fail-closed validation of the optional upstream facts block. An unknown key,
+ * an unexpected type or an out-of-range number rejects the whole payload rather
+ * than silently dropping the block: the page offers these values for copying,
+ * so a half-trusted shape must never reach it.
+ */
+function parseUpstreamResponseFacts(
+  value: unknown,
+): WebUpstreamResponseFacts | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const facts = value as Record<string, unknown>;
+  const keys = Object.keys(facts);
+  if (
+    keys.length !== UPSTREAM_FACT_KEYS.length ||
+    keys.some((key) => !UPSTREAM_FACT_KEYS.includes(key))
+  )
+    return null;
+  const method = facts.method;
+  const reasonPhrase = facts.reasonPhrase;
+  const server = boundedHeaderText(facts.server);
+  const contentType = boundedHeaderText(facts.contentType);
+  const bodyBytes = boundedCount(facts.bodyBytes, 1_099_511_627_776);
+  const elapsedMs = boundedCount(facts.elapsedMs, 86_400_000);
+  if (
+    typeof method !== "string" ||
+    !UPSTREAM_METHODS.has(method) ||
+    typeof reasonPhrase !== "string" ||
+    reasonPhrase.length > 128 ||
+    !isPrintableAscii(reasonPhrase) ||
+    server === undefined ||
+    contentType === undefined ||
+    bodyBytes === undefined ||
+    elapsedMs === undefined
+  )
+    return null;
+  return { method, reasonPhrase, server, contentType, bodyBytes, elapsedMs };
 }
 
 function requestUrlWithoutFragment(value: string): string | null {
@@ -203,6 +319,7 @@ export function parseProxyFailurePayload(
   data: unknown,
   expectedSessionId: string,
   expectedTargetUrl: string,
+  inPageNavigation?: { authorityUrl: string } | null,
 ): ProxyNavigationFailure | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const value = data as Record<string, unknown>;
@@ -231,9 +348,28 @@ export function parseProxyFailurePayload(
   ) {
     return null;
   }
+  const upstream =
+    value.upstream === undefined
+      ? undefined
+      : parseUpstreamResponseFacts(value.upstream);
+  if (upstream === null) return null;
+
   const normalizedUrl = requestUrlWithoutFragment(url);
+  if (!normalizedUrl) return null;
   const normalizedTarget = requestUrlWithoutFragment(expectedTargetUrl);
-  if (!normalizedUrl || normalizedUrl !== normalizedTarget) return null;
+  if (normalizedUrl !== normalizedTarget) {
+    // A themed proxy failure page replaces the document without the proxy's
+    // readiness script, so a link or form navigation never advances this tab's
+    // active navigation URL and the exact match above cannot succeed. Accept
+    // such a report only while the tab is already expecting a document, and
+    // only for the saved connection's own authority — a redirect handoff to a
+    // different origin still has to take the strict path.
+    if (
+      !inPageNavigation ||
+      !sameHttpAuthority(normalizedUrl, inPageNavigation.authorityUrl)
+    )
+      return null;
+  }
 
   return {
     version: 1,
@@ -244,7 +380,19 @@ export function parseProxyFailurePayload(
     url,
     reason,
     detail,
+    ...(upstream ? { upstream } : {}),
   };
+}
+
+function sameHttpAuthority(url: string, authorityUrl: string): boolean {
+  try {
+    const authority = new URL(authorityUrl);
+    if (authority.protocol !== "http:" && authority.protocol !== "https:")
+      return false;
+    return new URL(url).origin === authority.origin;
+  } catch {
+    return false;
+  }
 }
 
 export type LocalNavigationFailureKind = Extract<
@@ -2587,8 +2735,24 @@ export function useWebBrowser(session: ConnectionSession) {
         event.data,
         proxySessionIdRef.current,
         activeNavigationUrlRef.current,
+        pendingNavigationRef.current && !navigationFailureRef.current
+          ? { authorityUrl: baseTargetRef.current }
+          : null,
       );
       if (failure) {
+        // A link or form navigation that the proxy answered with a themed
+        // failure page: adopt its address so the toolbar, Retry and Back all
+        // act on the request that actually failed instead of the page before it.
+        if (
+          requestUrlWithoutFragment(failure.url) !==
+          requestUrlWithoutFragment(activeNavigationUrlRef.current)
+        ) {
+          activeNavigationUrlRef.current = failure.url;
+          setCurrentUrl(failure.url);
+          setInputUrl(failure.url);
+          setIsSecure(failure.url.startsWith("https:"));
+          appendHistory(failure.url);
+        }
         applyNavigationFailure(failure);
         return;
       }
