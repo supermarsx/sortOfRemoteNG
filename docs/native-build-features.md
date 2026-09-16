@@ -29,6 +29,24 @@ This is a launch-time sizing heuristic, **not a hard 40 GiB process-tree limit o
 
 Explicit `CARGO_BUILD_JOBS` and Cargo `--jobs`/`-j` arguments remain authoritative and are identified in the startup message; they can exceed the advisory recommendation. A custom runner, explicit profile/release invocation or Cargo `--config` also retains its existing policy. Regular Cargo commands, production/release builds, feature sets and optimization profiles are unchanged. For example, `npm run tauri:dev -- -- --jobs 4` explicitly selects four Cargo jobs for that invocation.
 
+## Unresolved `.llvm.<hash>` symbols after a dev rebuild
+
+A development build can fail at the final link even though the code compiles. On Windows the signature is `LNK2019`/`LNK2001` followed by `LNK1120`. On Linux/macOS it is `undefined reference`/`undefined symbol`. Every missing name ends in `.llvm.<digits>`. The object that references it sits in the same crate's library, for example `libsorng_core-<hash>.rlib(sorng_core-<hash>.<unit>.rcgu.o) : error LNK2019: unresolved external symbol _RNv…app_identity8IDENTITY.llvm.8982623585530315724`.
+
+This happens to crates that combine a development `opt-level` above 0 with incremental compilation. Those are the workspace and patched path crates in the dev profile overrides: `sorng-core`, `sorng-rdp`, `sorng-rdp-vendor`, and the patched `ironrdp-blocking`, `ironrdp-session` and `ironrdp-dvc`. Registry dependencies are never compiled incrementally. The build-dependency copy of a workspace crate is also exposed, because `build-override` optimizes it. After interrupted or rapid successive rebuilds, rustc can reuse optimized code-generation units that refer to another unit's symbol by an outdated `.llvm.<hash>` name ([rust-lang/rust#86049](https://github.com/rust-lang/rust/issues/86049)). It is not a toolchain, feature or staged-runtime problem, and it does not need `cargo clean`.
+
+To recover, delete only that crate's incremental cache and Cargo fingerprints while no Cargo build is running, then rebuild. A dev session left waiting after the failed link counts as not running. Take the crate name from the `lib<crate>-<hash>.rlib` in the linker lines. The incremental directory uses the crate name with underscores, and the fingerprint uses the package name with hyphens. Use `$CARGO_TARGET_DIR/debug` instead of `src-tauri/target/debug` when it is set. For `sorng-core`:
+
+```sh
+rm -rf src-tauri/target/debug/incremental/sorng_core-* src-tauri/target/debug/.fingerprint/sorng-core-*
+```
+
+```powershell
+Remove-Item -Recurse -Force src-tauri/target/debug/incremental/sorng_core-*, src-tauri/target/debug/.fingerprint/sorng-core-*
+```
+
+Then restart `npm run tauri dev`, or save a Rust file in a session that is still waiting. Cargo recompiles that crate from scratch and rebuilds its dependents incrementally. A repeat of the same failure means a different crate is named in the new linker lines.
+
 ## OPKSSH runtime prerequisites
 
 The default includes `opkssh-vendored-wrapper`. Managed development now verifies/stages its real embedded runtime before native launch; production staging uses the same checks. On Windows/MSVC, the statically linked Rust wrapper is deliberately metadata-only: the application dynamically loads a separately staged GNU bridge. On Windows x64, a healthy staged or cached bridge is reused; otherwise `npm run vendor:opkssh:build -- --skip-stage` builds it using the documented Go/GNU-toolchain and pinned-upstream prerequisites. Missing prerequisites fail visibly rather than replacing the bridge with a metadata-only DLL. No toolchain is installed automatically.
