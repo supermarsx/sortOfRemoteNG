@@ -235,7 +235,12 @@ export function parsePassiveSvg(source: string): PassiveSvgNode {
       "SVG declarations, entities and processing instructions are not supported",
     );
   const doc = new DOMParser().parseFromString(source, "image/svg+xml");
-  if (doc.querySelector("parsererror") || doc.documentElement.tagName !== "svg")
+  // Same match as the `parsererror` type selector (any namespace), without
+  // building a selector engine for every parsed document.
+  if (
+    doc.getElementsByTagNameNS("*", "parsererror").length > 0 ||
+    doc.documentElement.tagName !== "svg"
+  )
     fail("malformed SVG");
   let nodes = 0;
   function convert(element: Element, depth = 0): unknown {

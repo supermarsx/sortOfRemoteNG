@@ -213,7 +213,7 @@ export function exportLibrarySvg(key: string): string {
   );
   for (const element of [
     doc.documentElement,
-    ...Array.from(doc.documentElement.querySelectorAll("*")),
+    ...Array.from(doc.documentElement.getElementsByTagName("*")),
   ]) {
     for (const attr of Array.from(element.attributes)) {
       if (
