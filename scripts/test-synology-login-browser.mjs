@@ -130,7 +130,7 @@ const DSM_STYLE = `html,body{margin:0;min-height:100%;font:14px/1.4 "Segoe UI",s
 body{min-height:100vh;background:linear-gradient(135deg,#0b3d6e,#0a7fc2)}
 .login-wallpaper{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;opacity:.35;pointer-events:none}
 .dsm-boot-splash{position:fixed;inset:0;display:grid;place-items:center;color:#fff;font-size:18px;animation:dsm-pulse .9s ease-in-out infinite alternate}
-#sds-login-vue{position:relative;width:360px;max-width:calc(100vw - 32px);margin:12vh auto 0;padding:28px;border-radius:14px;background:rgba(255,255,255,.94);box-shadow:0 20px 60px rgba(0,0,0,.35);animation:dsm-rise .6s cubic-bezier(.2,.8,.2,1) both}
+#sds-login-vue-inst,#sds-login-vue{position:relative;width:360px;max-width:calc(100vw - 32px);margin:12vh auto 0;padding:28px;border-radius:14px;background:rgba(255,255,255,.94);box-shadow:0 20px 60px rgba(0,0,0,.35);animation:dsm-rise .6s cubic-bezier(.2,.8,.2,1) both}
 .login-tabs-content-wrapper{animation:dsm-slide .45s cubic-bezier(.2,.8,.2,1) both;transition:opacity .3s}
 .login-tabs-content-wrapper.is-busy{opacity:.7}
 .login-tabs-content-wrapper input:not([hidden]):not([type=checkbox]):not([name=captcha]){display:block;box-sizing:border-box;width:100%;height:40px;margin-top:8px;padding:0 12px;border:1px solid #c7cfdb;border-radius:8px;font:inherit;transition:border-color .2s,box-shadow .2s}
