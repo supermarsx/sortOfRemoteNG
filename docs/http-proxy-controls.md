@@ -31,7 +31,7 @@ before reconnecting. Changes to these options start a fresh proxy session.
 
 Application profiles use their own authentication settings; legacy generic
 authentication headers are not added to an application login. See
-[website application login and two-factor authentication](/http-application-logins/)
+[website application login and two-factor authentication]({{ '/http-application-logins/' | relative_url }})
 for supported application forms and explicit authenticator-code consent.
 
 ## Review a form before submitting
