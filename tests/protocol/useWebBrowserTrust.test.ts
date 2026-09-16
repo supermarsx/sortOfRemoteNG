@@ -1,4 +1,5 @@
 import React from "react";
+import { readFileSync } from "node:fs";
 import {
   act,
   cleanup,
@@ -25,7 +26,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   policy: "tofu",
   caMode: "system",
-  proxy: "http://proxy.fixture:8080",
+  proxy: "http://proxy.fixture:8080" as string | undefined,
   proxyInvalid: false,
   verifySsl: true,
   credentialOverrides: {} as Record<string, unknown>,
@@ -1415,6 +1416,10 @@ describe("HTTPS certificate and native trust stages", () => {
     await act(async () => vi.advanceTimersByTimeAsync(1_000));
     expect(mocks.verify).toHaveBeenCalledTimes(1);
     expect(result.current.navigationFailure?.detail).toContain("route changed");
+    expect(result.current.navigationFailure).toMatchObject({
+      kind: "navigation_cancelled",
+      title: "HTTPS route changed",
+    });
     expect(proxyStarts()).toHaveLength(0);
   });
 
@@ -1569,5 +1574,349 @@ describe("HTTPS certificate and native trust stages", () => {
       await accept;
     });
     expect(result.current.navigationFailure).toBeNull();
+  });
+
+  const inspectionFailures = JSON.parse(
+    readFileSync("tests/fixtures/certificate-inspection-failures.json", "utf8"),
+  ) as {
+    name: string;
+    wire: { route: "direct" | "proxy"; message: string };
+  }[];
+  const inspectionWire = (name: string) =>
+    structuredClone(
+      inspectionFailures.find((entry) => entry.name === name)!.wire,
+    );
+  const ATTEMPT_STARTED = Date.UTC(2026, 8, 15, 14, 2, 11);
+  const pendingInspections = () => {
+    const pending: {
+      resolve: (value: typeof cert) => void;
+      reject: (reason: unknown) => void;
+    }[] = [];
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "get_tls_certificate_info"
+        ? new Promise((resolve, reject) => {
+            pending.push({ resolve, reject });
+          })
+        : command === "start_basic_auth_proxy"
+          ? proxy
+          : undefined,
+    );
+    return pending;
+  };
+  const inspections = () =>
+    mocks.invoke.mock.calls.filter(
+      ([name]) => name === "get_tls_certificate_info",
+    );
+
+  it.each([
+    [
+      "direct_connect_timeout",
+      "host_unreachable",
+      "Can't reach 10.10.10.2:443",
+    ],
+    [
+      "direct_connection_refused",
+      "connection_refused",
+      "10.10.10.2:443 refused the connection",
+    ],
+    [
+      "proxy_auth_rejected",
+      "proxy_route_failure",
+      "The proxy rejected its credentials (HTTP 407)",
+    ],
+    [
+      "tls_handshake_not_tls",
+      "tls_handshake_failure",
+      "TLS handshake with 10.10.10.2:443 failed",
+    ],
+    [
+      "certificate_unreadable",
+      "tls_failure",
+      "Unable to read the HTTPS certificate",
+    ],
+  ])(
+    "classifies native %s by its failing layer with a measured timeline and opens nothing",
+    async (name, kind, title) => {
+      const wire = inspectionWire(name);
+      if (wire.route === "direct") mocks.proxy = undefined;
+      vi.useFakeTimers();
+      vi.setSystemTime(ATTEMPT_STARTED);
+      const pending = pendingInspections();
+      const { result } = renderHook(() => useWebBrowser(session));
+      await act(async () => {});
+      expect(mocks.invoke).toHaveBeenCalledWith("get_tls_certificate_info", {
+        host: "10.10.10.2",
+        port: 443,
+        proxyUrl: mocks.proxy,
+      });
+      expect(result.current.trustCheck).toEqual({
+        startedAt: ATTEMPT_STARTED,
+        host: "10.10.10.2",
+        port: 443,
+        route: wire.route,
+      });
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      await act(async () => pending[0].reject(wire));
+      expect(result.current.navigationFailure).toMatchObject({
+        kind,
+        title,
+        detail: wire.message,
+      });
+      expect(result.current.navigationFailure?.reason).toMatch(
+        /The certificate trust check could not run, so no connection was opened and nothing was sent\.$/,
+      );
+      expect(result.current.navigationFailure?.timeline).toMatchObject({
+        startedAt: ATTEMPT_STARTED,
+        failedAfterMs: 10_000,
+        route: wire.route,
+      });
+      expect(
+        result.current.navigationFailure?.timeline?.steps.some(
+          (step) => step.status === "fail",
+        ),
+      ).toBe(true);
+      expect(result.current.trustCheck).toBeNull();
+      expect(result.current.isLoading).toBe(false);
+      expect(proxyStarts()).toHaveLength(0);
+      expect(mocks.verify).not.toHaveBeenCalled();
+      expect(mocks.trust).not.toHaveBeenCalled();
+    },
+  );
+
+  it("inspects, verifies, pins and navigates on the port embedded in the hostname", async () => {
+    mocks.policy = "always-ask";
+    mocks.credentialOverrides = { port: undefined };
+    mocks.verify.mockResolvedValue({
+      status: "first-use",
+      identity: cert,
+      requiresApproval: true,
+    });
+    const embedded = { ...session, hostname: "10.10.10.2:8443" };
+    const { result } = renderHook(() => useWebBrowser(embedded));
+    await waitFor(() => expect(result.current.trustPrompt).not.toBeNull());
+    expect(inspections()).toEqual([
+      [
+        "get_tls_certificate_info",
+        { host: "10.10.10.2", port: 8443, proxyUrl: mocks.proxy },
+      ],
+    ]);
+    expect(mocks.verify.mock.calls[0].slice(0, 3)).toEqual([
+      "10.10.10.2",
+      8443,
+      "https",
+    ]);
+    expect(result.current.certificateInspection?.port).toBe(8443);
+    expect(result.current.trustCheck).toBeNull();
+    await act(async () => result.current.handleTrustAccept());
+    expect(mocks.trust).toHaveBeenCalledWith(
+      "10.10.10.2",
+      8443,
+      "https",
+      expect.objectContaining({ fingerprint: cert.fingerprint }),
+      true,
+      "fixture",
+    );
+    await waitFor(() => expect(proxyStarts()).toHaveLength(1));
+    expect(proxyStarts()[0][1].config.target_url).toBe(
+      "https://10.10.10.2:8443/",
+    );
+    expect(result.current.currentUrl).toBe("https://10.10.10.2:8443/");
+  });
+
+  it("reports a route change during inspection as a cancelled navigation, not a Trust Center failure", async () => {
+    const pending = pendingInspections();
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(pending).toHaveLength(1));
+    mocks.proxy = "http://replacement.fixture:8081";
+    await act(async () => pending[0].resolve(cert));
+    expect(result.current.navigationFailure).toMatchObject({
+      kind: "navigation_cancelled",
+      title: "HTTPS route changed",
+      reason:
+        "The configured proxy route changed while the certificate was being checked. Reload to check it on the current route.",
+    });
+    expect(result.current.navigationFailure?.detail).toContain("route changed");
+    expect(mocks.verify).not.toHaveBeenCalled();
+    expect(proxyStarts()).toHaveLength(0);
+  });
+
+  it("keeps a late deep-diagnostics report off the page of a retried navigation", async () => {
+    mocks.verify.mockRejectedValue(new Error("Trust Center unavailable"));
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(result.current.navigationFailure?.kind).toBe("trust_failure"),
+    );
+    const firstFailure = result.current.navigationFailure;
+    expect(result.current.diagnosticConnectTimeoutSecs).toBe(15);
+    let finishReport!: (value: unknown) => void;
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "diagnose_http_connection"
+        ? new Promise((resolve) => {
+            finishReport = resolve;
+          })
+        : command === "get_tls_certificate_info"
+          ? cert
+          : undefined,
+    );
+    let diagnostics: Promise<void> = Promise.resolve();
+    act(() => {
+      diagnostics = result.current.runDeepDiagnostics();
+    });
+    await waitFor(() => expect(finishReport).toBeTypeOf("function"));
+    expect(result.current.isRunningDiagnostics).toBe(true);
+    expect(result.current.diagnosticsStartedAt).toEqual(expect.any(Number));
+    act(() => result.current.handleRefresh());
+    expect(result.current.isRunningDiagnostics).toBe(false);
+    expect(result.current.diagnosticsStartedAt).toBeNull();
+    await waitFor(() =>
+      expect(result.current.navigationFailure?.kind).toBe("trust_failure"),
+    );
+    expect(result.current.navigationFailure).not.toBe(firstFailure);
+    await act(async () => {
+      finishReport({
+        summary: "Diagnostics stopped at: TCP Connect",
+        steps: [],
+        totalDurationMs: 15_013,
+      });
+      await diagnostics;
+    });
+    expect(result.current.diagnosticReport).toBeNull();
+    expect(result.current.diagnosticError).toBeNull();
+    expect(result.current.isRunningDiagnostics).toBe(false);
+    expect(result.current.diagnosticsStartedAt).toBeNull();
+  });
+
+  it("ignores a late diagnostics error from a superseded run on the same page", async () => {
+    mocks.verify.mockRejectedValue(new Error("Trust Center unavailable"));
+    const { result } = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(result.current.navigationFailure?.kind).toBe("trust_failure"),
+    );
+    const settle: ((error?: Error) => void)[] = [];
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "diagnose_http_connection"
+        ? new Promise((resolve, reject) => {
+            settle.push((error) =>
+              error
+                ? reject(error)
+                : resolve({ summary: "fresh", steps: [], totalDurationMs: 3 }),
+            );
+          })
+        : Promise.resolve(undefined),
+    );
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.runDeepDiagnostics();
+    });
+    act(() => {
+      second = result.current.runDeepDiagnostics();
+    });
+    await waitFor(() => expect(settle).toHaveLength(2));
+    await act(async () => {
+      settle[0](new Error("stale probe failed"));
+      await first;
+    });
+    expect(result.current.diagnosticError).toBeNull();
+    expect(result.current.isRunningDiagnostics).toBe(true);
+    await act(async () => {
+      settle[1]();
+      await second;
+    });
+    expect(result.current.diagnosticReport?.summary).toBe("fresh");
+    expect(result.current.isRunningDiagnostics).toBe(false);
+  });
+
+  it("starts a second inspection immediately on Retry and ignores the first late rejection", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(ATTEMPT_STARTED);
+    const pending = pendingInspections();
+    const { result } = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    expect(inspections()).toHaveLength(1);
+    const firstCheck = result.current.trustCheck;
+    expect(firstCheck).not.toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(4_000));
+    act(() => result.current.handleRefresh());
+    await act(async () => {});
+    expect(inspections()).toHaveLength(2);
+    expect(result.current.trustCheck).toMatchObject({
+      startedAt: ATTEMPT_STARTED + 4_000,
+      port: 443,
+    });
+    await act(async () =>
+      pending[0].reject(inspectionWire("direct_connect_timeout")),
+    );
+    expect(result.current.navigationFailure).toBeNull();
+    expect(result.current.loadError).toBe("");
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.diagnosticReport).toBeNull();
+    expect(result.current.trustCheck?.startedAt).toBe(ATTEMPT_STARTED + 4_000);
+    await act(async () => pending[1].resolve(cert));
+    expect(proxyStarts()).toHaveLength(1);
+    expect(result.current.trustCheck).toBeNull();
+    expect(result.current.navigationFailure).toBeNull();
+  });
+
+  it("clears the live trust check on success and when a trust prompt appears", async () => {
+    const pending = pendingInspections();
+    const first = renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(pending).toHaveLength(1));
+    expect(first.result.current.trustCheck).toMatchObject({
+      host: "10.10.10.2",
+      port: 443,
+      route: "proxy",
+    });
+    expect(first.result.current.isLoading).toBe(true);
+    await act(async () => pending[0].resolve(cert));
+    await waitFor(() => expect(proxyStarts()).toHaveLength(1));
+    expect(first.result.current.trustCheck).toBeNull();
+    first.unmount();
+
+    mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
+    const second = renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(second.result.current.trustCheck).not.toBeNull();
+    await act(async () => pending[1].resolve(cert));
+    await waitFor(() =>
+      expect(second.result.current.trustPrompt).not.toBeNull(),
+    );
+    expect(second.result.current.trustCheck).toBeNull();
+    expect(proxyStarts()).toHaveLength(1);
+  });
+
+  it("labels a malformed native response and legacy string rejections as generic inspection failures", async () => {
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === "get_tls_certificate_info"
+        ? { ...cert, ca_validation: { status: "forged" } }
+        : undefined,
+    );
+    const malformed = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(malformed.result.current.navigationFailure?.reason).toContain(
+        "returned malformed data",
+      ),
+    );
+    expect(malformed.result.current.navigationFailure).toMatchObject({
+      kind: "tls_failure",
+      title: "Unable to inspect the HTTPS certificate",
+    });
+    malformed.unmount();
+    mocks.invoke.mockRejectedValue(
+      "Certificate inspection timed out after 15 seconds",
+    );
+    const legacy = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(legacy.result.current.navigationFailure?.kind).toBe("tls_failure"),
+    );
+    expect(legacy.result.current.navigationFailure).toMatchObject({
+      title: "Unable to inspect the HTTPS certificate",
+      detail: "Certificate inspection timed out after 15 seconds",
+    });
+    expect(legacy.result.current.navigationFailure?.timeline?.steps).toEqual(
+      [],
+    );
+    expect(mocks.verify).not.toHaveBeenCalled();
+    expect(proxyStarts()).toHaveLength(0);
   });
 });

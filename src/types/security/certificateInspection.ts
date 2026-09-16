@@ -93,3 +93,96 @@ export interface CertificateInspection {
   generation: number;
   certificate: NativeTlsCertificateInfo;
 }
+
+/** Native pipeline stage of a certificate inspection (IPC error wire). */
+export type CertificateInspectionStage =
+  | "target"
+  | "resolve"
+  | "connect"
+  | "proxy_connect"
+  | "proxy_tls"
+  | "proxy_tunnel"
+  | "tls_handshake"
+  | "certificate"
+  | "verifier";
+export type CertificateInspectionFailureKind =
+  | "invalid_target"
+  | "dns_failure"
+  | "connect_timeout"
+  | "connection_refused"
+  | "host_unreachable"
+  | "connect_failed"
+  | "proxy_invalid"
+  | "proxy_unreachable"
+  | "proxy_tls_failed"
+  | "proxy_auth_rejected"
+  | "proxy_tunnel_rejected"
+  | "proxy_tunnel_timeout"
+  | "proxy_protocol_error"
+  | "tls_handshake_timeout"
+  | "tls_handshake_failed"
+  | "certificate_unreadable"
+  | "inspection_unavailable"
+  | "deadline_exceeded";
+export type CertificateInspectionRoute = "direct" | "proxy";
+export type CertificateTlsFailureReason =
+  "not_tls" | "peer_closed" | "alert" | "certificate" | "other";
+/**
+ * Structured native rejection of `get_tls_certificate_info`. Timings are
+ * measured natively; `message` is technical detail, never a proxy URL.
+ */
+export interface NativeCertificateInspectionError {
+  kind: CertificateInspectionFailureKind;
+  stage: CertificateInspectionStage;
+  route: CertificateInspectionRoute;
+  /** Requested authority, or "" for an invalid target. Display uses the hook's own host/port. */
+  target: string;
+  /** Last socket address dialled on the direct route. */
+  address: string | null;
+  addresses_tried: number;
+  elapsed_ms: number;
+  stage_elapsed_ms: number;
+  /** The budget that expired, when one did. */
+  timeout_ms: number | null;
+  proxy_status: number | null;
+  tls_reason: CertificateTlsFailureReason | null;
+  completed: { stage: CertificateInspectionStage; elapsed_ms: number }[];
+  message: string;
+}
+
+export type WebNavigationTimelineStepId =
+  | "resolve"
+  | "connect"
+  | "proxy_connect"
+  | "proxy_tls"
+  | "proxy_tunnel"
+  | "tls_handshake"
+  | "certificate"
+  | "trust"
+  | "page";
+export interface WebNavigationTimelineStep {
+  id: WebNavigationTimelineStepId;
+  label: string;
+  status: "pass" | "fail" | "not_started";
+  /** Measured native duration; null when not started or not measured. */
+  durationMs: number | null;
+  detail: string | null;
+}
+/** Measured timeline of one navigation attempt that failed before trust. */
+export interface WebNavigationTimeline {
+  /** Epoch milliseconds when the navigation attempt started. */
+  startedAt: number;
+  /** Monotonic milliseconds from attempt start to the failure. */
+  failedAfterMs: number;
+  route: CertificateInspectionRoute;
+  /** Canonical order for the route; empty when the failing stage is unknown. */
+  steps: WebNavigationTimelineStep[];
+}
+/** Live state of the pending HTTPS certificate trust check. */
+export interface WebTrustCheck {
+  /** Epoch milliseconds when the certificate check started. */
+  startedAt: number;
+  host: string;
+  port: number;
+  route: CertificateInspectionRoute;
+}

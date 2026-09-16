@@ -1,0 +1,246 @@
+[
+  {
+    "name": "direct_connect_timeout",
+    "wire": {
+      "kind": "connect_timeout",
+      "stage": "connect",
+      "route": "direct",
+      "target": "10.1.180.11:443",
+      "address": "10.1.180.11:443",
+      "addresses_tried": 1,
+      "elapsed_ms": 10004,
+      "stage_elapsed_ms": 10003,
+      "timeout_ms": 10000,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [{ "stage": "resolve", "elapsed_ms": 1 }],
+      "message": "TCP connect to 10.1.180.11:443 timed out after 10.0 s"
+    }
+  },
+  {
+    "name": "direct_connection_refused",
+    "wire": {
+      "kind": "connection_refused",
+      "stage": "connect",
+      "route": "direct",
+      "target": "10.1.180.11:443",
+      "address": "10.1.180.11:443",
+      "addresses_tried": 1,
+      "elapsed_ms": 2088,
+      "stage_elapsed_ms": 2087,
+      "timeout_ms": null,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [{ "stage": "resolve", "elapsed_ms": 1 }],
+      "message": "10.1.180.11:443 refused the TCP connection after 2.1 s"
+    }
+  },
+  {
+    "name": "direct_host_unreachable",
+    "wire": {
+      "kind": "host_unreachable",
+      "stage": "connect",
+      "route": "direct",
+      "target": "10.1.180.11:443",
+      "address": "10.1.180.11:443",
+      "addresses_tried": 1,
+      "elapsed_ms": 3001,
+      "stage_elapsed_ms": 3000,
+      "timeout_ms": null,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [{ "stage": "resolve", "elapsed_ms": 1 }],
+      "message": "No route to 10.1.180.11:443 (host unreachable) after 3.0 s"
+    }
+  },
+  {
+    "name": "direct_dns_failure",
+    "wire": {
+      "kind": "dns_failure",
+      "stage": "resolve",
+      "route": "direct",
+      "target": "nas.invalid:443",
+      "address": null,
+      "addresses_tried": 0,
+      "elapsed_ms": 42,
+      "stage_elapsed_ms": 42,
+      "timeout_ms": null,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [],
+      "message": "Could not resolve nas.invalid after 42 ms"
+    }
+  },
+  {
+    "name": "proxy_unreachable",
+    "wire": {
+      "kind": "proxy_unreachable",
+      "stage": "proxy_connect",
+      "route": "proxy",
+      "target": "private.invalid:443",
+      "address": null,
+      "addresses_tried": 0,
+      "elapsed_ms": 10002,
+      "stage_elapsed_ms": 10002,
+      "timeout_ms": 10000,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [],
+      "message": "The configured proxy could not be reached within 10.0 s"
+    }
+  },
+  {
+    "name": "proxy_auth_rejected",
+    "wire": {
+      "kind": "proxy_auth_rejected",
+      "stage": "proxy_tunnel",
+      "route": "proxy",
+      "target": "private.invalid:443",
+      "address": null,
+      "addresses_tried": 0,
+      "elapsed_ms": 12,
+      "stage_elapsed_ms": 4,
+      "timeout_ms": null,
+      "proxy_status": 407,
+      "tls_reason": null,
+      "completed": [{ "stage": "proxy_connect", "elapsed_ms": 8 }],
+      "message": "The configured proxy rejected authentication (HTTP 407)"
+    }
+  },
+  {
+    "name": "proxy_tunnel_rejected",
+    "wire": {
+      "kind": "proxy_tunnel_rejected",
+      "stage": "proxy_tunnel",
+      "route": "proxy",
+      "target": "private.invalid:443",
+      "address": null,
+      "addresses_tried": 0,
+      "elapsed_ms": 30,
+      "stage_elapsed_ms": 22,
+      "timeout_ms": null,
+      "proxy_status": 504,
+      "tls_reason": null,
+      "completed": [{ "stage": "proxy_connect", "elapsed_ms": 8 }],
+      "message": "The configured proxy could not open a tunnel (HTTP 504)"
+    }
+  },
+  {
+    "name": "tls_handshake_timeout",
+    "wire": {
+      "kind": "tls_handshake_timeout",
+      "stage": "tls_handshake",
+      "route": "direct",
+      "target": "10.1.180.11:443",
+      "address": "10.1.180.11:443",
+      "addresses_tried": 1,
+      "elapsed_ms": 10015,
+      "stage_elapsed_ms": 10000,
+      "timeout_ms": 10000,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [
+        { "stage": "resolve", "elapsed_ms": 1 },
+        { "stage": "connect", "elapsed_ms": 14 }
+      ],
+      "message": "10.1.180.11:443 accepted TCP but did not complete a TLS handshake within 10.0 s"
+    }
+  },
+  {
+    "name": "tls_handshake_not_tls",
+    "wire": {
+      "kind": "tls_handshake_failed",
+      "stage": "tls_handshake",
+      "route": "direct",
+      "target": "10.1.180.11:443",
+      "address": "10.1.180.11:443",
+      "addresses_tried": 1,
+      "elapsed_ms": 20,
+      "stage_elapsed_ms": 5,
+      "timeout_ms": null,
+      "proxy_status": null,
+      "tls_reason": "not_tls",
+      "completed": [
+        { "stage": "resolve", "elapsed_ms": 1 },
+        { "stage": "connect", "elapsed_ms": 14 }
+      ],
+      "message": "10.1.180.11:443 answered with data that is not TLS"
+    }
+  },
+  {
+    "name": "certificate_unreadable",
+    "wire": {
+      "kind": "certificate_unreadable",
+      "stage": "certificate",
+      "route": "direct",
+      "target": "10.1.180.11:443",
+      "address": "10.1.180.11:443",
+      "addresses_tried": 1,
+      "elapsed_ms": 60,
+      "stage_elapsed_ms": 1,
+      "timeout_ms": null,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [
+        { "stage": "resolve", "elapsed_ms": 1 },
+        { "stage": "connect", "elapsed_ms": 14 },
+        { "stage": "tls_handshake", "elapsed_ms": 44 }
+      ],
+      "message": "The server certificate could not be read"
+    }
+  },
+  {
+    "name": "inspection_unavailable",
+    "wire": {
+      "kind": "inspection_unavailable",
+      "stage": "verifier",
+      "route": "direct",
+      "target": "10.1.180.11:443",
+      "address": null,
+      "addresses_tried": 0,
+      "elapsed_ms": 0,
+      "stage_elapsed_ms": 0,
+      "timeout_ms": null,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [],
+      "message": "The local TLS inspection verifier is unavailable"
+    }
+  },
+  {
+    "name": "invalid_target",
+    "wire": {
+      "kind": "invalid_target",
+      "stage": "target",
+      "route": "direct",
+      "target": "",
+      "address": null,
+      "addresses_tried": 0,
+      "elapsed_ms": 0,
+      "stage_elapsed_ms": 0,
+      "timeout_ms": null,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [],
+      "message": "Invalid certificate target authority"
+    }
+  },
+  {
+    "name": "deadline_exceeded_proxy_tunnel",
+    "wire": {
+      "kind": "deadline_exceeded",
+      "stage": "proxy_tunnel",
+      "route": "proxy",
+      "target": "private.invalid:443",
+      "address": null,
+      "addresses_tried": 0,
+      "elapsed_ms": 25000,
+      "stage_elapsed_ms": 15000,
+      "timeout_ms": 25000,
+      "proxy_status": null,
+      "tls_reason": null,
+      "completed": [{ "stage": "proxy_connect", "elapsed_ms": 10000 }],
+      "message": "Certificate inspection did not finish within 25.0 s (proxy tunnel)"
+    }
+  }
+]

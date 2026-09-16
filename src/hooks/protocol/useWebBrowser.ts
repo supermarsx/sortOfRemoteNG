@@ -84,8 +84,14 @@ import { normalizeHttpFormAutomation } from "../../utils/connection/httpFormAuto
 import type {
   CertificateInspection,
   NativeTlsCertificateInfo,
+  WebNavigationTimeline,
+  WebTrustCheck,
 } from "../../types/security/certificateInspection";
 import { validateCertificateInspection } from "../../utils/security/certificateInspection";
+import {
+  describeCertificateInspectionFailure,
+  HttpsRouteChangedError,
+} from "../../utils/security/certificateInspectionFailure";
 import {
   normalizeHttpsCaTrustMode,
   constrainRedirectHttpsPolicy,
@@ -122,7 +128,17 @@ export type ProxyFailureKind =
   | "invalid_navigation"
   | "proxy_start_failed"
   | "trust_failure"
-  | "certificate_rejected";
+  | "certificate_rejected"
+  | "host_unreachable"
+  | "proxy_route_failure"
+  | "tls_handshake_failure"
+  | "inspection_unavailable";
+
+export type {
+  WebNavigationTimeline,
+  WebNavigationTimelineStep,
+  WebTrustCheck,
+} from "../../types/security/certificateInspection";
 
 export interface ProxyNavigationFailure {
   version: 1;
@@ -133,6 +149,8 @@ export interface ProxyNavigationFailure {
   url: string;
   reason: string;
   detail: string;
+  /** Measured attempt timeline for failures before the certificate trust check. */
+  timeline?: WebNavigationTimeline;
 }
 
 const PROXY_FAILURE_KINDS = new Set<ProxyFailureKind>([
@@ -229,18 +247,27 @@ export function parseProxyFailurePayload(
   };
 }
 
+export type LocalNavigationFailureKind = Extract<
+  ProxyFailureKind,
+  | "timeout"
+  | "page_load_timeout"
+  | "navigation_cancelled"
+  | "invalid_navigation"
+  | "proxy_start_failed"
+  | "certificate_rejected"
+  | "trust_failure"
+  | "tls_failure"
+  | "host_unreachable"
+  | "proxy_route_failure"
+  | "tls_handshake_failure"
+  | "inspection_unavailable"
+  | "connection_refused"
+  | "dns_failure"
+  | "connection_failed"
+>;
+
 function localNavigationFailure(
-  kind: Extract<
-    ProxyFailureKind,
-    | "timeout"
-    | "page_load_timeout"
-    | "navigation_cancelled"
-    | "invalid_navigation"
-    | "proxy_start_failed"
-    | "certificate_rejected"
-    | "trust_failure"
-    | "tls_failure"
-  >,
+  kind: LocalNavigationFailureKind,
   title: string,
   url: string,
   reason: string,
@@ -389,6 +416,8 @@ export function useWebBrowser(session: ConnectionSession) {
       return {
         error: null,
         hostname: authority.hostname,
+        // The single port source for navigation, inspection, pinning and trust.
+        port,
         url: target.toString(),
       };
     } catch (error) {
@@ -398,6 +427,7 @@ export function useWebBrowser(session: ConnectionSession) {
             ? error.message
             : "Saved web hostname is invalid.",
         hostname: "",
+        port: null,
         url: "",
       };
     }
@@ -606,6 +636,10 @@ export function useWebBrowser(session: ConnectionSession) {
   const [diagnosticReport, setDiagnosticReport] =
     useState<ProtocolDiagnosticReport | null>(null);
   const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
+  const [diagnosticsStartedAt, setDiagnosticsStartedAt] = useState<
+    number | null
+  >(null);
+  const diagnosticRunRef = useRef(0);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
   const [isSecure, setIsSecure] = useState(session.protocol === "https");
   const [navigationHistory, setNavigationHistory] = useState<{
@@ -636,7 +670,7 @@ export function useWebBrowser(session: ConnectionSession) {
     session.id,
     connection?.id,
     normalizedHostname,
-    connection?.port || 443,
+    targetResolution.port,
   ]);
   const [certificateCapture, setCertificateCapture] = useState<{
     scope: string;
@@ -657,6 +691,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const trustResolveRef = useRef<((accept: boolean) => void) | null>(null);
   const trustPromptRef = useRef(trustPrompt);
   trustPromptRef.current = trustPrompt;
+  const [trustCheck, setTrustCheck] = useState<WebTrustCheck | null>(null);
   const certPopupRef = useRef<HTMLDivElement>(null);
 
   // ── Proxy tracking ─────────────────────────────────────────
@@ -664,6 +699,12 @@ export function useWebBrowser(session: ConnectionSession) {
   const proxyUrlRef = useRef<string>("");
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
+  /** Start of the current navigation attempt: epoch for display, monotonic for elapsed. */
+  const attemptStartRef = useRef<{
+    epoch: number;
+    mono: number;
+    generation: number;
+  } | null>(null);
   const trustReadAbortRef = useRef<AbortController | null>(null);
   const cancelTrustRead = useCallback(() => {
     trustReadAbortRef.current?.abort();
@@ -887,8 +928,11 @@ export function useWebBrowser(session: ConnectionSession) {
     navigationFailureRef.current = null;
     setNavigationFailure(null);
     setLoadError("");
+    diagnosticRunRef.current += 1;
     setDiagnosticReport(null);
     setDiagnosticError(null);
+    setIsRunningDiagnostics(false);
+    setDiagnosticsStartedAt(null);
   }, []);
 
   const applyNavigationFailure = useCallback(
@@ -906,8 +950,12 @@ export function useWebBrowser(session: ConnectionSession) {
       pendingInternalNavigationRef.current = false;
       awaitingFrameGenerationRef.current = null;
       clearLoadingIndicator();
+      setTrustCheck(null);
+      diagnosticRunRef.current += 1;
       setDiagnosticReport(null);
       setDiagnosticError(null);
+      setIsRunningDiagnostics(false);
+      setDiagnosticsStartedAt(null);
     },
     [clearLoadingIndicator, cancelTrustRead],
   );
@@ -1043,7 +1091,18 @@ export function useWebBrowser(session: ConnectionSession) {
   const fetchAndVerifyCert = useCallback(
     async (proxyUrl?: string): Promise<boolean> => {
       if (session.protocol !== "https") return true;
-      const port = connection?.port || 443;
+      const port = targetResolution.port;
+      if (port === null) {
+        applyNavigationFailure(
+          localNavigationFailure(
+            "invalid_navigation",
+            "Invalid web connection",
+            activeNavigationUrlRef.current || session.hostname,
+            targetResolution.error ?? "Saved web hostname is invalid.",
+          ),
+        );
+        return false;
+      }
       const policy = httpsPolicy;
       const policyKey = httpsPolicyKey;
       requireCaVerificationRef.current = false;
@@ -1051,6 +1110,10 @@ export function useWebBrowser(session: ConnectionSession) {
       // detect whether a newer navigation has superseded us after the
       // await completes (e.g. React StrictMode double-mount race).
       const genBefore = navGenRef.current;
+      const attempt =
+        attemptStartRef.current?.generation === genBefore
+          ? attemptStartRef.current
+          : { epoch: Date.now(), mono: performance.now() };
       const ownerScope = trustOwnerScopeRef.current;
       cancelTrustRead();
       const abort = new AbortController();
@@ -1066,9 +1129,7 @@ export function useWebBrowser(session: ConnectionSession) {
         )
           throw new DOMException("Trust verification cancelled", "AbortError");
         if (getGlobalHttpProxyUrl({ failClosed: true }) !== proxyUrl)
-          throw new Error(
-            "The configured route changed. Reload to verify HTTPS trust on the current route.",
-          );
+          throw new HttpsRouteChangedError();
         // Bind known owners before the first read, not after a transition may
         // already have replaced their lease. Older ownerless tabs may perform
         // the initial verification, but cannot schedule an unowned retry.
@@ -1076,7 +1137,16 @@ export function useWebBrowser(session: ConnectionSession) {
           assertOwner ??= captureSessionDatabaseAccess(session);
         assertOwner?.();
       };
-      let stage: "inspection" | "identity" | "verification" = "inspection";
+      let stage:
+        "inspection" | "inspection_response" | "identity" | "verification" =
+        "inspection";
+      const check: WebTrustCheck = {
+        startedAt: Date.now(),
+        host: normalizedHostname,
+        port,
+        route: proxyUrl ? "proxy" : "direct",
+      };
+      setTrustCheck(check);
 
       try {
         const info = await invoke<NativeTlsCertificateInfo>(
@@ -1092,6 +1162,7 @@ export function useWebBrowser(session: ConnectionSession) {
         // this call is stale — bail out so we don't overwrite the ref
         // that the newer call will (or already did) set.
         if (genBefore !== navGenRef.current) return false;
+        stage = "inspection_response";
         validateCertificateInspection(info);
 
         const now = new Date().toISOString();
@@ -1206,22 +1277,43 @@ export function useWebBrowser(session: ConnectionSession) {
           return false;
         debugLog("WebBrowser", "HTTPS trust pipeline failed", { stage, err });
         acceptedCertFingerprintRef.current = null;
+        if (err instanceof HttpsRouteChangedError) {
+          applyNavigationFailure(
+            localNavigationFailure(
+              "navigation_cancelled",
+              "HTTPS route changed",
+              activeNavigationUrlRef.current,
+              "The configured proxy route changed while the certificate was being checked. Reload to check it on the current route.",
+              err.message,
+            ),
+          );
+          return false;
+        }
+        if (stage !== "verification") {
+          // Classify by the failing network layer; every class stays blocked.
+          applyNavigationFailure(
+            describeCertificateInspectionFailure({
+              error: err,
+              hookStage: stage,
+              host: normalizedHostname,
+              port,
+              route: proxyUrl ? "proxy" : "direct",
+              proxyTls: /^https:/i.test(proxyUrl ?? ""),
+              url: activeNavigationUrlRef.current,
+              startedAt: attempt.epoch,
+              failedAfterMs: performance.now() - attempt.mono,
+            }),
+          );
+          return false;
+        }
         applyNavigationFailure(
           localNavigationFailure(
-            stage === "inspection" || stage === "identity"
-              ? "tls_failure"
-              : "trust_failure",
-            stage === "inspection"
-              ? "Unable to inspect the HTTPS certificate"
-              : stage === "identity"
-                ? "Invalid HTTPS certificate identity"
-                : "Unable to verify HTTPS trust",
+            "trust_failure",
+            "Unable to verify HTTPS trust",
             activeNavigationUrlRef.current,
-            stage === "inspection" || stage === "identity"
-              ? "Certificate inspection or identity validation failed on the configured route. The connection was not opened without the trust check."
-              : stage === "verification" && isTransientTrustStoreError(err)
-                ? "The Trust Center is still busy after two retries. Wait for its storage transition or refresh to finish, then reload. TLS verification was not bypassed."
-                : "The certificate was inspected, but the database Trust Center could not complete its decision. Open or unlock the correct database and inspect its Trust Center; TLS verification was not bypassed.",
+            isTransientTrustStoreError(err)
+              ? "The Trust Center is still busy after two retries. Wait for its storage transition or refresh to finish, then reload. TLS verification was not bypassed."
+              : "The certificate was inspected, but the database Trust Center could not complete its decision. Open or unlock the correct database and inspect its Trust Center; TLS verification was not bypassed.",
             err instanceof Error ? err.message : String(err),
           ),
         );
@@ -1229,11 +1321,14 @@ export function useWebBrowser(session: ConnectionSession) {
       } finally {
         if (trustReadAbortRef.current === abort)
           trustReadAbortRef.current = null;
+        setTrustCheck((current) => (current === check ? null : current));
       }
     },
     [
       session,
       normalizedHostname,
+      targetResolution.port,
+      targetResolution.error,
       connection,
       httpsPolicy,
       httpsPolicyKey,
@@ -1257,9 +1352,10 @@ export function useWebBrowser(session: ConnectionSession) {
         httpsPolicyKey === httpsPolicyKeyRef.current;
       if (!current()) return;
       armNavigationDeadline(generation, activeNavigationUrlRef.current);
+      const port = targetResolution.port;
       if (trustPrompt && certIdentity && remember) {
-        const port = connection?.port || 443;
         try {
+          if (port === null) throw new Error("Saved web port is invalid.");
           await trustIdentity(
             normalizedHostname,
             port,
@@ -1304,6 +1400,7 @@ export function useWebBrowser(session: ConnectionSession) {
       trustPrompt,
       certIdentity,
       normalizedHostname,
+      targetResolution.port,
       connection,
       applyNavigationFailure,
       armNavigationDeadline,
@@ -1507,7 +1604,13 @@ export function useWebBrowser(session: ConnectionSession) {
   const navigateToUrl = useCallback(
     async (url: string, addToHistory = true) => {
       const gen = ++navGenRef.current;
+      attemptStartRef.current = {
+        epoch: Date.now(),
+        mono: performance.now(),
+        generation: gen,
+      };
       cancelTrustRead();
+      setTrustCheck(null);
       pendingNavigationRef.current = true;
       pendingInternalNavigationRef.current = false;
       awaitingFrameGenerationRef.current = null;
@@ -2735,9 +2838,20 @@ export function useWebBrowser(session: ConnectionSession) {
 
   const runDeepDiagnostics = useCallback(async () => {
     const diagnosticUrl = navigationFailure?.url || currentUrl;
+    // A separate on-demand probe bound to the failure page that requested it:
+    // a late report never lands on a retry or a newer diagnostics run.
+    const run = ++diagnosticRunRef.current;
+    const generation = navGenRef.current;
+    const failure = navigationFailureRef.current;
+    const current = () =>
+      mountedRef.current &&
+      run === diagnosticRunRef.current &&
+      generation === navGenRef.current &&
+      failure === navigationFailureRef.current;
     setDiagnosticReport(null);
     setDiagnosticError(null);
     setIsRunningDiagnostics(true);
+    setDiagnosticsStartedAt(Date.now());
     try {
       const target = new URL(diagnosticUrl);
       if (
@@ -2771,13 +2885,18 @@ export function useWebBrowser(session: ConnectionSession) {
           proxyUrl: getGlobalHttpProxyUrl({ failClosed: true }),
         },
       );
-      setDiagnosticReport(report);
+      if (current()) setDiagnosticReport(report);
     } catch (error) {
-      setDiagnosticError(
-        error instanceof Error ? error.message : String(error),
-      );
+      if (current())
+        setDiagnosticError(
+          error instanceof Error ? error.message : String(error),
+        );
     } finally {
-      setIsRunningDiagnostics(false);
+      // Page changes already reset the running state; a newer run owns it.
+      if (mountedRef.current && run === diagnosticRunRef.current) {
+        setIsRunningDiagnostics(false);
+        setDiagnosticsStartedAt(null);
+      }
     }
   }, [connection, currentUrl, navigationFailure?.url, settings.diagnostics]);
 
@@ -3259,6 +3378,10 @@ export function useWebBrowser(session: ConnectionSession) {
     navigationFailure,
     diagnosticReport,
     isRunningDiagnostics,
+    diagnosticsStartedAt,
+    /** The separate deep-diagnostics probe's own TCP connect budget. */
+    diagnosticConnectTimeoutSecs:
+      settings.diagnostics?.protocolDiagTimeoutSecs ?? 15,
     diagnosticError,
     isSecure,
     canGoBack,
@@ -3322,6 +3445,7 @@ export function useWebBrowser(session: ConnectionSession) {
     certificateHost: normalizedHostname,
     certPopupRef,
     trustPrompt,
+    trustCheck,
     handleTrustAccept,
     handleTrustReject,
     // Bookmarks
