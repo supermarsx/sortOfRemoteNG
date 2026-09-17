@@ -8,7 +8,10 @@ import {
   normalizeHttpApplicationSettings,
 } from "../connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "./httpCredentials";
+import { YEALINK_SERVLET_UPSTREAM_SUPPORTED } from "./upstreamAuthCapabilities";
 import { normalizeConnectionCredentialSource } from "../security/databaseCredentialVault";
+
+export { YEALINK_SERVLET_UPSTREAM_SUPPORTED };
 
 /** Hosted presets cannot label an arbitrary origin as their provider's login. */
 export function validateHttpApplicationTarget(
@@ -47,10 +50,35 @@ export function validateHttpApplicationTarget(
 export interface HttpApplicationLogin {
   credentials: { username: string; password: string } | null;
   upstreamAuthMode?:
-    "none" | "basic" | "digest" | "header" | "bitwarden-form" | "synology-form";
-  loginFlow?: "bitwarden" | "synology";
+    | "none"
+    | "basic"
+    | "digest"
+    | "header"
+    | "bitwarden-form"
+    | "synology-form"
+    | "yealink-servlet";
+  loginFlow?: "bitwarden" | "synology" | "yealink";
   autoLogin: boolean;
   selectors?: HttpAutoLoginSelectors;
+}
+
+/** Each reviewed staged flow owns one closed upstream mode; no mode is shared. */
+const STAGED_LOGIN_UPSTREAM_MODES: Record<
+  NonNullable<HttpApplicationLogin["loginFlow"]>,
+  NonNullable<HttpApplicationLogin["upstreamAuthMode"]>
+> = {
+  bitwarden: "bitwarden-form",
+  synology: "synology-form",
+  yealink: "yealink-servlet",
+};
+
+/** Never emit a mode the shipped backend would reject; see the gate's module. */
+function stagedUpstreamAuthMode(
+  loginFlow: NonNullable<HttpApplicationLogin["loginFlow"]>,
+): NonNullable<HttpApplicationLogin["upstreamAuthMode"]> {
+  if (loginFlow === "yealink" && !YEALINK_SERVLET_UPSTREAM_SUPPORTED)
+    return "none";
+  return STAGED_LOGIN_UPSTREAM_MODES[loginFlow];
 }
 
 /** Compare only login-affecting values in memory; never serialize credentials. */
@@ -179,7 +207,7 @@ export function resolveHttpApplicationLogin(
     throw new Error(
       "Automatic form login requires both the website username and password.",
     );
-  if (profile.loginFlow === "bitwarden" || profile.loginFlow === "synology") {
+  if (profile.loginFlow) {
     if (
       Object.keys(
         normalizeHttpApplicationSelectors(connection.httpAutoLoginSelectors) ??
@@ -191,10 +219,13 @@ export function resolveHttpApplicationLogin(
       );
     return {
       credentials,
-      upstreamAuthMode:
-        profile.loginFlow === "synology" ? "synology-form" : "bitwarden-form",
+      upstreamAuthMode: stagedUpstreamAuthMode(profile.loginFlow),
       loginFlow: profile.loginFlow,
       autoLogin: true,
+      // A staged flow still carries its own reviewed selectors when it has
+      // them: the Yealink confirm control is an anchor, so the page filler
+      // reaches it through this override and never a submit-button search.
+      ...(profile.selectors ? { selectors: { ...profile.selectors } } : {}),
     };
   }
   const selectors = {

@@ -68,6 +68,7 @@ describe("HTTP application profile policy", () => {
       "drupal",
       "payload-cms",
       "webmin",
+      "voip-phone",
     ]);
   });
   it("makes Cloudflare manual-only and ignores retained website credentials, API headers, and automatic selectors", () => {

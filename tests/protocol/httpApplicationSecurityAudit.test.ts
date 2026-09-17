@@ -11,6 +11,7 @@ import {
 import {
   normalizeHttpApplicationSelectors,
   resolveHttpApplicationLogin,
+  YEALINK_SERVLET_UPSTREAM_SUPPORTED,
 } from "../../src/utils/auth/httpApplicationLogin";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 import {
@@ -47,6 +48,14 @@ const base = (patch: Partial<Connection> = {}): Connection => ({
 });
 const importedProfile = (value: unknown) =>
   base({ httpApplication: value as HttpApplicationSettings });
+/** One closed upstream mode per reviewed staged flow, asserted independently.
+ * `yealink` stays on the pre-profile `"none"` until the backend gate opens, so
+ * a mode the shipped Rust enum cannot deserialize is never emitted. */
+const STAGED_UPSTREAM_MODES = {
+  bitwarden: "bitwarden-form",
+  synology: "synology-form",
+  yealink: YEALINK_SERVLET_UPSTREAM_SUPPORTED ? "yealink-servlet" : "none",
+} as const;
 
 describe("independent HTTP application security audit", () => {
   it.each(HTTP_APPLICATION_PROFILES)(
@@ -85,12 +94,9 @@ describe("independent HTTP application security audit", () => {
           });
         if (loginMode === "form")
           expect(result).toMatchObject({
-            upstreamAuthMode:
-              profile.loginFlow === "bitwarden"
-                ? "bitwarden-form"
-                : profile.loginFlow === "synology"
-                  ? "synology-form"
-                  : "none",
+            upstreamAuthMode: profile.loginFlow
+              ? STAGED_UPSTREAM_MODES[profile.loginFlow]
+              : "none",
             autoLogin: true,
           });
         if (loginMode === "basic")

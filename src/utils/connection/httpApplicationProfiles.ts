@@ -31,7 +31,7 @@ export interface HttpApplicationProfile {
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];
   requiresHttps?: boolean;
-  loginFlow?: "bitwarden" | "synology";
+  loginFlow?: "bitwarden" | "synology" | "yealink";
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -484,12 +484,28 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   generic("idrac", "Dell iDRAC", "management"),
   generic("lenovo", "Lenovo XClarity", "management"),
   generic("supermicro", "Supermicro BMC", "management"),
-  generic(
-    "voip-phone",
-    "VoIP phone (Yealink)",
-    "networking",
-    "Choose Basic for firmware that uses HTTP Basic, or generic form detection for a login page. Firmware-specific native phone hints are not probed automatically.",
-  ),
+  {
+    id: "voip-phone",
+    label: "VoIP phone (Yealink)",
+    category: "networking",
+    capability: "known-form",
+    // The set the placeholder profile accepted, unchanged: a saved connection
+    // must keep resolving after this profile gained a reviewed contract.
+    loginModes: ["manual", "form", "basic", "digest"],
+    loginFlow: "yealink",
+    // Mirrors `servlet::SEL_*` in
+    // `src-tauri/crates/sorng-voip-phone/src/endpoints.rs` — keep them equal.
+    // Both attested T2x markups are listed: the confirm control is an `<a>`
+    // that calls the page's own script, so a submit-button search finds
+    // nothing and only this override reaches it.
+    selectors: {
+      usernameSelector: '#idUsername, input[name="username"]',
+      passwordSelector: '#idPassword, input[name="pwd"][type="password"]',
+      submitSelector: '#idConfirm, input[type="submit"][name="login"]',
+    },
+    description:
+      "Reviewed Yealink T2x desk-phone web login, covering the current and older login-page markup. The phone's own page script encrypts the password with a per-session key, so filling the form is not enough by itself: automatic sign-in stays incomplete until the embedded viewer's page-script compatibility update ships, and signing in remains a manual step until then. Choose Basic only for the older /cgi-bin/ConfigManApp.com firmware generation; the servlet web UI does not accept HTTP Basic. The phone permits one web session at a time, so signing in from here can end a session you have open on the phone in another browser. A rejected or locked-out sign-in stops and is never retried, because repeated failures lock the account for several minutes. Newer T4x/T5x JSON-API firmware is not covered.",
+  },
   generic("netbox", "NetBox", "networking"),
   generic("vmware", "VMware vSphere", "virtualization"),
   generic(
