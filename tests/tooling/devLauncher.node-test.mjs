@@ -13,8 +13,14 @@ import {
 } from "../../scripts/dev-port.mjs";
 import { resolveDevServerPlan } from "../../scripts/dev-server.mjs";
 import {
+  DEV_ISOLATED_IDENTIFIER,
+  PRODUCTION_IDENTIFIER,
   buildDevSecurityOverride,
   buildTauriLaunchPlan,
+  describeDevProfile,
+  isolatedProfileIdentifier,
+  parseDevProfileArguments,
+  resolveKnownFolders,
   main as launchManagedDev,
 } from "../../scripts/tauri-dev.mjs";
 import {
@@ -299,4 +305,428 @@ test("Tauri development preserves the native window close contract", () => {
   });
   assert.match(security.csp, /connect-src[^;]*\bipc:/);
   assert.match(security.csp, /connect-src[^;]*http:\/\/ipc\.localhost/);
+});
+
+const fixedSecurityOverride = Object.freeze({
+  capabilities: [{ identifier: "test" }],
+  csp: "default-src 'self'",
+});
+const deterministicPlanOptions = Object.freeze({
+  nativeEnvironmentOptions: {
+    platform: "win32",
+    arch: "x64",
+    exists: () => false,
+  },
+  buildResourceOptions: {
+    resources: {
+      parallelism: 8,
+      totalMemoryBytes: 32 * 1024 ** 3,
+      freeMemoryBytes: 16 * 1024 ** 3,
+    },
+  },
+});
+const windowsKnownFolders = Object.freeze({
+  data: "C:\\Users\\dev\\AppData\\Roaming",
+  localData: "C:\\Users\\dev\\AppData\\Local",
+});
+const managedEntrypoints = [
+  ["tauri:dev", launchManagedDev, []],
+  ["tauri dev", launchTauri, ["dev"]],
+];
+
+function configOverrideBytes(plan) {
+  assert.equal(plan.tauriArgs[1], "-c");
+  return plan.tauriArgs[2];
+}
+
+function realOverrideBytes(identifier) {
+  return JSON.stringify({
+    ...(identifier ? { identifier } : {}),
+    build: { devUrl: "http://localhost:3042" },
+    app: { security: buildDevSecurityOverride(3042) },
+  });
+}
+
+function bannerFor(identifier, env = {}) {
+  return describeDevProfile({
+    identifier,
+    devUrl: "http://localhost:3042",
+    platform: "win32",
+    env,
+    knownFolders: windowsKnownFolders,
+  });
+}
+
+// Runs a managed launch with every side effect faked: no lock, port, staging,
+// Cargo or app process is touched.
+async function launchWithFakes(launch, argv, env = {}) {
+  const host = new EventEmitter();
+  host.execPath = process.execPath;
+  host.pid = process.pid;
+  host.platform = "win32";
+  host.exit = () => {};
+  host.kill = () => assert.fail("unexpected parent signal");
+  const child = new EventEmitter();
+  child.killed = false;
+  child.kill = () => {};
+  const events = [];
+  const staged = [];
+  let spawned;
+  await launch(argv, {
+    process: host,
+    env,
+    log: (message) => events.push(message),
+    assertNoManagedDevLock: () => {},
+    resolveDevPort: async () => ({ port: 3042, action: "available" }),
+    ...deterministicPlanOptions,
+    resolveKnownFolders: (options) => {
+      assert.equal(options.platform, "win32");
+      assert.equal(options.env, env);
+      return windowsKnownFolders;
+    },
+    prepareTauriDevOpkssh: (received) => staged.push(received),
+    stageFileViewerHost: ({ argv: received }) => staged.push(received),
+    spawn: (executable, received, options) => {
+      events.push("spawn");
+      spawned = { executable, args: received, options };
+      return child;
+    },
+  });
+  return { events, staged, spawned };
+}
+
+function assertLoggedBeforeSpawn(events, lines) {
+  for (const line of lines) {
+    const index = events.indexOf(line);
+    assert.notEqual(index, -1, `missing banner line: ${line}`);
+    assert.ok(index < events.indexOf("spawn"), `logged after spawn: ${line}`);
+  }
+}
+
+test("default dev launch keeps the pre-isolation config override byte-identical", () => {
+  const passthrough = ["--features", "full", "--", "--no-default-features"];
+  const plan = buildTauriLaunchPlan({
+    port: 3042,
+    passthrough,
+    baseEnv: {},
+    securityOverride: fixedSecurityOverride,
+  });
+
+  // Golden bytes of the `-c` override the launcher passed before t91. Tauri
+  // exports it as TAURI_CONFIG, an app crate build input, so a single changed
+  // byte would rebuild the user's dev app.
+  assert.equal(
+    configOverrideBytes(plan),
+    `{"build":{"devUrl":"http://localhost:3042"},"app":{"security":{"capabilities":[{"identifier":"test"}],"csp":"default-src 'self'"}}}`,
+  );
+  assert.deepEqual(plan.tauriArgs, [
+    "dev",
+    "-c",
+    configOverrideBytes(plan),
+    ...passthrough,
+  ]);
+  assert.equal(plan.identifier, PRODUCTION_IDENTIFIER);
+  assert.deepEqual(
+    buildTauriLaunchPlan({
+      port: 3042,
+      passthrough,
+      baseEnv: {},
+      securityOverride: fixedSecurityOverride,
+      isolatedProfile: null,
+    }).tauriArgs,
+    plan.tauriArgs,
+  );
+  assert.equal(
+    configOverrideBytes(buildTauriLaunchPlan({ port: 3042, baseEnv: {} })),
+    realOverrideBytes(),
+  );
+  assert.deepEqual(parseDevProfileArguments(passthrough, {}), {
+    isolatedProfile: null,
+    passthrough,
+  });
+});
+
+test("default tauri dev spawns the unchanged override after the production banner", async () => {
+  const args = ["--features", "full", "--", "--no-default-features"];
+  for (const [name, launch, prefix] of managedEntrypoints) {
+    const { events, staged, spawned } = await launchWithFakes(launch, [
+      ...prefix,
+      ...args,
+    ]);
+    assert.deepEqual(
+      spawned.args.slice(1),
+      ["dev", "-c", realOverrideBytes(), ...args],
+      name,
+    );
+    assert.deepEqual(staged, [args, args]);
+    const banner = bannerFor(PRODUCTION_IDENTIFIER);
+    assert.equal(banner.length, 1);
+    assert.deepEqual(
+      events.filter((event) => event.startsWith("dev profile:")),
+      banner,
+    );
+    assertLoggedBeforeSpawn(events, banner);
+  }
+});
+
+test("--isolated-profile adds only the dev identifier to the Tauri override", () => {
+  const passthrough = ["--features", "full", "--", "--no-default-features"];
+  const parsed = parseDevProfileArguments(
+    ["--isolated-profile", ...passthrough],
+    {},
+  );
+  assert.deepEqual(parsed, {
+    isolatedProfile: "com.sortofremote.ng.dev",
+    passthrough,
+  });
+  assert.equal(DEV_ISOLATED_IDENTIFIER, "com.sortofremote.ng.dev");
+
+  const options = {
+    port: 3042,
+    passthrough,
+    baseEnv: { PRESERVED: "yes" },
+    securityOverride: fixedSecurityOverride,
+    ...deterministicPlanOptions,
+  };
+  const shared = buildTauriLaunchPlan(options);
+  const isolated = buildTauriLaunchPlan({
+    ...options,
+    isolatedProfile: parsed.isolatedProfile,
+  });
+  const override = JSON.parse(configOverrideBytes(isolated));
+  assert.deepEqual(Object.keys(override), ["identifier", "build", "app"]);
+  const { identifier, ...rest } = override;
+  assert.equal(identifier, DEV_ISOLATED_IDENTIFIER);
+  assert.deepEqual(rest, JSON.parse(configOverrideBytes(shared)));
+  assert.equal(
+    configOverrideBytes(isolated),
+    `{"identifier":"com.sortofremote.ng.dev",${configOverrideBytes(shared).slice(1)}`,
+  );
+  assert.deepEqual(
+    isolated.tauriArgs.toSpliced(2, 1),
+    shared.tauriArgs.toSpliced(2, 1),
+  );
+  assert.deepEqual(isolated.env, shared.env);
+  assert.equal(isolated.identifier, DEV_ISOLATED_IDENTIFIER);
+  // Dev never enters e2e harness mode, which requires a per-run WebView2 folder.
+  for (const key of [
+    "SORNG_EXPECT_ISOLATED_PROFILE",
+    "WEBVIEW2_USER_DATA_FOLDER",
+    "TAURI_CONFIG",
+  ])
+    assert.equal(isolated.env[key], undefined, key);
+});
+
+test("tauri dev consumes --isolated-profile instead of forwarding it", async () => {
+  const args = ["--features", "full"];
+  for (const [name, launch, prefix] of managedEntrypoints) {
+    for (const [flag, identifier] of [
+      ["--isolated-profile", DEV_ISOLATED_IDENTIFIER],
+      ["--isolated-profile=dev2", "com.sortofremote.ng.dev2"],
+    ]) {
+      for (const argv of [
+        [...prefix, flag, ...args],
+        [...prefix, ...args, flag],
+      ]) {
+        const { events, staged, spawned } = await launchWithFakes(launch, argv);
+        assert.deepEqual(
+          spawned.args.slice(1),
+          ["dev", "-c", realOverrideBytes(identifier), ...args],
+          `${name} ${argv.join(" ")}`,
+        );
+        assert.equal(
+          spawned.args.slice(1).some((arg) => arg.includes("isolated-profile")),
+          false,
+        );
+        assert.deepEqual(staged, [args, args]);
+        assert.equal(
+          spawned.options.env.SORNG_EXPECT_ISOLATED_PROFILE,
+          undefined,
+        );
+        const banner = bannerFor(identifier);
+        assert.equal(banner.length, 2);
+        assertLoggedBeforeSpawn(events, banner);
+      }
+    }
+  }
+});
+
+test("isolated dev profiles never reuse an e2e or README capture identifier", async () => {
+  const harness = await import("../../scripts/lib/e2e-profile-isolation.mjs");
+  const readConfig = (name) =>
+    JSON.parse(
+      readFileSync(new URL(`../../src-tauri/${name}`, import.meta.url), "utf8"),
+    );
+  assert.equal(readConfig("tauri.conf.json").identifier, PRODUCTION_IDENTIFIER);
+  assert.equal(harness.PRODUCTION_IDENTIFIER, PRODUCTION_IDENTIFIER);
+
+  const prefix = `${PRODUCTION_IDENTIFIER}.`;
+  for (const reserved of [
+    harness.E2E_IDENTIFIER,
+    harness.README_CAPTURE_IDENTIFIER,
+    readConfig("tauri.readme-screenshot.conf.json").identifier,
+  ]) {
+    assert.ok(reserved.startsWith(prefix), reserved);
+    const suffix = reserved.slice(prefix.length);
+    for (const candidate of [suffix, `${suffix}-2`]) {
+      assert.throws(
+        () => parseDevProfileArguments([`--isolated-profile=${candidate}`], {}),
+        /is reserved/,
+      );
+      assert.throws(
+        () =>
+          buildTauriLaunchPlan({
+            port: 3042,
+            baseEnv: {},
+            securityOverride: fixedSecurityOverride,
+            isolatedProfile: `${prefix}${candidate}`,
+          }),
+        /is reserved/,
+      );
+    }
+    assert.throws(
+      () => parseDevProfileArguments([`--isolated-profile=${reserved}`], {}),
+      /is invalid/,
+    );
+  }
+  // Only the harness names and their slots are reserved.
+  assert.equal(
+    isolatedProfileIdentifier("e2eish"),
+    "com.sortofremote.ng.e2eish",
+  );
+});
+
+test("isolated profile arguments are refused before any launch side effect", async () => {
+  assert.equal(isolatedProfileIdentifier("a".repeat(108)).length, 128);
+  for (const [argv, env, pattern] of [
+    [["--isolated-profile="], {}, /is invalid/],
+    [["--isolated-profile=Dev"], {}, /is invalid/],
+    [["--isolated-profile=dev.two"], {}, /is invalid/],
+    [["--isolated-profile=../dev"], {}, /is invalid/],
+    [["--isolated-profile=-dev"], {}, /is invalid/],
+    [[`--isolated-profile=${"a".repeat(109)}`], {}, /exceeds 128/],
+    [["--isolated-profile", "--isolated-profile=dev2"], {}, /given 2 times/],
+    [["--features", "full", "--", "--isolated-profile"], {}, /before `--`/],
+    [
+      ["--features", "full"],
+      { npm_config_isolated_profile: "true" },
+      /npm run tauri dev -- --isolated-profile/,
+    ],
+  ]) {
+    assert.throws(() => parseDevProfileArguments(argv, env), pattern);
+    for (const [, launch, prefix] of managedEntrypoints) {
+      await assert.rejects(
+        launch([...prefix, ...argv], {
+          process: new EventEmitter(),
+          env,
+          log: () => assert.fail("logged before argument validation"),
+          assertNoManagedDevLock: () =>
+            assert.fail("lock checked before argument validation"),
+          resolveDevPort: async () =>
+            assert.fail("port resolved before argument validation"),
+          spawn: () => assert.fail("spawned with invalid profile arguments"),
+        }),
+        pattern,
+      );
+    }
+  }
+});
+
+test("the launch plan never forwards the flag or accepts a non-dev identifier", () => {
+  const options = {
+    port: 3042,
+    baseEnv: {},
+    securityOverride: fixedSecurityOverride,
+  };
+  for (const passthrough of [
+    ["--isolated-profile"],
+    ["--features", "full", "--isolated-profile=dev2"],
+    ["--", "--isolated-profile"],
+  ])
+    assert.throws(
+      () => buildTauriLaunchPlan({ ...options, passthrough }),
+      /never forwarded to Tauri/,
+    );
+  for (const isolatedProfile of [
+    PRODUCTION_IDENTIFIER,
+    "COM.SORTOFREMOTE.NG.dev",
+    "com.example.dev",
+    "dev",
+    "com.sortofremote.ng.",
+    true,
+    false,
+  ])
+    assert.throws(
+      () => buildTauriLaunchPlan({ ...options, isolatedProfile }),
+      /isolatedProfile must be|is invalid/,
+      String(isolatedProfile),
+    );
+});
+
+test("the profile banner names the production or isolated profile", () => {
+  assert.deepEqual(bannerFor(PRODUCTION_IDENTIFIER), [
+    "dev profile: PRODUCTION (com.sortofremote.ng, shared with the installed app; your real data): data C:\\Users\\dev\\AppData\\Roaming\\com.sortofremote.ng, WebView2 C:\\Users\\dev\\AppData\\Local\\com.sortofremote.ng\\EBWebView, keychain production entries, origin http://localhost:3042. Use --isolated-profile for a separate, empty dev profile.",
+  ]);
+  assert.deepEqual(bannerFor(DEV_ISOLATED_IDENTIFIER), [
+    "dev profile: ISOLATED (com.sortofremote.ng.dev, separate from the installed app): data C:\\Users\\dev\\AppData\\Roaming\\com.sortofremote.ng.dev, WebView2 C:\\Users\\dev\\AppData\\Local\\com.sortofremote.ng.dev\\EBWebView, keychain entries namespaced @com.sortofremote.ng.dev, origin http://localhost:3042.",
+    "--isolated-profile compiles the app with identifier com.sortofremote.ng.dev, so the app crate rebuilds (and again on the next launch without the flag). This profile starts empty: no production connections, settings or vault key.",
+  ]);
+  // An inherited WebView2 override replaces Tauri's folder, so report it.
+  assert.match(
+    bannerFor(PRODUCTION_IDENTIFIER, {
+      WEBVIEW2_USER_DATA_FOLDER: "D:\\wv2",
+    })[0],
+    /, WebView2 D:\\wv2\\EBWebView \(from WEBVIEW2_USER_DATA_FOLDER\), /,
+  );
+  assert.deepEqual(
+    describeDevProfile({
+      identifier: PRODUCTION_IDENTIFIER,
+      devUrl: "http://localhost:3042",
+      platform: "linux",
+      env: {},
+      knownFolders: {
+        data: "/home/dev/.local/share",
+        localData: "/home/dev/.local/share",
+      },
+    }),
+    [
+      "dev profile: PRODUCTION (com.sortofremote.ng, shared with the installed app; your real data): data /home/dev/.local/share/com.sortofremote.ng, keychain production entries, origin http://localhost:3042. Use --isolated-profile for a separate, empty dev profile.",
+    ],
+  );
+});
+
+test("known folders mirror the data roots Tauri joins the identifier onto", () => {
+  assert.deepEqual(
+    resolveKnownFolders({
+      platform: "win32",
+      env: { APPDATA: "E:\\Roaming", LOCALAPPDATA: "E:\\Local" },
+      home: "C:\\Users\\dev",
+    }),
+    { data: "E:\\Roaming", localData: "E:\\Local" },
+  );
+  assert.deepEqual(
+    resolveKnownFolders({ platform: "win32", env: {}, home: "C:\\Users\\dev" }),
+    windowsKnownFolders,
+  );
+  const support = "/Users/dev/Library/Application Support";
+  assert.deepEqual(
+    resolveKnownFolders({ platform: "darwin", env: {}, home: "/Users/dev" }),
+    { data: support, localData: support },
+  );
+  assert.deepEqual(
+    resolveKnownFolders({
+      platform: "linux",
+      env: { XDG_DATA_HOME: "/srv/xdg" },
+      home: "/home/dev",
+    }),
+    { data: "/srv/xdg", localData: "/srv/xdg" },
+  );
+  assert.deepEqual(
+    resolveKnownFolders({
+      platform: "linux",
+      env: { XDG_DATA_HOME: "relative" },
+      home: "/home/dev",
+    }),
+    { data: "/home/dev/.local/share", localData: "/home/dev/.local/share" },
+  );
 });
