@@ -23,3 +23,8 @@ url = { workspace = true }
 [[test]]
 name = "native_frame_navigation"
 harness = false
+
+# t95 W0b: disposable WebView2 measurement of the legacy-page website frame.
+[[test]]
+name = "native_legacy_frame_probe"
+harness = false
