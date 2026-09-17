@@ -1,15 +1,38 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn } from "node:child_process";
+import nodeFs from "node:fs";
 import { copyFile, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  ALLOW_RUNNING_PRODUCTION_ENV,
+  E2E_RUN_DIR_ENV,
+  E2E_RUN_ID_ENV,
+  E2E_WEBVIEW2_DIR_ENV,
+  E2eIsolationRefusal,
+  KEEP_RUN_DIR_ENV,
+  README_CAPTURE_IDENTIFIER,
+  RUN_LOCK_TOKEN_ENV,
+  acquireRunLock,
+  assertIsolatedBinary,
+  checkWebView2PolicyOverride,
+  cleanupIsolatedAutostart,
+  cleanupIsolatedKeychain,
+  createRunDir,
+  defaultExec,
+  inspectRunningProcesses,
+  releaseRunLock,
+  resolveRunProfile,
+  runProfileProbe,
+  wipeIsolatedProfile,
+  wipeRunDir,
+} from "./lib/e2e-profile-isolation.mjs";
 import { validateReadmeScreenshot } from "./readme-screenshot-validation.mjs";
 
-export const README_CAPTURE_IDENTIFIER = "com.sortofremote.ng.readme-capture";
+export { README_CAPTURE_IDENTIFIER };
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rootDirectory = path.resolve(scriptDirectory, "..");
@@ -76,42 +99,216 @@ async function runIgnoringFailure(command, args) {
   }
 }
 
-function appDataBaseDirectory() {
-  if (process.platform === "win32") {
-    return process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
+/**
+ * @typedef {object} CaptureIsolation
+ * @property {string} identifier
+ * @property {import("./lib/e2e-profile-isolation.mjs").EnvRecord} env
+ * @property {import("./lib/e2e-profile-isolation.mjs").VerifiedBinary} verifiedBinary
+ * @property {import("./lib/e2e-profile-isolation.mjs").RunProfile} runProfile
+ * @property {import("./lib/e2e-profile-isolation.mjs").RunLock | null} lock
+ * @property {import("./lib/e2e-profile-isolation.mjs").ProfileProbe | null} probe
+ */
+
+/** Run variables both capture phases inherit so they share one isolated run. */
+export const CAPTURE_RUN_ENV_KEYS = Object.freeze([
+  E2E_RUN_ID_ENV,
+  E2E_RUN_DIR_ENV,
+  E2E_WEBVIEW2_DIR_ENV,
+  RUN_LOCK_TOKEN_ENV,
+]);
+
+/**
+ * Proves the capture binary's isolated identity and prepares the one run both
+ * WDIO phases share (`wipe: "none"` in `e2e/wdio.readme-screenshot.conf.ts`).
+ *
+ * The run id, run dir and WebView2 folder are pinned into `env` (the phases
+ * inherit it), and the run lock is taken here and handed to both phases through
+ * `SORNG_E2E_RUN_LOCK_TOKEN`. Before the seed phase the probe-asserted capture
+ * roots (Roaming and LocalData), the capture keychain namespace and its
+ * autostart value are wiped, so the seed starts from an empty profile and no
+ * identifier-default EBWebView folder. Never touches the production profile.
+ * @param {{
+ *   applicationPath: string,
+ *   env?: import("./lib/e2e-profile-isolation.mjs").EnvRecord,
+ *   repoRoot?: string,
+ *   platform?: NodeJS.Platform,
+ *   fs?: typeof nodeFs,
+ *   exec?: import("./lib/e2e-profile-isolation.mjs").Exec,
+ *   spawnSync?: import("./lib/e2e-profile-isolation.mjs").SpawnSyncLike,
+ *   lockDir?: string,
+ *   tmpDir?: string,
+ *   isAlive?: (pid: number) => boolean,
+ *   selfPid?: number,
+ *   log?: import("./lib/e2e-profile-isolation.mjs").Logger,
+ * }} options
+ * @returns {Promise<CaptureIsolation>}
+ */
+export async function prepareCaptureIsolation({
+  applicationPath,
+  env = process.env,
+  repoRoot = rootDirectory,
+  platform = process.platform,
+  fs = nodeFs,
+  exec = defaultExec,
+  spawnSync,
+  lockDir,
+  tmpDir,
+  isAlive,
+  selfPid = process.pid,
+  log = console,
+}) {
+  const identifier = README_CAPTURE_IDENTIFIER;
+  const verifiedBinary = await assertIsolatedBinary({
+    binary: applicationPath,
+    expectedIdentifier: identifier,
+    repoRoot,
+    platform,
+    fs,
+  });
+  checkWebView2PolicyOverride({
+    binary: verifiedBinary.binary,
+    platform,
+    exec,
+  });
+  const processes = inspectRunningProcesses(verifiedBinary.binary, {
+    platform,
+    exec,
+    selfPid,
+  });
+  const describe = (entries) =>
+    entries
+      .map(({ pid, name, reason }) => `pid ${pid} ${name}: ${reason}`)
+      .join("; ");
+  if (processes.sameBinary.length > 0) {
+    throw new E2eIsolationRefusal(
+      "E2E_BINARY_RUNNING",
+      describe(processes.sameBinary),
+    );
   }
-
-  if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Application Support");
-  }
-
-  return (
-    process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share")
-  );
-}
-
-export function captureAppDataDirectory() {
-  return path.resolve(appDataBaseDirectory(), README_CAPTURE_IDENTIFIER);
-}
-
-async function removeCaptureAppData() {
-  const baseDirectory = path.resolve(appDataBaseDirectory());
-  const appDataDirectory = captureAppDataDirectory();
   if (
-    path.dirname(appDataDirectory) !== baseDirectory ||
-    path.basename(appDataDirectory) !== README_CAPTURE_IDENTIFIER
+    processes.production.length > 0 &&
+    env[ALLOW_RUNNING_PRODUCTION_ENV] !== "1"
   ) {
-    throw new Error(
-      `Refusing to remove unexpected app-data path: ${appDataDirectory}`,
+    throw new E2eIsolationRefusal(
+      "PRODUCTION_PROCESS_RUNNING",
+      describe(processes.production),
     );
   }
 
-  await rm(appDataDirectory, {
-    recursive: true,
-    force: true,
-    maxRetries: 8,
-    retryDelay: 250,
-  });
+  for (const key of CAPTURE_RUN_ENV_KEYS) {
+    delete env[key];
+  }
+  /** @type {CaptureIsolation} */
+  const state = {
+    identifier,
+    env,
+    verifiedBinary,
+    runProfile: resolveRunProfile({ env, identifier, platform, tmpDir }),
+    lock: null,
+    probe: null,
+  };
+  try {
+    state.lock = acquireRunLock(identifier, {
+      runId: state.runProfile.runId,
+      lockDir,
+      env,
+      pid: selfPid,
+      isAlive,
+      fs,
+      log,
+    });
+    env[RUN_LOCK_TOKEN_ENV] = state.lock.token;
+    createRunDir(state.runProfile, { platform, fs });
+    state.probe = runProfileProbe({
+      verifiedBinary,
+      expectedIdentifier: identifier,
+      runProfile: state.runProfile,
+      env,
+      spawnSync,
+      tmpDir,
+      platform,
+      fs,
+    });
+    wipeIsolatedProfile(state.probe, { platform, fs });
+    cleanupIsolatedKeychain(identifier, { platform, exec, log });
+    cleanupIsolatedAutostart(state.probe.autostartName, {
+      expectedIdentifier: identifier,
+      platform,
+      exec,
+      log,
+    });
+  } catch (error) {
+    cleanupCaptureIsolation(state, { platform, fs, exec, log });
+    throw error;
+  }
+  return state;
+}
+
+/**
+ * Removes the capture run: the probe-asserted capture roots, keychain entries
+ * and autostart value, the marker-verified run dir (unless
+ * `SORNG_E2E_KEEP_RUN_DIR=1`), the lock and the pinned run variables. Returns
+ * the failures instead of throwing so every step is attempted.
+ * @param {CaptureIsolation} state
+ * @param {{
+ *   platform?: NodeJS.Platform,
+ *   fs?: typeof nodeFs,
+ *   exec?: import("./lib/e2e-profile-isolation.mjs").Exec,
+ *   log?: import("./lib/e2e-profile-isolation.mjs").Logger,
+ * }} [options]
+ * @returns {string[]}
+ */
+export function cleanupCaptureIsolation(
+  state,
+  {
+    platform = process.platform,
+    fs = nodeFs,
+    exec = defaultExec,
+    log = console,
+  } = {},
+) {
+  const errors = [];
+  const attempt = (label, action) => {
+    try {
+      action();
+    } catch (error) {
+      errors.push(
+        `${label}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+  if (state.probe) {
+    attempt("capture profile", () =>
+      wipeIsolatedProfile(state.probe, { platform, fs }),
+    );
+    attempt("capture keychain", () =>
+      cleanupIsolatedKeychain(state.identifier, { platform, exec, log }),
+    );
+    attempt("capture autostart", () =>
+      cleanupIsolatedAutostart(state.probe.autostartName, {
+        expectedIdentifier: state.identifier,
+        platform,
+        exec,
+        log,
+      }),
+    );
+  }
+  if (state.lock && state.env[KEEP_RUN_DIR_ENV] !== "1") {
+    attempt("run dir", () =>
+      wipeRunDir(state.runProfile.runDir, {
+        runRoot: state.runProfile.runRoot,
+        platform,
+        fs,
+      }),
+    );
+  }
+  if (state.lock) {
+    attempt("run lock", () => releaseRunLock(state.lock, { fs }));
+  }
+  for (const key of CAPTURE_RUN_ENV_KEYS) {
+    delete state.env[key];
+  }
+  return errors;
 }
 
 async function waitForPort(host, port, timeoutMs) {
@@ -528,6 +725,7 @@ async function readSeed() {
 async function main() {
   let fixtureWasStarted = false;
   let applicationPath = null;
+  let isolation = null;
 
   await mkdir(artifactsDirectory, { recursive: true });
   await rm(seedFile, { force: true });
@@ -545,8 +743,15 @@ async function main() {
     console.log(
       "[readme-screenshot] building isolated native Tauri application",
     );
-    await removeCaptureAppData();
     applicationPath = await buildCaptureApplication();
+
+    console.log(
+      "[readme-screenshot] proving the capture identity and wiping its isolated profile",
+    );
+    isolation = await prepareCaptureIsolation({ applicationPath });
+    console.log(
+      `[readme-screenshot] capture run ${isolation.runProfile.runId} (${isolation.runProfile.runDir})`,
+    );
 
     console.log("[readme-screenshot] starting only the local test-ssh fixture");
     fixtureWasStarted = true;
@@ -583,7 +788,12 @@ async function main() {
     if (fixtureWasStarted) {
       await stopSshFixture();
     }
-    await removeCaptureAppData();
+    if (isolation) {
+      for (const error of cleanupCaptureIsolation(isolation)) {
+        console.error(`[readme-screenshot] cleanup ${error}`);
+        process.exitCode = 1;
+      }
+    }
     await rm(seedFile, { force: true });
     await rm(captureWorkPath, { force: true });
   }
