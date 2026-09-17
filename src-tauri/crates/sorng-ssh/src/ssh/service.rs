@@ -570,9 +570,31 @@ pub(crate) mod host_key_trust {
 }
 
 /// Default OpenSSH `known_hosts` location, shared by SSH, SFTP and SCP.
+///
+/// Resolved under the profile-aware SSH home: the OS home in production, the
+/// installed `ssh-home` of an isolated profile, which never falls back to the
+/// OS home.
 fn default_known_hosts_path() -> Result<String, String> {
-    Ok(dirs::home_dir()
+    default_known_hosts_path_in(sorng_core::ssh_home::home_dir(dirs::home_dir)?)
+}
+
+fn default_known_hosts_path_in(home: Option<std::path::PathBuf>) -> Result<String, String> {
+    Ok(home
         .ok_or_else(|| "Unable to determine the home directory for known_hosts".to_string())?
+        .join(".ssh")
+        .join("known_hosts")
+        .to_string_lossy()
+        .to_string())
+}
+
+/// `known_hosts` used by host-key verification when the connection names
+/// none, under the same SSH home as [`default_known_hosts_path`].
+fn verification_known_hosts_path_in(home: Option<std::path::PathBuf>) -> Result<String, String> {
+    Ok(home
+        .ok_or_else(|| {
+            "Host key verification failed: unable to determine the home directory for known_hosts"
+                .to_string()
+        })?
         .join(".ssh")
         .join("known_hosts")
         .to_string_lossy()
@@ -5524,15 +5546,9 @@ impl SshService {
     ) -> Result<(), String> {
         let known_hosts_path = match config.known_hosts_path.clone() {
             Some(path) => path,
-            None => dirs::home_dir()
-                .ok_or_else(|| {
-                    "Host key verification failed: unable to determine the home directory for known_hosts"
-                        .to_string()
-                })?
-                .join(".ssh")
-                .join("known_hosts")
-                .to_string_lossy()
-                .to_string(),
+            None => {
+                verification_known_hosts_path_in(sorng_core::ssh_home::home_dir(dirs::home_dir)?)?
+            }
         };
 
         let (host_key, key_type) = session.host_key().ok_or("No host key available")?;
@@ -12514,5 +12530,295 @@ mod tests {
             super::SshService::resolve_forward_bind(&cfg).unwrap(),
             "0.0.0.0"
         );
+    }
+
+    // ── Profile-aware SSH home (t91) ────────────────────────────
+    //
+    // These tests never install the process-wide app identity or SSH home
+    // (tests/isolated_ssh_home.rs does, in its own process). Isolated
+    // resolution is driven through `ssh_home::home_dir_with`, and every "OS
+    // home" is a temp dir; the real ~/.ssh is never opened.
+
+    use sorng_core::ssh_home::{home_dir_with, UNINSTALLED_ISOLATED_HOME_ERROR};
+
+    const ISOLATED_ID: &str = "com.sortofremote.ng.e2e";
+
+    /// `<temp>/com.sortofremote.ng.e2e/ssh-home`, not created.
+    fn isolated_ssh_home(root: &Path) -> std::path::PathBuf {
+        root.join(ISOLATED_ID)
+            .join(sorng_core::ssh_home::ISOLATED_SSH_HOME_DIRNAME)
+    }
+
+    /// A stand-in for the user's real home with a `known_hosts` the isolated
+    /// profile must never touch. Returns the home and the file's bytes.
+    fn sentinel_os_home(root: &Path) -> (std::path::PathBuf, Vec<u8>) {
+        let home = root.join("real-home");
+        std::fs::create_dir_all(home.join(".ssh")).unwrap();
+        let known_hosts = home.join(".ssh").join("known_hosts");
+        write_fixture_known_hosts(
+            &known_hosts,
+            &[("[isolated.example.test]:2222", b"real-home-fixture-key")],
+        );
+        let bytes = std::fs::read(&known_hosts).unwrap();
+        (home, bytes)
+    }
+
+    fn assert_sentinel_untouched(home: &Path, bytes: &[u8]) {
+        assert_eq!(
+            std::fs::read(home.join(".ssh").join("known_hosts")).unwrap(),
+            bytes,
+            "the OS home known_hosts must stay byte-identical"
+        );
+        assert_eq!(std::fs::read_dir(home.join(".ssh")).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn production_known_hosts_defaults_are_byte_identical_to_the_pre_t91_expressions() {
+        let legacy_default = || -> Result<String, String> {
+            Ok(dirs::home_dir()
+                .ok_or_else(|| {
+                    "Unable to determine the home directory for known_hosts".to_string()
+                })?
+                .join(".ssh")
+                .join("known_hosts")
+                .to_string_lossy()
+                .to_string())
+        };
+        let legacy_verification = || -> Result<String, String> {
+            Ok(dirs::home_dir()
+                .ok_or_else(|| {
+                    "Host key verification failed: unable to determine the home directory for known_hosts"
+                        .to_string()
+                })?
+                .join(".ssh")
+                .join("known_hosts")
+                .to_string_lossy()
+                .to_string())
+        };
+
+        // This test process never installs an identity, so it is production.
+        assert_eq!(
+            sorng_core::ssh_home::home_dir(dirs::home_dir),
+            Ok(dirs::home_dir())
+        );
+        assert_eq!(default_known_hosts_path(), legacy_default());
+        assert_eq!(
+            default_known_hosts_path_in(dirs::home_dir()),
+            legacy_default()
+        );
+        assert_eq!(
+            verification_known_hosts_path_in(dirs::home_dir()),
+            legacy_verification()
+        );
+
+        // An unresolvable OS home keeps each site's own message.
+        let calls = std::cell::Cell::new(0);
+        let no_home = home_dir_with(false, None, || {
+            calls.set(calls.get() + 1);
+            None
+        })
+        .unwrap();
+        assert_eq!(calls.get(), 1);
+        assert_eq!(
+            default_known_hosts_path_in(no_home.clone()),
+            Err("Unable to determine the home directory for known_hosts".to_string())
+        );
+        assert_eq!(
+            verification_known_hosts_path_in(no_home),
+            Err(
+                "Host key verification failed: unable to determine the home directory for known_hosts"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn isolated_known_hosts_defaults_resolve_only_under_the_ssh_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let ssh_home = isolated_ssh_home(temp.path());
+        let expected = ssh_home
+            .join(".ssh")
+            .join("known_hosts")
+            .to_string_lossy()
+            .to_string();
+
+        let never_os_home = || -> Option<std::path::PathBuf> {
+            panic!("an isolated profile must not resolve the OS home")
+        };
+        let resolved = home_dir_with(true, Some(ssh_home.as_path()), never_os_home).unwrap();
+        assert_eq!(
+            default_known_hosts_path_in(resolved.clone()),
+            Ok(expected.clone())
+        );
+        assert_eq!(verification_known_hosts_path_in(resolved), Ok(expected));
+
+        // Isolated without an installed home: both sites fail closed with
+        // the resolver's message before any path exists.
+        let uninstalled = home_dir_with(true, None, never_os_home);
+        assert_eq!(
+            uninstalled.clone().and_then(default_known_hosts_path_in),
+            Err(UNINSTALLED_ISOLATED_HOME_ERROR.to_string())
+        );
+        assert_eq!(
+            uninstalled.and_then(verification_known_hosts_path_in),
+            Err(UNINSTALLED_ISOLATED_HOME_ERROR.to_string())
+        );
+    }
+
+    #[test]
+    fn isolated_first_use_still_prompts_and_writes_only_the_isolated_known_hosts() {
+        struct RecordingEmitter(StdMutex<Vec<serde_json::Value>>);
+        impl sorng_core::events::AppEventEmitter for RecordingEmitter {
+            fn emit_event(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+                assert_eq!(event, "ssh://host-key-prompt");
+                self.0.lock().unwrap().push(payload);
+                Ok(())
+            }
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let (os_home, sentinel) = sentinel_os_home(temp.path());
+        let ssh_home = isolated_ssh_home(temp.path());
+        let os_home_calls = std::cell::Cell::new(0);
+        let resolved = home_dir_with(true, Some(ssh_home.as_path()), || {
+            os_home_calls.set(os_home_calls.get() + 1);
+            Some(os_home.clone())
+        })
+        .unwrap();
+        assert_eq!(os_home_calls.get(), 0);
+        let known_hosts_path = verification_known_hosts_path_in(resolved).unwrap();
+        assert!(!Path::new(&known_hosts_path).exists());
+
+        let _guard = install_active_runtime_for_tests(temp.path().join("databases"), "db-t91");
+        let host_key = b"isolated-first-use-host-key";
+        let host_key_info = fixture_host_key_info(host_key);
+        let mut config = tcp_test_config();
+        config.host = "isolated.example.test".to_string();
+        config.port = 2222;
+        config.strict_host_key_checking = true;
+        assert!(config.known_hosts_path.is_none() && config.also_write_known_hosts);
+
+        // The same steps verify_host_key takes for an endpoint nobody has
+        // decided on: the Trust Center is empty and the fresh isolated file
+        // does not exist, so the host is unknown. The OS home file lists this
+        // exact endpoint and must not be consulted.
+        assert_eq!(
+            host_key_trust::verify(&config.host, config.port, &host_key_info).unwrap(),
+            host_key_trust::TrustState::Unknown
+        );
+        let mut session = Session::new().unwrap();
+        let check = {
+            let mut known_hosts = session.known_hosts().unwrap();
+            read_known_hosts_if_present(&mut known_hosts, Path::new(&known_hosts_path)).unwrap();
+            known_hosts.check_port(&config.host, config.port, host_key)
+        };
+        assert!(matches!(check, ssh2::CheckResult::NotFound));
+        assert!(!SshService::should_accept_new_host_key(&config, check));
+
+        // ...which means the user is prompted (TOFU), exactly as before.
+        let emitter = Arc::new(RecordingEmitter(StdMutex::new(Vec::new())));
+        let mut service = empty_test_service();
+        service.event_emitter = Some(emitter.clone() as sorng_core::events::DynEventEmitter);
+        let session_id = "t91-isolated-first-use";
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let decision = runtime.block_on(async {
+            let respond = async {
+                loop {
+                    let sender = PENDING_HOST_KEY_PROMPTS.lock().unwrap().remove(session_id);
+                    if let Some(sender) = sender {
+                        sender
+                            .send(SshHostKeyPromptDecision::AcceptAndSave)
+                            .unwrap();
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            };
+            let prompt = service.prompt_for_host_key_decision_with_timeout(
+                session_id,
+                &config,
+                &host_key_info,
+                SshHostKeyPromptStatus::FirstUse,
+                Duration::from_secs(5),
+            );
+            tokio::join!(prompt, respond).0
+        });
+        assert_eq!(decision, Ok(SshHostKeyPromptDecision::AcceptAndSave));
+        {
+            let events = emitter.0.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0]["status"], "first_use");
+            assert_eq!(events[0]["host"], "isolated.example.test");
+        }
+
+        let persistence = HostKeyPersistenceContext {
+            config: &config,
+            known_hosts_path: &known_hosts_path,
+            host_key,
+            host_key_info: &host_key_info,
+            key_type: ssh2::HostKeyType::Ed25519,
+            replace_existing: false,
+        };
+        service
+            .apply_host_key_decision(&mut session, &persistence, decision.unwrap())
+            .unwrap();
+
+        assert_eq!(
+            host_key_trust::verify(&config.host, config.port, &host_key_info).unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+        let written = std::fs::read_to_string(&known_hosts_path).unwrap();
+        let lines: Vec<&str> = written.lines().filter(|line| !line.is_empty()).collect();
+        assert_eq!(lines.len(), 1, "{written}");
+        assert!(lines[0].starts_with("[isolated.example.test]:2222 "));
+        assert_eq!(os_home_calls.get(), 0);
+        assert_sentinel_untouched(&os_home, &sentinel);
+    }
+
+    #[test]
+    fn isolated_known_hosts_opt_out_leaves_the_isolated_file_absent() {
+        let temp = tempfile::tempdir().unwrap();
+        let (os_home, sentinel) = sentinel_os_home(temp.path());
+        let ssh_home = isolated_ssh_home(temp.path());
+        let known_hosts_path = verification_known_hosts_path_in(
+            home_dir_with(true, Some(ssh_home.as_path()), || Some(os_home.clone())).unwrap(),
+        )
+        .unwrap();
+        let _guard =
+            install_active_runtime_for_tests(temp.path().join("databases"), "db-t91-opt-out");
+
+        let host_key = b"isolated-opt-out-host-key";
+        let host_key_info = fixture_host_key_info(host_key);
+        let mut config = tcp_test_config();
+        config.host = "isolated.example.test".to_string();
+        config.port = 2222;
+        config.also_write_known_hosts = false;
+        let persistence = HostKeyPersistenceContext {
+            config: &config,
+            known_hosts_path: &known_hosts_path,
+            host_key,
+            host_key_info: &host_key_info,
+            key_type: ssh2::HostKeyType::Ed25519,
+            replace_existing: false,
+        };
+
+        empty_test_service()
+            .apply_host_key_decision(
+                &mut Session::new().unwrap(),
+                &persistence,
+                SshHostKeyPromptDecision::AcceptAndSave,
+            )
+            .unwrap();
+
+        assert_eq!(
+            host_key_trust::verify(&config.host, config.port, &host_key_info).unwrap(),
+            host_key_trust::TrustState::Trusted
+        );
+        assert!(!Path::new(&known_hosts_path).exists());
+        assert!(!ssh_home.exists());
+        assert_sentinel_untouched(&os_home, &sentinel);
     }
 }

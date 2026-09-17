@@ -908,6 +908,16 @@ impl ScpService {
     }
 
     fn known_hosts_path(config: &ScpConnectionConfig) -> Result<PathBuf, String> {
+        Self::known_hosts_path_in(config, || sorng_core::ssh_home::home_dir(dirs::home_dir))
+    }
+
+    /// Resolve the connection's known_hosts file. `home` (the profile-aware
+    /// SSH home) is consulted only to expand `~` or for the default, so an
+    /// explicit path never depends on it.
+    fn known_hosts_path_in(
+        config: &ScpConnectionConfig,
+        home: impl FnOnce() -> Result<Option<PathBuf>, String>,
+    ) -> Result<PathBuf, String> {
         if let Some(configured) = config.known_hosts_path.as_deref() {
             let configured = configured.trim();
             if configured.is_empty() {
@@ -924,7 +934,7 @@ impl ScpService {
             }
 
             if configured == "~" || configured.starts_with("~/") || configured.starts_with("~\\") {
-                let home = dirs::home_dir().ok_or_else(|| {
+                let home = home()?.ok_or_else(|| {
                     "Host-key verification failed: cannot expand the configured known_hosts home path; no credentials were sent"
                         .to_string()
                 })?;
@@ -938,12 +948,31 @@ impl ScpService {
             return Ok(PathBuf::from(configured));
         }
 
-        dirs::home_dir()
+        home()?
             .map(|home| home.join(".ssh").join("known_hosts"))
             .ok_or_else(|| {
                 "Host-key verification failed: cannot resolve the home directory for known_hosts; no credentials were sent"
                     .to_string()
             })
+    }
+
+    /// Default private keys under the SSH home, in the order they are tried.
+    /// `exists` is checked lazily, one key at a time. An unresolved home
+    /// (including an isolated profile without one) yields no keys.
+    fn default_key_files(
+        home: Result<Option<PathBuf>, String>,
+        exists: impl Fn(&Path) -> bool,
+    ) -> impl Iterator<Item = (&'static str, PathBuf)> {
+        home.ok()
+            .flatten()
+            .map(|home| home.join(".ssh"))
+            .into_iter()
+            .flat_map(|ssh_dir| {
+                ["id_ed25519", "id_rsa", "id_ecdsa", "id_dsa"]
+                    .into_iter()
+                    .map(move |key_name| (key_name, ssh_dir.join(key_name)))
+            })
+            .filter(move |(_, key_path)| exists(key_path))
     }
 
     fn check_known_host(
@@ -1150,20 +1179,18 @@ impl ScpService {
         }
 
         // 4. Try default key files (~/.ssh/id_rsa, id_ed25519, etc.)
-        if let Some(home) = dirs::home_dir() {
-            let ssh_dir = home.join(".ssh");
-            for key_name in &["id_ed25519", "id_rsa", "id_ecdsa", "id_dsa"] {
-                let key_path = ssh_dir.join(key_name);
-                if key_path.exists() {
-                    let passphrase = config.private_key_passphrase.as_deref();
-                    if session
-                        .userauth_pubkey_file(&config.username, None, &key_path, passphrase)
-                        .is_ok()
-                        && session.authenticated()
-                    {
-                        return Ok(format!("publickey-default({})", key_name));
-                    }
-                }
+        for (key_name, key_path) in
+            Self::default_key_files(sorng_core::ssh_home::home_dir(dirs::home_dir), |path| {
+                path.exists()
+            })
+        {
+            let passphrase = config.private_key_passphrase.as_deref();
+            if session
+                .userauth_pubkey_file(&config.username, None, &key_path, passphrase)
+                .is_ok()
+                && session.authenticated()
+            {
+                return Ok(format!("publickey-default({})", key_name));
             }
         }
 
@@ -1902,6 +1929,258 @@ mod tests {
             "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
         );
         std::fs::remove_file(&tmp).ok();
+    }
+
+    // ── Profile-aware SSH home (t91) ────────────────────────────────────────
+    //
+    // Never installs the process-wide identity or SSH home; isolated
+    // resolution goes through `home_dir_with`, and every "OS home" is a temp
+    // dir, so the real ~/.ssh is never opened.
+
+    use sorng_core::ssh_home::{home_dir_with, UNINSTALLED_ISOLATED_HOME_ERROR};
+
+    fn isolated_ssh_home(root: &Path) -> PathBuf {
+        root.join("com.sortofremote.ng.e2e")
+            .join(sorng_core::ssh_home::ISOLATED_SSH_HOME_DIRNAME)
+    }
+
+    fn never_home() -> Result<Option<PathBuf>, String> {
+        panic!("this path must not consult the SSH home")
+    }
+
+    fn scp_config(known_hosts_path: Option<&str>) -> ScpConnectionConfig {
+        let mut config: ScpConnectionConfig = serde_json::from_value(serde_json::json!({
+            "host": "copy.example.test",
+            "port": 2222,
+            "username": "operator",
+            "knownHostsPolicy": "acceptNew"
+        }))
+        .unwrap();
+        config.known_hosts_path = known_hosts_path.map(str::to_string);
+        config
+    }
+
+    /// The pre-t91 production expression, verbatim.
+    fn legacy_known_hosts_path(config: &ScpConnectionConfig) -> Result<PathBuf, String> {
+        if let Some(configured) = config.known_hosts_path.as_deref() {
+            let configured = configured.trim();
+            if configured == "~" || configured.starts_with("~/") || configured.starts_with("~\\") {
+                let home = dirs::home_dir().ok_or_else(|| {
+                    "Host-key verification failed: cannot expand the configured known_hosts home path; no credentials were sent"
+                        .to_string()
+                })?;
+                let suffix = configured
+                    .strip_prefix('~')
+                    .unwrap_or(configured)
+                    .trim_start_matches(['/', '\\']);
+                return Ok(home.join(suffix));
+            }
+            return Ok(PathBuf::from(configured));
+        }
+        dirs::home_dir()
+            .map(|home| home.join(".ssh").join("known_hosts"))
+            .ok_or_else(|| {
+                "Host-key verification failed: cannot resolve the home directory for known_hosts; no credentials were sent"
+                    .to_string()
+            })
+    }
+
+    const TILDE_PATHS: [&str; 5] = [
+        "~",
+        "~/.ssh/known_hosts",
+        "~\\.ssh\\known_hosts",
+        "  ~/custom_known_hosts  ",
+        "~//nested/known_hosts",
+    ];
+
+    #[test]
+    fn production_known_hosts_paths_are_byte_identical_to_the_pre_t91_expression() {
+        // This test process never installs an identity, so it is production.
+        assert_eq!(
+            sorng_core::ssh_home::home_dir(dirs::home_dir),
+            Ok(dirs::home_dir())
+        );
+        let explicit = std::env::temp_dir().join("explicit_known_hosts");
+        let explicit = explicit.to_string_lossy().to_string();
+        let mut cases = vec![None, Some(explicit.as_str())];
+        cases.extend(TILDE_PATHS.map(Some));
+        for path in cases {
+            let config = scp_config(path);
+            assert_eq!(
+                ScpService::known_hosts_path(&config),
+                legacy_known_hosts_path(&config),
+                "{path:?}"
+            );
+        }
+
+        // No OS home keeps each branch's own message.
+        let no_home = || home_dir_with(false, None, || None);
+        assert_eq!(
+            ScpService::known_hosts_path_in(&scp_config(None), no_home),
+            Err("Host-key verification failed: cannot resolve the home directory for known_hosts; no credentials were sent".to_string())
+        );
+        assert_eq!(
+            ScpService::known_hosts_path_in(&scp_config(Some("~/known_hosts")), no_home),
+            Err("Host-key verification failed: cannot expand the configured known_hosts home path; no credentials were sent".to_string())
+        );
+    }
+
+    #[test]
+    fn isolated_known_hosts_paths_resolve_under_the_ssh_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let ssh_home = isolated_ssh_home(temp.path());
+        let isolated = || {
+            home_dir_with(true, Some(ssh_home.as_path()), || {
+                panic!("an isolated profile must not resolve the OS home")
+            })
+        };
+
+        assert_eq!(
+            ScpService::known_hosts_path_in(&scp_config(None), isolated),
+            Ok(ssh_home.join(".ssh").join("known_hosts"))
+        );
+        assert_eq!(
+            ScpService::known_hosts_path_in(&scp_config(Some("~/.ssh/known_hosts")), isolated),
+            Ok(ssh_home.join(".ssh/known_hosts"))
+        );
+        assert_eq!(
+            ScpService::known_hosts_path_in(&scp_config(Some("~")), isolated),
+            Ok(ssh_home.clone())
+        );
+
+        // Isolated without an installed home: `~` and the default fail closed.
+        let uninstalled = || {
+            home_dir_with(true, None, || {
+                panic!("an isolated profile must not resolve the OS home")
+            })
+        };
+        for path in [None, Some("~/.ssh/known_hosts"), Some("~\\known_hosts")] {
+            assert_eq!(
+                ScpService::known_hosts_path_in(&scp_config(path), uninstalled),
+                Err(UNINSTALLED_ISOLATED_HOME_ERROR.to_string()),
+                "{path:?}"
+            );
+        }
+
+        // An explicit path is the user's choice and never resolves a home.
+        let explicit = temp.path().join("chosen_known_hosts");
+        let explicit_text = explicit.to_string_lossy().to_string();
+        assert_eq!(
+            ScpService::known_hosts_path_in(&scp_config(Some(&explicit_text)), never_home),
+            Ok(explicit)
+        );
+        assert!(ScpService::known_hosts_path_in(&scp_config(Some("  ")), never_home).is_err());
+    }
+
+    #[test]
+    fn default_key_discovery_matches_the_pre_t91_order_in_production() {
+        let temp = tempfile::tempdir().unwrap();
+        let os_home = temp.path().join("real-home");
+        let ssh_dir = os_home.join(".ssh");
+        std::fs::create_dir_all(&ssh_dir).unwrap();
+        for name in ["id_ed25519", "id_dsa"] {
+            std::fs::write(ssh_dir.join(name), b"fixture").unwrap();
+        }
+        let probed = RefCell::new(Vec::new());
+        let found: Vec<_> = ScpService::default_key_files(
+            home_dir_with(false, None, || Some(os_home.clone())),
+            |path| {
+                probed.borrow_mut().push(path.to_path_buf());
+                path.exists()
+            },
+        )
+        .collect();
+
+        assert_eq!(
+            found,
+            vec![
+                ("id_ed25519", ssh_dir.join("id_ed25519")),
+                ("id_dsa", ssh_dir.join("id_dsa")),
+            ]
+        );
+        assert_eq!(
+            *probed.borrow(),
+            ["id_ed25519", "id_rsa", "id_ecdsa", "id_dsa"].map(|name| ssh_dir.join(name))
+        );
+        assert_eq!(ScpService::default_key_files(Ok(None), |_| true).count(), 0);
+    }
+
+    #[test]
+    fn isolated_default_key_discovery_never_probes_the_os_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let os_home = temp.path().join("real-home");
+        std::fs::create_dir_all(os_home.join(".ssh")).unwrap();
+        std::fs::write(os_home.join(".ssh").join("id_ed25519"), b"sentinel").unwrap();
+        let ssh_home = isolated_ssh_home(temp.path());
+
+        let probed = RefCell::new(Vec::new());
+        let probe = |path: &Path| {
+            probed.borrow_mut().push(path.to_path_buf());
+            path.exists()
+        };
+        let found: Vec<_> = ScpService::default_key_files(
+            home_dir_with(true, Some(ssh_home.as_path()), || Some(os_home.clone())),
+            probe,
+        )
+        .collect();
+        assert!(found.is_empty());
+        assert_eq!(probed.borrow().len(), 4);
+        assert!(probed
+            .borrow()
+            .iter()
+            .all(|path| path.starts_with(ssh_home.join(".ssh"))));
+
+        probed.borrow_mut().clear();
+        let uninstalled: Vec<_> = ScpService::default_key_files(
+            home_dir_with(true, None, || Some(os_home.clone())),
+            probe,
+        )
+        .collect();
+        assert!(uninstalled.is_empty());
+        assert!(probed.borrow().is_empty(), "fail closed tries no key files");
+    }
+
+    #[test]
+    fn isolated_first_use_is_unknown_and_persists_only_to_the_isolated_known_hosts() {
+        let temp = tempfile::tempdir().unwrap();
+        let os_home = temp.path().join("real-home");
+        std::fs::create_dir_all(os_home.join(".ssh")).unwrap();
+        let sentinel = b"[copy.example.test]:2222 ssh-ed25519 AAAAsentinel\n";
+        std::fs::write(os_home.join(".ssh").join("known_hosts"), sentinel).unwrap();
+        let ssh_home = isolated_ssh_home(temp.path());
+        let config = scp_config(None);
+        let path = ScpService::known_hosts_path_in(&config, || {
+            home_dir_with(true, Some(ssh_home.as_path()), || Some(os_home.clone()))
+        })
+        .unwrap();
+        assert!(!path.exists());
+
+        let session = Session::new().expect("SSH session");
+        let key = [11_u8; 32];
+        // A fresh isolated profile has no known_hosts, so the host is unknown
+        // and the policy decides, exactly like a first-run user.
+        assert_eq!(
+            ScpService::check_known_host(&session, &path, "copy.example.test", 2222, &key).unwrap(),
+            HostKeyCheck::NotFound
+        );
+        ScpService::persist_new_host_key(
+            &session,
+            &config,
+            &path,
+            &key,
+            ssh2::HostKeyType::Ed25519,
+        )
+        .unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = written.lines().filter(|line| !line.is_empty()).collect();
+        assert_eq!(lines.len(), 1, "{written}");
+        assert!(lines[0].starts_with("[copy.example.test]:2222 "));
+        assert_eq!(
+            std::fs::read(os_home.join(".ssh").join("known_hosts")).unwrap(),
+            sentinel
+        );
+        assert_eq!(std::fs::read_dir(os_home.join(".ssh")).unwrap().count(), 1);
     }
 }
 

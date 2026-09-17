@@ -565,7 +565,7 @@ impl SftpService {
             return Ok(());
         }
 
-        let known_hosts_path = Self::known_hosts_path();
+        let known_hosts_path = Self::known_hosts_path()?;
 
         let (host_key, key_type) = session.host_key().ok_or_else(|| {
             "Host-key verification failed: server presented no host key".to_string()
@@ -687,13 +687,38 @@ impl SftpService {
     }
 
     /// Default known_hosts path: `~/.ssh/known_hosts` (shared with core SSH so
-    /// trust is consistent across the app).
-    fn known_hosts_path() -> String {
-        dirs::home_dir()
-            .map(|p| p.join(".ssh").join("known_hosts"))
+    /// trust is consistent across the app). Resolved under the profile-aware
+    /// SSH home; an isolated profile without one fails closed.
+    fn known_hosts_path() -> Result<String, String> {
+        Ok(Self::known_hosts_path_in(sorng_core::ssh_home::home_dir(
+            dirs::home_dir,
+        )?))
+    }
+
+    fn known_hosts_path_in(home: Option<PathBuf>) -> String {
+        home.map(|p| p.join(".ssh").join("known_hosts"))
             .unwrap_or_else(|| Path::new("known_hosts").to_path_buf())
             .to_string_lossy()
             .to_string()
+    }
+
+    /// Default private keys under the SSH home, in the order they are tried.
+    /// `exists` is checked lazily, one key at a time. An unresolved home
+    /// (including an isolated profile without one) yields no keys.
+    fn default_key_files(
+        home: Result<Option<PathBuf>, String>,
+        exists: impl Fn(&Path) -> bool,
+    ) -> impl Iterator<Item = (&'static str, PathBuf)> {
+        home.ok()
+            .flatten()
+            .map(|h| h.join(".ssh"))
+            .into_iter()
+            .flat_map(|ssh_dir| {
+                ["id_ed25519", "id_rsa", "id_ecdsa"]
+                    .into_iter()
+                    .map(move |name| (name, ssh_dir.join(name)))
+            })
+            .filter(move |(_, path)| exists(path))
     }
 
     /// SHA-256 hex fingerprint for actionable error messages.
@@ -820,22 +845,21 @@ impl SftpService {
 
         // 4. Default key paths (~/.ssh/id_rsa, id_ed25519, …)
         if config.password.is_none() {
-            if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh")) {
-                for name in &["id_ed25519", "id_rsa", "id_ecdsa"] {
-                    let path = ssh_dir.join(name);
-                    if path.exists() {
-                        let passphrase = config
-                            .private_key_passphrase
-                            .as_ref()
-                            .map(|p| p.expose_secret());
-                        if session
-                            .userauth_pubkey_file(&config.username, None, &path, passphrase)
-                            .is_ok()
-                            && session.authenticated()
-                        {
-                            return Ok(format!("publickey-default({})", name));
-                        }
-                    }
+            for (name, path) in
+                Self::default_key_files(sorng_core::ssh_home::home_dir(dirs::home_dir), |path| {
+                    path.exists()
+                })
+            {
+                let passphrase = config
+                    .private_key_passphrase
+                    .as_ref()
+                    .map(|p| p.expose_secret());
+                if session
+                    .userauth_pubkey_file(&config.username, None, &path, passphrase)
+                    .is_ok()
+                    && session.authenticated()
+                {
+                    return Ok(format!("publickey-default({})", name));
                 }
             }
         }
@@ -1116,6 +1140,182 @@ mod host_key_tests {
                 policy
             );
         }
+    }
+
+    // ── Profile-aware SSH home (t91) ────────────────────────────────────────
+    //
+    // Never installs the process-wide identity or SSH home; isolated
+    // resolution goes through `home_dir_with`, and every "OS home" is a temp
+    // dir, so the real ~/.ssh is never opened.
+
+    use super::SftpService;
+    use sorng_core::ssh_home::{home_dir_with, UNINSTALLED_ISOLATED_HOME_ERROR};
+    use std::cell::RefCell;
+    use std::path::{Path, PathBuf};
+
+    fn isolated_ssh_home(root: &Path) -> PathBuf {
+        root.join("com.sortofremote.ng.e2e")
+            .join(sorng_core::ssh_home::ISOLATED_SSH_HOME_DIRNAME)
+    }
+
+    fn never_os_home() -> Option<PathBuf> {
+        panic!("an isolated profile must not resolve the OS home")
+    }
+
+    #[test]
+    fn production_known_hosts_default_is_byte_identical_to_the_pre_t91_expression() {
+        let legacy = |home: Option<PathBuf>| {
+            home.map(|p| p.join(".ssh").join("known_hosts"))
+                .unwrap_or_else(|| Path::new("known_hosts").to_path_buf())
+                .to_string_lossy()
+                .to_string()
+        };
+
+        // This test process never installs an identity, so it is production.
+        assert_eq!(
+            sorng_core::ssh_home::home_dir(dirs::home_dir),
+            Ok(dirs::home_dir())
+        );
+        assert_eq!(
+            SftpService::known_hosts_path(),
+            Ok(legacy(dirs::home_dir()))
+        );
+        assert_eq!(
+            SftpService::known_hosts_path_in(dirs::home_dir()),
+            legacy(dirs::home_dir())
+        );
+        // No OS home keeps the relative fallback.
+        let no_home = home_dir_with(false, None, || None).unwrap();
+        assert_eq!(SftpService::known_hosts_path_in(no_home), "known_hosts");
+    }
+
+    #[test]
+    fn isolated_known_hosts_default_resolves_under_the_ssh_home_or_fails_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let ssh_home = isolated_ssh_home(temp.path());
+        let resolved = home_dir_with(true, Some(ssh_home.as_path()), never_os_home).unwrap();
+        assert_eq!(
+            SftpService::known_hosts_path_in(resolved),
+            ssh_home
+                .join(".ssh")
+                .join("known_hosts")
+                .to_string_lossy()
+                .to_string()
+        );
+        assert_eq!(
+            home_dir_with(true, None, never_os_home).map(SftpService::known_hosts_path_in),
+            Err(UNINSTALLED_ISOLATED_HOME_ERROR.to_string())
+        );
+    }
+
+    #[test]
+    fn default_key_discovery_matches_the_pre_t91_order_in_production() {
+        let temp = tempfile::tempdir().unwrap();
+        let os_home = temp.path().join("real-home");
+        std::fs::create_dir_all(os_home.join(".ssh")).unwrap();
+        for name in ["id_rsa", "id_ecdsa"] {
+            std::fs::write(os_home.join(".ssh").join(name), b"fixture").unwrap();
+        }
+        let probed = RefCell::new(Vec::new());
+        let found: Vec<_> = SftpService::default_key_files(
+            home_dir_with(false, None, || Some(os_home.clone())),
+            |path| {
+                probed.borrow_mut().push(path.to_path_buf());
+                path.exists()
+            },
+        )
+        .collect();
+
+        let ssh_dir = os_home.join(".ssh");
+        assert_eq!(
+            found,
+            vec![
+                ("id_rsa", ssh_dir.join("id_rsa")),
+                ("id_ecdsa", ssh_dir.join("id_ecdsa")),
+            ]
+        );
+        assert_eq!(
+            *probed.borrow(),
+            ["id_ed25519", "id_rsa", "id_ecdsa"].map(|name| ssh_dir.join(name))
+        );
+        assert_eq!(
+            SftpService::default_key_files(Ok(None), |_| true).count(),
+            0,
+            "no OS home means no default keys, as before"
+        );
+    }
+
+    #[test]
+    fn isolated_default_key_discovery_never_probes_the_os_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let os_home = temp.path().join("real-home");
+        std::fs::create_dir_all(os_home.join(".ssh")).unwrap();
+        std::fs::write(os_home.join(".ssh").join("id_ed25519"), b"sentinel").unwrap();
+        let ssh_home = isolated_ssh_home(temp.path());
+
+        let probed = RefCell::new(Vec::new());
+        let probe = |path: &Path| {
+            probed.borrow_mut().push(path.to_path_buf());
+            path.exists()
+        };
+        let found: Vec<_> = SftpService::default_key_files(
+            home_dir_with(true, Some(ssh_home.as_path()), || Some(os_home.clone())),
+            probe,
+        )
+        .collect();
+        assert!(found.is_empty());
+        assert_eq!(probed.borrow().len(), 3);
+        assert!(probed
+            .borrow()
+            .iter()
+            .all(|path| path.starts_with(ssh_home.join(".ssh"))));
+
+        probed.borrow_mut().clear();
+        let uninstalled: Vec<_> =
+            SftpService::default_key_files(home_dir_with(true, None, never_os_home), probe)
+                .collect();
+        assert!(uninstalled.is_empty());
+        assert!(probed.borrow().is_empty(), "fail closed tries no key files");
+    }
+
+    #[test]
+    fn isolated_first_use_persists_only_to_the_isolated_known_hosts() {
+        let temp = tempfile::tempdir().unwrap();
+        let os_home = temp.path().join("real-home");
+        std::fs::create_dir_all(os_home.join(".ssh")).unwrap();
+        let sentinel = b"[files.example.test]:2222 ssh-ed25519 AAAAsentinel\n";
+        std::fs::write(os_home.join(".ssh").join("known_hosts"), sentinel).unwrap();
+        let known_hosts_path = SftpService::known_hosts_path_in(
+            home_dir_with(
+                true,
+                Some(isolated_ssh_home(temp.path()).as_path()),
+                never_os_home,
+            )
+            .unwrap(),
+        );
+        assert!(!Path::new(&known_hosts_path).exists());
+
+        let session = ssh2::Session::new().unwrap();
+        let key = [5_u8; 32];
+        SftpService::persist_host_key(
+            &session,
+            &known_hosts_path,
+            "files.example.test",
+            2222,
+            &key,
+            ssh2::HostKeyType::Ed25519,
+        )
+        .unwrap();
+
+        let written = std::fs::read_to_string(&known_hosts_path).unwrap();
+        let lines: Vec<&str> = written.lines().filter(|line| !line.is_empty()).collect();
+        assert_eq!(lines.len(), 1, "{written}");
+        assert!(lines[0].starts_with("[files.example.test]:2222 "));
+        assert_eq!(
+            std::fs::read(os_home.join(".ssh").join("known_hosts")).unwrap(),
+            sentinel
+        );
+        assert_eq!(std::fs::read_dir(os_home.join(".ssh")).unwrap().count(), 1);
     }
 }
 
