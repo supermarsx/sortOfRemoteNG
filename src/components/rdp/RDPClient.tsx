@@ -12,6 +12,7 @@ import { RDPStatusBar } from "./RDPStatusBar";
 import RDPClientHeader from "./RDPClientHeader";
 import WindowsToolsBar from "./WindowsToolsBar";
 import { useRDPClient, type RDPClientMgr } from "../../hooks/rdp/useRDPClient";
+import { useNonPassiveWheel } from "../../hooks/window/useNonPassiveWheel";
 import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
 import { useRDPInternalsBridge } from "../../hooks/rdp/useRDPInternalsBridge";
 
@@ -169,6 +170,11 @@ const CanvasArea: React.FC<{
   const dropDismissRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+
+  // Wheel input is forwarded to the remote desktop instead of scrolling the
+  // canvas container. Registered natively so `preventDefault()` takes effect:
+  // React's own wheel listener is passive.
+  useNonPassiveWheel(mgr.canvasRef, mgr.handleWheel);
 
   // Listen for file transfer progress events from backend
   React.useEffect(() => {
@@ -591,7 +597,6 @@ const CanvasArea: React.FC<{
         onMouseMove={mgr.handleMouseMove}
         onMouseDown={mgr.handleMouseDown}
         onMouseUp={mgr.handleMouseUp}
-        onWheel={mgr.handleWheel}
         onKeyDown={mgr.handleKeyDown}
         onKeyUp={mgr.handleKeyUp}
         onContextMenu={mgr.handleContextMenu}

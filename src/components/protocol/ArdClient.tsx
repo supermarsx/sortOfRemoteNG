@@ -4,6 +4,7 @@ import { Clipboard, Monitor, ShieldAlert, StopCircle } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { ardKeysymForKey } from "../../hooks/protocol/ardRuntime";
 import { useArdClient } from "../../hooks/protocol/useArdClient";
+import { useNonPassiveWheel } from "../../hooks/window/useNonPassiveWheel";
 import type { ConnectionSession } from "../../types/connection/connection";
 
 const pointerCoordinates = (
@@ -99,6 +100,23 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
     event.preventDefault();
     void model.sendInput({ type: "keyboardKey", keysym, pressed });
   };
+
+  // Wheel scrolling is forwarded to the remote Mac instead of scrolling the
+  // framebuffer container. Registered natively so `preventDefault()` takes
+  // effect: React's own wheel listener is passive.
+  useNonPassiveWheel(model.canvasRef, (event) => {
+    if (!connected || model.settings.viewOnly) return;
+    const canvas = model.canvasRef.current;
+    if (!canvas) return;
+    event.preventDefault();
+    const point = pointerCoordinates(canvas, event.clientX, event.clientY);
+    void model.sendInput({
+      type: "scroll",
+      dx: Math.sign(event.deltaX),
+      dy: Math.sign(event.deltaY),
+      ...point,
+    });
+  });
 
   const sendLocalClipboard = async () => {
     try {
@@ -312,21 +330,6 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
               onPointerUp={(event) => sendPointerButton(event, false)}
               onKeyDown={(event) => sendKey(event, true)}
               onKeyUp={(event) => sendKey(event, false)}
-              onWheel={(event) => {
-                if (!connected || model.settings.viewOnly) return;
-                event.preventDefault();
-                const point = pointerCoordinates(
-                  event.currentTarget,
-                  event.clientX,
-                  event.clientY,
-                );
-                void model.sendInput({
-                  type: "scroll",
-                  dx: Math.sign(event.deltaX),
-                  dy: Math.sign(event.deltaY),
-                  ...point,
-                });
-              }}
             />
           </div>
         </>

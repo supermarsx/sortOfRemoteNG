@@ -680,4 +680,74 @@ describe("SessionTabs accessibility", () => {
 
     expect(onSessionClose).not.toHaveBeenCalled();
   });
+
+  // React's root wheel listener is passive, so a React `onWheel` cannot call
+  // preventDefault(): the browser would warn and scroll the page vertically on
+  // top of the horizontal tab scroll.
+  it("scrolls the tab strip from a non-passive wheel listener", () => {
+    forceTabOverflow();
+    const registrations: { target: EventTarget; options: unknown }[] = [];
+    const original = HTMLElement.prototype.addEventListener;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "addEventListener")
+      .mockImplementation(function (
+        this: HTMLElement,
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions,
+      ) {
+        if (type === "wheel") registrations.push({ target: this, options });
+        return original.call(this, type, listener, options);
+      } as typeof HTMLElement.prototype.addEventListener);
+
+    try {
+      renderTabs();
+      const lane = screen.getByTestId("session-tabs-scroll");
+
+      const registration = registrations.find((entry) => entry.target === lane);
+      expect(registration).toBeDefined();
+      expect(registration!.options).toEqual({ passive: false });
+
+      Object.defineProperty(lane, "scrollLeft", {
+        configurable: true,
+        writable: true,
+        value: 0,
+      });
+      const event = new WheelEvent("wheel", {
+        deltaY: 120,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        lane.dispatchEvent(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(lane.scrollLeft).toBe(120);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("leaves the page scroll alone when the tab strip does not overflow", () => {
+    renderTabs();
+    const lane = screen.getByTestId("session-tabs-scroll");
+    Object.defineProperty(lane, "scrollLeft", {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+
+    const event = new WheelEvent("wheel", {
+      deltaY: 120,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      lane.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(lane.scrollLeft).toBe(0);
+  });
 });

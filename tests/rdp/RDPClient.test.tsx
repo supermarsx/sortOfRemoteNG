@@ -2403,6 +2403,87 @@ describe("RDPClient", () => {
       expect(canvas).toBeInTheDocument();
     });
 
+    // React's root wheel listener is passive, so a React `onWheel` cannot call
+    // preventDefault(): the browser would warn and scroll the canvas container
+    // while the same wheel tick is forwarded to the remote desktop.
+    it("registers the canvas wheel listener as non-passive", async () => {
+      const registrations: { target: EventTarget; options: unknown }[] = [];
+      const original = HTMLCanvasElement.prototype.addEventListener;
+      const spy = vi
+        .spyOn(HTMLCanvasElement.prototype, "addEventListener")
+        .mockImplementation(function (
+          this: HTMLCanvasElement,
+          type: string,
+          listener: EventListenerOrEventListenerObject,
+          options?: boolean | AddEventListenerOptions,
+        ) {
+          if (type === "wheel") registrations.push({ target: this, options });
+          return original.call(this, type, listener, options);
+        } as typeof HTMLCanvasElement.prototype.addEventListener);
+
+      try {
+        renderWithProviders(mockSession);
+        await waitFor(() => {
+          expect(mockInvoke).toHaveBeenCalledWith(
+            "connect_rdp",
+            expect.any(Object),
+          );
+        });
+        emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+        await waitFor(() => {
+          expect(screen.getByText("connected")).toBeInTheDocument();
+        });
+
+        const canvas = screen.getByTestId("rdp-canvas") as HTMLCanvasElement;
+        const registration = registrations.find(
+          (entry) => entry.target === canvas,
+        );
+        expect(registration).toBeDefined();
+        expect(registration!.options).toEqual({ passive: false });
+
+        vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+          left: 0,
+          top: 0,
+          right: 1000,
+          bottom: 1000,
+          width: 1000,
+          height: 1000,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        });
+        mockInvoke.mockClear();
+
+        const event = new WheelEvent("wheel", {
+          clientX: 500,
+          clientY: 500,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        });
+        await act(async () => {
+          canvas.dispatchEvent(event);
+        });
+
+        expect(event.defaultPrevented).toBe(true);
+        await waitFor(() => {
+          const inputCalls = mockInvoke.mock.calls.filter(
+            ([command]) => command === "rdp_send_input",
+          );
+          expect(inputCalls).toHaveLength(1);
+          expect(
+            (inputCalls[0][1] as { events: unknown[] }).events[0],
+          ).toMatchObject({
+            type: "Wheel",
+            delta: 120,
+            horizontal: false,
+          });
+        });
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it("should expose an accessible canvas label and release shortcut", () => {
       renderWithProviders(mockSession);
 

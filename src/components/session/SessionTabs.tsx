@@ -59,6 +59,7 @@ import {
 } from "../app/toolSession";
 import { getToolIcon } from "../app/toolDescriptors";
 import { DOCUMENTS_PROTOCOL } from "../../hooks/documents/useDocumentSession";
+import { useNonPassiveWheel } from "../../hooks/window/useNonPassiveWheel";
 import {
   isWinmgmtProtocol,
   getWinmgmtToolId,
@@ -377,6 +378,15 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   const scrollBy = useCallback((delta: number) => {
     scrollRef.current?.scrollBy({ left: delta, behavior: "smooth" });
   }, []);
+
+  // Wheeling over the tab strip scrolls it horizontally instead of the page.
+  // Registered natively so `preventDefault()` takes effect: React's own wheel
+  // listener is passive.
+  useNonPassiveWheel(scrollRef, (e) => {
+    if (!scrollRef.current || !hasOverflow) return;
+    e.preventDefault();
+    scrollRef.current.scrollLeft += e.deltaY || e.deltaX;
+  });
 
   // ── Scroll track drag state ─────────────────────────────────
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -1302,11 +1312,6 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             className="flex-1 flex items-center h-full overflow-x-auto"
             role="tablist"
             aria-label="Session tabs"
-            onWheel={(e) => {
-              if (!scrollRef.current || !hasOverflow) return;
-              e.preventDefault();
-              scrollRef.current.scrollLeft += e.deltaY || e.deltaX;
-            }}
           >
             {/* Ungrouped tabs first */}
             {orderedTabs.ungrouped.map((session) => renderTab(session))}

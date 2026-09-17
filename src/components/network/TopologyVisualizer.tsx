@@ -8,6 +8,7 @@ import React, {
 import { useTranslation } from "react-i18next";
 import { Select } from "../ui/forms";
 import { useTopology } from "../../hooks/network/useTopology";
+import { useNonPassiveWheel } from "../../hooks/window/useNonPassiveWheel";
 import type {
   TopologyNode,
   LayoutAlgorithm,
@@ -205,7 +206,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({ isOpen }) => {
     setDragStart(null);
   }, []);
 
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+  const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.1 : 0.9;
     setCamera((c) => ({
@@ -213,6 +214,10 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({ isOpen }) => {
       zoom: Math.min(5, Math.max(0.1, c.zoom * factor)),
     }));
   }, []);
+
+  // Wheel zooms the graph instead of scrolling the dialog. Registered natively
+  // so `preventDefault()` takes effect: React's own wheel listener is passive.
+  useNonPassiveWheel(canvasRef, handleWheel);
 
   /* ---- toolbar actions ---- */
   const handleLayoutChange = (alg: LayoutAlgorithm) => topo.applyLayout(alg);
@@ -630,7 +635,6 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({ isOpen }) => {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            onWheel={handleWheel}
           />
           <div className="sr-only" role="status" aria-live="assertive">
             {srAnnouncement}

@@ -56,9 +56,7 @@ beforeEach(() => {
 async function renderOpen(props?: Partial<{ isOpen: boolean }>) {
   let result: ReturnType<typeof render>;
   await act(async () => {
-    result = render(
-      <TopologyVisualizer isOpen={props?.isOpen ?? true} />,
-    );
+    result = render(<TopologyVisualizer isOpen={props?.isOpen ?? true} />);
   });
   return result!;
 }
@@ -138,5 +136,49 @@ describe("TopologyVisualizer", () => {
   it("shows find path button", async () => {
     await renderOpen();
     expect(screen.getByText("topology.findPath")).toBeInTheDocument();
+  });
+
+  // React's root wheel listener is passive, so a React `onWheel` cannot call
+  // preventDefault(): the browser would warn and scroll the dialog while zooming.
+  it("zooms from a non-passive wheel listener on the canvas", async () => {
+    const registrations: { target: EventTarget; options: unknown }[] = [];
+    const original = HTMLCanvasElement.prototype.addEventListener;
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, "addEventListener")
+      .mockImplementation(function (
+        this: HTMLCanvasElement,
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions,
+      ) {
+        if (type === "wheel") registrations.push({ target: this, options });
+        return original.call(this, type, listener, options);
+      } as typeof HTMLCanvasElement.prototype.addEventListener);
+
+    try {
+      const { container } = await renderOpen();
+      const canvas = container.querySelector("canvas")!;
+
+      const registration = registrations.find(
+        (entry) => entry.target === canvas,
+      );
+      expect(registration).toBeDefined();
+      expect(registration!.options).toEqual({ passive: false });
+
+      mockContext.scale.mockClear();
+      const event = new WheelEvent("wheel", {
+        deltaY: -120,
+        bubbles: true,
+        cancelable: true,
+      });
+      await act(async () => {
+        canvas.dispatchEvent(event);
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(mockContext.scale).toHaveBeenCalledWith(1.1, 1.1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

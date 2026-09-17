@@ -215,6 +215,79 @@ describe("ArdClient", () => {
     expect(model.launchNativeScreenSharing).not.toHaveBeenCalled();
   });
 
+  // React's root wheel listener is passive, so a React `onWheel` cannot call
+  // preventDefault(): the browser would warn and scroll the framebuffer
+  // container while the scroll is forwarded to the Mac.
+  it("forwards scrolling from a non-passive wheel listener on the canvas", () => {
+    const model = createModel();
+    hookMock.mockReturnValue(model);
+    const registrations: { target: EventTarget; options: unknown }[] = [];
+    const original = HTMLCanvasElement.prototype.addEventListener;
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, "addEventListener")
+      .mockImplementation(function (
+        this: HTMLCanvasElement,
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions,
+      ) {
+        if (type === "wheel") registrations.push({ target: this, options });
+        return original.call(this, type, listener, options);
+      } as typeof HTMLCanvasElement.prototype.addEventListener);
+
+    try {
+      render(<ArdClient session={session} />);
+      const canvas = screen.getByRole("application", {
+        name: "Apple Remote Desktop framebuffer",
+      });
+
+      const registration = registrations.find(
+        (entry) => entry.target === canvas,
+      );
+      expect(registration).toBeDefined();
+      expect(registration!.options).toEqual({ passive: false });
+
+      const event = new WheelEvent("wheel", {
+        deltaX: -4,
+        deltaY: 9,
+        bubbles: true,
+        cancelable: true,
+      });
+      canvas.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(model.sendInput).toHaveBeenCalledWith({
+        type: "scroll",
+        dx: -1,
+        dy: 1,
+        x: 0,
+        y: 0,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("ignores wheel input while the session is view only", () => {
+    const model = createModel();
+    model.settings = { ...model.settings, viewOnly: true };
+    hookMock.mockReturnValue(model);
+
+    render(<ArdClient session={session} />);
+    const canvas = screen.getByRole("application", {
+      name: "Apple Remote Desktop framebuffer",
+    });
+    const event = new WheelEvent("wheel", {
+      deltaY: 9,
+      bubbles: true,
+      cancelable: true,
+    });
+    canvas.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(model.sendInput).not.toHaveBeenCalled();
+  });
+
   it.each([
     [
       "macOsAccount" as const,

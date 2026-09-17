@@ -3466,8 +3466,10 @@ export function useRDPClient(session: ConnectionSession) {
     [isConnected, mouseEnabled, scaleCoords, sendInput],
   );
 
+  // Native WheelEvent: the canvas registers this through `useNonPassiveWheel`
+  // so `preventDefault()` applies. React's own wheel listener is passive.
   const handleWheel = useCallback(
-    (e: React.WheelEvent<HTMLCanvasElement>) => {
+    (e: WheelEvent) => {
       if (!isConnected || !mouseEnabled) return;
       e.preventDefault();
       const point = scaleCoords(e.clientX, e.clientY);
