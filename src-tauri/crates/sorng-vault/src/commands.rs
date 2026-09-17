@@ -7,7 +7,20 @@ use tauri::{AppHandle, Manager};
 
 const RESERVED_INTERNAL_SERVICE_PREFIX: &str = "sortofremoteng.internal.";
 
+/// Characters no generic IPC service name may contain. `@` separates a logical
+/// service from an isolated profile's keychain namespace
+/// (`<service>@<identifier>`, see `keychain::physical_service`), so production
+/// entries must never contain it: the e2e keychain cleanup relies on that to
+/// never match a production entry. `*` is the credential enumeration wildcard.
+const RESERVED_SERVICE_CHARS: &[char] = &['@', '*'];
+
 fn reject_reserved_target(service: &str, account: &str) -> Result<(), String> {
+    if service.contains(RESERVED_SERVICE_CHARS) {
+        return Err(
+            "vault service names containing '@' or '*' are reserved and not accessible through generic vault IPC"
+                .to_string(),
+        );
+    }
     if service
         .trim()
         .to_ascii_lowercase()
@@ -233,6 +246,43 @@ mod reserved_target_tests {
         assert!(reject_reserved_target("com.integration.example", "api-token").is_ok());
         assert!(reject_reserved_target(SERVICE_NAME, "integration-account").is_ok());
         assert!(reject_reserved_target("other-service", MASTER_DEK_ACCOUNT).is_ok());
+    }
+
+    #[test]
+    fn namespace_and_wildcard_characters_are_reserved_in_service_names() {
+        // Guards vault_store_secret, vault_read_secret, vault_delete_secret and
+        // the biometric variants alike (see the source contract below).
+        for service in [
+            "com.sortofremoteng.integrations@com.sortofremote.ng.e2e",
+            "com.sortofremoteng.vault@com.sortofremote.ng.e2e",
+            "@com.sortofremote.ng.e2e",
+            "user@example.com",
+            "service@",
+            " @ ",
+            "sortofremoteng.connection-notes*",
+            "*",
+            "*@*",
+        ] {
+            for account in ["api-token", MASTER_DEK_ACCOUNT, "", "*"] {
+                let error = reject_reserved_target(service, account).unwrap_err();
+                assert!(error.contains("'@' or '*'"), "{service:?}/{account:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn existing_generic_ipc_services_and_accounts_stay_accessible() {
+        // Every service the frontend stores through generic vault IPC
+        // (useIntegrationConfigStore, connectionNotesVault, useSSHCommandHistory).
+        for service in [
+            "com.sortofremoteng.integrations",
+            "sortofremoteng.connection-notes",
+            "sortofremoteng.ssh-command-history",
+        ] {
+            assert!(reject_reserved_target(service, "0f8e2d4c-credential-ref").is_ok());
+            // Only the service half is namespaced; accounts may carry '@'.
+            assert!(reject_reserved_target(service, "admin@example.com").is_ok());
+        }
     }
 
     #[tokio::test]
