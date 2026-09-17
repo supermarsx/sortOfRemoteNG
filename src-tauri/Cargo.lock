@@ -12119,8 +12119,10 @@ dependencies = [
 name = "sorng-protocols"
 version = "26.45.0"
 dependencies = [
+ "aes 0.8.4",
  "axum",
  "base64 0.23.1",
+ "cbc 0.1.2",
  "chrono",
  "cookie_store",
  "flate2",
@@ -12135,6 +12137,7 @@ dependencies = [
  "rcgen",
  "regex",
  "reqwest 0.12.28",
+ "rsa 0.9.10",
  "rustls",
  "rustls-native-certs 0.8.4",
  "serde",
@@ -12145,6 +12148,7 @@ dependencies = [
  "sorng-core",
  "sorng-quickconnect",
  "sorng-socket-transport",
+ "sorng-voip-phone",
  "sqlx",
  "ssh2",
  "suppaftp",
@@ -13175,8 +13179,10 @@ dependencies = [
 name = "sorng-voip-phone"
 version = "26.45.0"
 dependencies = [
+ "aes 0.8.4",
  "async-trait",
  "base64 0.23.1",
+ "cbc 0.1.2",
  "log",
  "rand 0.8.8",
  "regex",

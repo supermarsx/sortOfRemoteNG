@@ -238,6 +238,10 @@ async fn handle_inner(
         forwarded.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
         forwarded.push((name.clone(), value.clone()));
     }
+    // An authenticated page must not open an unauthenticated socket: this path
+    // shares `collect_upstream_headers` with documents, so the natively
+    // established phone session has to reach the upgrade too.
+    super::yealink_login::apply_session_cookie(&mut forwarded, &state.yealink_session);
     forwarded.extend([
         ("connection".into(), "Upgrade".into()),
         ("upgrade".into(), "websocket".into()),

@@ -219,6 +219,50 @@ async fn websocket_upstream_rejection_preserves_status_without_challenge_body_or
 }
 
 #[tokio::test]
+async fn websocket_upgrade_carries_the_natively_established_phone_session() {
+    // t96 Route A. An authenticated page must not open an unauthenticated
+    // socket: the upgrade shares `collect_upstream_headers` with the document
+    // path, so the proxy-held JSESSIONID has to be spliced in here too. Pinned
+    // on the wire rather than on the two call sites looking alike — real
+    // firmware issues that cookie `Lax`, which a cross-site website frame would
+    // never send back, so the browser's own header cannot be relied on.
+    let upstream = upstream_ws(VALID.into(), false, false).await;
+    let fixture = proxy_with_mode(
+        upstream.url.clone(),
+        client(),
+        UpstreamAuthMode::YealinkServlet,
+    )
+    .await;
+    *fixture.state.username.write().unwrap() = "admin".into();
+    *fixture.state.password.write().unwrap() = "synthetic-phone-secret".into();
+    *fixture.state.yealink_session.write().unwrap() =
+        Some("JSESSIONID=SYNTHETICPHONESESSION".into());
+
+    let response = ws_request(&fixture)
+        .header("Cookie", "lang=en")
+        .send()
+        .await
+        .unwrap();
+    let _socket = echo(response).await;
+
+    let headers = upstream.headers.lock().unwrap().join("\n");
+    let cookie = headers
+        .lines()
+        .find_map(|line| {
+            line.split_once(':')
+                .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+        })
+        .map(|(_, value)| value.trim().to_string())
+        .expect("the upgrade carried a Cookie header");
+    // The proxy-held session leads; the browser keeps everything else it sent.
+    assert_eq!(cookie, "JSESSIONID=SYNTHETICPHONESESSION; lang=en");
+    // Native pre-authentication never injects an Authorization header, and the
+    // phone's password never reaches the wire.
+    assert!(!headers.to_ascii_lowercase().contains("authorization:"));
+    assert!(!headers.contains("synthetic-phone-secret"));
+}
+
+#[tokio::test]
 async fn websocket_local_refusal_observation_is_bounded_and_never_logs_credentials() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let fixture = proxy(

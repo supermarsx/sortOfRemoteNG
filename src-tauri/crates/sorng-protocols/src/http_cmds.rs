@@ -585,6 +585,34 @@ pub async fn start_basic_auth_proxy(
         attempt.as_ref().map(|attempt| attempt.cookie_store()),
     )?;
 
+    // t96 Route A: sign in to a Yealink phone natively, before the frame loads
+    // a single byte, and hold its web session for this arm. Exactly one
+    // handshake per session arm — the phone permits one web session and locks
+    // an account out after repeated failed sign-ins, so a rejected or locked
+    // sign-in is terminal and refuses the connection rather than retrying.
+    let yealink_session = crate::http::yealink_login::session_slot();
+    match config.upstream_auth_mode {
+        UpstreamAuthMode::YealinkServlet => {
+            crate::http::yealink_login::pre_authenticate(
+                &client,
+                &validated_target,
+                &config.username,
+                &config.password,
+                &yealink_session,
+            )
+            .await?;
+        }
+        UpstreamAuthMode::Unknown => {
+            // A mode this build cannot place. The session still opens, with no
+            // Authorization header of any kind — never the default Basic.
+            log::warn!(
+                "proxy session {session_id} requested an upstream auth mode this build does not \
+                 support; continuing without any injected credentials"
+            );
+        }
+        _ => {}
+    }
+
     // Bind to a random free port.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -647,6 +675,7 @@ pub async fn start_basic_auth_proxy(
         bitwarden_continuation: Default::default(),
         auto_login_selectors: config.http_auto_login_selectors.clone(),
         http_form_automation: config.http_form_automation.clone(),
+        yealink_session,
         client,
         request_count: request_count.clone(),
         document_sequence: Arc::new(AtomicU64::new(0)),
@@ -1195,6 +1224,12 @@ pub async fn restart_proxy_session(
         bitwarden_continuation: Default::default(),
         auto_login_selectors: None,
         http_form_automation: None,
+        // t96: a restart starts with NO phone session, for the same reason the
+        // auto-login above starts disarmed. Re-running the handshake here would
+        // be a second sign-in the user never asked for, and the phone locks an
+        // account out after repeated failures. Only a real reconnect through
+        // `start_basic_auth_proxy` signs in again.
+        yealink_session: crate::http::yealink_login::session_slot(),
         client,
         request_count: request_count.clone(),
         document_sequence: Arc::new(AtomicU64::new(0)),

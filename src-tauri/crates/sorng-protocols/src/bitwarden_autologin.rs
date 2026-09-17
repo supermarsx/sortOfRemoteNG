@@ -110,11 +110,31 @@ fn json(value: serde_json::Value) -> Response<Body> {
         .unwrap_or_else(|_| server_error("failed to build reviewed login response"))
 }
 
+/// The reviewed staged flows that release a credential **into the document**.
+///
+/// Closed and exhaustive on purpose: a new upstream mode is a compile error
+/// here until somebody decides, in writing, whether it may hand out a password.
+/// `YealinkServlet` is deliberately absent — the proxy signs the phone in
+/// natively before the frame loads (`crate::http::yealink_login`), so no
+/// credential ever reaches the page and there is nothing to dispense. So is
+/// `Unknown`: a mode from a newer frontend must degrade, never dispense.
+pub(crate) fn reviewed_flow_label(mode: UpstreamAuthMode) -> Option<&'static str> {
+    match mode {
+        UpstreamAuthMode::BitwardenForm => Some("bitwarden"),
+        UpstreamAuthMode::SynologyForm => Some("synology"),
+        UpstreamAuthMode::Basic
+        | UpstreamAuthMode::Digest
+        | UpstreamAuthMode::Header
+        | UpstreamAuthMode::None
+        | UpstreamAuthMode::PfSenseV1
+        | UpstreamAuthMode::YealinkServlet
+        | UpstreamAuthMode::Unknown => None,
+    }
+}
+
 pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body> {
-    let flow = match state.upstream_auth_mode {
-        UpstreamAuthMode::BitwardenForm => "bitwarden",
-        UpstreamAuthMode::SynologyForm => "synology",
-        _ => return forbidden("reviewed login mode required"),
+    let Some(flow) = reviewed_flow_label(state.upstream_auth_mode) else {
+        return forbidden("reviewed login mode required");
     };
     // Hold the manager's short synchronous lock through dispensing. Removing the
     // session (owner lock/close) makes every subsequent grant fail, including a
@@ -282,6 +302,47 @@ mod tests {
             assert!(grant.expired());
         }
     }
+    #[test]
+    fn a_natively_authenticated_mode_never_dispenses_a_credential() {
+        // Route A's whole security argument: the Yealink flow signs in through
+        // the proxy, so the document must never be handed a username or a
+        // password. Neither may an unknown mode from a newer frontend.
+        for mode in [
+            UpstreamAuthMode::Basic,
+            UpstreamAuthMode::Digest,
+            UpstreamAuthMode::Header,
+            UpstreamAuthMode::None,
+            UpstreamAuthMode::PfSenseV1,
+            UpstreamAuthMode::YealinkServlet,
+            UpstreamAuthMode::Unknown,
+        ] {
+            assert_eq!(reviewed_flow_label(mode), None, "{mode:?}");
+        }
+        assert_eq!(
+            reviewed_flow_label(UpstreamAuthMode::BitwardenForm),
+            Some("bitwarden")
+        );
+        assert_eq!(
+            reviewed_flow_label(UpstreamAuthMode::SynologyForm),
+            Some("synology")
+        );
+        // The HTTPS/fixed-control gate is for the two document flows only; a
+        // plain-HTTP phone signs in natively and must not be pulled into it.
+        let phone: BasicAuthProxyConfig = serde_json::from_value(serde_json::json!({
+            "target_url": "http://phone.invalid/",
+            "username": "admin",
+            "password": "fixture-phone-secret",
+            "upstream_auth_mode": "yealink-servlet",
+            "http_auto_login": true,
+        }))
+        .unwrap();
+        assert!(validate_config(&phone).is_ok());
+        assert_eq!(
+            phone.upstream_auth_mode.manager_visible_username("admin"),
+            ""
+        );
+    }
+
     #[test]
     fn reviewed_vault_config_requires_https_and_fixed_controls() {
         let base = serde_json::json!({"target_url":"https://vault.invalid/", "username":"fixture", "password":"fixture", "upstream_auth_mode":"bitwarden-form", "http_auto_login":true});

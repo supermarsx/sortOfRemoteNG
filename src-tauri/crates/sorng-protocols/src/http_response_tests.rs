@@ -135,6 +135,7 @@ async fn proxy_with_redirect_profile(
         bitwarden_continuation: Default::default(),
         auto_login_selectors: None,
         http_form_automation: None,
+        yealink_session: crate::http::yealink_login::session_slot(),
         client,
         request_count: Arc::new(AtomicU64::new(0)),
         document_sequence: Arc::new(AtomicU64::new(0)),
@@ -546,6 +547,124 @@ async fn real_digest_negotiation_is_bounded_and_never_sends_basic_or_plaintext()
         1
     );
     assert!(log.iter().all(|(_, _, auth)| !auth.starts_with("Basic ")));
+    upstream.abort();
+}
+
+#[tokio::test]
+async fn document_and_subresource_requests_carry_the_natively_established_phone_session() {
+    // t96 Route A, pinned on the wire rather than on the helper. The proxy
+    // signs the phone in before the frame loads and holds the `JSESSIONID`
+    // itself, because real firmware issues that cookie without a `SameSite`
+    // attribute — i.e. `Lax` — which a cross-site website frame would never
+    // send back. Every upstream request in the session has to carry it, not
+    // just the one the browser happened to attach cookies to.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = captured.clone();
+    let router = axum::Router::new().fallback(move |request: axum::extract::Request| {
+        let log = log.clone();
+        async move {
+            let header = |name: &str| {
+                request
+                    .headers()
+                    .get(name)
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            log.lock().unwrap().push((
+                request.uri().path().to_string(),
+                header("cookie"),
+                header("authorization"),
+            ));
+            Response::builder()
+                .status(200)
+                .header("Content-Type", "text/html")
+                .body(Body::from("<html><body>status</body></html>"))
+                .unwrap()
+        }
+    });
+    let upstream = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    let signed_in = proxy_with_mode(
+        format!("http://{address}/"),
+        client(),
+        UpstreamAuthMode::YealinkServlet,
+    )
+    .await;
+    *signed_in.state.username.write().unwrap() = "admin".into();
+    *signed_in.state.password.write().unwrap() = "synthetic-phone-secret".into();
+    *signed_in.state.yealink_session.write().unwrap() =
+        Some("JSESSIONID=SYNTHETICPHONESESSION".into());
+
+    // A document the browser did attach a cookie to.
+    let response = client()
+        .get(format!(
+            "{}/servlet?m=mod_data&p=status&q=load",
+            signed_in.base
+        ))
+        .header("Host", &signed_in.state.proxy_authority)
+        .header("Sec-Fetch-Dest", "document")
+        .header("Cookie", "lang=en")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    // A subresource the browser attached nothing to — the common case, since a
+    // Lax cookie does not leave the parent document's site.
+    assert_eq!(
+        client()
+            .get(format!("{}/css/main.css", signed_in.base))
+            .header("Host", &signed_in.state.proxy_authority)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+
+    // The same mode with no established session must invent nothing.
+    let anonymous = proxy_with_mode(
+        format!("http://{address}/"),
+        client(),
+        UpstreamAuthMode::YealinkServlet,
+    )
+    .await;
+    assert_eq!(
+        client()
+            .get(format!("{}/anonymous", anonymous.base))
+            .header("Host", &anonymous.state.proxy_authority)
+            .header("Cookie", "lang=en")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+
+    let log = captured.lock().unwrap();
+    let cookie = |path: &str| {
+        log.iter()
+            .find(|(seen, _, _)| seen == path)
+            .map(|(_, cookie, _)| cookie.clone())
+            .unwrap_or_else(|| panic!("{path} never reached the phone"))
+    };
+    // The proxy-held session leads; whatever the browser sent is preserved.
+    assert_eq!(
+        cookie("/servlet"),
+        "JSESSIONID=SYNTHETICPHONESESSION; lang=en"
+    );
+    assert_eq!(cookie("/css/main.css"), "JSESSIONID=SYNTHETICPHONESESSION");
+    assert_eq!(cookie("/anonymous"), "lang=en");
+    // Native pre-authentication never injects an Authorization header, and the
+    // phone's password never reaches the wire.
+    assert!(log
+        .iter()
+        .all(|(_, _, authorization)| authorization.is_empty()
+            && !authorization.contains("synthetic-phone-secret")));
     upstream.abort();
 }
 

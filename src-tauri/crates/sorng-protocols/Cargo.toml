@@ -14,6 +14,13 @@ tls-cert-details = []
 sorng-quickconnect = { path = "../sorng-quickconnect" }
 sorng-core = { path = "../sorng-core" }
 sorng-socket-transport = { path = "../sorng-socket-transport" }
+# t96 Route A: the Yealink servlet login contract (page grammar, RSA/AES
+# password wrapper, response classification) is implemented ONCE, in
+# `sorng_voip_phone::yealink_servlet_auth`, and shared with the native phone
+# driver so the proxy and the driver can never drift. The edge is one-way —
+# sorng-voip-phone depends on sorng-tls-trust/sorng-storage only, never on this
+# crate — and adds no new external package.
+sorng-voip-phone = { path = "../sorng-voip-phone" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -58,3 +65,10 @@ tauri = { workspace = true }
 [dev-dependencies]
 # Synthetic local CA/leaf fixtures only; no OS trust installation or public hosts.
 rcgen = "0.12"
+# The Yealink mock phone in `http_yealink_login_tests.rs` really decrypts the
+# login body, the way `decodeRsaAesLogin` does in the e2e fixture, so the test
+# proves the POST is bound to the session id the login-page GET issued. All
+# three are already locked at these versions by sibling crates — no new package.
+rsa = "0.9"
+aes = "0.8"
+cbc = "0.1"

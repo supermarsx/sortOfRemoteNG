@@ -303,6 +303,7 @@ fn synology_direct_documents_keep_their_own_page_nonce_outside_the_shared_slot()
         bitwarden_continuation: Default::default(),
         auto_login_selectors: None,
         http_form_automation: None,
+        yealink_session: sorng_protocols::http::yealink_login::session_slot(),
         client: reqwest::Client::new(),
         document_sequence: Arc::new(AtomicU64::new(2)),
         request_count: Arc::new(AtomicU64::new(0)),

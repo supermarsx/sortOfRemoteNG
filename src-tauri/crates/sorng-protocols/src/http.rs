@@ -64,6 +64,12 @@ mod synology_redirect_defaults;
 mod upstream;
 #[path = "http_websocket.rs"]
 mod websocket;
+// t96 Route A. `pub` rather than `mod`: `http_cmds.rs` is `include!`-ed into
+// sorng-commands-core, which reaches this as `crate::http::yealink_login`, and
+// `tests/autologin_integration.rs` needs the session slot from outside the
+// crate.
+#[path = "http_yealink_login.rs"]
+pub mod yealink_login;
 pub use crate::webview_origins;
 pub use network::ProxyNetworkState;
 pub use redirect::ProxyRedirectReview;
@@ -526,6 +532,24 @@ pub enum UpstreamAuthMode {
     /// `Authorization: <client-id> <client-secret>`.
     #[serde(rename = "pfSenseV1")]
     PfSenseV1,
+    /// Yealink T2x desk phone: the proxy performs the phone's servlet login
+    /// handshake itself before the frame loads, and holds the resulting web
+    /// session (`yealink_login`). No credential is ever released into the
+    /// document and nothing is injected into `Authorization`.
+    #[serde(rename = "yealink-servlet")]
+    YealinkServlet,
+    /// A mode this build does not know, from a newer frontend.
+    ///
+    /// Must be the **last** variant: `#[serde(other)]` is only honoured there.
+    /// It exists so a version skew degrades instead of failing the whole typed
+    /// command argument — but it deliberately does **not** inherit the
+    /// `#[default] Basic` behaviour. An absent field still defaults to `Basic`
+    /// for backward compatibility; an unknown *value* lands here and injects
+    /// nothing, because handing a device a Basic header it never asked for is a
+    /// credential leak, strictly worse than the failed connect it replaces.
+    #[serde(rename = "unknown")]
+    #[serde(other)]
+    Unknown,
 }
 
 impl UpstreamAuthMode {
@@ -536,7 +560,9 @@ impl UpstreamAuthMode {
             | Self::Header
             | Self::None
             | Self::BitwardenForm
-            | Self::SynologyForm => None,
+            | Self::SynologyForm
+            | Self::YealinkServlet
+            | Self::Unknown => None,
             Self::PfSenseV1 if !username.is_empty() && !password.is_empty() => {
                 Some(format!("{username} {password}"))
             }
@@ -554,7 +580,9 @@ impl UpstreamAuthMode {
             | Self::Header
             | Self::None
             | Self::BitwardenForm
-            | Self::SynologyForm => String::new(),
+            | Self::SynologyForm
+            | Self::YealinkServlet
+            | Self::Unknown => String::new(),
         }
     }
 
@@ -577,10 +605,15 @@ impl UpstreamAuthMode {
             | Self::Header
             | Self::None
             | Self::BitwardenForm
-            | Self::SynologyForm => request,
+            | Self::SynologyForm
+            | Self::YealinkServlet
+            | Self::Unknown => request,
         }
     }
 
+    /// Deliberately a `matches!` allowlist, not an exhaustive match: a variant
+    /// nobody remembered to classify must fall to "does not answer a Basic
+    /// challenge", never to "sends credentials".
     fn accepts_basic_challenge(self) -> bool {
         matches!(self, Self::Basic | Self::PfSenseV1)
     }
@@ -838,7 +871,7 @@ mod upstream_auth_mode_tests {
     }
 
     #[test]
-    fn omitted_mode_remains_basic_and_unknown_modes_fail_closed() {
+    fn omitted_mode_remains_basic_and_unknown_modes_inject_nothing() {
         let config: BasicAuthProxyConfig = serde_json::from_value(serde_json::json!({
             "target_url": "https://firewall.test/",
             "username": "client-id",
@@ -852,7 +885,19 @@ mod upstream_auth_mode_tests {
             "admin"
         );
 
-        assert!(serde_json::from_str::<UpstreamAuthMode>(r#""bearer""#).is_err());
+        // An unknown mode no longer fails the whole typed command argument —
+        // that refused the connection outright on any frontend/backend skew.
+        // It degrades to `Unknown`, and "fails closed" now means it injects
+        // NOTHING: never the `#[default]` Basic, which would hand a device a
+        // header it never asked for. An ABSENT field still defaults to Basic,
+        // asserted above; only a present-but-unknown VALUE lands here.
+        let skew = serde_json::from_str::<UpstreamAuthMode>(r#""bearer""#)
+            .expect("an unknown mode degrades instead of refusing the connection");
+        assert_eq!(skew, UpstreamAuthMode::Unknown);
+        assert_ne!(skew, UpstreamAuthMode::default());
+        assert_eq!(skew.authorization_value("client-id", "client-secret"), None);
+        assert_eq!(skew.manager_visible_username("admin"), "");
+        assert!(!skew.accepts_basic_challenge());
     }
 
     #[test]
@@ -1335,6 +1380,12 @@ pub struct AxumProxyState {
     /// client so a set-but-unmatched selector means "do not fill".
     pub auto_login_selectors: Option<HttpAutoLoginSelectors>,
     pub http_form_automation: Option<crate::themed_autologin::HttpFormAutomation>,
+    /// t96 Route A: the Yealink web session this proxy established natively
+    /// before the frame loaded, empty for every other mode. Held here rather
+    /// than left to the browser because real firmware issues its `JSESSIONID`
+    /// without a `SameSite` attribute — i.e. `Lax` — which a cross-site website
+    /// frame would never send back. **Secret**: never serialized or logged.
+    pub yealink_session: yealink_login::YealinkSessionCookie,
     pub client: reqwest::Client,
     /// Request-start ordering for document lifecycle reports (never credentials).
     pub document_sequence: Arc<AtomicU64>,
@@ -1938,6 +1989,10 @@ pub async fn axum_proxy_handler(
         fwd_headers.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
         fwd_headers.push((name.clone(), value.clone()));
     }
+    // After the custom headers, so an explicitly configured `Cookie` is merged
+    // with the phone's session rather than replacing it. A session that never
+    // pre-authenticated leaves the headers untouched.
+    yealink_login::apply_session_cookie(&mut fwd_headers, &state.yealink_session);
     if state.proxy_policy.cache_mode == CacheMode::Bypass {
         fwd_headers.retain(|(name, _)| {
             !matches!(

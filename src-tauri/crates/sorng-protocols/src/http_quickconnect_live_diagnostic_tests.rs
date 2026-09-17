@@ -476,6 +476,7 @@ async fn mediator_with_attempt(
         bitwarden_continuation: Default::default(),
         auto_login_selectors: None,
         http_form_automation: None,
+        yealink_session: crate::http::yealink_login::session_slot(),
         client,
         request_count: Arc::new(AtomicU64::new(0)),
         document_sequence: Arc::new(AtomicU64::new(0)),
