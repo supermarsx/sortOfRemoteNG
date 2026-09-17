@@ -11,11 +11,14 @@ use std::thread;
 use std::time::Duration;
 
 use base64::Engine;
+use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+use rand::SeedableRng;
 use rsa::traits::PublicKeyParts;
 use sorng_voip_phone::error::VoipPhoneErrorKind;
 use sorng_voip_phone::service::VoipPhoneService;
 use sorng_voip_phone::types::*;
 use sorng_voip_phone::vendor::build_http;
+use sorng_voip_phone::yealink_servlet_auth as auth;
 
 const USER: &str = "admin";
 const PASS: &str = "T66_VOIP_SENTINEL_SECRET_pw!";
@@ -231,7 +234,8 @@ const SERVLET_LOGIN_FORM: &str = "/servlet?m=mod_listener&p=login&q=loginForm";
 const SERVLET_LOGIN_POST: &str = "/servlet?m=mod_listener&p=login&q=login";
 const SERVLET_STATUS: &str = "/servlet?m=mod_data&p=status&q=load";
 const SERVLET_REBOOT_FORM: &str = "/servlet?m=mod_data&p=settings-upgrade&q=reboot";
-const SESSION: &str = "JSESSIONID=abc123def456; Path=/";
+const SESSION_ID: &str = "abc123def456";
+const SESSION: &str = "JSESSIONID=abc123def456; Path=/; HttpOnly";
 
 /// Legacy T21P: everything behind Basic; `action_uri_status` controls `?key=Reboot`.
 fn legacy_phone(action_uri_status: u16) -> Handler {
@@ -257,61 +261,222 @@ fn legacy_phone(action_uri_status: u16) -> Handler {
     })
 }
 
-/// Servlet T21P E2. `rsa`: serve the RSA login page and decrypt with the
-/// matching private key. `action_uri_status` controls `/servlet?key=Reboot`.
-fn servlet_phone(rsa: Option<Arc<rsa::RsaPrivateKey>>, action_uri_status: u16) -> Handler {
-    let modulus_hex = rsa.as_ref().map(|k| k.n().to_str_radix(16));
-    Arc::new(move |req: &Req| {
-        let logged_in = req
-            .header("cookie")
-            .is_some_and(|c| c.contains("JSESSIONID=abc123def456"));
-        match (req.method.as_str(), req.target.as_str()) {
-            ("GET", "/") => Resp::redirect(SERVLET_LOGIN_FORM),
-            ("GET", SERVLET_LOGIN_FORM) => match &modulus_hex {
-                Some(m) => Resp::new(
-                    200,
-                    fixture("servlet_login_rsa.html").replace("{{MODULUS}}", m),
-                ),
-                None => Resp::new(200, fixture("servlet_login_plain.html")),
-            },
-            ("POST", SERVLET_LOGIN_POST) => {
-                let user_ok = req.form_field("username").as_deref() == Some(USER);
-                let pwd = req.form_field("pwd").unwrap_or_default();
-                let pass_ok = match (&rsa, &modulus_hex) {
-                    (Some(key), Some(m)) => {
-                        let cipher = base64::engine::general_purpose::STANDARD
-                            .decode(pwd.as_bytes())
-                            .expect("pwd is base64");
-                        let plain = key
-                            .decrypt(rsa::Pkcs1v15Encrypt, &cipher)
-                            .expect("pwd decrypts with the page key");
-                        req.form_field("rsakey").as_deref() == Some(m.as_str())
-                            && plain == PASS.as_bytes()
-                    }
-                    _ => pwd == PASS,
-                };
-                if user_ok && pass_ok {
-                    Resp::redirect(SERVLET_STATUS).header("Set-Cookie", SESSION)
-                } else {
-                    Resp::new(200, fixture("servlet_login_plain.html"))
-                }
-            }
-            ("GET", "/servlet?key=Reboot") => {
-                if req.has_basic(USER, PASS) || logged_in {
-                    Resp::new(action_uri_status, "")
-                } else {
-                    Resp::new(401, "")
-                }
-            }
-            _ if !logged_in => Resp::redirect(SERVLET_LOGIN_FORM),
-            ("GET", SERVLET_STATUS) => Resp::new(200, fixture("servlet_status.html")),
-            ("POST", SERVLET_REBOOT_FORM) => Resp::new(200, "<html>Rebooting</html>"),
-            ("GET", "/servlet?m=mod_listener&p=login&q=logout") => {
-                Resp::redirect(SERVLET_LOGIN_FORM)
-            }
-            _ => Resp::new(404, "not found"),
+/// What the mock phone answers the login POST with, regardless of the
+/// credentials — used to drive `classify_login_response` through the driver.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ForcedAnswer {
+    Lock,
+    Bounce,
+    Garbage,
+    /// The false positive this task fixes: HTTP 200, no `loginForm` marker, no
+    /// redirect, and a `JSESSIONID` — but `{"authstatus":"none"}`.
+    RejectedWithCookie,
+}
+
+impl ForcedAnswer {
+    fn response(self) -> Resp {
+        match self {
+            Self::Lock => Resp::new(200, fixture("servlet_login_response_lock.html")),
+            Self::Bounce => Resp::new(200, fixture("servlet_login_response_bounce.html")),
+            Self::Garbage => Resp::new(502, fixture("servlet_login_response_garbage.html")),
+            Self::RejectedWithCookie => Resp::new(200, fixture("servlet_login_response_none.html"))
+                .header("Set-Cookie", SESSION),
         }
+    }
+}
+
+/// Servlet T21P E2 emulation.
+#[derive(Clone)]
+struct ServletPhone {
+    /// `Some` = the login page carries an RSA key and the phone decrypts the
+    /// attested RSA+AES body. `None` = pre-RSA firmware serving a plain form.
+    rsa: Option<Arc<rsa::RsaPrivateKey>>,
+    /// Login-page fixture (`{{MODULUS}}` / `{{EXPONENT}}` substituted).
+    login_page: &'static str,
+    action_uri_status: u16,
+    forced: Option<ForcedAnswer>,
+}
+
+impl ServletPhone {
+    /// The attested T21P E2: `g_rsa_n` / `g_rsa_e` markup, RSA+AES login.
+    fn attested(key: &Arc<rsa::RsaPrivateKey>) -> Self {
+        Self {
+            rsa: Some(Arc::clone(key)),
+            login_page: "servlet_login_g_rsa.html",
+            action_uri_status: 200,
+            forced: None,
+        }
+    }
+
+    /// The older markup, where the key lives in `var rsakey` / `setPublic`.
+    fn legacy_markup(key: &Arc<rsa::RsaPrivateKey>) -> Self {
+        Self {
+            login_page: "servlet_login_rsa.html",
+            ..Self::attested(key)
+        }
+    }
+
+    /// Pre-RSA firmware: no key anywhere on the page.
+    fn plain() -> Self {
+        Self {
+            rsa: None,
+            login_page: "servlet_login_plain.html",
+            action_uri_status: 200,
+            forced: None,
+        }
+    }
+
+    fn action_uri(mut self, status: u16) -> Self {
+        self.action_uri_status = status;
+        self
+    }
+
+    fn answering(mut self, forced: ForcedAnswer) -> Self {
+        self.forced = Some(forced);
+        self
+    }
+
+    fn handler(self) -> Handler {
+        let modulus_hex = self.rsa.as_ref().map(|k| k.n().to_str_radix(16));
+        let exponent_hex = self.rsa.as_ref().map(|k| k.e().to_str_radix(16));
+        // A session id exists from the form GET onwards; only a *successful*
+        // login marks it authenticated, exactly like the real phone.
+        let authenticated = Arc::new(Mutex::new(false));
+        Arc::new(move |req: &Req| {
+            let has_cookie = req
+                .header("cookie")
+                .is_some_and(|c| c.contains(&format!("JSESSIONID={SESSION_ID}")));
+            let logged_in = has_cookie && *authenticated.lock().unwrap();
+            // Both login URLs carry a cache-buster, and `…q=login` is a prefix
+            // of `…q=loginForm`, so match on prefixes in that order.
+            let is_form = |t: &str| t.starts_with(SERVLET_LOGIN_FORM);
+            let is_post = |t: &str| t.starts_with(SERVLET_LOGIN_POST) && !is_form(t);
+
+            match (req.method.as_str(), req.target.as_str()) {
+                ("GET", "/") => Resp::redirect(SERVLET_LOGIN_FORM),
+                ("GET", t) if is_form(t) => {
+                    let mut page = fixture(self.login_page);
+                    if let (Some(m), Some(e)) = (&modulus_hex, &exponent_hex) {
+                        page = page.replace("{{MODULUS}}", m).replace("{{EXPONENT}}", e);
+                    }
+                    // The attested flow hands out the session *before*
+                    // authenticating: the ciphertext is bound to it.
+                    Resp::new(200, page).header("Set-Cookie", SESSION)
+                }
+                ("POST", t) if is_post(t) => {
+                    if let Some(forced) = self.forced {
+                        return forced.response();
+                    }
+                    if !req.target.contains("Rajax=") {
+                        return Resp::new(400, "missing Rajax cache buster");
+                    }
+                    let user_ok = req.form_field("username").as_deref() == Some(USER);
+                    let creds_ok = match &self.rsa {
+                        Some(key) => {
+                            decode_rsa_aes_login(key, req) == Some((SESSION_ID.into(), PASS.into()))
+                        }
+                        None => req.form_field("pwd").as_deref() == Some(PASS),
+                    };
+                    if !(user_ok && creds_ok) {
+                        // A rejected login is an HTTP 200 carrying the verdict
+                        // and nothing else — no redirect, no login-form marker.
+                        return Resp::new(200, fixture("servlet_login_response_none.html"));
+                    }
+                    *authenticated.lock().unwrap() = true;
+                    match &self.rsa {
+                        // Attested: `{"authstatus":"done"}` in the body.
+                        Some(_) => Resp::new(200, fixture("servlet_login_response_done.html")),
+                        // Pre-RSA: a redirect straight into the data area.
+                        None => Resp::redirect(SERVLET_STATUS),
+                    }
+                }
+                ("GET", "/servlet?key=Reboot") => {
+                    if req.has_basic(USER, PASS) || logged_in {
+                        Resp::new(self.action_uri_status, "")
+                    } else {
+                        Resp::new(401, "")
+                    }
+                }
+                _ if !logged_in => Resp::redirect(SERVLET_LOGIN_FORM),
+                ("GET", SERVLET_STATUS) => Resp::new(200, fixture("servlet_status.html")),
+                ("POST", SERVLET_REBOOT_FORM) => Resp::new(200, "<html>Rebooting</html>"),
+                ("GET", "/servlet?m=mod_listener&p=login&q=logout") => {
+                    *authenticated.lock().unwrap() = false;
+                    Resp::redirect(SERVLET_LOGIN_FORM)
+                }
+                _ => Resp::new(404, "not found"),
+            }
+        })
+    }
+}
+
+fn hex16(s: &str) -> Option<[u8; 16]> {
+    if s.len() != 32 {
+        return None;
+    }
+    let mut out = [0u8; 16];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(s.get(i * 2..i * 2 + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct DecodedLogin {
+    key_hex: String,
+    iv_hex: String,
+    random: String,
+    session: String,
+    password: String,
+}
+
+/// Undo the attested wrapper exactly as the phone does.
+///
+/// Mirrors `decodeRsaAesLogin` in `e2e/fixtures/voip-phone/server.mjs`, which
+/// is the other half of the same contract: RSA-PKCS#1v1.5 over base64 for the
+/// 32-hex-character AES key and IV, then AES-128-CBC with zero padding over
+/// `"<random>;<JSESSIONID>;<password>"`.
+fn decode_login_fields(
+    key: &rsa::RsaPrivateKey,
+    field: impl Fn(&str) -> Option<String>,
+) -> Option<DecodedLogin> {
+    let unwrap = |name: &str| -> Option<String> {
+        let cipher = base64::engine::general_purpose::STANDARD
+            .decode(field(name)?.as_bytes())
+            .ok()?;
+        String::from_utf8(key.decrypt(rsa::Pkcs1v15Encrypt, &cipher).ok()?).ok()
+    };
+    let key_hex = unwrap("rsakey")?;
+    let iv_hex = unwrap("rsaiv")?;
+    let aes_key = hex16(&key_hex)?;
+    let aes_iv = hex16(&iv_hex)?;
+
+    let mut buf = base64::engine::general_purpose::STANDARD
+        .decode(field("pwd")?.as_bytes())
+        .ok()?;
+    if buf.is_empty() || buf.len() % 16 != 0 {
+        return None;
+    }
+    let mut dec = cbc::Decryptor::<aes::Aes128>::new((&aes_key).into(), (&aes_iv).into());
+    for block in buf.as_chunks_mut::<16>().0 {
+        dec.decrypt_block_mut(block.into());
+    }
+    let plain = String::from_utf8(buf).ok()?;
+    let plain = plain.trim_end_matches('\0');
+    let mut parts = plain.splitn(3, ';');
+    Some(DecodedLogin {
+        key_hex,
+        iv_hex,
+        random: parts.next()?.to_string(),
+        session: parts.next()?.to_string(),
+        password: parts.next()?.to_string(),
     })
+}
+
+/// `(JSESSIONID, password)` the phone reads out of one login POST.
+fn decode_rsa_aes_login(key: &rsa::RsaPrivateKey, req: &Req) -> Option<(String, String)> {
+    let decoded = decode_login_fields(key, |name| req.form_field(name))?;
+    (!decoded.random.is_empty()).then_some((decoded.session, decoded.password))
 }
 
 fn test_rsa_key() -> Arc<rsa::RsaPrivateKey> {
@@ -405,8 +570,10 @@ async fn legacy_reboot_action_uri_then_form_fallback() {
 // ── servlet generation ───────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn servlet_form_plain_login_sets_session_cookie() {
-    let server = MockServer::start(servlet_phone(None, 200));
+async fn servlet_pre_rsa_firmware_posts_a_plain_password() {
+    // The only path that may post a plain password: the page carries no key
+    // in *any* attested shape, so there is nothing to encrypt with.
+    let server = MockServer::start(ServletPhone::plain().handler());
     let mut svc = VoipPhoneService::new();
     let summary = svc.connect("p1".into(), config(&server)).await.unwrap();
 
@@ -414,52 +581,180 @@ async fn servlet_form_plain_login_sets_session_cookie() {
     assert_eq!(summary.auth_shape, VoipPhoneAuthShape::FormPlain);
     assert!(summary.web_ui_url.ends_with(SERVLET_LOGIN_FORM));
 
-    let targets = server.targets();
-    assert_eq!(targets, vec!["/", SERVLET_LOGIN_FORM, SERVLET_LOGIN_POST]);
-    let post = &server.requests()[2];
+    let reqs = server.requests();
+    assert_eq!(reqs.len(), 3);
+    assert_eq!(reqs[0].target, "/");
+    assert!(reqs[1].target.starts_with(SERVLET_LOGIN_FORM));
+    let post = &reqs[2];
+    assert!(post.target.starts_with(SERVLET_LOGIN_POST));
     assert_eq!(post.form_field("username").as_deref(), Some(USER));
     assert_eq!(post.form_field("pwd").as_deref(), Some(PASS));
     assert!(post.form_field("rsakey").is_none());
+    assert!(post.form_field("rsaiv").is_none());
 }
 
 #[tokio::test]
-async fn servlet_form_rsa_login_encrypts_password_with_page_key() {
+async fn servlet_login_wraps_the_password_in_aes_under_the_page_rsa_key() {
     let key = test_rsa_key();
-    let server = MockServer::start(servlet_phone(Some(Arc::clone(&key)), 200));
+    let server = MockServer::start(ServletPhone::attested(&key).handler());
     let mut svc = VoipPhoneService::new();
     let summary = svc.connect("p1".into(), config(&server)).await.unwrap();
-    assert_eq!(summary.auth_shape, VoipPhoneAuthShape::FormRsa);
+    // The mock decrypted the body itself and compared the password and the
+    // session id, so reaching here IS the round-trip assertion.
+    assert_eq!(summary.auth_shape, VoipPhoneAuthShape::FormRsaAes);
 
-    let post = &server.requests()[2];
-    assert_eq!(post.target, SERVLET_LOGIN_POST);
-    assert_ne!(
-        post.form_field("pwd").as_deref(),
-        Some(PASS),
+    let reqs = server.requests();
+    let post = &reqs[2];
+    assert!(post.target.starts_with(SERVLET_LOGIN_POST));
+    assert!(
+        post.target.contains("Rajax="),
+        "the login POST carries the cache buster the phone's own page sends"
+    );
+    assert!(
+        reqs[1].target.contains("Random="),
+        "the login-page GET carries the cache buster too"
+    );
+
+    // The wire shape: exactly the four attested fields, none in clear.
+    let mut fields: Vec<&str> = post
+        .body
+        .split('&')
+        .filter_map(|kv| kv.split_once('=').map(|(k, _)| k))
+        .collect();
+    fields.sort_unstable();
+    assert_eq!(fields, vec!["pwd", "rsaiv", "rsakey", "username"]);
+    assert_ne!(post.form_field("pwd").as_deref(), Some(PASS));
+    assert!(
+        !post.body.contains(PASS),
         "password must not travel in clear"
     );
-    assert!(!post.body.contains(PASS));
-    assert_eq!(post.form_field("rsakey").unwrap(), key.n().to_str_radix(16));
-    // The mock decrypted + compared the password itself (login succeeded).
+    assert!(
+        !post.body.contains(SESSION_ID),
+        "the session id travels encrypted, not as a form field"
+    );
+    // The modulus itself is never a form field — `rsakey` carries the wrapped
+    // AES key. Sending the modulus was the old (wrong) shape.
+    assert_ne!(
+        post.form_field("rsakey").unwrap(),
+        key.n().to_str_radix(16),
+        "rsakey must carry the wrapped AES key, not the page's modulus"
+    );
+
     let status = svc.status("p1").await.unwrap();
-    assert_eq!(status.auth_shape, VoipPhoneAuthShape::FormRsa);
+    assert_eq!(status.auth_shape, VoipPhoneAuthShape::FormRsaAes);
+}
+
+/// REGRESSION (t96 §2.6): a rejected login answers HTTP 200 with
+/// `{"authstatus":"none"}` — no `loginForm` marker, no redirect — and the
+/// `JSESSIONID` the login page already set. The driver used to read that as a
+/// connected phone.
+#[tokio::test]
+async fn servlet_rejected_login_with_a_session_cookie_is_not_success() {
+    let key = test_rsa_key();
+    let server = MockServer::start(
+        ServletPhone::attested(&key)
+            .answering(ForcedAnswer::RejectedWithCookie)
+            .handler(),
+    );
+    let mut svc = VoipPhoneService::new();
+    let err = svc.connect("p1".into(), config(&server)).await.unwrap_err();
+
+    assert_eq!(err.kind, VoipPhoneErrorKind::Auth);
+    assert_eq!(err.auth_shape, Some(VoipPhoneAuthShape::FormRsaAes));
+    assert!(
+        err.message.contains("rejected the username or password"),
+        "unexpected message: {}",
+        err.message
+    );
+    assert!(svc.list().is_empty(), "no session may be registered");
+
+    // The answer really did carry a cookie and neither of the old success
+    // tells, i.e. the old code would have accepted it.
+    let answer = fixture("servlet_login_response_none.html");
+    assert!(!answer.contains("loginForm"));
+    assert!(!answer.contains("idUsername"));
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .filter(|r| r.method == "POST")
+            .count(),
+        1,
+        "a rejected login is terminal — never retried"
+    );
 }
 
 #[tokio::test]
-async fn servlet_rejected_login_reports_shape() {
+async fn servlet_lockout_is_terminal_and_says_so() {
     let key = test_rsa_key();
-    let server = MockServer::start(servlet_phone(Some(key), 200));
+    let server = MockServer::start(
+        ServletPhone::attested(&key)
+            .answering(ForcedAnswer::Lock)
+            .handler(),
+    );
     let mut svc = VoipPhoneService::new();
-    let mut cfg = config(&server);
-    cfg.password = "wrong".into();
-    let err = svc.connect("p1".into(), cfg).await.unwrap_err();
+    let err = svc.connect("p1".into(), config(&server)).await.unwrap_err();
+
     assert_eq!(err.kind, VoipPhoneErrorKind::Auth);
-    assert_eq!(err.auth_shape, Some(VoipPhoneAuthShape::FormRsa));
-    assert!(err.message.contains("Open Web UI"));
+    assert!(
+        err.message.contains("locked this account"),
+        "unexpected message: {}",
+        err.message
+    );
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .filter(|r| r.method == "POST")
+            .count(),
+        1,
+        "a lockout must never be retried or backed off"
+    );
+}
+
+#[tokio::test]
+async fn servlet_session_bounce_and_garbage_fail_closed() {
+    let key = test_rsa_key();
+    let server = MockServer::start(
+        ServletPhone::attested(&key)
+            .answering(ForcedAnswer::Bounce)
+            .handler(),
+    );
+    let mut svc = VoipPhoneService::new();
+    let err = svc.connect("p1".into(), config(&server)).await.unwrap_err();
+    assert_eq!(err.kind, VoipPhoneErrorKind::Auth);
+    assert!(err.message.contains("one web session at a time"));
+
+    let server = MockServer::start(
+        ServletPhone::attested(&key)
+            .answering(ForcedAnswer::Garbage)
+            .handler(),
+    );
+    let err = svc.connect("p2".into(), config(&server)).await.unwrap_err();
+    assert_eq!(err.kind, VoipPhoneErrorKind::Unsupported);
+    assert!(err.message.contains("Could not classify"));
+    assert!(err.message.contains("HTTP 502"));
+    assert!(svc.list().is_empty());
+}
+
+/// The older `var rsakey = "…"` markup must still be recognised as encrypted:
+/// the alternates in `RSA_N_PATTERNS` are what stop it falling back to a
+/// plaintext password (t96 §2.6, second half).
+#[tokio::test]
+async fn servlet_legacy_markup_still_encrypts_the_password() {
+    let key = test_rsa_key();
+    let server = MockServer::start(ServletPhone::legacy_markup(&key).handler());
+    let mut svc = VoipPhoneService::new();
+    let summary = svc.connect("p1".into(), config(&server)).await.unwrap();
+    assert_eq!(summary.auth_shape, VoipPhoneAuthShape::FormRsaAes);
+    let post = &server.requests()[2];
+    assert!(!post.body.contains(PASS));
+    assert!(post.form_field("rsaiv").is_some());
 }
 
 #[tokio::test]
 async fn servlet_status_uses_session_cookie_and_parses_accounts() {
-    let server = MockServer::start(servlet_phone(None, 200));
+    let server = MockServer::start(ServletPhone::plain().handler());
     let mut svc = VoipPhoneService::new();
     svc.connect("p1".into(), config(&server)).await.unwrap();
     let status = svc.status("p1").await.unwrap();
@@ -489,7 +784,7 @@ async fn servlet_status_uses_session_cookie_and_parses_accounts() {
 
 #[tokio::test]
 async fn servlet_reboot_action_uri_200() {
-    let server = MockServer::start(servlet_phone(None, 200));
+    let server = MockServer::start(ServletPhone::plain().handler());
     let mut svc = VoipPhoneService::new();
     svc.connect("p1".into(), config(&server)).await.unwrap();
     let r = svc.reboot("p1").await.unwrap();
@@ -502,7 +797,7 @@ async fn servlet_reboot_action_uri_200() {
 
 #[tokio::test]
 async fn servlet_reboot_403_falls_back_to_web_form() {
-    let server = MockServer::start(servlet_phone(None, 403));
+    let server = MockServer::start(ServletPhone::plain().action_uri(403).handler());
     let mut svc = VoipPhoneService::new();
     svc.connect("p1".into(), config(&server)).await.unwrap();
     let r = svc.reboot("p1").await.unwrap();
@@ -518,7 +813,7 @@ async fn servlet_reboot_403_falls_back_to_web_form() {
 
 #[tokio::test]
 async fn reboot_skips_action_uri_when_disabled_in_config() {
-    let server = MockServer::start(servlet_phone(None, 200));
+    let server = MockServer::start(ServletPhone::plain().handler());
     let mut svc = VoipPhoneService::new();
     let mut cfg = config(&server);
     cfg.action_uri_enabled = false;
@@ -530,17 +825,17 @@ async fn reboot_skips_action_uri_when_disabled_in_config() {
 
 #[tokio::test]
 async fn forced_form_auth_mode_skips_detection() {
-    let server = MockServer::start(servlet_phone(None, 200));
+    let server = MockServer::start(ServletPhone::plain().handler());
     let mut svc = VoipPhoneService::new();
     let mut cfg = config(&server);
     cfg.auth_mode = VoipPhoneAuthMode::Form;
     svc.connect("p1".into(), cfg).await.unwrap();
-    assert_eq!(server.targets()[0], SERVLET_LOGIN_FORM);
+    assert!(server.targets()[0].starts_with(SERVLET_LOGIN_FORM));
 }
 
 #[tokio::test]
 async fn disconnect_logs_out_and_drops_session() {
-    let server = MockServer::start(servlet_phone(None, 200));
+    let server = MockServer::start(ServletPhone::plain().handler());
     let mut svc = VoipPhoneService::new();
     svc.connect("p1".into(), config(&server)).await.unwrap();
     assert_eq!(svc.list().len(), 1);
@@ -560,17 +855,30 @@ async fn disconnect_logs_out_and_drops_session() {
 
 #[tokio::test]
 async fn web_login_hints_per_generation() {
-    let server = MockServer::start(servlet_phone(None, 200));
+    let server = MockServer::start(ServletPhone::plain().handler());
     let mut svc = VoipPhoneService::new();
     svc.connect("s".into(), config(&server)).await.unwrap();
     let hint = svc.web_login_hint("s").unwrap();
     assert!(hint.form_login);
+    // The attested DOM ids first, the older markup as an alternate. The
+    // confirm control is an <a>, so an `input[type=submit]`-only override
+    // matches nothing and makes the embedded auto-login fail closed.
     assert_eq!(
         hint.username_selector.as_deref(),
-        Some("input[name=username]")
+        Some("#idUsername, input[name=\"username\"]")
     );
-    assert_eq!(hint.password_selector.as_deref(), Some("input[name=pwd]"));
-    assert!(hint.submit_selector.is_some());
+    assert_eq!(
+        hint.password_selector.as_deref(),
+        Some("#idPassword, input[name=\"pwd\"][type=\"password\"]")
+    );
+    assert_eq!(
+        hint.submit_selector.as_deref(),
+        Some("#idConfirm, input[type=\"submit\"][name=\"login\"]")
+    );
+    // The note no longer claims the browser auto-login works as-is (§2.5).
+    let note = hint.note.unwrap();
+    assert!(note.contains("not enough on its own"));
+    assert!(!note.contains("runs as-is"));
     assert!(hint.login_url.ends_with(SERVLET_LOGIN_FORM));
 
     let server = MockServer::start(legacy_phone(200));
@@ -585,11 +893,11 @@ async fn web_login_hints_per_generation() {
 
 #[tokio::test]
 async fn probe_detects_without_sending_credentials() {
-    let server = MockServer::start(servlet_phone(None, 200));
+    let server = MockServer::start(ServletPhone::plain().handler());
     let svc = VoipPhoneService::new();
     let p = svc.probe(config(&server)).await.unwrap();
     assert_eq!(p.generation, VoipPhoneGeneration::Servlet);
-    assert_eq!(p.expected_auth_shape, VoipPhoneAuthShape::FormPlain);
+    assert_eq!(p.expected_auth_shape, VoipPhoneAuthShape::FormRsaAes);
     let reqs = server.requests();
     assert_eq!(reqs.len(), 1);
     assert!(reqs[0].header("authorization").is_none());
@@ -651,7 +959,7 @@ fn https_client_builds_through_trust_center() {
 
 #[tokio::test]
 async fn sentinel_password_absent_from_every_serialized_type() {
-    let server = MockServer::start(servlet_phone(None, 403));
+    let server = MockServer::start(ServletPhone::plain().action_uri(403).handler());
     let mut svc = VoipPhoneService::new();
     let cfg = config(&server);
 
@@ -697,4 +1005,317 @@ async fn sentinel_password_absent_from_every_serialized_type() {
 
     svc.disconnect("p1").await.unwrap();
     assert!(svc.get_config_safe("p1").is_err());
+}
+
+// ── shared servlet-auth module (pure, no I/O) ────────────────────────────────
+
+/// The anti-replay nonce is 8 random bytes, hex-encoded.
+const NONCE_HEX_LEN: usize = 16;
+
+fn fixed_rng() -> rand::rngs::StdRng {
+    rand::rngs::StdRng::seed_from_u64(0x7961_6c69_6e6b)
+}
+
+fn attested_page(key: &rsa::RsaPrivateKey) -> String {
+    fixture("servlet_login_g_rsa.html")
+        .replace("{{MODULUS}}", &key.n().to_str_radix(16))
+        .replace("{{EXPONENT}}", &key.e().to_str_radix(16))
+}
+
+#[test]
+fn parse_login_form_reads_the_attested_markup() {
+    let modulus = "ab".repeat(64);
+    let facts = auth::parse_login_form(
+        &fixture("servlet_login_g_rsa.html")
+            .replace("{{MODULUS}}", &modulus)
+            .replace("{{EXPONENT}}", "10001"),
+    );
+    assert!(facts.is_encrypted());
+    assert_eq!(facts.rsa_n.as_deref(), Some(modulus.as_str()));
+    assert_eq!(facts.rsa_e.as_deref(), Some("10001"));
+    assert_eq!(facts.exponent_hex(), "10001");
+    // Readable before authenticating, and the only two values this crate logs.
+    assert_eq!(facts.phone_type.as_deref(), Some("T21P_E2"));
+    assert_eq!(facts.firmware.as_deref(), Some("52.84.0.15"));
+}
+
+#[test]
+fn parse_login_form_reads_the_older_markup_through_the_alternates() {
+    // The `{64,}` guard means a short stub is not mistaken for a modulus.
+    let facts =
+        auth::parse_login_form(&fixture("servlet_login_rsa.html").replace("{{MODULUS}}", "beef00"));
+    assert!(!facts.is_encrypted());
+
+    let modulus = "cd".repeat(64);
+    let facts =
+        auth::parse_login_form(&fixture("servlet_login_rsa.html").replace("{{MODULUS}}", &modulus));
+    assert_eq!(facts.rsa_n.as_deref(), Some(modulus.as_str()));
+    // No `g_rsa_e` on this markup: the exponent comes from `setPublic`.
+    assert_eq!(facts.rsa_e.as_deref(), Some("10001"));
+    assert!(facts.phone_type.is_none() && facts.firmware.is_none());
+}
+
+#[test]
+fn parse_login_form_finds_nothing_in_pages_that_carry_no_key() {
+    for name in ["servlet_login_plain.html", "legacy_status.html"] {
+        let facts = auth::parse_login_form(&fixture(name));
+        assert_eq!(facts, Default::default(), "{name} must yield no facts");
+        assert!(!facts.is_encrypted());
+        assert_eq!(facts.exponent_hex(), "10001");
+    }
+}
+
+#[test]
+fn parse_login_form_prefers_g_rsa_n_over_the_legacy_alternate() {
+    let modern = "11".repeat(64);
+    let legacy = "22".repeat(64);
+    let facts = auth::parse_login_form(&format!(
+        "var rsakey = \"{legacy}\";\nvar g_rsa_n=\"{modern}\";"
+    ));
+    assert_eq!(facts.rsa_n.as_deref(), Some(modern.as_str()));
+}
+
+#[test]
+fn classify_login_response_covers_every_answer() {
+    let done = fixture("servlet_login_response_done.html");
+    let none = fixture("servlet_login_response_none.html");
+    let lock = fixture("servlet_login_response_lock.html");
+    let bounce = fixture("servlet_login_response_bounce.html");
+    let garbage = fixture("servlet_login_response_garbage.html");
+
+    assert_eq!(
+        auth::classify_login_response(200, None, &done),
+        LoginOutcome::Done
+    );
+    assert_eq!(
+        auth::classify_login_response(200, None, &none),
+        LoginOutcome::BadCredentials
+    );
+    assert_eq!(
+        auth::classify_login_response(200, None, &lock),
+        LoginOutcome::Locked
+    );
+    assert_eq!(
+        auth::classify_login_response(200, None, &bounce),
+        LoginOutcome::SessionLost
+    );
+    // A redirect back to the login page, with no body at all.
+    assert_eq!(
+        auth::classify_login_response(302, Some(SERVLET_LOGIN_FORM), ""),
+        LoginOutcome::SessionLost
+    );
+    // Pre-RSA firmware: a redirect straight into the data area is success.
+    assert_eq!(
+        auth::classify_login_response(302, Some(SERVLET_STATUS), ""),
+        LoginOutcome::Done
+    );
+
+    // Everything unrecognised fails closed, with an actionable hint.
+    let hint = match auth::classify_login_response(502, None, &garbage) {
+        LoginOutcome::Unclassified(hint) => hint,
+        other => panic!("expected Unclassified, got {other:?}"),
+    };
+    assert!(hint.contains("HTTP 502"));
+    assert!(hint.contains("502 Bad Gateway"));
+    assert!(matches!(
+        auth::classify_login_response(200, None, ""),
+        LoginOutcome::Unclassified(_)
+    ));
+    assert!(matches!(
+        auth::classify_login_response(200, None, "{\"authstatus\":\"wat\"}"),
+        LoginOutcome::Unclassified(_)
+    ));
+}
+
+#[test]
+fn classify_login_response_never_calls_a_contradictory_answer_success() {
+    // "done" while redirecting back to the login page.
+    assert!(matches!(
+        auth::classify_login_response(302, Some(SERVLET_LOGIN_FORM), "{\"authstatus\":\"done\"}"),
+        LoginOutcome::Unclassified(_)
+    ));
+    // Two disagreeing verdicts in one body: trust neither.
+    assert!(matches!(
+        auth::classify_login_response(
+            200,
+            None,
+            "{\"authstatus\":\"done\"} ... {\"authstatus\":\"none\"}"
+        ),
+        LoginOutcome::Unclassified(_)
+    ));
+    // Whitespace and case variance still classifies.
+    assert_eq!(
+        auth::classify_login_response(200, None, "{ \"AuthStatus\" : \"DONE\" }"),
+        LoginOutcome::Done
+    );
+}
+
+/// REGRESSION (t96 §2.6): neither a `JSESSIONID` nor "HTTP 200 without the
+/// `loginForm` marker" may count towards success — a rejected login is both.
+#[test]
+fn a_rejected_answer_has_none_of_the_old_success_tells() {
+    let none = fixture("servlet_login_response_none.html");
+    assert!(!none.contains("loginForm"));
+    assert!(!none.contains("idUsername"));
+    // The old rule was `200 && !body.contains("loginForm")` → success.
+    assert_eq!(
+        auth::classify_login_response(200, None, &none),
+        LoginOutcome::BadCredentials
+    );
+    assert_eq!(
+        auth::login_outcome_error(LoginOutcome::BadCredentials).kind,
+        VoipPhoneErrorKind::Auth
+    );
+}
+
+#[test]
+fn build_login_body_round_trips_through_a_test_rsa_key() {
+    let key = test_rsa_key();
+    let facts = auth::parse_login_form(&attested_page(&key));
+    let mut rng = fixed_rng();
+    let body = auth::build_login_body(USER, PASS, SESSION_ID, &facts, &mut rng).unwrap();
+
+    let names: Vec<&str> = body.iter().map(|(k, _)| *k).collect();
+    assert_eq!(names, vec!["username", "pwd", "rsakey", "rsaiv"]);
+    let field = |name: &str| {
+        body.iter()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(field("username").as_deref(), Some(USER));
+    for (name, value) in &body {
+        if *name != "username" {
+            assert!(!value.contains(PASS), "{name} leaks the password");
+            assert!(!value.contains(SESSION_ID), "{name} leaks the session id");
+        }
+    }
+
+    let decoded = decode_login_fields(&key, field).expect("the phone decodes the body");
+    assert_eq!(decoded.password, PASS);
+    assert_eq!(decoded.session, SESSION_ID);
+    assert_eq!(decoded.random.len(), NONCE_HEX_LEN);
+    assert!(decoded.random.chars().all(|c| c.is_ascii_hexdigit()));
+    assert_eq!(decoded.key_hex.len(), 32);
+    assert_eq!(decoded.iv_hex.len(), 32);
+    assert_ne!(decoded.key_hex, decoded.iv_hex);
+    for hex in [&decoded.key_hex, &decoded.iv_hex] {
+        assert!(hex
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    }
+}
+
+#[test]
+fn the_same_seed_produces_the_same_ciphertext() {
+    let key = test_rsa_key();
+    let facts = auth::parse_login_form(&attested_page(&key));
+    let pwd = |rng: &mut rand::rngs::StdRng| {
+        auth::build_login_body(USER, PASS, SESSION_ID, &facts, rng)
+            .unwrap()
+            .into_iter()
+            .find(|(k, _)| *k == "pwd")
+            .map(|(_, v)| v)
+            .unwrap()
+    };
+    // The AES key, IV and nonce all come from the injected RNG, so `pwd` is
+    // reproducible. (`rsakey` / `rsaiv` are not: PKCS#1 v1.5 padding is
+    // randomised by design and must stay that way.)
+    assert_eq!(pwd(&mut fixed_rng()), pwd(&mut fixed_rng()));
+    assert_ne!(
+        pwd(&mut fixed_rng()),
+        pwd(&mut rand::rngs::StdRng::seed_from_u64(1))
+    );
+}
+
+#[test]
+fn build_login_body_is_bound_to_the_session_and_refuses_a_keyless_page() {
+    let key = test_rsa_key();
+    let facts = auth::parse_login_form(&attested_page(&key));
+    let other =
+        auth::build_login_body(USER, PASS, "someothersession", &facts, &mut fixed_rng()).unwrap();
+    let field = |name: &str| {
+        other
+            .iter()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(
+        decode_login_fields(&key, field).unwrap().session,
+        "someothersession",
+        "the ciphertext carries whichever session it was built for"
+    );
+
+    // A page with no key at all cannot be encrypted for, and the module
+    // refuses rather than inventing a plaintext fallback.
+    let err = auth::build_login_body(
+        USER,
+        PASS,
+        SESSION_ID,
+        &auth::parse_login_form(&fixture("servlet_login_plain.html")),
+        &mut fixed_rng(),
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, VoipPhoneErrorKind::Parse);
+    assert!(!err.to_string().contains(PASS));
+}
+
+#[test]
+fn cache_busters_are_appended_the_way_the_phone_pages_do() {
+    let mut rng = fixed_rng();
+    let form = auth::with_cache_buster(SERVLET_LOGIN_FORM, "Random", &mut rng);
+    let post = auth::with_cache_buster(SERVLET_LOGIN_POST, "Rajax", &mut rng);
+    assert!(form.starts_with(&format!("{SERVLET_LOGIN_FORM}&Random=")));
+    assert!(post.starts_with(&format!("{SERVLET_LOGIN_POST}&Rajax=")));
+    assert!(form
+        .rsplit('=')
+        .next()
+        .unwrap()
+        .chars()
+        .all(|c| c.is_ascii_digit()));
+}
+
+#[test]
+fn is_login_page_spots_both_markups() {
+    assert!(auth::is_login_page(&fixture("servlet_login_plain.html")));
+    assert!(auth::is_login_page(&fixture("servlet_login_g_rsa.html")));
+    assert!(auth::is_login_page(&fixture(
+        "servlet_login_response_bounce.html"
+    )));
+    assert!(!auth::is_login_page(&fixture(
+        "servlet_login_response_done.html"
+    )));
+    assert!(!auth::is_login_page(&fixture("unknown_index.html")));
+}
+
+#[test]
+fn every_login_outcome_has_a_log_safe_label_and_a_closed_error() {
+    let secret_hint = "HTTP 418 — first bytes: \"teapot\"";
+    let outcomes = [
+        LoginOutcome::Done,
+        LoginOutcome::BadCredentials,
+        LoginOutcome::Locked,
+        LoginOutcome::SessionLost,
+        LoginOutcome::Unclassified(secret_hint.into()),
+    ];
+    let labels: Vec<&str> = outcomes.iter().map(LoginOutcome::as_str).collect();
+    assert_eq!(
+        labels,
+        vec![
+            "done",
+            "bad-credentials",
+            "locked",
+            "session-lost",
+            "unclassified"
+        ]
+    );
+    // The label never carries the hint: this crate logs classifications only.
+    assert!(!outcomes[4].as_str().contains("teapot"));
+    for outcome in outcomes.into_iter().skip(1) {
+        let err = auth::login_outcome_error(outcome);
+        assert!(matches!(
+            err.kind,
+            VoipPhoneErrorKind::Auth | VoipPhoneErrorKind::Unsupported
+        ));
+        assert!(!err.message.is_empty());
+    }
 }

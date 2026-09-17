@@ -48,7 +48,13 @@ impl VoipPhoneGeneration {
 pub enum VoipPhoneAuthShape {
     Basic,
     FormPlain,
+    /// Historic shape: the password itself RSA-encrypted. No firmware is known
+    /// to want this; kept so an old log or saved session still parses.
     FormRsa,
+    /// The attested servlet shape: AES-CBC over
+    /// `"<nonce>;<JSESSIONID>;<password>"` with the AES key and IV RSA-wrapped
+    /// under the page's per-session key.
+    FormRsaAes,
 }
 
 impl VoipPhoneAuthShape {
@@ -57,6 +63,42 @@ impl VoipPhoneAuthShape {
             Self::Basic => "basic",
             Self::FormPlain => "form-plain",
             Self::FormRsa => "form-rsa",
+            Self::FormRsaAes => "form-rsa-aes",
+        }
+    }
+}
+
+/// How the phone answered the servlet login POST.
+///
+/// `BadCredentials` and `Locked` are **terminal**: the phone locks an account
+/// out after repeated failures, so no caller may retry or back off on them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LoginOutcome {
+    /// `{"authstatus":"done"}`, or a redirect into the post-login area.
+    Done,
+    /// `{"authstatus":"none"}` — username or password rejected.
+    BadCredentials,
+    /// `{"authstatus":"lock"}` — locked out after repeated failed sign-ins.
+    Locked,
+    /// The phone sent the login page back: the session was dropped (it allows
+    /// only one web session at a time).
+    SessionLost,
+    /// Anything else. Carries the HTTP status and the first bytes so a user
+    /// with a real phone can paste an actionable report. Never success.
+    Unclassified(String),
+}
+
+impl LoginOutcome {
+    /// Log-safe label. The `Unclassified` hint is deliberately not included:
+    /// `log::debug!` in this crate prints classifications, never bodies.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Done => "done",
+            Self::BadCredentials => "bad-credentials",
+            Self::Locked => "locked",
+            Self::SessionLost => "session-lost",
+            Self::Unclassified(_) => "unclassified",
         }
     }
 }

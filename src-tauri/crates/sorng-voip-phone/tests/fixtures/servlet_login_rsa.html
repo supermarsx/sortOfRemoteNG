@@ -1,3 +1,10 @@
+<!--
+  The older servlet markup this crate's endpoint table was first written
+  against: the key lives in `var rsakey` / `RSA.setPublic(...)` rather than
+  `g_rsa_n`. Kept as a fixture so the alternate patterns in
+  `servlet::RSA_N_PATTERNS` stay covered -- a page in this shape must still be
+  detected as encrypted and must never fall back to a plaintext password.
+-->
 <html>
 <head>
 <title>Yealink SIP-T21P E2</title>
@@ -7,18 +14,19 @@
   function doLogin() {
     var rsa = new RSAKey();
     rsa.setPublic(rsakey, "10001");
-    document.getElementById("pwd").value = hex2b64(rsa.encrypt(document.getElementById("pwd").value));
-    document.getElementById("rsakey").value = rsakey;
+    document.getElementById("pwd").value = hex2b64(rsa.encrypt(buildPayload()));
     document.loginForm.submit();
   }
 </script>
 </head>
 <body>
 <form name="loginForm" method="post" action="/servlet?m=mod_listener&p=login&q=login">
-  <input type="text" name="username" id="username" />
-  <input type="password" name="pwd" id="pwd" />
-  <input type="hidden" name="rsakey" id="rsakey" />
-  <input type="submit" id="login" value="Confirm" onclick="doLogin();return false;" />
+  <input type="text" id="idUsername" name="username" />
+  <input type="password" id="idPassword" />
+  <input type="hidden" id="pwd" name="pwd" />
+  <input type="hidden" id="rsakey" name="rsakey" />
+  <input type="hidden" id="rsaiv" name="rsaiv" />
+  <a href="javascript:void(0);" id="idConfirm" onclick="doLogin();">Confirm</a>
 </form>
 </body>
 </html>

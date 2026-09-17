@@ -1,0 +1,47 @@
+<!--
+  Attested T21P E2 login page (public reconstruction; no firmware was
+  downloaded or decrypted). `{{MODULUS}}` / `{{EXPONENT}}` are substituted by
+  the test's mock phone with a real per-session key pair.
+
+  What matters here: `g_rsa_n` / `g_rsa_e` carry the key, `g_phonetype` /
+  `g_strFirmware` are readable before authenticating, and the confirm control
+  is an <a> that calls the page's own JavaScript -- NOT a submit input.
+-->
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=gb2312">
+<title>Yealink SIP-T21P_E2</title>
+<script type="text/javascript" src="/js/rsa.js"></script>
+<script type="text/javascript" src="/js/aes.js"></script>
+<script type="text/javascript">
+  var g_phonetype = "T21P_E2";
+  var g_strFirmware = "52.84.0.15";
+  var g_rsa_n = "{{MODULUS}}";
+  var g_rsa_e = "{{EXPONENT}}";
+  function doLogin() {
+    var aeskey = hex_md5(Math.random().toString());
+    var aesiv = hex_md5(Math.random().toString());
+    var plain = Math.random().toString() + ";" + getCookie("JSESSIONID") + ";"
+              + document.getElementById("idPassword").value;
+    var rsa = new RSAKey();
+    rsa.setPublic(g_rsa_n, g_rsa_e);
+    document.getElementById("pwd").value = aesEncrypt(plain, aeskey, aesiv);
+    document.getElementById("rsakey").value = hex2b64(rsa.encrypt(aeskey));
+    document.getElementById("rsaiv").value = hex2b64(rsa.encrypt(aesiv));
+    document.forms[0].submit();
+  }
+</script>
+</head>
+<body>
+<div id="idLoginArea">
+  <form method="post" action="/servlet?m=mod_listener&p=login&q=login">
+    <input type="text" id="idUsername" name="username" maxlength="32" />
+    <input type="password" id="idPassword" maxlength="32" />
+    <input type="hidden" id="pwd" name="pwd" />
+    <input type="hidden" id="rsakey" name="rsakey" />
+    <input type="hidden" id="rsaiv" name="rsaiv" />
+    <a href="javascript:void(0);" id="idConfirm" onclick="doLogin();">Confirm</a>
+  </form>
+</div>
+</body>
+</html>

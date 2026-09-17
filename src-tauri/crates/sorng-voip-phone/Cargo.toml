@@ -18,6 +18,11 @@ async-trait = { workspace = true }
 # Already locked in the workspace (sorng-auth / sorng-smtp / sorng-ssh) — no new lockfile entry.
 rsa = "0.9"
 rand = { workspace = true }
+# Yealink servlet login wraps the password in AES-128-CBC before RSA. Both are
+# already locked at these versions (sorng-ard / sorng-auth / sorng-bitwarden /
+# sorng-lastpass / sorng-ssh) — no new lockfile entry.
+aes = "0.8"
+cbc = "0.1"
 sorng-tls-trust = { path = "../sorng-tls-trust" }
 sorng-storage = { path = "../sorng-storage" }
 

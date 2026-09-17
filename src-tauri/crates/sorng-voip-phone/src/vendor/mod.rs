@@ -2,6 +2,7 @@
 //! Snom, …) plug in here without touching the service, types or commands.
 
 pub mod yealink;
+pub mod yealink_servlet_auth;
 
 use std::time::Duration;
 

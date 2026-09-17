@@ -30,9 +30,15 @@ pub mod legacy {
 /// Servlet generation: T21P E2 and every v8x+ phone.
 pub mod servlet {
     /// Login page (GET) — serves the form and (v8x+) an RSA public key.
+    /// Real firmware appends `&Random=<n>`; see [`PARAM_FORM_NONCE`].
     pub const LOGIN_FORM: &str = "/servlet?m=mod_listener&p=login&q=loginForm";
-    /// Login POST target.
+    /// Login POST target. Real firmware appends `&Rajax=<n>`; see
+    /// [`PARAM_LOGIN_NONCE`].
     pub const LOGIN_POST: &str = "/servlet?m=mod_listener&p=login&q=login";
+    /// Cache-buster the phone's own pages append to the login-page GET.
+    pub const PARAM_FORM_NONCE: &str = "Random";
+    /// Cache-buster the phone's own pages append to the login POST.
+    pub const PARAM_LOGIN_NONCE: &str = "Rajax";
     /// Post-login landing / status page.
     pub const STATUS: &str = "/servlet?m=mod_data&p=status&q=load";
     /// Logout.
@@ -46,27 +52,73 @@ pub mod servlet {
 
     pub const FIELD_USERNAME: &str = "username";
     pub const FIELD_PASSWORD: &str = "pwd";
+    /// RSA-wrapped AES key (hex string) — NOT the modulus.
     pub const FIELD_RSAKEY: &str = "rsakey";
+    /// RSA-wrapped AES IV (hex string).
+    pub const FIELD_RSAIV: &str = "rsaiv";
     pub const SESSION_COOKIE: &str = "JSESSIONID";
     /// Marker in a redirect `Location` / body that identifies this generation.
     pub const MARKER: &str = "servlet?m=mod_listener";
-    /// Marker present in the login page (its absence after POST = success).
+    /// Marker present in the login page body.
     pub const LOGIN_FORM_MARKER: &str = "loginForm";
+    /// Marker in a redirect `Location` that means "back to the login page".
+    pub const LOGIN_FORM_QUERY_MARKER: &str = "q=loginForm";
+    /// DOM id of the login page's username field — also the tell that a
+    /// response is the login page again rather than the post-login area.
+    pub const USERNAME_ID_MARKER: &str = "idUsername";
     /// Marker of the post-login area.
     pub const DATA_MARKER: &str = "mod_data";
-    /// Public exponent used by the phone's client-side RSA (0x10001).
+
+    /// Default public exponent when the page does not carry `g_rsa_e` (0x10001).
     pub const RSA_EXPONENT_HEX: &str = "10001";
-    /// Regexes that locate the RSA modulus (hex) in the login page.
-    pub const RSA_KEY_PATTERNS: &[&str] = &[
+    /// Regexes that locate the RSA modulus (hex) in the login page. The first
+    /// entry is the attested T21P E2 shape (`var g_rsa_n="…"`, per session);
+    /// the rest are the older shapes this table carried before and are kept as
+    /// alternates so one page grammar change cannot silently disable the
+    /// encryption.
+    pub const RSA_N_PATTERNS: &[&str] = &[
+        r#"g_rsa_n\s*=\s*['"]([0-9a-fA-F]{64,})['"]"#,
         r#"rsakey\s*=\s*['"]([0-9a-fA-F]{64,})['"]"#,
         r#"RSA\.setPublic\(\s*['"]([0-9a-fA-F]{64,})['"]"#,
         r#"setPublic\(\s*['"]([0-9a-fA-F]{64,})['"]"#,
     ];
+    /// Regexes that locate the RSA public exponent (hex) in the login page.
+    /// The `setPublic` alternate takes the modulus argument as-is, because the
+    /// pages pass it as a variable (`rsa.setPublic(g_rsa_n, "10001")`) as
+    /// often as they inline it.
+    pub const RSA_E_PATTERNS: &[&str] = &[
+        r#"g_rsa_e\s*=\s*['"]([0-9a-fA-F]{1,16})['"]"#,
+        r#"setPublic\(\s*[^,()]{1,80},\s*['"]([0-9a-fA-F]{1,16})['"]"#,
+    ];
+    /// Model and firmware are readable *before* authenticating. Non-secret:
+    /// these two may be logged, nothing else from the login page may.
+    pub const PHONETYPE_PATTERN: &str = r#"g_phonetype\s*=\s*['"]([^'"]{1,64})['"]"#;
+    pub const FIRMWARE_PATTERN: &str = r#"g_strFirmware\s*=\s*['"]([^'"]{1,64})['"]"#;
+    /// The phone's JS submits the RSA ciphertext base64-encoded (`hex2b64`).
+    /// Flip to `false` if a real phone turns out to want raw hex.
+    pub const RSA_CIPHERTEXT_IS_BASE64: bool = true;
 
-    /// Embedded-browser auto-login selectors.
-    pub const SEL_USERNAME: &str = "input[name=username]";
-    pub const SEL_PASSWORD: &str = "input[name=pwd]";
-    pub const SEL_SUBMIT: &str = "input[type=submit],#login,button[type=submit]";
+    /// Login answer: `<div id="_RES_INFO_">{"authstatus":"done"}</div>`.
+    pub const AUTHSTATUS_PATTERN: &str = r#"(?i)"authstatus"\s*:\s*"([a-z]+)""#;
+    /// Signed in.
+    pub const AUTHSTATUS_DONE: &str = "done";
+    /// Username or password rejected. Terminal — never retry.
+    pub const AUTHSTATUS_NONE: &str = "none";
+    /// Account locked out after repeated failures. Terminal — never retry.
+    pub const AUTHSTATUS_LOCK: &str = "lock";
+
+    /// Embedded-browser auto-login selectors. The first alternate in each is
+    /// the attested T21P E2 markup; the second is the older markup this table
+    /// carried before. `findInRoot` requires exactly one visible match per
+    /// role, so listing both is safe and covers both generations.
+    ///
+    /// These strings are mirrored by the `voip-phone` HTTP application profile
+    /// (`src/utils/connection/httpApplicationProfiles.ts`) — keep them equal.
+    pub const SEL_USERNAME: &str = r#"#idUsername, input[name="username"]"#;
+    pub const SEL_PASSWORD: &str = r#"#idPassword, input[name="pwd"][type="password"]"#;
+    /// The real confirm control is an `<a>` that calls the page's own JS, not
+    /// a native submit input.
+    pub const SEL_SUBMIT: &str = r#"#idConfirm, input[type="submit"][name="login"]"#;
 }
 
 /// Status-page label → field mapping shared by both generations. Matching is

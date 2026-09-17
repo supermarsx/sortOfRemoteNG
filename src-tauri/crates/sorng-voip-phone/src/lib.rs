@@ -19,6 +19,11 @@ pub mod trust;
 pub mod types;
 pub mod vendor;
 
+/// The Yealink servlet login contract (page grammar + RSA/AES password
+/// wrapper + response classification), shared with the HTTP proxy's native
+/// pre-authentication so the two can never drift.
+pub use vendor::yealink_servlet_auth;
+
 pub use error::{VoipPhoneError, VoipPhoneErrorKind, VoipPhoneResult};
 pub use service::{VoipPhoneService, VoipPhoneServiceState};
 pub use types::*;

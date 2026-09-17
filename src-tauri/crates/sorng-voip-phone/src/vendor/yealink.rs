@@ -3,21 +3,28 @@
 //! Two firmware generations (see [`crate::endpoints`]):
 //! * **Legacy** — `/cgi-bin/ConfigManApp.com` behind HTTP Basic.
 //! * **Servlet** — `/servlet?m=mod_listener…` login form, `JSESSIONID`
-//!   cookie, optional client-side RSA (v8x+).
+//!   cookie, and a password wrapped in AES under a per-session RSA key. The
+//!   wire contract lives in [`super::yealink_servlet_auth`], shared with the
+//!   proxy so the two cannot drift.
 //!
-//! Detection-first and tolerant: nothing here fails on a missing status
-//! field, and every auth failure carries the shape that was attempted.
-//! Passwords are never logged; `log::debug!` only prints generation,
-//! auth shape and HTTP status codes.
+//! Detection-first and tolerant on *status* pages: nothing here fails on a
+//! missing field, and every auth failure carries the shape that was attempted.
+//! Sign-in itself is the opposite — it fails closed, and only the phone's own
+//! `authstatus` verdict counts as success.
+//!
+//! Secrets are never logged: `log::debug!` prints generation, auth shape,
+//! HTTP status codes, the login outcome, and the phone model and firmware
+//! (both readable from the login page without credentials).
 
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use base64::Engine;
+use rand::SeedableRng;
 use regex::Regex;
 use reqwest::header::{HeaderMap, LOCATION, SET_COOKIE, WWW_AUTHENTICATE};
 use reqwest::{RequestBuilder, Response, StatusCode};
 
+use super::yealink_servlet_auth as auth;
 use super::{PhoneHttp, VendorDriver};
 use crate::endpoints::{labels, legacy, servlet};
 use crate::error::{VoipPhoneError, VoipPhoneResult};
@@ -39,12 +46,20 @@ fn location(headers: &HeaderMap) -> Option<&str> {
     header_str(headers, LOCATION.as_str())
 }
 
-fn sets_cookie(headers: &HeaderMap, name: &str) -> bool {
+/// The value of a `Set-Cookie` the response issued. **Secret**: the session id
+/// binds the encrypted password to the session, so it is never logged, never
+/// put in an error and never returned to the frontend.
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    let prefix = format!("{name}=");
     headers
         .get_all(SET_COOKIE)
         .iter()
         .filter_map(|v| v.to_str().ok())
-        .any(|c| c.trim_start().starts_with(&format!("{name}=")))
+        .find_map(|c| {
+            let c = c.trim_start().strip_prefix(&prefix)?;
+            let value = c.split(';').next().unwrap_or("").trim();
+            (!value.is_empty()).then(|| value.to_string())
+        })
 }
 
 fn location_points_to_login(headers: &HeaderMap) -> bool {
@@ -56,37 +71,7 @@ async fn body_text(resp: Response) -> String {
 }
 
 fn classification_hint(status: StatusCode, body: &str) -> String {
-    let snippet: String = body.chars().take(200).collect();
-    let snippet = snippet.replace(['\r', '\n'], " ");
-    format!("HTTP {} — first bytes: {snippet:?}", status.as_u16())
-}
-
-/// Find the RSA public modulus (hex) in the servlet login page.
-fn find_rsa_modulus(body: &str) -> Option<String> {
-    servlet::RSA_KEY_PATTERNS.iter().find_map(|pat| {
-        Regex::new(pat)
-            .ok()?
-            .captures(body)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string())
-    })
-}
-
-/// RSA-PKCS#1 v1.5 encrypt `plain` with the page's hex modulus (e = 0x10001),
-/// base64-encoded — what the phone's own JavaScript does before submitting.
-fn rsa_encrypt_password(modulus_hex: &str, plain: &str) -> VoipPhoneResult<String> {
-    use rsa::{BigUint, Pkcs1v15Encrypt, RsaPublicKey};
-    let n = BigUint::parse_bytes(modulus_hex.as_bytes(), 16)
-        .ok_or_else(|| VoipPhoneError::parse("RSA modulus in login page is not hex"))?;
-    let e = BigUint::parse_bytes(servlet::RSA_EXPONENT_HEX.as_bytes(), 16)
-        .ok_or_else(|| VoipPhoneError::parse("bad RSA exponent constant"))?;
-    let key = RsaPublicKey::new(n, e)
-        .map_err(|e| VoipPhoneError::parse(format!("RSA public key rejected: {e}")))?;
-    let mut rng = rand::thread_rng();
-    let cipher = key
-        .encrypt(&mut rng, Pkcs1v15Encrypt, plain.as_bytes())
-        .map_err(|e| VoipPhoneError::parse(format!("RSA encryption failed: {e}")))?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(cipher))
+    auth::response_hint(status.as_u16(), body)
 }
 
 // ── status-page scraping ─────────────────────────────────────────────────────
@@ -253,74 +238,114 @@ impl YealinkDriver {
         }
     }
 
+    /// Servlet sign-in, per the attested contract (see
+    /// [`auth`][crate::vendor::yealink_servlet_auth]). Exactly one attempt:
+    /// the phone locks an account out after repeated failures, so a rejected
+    /// or locked answer is terminal and nothing here retries or backs off.
     async fn login_servlet(&self, http: &PhoneHttp) -> VoipPhoneResult<VoipPhoneAuthShape> {
-        // 1) GET the login form (may already set JSESSIONID; may carry an RSA key).
+        // `StdRng` rather than `thread_rng()`: this future has to stay `Send`
+        // across the two awaits below.
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        // 1) GET the login form. It issues the JSESSIONID the ciphertext is
+        //    bound to, and carries the per-session RSA public key.
+        let form_url =
+            auth::with_cache_buster(servlet::LOGIN_FORM, servlet::PARAM_FORM_NONCE, &mut rng);
         let form_resp = http
             .client
-            .get(http.url(servlet::LOGIN_FORM))
+            .get(http.url(&form_url))
             .send()
             .await
-            .map_err(|e| VoipPhoneError::http(e).with_shape(VoipPhoneAuthShape::FormPlain))?;
+            .map_err(|e| VoipPhoneError::http(e).with_shape(VoipPhoneAuthShape::FormRsaAes))?;
         let form_status = form_resp.status();
-        let mut cookie_seen = sets_cookie(form_resp.headers(), servlet::SESSION_COOKIE);
+        let session_id = cookie_value(form_resp.headers(), servlet::SESSION_COOKIE);
         let form_body = body_text(form_resp).await;
+        let facts = auth::parse_login_form(&form_body);
+        // `phone_type` / `firmware` are readable without credentials and are
+        // not secret. The session id is, so only its presence is printed.
         log::debug!(
-            "yealink servlet loginForm -> HTTP {} (cookie_seen={cookie_seen})",
-            form_status.as_u16()
+            "yealink servlet loginForm -> HTTP {} (session={}, encrypted={}, phone={:?}, firmware={:?})",
+            form_status.as_u16(),
+            session_id.is_some(),
+            facts.is_encrypted(),
+            facts.phone_type,
+            facts.firmware,
         );
 
-        let modulus = find_rsa_modulus(&form_body);
-        let shape = if modulus.is_some() {
-            VoipPhoneAuthShape::FormRsa
+        let shape = if facts.is_encrypted() {
+            VoipPhoneAuthShape::FormRsaAes
         } else {
             VoipPhoneAuthShape::FormPlain
         };
+        if !form_status.is_success() {
+            return Err(VoipPhoneError::connection(format!(
+                "The phone's login page returned HTTP {}",
+                form_status.as_u16()
+            ))
+            .with_shape(shape));
+        }
+        if !auth::is_login_page(&form_body) && !facts.is_encrypted() {
+            // Not a Yealink login form at all — never post a credential to it.
+            return Err(VoipPhoneError::unsupported(format!(
+                "Could not classify the phone's login page: {}",
+                classification_hint(form_status, &form_body)
+            ))
+            .with_shape(shape));
+        }
 
         // 2) POST the credentials in the detected shape.
-        let mut form: Vec<(&str, String)> = vec![(servlet::FIELD_USERNAME, http.username.clone())];
-        match &modulus {
-            Some(hex) => {
-                let enc =
-                    rsa_encrypt_password(hex, &http.password).map_err(|e| e.with_shape(shape))?;
-                form.push((servlet::FIELD_PASSWORD, enc));
-                form.push((servlet::FIELD_RSAKEY, hex.clone()));
-            }
-            None => form.push((servlet::FIELD_PASSWORD, http.password.clone())),
-        }
+        let form: Vec<(&str, String)> = if facts.is_encrypted() {
+            let Some(session_id) = session_id else {
+                return Err(VoipPhoneError::auth(
+                    "The phone did not issue a web session cookie, so the sign-in cannot be encrypted for it",
+                )
+                .with_shape(shape));
+            };
+            auth::build_login_body(
+                &http.username,
+                &http.password,
+                &session_id,
+                &facts,
+                &mut rng,
+            )
+            .map_err(|e| e.with_shape(shape))?
+        } else {
+            // Pre-RSA firmware: the page offers no key, so there is nothing to
+            // encrypt with. This is the only path that posts a plain password,
+            // and it is reached only from a page that has no `g_rsa_n` and no
+            // legacy `rsakey` either.
+            vec![
+                (servlet::FIELD_USERNAME, http.username.clone()),
+                (servlet::FIELD_PASSWORD, http.password.clone()),
+            ]
+        };
+        let post_url =
+            auth::with_cache_buster(servlet::LOGIN_POST, servlet::PARAM_LOGIN_NONCE, &mut rng);
         let resp = http
             .client
-            .post(http.url(servlet::LOGIN_POST))
+            .post(http.url(&post_url))
             .form(&form)
             .send()
             .await
             .map_err(|e| VoipPhoneError::http(e).with_shape(shape))?;
         let status = resp.status();
-        cookie_seen |= sets_cookie(resp.headers(), servlet::SESSION_COOKIE);
-        let redirected_to_data =
-            location(resp.headers()).is_some_and(|l| l.contains(servlet::DATA_MARKER));
-        let redirected_to_login = location_points_to_login(resp.headers());
+        let redirect = location(resp.headers()).map(str::to_string);
         let body = body_text(resp).await;
-        log::debug!(
-            "yealink servlet login POST ({}) -> HTTP {} cookie_seen={cookie_seen} to_data={redirected_to_data}",
-            shape.as_str(),
-            status.as_u16()
-        );
 
-        let ok = cookie_seen
-            && !redirected_to_login
-            && (redirected_to_data
-                || (status.is_success() && !body.contains(servlet::LOGIN_FORM_MARKER)));
-        if ok {
+        // 3) The phone's own verdict decides, and only a positive one is
+        //    success. A rejected login answers HTTP 200 carrying
+        //    `{"authstatus":"none"}` and the cookie the form GET already set,
+        //    which is why neither of those may count as a sign of success.
+        let outcome = auth::classify_login_response(status.as_u16(), redirect.as_deref(), &body);
+        log::debug!(
+            "yealink servlet login POST ({}) -> HTTP {} outcome={}",
+            shape.as_str(),
+            status.as_u16(),
+            outcome.as_str(),
+        );
+        if outcome == LoginOutcome::Done {
             return Ok(shape);
         }
-        let mut msg = String::from("Phone rejected the web-form login");
-        if shape == VoipPhoneAuthShape::FormRsa {
-            msg.push_str("; this firmware encrypts the password client-side — use Open Web UI (auto-login) if native login keeps failing");
-        }
-        if !cookie_seen {
-            msg.push_str(" (no JSESSIONID cookie issued)");
-        }
-        Err(VoipPhoneError::auth(msg).with_shape(shape))
+        Err(auth::login_outcome_error(outcome).with_shape(shape))
     }
 
     async fn fetch_status_page(
@@ -544,7 +569,11 @@ impl VendorDriver for YealinkDriver {
                 password_selector: Some(servlet::SEL_PASSWORD.into()),
                 submit_selector: Some(servlet::SEL_SUBMIT.into()),
                 note: Some(
-                    "Web-form login; v8x+ firmware encrypts the password in the page's JavaScript, which the browser auto-login runs as-is".into(),
+                    "Web-form login. The page's own JavaScript encrypts the password (AES, \
+                     RSA-wrapped) against a per-session key before submitting, so filling the \
+                     fields and clicking Confirm is not enough on its own — the phone's scripts \
+                     have to run. The phone is signed in natively where possible."
+                        .into(),
                 ),
             },
         }
@@ -560,7 +589,9 @@ impl VendorDriver for YealinkDriver {
     fn expected_auth_shape(&self, generation: VoipPhoneGeneration) -> VoipPhoneAuthShape {
         match generation {
             VoipPhoneGeneration::Legacy => VoipPhoneAuthShape::Basic,
-            VoipPhoneGeneration::Servlet => VoipPhoneAuthShape::FormPlain,
+            // The attested shape. A page that turns out to carry no RSA key at
+            // all falls back to `FormPlain` at login time.
+            VoipPhoneGeneration::Servlet => VoipPhoneAuthShape::FormRsaAes,
         }
     }
 }
@@ -570,17 +601,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rsa_modulus_is_found_in_either_page_shape() {
-        let m = "ab".repeat(64);
-        assert_eq!(
-            find_rsa_modulus(&format!("var rsakey = \"{m}\";")).as_deref(),
-            Some(m.as_str())
+    fn session_cookie_value_is_extracted_without_attributes() {
+        let mut headers = HeaderMap::new();
+        headers.append(SET_COOKIE, "Path=/; Other=1".parse().unwrap());
+        headers.append(
+            SET_COOKIE,
+            "JSESSIONID=abc123def456; Path=/; HttpOnly".parse().unwrap(),
         );
         assert_eq!(
-            find_rsa_modulus(&format!("rsa.setPublic('{m}', '10001')")).as_deref(),
-            Some(m.as_str())
+            cookie_value(&headers, servlet::SESSION_COOKIE).as_deref(),
+            Some("abc123def456")
         );
-        assert!(find_rsa_modulus("<form name=loginForm>").is_none());
+        assert!(cookie_value(&HeaderMap::new(), servlet::SESSION_COOKIE).is_none());
+
+        let mut empty = HeaderMap::new();
+        empty.append(SET_COOKIE, "JSESSIONID=; Path=/".parse().unwrap());
+        assert!(cookie_value(&empty, servlet::SESSION_COOKIE).is_none());
     }
 
     #[test]
