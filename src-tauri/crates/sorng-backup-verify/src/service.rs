@@ -295,25 +295,171 @@ impl Default for BackupVerifyService {
 }
 
 /// Determine data directory for persisted state.
+///
+/// Production keeps the historical location, including the `SORNG_DATA_DIR`
+/// override. An isolated app identity (e2e builds) resolves inside its own
+/// local-data profile root, `<local data>/<identifier>/backup-verify`, and
+/// ignores `SORNG_DATA_DIR`, so it never shares production state.
 fn dirs_data_path() -> PathBuf {
-    if let Ok(dir) = std::env::var("SORNG_DATA_DIR") {
-        return PathBuf::from(dir).join("backup-verify");
+    data_path_for(sorng_core::app_identity::current_identifier(), |key| {
+        std::env::var(key).ok()
+    })
+}
+
+fn data_path_for(identifier: &str, env: impl Fn(&str) -> Option<String>) -> PathBuf {
+    let isolated = !sorng_core::app_identity::is_production(identifier);
+    if !isolated {
+        if let Some(dir) = env("SORNG_DATA_DIR") {
+            return PathBuf::from(dir).join("backup-verify");
+        }
     }
+    let profile = if isolated { identifier } else { "sorng" };
     #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
-            return PathBuf::from(appdata).join("sorng").join("backup-verify");
-        }
-    }
+    let local_data = env("LOCALAPPDATA").map(PathBuf::from);
     #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home)
-                .join(".local")
-                .join("share")
-                .join("sorng")
-                .join("backup-verify");
-        }
+    let local_data = env("HOME").map(|home| PathBuf::from(home).join(".local").join("share"));
+    match local_data {
+        Some(root) => root.join(profile).join("backup-verify"),
+        None if isolated => PathBuf::from(".")
+            .join("sorng-data")
+            .join(identifier)
+            .join("backup-verify"),
+        None => PathBuf::from(".").join("sorng-data").join("backup-verify"),
     }
-    PathBuf::from(".").join("sorng-data").join("backup-verify")
+}
+
+#[cfg(test)]
+mod data_path_tests {
+    use super::{data_path_for, dirs_data_path};
+    use sorng_core::app_identity::{self, PRODUCTION_IDENTIFIER};
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    const E2E_IDENTIFIER: &str = "com.sortofremote.ng.e2e";
+
+    /// The resolver as it was before app identities existed.
+    fn legacy_data_path(env: impl Fn(&str) -> Option<String>) -> PathBuf {
+        if let Some(dir) = env("SORNG_DATA_DIR") {
+            return PathBuf::from(dir).join("backup-verify");
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(appdata) = env("LOCALAPPDATA") {
+                return PathBuf::from(appdata).join("sorng").join("backup-verify");
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Some(home) = env("HOME") {
+                return PathBuf::from(home)
+                    .join(".local")
+                    .join("share")
+                    .join("sorng")
+                    .join("backup-verify");
+            }
+        }
+        PathBuf::from(".").join("sorng-data").join("backup-verify")
+    }
+
+    fn fixture(name: &str) -> String {
+        std::env::temp_dir()
+            .join("sorng-backup-verify-paths")
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn env_from(pairs: &[(&str, String)]) -> impl Fn(&str) -> Option<String> {
+        let vars: HashMap<String, String> = pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.clone()))
+            .collect();
+        move |key| vars.get(key).cloned()
+    }
+
+    fn env_matrix() -> Vec<Vec<(&'static str, String)>> {
+        vec![
+            vec![],
+            vec![("SORNG_DATA_DIR", fixture("override"))],
+            vec![
+                ("LOCALAPPDATA", fixture("local")),
+                ("HOME", fixture("home")),
+            ],
+            vec![
+                ("SORNG_DATA_DIR", fixture("override")),
+                ("LOCALAPPDATA", fixture("local")),
+                ("HOME", fixture("home")),
+            ],
+            vec![("LOCALAPPDATA", String::new()), ("HOME", String::new())],
+        ]
+    }
+
+    #[test]
+    fn production_identity_matches_the_legacy_resolver_byte_for_byte() {
+        for pairs in env_matrix() {
+            let env = env_from(&pairs);
+            assert_eq!(
+                data_path_for(PRODUCTION_IDENTIFIER, &env)
+                    .as_os_str()
+                    .as_encoded_bytes(),
+                legacy_data_path(&env).as_os_str().as_encoded_bytes(),
+                "{pairs:?}"
+            );
+        }
+        assert_eq!(
+            data_path_for(
+                PRODUCTION_IDENTIFIER,
+                env_from(&[("SORNG_DATA_DIR", fixture("override"))])
+            ),
+            PathBuf::from(fixture("override")).join("backup-verify")
+        );
+    }
+
+    #[test]
+    fn uninstalled_process_identity_resolves_the_production_location() {
+        // Nothing in this test binary installs an app identity.
+        assert_eq!(
+            dirs_data_path().as_os_str().as_encoded_bytes(),
+            legacy_data_path(|key| std::env::var(key).ok())
+                .as_os_str()
+                .as_encoded_bytes()
+        );
+    }
+
+    #[test]
+    fn isolated_identity_resolves_inside_its_profile_root_and_ignores_the_override() {
+        let env = env_from(&[
+            ("SORNG_DATA_DIR", fixture("override")),
+            ("LOCALAPPDATA", fixture("local")),
+            ("HOME", fixture("home")),
+        ]);
+        #[cfg(target_os = "windows")]
+        let local_data = PathBuf::from(fixture("local"));
+        #[cfg(not(target_os = "windows"))]
+        let local_data = PathBuf::from(fixture("home")).join(".local").join("share");
+
+        let resolved = data_path_for(E2E_IDENTIFIER, &env);
+        assert_eq!(
+            resolved,
+            local_data.join(E2E_IDENTIFIER).join("backup-verify")
+        );
+        app_identity::verify_isolated_dir(&resolved, E2E_IDENTIFIER)
+            .expect("isolated backup-verify state must not alias production state");
+        assert!(!resolved.starts_with(fixture("override")));
+        assert_ne!(resolved, data_path_for(PRODUCTION_IDENTIFIER, &env));
+    }
+
+    #[test]
+    fn isolated_identity_without_a_home_stays_under_its_identifier() {
+        assert_eq!(
+            data_path_for(
+                E2E_IDENTIFIER,
+                env_from(&[("SORNG_DATA_DIR", fixture("override"))])
+            ),
+            PathBuf::from(".")
+                .join("sorng-data")
+                .join(E2E_IDENTIFIER)
+                .join("backup-verify")
+        );
+    }
 }

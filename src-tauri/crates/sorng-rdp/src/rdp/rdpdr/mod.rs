@@ -451,10 +451,10 @@ impl RdpdrClient {
                 if self.device_flags.printers {
                     let printer_id = self.next_device_id;
                     self.next_device_id += 1;
-                    let output_dir = dirs::data_dir()
-                        .unwrap_or_else(|| PathBuf::from("."))
-                        .join("com.sortofremote.ng")
-                        .join("print-jobs");
+                    let output_dir = print_jobs_dir(
+                        dirs::data_dir(),
+                        sorng_core::app_identity::current_identifier(),
+                    );
                     let printer = PrinterDevice::new(
                         printer_id,
                         "sortOfRemote PDF",
@@ -1244,6 +1244,69 @@ impl SvcProcessor for RdpsndClient {
                 Ok(Vec::new())
             }
         }
+    }
+}
+
+/// Spool directory for redirected print jobs: `<data_dir>/<identifier>/print-jobs`.
+/// The profile component is the compiled app identity, so an isolated (e2e)
+/// build never spools into the production profile, while production keeps
+/// `<data_dir>/com.sortofremote.ng/print-jobs` byte for byte.
+fn print_jobs_dir(data_dir: Option<PathBuf>, identifier: &str) -> PathBuf {
+    data_dir
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(identifier)
+        .join("print-jobs")
+}
+
+#[cfg(test)]
+mod print_jobs_dir_tests {
+    use super::print_jobs_dir;
+    use sorng_core::app_identity::{self, PRODUCTION_IDENTIFIER};
+    use std::path::PathBuf;
+
+    const E2E_IDENTIFIER: &str = "com.sortofremote.ng.e2e";
+
+    #[test]
+    fn production_identity_keeps_the_legacy_spool_path_byte_for_byte() {
+        for data_dir in [Some(std::env::temp_dir().join("data-root")), None] {
+            let legacy = data_dir
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("com.sortofremote.ng")
+                .join("print-jobs");
+            let resolved = print_jobs_dir(data_dir, PRODUCTION_IDENTIFIER);
+            assert_eq!(
+                resolved.as_os_str().as_encoded_bytes(),
+                legacy.as_os_str().as_encoded_bytes()
+            );
+        }
+    }
+
+    #[test]
+    fn uninstalled_process_identity_resolves_the_production_spool() {
+        // Nothing in this test binary installs an app identity.
+        let legacy = dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("com.sortofremote.ng")
+            .join("print-jobs");
+        let resolved = print_jobs_dir(dirs::data_dir(), app_identity::current_identifier());
+        assert_eq!(
+            resolved.as_os_str().as_encoded_bytes(),
+            legacy.as_os_str().as_encoded_bytes()
+        );
+    }
+
+    #[test]
+    fn isolated_identity_spools_inside_its_own_profile_root() {
+        let data_root = std::env::temp_dir().join("data-root");
+        let resolved = print_jobs_dir(Some(data_root.clone()), E2E_IDENTIFIER);
+        assert_eq!(resolved, data_root.join(E2E_IDENTIFIER).join("print-jobs"));
+        app_identity::verify_isolated_dir(&resolved, E2E_IDENTIFIER)
+            .expect("isolated spool must not alias production state");
+        assert_ne!(
+            resolved,
+            print_jobs_dir(Some(data_root), PRODUCTION_IDENTIFIER)
+        );
     }
 }
 
