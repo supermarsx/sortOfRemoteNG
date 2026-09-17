@@ -1,0 +1,10 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "identifier": "com.sortofremote.ng.e2e",
+  "build": {
+    "beforeBuildCommand": "npm run build"
+  },
+  "bundle": {
+    "active": false
+  }
+}

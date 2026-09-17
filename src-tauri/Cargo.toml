@@ -338,6 +338,7 @@ crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "=2.6.3", features = [] }
+sorng-core = { path = "crates/sorng-core" }
 
 [dependencies]
 sorng-app-api = { path = "crates/sorng-app-api" }

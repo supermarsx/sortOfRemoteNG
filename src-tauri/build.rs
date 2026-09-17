@@ -127,5 +127,75 @@ fn main() {
         }
     }
 
+    embed_app_identity();
+
     tauri_build::build()
+}
+
+/// Resolve the identifier tauri-build compiles into the app, from the same
+/// inputs it merges (`tauri.conf.json`, the target's platform file, then the
+/// `TAURI_CONFIG` merge patch), and hand it to `src/app_profile.rs` as
+/// `SORNG_BUILD_IDENTIFIER`. Every profile directory, the WebView2 folder and
+/// the keychain namespace follow this identifier, so any input the resolver
+/// cannot read exactly as tauri-build does fails the build.
+fn embed_app_identity() {
+    let tauri_dir = std::path::PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"),
+    );
+    // Mirrors tauri_utils::platform::Target::from_triple.
+    let target = std::env::var("TARGET").expect("cargo sets TARGET");
+    let platform = if target.contains("darwin") {
+        "macos"
+    } else if target.contains("windows") {
+        "windows"
+    } else if target.contains("android") {
+        "android"
+    } else if target.contains("ios") {
+        "ios"
+    } else {
+        "linux"
+    };
+
+    for unsupported in [
+        "tauri.conf.json5".to_string(),
+        "Tauri.toml".to_string(),
+        format!("tauri.{platform}.conf.json5"),
+        format!("Tauri.{platform}.toml"),
+    ] {
+        if tauri_dir.join(&unsupported).exists() {
+            panic!(
+                "src-tauri/{unsupported} is not supported: build.rs resolves the compiled app identifier from JSON Tauri config only"
+            );
+        }
+    }
+
+    let read_config = |name: &str| {
+        let path = tauri_dir.join(name);
+        println!("cargo:rerun-if-changed={}", path.display());
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("cannot read src-tauri/{name}: {error}"))
+    };
+    let base = read_config("tauri.conf.json");
+    let platform_name = format!("tauri.{platform}.conf.json");
+    let platform_config = tauri_dir
+        .join(&platform_name)
+        .exists()
+        .then(|| read_config(&platform_name));
+
+    println!("cargo:rerun-if-env-changed=TAURI_CONFIG");
+    let tauri_config = match std::env::var("TAURI_CONFIG") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("TAURI_CONFIG is not valid Unicode; cannot resolve the compiled app identifier")
+        }
+    };
+
+    let identifier = sorng_core::app_identity::resolve_build_identifier(
+        &base,
+        platform_config.as_deref(),
+        tauri_config.as_deref(),
+    )
+    .unwrap_or_else(|error| panic!("cannot resolve the compiled app identifier: {error}"));
+    println!("cargo:rustc-env=SORNG_BUILD_IDENTIFIER={identifier}");
 }

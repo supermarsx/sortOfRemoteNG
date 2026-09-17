@@ -42,6 +42,7 @@
 //  Always-compiled: core infrastructure, connectivity, sessions, access
 // ═══════════════════════════════════════════════════════════════════════
 
+mod app_profile;
 mod domains;
 pub(crate) mod event_bridge;
 mod invoke_handler;
@@ -162,6 +163,8 @@ fn init_tracing() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Initializes and runs the SortOfRemote NG Tauri application.
 pub fn run() {
+    let profile = app_profile::install_process_profile();
+
     // t3-e23: structured tracing — must initialise before any span/event
     // is emitted by downstream setup code.
     init_tracing();
@@ -172,13 +175,8 @@ pub fn run() {
         .install_default()
         .expect("Failed to install rustls CryptoProvider");
 
-    use tauri_plugin_autostart::MacosLauncher;
-
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec!["--autostart"]),
-        ))
+        .plugin(app_profile::autostart_plugin(&profile))
         .plugin(native_dialogs::init())
         .plugin(webview_privacy::init())
         .plugin(tauri_plugin_fs::init())
@@ -187,6 +185,7 @@ pub fn run() {
         // sorng-updater supply settings, status, and private endpoint wiring.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            app_profile::verify_runtime(app)?;
             web_network_guard::install(app);
             state_registry::register(app)?;
             splash::show(app)?;
