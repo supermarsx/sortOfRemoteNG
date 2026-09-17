@@ -3,7 +3,7 @@
 //! Handle the `opkssh login` flow, which opens a browser for OIDC authentication
 //! and generates an SSH key containing the PK Token.
 
-use crate::service::OpksshServiceState;
+use crate::service::{OpkHome, OpksshServiceState};
 use crate::types::*;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use log::info;
@@ -1258,14 +1258,15 @@ async fn supervise_login_child(
     })
 }
 
-async fn run_bounded_login_process(
-    binary_path: &Path,
+/// The `opkssh login` child. It inherits the app's environment except for
+/// `OPKSSH_PROVIDERS` and, when an isolated home is installed, the home
+/// variables.
+fn login_command(
+    executable: &Path,
     args: &[String],
     provider_env: Option<&str>,
-    limits: LoginProcessLimits,
-    process_context: LoginProcessContext,
-) -> Result<LoginProcessOutput, LoginProcessError> {
-    let executable = resolve_login_executable(binary_path).await?;
+    isolated_home: Option<&Path>,
+) -> Command {
     let mut command = Command::new(executable);
     command
         .args(args)
@@ -1279,6 +1280,28 @@ async fn run_bounded_login_process(
     if let Some(provider_env) = provider_env {
         command.env("OPKSSH_PROVIDERS", provider_env);
     }
+    if let Some(home) = isolated_home {
+        // The CLI resolves `~/.opk` and `~/.ssh` from these (Go's
+        // `os.UserHomeDir`). Only the child sees them, never the app.
+        command
+            .env("HOME", home)
+            .env("USERPROFILE", home)
+            .env_remove("HOMEDRIVE")
+            .env_remove("HOMEPATH");
+    }
+    command
+}
+
+async fn run_bounded_login_process(
+    binary_path: &Path,
+    args: &[String],
+    provider_env: Option<&str>,
+    isolated_home: Option<&Path>,
+    limits: LoginProcessLimits,
+    process_context: LoginProcessContext,
+) -> Result<LoginProcessOutput, LoginProcessError> {
+    let executable = resolve_login_executable(binary_path).await?;
+    let mut command = login_command(&executable, args, provider_env, isolated_home);
 
     let mut child = command.spawn().map_err(|_| LoginProcessError::Spawn)?;
     process_context.lifecycle.mark_started();
@@ -1371,7 +1394,17 @@ pub async fn execute_login(
     binary_path: &Path,
     opts: &OpksshLoginOptions,
 ) -> Result<OpksshLoginResult, String> {
+    execute_login_in(binary_path, opts, crate::service::opk_home_state()).await
+}
+
+async fn execute_login_in(
+    binary_path: &Path,
+    opts: &OpksshLoginOptions,
+    home: OpkHome<'_>,
+) -> Result<OpksshLoginResult, String> {
     validate_login_options(opts).map_err(|error| error.message().to_string())?;
+    // A refused isolated home stops here, before the executable is resolved.
+    let isolated_home = crate::service::isolated_home_for(home)?;
     let args = Zeroizing::new(build_login_args(opts));
     let env_providers = build_login_env_providers(opts).map(Zeroizing::new);
     info!("Executing OPKSSH login through the bounded CLI fallback");
@@ -1388,6 +1421,7 @@ pub async fn execute_login(
         binary_path,
         args.as_slice(),
         env_providers.as_deref().map(String::as_str),
+        isolated_home,
         LoginProcessLimits::default(),
         process_context,
     )
@@ -1411,7 +1445,7 @@ pub async fn execute_login(
     }
 
     // Parse the output to extract key path and identity
-    let key_path = parse_key_path(&raw_output, opts);
+    let key_path = parse_key_path(&raw_output, opts, home);
     let identity = parse_identity(&raw_output);
     // Default: keys expire after 24 hours
     let expires_at = Some(Utc::now() + ChronoDuration::hours(24));
@@ -1428,7 +1462,7 @@ pub async fn execute_login(
 }
 
 /// Parse key path from login output.
-fn parse_key_path(output: &str, opts: &OpksshLoginOptions) -> Option<String> {
+fn parse_key_path(output: &str, opts: &OpksshLoginOptions, home: OpkHome<'_>) -> Option<String> {
     // Look for path mentions in output
     for line in output.lines() {
         let lower = line.to_lowercase();
@@ -1443,7 +1477,8 @@ fn parse_key_path(output: &str, opts: &OpksshLoginOptions) -> Option<String> {
     // Fall back to default path
     let key_name = opts.key_file_name.as_deref().unwrap_or("id_ecdsa");
 
-    dirs::home_dir().map(|h| h.join(".ssh").join(key_name).to_string_lossy().to_string())
+    crate::service::opk_home_with(home, dirs::home_dir)
+        .map(|h| h.join(".ssh").join(key_name).to_string_lossy().to_string())
 }
 
 /// Extract a file path from a log line.
@@ -1953,6 +1988,7 @@ mod tests {
             &executable,
             &fake_helper_args(),
             Some(mode),
+            None,
             limits,
             context,
         )
@@ -2257,5 +2293,183 @@ mod tests {
         assert!(!raw_output.contains("my-client"));
         assert!(!raw_output.contains("openid-email"));
         assert!(!login_failure_message(output.status).contains(secret));
+    }
+
+    // ── Home-scoped state ──────────────────────────────────────
+
+    const HOME_VARIABLES: [&str; 4] = ["HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH"];
+
+    fn isolated_test_home() -> PathBuf {
+        std::env::temp_dir()
+            .join(format!("sorng-opkssh-login-home-{}", Uuid::new_v4()))
+            .join(crate::service::ISOLATED_SSH_HOME_DIRNAME)
+    }
+
+    fn command_envs(command: &Command) -> Vec<(String, Option<String>)> {
+        command
+            .as_std()
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().into_owned(),
+                    value.map(|value| value.to_string_lossy().into_owned()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn login_command_keeps_the_app_home_when_nothing_is_installed() {
+        let executable = std::env::temp_dir().join("opkssh");
+        let args = vec!["login".to_string(), "google".to_string()];
+
+        let command = login_command(&executable, &args, None, None);
+        assert_eq!(command.as_std().get_program(), executable.as_os_str());
+        assert_eq!(
+            command
+                .as_std()
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            args
+        );
+        assert_eq!(
+            command_envs(&command),
+            vec![("OPKSSH_PROVIDERS".to_string(), None)]
+        );
+
+        let command = login_command(&executable, &args, Some("alias,issuer,client"), None);
+        let envs = command_envs(&command);
+        assert_eq!(
+            envs,
+            vec![(
+                "OPKSSH_PROVIDERS".to_string(),
+                Some("alias,issuer,client".to_string())
+            )]
+        );
+        assert!(envs
+            .iter()
+            .all(|(key, _)| !HOME_VARIABLES.contains(&key.as_str())));
+    }
+
+    #[test]
+    fn login_command_points_every_home_variable_at_the_isolated_home() {
+        let executable = std::env::temp_dir().join("opkssh");
+        let home = isolated_test_home();
+        let home_value = Some(home.to_string_lossy().into_owned());
+
+        let mut envs = command_envs(&login_command(
+            &executable,
+            &["login".to_string()],
+            Some("alias,issuer,client"),
+            Some(&home),
+        ));
+        envs.sort();
+        let mut expected = vec![
+            ("HOME".to_string(), home_value.clone()),
+            ("HOMEDRIVE".to_string(), None),
+            ("HOMEPATH".to_string(), None),
+            (
+                "OPKSSH_PROVIDERS".to_string(),
+                Some("alias,issuer,client".to_string()),
+            ),
+            ("USERPROFILE".to_string(), home_value),
+        ];
+        expected.sort();
+        assert_eq!(envs, expected);
+    }
+
+    #[tokio::test]
+    async fn refused_isolated_home_stops_login_before_the_executable_is_resolved() {
+        let home = isolated_test_home();
+        let missing = home.parent().expect("temp root").join("missing-opkssh");
+        let opts = OpksshLoginOptions {
+            provider: Some("google".into()),
+            ..Default::default()
+        };
+        let login_error = |state| execute_login_in(&missing, &opts, state);
+
+        assert_eq!(
+            login_error(OpkHome::Refused).await.expect_err("refused"),
+            crate::service::ISOLATED_HOME_REFUSED
+        );
+        let invalid_executable = LoginProcessError::InvalidExecutable.message();
+        assert_eq!(
+            login_error(OpkHome::Isolated(&home))
+                .await
+                .expect_err("no executable exists"),
+            invalid_executable
+        );
+        assert_eq!(
+            login_error(OpkHome::Os)
+                .await
+                .expect_err("no executable exists"),
+            invalid_executable
+        );
+        assert!(!home.exists());
+    }
+
+    #[test]
+    fn default_key_path_follows_the_opkssh_home() {
+        let without_path = "Login successful";
+        let opts = OpksshLoginOptions::default();
+        assert_eq!(
+            parse_key_path(without_path, &opts, OpkHome::Os),
+            dirs::home_dir().map(|h| h
+                .join(".ssh")
+                .join("id_ecdsa")
+                .to_string_lossy()
+                .to_string())
+        );
+
+        let home = isolated_test_home();
+        let named = OpksshLoginOptions {
+            key_file_name: Some("id_named".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            parse_key_path(without_path, &named, OpkHome::Isolated(&home)),
+            Some(
+                home.join(".ssh")
+                    .join("id_named")
+                    .to_string_lossy()
+                    .to_string()
+            )
+        );
+        assert_eq!(parse_key_path(without_path, &opts, OpkHome::Refused), None);
+
+        let reported = "Key written to /tmp/opk/id_ecdsa";
+        for state in [OpkHome::Os, OpkHome::Isolated(&home), OpkHome::Refused] {
+            assert_eq!(
+                parse_key_path(reported, &opts, state).as_deref(),
+                Some("/tmp/opk/id_ecdsa")
+            );
+        }
+    }
+
+    #[test]
+    fn login_args_never_ask_the_cli_to_configure_ssh() {
+        for opts in [
+            OpksshLoginOptions::default(),
+            OpksshLoginOptions {
+                provider: Some("google".into()),
+                key_file_name: Some("id_named".into()),
+                create_config: true,
+                remote_redirect_uri: Some("http://localhost:3000/login-callback".into()),
+                ..Default::default()
+            },
+            OpksshLoginOptions {
+                issuer: Some("https://auth.example.com".into()),
+                client_id: Some("client".into()),
+                scopes: Some("openid".into()),
+                ..Default::default()
+            },
+        ] {
+            let args = build_login_args(&opts);
+            assert!(
+                args.iter().all(|arg| !arg.contains("configure")),
+                "{args:?}"
+            );
+        }
     }
 }

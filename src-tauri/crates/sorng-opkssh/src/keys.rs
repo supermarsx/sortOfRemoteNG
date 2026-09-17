@@ -110,7 +110,11 @@ pub fn build_key_from_material(material: RuntimeKeyMaterial) -> OpksshKey {
 
 /// Remove an opkssh key pair from disk.
 pub async fn remove_key(key_ref: &str) -> Result<(), String> {
-    let ssh_dir = default_ssh_dir().ok_or_else(|| "Failed to resolve ~/.ssh".to_string())?;
+    remove_key_in(default_ssh_dir(), key_ref).await
+}
+
+async fn remove_key_in(ssh_dir: Option<PathBuf>, key_ref: &str) -> Result<(), String> {
+    let ssh_dir = ssh_dir.ok_or_else(|| "Failed to resolve ~/.ssh".to_string())?;
     remove_key_from_dir(&ssh_dir, key_ref).await
 }
 
@@ -136,8 +140,12 @@ pub async fn remove_key_from_dir(ssh_dir: &Path, key_ref: &str) -> Result<(), St
     Ok(())
 }
 
-fn default_ssh_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".ssh"))
+pub(crate) fn default_ssh_dir() -> Option<PathBuf> {
+    ssh_dir_in(crate::service::opk_home(dirs::home_dir))
+}
+
+fn ssh_dir_in(home: Option<PathBuf>) -> Option<PathBuf> {
+    home.map(|home| home.join(".ssh"))
 }
 
 fn is_private_key_candidate(path: &Path) -> bool {
@@ -386,5 +394,91 @@ mod tests {
         assert_eq!(key.provider.as_deref(), Some("google"));
         assert_eq!(key.expires_at, Some(expires_at));
         assert!(!key.is_expired);
+    }
+
+    // ── Home-scoped state ──────────────────────────────────────
+
+    use crate::service::{opk_home_with, OpkHome, ISOLATED_SSH_HOME_DIRNAME};
+
+    fn os_home_must_not_be_consulted() -> Option<PathBuf> {
+        panic!("the user's home must not be consulted")
+    }
+
+    async fn write_key_pair(ssh_dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+        tokio::fs::create_dir_all(ssh_dir)
+            .await
+            .expect("create ssh dir");
+        let private_key = ssh_dir.join(name);
+        let certificate = ssh_dir.join(format!("{name}-cert.pub"));
+        tokio::fs::write(&private_key, b"private")
+            .await
+            .expect("write private key");
+        tokio::fs::write(
+            &certificate,
+            b"ecdsa-sha2-nistp256-cert-v01@openssh.com AAAA alice@example.com",
+        )
+        .await
+        .expect("write certificate");
+        (private_key, certificate)
+    }
+
+    #[test]
+    fn default_ssh_dir_is_unchanged_when_nothing_is_installed() {
+        assert_eq!(
+            default_ssh_dir(),
+            dirs::home_dir().map(|home| home.join(".ssh"))
+        );
+    }
+
+    #[tokio::test]
+    async fn isolated_home_scans_and_removes_only_its_own_keys() {
+        let root = test_dir("isolated-home");
+        let home = root.join("profile").join(ISOLATED_SSH_HOME_DIRNAME);
+        let real_home = root.join("real-home");
+        let key_name = format!("id_opkssh_{}", uuid::Uuid::new_v4().simple());
+        let (real_key, real_cert) = write_key_pair(&real_home.join(".ssh"), &key_name).await;
+
+        let ssh_dir = ssh_dir_in(opk_home_with(
+            OpkHome::Isolated(&home),
+            os_home_must_not_be_consulted,
+        ));
+        assert_eq!(ssh_dir, Some(home.join(".ssh")));
+        let ssh_dir = ssh_dir.unwrap();
+
+        // A fresh isolated home has no keys and nothing to remove.
+        assert!(list_keys_in_dir(&ssh_dir).await.is_empty());
+        assert!(remove_key_in(Some(ssh_dir.clone()), &key_name)
+            .await
+            .is_err());
+
+        let (key, cert) = write_key_pair(&ssh_dir, &key_name).await;
+        let keys = list_keys_in_dir(&ssh_dir).await;
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].path, key.to_string_lossy());
+
+        remove_key_in(Some(ssh_dir), &key_name)
+            .await
+            .expect("remove isolated key");
+        assert!(!key.exists() && !cert.exists());
+        assert_eq!(
+            tokio::fs::read(&real_key).await.expect("real key"),
+            b"private"
+        );
+        assert!(real_cert.is_file());
+
+        tokio::fs::remove_dir_all(&root).await.expect("cleanup dir");
+    }
+
+    #[tokio::test]
+    async fn refused_home_neither_scans_nor_removes_keys() {
+        let ssh_dir = ssh_dir_in(opk_home_with(
+            OpkHome::Refused,
+            os_home_must_not_be_consulted,
+        ));
+        assert_eq!(ssh_dir, None);
+        assert_eq!(
+            remove_key_in(ssh_dir, "id_opkssh").await,
+            Err("Failed to resolve ~/.ssh".to_string())
+        );
     }
 }

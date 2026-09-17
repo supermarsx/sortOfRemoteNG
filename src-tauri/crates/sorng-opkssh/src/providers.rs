@@ -51,7 +51,11 @@ pub fn well_known_providers() -> Vec<CustomProvider> {
 
 /// Get the config directory path.
 pub fn config_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".opk"))
+    config_dir_in(crate::service::opk_home(dirs::home_dir))
+}
+
+fn config_dir_in(home: Option<PathBuf>) -> Option<PathBuf> {
+    home.map(|home| home.join(".opk"))
 }
 
 /// Get the config file path.
@@ -883,5 +887,50 @@ providers:
             .expect_err("new plaintext secrets should be rejected");
         assert!(error.contains("blocked"));
         assert!(!path.exists());
+    }
+
+    // ── Home-scoped state ──────────────────────────────────────
+
+    use crate::service::{opk_home_with, OpkHome, ISOLATED_SSH_HOME_DIRNAME};
+
+    fn os_home_must_not_be_consulted() -> Option<PathBuf> {
+        panic!("the user's home must not be consulted")
+    }
+
+    #[test]
+    fn config_paths_are_unchanged_when_nothing_is_installed() {
+        let legacy_dir = dirs::home_dir().map(|home| home.join(".opk"));
+        assert_eq!(config_dir(), legacy_dir);
+        assert_eq!(
+            config_path(),
+            legacy_dir.as_ref().map(|dir| dir.join("config.yml"))
+        );
+        assert_eq!(
+            resolve_client_config_path(None),
+            legacy_dir
+                .map(|dir| dir.join("config.yml"))
+                .ok_or_else(|| "Cannot determine opkssh client config path".to_string())
+        );
+    }
+
+    #[test]
+    fn isolated_config_dir_is_inside_the_isolated_home() {
+        let home = std::env::temp_dir()
+            .join("sorng-opkssh-providers-home")
+            .join(ISOLATED_SSH_HOME_DIRNAME);
+        assert_eq!(
+            config_dir_in(opk_home_with(
+                OpkHome::Isolated(&home),
+                os_home_must_not_be_consulted
+            )),
+            Some(home.join(".opk"))
+        );
+        assert_eq!(
+            config_dir_in(opk_home_with(
+                OpkHome::Refused,
+                os_home_must_not_be_consulted
+            )),
+            None
+        );
     }
 }

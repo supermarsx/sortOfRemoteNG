@@ -9,8 +9,9 @@ use crate::{audit, binary, keys, login, providers, server_policy};
 use chrono::Utc;
 use log::warn;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::ffi::OsStr;
+use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 
 const BACKEND_MODE_ENV: &str = "SORNG_OPKSSH_BACKEND";
@@ -555,8 +556,168 @@ fn load_wrapper_backed_client_config() -> Result<Option<OpksshClientConfig>, Str
     Ok(Some(config))
 }
 
+// ── Home-scoped state ──────────────────────────────────────────
+
+/// Last component of an isolated profile's SSH home (`<app data>/ssh-home`).
+pub const ISOLATED_SSH_HOME_DIRNAME: &str = "ssh-home";
+
+/// Returned wherever opkssh would otherwise fall back to the user's home after
+/// an isolated home was refused.
+pub(crate) const ISOLATED_HOME_REFUSED: &str =
+    "The isolated profile has no opkssh home; refusing to use the user's home directory";
+
+static ISOLATED_HOME: OpkHomeSlot = OpkHomeSlot::new();
+
+/// Where opkssh keeps its home-scoped state (`~/.opk`, `~/.ssh`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OpkHome<'a> {
+    /// Nothing was installed: the user's home, resolved exactly as before.
+    Os,
+    /// The isolated profile's SSH home.
+    Isolated(&'a Path),
+    /// An isolated home was requested but refused. Never falls back to the
+    /// user's home.
+    Refused,
+}
+
+/// Set-once holder for the isolated home. A refused install also takes the
+/// slot, so a caller that ignores the error still fails closed.
+struct OpkHomeSlot(OnceLock<Result<PathBuf, String>>);
+
+impl OpkHomeSlot {
+    const fn new() -> Self {
+        Self(OnceLock::new())
+    }
+
+    fn install(&self, path: PathBuf) -> Result<(), String> {
+        let requested = validate_isolated_home(&path).map(|()| path);
+        match (self.0.get_or_init(|| requested.clone()), requested) {
+            (Ok(installed), Ok(path)) if *installed == path => Ok(()),
+            (Ok(installed), Ok(path)) => Err(format!(
+                "an isolated opkssh home is already installed at {}; refusing {}",
+                installed.display(),
+                path.display()
+            )),
+            (Err(refused), Ok(_)) => Err(format!(
+                "an earlier isolated opkssh home was refused ({refused}); opkssh stays fail-closed"
+            )),
+            (_, Err(reason)) => Err(reason),
+        }
+    }
+
+    fn state(&self) -> OpkHome<'_> {
+        match self.0.get() {
+            None => OpkHome::Os,
+            Some(Ok(path)) => OpkHome::Isolated(path),
+            Some(Err(_)) => OpkHome::Refused,
+        }
+    }
+}
+
+fn validate_isolated_home(path: &Path) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err(format!(
+            "the isolated opkssh home {} is not an absolute path",
+            path.display()
+        ));
+    }
+    if path
+        .components()
+        .any(|component| component == Component::ParentDir)
+    {
+        return Err(format!(
+            "the isolated opkssh home {} contains '..'",
+            path.display()
+        ));
+    }
+    if path.components().next_back()
+        != Some(Component::Normal(OsStr::new(ISOLATED_SSH_HOME_DIRNAME)))
+    {
+        return Err(format!(
+            "the isolated opkssh home {} does not end in {ISOLATED_SSH_HOME_DIRNAME}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+/// Install an isolated profile's SSH home for opkssh. Call it once, before
+/// `tauri::Builder`, and only in isolated builds.
+///
+/// From then on `~/.opk/config.yml`, key discovery and removal, the library
+/// login's config and key paths, and the `HOME`/`USERPROFILE` of the
+/// `opkssh login` child all resolve under `path`. Production never calls
+/// this, so its paths and the child's environment are exactly as before.
+///
+/// `path` must be absolute, contain no `..` and end in
+/// [`ISOLATED_SSH_HOME_DIRNAME`]. Installing the same path again is `Ok`; a
+/// different path is refused. A refused install still takes the slot: opkssh
+/// then fails closed rather than using the user's home.
+///
+/// Only an app build that names `sorng_opkssh` (the `opkssh` feature) can
+/// call this. An `ops` build without `opkssh` still links this crate through
+/// the ops command crates but cannot install the home, so its opkssh state
+/// would stay in the user's home. No shipped feature set (`full`,
+/// `full-*-dynamic`, `lean`) is built that way.
+pub fn install_isolated_home(path: PathBuf) -> Result<(), String> {
+    ISOLATED_HOME.install(path)
+}
+
+/// The installed isolated home, or `None` when nothing (or a refused path)
+/// was installed.
+pub fn isolated_home() -> Option<&'static Path> {
+    match ISOLATED_HOME.state() {
+        OpkHome::Isolated(path) => Some(path),
+        OpkHome::Os | OpkHome::Refused => None,
+    }
+}
+
+pub(crate) fn opk_home_state() -> OpkHome<'static> {
+    ISOLATED_HOME.state()
+}
+
+/// The home opkssh's `~/.opk` and `~/.ssh` live in. Pass `dirs::home_dir`:
+/// production calls it exactly as before; an isolated home never does.
+pub(crate) fn opk_home(os_home: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
+    opk_home_with(opk_home_state(), os_home)
+}
+
+pub(crate) fn opk_home_with(
+    home: OpkHome<'_>,
+    os_home: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    match home {
+        OpkHome::Os => os_home(),
+        OpkHome::Isolated(path) => Some(path.to_path_buf()),
+        OpkHome::Refused => None,
+    }
+}
+
+/// The isolated home that must replace every home the user's environment
+/// names, `None` when nothing was installed, or the refusal.
+pub(crate) fn isolated_home_for(home: OpkHome<'_>) -> Result<Option<&Path>, &'static str> {
+    match home {
+        OpkHome::Os => Ok(None),
+        OpkHome::Isolated(path) => Ok(Some(path)),
+        OpkHome::Refused => Err(ISOLATED_HOME_REFUSED),
+    }
+}
+
+/// The home the library login's explicit paths start from, before the OS
+/// home. An isolated home wins over `HOME`/`USERPROFILE`: those come from the
+/// developer's shell and name the real home.
+fn wrapper_home_override(
+    home: OpkHome<'_>,
+    env_home: impl FnOnce() -> Option<PathBuf>,
+) -> Result<Option<PathBuf>, String> {
+    match isolated_home_for(home)? {
+        Some(path) => Ok(Some(path.to_path_buf())),
+        None => Ok(env_home()),
+    }
+}
+
 fn resolve_wrapper_client_config_path() -> Result<PathBuf, String> {
-    if let Some(home_dir) = override_home_dir() {
+    if let Some(home_dir) = wrapper_home_override(opk_home_state(), override_home_dir)? {
         return Ok(home_dir.join(".opk").join("config.yml"));
     }
 
@@ -564,9 +725,12 @@ fn resolve_wrapper_client_config_path() -> Result<PathBuf, String> {
 }
 
 fn resolve_wrapper_login_key_path(opts: &OpksshLoginOptions) -> Result<PathBuf, String> {
-    let home_dir = override_home_dir().or_else(dirs::home_dir).ok_or_else(|| {
-        "Failed to resolve the home directory for the OPKSSH login key path".to_string()
-    })?;
+    let home = opk_home_state();
+    let home_dir = wrapper_home_override(home, override_home_dir)?
+        .or_else(|| opk_home_with(home, dirs::home_dir))
+        .ok_or_else(|| {
+            "Failed to resolve the home directory for the OPKSSH login key path".to_string()
+        })?;
 
     let key_name = opts
         .key_file_name
@@ -995,5 +1159,456 @@ mod tests {
         assert!(signal
             .cli_retirement_message
             .contains("bundle/install evidence"));
+    }
+
+    // ── Home-scoped state ──────────────────────────────────────
+
+    fn temp_root(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("sorng-opkssh-{name}-{}", uuid::Uuid::new_v4()))
+    }
+
+    fn isolated_home_in(root: &Path) -> PathBuf {
+        root.join("profile").join(ISOLATED_SSH_HOME_DIRNAME)
+    }
+
+    fn os_home_must_not_be_consulted() -> Option<PathBuf> {
+        panic!("the user's home must not be consulted")
+    }
+
+    #[test]
+    fn unit_tests_never_install_the_process_home() {
+        assert_eq!(opk_home_state(), OpkHome::Os);
+        assert_eq!(isolated_home(), None);
+    }
+
+    #[test]
+    fn home_slot_starts_on_the_os_home_and_installs_once() {
+        let slot = OpkHomeSlot::new();
+        assert_eq!(slot.state(), OpkHome::Os);
+
+        let root = temp_root("slot");
+        let home = isolated_home_in(&root);
+        assert_eq!(slot.install(home.clone()), Ok(()));
+        assert_eq!(slot.state(), OpkHome::Isolated(&home));
+        assert_eq!(slot.install(home.clone()), Ok(()));
+
+        let other = root.join("other").join(ISOLATED_SSH_HOME_DIRNAME);
+        assert!(slot
+            .install(other)
+            .expect_err("a second home is refused")
+            .contains("already installed"));
+        assert!(slot
+            .install(PathBuf::from(ISOLATED_SSH_HOME_DIRNAME))
+            .is_err());
+        assert_eq!(slot.state(), OpkHome::Isolated(&home));
+    }
+
+    #[test]
+    fn refused_install_keeps_the_slot_fail_closed() {
+        let slot = OpkHomeSlot::new();
+        assert!(slot
+            .install(PathBuf::from("relative").join(ISOLATED_SSH_HOME_DIRNAME))
+            .is_err());
+        assert_eq!(slot.state(), OpkHome::Refused);
+
+        let valid = isolated_home_in(&temp_root("slot-refused"));
+        assert!(slot
+            .install(valid)
+            .expect_err("a refused slot stays refused")
+            .contains("fail-closed"));
+        assert_eq!(slot.state(), OpkHome::Refused);
+    }
+
+    #[test]
+    fn isolated_home_must_be_absolute_without_parent_components_and_named_ssh_home() {
+        let root = temp_root("validate");
+        let home = isolated_home_in(&root);
+        assert_eq!(validate_isolated_home(&home), Ok(()));
+        let mut trailing = home.clone().into_os_string();
+        trailing.push(std::path::MAIN_SEPARATOR_STR);
+        assert_eq!(validate_isolated_home(Path::new(&trailing)), Ok(()));
+
+        for refused in [
+            PathBuf::new(),
+            PathBuf::from(ISOLATED_SSH_HOME_DIRNAME),
+            PathBuf::from("profile").join(ISOLATED_SSH_HOME_DIRNAME),
+            root.clone(),
+            root.join(".ssh"),
+            root.join("SSH-HOME"),
+            root.join("ssh-home-2"),
+            root.join("..").join(ISOLATED_SSH_HOME_DIRNAME),
+            home.join(".."),
+        ] {
+            assert!(
+                validate_isolated_home(&refused).is_err(),
+                "{} should be refused",
+                refused.display()
+            );
+        }
+    }
+
+    #[test]
+    fn os_home_is_used_unchanged_when_nothing_is_installed() {
+        let sentinel = temp_root("os-home");
+        let mut calls = 0;
+        assert_eq!(
+            opk_home_with(OpkHome::Os, || {
+                calls += 1;
+                Some(sentinel.clone())
+            }),
+            Some(sentinel.clone())
+        );
+        assert_eq!(calls, 1);
+        assert_eq!(opk_home_with(OpkHome::Os, || None), None);
+        assert_eq!(opk_home(dirs::home_dir), dirs::home_dir());
+        assert_eq!(isolated_home_for(OpkHome::Os), Ok(None));
+    }
+
+    #[test]
+    fn isolated_and_refused_homes_never_consult_the_os_home() {
+        let home = isolated_home_in(&temp_root("iso-home"));
+        assert_eq!(
+            opk_home_with(OpkHome::Isolated(&home), os_home_must_not_be_consulted),
+            Some(home.clone())
+        );
+        assert_eq!(
+            opk_home_with(OpkHome::Refused, os_home_must_not_be_consulted),
+            None
+        );
+        assert_eq!(
+            isolated_home_for(OpkHome::Isolated(&home)),
+            Ok(Some(home.as_path()))
+        );
+        assert_eq!(
+            isolated_home_for(OpkHome::Refused),
+            Err(ISOLATED_HOME_REFUSED)
+        );
+    }
+
+    #[test]
+    fn wrapper_home_prefers_the_isolated_home_over_the_shell_environment() {
+        let shell_home = temp_root("shell-home");
+        let mut calls = 0;
+        assert_eq!(
+            wrapper_home_override(OpkHome::Os, || {
+                calls += 1;
+                Some(shell_home.clone())
+            }),
+            Ok(Some(shell_home.clone()))
+        );
+        assert_eq!(calls, 1);
+        assert_eq!(wrapper_home_override(OpkHome::Os, || None), Ok(None));
+
+        let home = isolated_home_in(&temp_root("wrapper"));
+        assert_eq!(
+            wrapper_home_override(OpkHome::Isolated(&home), os_home_must_not_be_consulted),
+            Ok(Some(home.clone()))
+        );
+        assert_eq!(
+            wrapper_home_override(OpkHome::Refused, os_home_must_not_be_consulted),
+            Err(ISOLATED_HOME_REFUSED.to_string())
+        );
+    }
+
+    #[test]
+    fn wrapper_paths_are_unchanged_when_nothing_is_installed() {
+        assert_eq!(opk_home_state(), OpkHome::Os);
+
+        // The expressions these resolvers had before isolated homes existed.
+        let legacy_config_path = match override_home_dir() {
+            Some(home_dir) => Ok(home_dir.join(".opk").join("config.yml")),
+            None => dirs::home_dir()
+                .map(|home| home.join(".opk").join("config.yml"))
+                .ok_or_else(|| "Cannot determine opkssh client config path".to_string()),
+        };
+        assert_eq!(resolve_wrapper_client_config_path(), legacy_config_path);
+
+        for key_file_name in [None, Some(""), Some("  "), Some("id_custom")] {
+            let opts = OpksshLoginOptions {
+                key_file_name: key_file_name.map(str::to_string),
+                ..Default::default()
+            };
+            let legacy_key_path = override_home_dir()
+                .or_else(dirs::home_dir)
+                .ok_or_else(|| {
+                    "Failed to resolve the home directory for the OPKSSH login key path".to_string()
+                })
+                .map(|home_dir| {
+                    home_dir.join(".ssh").join(
+                        key_file_name
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or("id_ecdsa"),
+                    )
+                });
+            assert_eq!(resolve_wrapper_login_key_path(&opts), legacy_key_path);
+        }
+    }
+
+    #[test]
+    fn vendored_login_never_configures_the_users_ssh_config() {
+        // The bridge's `--configure` login option writes `~/.ssh/config` from
+        // Go's own home lookup. No Rust request may carry it.
+        let binary = include_str!("binary.rs").replace("\r\n", "\n");
+        let payload = binary
+            .split("struct VendorLoginRequestPayload {\n")
+            .nth(1)
+            .and_then(|rest| rest.split("\n}").next())
+            .expect("vendor login request payload");
+        assert!(payload.contains("key_path: String"), "{payload}");
+        assert!(
+            !payload.to_ascii_lowercase().contains("configure"),
+            "{payload}"
+        );
+
+        // `commands.rs` only forwards to the service (and is compiled by the
+        // command crates), so the modules below are every request builder.
+        let needle = ["configure", "arg"].concat();
+        let mentions = |source: &str| {
+            source
+                .to_ascii_lowercase()
+                .replace('_', "")
+                .contains(&needle)
+        };
+        for spelling in [
+            ["Configure", "Arg"],
+            ["configure", "_arg"],
+            ["CONFIGURE", "_ARG"],
+        ] {
+            assert!(mentions(&format!("x.{}: true", spelling.concat())));
+        }
+        for (name, source) in [
+            ("audit.rs", include_str!("audit.rs")),
+            ("binary.rs", include_str!("binary.rs")),
+            ("keys.rs", include_str!("keys.rs")),
+            ("lib.rs", include_str!("lib.rs")),
+            ("login.rs", include_str!("login.rs")),
+            ("providers.rs", include_str!("providers.rs")),
+            ("server_policy.rs", include_str!("server_policy.rs")),
+            ("service.rs", include_str!("service.rs")),
+            ("types.rs", include_str!("types.rs")),
+        ] {
+            assert!(!mentions(source), "{name} mentions {needle}");
+        }
+    }
+
+    const HOME_HELPER_MODE_ENV: &str = "SORNG_OPKSSH_TEST_HOME_MODE";
+    const HOME_HELPER_ROOT_ENV: &str = "SORNG_OPKSSH_TEST_HOME_ROOT";
+    const HOME_HELPER_NAME: &str = "service::tests::isolated_home_process_helper";
+
+    /// Printed only after every helper check ran, so an early return (for
+    /// example a lost environment variable) cannot pass as success.
+    fn home_helper_completed(mode: &str) -> String {
+        format!("opkssh home helper completed: {mode}")
+    }
+
+    /// Runs [`isolated_home_process_helper`] in a fresh test process, where the
+    /// process-wide home can be installed without affecting other tests. The
+    /// shell home variables point at a sentinel "real" home the helper checks
+    /// is never used.
+    fn run_home_helper(mode: &str) {
+        let root = temp_root(&format!("process-{mode}"));
+        let sentinel = root.join("real-home");
+        let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--ignored",
+                "--exact",
+                HOME_HELPER_NAME,
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(HOME_HELPER_MODE_ENV, mode)
+            .env(HOME_HELPER_ROOT_ENV, &root)
+            .env("HOME", &sentinel)
+            .env("USERPROFILE", &sentinel)
+            .env_remove("OPKSSH_PROVIDERS")
+            .env_remove("OPKSSH_DEFAULT")
+            .output()
+            .expect("run the home helper process");
+        let _ = std::fs::remove_dir_all(&root);
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success()
+                && stdout.contains("1 passed")
+                && stdout.contains(&home_helper_completed(mode)),
+            "home helper ({mode}) failed: {}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+            output.status
+        );
+    }
+
+    #[test]
+    fn installed_isolated_home_redirects_opkssh_state_in_a_fresh_process() {
+        run_home_helper("installed");
+    }
+
+    #[test]
+    fn refused_isolated_home_fails_closed_in_a_fresh_process() {
+        run_home_helper("refused");
+    }
+
+    fn write_key_pair(ssh_dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+        std::fs::create_dir_all(ssh_dir).expect("create ssh dir");
+        let private_key = ssh_dir.join(name);
+        let certificate = ssh_dir.join(format!("{name}-cert.pub"));
+        std::fs::write(&private_key, b"private").expect("write private key");
+        std::fs::write(
+            &certificate,
+            b"ecdsa-sha2-nistp256-cert-v01@openssh.com AAAA alice@example.com",
+        )
+        .expect("write certificate");
+        (private_key, certificate)
+    }
+
+    #[test]
+    #[ignore]
+    fn isolated_home_process_helper() {
+        let (Some(mode), Some(root)) = (
+            std::env::var_os(HOME_HELPER_MODE_ENV),
+            std::env::var_os(HOME_HELPER_ROOT_ENV),
+        ) else {
+            // Only meaningful inside the process `run_home_helper` starts.
+            return;
+        };
+        let root = PathBuf::from(root);
+        let home = isolated_home_in(&root);
+        let sentinel = root.join("real-home");
+        let key_name = format!("id_opkssh_{}", uuid::Uuid::new_v4().simple());
+        let missing_cli = root.join("missing-opkssh");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        // The sentinel stands in for the user's real `~/.ssh` and `~/.opk`.
+        let (sentinel_key, sentinel_cert) = write_key_pair(&sentinel.join(".ssh"), &key_name);
+        let sentinel_config = sentinel.join(".opk").join("config.yml");
+        std::fs::create_dir_all(sentinel_config.parent().unwrap()).expect("sentinel .opk");
+        std::fs::write(&sentinel_config, b"default: sentinel\n").expect("sentinel config");
+
+        match mode.to_str() {
+            Some("installed") => {
+                assert_eq!(install_isolated_home(home.clone()), Ok(()));
+                assert_eq!(install_isolated_home(home.clone()), Ok(()));
+                assert_eq!(isolated_home(), Some(home.as_path()));
+
+                // Paths first, so a regression fails before any file is touched.
+                let config_path = home.join(".opk").join("config.yml");
+                assert_eq!(providers::config_dir(), Some(home.join(".opk")));
+                assert_eq!(keys::default_ssh_dir(), Some(home.join(".ssh")));
+                assert_eq!(
+                    providers::resolve_client_config_path(None),
+                    Ok(config_path.clone())
+                );
+                assert_eq!(
+                    resolve_wrapper_client_config_path(),
+                    Ok(config_path.clone())
+                );
+                assert_eq!(
+                    resolve_wrapper_login_key_path(&OpksshLoginOptions::default()),
+                    Ok(home.join(".ssh").join("id_ecdsa"))
+                );
+                assert_eq!(
+                    isolated_home_for(opk_home_state()),
+                    Ok(Some(home.as_path()))
+                );
+
+                let (isolated_key, isolated_cert) = write_key_pair(&home.join(".ssh"), &key_name);
+                runtime.block_on(async {
+                    let keys = keys::list_keys().await;
+                    assert_eq!(keys.len(), 1, "{keys:?}");
+                    assert_eq!(keys[0].path, isolated_key.to_string_lossy());
+
+                    keys::remove_key(&key_name).await.expect("remove key");
+                    assert!(!isolated_key.exists() && !isolated_cert.exists());
+
+                    let read = providers::read_client_config().await;
+                    assert_eq!(read.config_path, config_path.to_string_lossy());
+
+                    let mut service = OpksshService::new();
+                    service
+                        .update_client_config(OpksshClientConfig {
+                            config_path: String::new(),
+                            default_provider: Some("google".into()),
+                            providers: Vec::new(),
+                            provider_secrets_present: false,
+                            secrets_redacted_for_transport: false,
+                            secret_storage_note: None,
+                        })
+                        .await
+                        .expect("write client config");
+                    assert!(config_path.is_file());
+
+                    // The CLI login passes the home gate and only then refuses
+                    // the missing executable.
+                    assert_eq!(
+                        login::execute_login(&missing_cli, &OpksshLoginOptions::default())
+                            .await
+                            .expect_err("no executable exists"),
+                        "The configured OPKSSH executable is not a safe executable file"
+                    );
+                });
+            }
+            Some("refused") => {
+                assert!(install_isolated_home(root.join("ssh")).is_err());
+                assert!(install_isolated_home(home.clone()).is_err());
+                assert_eq!(isolated_home(), None);
+                assert_eq!(opk_home_state(), OpkHome::Refused);
+
+                assert_eq!(providers::config_dir(), None);
+                assert_eq!(keys::default_ssh_dir(), None);
+                assert!(providers::resolve_client_config_path(None).is_err());
+                assert_eq!(
+                    resolve_wrapper_client_config_path(),
+                    Err(ISOLATED_HOME_REFUSED.to_string())
+                );
+                assert_eq!(
+                    resolve_wrapper_login_key_path(&OpksshLoginOptions::default()),
+                    Err(ISOLATED_HOME_REFUSED.to_string())
+                );
+
+                runtime.block_on(async {
+                    assert!(keys::list_keys().await.is_empty());
+                    assert_eq!(
+                        keys::remove_key(&key_name).await,
+                        Err("Failed to resolve ~/.ssh".to_string())
+                    );
+                    assert_eq!(providers::read_client_config().await.config_path, "");
+                    assert_eq!(
+                        load_wrapper_backed_client_config().map(|config| config.is_none()),
+                        Ok(true)
+                    );
+                    assert_eq!(
+                        login::execute_login(&missing_cli, &OpksshLoginOptions::default())
+                            .await
+                            .expect_err("refused"),
+                        ISOLATED_HOME_REFUSED
+                    );
+                });
+                assert!(!home.exists());
+            }
+            other => panic!("unknown home helper mode {other:?}"),
+        }
+
+        assert!(sentinel_key.is_file() && sentinel_cert.is_file());
+        assert_eq!(
+            std::fs::read(&sentinel_config).expect("sentinel config"),
+            b"default: sentinel\n"
+        );
+        assert_eq!(
+            std::fs::read_dir(&sentinel)
+                .expect("sentinel home")
+                .map(|entry| entry.expect("entry").file_name())
+                .collect::<std::collections::BTreeSet<_>>(),
+            [".opk", ".ssh"]
+                .map(std::ffi::OsString::from)
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>()
+        );
+        println!(
+            "{}",
+            home_helper_completed(mode.to_str().unwrap_or_default())
+        );
     }
 }
