@@ -3,10 +3,25 @@ import { execFileSync, spawn } from "child_process";
 import fs from "fs";
 import net from "net";
 import path from "path";
+import { fileURLToPath } from "url";
 
+import {
+  E2eIsolationRefusal,
+  PREFLIGHT_ENV_KEYS,
+  assertWebView2LaunchArgs,
+  prepareIsolatedE2eRun,
+  type IsolatedE2eRun,
+  type RunProfile,
+  type WipeMode,
+} from "../../scripts/lib/e2e-profile-isolation.mjs";
 import type { DriverPorts } from "./driver-ports";
 import { ensureDriverPortsAvailable } from "./driver-ports";
 
+const REPO_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
 const DRIVER_START_TIMEOUT_MS = 30_000;
 const DRIVER_SHUTDOWN_GRACE_MS = 3_000;
 const DRIVER_INSTALL_HINT =
@@ -28,15 +43,55 @@ const NATIVE_DRIVER_ENV_VARS = [
  * attach to each other's sessions. The whole driver process tree is torn down
  * on completion and on abnormal exit, so a crashed run cannot leave an
  * orphaned driver holding a port or an app window open.
+ *
+ * Before the driver starts, the profile-isolation preflight
+ * (`scripts/lib/e2e-profile-isolation.mjs`) proves the application is an
+ * isolated build, refuses while a production-identifier app runs, takes the run
+ * lock, creates the per-run WebView2 folder, probes the binary with the run's
+ * launch inputs and wipes only the asserted isolated profile. Without
+ * `expectedIdentifier`, `wipe` and `runProfile` the service refuses to start
+ * anything.
  */
+export interface TauriDriverServiceOptions {
+  expectedIdentifier?: string;
+  wipe?: WipeMode;
+  /** From `resolveRunProfile`; selects the per-run WebView2 folder. */
+  runProfile?: RunProfile;
+}
+
 export default class TauriDriverService {
   private process: ChildProcess | null = null;
   private cleanupHandlers: Array<[NodeJS.Signals | "exit", () => void]> = [];
+  private isolation: IsolatedE2eRun | null = null;
 
-  async onPrepare(): Promise<void> {
+  constructor(private readonly options: TauriDriverServiceOptions = {}) {}
+
+  async onPrepare(_config?: unknown, capabilities?: unknown): Promise<void> {
     let driverCommand: string;
     let driverArgs: string[];
     let ports: DriverPorts;
+
+    for (const key of PREFLIGHT_ENV_KEYS) {
+      delete process.env[key];
+    }
+
+    try {
+      this.isolation = await prepareIsolatedE2eRun({
+        binary: this.resolveApplication(capabilities),
+        expectedIdentifier: this.options.expectedIdentifier as string,
+        wipe: this.options.wipe as WipeMode,
+        runProfile: this.options.runProfile as RunProfile,
+        repoRoot: REPO_ROOT,
+      });
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+      return;
+    }
+
+    // From here on every exit path (including a crash) tears the run down.
+    Object.assign(process.env, this.isolation.env);
+    this.registerCleanupHandlers();
 
     try {
       ports = await ensureDriverPortsAvailable();
@@ -99,16 +154,75 @@ export default class TauriDriverService {
 
   async onComplete(): Promise<void> {
     const child = this.takeProcess();
-    if (!child?.pid) {
+    if (child?.pid) {
+      this.terminateTree(child.pid, { force: process.platform === "win32" });
+
+      const exited = await this.waitForExit(child, DRIVER_SHUTDOWN_GRACE_MS);
+      if (!exited) {
+        this.terminateTree(child.pid, { force: true });
+      }
+    }
+
+    this.finishIsolation();
+  }
+
+  /**
+   * Post-run wipe of the isolated profile, keychain entries and autostart
+   * value, the known_hosts comparison and the lock release. Synchronous so the
+   * `exit` handler can run it; idempotent.
+   */
+  private finishIsolation(): void {
+    const isolation = this.isolation;
+    this.isolation = null;
+    if (!isolation) {
       return;
     }
-
-    this.terminateTree(child.pid, { force: process.platform === "win32" });
-
-    const exited = await this.waitForExit(child, DRIVER_SHUTDOWN_GRACE_MS);
-    if (!exited) {
-      this.terminateTree(child.pid, { force: true });
+    const { errors } = isolation.teardown();
+    if (errors.length > 0) {
+      process.exitCode = 1;
     }
+  }
+
+  /**
+   * The single application WDIO will launch, from `tauri:options`. Every
+   * capability must also pass this run's WebView2 folder flag.
+   */
+  private resolveApplication(capabilities: unknown): string {
+    const applications = new Set<string>();
+    const visit = (entry: unknown) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+      const record = entry as Record<string, unknown>;
+      const options = (record["tauri:options"] ??
+        (record.capabilities as Record<string, unknown> | undefined)?.[
+          "tauri:options"
+        ]) as { application?: unknown; args?: unknown } | undefined;
+      assertWebView2LaunchArgs(
+        options?.args,
+        this.options.runProfile as RunProfile,
+      );
+      if (typeof options?.application === "string") {
+        applications.add(options.application);
+      } else {
+        applications.add("");
+      }
+    };
+
+    if (Array.isArray(capabilities)) {
+      capabilities.forEach(visit);
+    } else if (capabilities && typeof capabilities === "object") {
+      Object.values(capabilities).forEach(visit);
+    }
+
+    const [application] = [...applications];
+    if (applications.size !== 1 || !application) {
+      throw new E2eIsolationRefusal(
+        "BINARY_NOT_CONFIGURED",
+        `expected exactly one "tauri:options".application, found ${JSON.stringify([...applications])}.`,
+      );
+    }
+    return application;
   }
 
   /**
@@ -148,6 +262,7 @@ export default class TauriDriverService {
         if (child?.pid) {
           this.terminateTree(child.pid, { force: true });
         }
+        this.finishIsolation();
       };
 
       this.cleanupHandlers.push([event, handler]);

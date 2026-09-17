@@ -2,6 +2,11 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import type { Options } from "@wdio/types";
+import {
+  E2E_IDENTIFIER,
+  resolveRunProfile,
+  webview2Launch,
+} from "../scripts/lib/e2e-profile-isolation.mjs";
 import TauriDriverService from "./helpers/tauri-service";
 import { resolveDriverPorts } from "./helpers/driver-ports";
 
@@ -10,6 +15,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // (which re-parse this file in their own processes) reuse the launcher's port
 // instead of allocating a different one.
 const { driverPort: tauriDriverPort } = resolveDriverPorts();
+// The per-run WebView2 folder follows the same publish-once pattern, so every
+// worker launches the app with the folder the launcher's preflight verified.
+const runProfile = resolveRunProfile({ identifier: E2E_IDENTIFIER });
 const connectionRetryTimeout = Number.parseInt(
   process.env.WDIO_CONNECTION_RETRY_TIMEOUT ?? "120000",
   10,
@@ -50,11 +58,23 @@ export const config = {
     {
       "tauri:options": {
         application: configuredTauriBinaryPath,
+        args: webview2Launch(runProfile).args,
       },
     } as never,
   ],
 
-  services: [[TauriDriverService]],
+  // The service refuses to start unless the binary is proven to be the
+  // isolated e2e build; it wipes only that profile before and after the run.
+  services: [
+    [
+      TauriDriverService,
+      {
+        expectedIdentifier: E2E_IDENTIFIER,
+        wipe: "before-and-after",
+        runProfile,
+      },
+    ],
+  ],
 
   framework: "mocha",
   mochaOpts: {
@@ -68,7 +88,16 @@ export const config = {
   connectionRetryTimeout,
   connectionRetryCount: 3,
 
+  async beforeSession() {
+    const { enforceWorkerPreflight } = await import("./helpers/profile-guard");
+    enforceWorkerPreflight();
+  },
+
   async before() {
+    // Must precede anything that touches app state.
+    const { enforceWorkerProfileIsolation } =
+      await import("./helpers/profile-guard");
+    await enforceWorkerProfileIsolation();
     const { waitForAppReady } = await import("./helpers/app");
     await waitForAppReady();
   },

@@ -21,11 +21,14 @@
 // the document hand-off is made through the same bridge the UI uses; every
 // other step goes through the real UI.
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { S } from "../../helpers/selectors";
 import { selectCustomOption } from "../../helpers/forms";
 import { resetAppState, createCollection } from "../../helpers/app";
+import {
+  isolatedAppDataDir,
+  isolatedSshHome,
+} from "../../helpers/profile-guard";
 import {
   isDockerAvailable,
   startContainers,
@@ -114,27 +117,13 @@ async function activeTrustDatabase(): Promise<{
   return invokeNative("trust_get_active_database");
 }
 
-/** `<app_data>` for the installed identifier, i.e. where `databases/` lives. */
+/**
+ * `<app_data>` of this run's isolated e2e profile, i.e. where `databases/`
+ * lives. It is the directory the launcher's profile probe verified, never a
+ * path computed here, so this spec cannot reach the production profile.
+ */
 function appDataDir(): string {
-  const identifier = "com.sortofremote.ng";
-  if (process.platform === "win32") {
-    return path.join(
-      process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"),
-      identifier,
-    );
-  }
-  if (process.platform === "darwin") {
-    return path.join(
-      os.homedir(),
-      "Library",
-      "Application Support",
-      identifier,
-    );
-  }
-  return path.join(
-    process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share"),
-    identifier,
-  );
+  return isolatedAppDataDir();
 }
 
 function trustFilePath(databaseId: string): string {
@@ -153,40 +142,26 @@ function readSdbfMagic(file: string): string {
   }
 }
 
-// ── the developer's own known_hosts, borrowed and put back ──────────────────
+// ── the isolated profile's known_hosts ──────────────────────────────────────
 //
 // The `test-ssh` fixture keeps no volume for `/config`, so it regenerates its
 // host keys every time the container is recreated. A `[127.0.0.1]:2222` line
-// left by an earlier run therefore names a key the new container no longer has,
-// and the connection would take the mismatch path instead of the first-use path
-// this suite is about. So: strip **only** the fixture's endpoint before the run
-// and restore the file exactly as it was afterwards, including deleting it again
-// if it did not exist.
+// left by an earlier spec in the same run therefore names a key the new
+// container no longer has, and the connection would take the mismatch path
+// instead of the first-use path this suite is about. Isolated builds keep SSH
+// state in the profile's own SSH home, which the harness wipes before and after
+// every run, so only the fixture's endpoint is stripped from that file. The
+// developer's real `~/.ssh` is never read or written.
 
-const knownHostsPath = path.join(os.homedir(), ".ssh", "known_hosts");
-let knownHostsBefore: Buffer | null = null;
-let knownHostsExisted = false;
-
-function isolateFixtureFromKnownHosts(): void {
-  knownHostsExisted = fs.existsSync(knownHostsPath);
-  if (!knownHostsExisted) return;
-  knownHostsBefore = fs.readFileSync(knownHostsPath);
+function stripFixtureFromIsolatedKnownHosts(): void {
+  const knownHostsPath = path.join(isolatedSshHome(), ".ssh", "known_hosts");
+  if (!fs.existsSync(knownHostsPath)) return;
   const endpoints = [`[${SSH_HOST}]:${SSH_PORT}`, `[localhost]:${SSH_PORT}`];
-  const kept = knownHostsBefore
-    .toString("utf8")
+  const kept = fs
+    .readFileSync(knownHostsPath, "utf8")
     .split(/\r?\n/)
     .filter((line) => !endpoints.some((endpoint) => line.includes(endpoint)));
   fs.writeFileSync(knownHostsPath, kept.join("\n"));
-}
-
-function restoreKnownHosts(): void {
-  if (knownHostsExisted && knownHostsBefore) {
-    fs.writeFileSync(knownHostsPath, knownHostsBefore);
-    return;
-  }
-  if (!knownHostsExisted && fs.existsSync(knownHostsPath)) {
-    fs.rmSync(knownHostsPath);
-  }
 }
 
 // ── UI helpers ──────────────────────────────────────────────────────────────
@@ -422,7 +397,7 @@ describe("Trust Center — per-database storage (docker sshd fixture)", function
       this.skip();
       return;
     }
-    isolateFixtureFromKnownHosts();
+    stripFixtureFromIsolatedKnownHosts();
     startContainers(["test-ssh"]);
   });
 
@@ -432,7 +407,6 @@ describe("Trust Center — per-database storage (docker sshd fixture)", function
   });
 
   after(() => {
-    restoreKnownHosts();
     if (dockerAvailable) {
       stopContainers(["test-ssh"]);
     }

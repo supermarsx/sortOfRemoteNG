@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  README_CAPTURE_IDENTIFIER,
+  resolveRunProfile,
+  webview2Launch,
+} from "../scripts/lib/e2e-profile-isolation.mjs";
 import TauriDriverService from "./helpers/tauri-service";
 import { resolveDriverPorts } from "./helpers/driver-ports";
 
@@ -8,6 +13,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // `scripts/readme-screenshot.mjs` pins these so it can wait for the driver port
 // to close between its seed and capture phases; standalone runs get a free pair.
 const { driverPort: tauriDriverPort } = resolveDriverPorts();
+// scripts/readme-screenshot.mjs pins the run id and run dir as well, so both
+// phases share one WebView2 folder.
+const runProfile = resolveRunProfile({ identifier: README_CAPTURE_IDENTIFIER });
 const phase = process.env.README_CAPTURE_PHASE;
 const application = process.env.README_CAPTURE_BINARY?.trim();
 
@@ -33,10 +41,12 @@ if (
   );
 }
 
-const applicationArgs =
-  phase === "capture"
+const applicationArgs = [
+  ...(phase === "capture"
     ? [`--collection=${collectionId}`, `--connection=${connectionId}`]
-    : [];
+    : []),
+  ...webview2Launch(runProfile).args,
+];
 
 export const config = {
   runner: "local",
@@ -60,7 +70,18 @@ export const config = {
       },
     } as never,
   ],
-  services: [[TauriDriverService]],
+  // The seed and capture phases share one profile, so
+  // scripts/readme-screenshot.mjs owns the wipe; identity is still proven here.
+  services: [
+    [
+      TauriDriverService,
+      {
+        expectedIdentifier: README_CAPTURE_IDENTIFIER,
+        wipe: "none",
+        runProfile,
+      },
+    ],
+  ],
   framework: "mocha",
   mochaOpts: {
     ui: "bdd",
@@ -71,7 +92,15 @@ export const config = {
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
 
+  async beforeSession() {
+    const { enforceWorkerPreflight } = await import("./helpers/profile-guard");
+    enforceWorkerPreflight();
+  },
+
   async before() {
+    const { enforceWorkerProfileIsolation } =
+      await import("./helpers/profile-guard");
+    await enforceWorkerProfileIsolation();
     const { waitForAppReady } = await import("./helpers/app");
     await waitForAppReady();
   },
