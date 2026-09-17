@@ -1,24 +1,42 @@
+<!doctype html>
 <html>
   <head>
     <title>Yealink SIP-T21P E2</title>
-    <!-- {{RSAKEY_SCRIPT}} -->
+    <!-- Page-scope variables the real firmware emits before authenticating:
+         g_rsa_n / g_rsa_e (per session), g_phonetype, g_strFirmware. -->
+    {{PAGE_VARS}}
+    <script src="/js/phone-page.js"></script>
   </head>
   <body class="loginForm">
-    <div id="loginForm">
-      {{ERROR}}
-      <form
-        id="login"
-        name="loginForm"
-        method="post"
-        action="/servlet?m=mod_listener&amp;p=login&amp;q=login"
-      >
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" value="" />
-        <label for="pwd">Password</label>
-        <input type="password" id="pwd" name="pwd" value="" />
-        <input type="hidden" id="rsakey" name="rsakey" value="" />
-        <input type="submit" id="loginButton" value="Confirm" />
-      </form>
+    <div id="idLoginBox">
+      {{ERROR}} {{LOGIN_OPEN}}
+      <table>
+        <tr>
+          <td><label for="idUsername">User Name</label></td>
+          <td>
+            <input type="text" id="idUsername" name="username" value="" />
+          </td>
+        </tr>
+        <tr>
+          <td><label for="idPassword">Password</label></td>
+          <td>
+            <input type="password" id="idPassword" name="pwd" value="" />
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <input type="hidden" id="idRsakey" name="rsakey" value="" />
+            <input type="hidden" id="idRsaiv" name="rsaiv" value="" />
+            <!-- The confirm control is an anchor that calls a page function,
+                 not a native submit: a plain submit-button search finds
+                 nothing here (t96 §2.3). -->
+            <a id="idConfirm" href="javascript:void(0)">Confirm</a>
+            <a id="idCancel" href="javascript:void(0)">Cancel</a>
+          </td>
+        </tr>
+      </table>
+      {{LOGIN_CLOSE}}
+      <div id="_RES_INFO_"></div>
     </div>
   </body>
 </html>
