@@ -18,6 +18,7 @@ import { getHttpApplicationProfile } from "../../utils/connection/httpApplicatio
 import { WebAutomationBridge } from "../../utils/recording/webAutomationBridge";
 import { totpApi } from "../totp/useTOTP";
 import type { RuntimeVaultTotpController } from "../security/useRuntimeVaultTotp";
+import type { SynologyMfaCapability } from "../../utils/protocol/synologyFormLoginLease";
 
 interface Options {
   connection: Connection | undefined;
@@ -30,6 +31,7 @@ interface Options {
   iframe: React.RefObject<HTMLIFrameElement | null>;
   getDocument: () => WebAutomationDocument | null;
   vaultTotp?: RuntimeVaultTotpController;
+  synologyMfa?: SynologyMfaCapability;
 }
 const failure =
   "Automatic 2FA stopped. Use 2FA Codes manually or review the saved Application settings.";
@@ -75,7 +77,8 @@ export function useWebAutoMfa(options: Options) {
   const [retry, setRetry] = useState(0);
   const retryRef = useRef(false);
   retryRef.current = canRetry;
-  const identity = `${options.ownerDatabaseId ?? ""}:${options.availability?.generation ?? ""}:${options.navigationKey}:${options.settingsReady}:${options.blocked}:${options.vaultTotp?.scopeKey ?? ""}`;
+  const synologyMfa = options.synologyMfa;
+  const identity = `${options.ownerDatabaseId ?? ""}:${options.availability?.generation ?? ""}:${options.navigationKey}:${options.settingsReady}:${options.blocked}:${options.vaultTotp?.scopeKey ?? ""}:${synologyMfa?.runtimeConnectionId ?? ""}:${synologyMfa?.proxySessionId ?? ""}`;
   const previous = useRef({ identity, connection: options.connection });
   if (
     previous.current.identity !== identity ||
@@ -85,10 +88,12 @@ export function useWebAutoMfa(options: Options) {
     generation.current++;
   }
   useEffect(() => {
-    if (options.connection?.httpAutoMfa?.enabled !== true) return;
+    if (options.connection?.httpAutoMfa?.enabled !== true && !synologyMfa)
+      return;
     let disposed = false,
       offNative: (() => void) | undefined;
     const revoke = () => {
+      latest.current.synologyMfa?.revoke();
       revoked.current = true;
       generation.current++;
       cancelPending.current?.();
@@ -134,7 +139,7 @@ export function useWebAutoMfa(options: Options) {
       offCurrent();
       offNative?.();
     };
-  }, [options.connection?.httpAutoMfa?.enabled]);
+  }, [options.connection?.httpAutoMfa?.enabled, synologyMfa]);
 
   useEffect(() => {
     const captured = generation.current,
@@ -156,7 +161,9 @@ export function useWebAutoMfa(options: Options) {
       return;
     let config: ReturnType<typeof normalizeHttpAutoMfa>;
     try {
-      config = normalizeHttpAutoMfa(connection.httpAutoMfa);
+      config = synologyMfa
+        ? { version: 1, enabled: true, challengeId: "synology-dsm-otp" }
+        : normalizeHttpAutoMfa(connection.httpAutoMfa);
     } catch {
       setStatus(failure);
       return;
@@ -165,21 +172,21 @@ export function useWebAutoMfa(options: Options) {
     const doc = options.getDocument();
     if (!doc) return;
     const attemptKey = `${options.ownerDatabaseId}:${connection.id}:${doc.sessionId}`;
-    if (sent.current.has(attemptKey)) {
+    if (sent.current.has(attemptKey) || synologyMfa?.attempted()) {
       setStatus(
         "Automatic 2FA was attempted once. Complete any further verification manually.",
       );
       return;
     }
     const challenge = getHttpApplicationProfile(
-      connection.httpApplication?.id ?? "",
+      synologyMfa ? "synology-dsm" : (connection.httpApplication?.id ?? ""),
     )?.totpChallenges?.find((item) => item.id === config.challengeId);
     const entries =
       connection.totpConfigs?.filter(
         (item) => item.id === config.totpConfigId,
       ) ?? [];
     const authenticator = entries.length === 1 ? entries[0] : null;
-    const vault = connection.credentialSource?.kind === "vault";
+    const vault = !synologyMfa && connection.credentialSource?.kind === "vault";
     const vaultTotp = vault ? options.vaultTotp : undefined;
     const manager = DatabaseManager.getInstance();
     let target: DatabaseDataTarget | null;
@@ -190,6 +197,11 @@ export function useWebAutoMfa(options: Options) {
       return;
     }
     const expected = receipt(connection);
+    const mfaContext = () => ({
+      runtimeConnectionId: connection.id,
+      currentUrl: latest.current.currentUrl,
+      document: doc,
+    });
     const valid = () => {
       const live = latest.current;
       if (
@@ -212,6 +224,8 @@ export function useWebAutoMfa(options: Options) {
       )
         throw new Error(failure);
       target.assertAccessible();
+      if (live.synologyMfa !== synologyMfa) throw new Error(failure);
+      synologyMfa?.assertCurrent(mfaContext());
       if (
         vault &&
         (!vaultTotp?.available ||
@@ -223,8 +237,10 @@ export function useWebAutoMfa(options: Options) {
       const upstream = new URL(live.currentUrl);
       const local = new URL(doc.url);
       if (
-        getHttpAutoMfaOrigin(connection) !== config.origin ||
-        upstream.origin !== config.origin ||
+        (!synologyMfa &&
+          (getHttpAutoMfaOrigin(connection) !== config.origin ||
+            upstream.origin !== config.origin)) ||
+        upstream.protocol !== "https:" ||
         upstream.username ||
         upstream.password ||
         upstream.pathname !== local.pathname ||
@@ -235,11 +251,12 @@ export function useWebAutoMfa(options: Options) {
     try {
       valid();
       if (
-        (!vault && !authenticator) ||
+        (!synologyMfa && !vault && !authenticator) ||
         !challenge ||
         !target?.readCurrent ||
         !target.verifyCurrent ||
-        (!vault &&
+        (!synologyMfa &&
+          !vault &&
           (!authenticator ||
             typeof authenticator.secret !== "string" ||
             !authenticator.secret ||
@@ -259,14 +276,17 @@ export function useWebAutoMfa(options: Options) {
     }
     const persisted = async () => {
       valid();
+      // The redirected capability owns saved-source verification and generation.
+      if (synologyMfa) return;
       await target!.verifyCurrent!();
       valid();
       const data = await target!.readCurrent!();
       valid();
       const saved =
         data?.connections.filter((item) => item.id === connection.id) ?? [];
-      if (saved.length !== 1 || receipt(saved[0]) !== expected)
+      if (saved.length !== 1 || receipt(saved[0]) !== expected) {
         throw new Error(failure);
+      }
     };
     const bridge = new WebAutomationBridge(() => {
       try {
@@ -318,8 +338,10 @@ export function useWebAutoMfa(options: Options) {
         await persisted();
         let expires: number;
         let assertCodeCurrent: (() => void) | undefined;
-        if (vault) {
-          const generated = await vaultTotp!.generate(config.totpConfigId!);
+        if (synologyMfa || vault) {
+          const generated = synologyMfa
+            ? await synologyMfa.generate(mfaContext(), valid)
+            : await vaultTotp!.generate(config.totpConfigId!);
           generated.assertCurrent();
           code = generated.code;
           expires = generated.expires;
@@ -343,13 +365,14 @@ export function useWebAutoMfa(options: Options) {
         await persisted();
         if (
           Date.now() >= expires - 1000 ||
-          !(vault
+          !(synologyMfa || vault
             ? /^\d{6}(?:\d{2})?$/.test(code)
             : new RegExp(`^\\d{${authenticator!.digits}}$`).test(code))
         )
           throw new Error(failure);
         valid();
         assertCodeCurrent?.();
+        synologyMfa?.claim(mfaContext());
         sent.current.add(attemptKey);
         setCanRetry(false);
         await bridge.request("totpSubmit", { nonce, code, expires });

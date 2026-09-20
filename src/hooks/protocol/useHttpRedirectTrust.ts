@@ -26,7 +26,12 @@ import {
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy";
 import { normalizeSynologySettings } from "../../types/protocols/synology";
-import { captureSynologyFormLoginLease } from "../../utils/protocol/synologyFormLoginLease";
+import {
+  captureSynologyFormLoginLease,
+  createSynologyMfaCapability,
+  hasSynologyAutoMfaConsent,
+  type SynologyMfaCapability,
+} from "../../utils/protocol/synologyFormLoginLease";
 import {
   isSynologyDefaultRedirect,
   isSynologyDefaultRedirectOrigin,
@@ -167,6 +172,7 @@ export function useHttpRedirectTrust(
                 originalOrigin: original.originalOrigin,
                 enabled: settings.useDefaultRedirectDestinations !== false,
                 databaseId: availability.databaseId!,
+                databaseGeneration: availability.generation,
                 savedConnectionId: saved?.id,
                 formLogin: saved
                   ? captureSynologyFormLoginLease(
@@ -198,6 +204,7 @@ export function useHttpRedirectTrust(
       }
     }
   } catch {
+    inheritedDefault?.formLogin?.revoke();
     defaults = undefined;
     // Keep invalidated provenance as an inert marker across an explicit manual
     // handoff; never reinterpret a later portal as a new original NAS source.
@@ -209,27 +216,35 @@ export function useHttpRedirectTrust(
   const latestBudgetSource = useRef(budgetSource);
   latestBudgetSource.current = budgetSource;
   const assertBudgetCurrent = () => {
-    const current = latest.current;
-    const availability = current.context.databaseAvailability;
-    if (
-      !budgetSource ||
-      latestBudgetSource.current !== budgetSource ||
-      availability?.status !== "ready" ||
-      availability.databaseId !== current.session.ownerDatabaseId ||
-      availability.databaseId !== budgetSource.databaseId
-    )
+    try {
+      const current = latest.current;
+      const availability = current.context.databaseAvailability;
+      if (
+        !budgetSource ||
+        latestBudgetSource.current !== budgetSource ||
+        availability?.status !== "ready" ||
+        availability.databaseId !== current.session.ownerDatabaseId ||
+        availability.databaseId !== budgetSource.databaseId ||
+        (budgetSource.formLogin &&
+          availability.generation !== budgetSource.databaseGeneration)
+      )
+        throw new Error(UNAVAILABLE);
+      budgetSource.assertOwner();
+      if (budgetSource.savedConnectionId) {
+        const originals = current.context.state.connections.filter(
+          (item) => item.id === budgetSource.savedConnectionId,
+        );
+        if (originals.length !== 1) throw new Error(UNAVAILABLE);
+        const original = originals[0];
+        budgetSource.formLogin?.assertCurrent(
+          original,
+          current.context.credentialVault,
+        );
+        budgetSource.assertIdentity(original);
+      }
+    } catch {
+      budgetSource?.formLogin?.revoke();
       throw new Error(UNAVAILABLE);
-    budgetSource.assertOwner();
-    if (budgetSource.savedConnectionId) {
-      const original = current.context.state.connections.find(
-        (item) => item.id === budgetSource.savedConnectionId,
-      );
-      if (!original) throw new Error(UNAVAILABLE);
-      budgetSource.formLogin?.assertCurrent(
-        original,
-        current.context.credentialVault,
-      );
-      budgetSource.assertIdentity(original);
     }
   };
   let redirectBudget:
@@ -249,6 +264,70 @@ export function useHttpRedirectTrust(
     assertBudgetCurrent();
   };
   const formLoginCurrent = !!budgetSource?.formLogin && !!redirectBudget;
+  const mfaRef = useRef<{
+    proof: unknown;
+    capability: SynologyMfaCapability;
+  } | null>(null);
+  const proof = runtimeNavigation?.synologyMfaProof;
+  let synologyMfa: SynologyMfaCapability | undefined;
+  if (
+    proof &&
+    inheritedDefault?.formLogin &&
+    formLoginCurrent &&
+    connection &&
+    saved &&
+    hasSynologyAutoMfaConsent(saved)
+  ) {
+    const runtime = connection;
+    const source = inheritedDefault;
+    const readSource = () => {
+      assertBudgetCurrent();
+      const current = latest.current;
+      const navigation = getRuntimeWebNavigation(runtime.id);
+      const origin = httpRedirectConnectionOrigin(runtime);
+      if (
+        current.connection !== runtime ||
+        current.session.connectionId !== runtime.id ||
+        navigation !== runtimeNavigation ||
+        navigation?.synologyMfaProof !== proof ||
+        navigation.synologyRedirectSource !== source ||
+        !Number.isSafeInteger(navigation.redirectHops) ||
+        navigation.redirectHops < 1 ||
+        navigation.redirectHops > 20 ||
+        !source.enabled ||
+        proof.runtimeConnectionId !== runtime.id ||
+        proof.origin !== origin ||
+        new URL(navigation.initialUrl).origin !== origin ||
+        new URL(origin).protocol !== "https:" ||
+        (origin !== source.originalOrigin &&
+          !isSynologyDefaultRedirectOrigin(source.originalOrigin, origin))
+      )
+        throw new Error(UNAVAILABLE);
+      const matches = current.context.state.connections.filter(
+        (item) => item.id === source.savedConnectionId,
+      );
+      if (matches.length !== 1) throw new Error(UNAVAILABLE);
+      return matches[0];
+    };
+    try {
+      proof.assertCurrent();
+      readSource();
+      if (mfaRef.current?.proof !== proof) {
+        mfaRef.current = {
+          proof,
+          capability: createSynologyMfaCapability(
+            proof,
+            source,
+            readSource,
+            () => latest.current.context.credentialVault,
+          ),
+        };
+      }
+      synologyMfa = mfaRef.current.capability;
+    } catch {
+      source.formLogin?.revoke();
+    }
+  }
   const latestDefaults = useRef({ defaults, source: defaultSource });
   latestDefaults.current = { defaults, source: defaultSource };
   let canRemember = false;
@@ -631,6 +710,7 @@ export function useHttpRedirectTrust(
     defaultSource,
     formLoginCurrent,
     assertFormLoginCurrent,
+    ...(synologyMfa ? { synologyMfa } : {}),
     ...(redirectBudget ? { redirectBudget } : {}),
   };
 }

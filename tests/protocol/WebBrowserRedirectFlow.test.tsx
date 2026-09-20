@@ -129,6 +129,9 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
           if (h.locked) throw new Error("locked");
         },
         readCurrent: h.readCurrent,
+        verifyCurrent: async () => {
+          if (h.locked) throw new Error("locked");
+        },
       }),
     }),
   },
@@ -631,7 +634,11 @@ describe("actual website redirect review integration", () => {
     expect(information).toHaveClass("flex-wrap", "min-w-0");
   });
 
-  async function mountContinuation(holdCertificate = false) {
+  async function mountContinuation(
+    holdCertificate = false,
+    destination = continuationDestination,
+    includeContinuation = true,
+  ) {
     h.connections = [
       {
         ...h.connections[0],
@@ -655,16 +662,14 @@ describe("actual website redirect review integration", () => {
         });
       }
       const result = await invoke(command, args);
-      return command === "review_proxy_redirect" && args.receiptId && result
+      return includeContinuation &&
+        command === "review_proxy_redirect" &&
+        args.receiptId &&
+        result
         ? { ...result, continuationId }
         : result;
     });
-    redirect(
-      view.container.querySelector("iframe")!,
-      continuationDestination,
-      true,
-      202,
-    );
+    redirect(view.container.querySelector("iframe")!, destination, true, 202);
     if (holdCertificate)
       await waitFor(() => expect(resumeCertificate).toBeTypeOf("function"));
     return { view, resumeCertificate: () => resumeCertificate?.() };
@@ -710,6 +715,267 @@ describe("actual website redirect review integration", () => {
         compareAndSwap: vi.fn(),
       };
   }
+  it.each([false, true])(
+    "automatically submits original TOTP only through the redeemed destination proxy (vault=%s)",
+    async (vault) => {
+      automaticSource(vault);
+      const totpId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+      const localEntry = {
+        id: totpId,
+        secret: "LOCAL-MFA-SEED",
+        issuer: "DSM",
+        account: "NAS account",
+        algorithm: "sha1" as const,
+        digits: 6,
+        period: 30,
+      };
+      h.connections[0] = {
+        ...h.connections[0],
+        totpConfigs: [localEntry],
+        httpAutoMfa: {
+          version: 1,
+          enabled: true,
+          origin: "https://example-nas.fr3.quickconnect.to",
+          challengeId: "synology-dsm-otp",
+          totpConfigId: totpId,
+        },
+        ...(vault
+          ? {
+              credentialSource: {
+                kind: "vault" as const,
+                credentialId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                totpId,
+              },
+            }
+          : {}),
+      };
+      if (vault) {
+        const list = h.vault!.list;
+        h.vault!.list = vi.fn(async (scope) => {
+          const snapshot = await list(scope);
+          snapshot.entries[0].availableFacets.push("totp");
+          return snapshot;
+        });
+        h.vault!.resolve = vi.fn(async (_snapshot, _id, facets) =>
+          facets.includes("totp")
+            ? {
+                totp: [
+                  {
+                    id: totpId,
+                    label: "Vault DSM OTP",
+                    secret: "VAULT-MFA-SEED",
+                    algorithm: "sha1" as const,
+                    digits: 6 as const,
+                    period: 30,
+                  },
+                ],
+              }
+            : { username: "vault-user", password: "vault-password" },
+        );
+      }
+      // Hold the clock within a fresh OTP window without faking browser timers.
+      vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-20T00:00:01Z"));
+      const baseInvoke = h.invoke.getMockImplementation()!;
+      h.invoke.mockImplementation(async (command, args) =>
+        command === "totp_compute_code" ? "123456" : baseInvoke(command, args),
+      );
+      const { view } = await mountContinuation(
+        false,
+        "https://example-nas.de2.quickconnect.to/webman/index.cgi",
+      );
+      await waitFor(() => expect(proxies).toHaveLength(2));
+      await waitFor(() =>
+        expect(view.container.querySelector("iframe")?.src).toContain(
+          proxies[1].proxy_url,
+        ),
+      );
+      const iframe = view.container.querySelector("iframe")!;
+      const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+      const url = new URL(iframe.src);
+      const navigationToken = url.searchParams.get("__sorng_navigation_v1");
+      url.searchParams.delete("__sorng_navigation_v1");
+      const identity = {
+        version: 1,
+        sessionId: "proxy-2",
+        documentToken: "e".repeat(32),
+        documentSequence: 1,
+        navigationToken,
+        url: url.href,
+      };
+      const send = async (data: Record<string, unknown>) =>
+        act(async () => {
+          window.dispatchEvent(
+            new MessageEvent("message", {
+              source: iframe.contentWindow,
+              origin: url.origin,
+              data,
+            }),
+          );
+        });
+      await send({ ...identity, type: "proxy_document_start" });
+      await send({ ...identity, type: "proxy_dom_ready" });
+      const requests = (action: string) =>
+        post.mock.calls
+          .map(([data]) => data)
+          .filter((data) => data.action === action);
+      await waitFor(() => expect(requests("totpProbe")).toHaveLength(1));
+      await send({
+        ...requests("totpProbe")[0],
+        type: "proxy_web_automation",
+        status: "ok",
+      });
+      await waitFor(() => expect(requests("totpSubmit")).toHaveLength(1));
+      expect(requests("totpSubmit")[0].payload.code).toBe("123456");
+      await send({
+        ...requests("totpSubmit")[0],
+        type: "proxy_web_automation",
+        status: "ok",
+      });
+      expect(h.invoke).toHaveBeenCalledWith(
+        "totp_compute_code",
+        expect.objectContaining({
+          secret: vault ? "VAULT-MFA-SEED" : "LOCAL-MFA-SEED",
+        }),
+      );
+      const runtime = resolveRuntimeConnection(
+        h.connections,
+        h.sessions[0].connectionId,
+      )!;
+      expect(runtime.id).not.toBe(h.connections[0].id);
+      expect(runtime.totpConfigs).toBeUndefined();
+      expect(runtime.credentialSource).toBeUndefined();
+      expect(runtime.httpAutoMfa).toBeUndefined();
+      expect(
+        JSON.stringify([
+          runtime,
+          getRuntimeWebNavigation(runtime.id),
+          h.sessions,
+          post.mock.calls,
+        ]),
+      ).not.toMatch(/MFA-SEED|fixture-password|vault-password/);
+      const starts = h.invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      );
+      expect(starts[1][1].config).toMatchObject({
+        username: "",
+        password: "",
+        http_auto_login: false,
+        continuation_id: continuationId,
+      });
+      if (vault)
+        expect(h.vault!.resolve).toHaveBeenCalledWith(
+          expect.anything(),
+          "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          ["totp"],
+        );
+      // The toolbar and destination connection receive neither source references nor seeds.
+      fireEvent.click(screen.getByRole("button", { name: "2FA Codes" }));
+      expect(
+        screen.queryByText(vault ? "Vault DSM OTP" : "NAS account"),
+      ).toBeNull();
+      expect(requests("totpSubmit")).toHaveLength(1);
+    },
+  );
+  it.each(["missing", "failed", "cancelled"])(
+    "never arms MFA for a %s native continuation",
+    async (mode) => {
+      automaticSource();
+      h.connections[0] = {
+        ...h.connections[0],
+        httpAutoMfa: {
+          version: 1,
+          enabled: true,
+          origin: "https://example-nas.fr3.quickconnect.to",
+          challengeId: "synology-dsm-otp",
+          totpConfigId: "otp",
+        },
+        totpConfigs: [
+          {
+            id: "otp",
+            secret: "NEVER-RELEASE",
+            issuer: "DSM",
+            account: "NAS",
+            algorithm: "sha1",
+            digits: 6,
+            period: 30,
+          },
+        ],
+      };
+      let finish: (() => void) | undefined;
+      const baseInvoke = h.invoke.getMockImplementation()!;
+      h.invoke.mockImplementation(async (command, args) => {
+        if (
+          command === "start_basic_auth_proxy" &&
+          args.config.continuation_id
+        ) {
+          if (mode === "failed")
+            throw new Error("Synthetic continuation rejected");
+          if (mode === "cancelled")
+            await new Promise<void>((resolve) => {
+              finish = resolve;
+            });
+        }
+        return baseInvoke(command, args);
+      });
+      const { view } = await mountContinuation(
+        false,
+        "https://example-nas.de2.quickconnect.to/webman/index.cgi",
+        mode !== "missing",
+      );
+      if (mode === "cancelled") {
+        await waitFor(() => expect(finish).toBeTypeOf("function"));
+        view.unmount();
+        await act(async () => finish!());
+      } else if (mode === "failed") {
+        await screen.findByText(/Synthetic continuation rejected/);
+      } else {
+        await waitFor(() => expect(proxies).toHaveLength(2));
+        await waitFor(() =>
+          expect(view.container.querySelector("iframe")?.src).toContain(
+            proxies[1].proxy_url,
+          ),
+        );
+        const iframe = view.container.querySelector("iframe")!;
+        const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+        const url = new URL(iframe.src);
+        const navigationToken = url.searchParams.get("__sorng_navigation_v1");
+        url.searchParams.delete("__sorng_navigation_v1");
+        const identity = {
+          version: 1,
+          sessionId: "proxy-2",
+          documentToken: "e".repeat(32),
+          documentSequence: 1,
+          navigationToken,
+          url: url.href,
+        };
+        for (const type of ["proxy_document_start", "proxy_dom_ready"]) {
+          await act(async () =>
+            window.dispatchEvent(
+              new MessageEvent("message", {
+                source: iframe.contentWindow,
+                origin: url.origin,
+                data: { ...identity, type },
+              }),
+            ),
+          );
+        }
+        expect(
+          post.mock.calls.filter(
+            ([data]) =>
+              data.action === "totpProbe" || data.action === "totpSubmit",
+          ),
+        ).toHaveLength(0);
+      }
+      expect(
+        getRuntimeWebNavigation(h.sessions[0].connectionId)?.synologyMfaProof,
+      ).toBeUndefined();
+      expect(
+        h.invoke.mock.calls.filter(
+          ([command]) => command === "totp_compute_code",
+        ),
+      ).toHaveLength(0);
+    },
+  );
   it("keeps the saved-login toolbar indicator through an anonymous handoff using native status only", async () => {
     automaticSource();
     h.loginStatuses = {

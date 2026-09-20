@@ -18,6 +18,12 @@ const mock = vi.hoisted(() => ({
 vi.mock("../../src/hooks/totp/useTOTP", () => ({
   totpApi: { computeCode: mock.compute },
 }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (
+    _command: string,
+    args: { secret: string; algorithm: string; digits: number; period: number },
+  ) => mock.compute(args.secret, args.algorithm, args.digits, args.period),
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (_: string, cb: () => void) => {
     mock.lock = cb;
@@ -49,6 +55,12 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
 }));
 import { useWebAutoMfa } from "../../src/hooks/protocol/useWebAutoMfa";
 import type { RuntimeVaultTotpController } from "../../src/hooks/security/useRuntimeVaultTotp";
+import {
+  captureSynologyFormLoginLease,
+  createSynologyMfaCapability,
+  type SynologyMfaCapability,
+} from "../../src/utils/protocol/synologyFormLoginLease";
+let synologyMfa: SynologyMfaCapability | undefined;
 let vaultTotp: RuntimeVaultTotpController | undefined;
 let conn: Connection,
   saved: Connection,
@@ -73,6 +85,7 @@ function Fixture() {
     iframe,
     getDocument: () => doc,
     vaultTotp,
+    synologyMfa,
   });
   return null;
 }
@@ -113,6 +126,7 @@ beforeEach(() => {
   mock.accessible = true;
   ready = true;
   vaultTotp = undefined;
+  synologyMfa = undefined;
   blocked = false;
   currentUrl = "https://nas.example/wp-login.php";
   availability = { status: "ready", databaseId: "db", generation: 1 };
@@ -163,6 +177,229 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("explicit origin-bound automatic website 2FA", () => {
+  function redirectedSynology(vault = false) {
+    const totpId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    saved = {
+      ...conn,
+      hostname: "nas.fr3.quickconnect.to",
+      httpApplication: { version: 1, id: "synology-dsm", loginMode: "form" },
+      basicAuthUsername: "user",
+      basicAuthPassword: "password",
+      httpAutoMfa: {
+        ...conn.httpAutoMfa!,
+        origin: "https://nas.fr3.quickconnect.to",
+        challengeId: "synology-dsm-otp",
+        totpConfigId: totpId,
+      },
+      totpConfigs: [{ ...conn.totpConfigs![0], id: totpId }],
+      ...(vault
+        ? {
+            credentialSource: {
+              kind: "vault" as const,
+              credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              totpId,
+            },
+          }
+        : {}),
+    };
+    currentUrl = "https://nas.de2.quickconnect.to/webman/index.cgi";
+    doc = { ...doc!, url: "http://127.0.0.1:41000/webman/index.cgi" };
+    const vaultApi = vault
+      ? {
+          scope: { databaseId: "db", generation: 1 },
+          changeRevision: 1,
+          list: vi.fn(async () => ({
+            scope: { databaseId: "db", generation: 1 },
+            revision: 1,
+            receipt: "receipt",
+            entries: [
+              {
+                id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                name: "fixture",
+                createdAt: "",
+                updatedAt: "",
+                availableFacets: ["totp" as const],
+              },
+            ],
+          })),
+          resolve: vi.fn(async () => ({
+            totp: [
+              {
+                id: totpId,
+                label: "DSM",
+                secret: "VAULT-SEED",
+                algorithm: "sha1" as const,
+                digits: 6 as const,
+                period: 30,
+              },
+            ],
+          })),
+          compareAndSwap: vi.fn(),
+        }
+      : undefined;
+    const lease = captureSynologyFormLoginLease(saved, vaultApi)!;
+    conn = {
+      id: "redirect",
+      name: "Redirect",
+      protocol: "https",
+      hostname: "nas.de2.quickconnect.to",
+      port: 443,
+      isGroup: false,
+      createdAt: "",
+      updatedAt: "",
+    };
+    let active = true;
+    synologyMfa = createSynologyMfaCapability(
+      {
+        runtimeConnectionId: conn.id,
+        proxySessionId: "proxy",
+        origin: new URL(currentUrl).origin,
+        proxyOrigin: "http://127.0.0.1:41000",
+        assertCurrent: () => {
+          if (!active) throw Error("inactive");
+        },
+      },
+      {
+        originalOrigin: saved.httpAutoMfa!.origin!,
+        databaseId: "db",
+        databaseGeneration: 1,
+        enabled: true,
+        savedConnectionId: saved.id,
+        formLogin: lease,
+        assertOwner: () => {
+          if (mock.owner !== "db" || !mock.accessible) throw Error("revoked");
+        },
+        assertIdentity: () => {},
+      },
+      () => saved,
+      () => vaultApi,
+    );
+    return {
+      capability: synologyMfa,
+      vaultApi,
+      deactivate: () => {
+        active = false;
+      },
+    };
+  }
+  it.each([false, true])(
+    "generates original TOTP through the redeemed MFA-only capability (vault=%s)",
+    async (vault) => {
+      const { capability, vaultApi } = redirectedSynology(vault);
+      const view = await mount();
+      await reply(requests("totpProbe")[0]);
+      expect(requests("totpSubmit")).toHaveLength(1);
+      expect(requests("totpSubmit")[0].payload.code).toBe("123456");
+      expect(mock.compute).toHaveBeenCalledWith(
+        vault ? "VAULT-SEED" : "SYNTHETIC-SEED",
+        "SHA1",
+        6,
+        30,
+      );
+      if (vault)
+        expect(vaultApi!.resolve).toHaveBeenCalledWith(
+          expect.anything(),
+          saved.credentialSource!.kind === "vault"
+            ? saved.credentialSource!.credentialId
+            : "",
+          ["totp"],
+        );
+      expect(mock.read).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify([conn, capability, post.mock.calls])).not.toMatch(
+        /SYNTHETIC-SEED|VAULT-SEED/,
+      );
+      expect(capability.attempted()).toBe(true);
+      view.unmount();
+      await mount();
+      expect(requests("totpProbe")).toHaveLength(1);
+      expect(requests("totpSubmit")).toHaveLength(1);
+    },
+  );
+  it.each([
+    "missing",
+    "revoked",
+    "inactive",
+    "foreign",
+    "http",
+    "path",
+    "proxy-path",
+    "proxy-session",
+    "proxy-origin",
+    "runtime-id",
+    "consent-origin",
+    "challenge",
+  ])(
+    "does not probe or generate for %s redirect proof/context",
+    async (mode) => {
+      const { capability, deactivate } = redirectedSynology();
+      if (mode === "missing") synologyMfa = undefined;
+      if (mode === "revoked") capability.revoke();
+      if (mode === "inactive") deactivate();
+      if (mode === "foreign")
+        currentUrl = "https://unapproved.example/webman/index.cgi";
+      if (mode === "http")
+        currentUrl = "http://nas.de2.quickconnect.to/webman/index.cgi";
+      if (mode === "path") {
+        currentUrl = "https://nas.de2.quickconnect.to/other";
+        doc!.url = "http://127.0.0.1:41000/other";
+      }
+      if (mode === "proxy-path") doc!.url = "http://127.0.0.1:41000/";
+      if (mode === "proxy-session") doc!.sessionId = "different-proxy";
+      if (mode === "proxy-origin")
+        doc!.url = "http://127.0.0.1:42000/webman/index.cgi";
+      if (mode === "runtime-id") conn = { ...conn, id: "other" };
+      if (mode === "consent-origin")
+        saved.httpAutoMfa!.origin = new URL(currentUrl).origin;
+      if (mode === "challenge")
+        saved.httpAutoMfa!.challengeId = "wordpress-two-factor-totp";
+      await mount();
+      expect(requests("totpProbe")).toHaveLength(0);
+      expect(mock.compute).not.toHaveBeenCalled();
+    },
+  );
+  it.each([false, true])(
+    "discards pending redirected OTP on permanent revocation (vault=%s)",
+    async (vault) => {
+      const { capability } = redirectedSynology(vault);
+      let finish!: (code: string) => void;
+      mock.compute.mockImplementation(
+        () =>
+          new Promise<string>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await mount();
+      await reply(requests("totpProbe")[0]);
+      expect(mock.compute).toHaveBeenCalledOnce();
+      capability.revoke();
+      await act(async () => finish("123456"));
+      expect(requests("totpSubmit")).toHaveLength(0);
+    },
+  );
+  it("never falls back to a preserved local seed when the owning vault refuses disclosure", async () => {
+    const { vaultApi } = redirectedSynology(true);
+    vaultApi!.resolve.mockRejectedValueOnce(new Error("private error"));
+    await mount();
+    await reply(requests("totpProbe")[0]);
+    expect(mock.compute).not.toHaveBeenCalled();
+    expect(requests("totpSubmit")).toHaveLength(0);
+    expect(api.status ?? "").not.toContain("private error");
+  });
+  it("revokes the shared capability when persisted consent disappears", async () => {
+    const { capability } = redirectedSynology();
+    await mount();
+    mock.read.mockResolvedValue({ connections: [] });
+    await reply(requests("totpProbe")[0]);
+    expect(() =>
+      capability.assertCurrent({
+        runtimeConnectionId: conn.id,
+        currentUrl,
+        document: doc!,
+      }),
+    ).toThrow();
+    expect(mock.compute).not.toHaveBeenCalled();
+    expect(requests("totpSubmit")).toHaveLength(0);
+  });
   it("generates only the explicitly linked vault code after probe acknowledgement, never a preserved local seed", async () => {
     conn.credentialSource = {
       kind: "vault",

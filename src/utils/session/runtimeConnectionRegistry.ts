@@ -27,6 +27,7 @@ export interface SynologyRedirectSource {
   originalOrigin: string;
   enabled: boolean;
   databaseId: string;
+  databaseGeneration?: number;
   savedConnectionId?: string;
   assertOwner: () => void;
   assertIdentity: (connection: Connection) => void;
@@ -36,7 +37,20 @@ export interface SynologyRedirectSource {
       source: Connection,
       vault: DatabaseCredentialVaultApi | undefined,
     ) => void;
+    revoke: () => void;
+    autoMfaAttempted: () => boolean;
+    claimAutoMfaAttempt: () => void;
+    revokeAutoMfa: () => void;
+    assertAutoMfaCurrent: () => void;
   };
+}
+/** Created only after the native one-use continuation was successfully redeemed. */
+export interface SynologyMfaProof {
+  runtimeConnectionId: string;
+  proxySessionId: string;
+  origin: string;
+  proxyOrigin: string;
+  assertCurrent: () => void;
 }
 export interface RuntimeWebNavigation {
   initialUrl: string;
@@ -48,6 +62,7 @@ export interface RuntimeWebNavigation {
   synologyRedirectSource?: SynologyRedirectSource;
   /** Native-issued, one-use handoff; never saved or exposed to website frames. */
   nativeContinuation?: { id: string; cancel: () => void };
+  synologyMfaProof?: SynologyMfaProof;
 }
 const webNavigation = new Map<string, RuntimeWebNavigation>();
 
@@ -63,6 +78,55 @@ export function getRuntimeWebNavigation(
   connectionId: string,
 ): RuntimeWebNavigation | undefined {
   return webNavigation.get(connectionId);
+}
+
+/** Call only after a successful start_basic_auth_proxy reply and frame validation.
+ * Merely registering/reviewing a redirect never grants MFA authority. */
+export function activateSynologyMfaProof(
+  connectionId: string,
+  continuation: NonNullable<RuntimeWebNavigation["nativeContinuation"]>,
+  proxySessionId: string,
+  proxyOrigin: string,
+  assertActiveProxy: () => void,
+): void {
+  const navigation = webNavigation.get(connectionId);
+  if (
+    !navigation ||
+    navigation.nativeContinuation !== continuation ||
+    !proxySessionId
+  )
+    throw new Error("The native Synology continuation is no longer current.");
+  const destination = new URL(navigation.initialUrl);
+  // HTTP portal continuations remain transport-only; never activate OTP there.
+  if (
+    destination.protocol !== "https:" ||
+    !navigation.synologyRedirectSource?.formLogin
+  )
+    return;
+  let revoked = false;
+  const proof: SynologyMfaProof = Object.freeze({
+    runtimeConnectionId: connectionId,
+    proxySessionId,
+    origin: destination.origin,
+    proxyOrigin,
+    assertCurrent: () => {
+      try {
+        if (
+          revoked ||
+          webNavigation.get(connectionId) !== navigation ||
+          navigation.synologyMfaProof !== proof
+        )
+          throw new Error();
+        assertActiveProxy();
+      } catch {
+        revoked = true;
+        throw new Error(
+          "The redeemed Synology MFA session is no longer current.",
+        );
+      }
+    },
+  });
+  navigation.synologyMfaProof = proof;
 }
 
 export function resolveRuntimeConnection(

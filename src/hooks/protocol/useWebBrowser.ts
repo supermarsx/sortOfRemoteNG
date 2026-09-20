@@ -63,6 +63,7 @@ import {
   getRuntimeWebNavigation,
   resolveRuntimeConnection,
   releaseReplacedRuntimeConnection,
+  activateSynologyMfaProof,
 } from "../../utils/session/runtimeConnectionRegistry";
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
@@ -896,7 +897,9 @@ export function useWebBrowser(session: ConnectionSession) {
     ]),
     requested: !!redirectTrust.defaultSource?.formLogin,
     valid: redirectTrust.formLoginCurrent,
-    automaticOtp: noncredentialConnection?.httpAutoMfa?.enabled === true,
+    automaticOtp:
+      noncredentialConnection?.httpAutoMfa?.enabled === true ||
+      !!redirectTrust.synologyMfa,
     assertCurrent: () => assertFormLoginCurrentRef.current?.(),
     context: () =>
       proxySessionIdRef.current
@@ -2027,12 +2030,6 @@ export function useWebBrowser(session: ConnectionSession) {
             continuation?.cancel();
             throw error;
           });
-          if (
-            continuation &&
-            runtimeNavigation?.nativeContinuation === continuation
-          ) {
-            delete runtimeNavigation.nativeContinuation;
-          }
           attemptLogin = null;
           if (gen !== navGenRef.current) {
             invoke("stop_basic_auth_proxy", {
@@ -2050,6 +2047,28 @@ export function useWebBrowser(session: ConnectionSession) {
           }
           proxySessionIdRef.current = response.session_id;
           proxyUrlRef.current = protectedProxyUrl;
+          if (
+            continuation &&
+            runtimeNavigation?.nativeContinuation === continuation
+          ) {
+            activateSynologyMfaProof(
+              session.connectionId,
+              continuation,
+              response.session_id,
+              new URL(protectedProxyUrl).origin,
+              () => {
+                assertFormLease?.();
+                if (
+                  proxySessionIdRef.current !== response.session_id ||
+                  proxyUrlRef.current !== protectedProxyUrl
+                )
+                  throw new Error(
+                    "The Synology MFA proxy was stopped or replaced.",
+                  );
+              },
+            );
+            delete runtimeNavigation.nativeContinuation;
+          }
           deferredLoginRef.current.receive(response);
           navigateFrame(
             protectedProxyUrl.replace(/\/+$/, "") + pagePath,
@@ -3494,6 +3513,7 @@ export function useWebBrowser(session: ConnectionSession) {
 
   const autoMfa = useWebAutoMfa({
     connection: noncredentialConnection,
+    synologyMfa: redirectTrust.synologyMfa,
     vaultTotp: vaultSource ? vaultTotp : undefined,
     ownerDatabaseId: session.ownerDatabaseId,
     availability: databaseAvailability,

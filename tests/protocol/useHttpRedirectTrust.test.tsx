@@ -16,6 +16,7 @@ import {
 import {
   clearRuntimeConnectionsForTests,
   registerRuntimeConnection,
+  activateSynologyMfaProof,
 } from "../../src/utils/session/runtimeConnectionRegistry";
 import { DEFAULT_HTTP_PROXY_POLICY } from "../../src/types/connection/httpProxyPolicy";
 import { withSynologyRedirectDefaults } from "../../src/utils/protocol/synologyRedirectDefaults";
@@ -114,6 +115,7 @@ function fixture(
             throw new Error("private backend lock diagnostic");
         },
         readCurrent,
+        verifyCurrent: async () => {},
       };
     }),
   };
@@ -167,7 +169,7 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     ...qc(),
     httpApplication: { version: 1, id: "synology-dsm", loginMode: "form" },
   });
-  function inheritForm(view: ReturnType<typeof fixture>) {
+  function inheritForm(view: ReturnType<typeof fixture>, redeem = false) {
     const original = view.result.current.defaultSource!;
     const target = anonymousRedirectConnection(
       view.context.state.connections[0],
@@ -177,12 +179,22 @@ describe("database-owned trusted HTTP redirect preferences", () => {
         view.result.current.defaults,
       ),
     );
+    const continuation = { id: "continuation", cancel: vi.fn() };
     registerRuntimeConnection(target, {
       initialUrl: "https://example-nas.de2.quickconnect.to/",
       redirectHops: 1,
       assertCurrent: () => {},
       synologyRedirectSource: original,
+      ...(redeem ? { nativeContinuation: continuation } : {}),
     });
+    if (redeem)
+      activateSynologyMfaProof(
+        target.id,
+        continuation,
+        "proxy",
+        "http://127.0.0.1:41000",
+        () => {},
+      );
     view.rerender({
       connection: target,
       session: { ...session, connectionId: target.id },
@@ -201,6 +213,143 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     expect(JSON.stringify(view.result.current.defaultSource)).not.toContain(
       "private",
     );
+  });
+  const mfaSource = (): Connection => ({
+    ...formSource(),
+    httpAutoMfa: {
+      version: 1,
+      enabled: true,
+      origin: "https://example-nas.fr3.quickconnect.to",
+      challengeId: "synology-dsm-otp",
+      totpConfigId: "otp",
+    },
+    totpConfigs: [
+      {
+        id: "otp",
+        secret: "LOCAL-SEED",
+        issuer: "DSM",
+        account: "user",
+        algorithm: "sha1",
+        digits: 6,
+        period: 30,
+      },
+    ],
+  });
+  const mfaContext = (target: Connection) => ({
+    runtimeConnectionId: target.id,
+    currentUrl: "https://example-nas.de2.quickconnect.to/webman/index.cgi",
+    document: {
+      sessionId: "proxy",
+      url: "http://127.0.0.1:41000/webman/index.cgi",
+    },
+  });
+  it("has no MFA capability before native continuation redemption", () => {
+    const view = fixture(mfaSource());
+    expect(view.result.current.synologyMfa).toBeUndefined();
+    inheritForm(view);
+    expect(view.result.current.synologyMfa).toBeUndefined();
+  });
+  it("exposes only a proof-bound MFA capability, never the saved source or its secrets", () => {
+    const view = fixture(mfaSource());
+    const target = inheritForm(view, true);
+    const capability = view.result.current.synologyMfa!;
+    capability.assertCurrent(mfaContext(target));
+    expect(capability.runtimeConnectionId).toBe(target.id);
+    expect(capability.proxySessionId).toBe("proxy");
+    expect(JSON.stringify([capability, target])).not.toMatch(
+      /LOCAL-SEED|private-password|totpConfigs|httpAutoMfa|credentialSource/,
+    );
+    expect(view.result.current).not.toHaveProperty("credentialConnection");
+    capability.claim(mfaContext(target));
+    view.rerender({
+      connection: target,
+      session: { ...session, connectionId: target.id },
+    });
+    expect(view.result.current.synologyMfa!.attempted()).toBe(true);
+    expect(() =>
+      view.result.current.synologyMfa!.claim(mfaContext(target)),
+    ).toThrow();
+  });
+  it.each([
+    "deleted",
+    "duplicate",
+    "db-generation",
+    "locked",
+    "seed",
+    "mfa",
+    "credential-source",
+  ])(
+    "permanently revokes a redeemed capability after %s, without fallback",
+    (change) => {
+      const original = mfaSource();
+      const view = fixture(original);
+      const target = inheritForm(view, true);
+      const capability = view.result.current.synologyMfa!;
+      if (change === "deleted") view.context.state.connections = [];
+      if (change === "duplicate") view.context.state.connections.push(original);
+      if (change === "db-generation")
+        view.context.databaseAvailability.generation++;
+      if (change === "locked")
+        view.context.databaseAvailability.status = "locked";
+      if (change === "seed")
+        view.context.state.connections = [
+          {
+            ...original,
+            totpConfigs: [{ ...original.totpConfigs![0], secret: "CHANGED" }],
+          },
+        ];
+      if (change === "mfa")
+        view.context.state.connections = [
+          { ...original, httpAutoMfa: { version: 1, enabled: false } },
+        ];
+      if (change === "credential-source")
+        view.context.state.connections = [
+          {
+            ...original,
+            credentialSource: {
+              kind: "vault",
+              credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            },
+          },
+        ];
+      expect(() => capability.assertCurrent(mfaContext(target))).toThrow();
+      view.context.state.connections = [original];
+      view.context.databaseAvailability.status = "ready";
+      view.context.databaseAvailability.generation = 1;
+      view.rerender({
+        connection: target,
+        session: { ...session, connectionId: target.id },
+      });
+      expect(view.result.current.synologyMfa).toBeUndefined();
+    },
+  );
+  it("does not turn a Synology budget into an OTP grant for an unrelated origin", () => {
+    const view = fixture(mfaSource());
+    const source = view.result.current.defaultSource!;
+    const target = anonymousRedirectConnection(
+      view.context.state.connections[0],
+      { ...review, sourceOrigin: source.originalOrigin },
+    );
+    const continuation = { id: "continuation", cancel: vi.fn() };
+    registerRuntimeConnection(target, {
+      initialUrl: review.destinationUrl,
+      redirectHops: 1,
+      assertCurrent: () => {},
+      synologyRedirectSource: source,
+      nativeContinuation: continuation,
+    });
+    activateSynologyMfaProof(
+      target.id,
+      continuation,
+      "proxy",
+      "http://127.0.0.1:41000",
+      () => {},
+    );
+    view.rerender({
+      connection: target,
+      session: { ...session, connectionId: target.id },
+    });
+    expect(view.result.current.synologyMfa).toBeUndefined();
   });
   it.each(["password", "mode", "allowlist"])(
     "revokes original %s edits and cannot re-arm via ABA",
