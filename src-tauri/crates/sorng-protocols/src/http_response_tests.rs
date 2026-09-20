@@ -1160,6 +1160,10 @@ async fn actual_proxy_rejects_bad_text_encoding_but_preserves_opaque_bodies() {
         let (status, ty, encoding, bytes) = match request.uri().path() {
             "/binary" => (200, "application/octet-stream", "br", vec![0, 255, 1, 128]),
             "/json" => (200, "application/json", "gzip", gzip(b"{\"ok\":true}")),
+            "/noise-c.wasm" => (200, "application/wasm", "identity", vec![0, 97, 115, 109]),
+            "/assets/88bb6b035c5a6cc81fbd.png" => {
+                (404, "image/png", "identity", vec![137, 80, 78, 71])
+            }
             "/status" => (
                 500,
                 "text/html",
@@ -1208,6 +1212,16 @@ async fn actual_proxy_rejects_bad_text_encoding_but_preserves_opaque_bodies() {
     let json = fetch(&proxy, "/json").await;
     assert_eq!(json.headers()["content-encoding"], "gzip");
     assert_eq!(json.bytes().await.unwrap().as_ref(), gzip(b"{\"ok\":true}"));
+    let wasm = fetch(&proxy, "/noise-c.wasm").await;
+    assert_eq!(wasm.status(), StatusCode::OK);
+    assert_eq!(wasm.headers().get_all("content-type").iter().count(), 1);
+    assert_eq!(wasm.headers()["content-type"], "application/wasm");
+    assert_eq!(wasm.bytes().await.unwrap().as_ref(), [0, 97, 115, 109]);
+    let asset = fetch(&proxy, "/assets/88bb6b035c5a6cc81fbd.png").await;
+    assert_eq!(asset.status(), StatusCode::NOT_FOUND);
+    assert_eq!(asset.headers().get_all("content-type").iter().count(), 1);
+    assert_eq!(asset.headers()["content-type"], "image/png");
+    assert_eq!(asset.bytes().await.unwrap().as_ref(), [137, 80, 78, 71]);
     let error = fetch(&proxy, "/status").await;
     assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(!error.headers().contains_key("content-encoding"));

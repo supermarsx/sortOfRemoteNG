@@ -2586,6 +2586,11 @@ pub async fn axum_proxy_handler(
                     || k == "transfer-encoding"
                     || k == "connection"
                     || k == "content-length"
+                    // `Response::builder().header` appends. Content-Type is
+                    // normalized below, so forwarding it here would emit two
+                    // values (for example `application/wasm, application/wasm`)
+                    // and makes WebAssembly.compileStreaming reject the body.
+                    || k == "content-type"
                     || k == "www-authenticate"
                     || k == "proxy-authenticate"
                     || k == "x-frame-options"
