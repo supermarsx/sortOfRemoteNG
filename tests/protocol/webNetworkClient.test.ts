@@ -593,6 +593,102 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       expect(report).not.toHaveBeenCalled();
     },
   );
+  describe.each(["a", "area"] as const)("inert %s references", (tag) => {
+    it.each(["property", "attribute"] as const)(
+      "accepts foreign href %s assignment but blocks its click without a request",
+      async (assignment) => {
+        start();
+        for (const destination of [
+          "https://sy.to",
+          "https://foreign.example/help?token=private#section",
+          "http://foreign.example/help",
+        ]) {
+          report.mockClear();
+          const link = document.createElement(tag);
+          document.body.append(link);
+          expect(() => {
+            if (assignment === "property") link.href = destination;
+            else link.setAttribute("href", destination);
+          }).not.toThrow();
+          const parsed = new URL(destination);
+          expect(link.getAttribute("href")).toBe(parsed.href);
+          expect(link.href).toBe(parsed.href);
+          expect(link.hostname).toBe(parsed.hostname);
+          expect(link.pathname).toBe(parsed.pathname);
+          expect(link.search).toBe(parsed.search);
+          expect(link.hash).toBe(parsed.hash);
+          expect(report).not.toHaveBeenCalled();
+          expect(fetch).not.toHaveBeenCalled();
+          expect(xhrOpen).not.toHaveBeenCalled();
+          expect(xhrSend).not.toHaveBeenCalled();
+          expect(beacon).not.toHaveBeenCalled();
+          expect(constructed).toEqual([]);
+
+          // No test listener cancels this event: the installed capture handler
+          // must stop the browser's default navigation and report the origin.
+          const clicked = new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+          });
+          expect(link.dispatchEvent(clicked)).toBe(false);
+          expect(clicked.defaultPrevented).toBe(true);
+          expect(link.href).toBe(parsed.href);
+          expect(report).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+              kind: "navigation",
+              reason: "origin-not-approved",
+              origin: parsed.origin,
+            }),
+          );
+          expect(JSON.stringify(report.mock.calls)).not.toContain("private");
+          expect(() => controller!.mapUrl(destination, "navigation")).toThrow(
+            "origin-not-approved",
+          );
+          await expect(window.fetch(destination)).rejects.toThrow(
+            "origin-not-approved",
+          );
+          expect(fetch).not.toHaveBeenCalled();
+          expect(xhrOpen).not.toHaveBeenCalled();
+          expect(xhrSend).not.toHaveBeenCalled();
+          expect(beacon).not.toHaveBeenCalled();
+          expect(constructed).toEqual([]);
+          link.remove();
+        }
+      },
+    );
+    it.each(["property", "attribute"] as const)(
+      "still rejects unsafe href %s assignments before changing the link",
+      (assignment) => {
+        start();
+        const link = document.createElement(tag);
+        link.href = `${upstream}/help`;
+        expect(link.href).toBe(`${proxy}/help`);
+        for (const [destination, reason] of [
+          ["https://user:private@sy.to/", "url-credentials"],
+          ["https://[invalid", "invalid-url"],
+          ["https://sy.to/" + "x".repeat(16_384), "invalid-url"],
+          ["javascript:alert(1)", "unsupported-scheme"],
+          ["file:///private", "unsupported-scheme"],
+          ["ftp://sy.to/", "unsupported-scheme"],
+          ["data:text/html,private", "unsupported-scheme"],
+          ["blob:https://sy.to/private", "unsupported-scheme"],
+          ["wss://sy.to/socket", "unsupported-scheme"],
+        ]) {
+          expect(() => {
+            if (assignment === "property") link.href = destination;
+            else link.setAttribute("href", destination);
+          }).toThrow(reason);
+          expect(link.href).toBe(`${proxy}/help`);
+        }
+        expect(JSON.stringify(report.mock.calls)).not.toContain("private");
+        expect(fetch).not.toHaveBeenCalled();
+        expect(xhrOpen).not.toHaveBeenCalled();
+        expect(xhrSend).not.toHaveBeenCalled();
+        expect(beacon).not.toHaveBeenCalled();
+        expect(constructed).toEqual([]);
+      },
+    );
+  });
   it("also routes parser-created permitted links but does not grant resource or form authority", () => {
     start(quickConfig());
     document.body.innerHTML =
@@ -714,7 +810,10 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     );
     expect(() => {
       document.createElement("a").href = "https://www.quickconnect.to/";
-    }).toThrow();
+    }).not.toThrow();
+    expect(() =>
+      controller!.mapUrl("https://www.quickconnect.to/", "navigation"),
+    ).toThrow("origin-not-approved");
   });
   const rtcNames = [
     "RTCPeerConnection",

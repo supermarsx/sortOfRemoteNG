@@ -41,6 +41,17 @@
   }
   var markup = window.createDsmMarkup();
   var page = window.createDsmPage(window);
+
+  // DSM's Vue login router assigns its official short-link to an anchor while
+  // constructing the sign-in view. The embedded network policy must treat
+  // that assignment as inert DOM setup; only an actual click is a navigation.
+  var supportLink = document.createElement("a");
+  supportLink.href = "https://sy.to";
+  supportLink.hidden = true;
+  supportLink.setAttribute("data-dsm-support-link", "true");
+  document.body.appendChild(supportLink);
+  report("support-link-ready");
+
   // Transitions follow the API replies below, not the simulator's own timers.
   page.install({
     next: { delayMs: 0, outcome: "none" },

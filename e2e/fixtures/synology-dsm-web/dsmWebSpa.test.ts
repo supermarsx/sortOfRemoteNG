@@ -199,6 +199,7 @@ describe("synthetic DSM website fixture SPA", () => {
     const scenario = boot("standard");
     await vi.advanceTimersByTimeAsync(20_000);
 
+    expect(pageEvents("support-link-ready")).toHaveLength(1);
     expect(status()).toEqual({
       phase: scenario.expected.phase,
       reason: scenario.expected.reason,

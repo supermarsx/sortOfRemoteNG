@@ -351,7 +351,13 @@ function installWebNetworkClient(configuration, reportBlocked) {
     var mapped = proxies.has(lookup.origin)
       ? lookup.origin
       : routes.get(lookup.origin);
-    if (!mapped) throw blocked(kind, "origin-not-approved", lookup.origin);
+    if (!mapped) {
+      // Anchor/area href assignment is inert and supports router URL parsing.
+      // URL validation still applies; click capture omits navigationReference
+      // and enforces origin approval before allowing actual navigation.
+      if (kind === "navigation" && navigationReference) return target.href;
+      throw blocked(kind, "origin-not-approved", lookup.origin);
+    }
     var result = new NativeURL(mapped);
     if (socket) result.protocol = "ws:";
     result.pathname = target.pathname;
