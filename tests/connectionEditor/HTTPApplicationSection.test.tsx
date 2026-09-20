@@ -1,9 +1,12 @@
 import React from "react";
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { HTTPOptions } from "../../src/components/connectionEditor/HTTPOptions";
 import type { Connection } from "../../src/types/connection/connection";
+import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
+import { ConnectionContext } from "../../src/contexts/ConnectionContextTypes";
 
+const vaultCredentialId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const initial: Partial<Connection> = {
   protocol: "https",
   hostname: "fixture.example.test",
@@ -12,6 +15,39 @@ const initial: Partial<Connection> = {
   password: "old-secret",
   httpVerifySsl: false,
 };
+function databaseVaultApi(): DatabaseCredentialVaultApi {
+  return {
+    scope: { databaseId: "owner", generation: 1 },
+    changeRevision: 1,
+    list: async () => ({
+      scope: { databaseId: "owner", generation: 1 },
+      revision: 1,
+      receipt: "read",
+      entries: [
+        {
+          id: vaultCredentialId,
+          name: "Application vault credential",
+          createdAt: "2026-09-20",
+          updatedAt: "2026-09-20",
+          availableFacets: ["username", "password", "totp"],
+        },
+      ],
+    }),
+    resolve: async () => ({
+      totp: [
+        {
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          label: "Application authenticator",
+          secret: "VAULT_SECRET_MUST_NOT_APPEAR",
+          algorithm: "sha1",
+          digits: 6,
+          period: 30,
+        },
+      ],
+    }),
+    compareAndSwap: async () => {},
+  };
+}
 function Fixture({ value = initial }: { value?: Partial<Connection> }) {
   const [formData, setFormData] = React.useState(value);
   return (
@@ -23,6 +59,18 @@ function Fixture({ value = initial }: { value?: Partial<Connection> }) {
       />
       <output data-testid="value">{JSON.stringify(formData)}</output>
     </>
+  );
+}
+function VaultFixture({ value }: { value: Partial<Connection> }) {
+  const api = React.useMemo(databaseVaultApi, []);
+  return (
+    <ConnectionContext.Provider
+      value={
+        { credentialVault: api } as React.ContextType<typeof ConnectionContext>
+      }
+    >
+      <Fixture value={value} />
+    </ConnectionContext.Provider>
   );
 }
 function choose(label: string, option: string) {
@@ -215,6 +263,101 @@ describe("HTTP Application subtab", () => {
       password: "old-secret",
     });
     expect(screen.getByText(/No preemptive Basic header/)).toBeInTheDocument();
+  });
+  it("chooses a vault explicitly, locks its fields, and disarms automatic MFA", async () => {
+    render(
+      <VaultFixture
+        value={{
+          ...initial,
+          httpApplication: {
+            version: 1,
+            id: "wordpress",
+            loginMode: "form",
+          },
+          totpConfigs: [
+            {
+              id: "local-authenticator",
+              account: "Local account",
+              issuer: "Local",
+              secret: "LOCAL_SECRET",
+              algorithm: "sha1",
+              digits: 6,
+              period: 30,
+            },
+          ],
+          httpAutoMfa: {
+            version: 1,
+            enabled: true,
+            totpConfigId: "local-authenticator",
+            challengeId: "wordpress-two-factor-totp",
+            origin: "https://fixture.example.test:9443",
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Website credential source")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Database vault" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "Reusable vault credential" }),
+      ).toBeEnabled(),
+    );
+    choose(
+      "Reusable vault credential",
+      "Application vault credential · Username, Password, TOTP authenticators",
+    );
+    expect(value().credentialSource).toEqual({
+      kind: "vault",
+      credentialId: vaultCredentialId,
+    });
+    expect(value().httpAutoMfa).toEqual({ version: 1, enabled: false });
+    expect(screen.getByLabelText("Website username or email")).toBeDisabled();
+    expect(screen.getByLabelText("Website password")).toBeDisabled();
+    expect(
+      screen.getByText(/Website username and password fields are locked here/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Vault authenticator")).toBeInTheDocument();
+    expect(JSON.stringify(value())).not.toContain(
+      "VAULT_SECRET_MUST_NOT_APPEAR",
+    );
+  });
+  it("restores editable connection-local fields only after switching sources", () => {
+    render(
+      <Fixture
+        value={{
+          ...initial,
+          basicAuthUsername: "local-user",
+          basicAuthPassword: "local-password",
+          httpApplication: {
+            version: 1,
+            id: "wordpress",
+            loginMode: "form",
+          },
+          credentialSource: {
+            kind: "vault",
+            credentialId: vaultCredentialId,
+          },
+          httpAutoMfa: {
+            version: 1,
+            enabled: true,
+            totpConfigId: "vault-authenticator",
+            challengeId: "wordpress-two-factor-totp",
+            origin: "https://fixture.example.test:9443",
+          },
+        }}
+      />,
+    );
+    expect(screen.getByLabelText("Website username or email")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Connection-local" }));
+    expect(value().credentialSource).toEqual({ kind: "local" });
+    expect(value().httpAutoMfa).toEqual({ version: 1, enabled: false });
+    expect(screen.getByLabelText("Website username or email")).toBeEnabled();
+    expect(screen.getByLabelText("Website username or email")).toHaveValue(
+      "local-user",
+    );
+    expect(screen.getByLabelText("Website password")).toHaveValue(
+      "local-password",
+    );
   });
   it("exposes Proxmox realm without changing saved username and explains generic iLO", () => {
     render(<Fixture />);

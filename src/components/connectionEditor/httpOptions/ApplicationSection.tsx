@@ -21,6 +21,7 @@ import type { Mgr } from "./types";
 import ApplicationIconSuggestion from "./ApplicationIconSuggestion";
 import AutomaticMfaSection from "./AutomaticMfaSection";
 import { isSynologyFileConnection } from "../../../types/protocols/synology";
+import CredentialSourceSection from "../CredentialSourceSection";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -49,6 +50,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
     ...mgr.formData,
     authType: "basic",
   });
+  const vaultCredentials = mgr.formData.credentialSource?.kind === "vault";
   const selectProfile = (id: string) =>
     mgr.setFormData((previous) => ({
       ...previous,
@@ -375,65 +377,105 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
             </div>
           )}
           {settings?.loginMode !== "manual" && !settings?.invalid && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
-              <div>
-                <label
-                  htmlFor="http-application-user"
-                  className="block text-sm mb-2"
-                >
-                  Website {profile.usernameLabel?.toLowerCase() ?? "username"}
-                </label>
-                <input
-                  id="http-application-user"
-                  className="sor-form-input"
-                  autoComplete="off"
-                  value={credentials?.username ?? ""}
-                  onChange={(event) =>
-                    updateCredential("username", event.target.value)
-                  }
+            <>
+              <div className="max-w-2xl space-y-2">
+                <p className="text-sm font-medium">Website credential source</p>
+                <p className="text-xs text-[var(--color-textSecondary)]">
+                  Choose connection-local credentials or a reusable database
+                  vault credential for this automatic login. Vault references
+                  never copy or reveal their secrets in this connection.
+                </p>
+                <CredentialSourceSection
+                  formData={mgr.formData}
+                  setFormData={mgr.setFormData}
                 />
               </div>
-              <div>
-                <label
-                  htmlFor="http-application-password"
-                  className="block text-sm mb-2"
+              {vaultCredentials && (
+                <p
+                  role="note"
+                  className="max-w-2xl text-xs text-[var(--color-textSecondary)]"
                 >
-                  Website password
-                </label>
-                <PasswordInput
-                  id="http-application-password"
-                  className="sor-form-input"
-                  autoComplete="new-password"
-                  value={credentials?.password ?? ""}
-                  onChange={(event) =>
-                    updateCredential("password", event.target.value)
-                  }
-                />
-              </div>
-              {profile.id === "proxmox" && settings?.loginMode === "form" && (
+                  A database vault credential is selected. Website username and
+                  password fields are locked here; select or edit the reusable
+                  credential in the Database vault instead. Automatic 2FA can
+                  use only that selected vault credential's authenticator and
+                  requires separate consent below.
+                </p>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
                 <div>
                   <label
-                    htmlFor="http-application-realm"
+                    htmlFor="http-application-user"
                     className="block text-sm mb-2"
                   >
-                    Account realm
+                    Website {profile.usernameLabel?.toLowerCase() ?? "username"}
                   </label>
                   <input
-                    id="http-application-realm"
+                    id="http-application-user"
                     className="sor-form-input"
-                    value={settings.realm ?? "pam"}
-                    maxLength={128}
+                    autoComplete="off"
+                    disabled={vaultCredentials}
+                    placeholder={
+                      vaultCredentials
+                        ? "Stored in selected database vault"
+                        : undefined
+                    }
+                    value={credentials?.username ?? ""}
                     onChange={(event) =>
-                      updateSettings({ realm: event.target.value || undefined })
+                      updateCredential("username", event.target.value)
                     }
                   />
-                  <p className="mt-1 text-xs text-[var(--color-textMuted)]">
-                    Appended only when the username has no @realm; the saved
-                    username stays unchanged.
-                  </p>
                 </div>
-              )}
-            </div>
+                <div>
+                  <label
+                    htmlFor="http-application-password"
+                    className="block text-sm mb-2"
+                  >
+                    Website password
+                  </label>
+                  <PasswordInput
+                    id="http-application-password"
+                    className="sor-form-input"
+                    autoComplete="new-password"
+                    disabled={vaultCredentials}
+                    placeholder={
+                      vaultCredentials
+                        ? "Stored in selected database vault"
+                        : undefined
+                    }
+                    value={credentials?.password ?? ""}
+                    onChange={(event) =>
+                      updateCredential("password", event.target.value)
+                    }
+                  />
+                </div>
+                {profile.id === "proxmox" && settings?.loginMode === "form" && (
+                  <div>
+                    <label
+                      htmlFor="http-application-realm"
+                      className="block text-sm mb-2"
+                    >
+                      Account realm
+                    </label>
+                    <input
+                      id="http-application-realm"
+                      className="sor-form-input"
+                      value={settings.realm ?? "pam"}
+                      maxLength={128}
+                      onChange={(event) =>
+                        updateSettings({
+                          realm: event.target.value || undefined,
+                        })
+                      }
+                    />
+                    <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                      Appended only when the username has no @realm; the saved
+                      username stays unchanged.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
           )}
           {settings?.loginMode === "form" && !settings.invalid && (
             <>
