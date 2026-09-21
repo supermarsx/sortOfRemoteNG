@@ -39,6 +39,9 @@ pub use log_diagnostics::ProxyLogDiagnostic;
 #[path = "http_attempt.rs"]
 #[doc(hidden)]
 pub mod attempt;
+#[path = "http_synology_continuation.rs"]
+mod synology_continuation;
+pub use synology_continuation::{ProxySessionRuntime, SynologyProxyContinuation, SynologyProxyTls};
 #[path = "http_dark_mode.rs"]
 mod dark_mode;
 #[cfg(test)]
@@ -301,8 +304,20 @@ fn validate_cert_fingerprint(fingerprint: &str) -> Result<(), String> {
 }
 
 pub fn build_pinned_tls_config(fingerprint: String) -> Result<rustls::ClientConfig, String> {
+    build_pinned_tls_config_with_min_version(fingerprint, "1.2")
+}
+
+pub fn build_pinned_tls_config_with_min_version(
+    fingerprint: String,
+    min_tls: &str,
+) -> Result<rustls::ClientConfig, String> {
     validate_cert_fingerprint(&fingerprint)?;
-    rustls::ClientConfig::builder()
+    let versions = if min_tls.trim() == "1.3" {
+        vec![&rustls::version::TLS13]
+    } else {
+        vec![&rustls::version::TLS13, &rustls::version::TLS12]
+    };
+    rustls::ClientConfig::builder_with_protocol_versions(&versions)
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(PinnedCertificateVerification::new(fingerprint)))
         .with_no_client_auth()
@@ -1083,6 +1098,8 @@ pub struct ProxySessionManager {
 }
 
 pub struct ProxySessionEntry {
+    /// The listener owns this slot; a weak reference avoids a manager cycle.
+    pub runtime: std::sync::Weak<ProxySessionRuntime>,
     #[doc(hidden)]
     pub attempt: Option<attempt::AttemptSession>,
     pub network: Arc<ProxyNetworkState>,
@@ -2956,6 +2973,20 @@ pub async fn themed_auth_post_handler(
     // manager UI sees the updated username (passwords aren't
     // surfaced there).
     if let Ok(mut mgr) = state.global_sessions.lock() {
+        // A nonce could have been consumed just before an in-session retarget
+        // took the manager lock. Never mirror that retired request into the
+        // successor entry merely because its session id remains unchanged.
+        if !state.network.is_active()
+            || mgr
+                .sessions
+                .get(&state.session_id)
+                .is_some_and(|entry| !Arc::ptr_eq(&entry.network, &state.network))
+        {
+            return Response::builder()
+                .status(StatusCode::GONE)
+                .body(Body::from("The proxy document is no longer active."))
+                .expect("static retired response");
+        }
         if let Some(entry) = mgr.sessions.get_mut(&state.session_id) {
             entry.username = form.username.clone();
             entry.password = form.password.clone();

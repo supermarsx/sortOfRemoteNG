@@ -49,11 +49,22 @@ interface Options {
   generation: () => number;
   proxySessionId: () => string;
   navigationToken: () => string | null;
+  runtimeNavigationKey?: string;
+  /** Any owner/credential lease change immediately revokes a redeemed ticket. */
+  revocationKey?: string;
   stopSource: (
     sessionId: string,
     continuationId?: string,
     preserveTabContext?: boolean,
   ) => Promise<void>;
+  /** Redeem a reviewed Synology continuation without replacing the proxy/tab. */
+  continueSynologyInSession?: (request: {
+    sessionId: string;
+    destinationUrl: string;
+    redirectHops: number;
+    continuation: { id: string; cancel: () => void };
+    assertCurrent: () => void;
+  }) => Promise<void>;
   /** Replace only the tab's ephemeral target, never the saved connection. */
   continueInTab?: (connection: Connection) => void;
   trust?: ReturnType<typeof useHttpRedirectTrust>;
@@ -74,8 +85,9 @@ export const MAX_HTTP_REDIRECT_HANDOFFS = 5;
 export const HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS = 15_000;
 
 /** A deadline bounds waiting, not native cancellation. Late results cannot launch. */
-function attemptDeadline() {
-  const ends = performance.now() + HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS;
+function attemptDeadline(
+  ends = performance.now() + HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS,
+) {
   return async <T>(operation: () => Promise<T>): Promise<T> => {
     const remaining = ends - performance.now();
     if (remaining <= 0) throw new Error("Redirect attempt expired");
@@ -121,6 +133,7 @@ export function useHttpRedirectReview(options: Options) {
     options.effectivePolicy,
     options.redirectBudget?.profile,
     options.trust?.revision,
+    options.revocationKey,
   ]);
   // Saving an explicitly reviewed origin changes only the local consent list.
   // The save adapter separately fences that exact delta and its durable result.
@@ -135,6 +148,7 @@ export function useHttpRedirectReview(options: Options) {
     options.enabled,
     options.effectivePolicy,
     options.redirectBudget?.profile,
+    options.revocationKey,
   ]);
   const latest = useRef({ options, signature, transportSignature });
   latest.current = { options, signature, transportSignature };
@@ -142,6 +156,10 @@ export function useHttpRedirectReview(options: Options) {
   const pending = useRef<Pending | null>(null);
   const action = useRef(0);
   const accepting = useRef(false);
+  const activeNativeContinuation = useRef<{
+    id: string;
+    cancel: () => void;
+  } | null>(null);
   const remembering = useRef(false);
   const manuallyRememberedReceipt = useRef<string | null>(null);
   const rememberReplayGuard = useRef<(() => void) | null>(null);
@@ -165,11 +183,15 @@ export function useHttpRedirectReview(options: Options) {
       // eslint-disable-next-line react-hooks/exhaustive-deps
       ++action.current;
       pending.current = null;
+      activeNativeContinuation.current?.cancel();
+      activeNativeContinuation.current = null;
     };
   }, []);
   useEffect(() => {
     ++action.current;
     pending.current = null;
+    activeNativeContinuation.current?.cancel();
+    activeNativeContinuation.current = null;
     setReview(null);
     setBusy(false);
     setError("");
@@ -284,7 +306,9 @@ export function useHttpRedirectReview(options: Options) {
           );
         return;
       }
-      const navigation = getRuntimeWebNavigation(captured.connection.id);
+      const navigation = getRuntimeWebNavigation(
+        captured.runtimeNavigationKey ?? captured.connection.id,
+      );
       const depth = navigation ? navigation.redirectHops : 0;
       const limit = httpRedirectHandoffLimit(captured.redirectBudget);
       if (!Number.isSafeInteger(depth) || depth < 0 || depth >= limit) {
@@ -342,6 +366,18 @@ export function useHttpRedirectReview(options: Options) {
     setError("");
     setTrustNotice("");
   };
+  const abort = () => {
+    ++action.current;
+    pending.current = null;
+    activeNativeContinuation.current?.cancel();
+    activeNativeContinuation.current = null;
+    accepting.current = false;
+    rememberReplayGuard.current = null;
+    setReview(null);
+    setBusy(false);
+    setError("");
+    setTrustNotice("");
+  };
   const canAutomaticallyContinue = (
     captured: Options,
     current: Pending,
@@ -350,7 +386,7 @@ export function useHttpRedirectReview(options: Options) {
       return !!(
         current.trust?.trusted &&
         current.review.receiptId !== manuallyRememberedReceipt.current &&
-        captured.continueInTab &&
+        (captured.continueSynologyInSession || captured.continueInTab) &&
         captured.enabled &&
         (captured.connection?.httpProxyPolicy?.allowCrossOriginRedirects ===
           true ||
@@ -374,8 +410,11 @@ export function useHttpRedirectReview(options: Options) {
     accepting.current = true;
     const token = ++action.current;
     const captured = latest.current.options;
+    const acceptanceEnds = automatic
+      ? performance.now() + HTTP_REDIRECT_ATTEMPT_TIMEOUT_MS
+      : null;
     const withinDeadline = automatic
-      ? attemptDeadline()
+      ? attemptDeadline(acceptanceEnds!)
       : <T>(operation: () => Promise<T>) => operation();
     setBusy(true);
     setError("");
@@ -385,7 +424,11 @@ export function useHttpRedirectReview(options: Options) {
     try {
       if (destination !== "current" && destination !== "anonymous")
         throw new Error();
-      if (destination === "current" && !captured.continueInTab)
+      if (
+        destination === "current" &&
+        !captured.continueSynologyInSession &&
+        !captured.continueInTab
+      )
         throw new Error();
       if (
         carrySavedLogin &&
@@ -397,9 +440,9 @@ export function useHttpRedirectReview(options: Options) {
       )
         throw new Error();
       receipt.assertCurrent();
-      const sourceNavigation = getRuntimeWebNavigation(
-        captured.connection?.id ?? "",
-      );
+      const navigationKey =
+        captured.runtimeNavigationKey ?? captured.connection?.id ?? "";
+      const sourceNavigation = getRuntimeWebNavigation(navigationKey);
       const depth = sourceNavigation ? sourceNavigation.redirectHops : 0;
       const assertBudgetCurrent = () => {
         assertHttpRedirectDepth(
@@ -410,7 +453,7 @@ export function useHttpRedirectReview(options: Options) {
       };
       const assertSourceBudgetCurrent = () => {
         assertBudgetCurrent();
-        const current = getRuntimeWebNavigation(captured.connection?.id ?? "");
+        const current = getRuntimeWebNavigation(navigationKey);
         if (
           current !== sourceNavigation ||
           (current ? current.redirectHops : 0) !== depth
@@ -454,16 +497,22 @@ export function useHttpRedirectReview(options: Options) {
             );
             if (native?.continuationId) {
               const id = native.continuationId;
+              let cancelled = false;
               const transfer = {
                 id,
                 cancel: () => {
+                  if (cancelled) return;
+                  cancelled = true;
                   void invoke("cancel_proxy_continuation", {
                     continuationId: id,
                   }).catch(() => {});
                 },
               };
               if (continuationFinished) transfer.cancel();
-              else nativeContinuation = transfer;
+              else {
+                nativeContinuation = transfer;
+                activeNativeContinuation.current = transfer;
+              }
             }
             return value;
           }),
@@ -506,6 +555,16 @@ export function useHttpRedirectReview(options: Options) {
           receipt.trust.assertLaunchCurrent();
         }
       };
+      const assertAcceptanceCurrent = () => {
+        assertLaunchCurrent();
+        if (
+          token !== action.current ||
+          !accepting.current ||
+          continuationFinished ||
+          (acceptanceEnds !== null && performance.now() >= acceptanceEnds)
+        )
+          throw new Error("The redirect acceptance expired.");
+      };
       const synologyRedirectSource =
         receipt.trust?.synologySource ??
         captured.trust?.defaultSource ??
@@ -532,20 +591,19 @@ export function useHttpRedirectReview(options: Options) {
       // Explicit credential forwarding is a separate flow, not anonymous
       // continuity. Ordinary stop below revokes any unclaimed native transfer.
       const transferContinuation =
-        destination === "current" &&
-        !carrySavedLogin &&
-        synologyRedirectSource?.enabled
+        destination === "current" && synologyRedirectSource?.enabled
           ? nativeContinuation
           : undefined;
       assertSourceBudgetCurrent();
-      if (
+      const isDefaultSynologyTransfer = !!(
         transferContinuation &&
         isSynologyDefaultRedirect(
           captured.effectivePolicy,
           captured.sourceOrigin,
           consumed.destinationUrl,
         )
-      ) {
+      );
+      if (isDefaultSynologyTransfer) {
         // Retire an active HTTPS proof before the awaited stop can trigger an
         // old-frame callback. HTTP portal hops never receive an OTP proof, but
         // the one-use native continuation still preserves the original lease
@@ -554,13 +612,41 @@ export function useHttpRedirectReview(options: Options) {
         // transport-only portal redirect.
         if (sourceNavigation?.synologyMfaProof)
           retireSynologyMfaProof(
-            captured.connection.id,
+            navigationKey,
             receipt.review.sessionId,
+            captured.connection.id,
           );
       } else {
         // Anonymous tabs, missing tickets and non-default redirects cannot
         // re-arm MFA later merely by retaining form-login provenance.
         synologyRedirectSource?.formLogin?.revokeAutoMfa();
+      }
+      if (
+        destination === "current" &&
+        isDefaultSynologyTransfer &&
+        captured.continueSynologyInSession
+      ) {
+        assertLaunchCurrent();
+        await withinDeadline(() =>
+          captured.continueSynologyInSession!({
+            sessionId: receipt.review.sessionId,
+            destinationUrl: consumed.destinationUrl,
+            redirectHops: depth + 1,
+            continuation: transferContinuation!,
+            assertCurrent: assertAcceptanceCurrent,
+          }),
+        );
+        assertAcceptanceCurrent();
+        // The native retarget consumed the one-use continuation. Ownership no
+        // longer belongs to a replacement runtime connection, but the hook
+        // must not send a best-effort cancellation for the redeemed ticket.
+        continuationOwnedByRuntime = true;
+        if (activeNativeContinuation.current === transferContinuation)
+          activeNativeContinuation.current = null;
+        pending.current = null;
+        setReview(null);
+        rememberReplayGuard.current = null;
+        return;
       }
       await withinDeadline(() =>
         transferContinuation
@@ -608,6 +694,8 @@ export function useHttpRedirectReview(options: Options) {
     } finally {
       continuationFinished = true;
       if (!continuationOwnedByRuntime) nativeContinuation?.cancel();
+      if (activeNativeContinuation.current === nativeContinuation)
+        activeNativeContinuation.current = null;
       accepting.current = false;
       if (live.current && token === action.current) setBusy(false);
     }
@@ -701,8 +789,9 @@ export function useHttpRedirectReview(options: Options) {
       : MAX_HTTP_REDIRECT_HANDOFFS;
   return {
     redirectStep: Math.min(
-      (getRuntimeWebNavigation(options.connection?.id ?? "")?.redirectHops ??
-        0) + 1,
+      (getRuntimeWebNavigation(
+        options.runtimeNavigationKey ?? options.connection?.id ?? "",
+      )?.redirectHops ?? 0) + 1,
       maxRedirectHops,
     ),
     maxRedirectHops,
@@ -734,6 +823,7 @@ export function useHttpRedirectReview(options: Options) {
     rememberDestination,
     offer,
     cancel,
+    abort,
     accept,
   };
 }

@@ -7,6 +7,8 @@
   "use strict";
   var parentWindow = window.parent;
   if (parentWindow === window) return;
+  var nativePrint = window.print;
+  var nativeFocus = window.focus;
   var selectorPattern =
     /^html > body(?: > [a-z][a-z0-9-]{0,30}:nth-of-type\([1-9][0-9]{0,3}\)){1,24}$/;
   var recording = null,
@@ -14,10 +16,18 @@
     darkMode = null;
   var closed = false;
   var totpChallenge = null,
-    totpSubmitted = false;
+    totpSubmitted = false,
+    totpRevision = 0,
+    totpPendingField = null;
   // DSM's reviewed desktop OTP panel is deliberately not a form. Keep this
   // fixed contract separate from generic POST/SPA form validation.
-  function synologyTotpTarget(payload, field, button) {
+  function synologyButtonReady(button) {
+    return !(
+      button.matches(".disable,.spin,[aria-disabled=true]") ||
+      ("disabled" in button && button.disabled)
+    );
+  }
+  function synologyTotpTarget(payload, field, button, requireReady) {
     // DSM's Vue 2 mount replaces the served #sds-login-vue placeholder with
     // #sds-login-vue-inst; a mounted root wins over a leftover placeholder.
     var roots = document.querySelectorAll("#sds-login-vue-inst");
@@ -46,10 +56,10 @@
       field.matches(":disabled") ||
       field.readOnly ||
       !visible(field) ||
-      !(button instanceof HTMLDivElement) ||
+      !(button instanceof HTMLElement) ||
       !visible(button) ||
       button.closest(".login-tabs-content-wrapper") !== panel ||
-      button.matches(".disable,.spin,[aria-disabled=true]") ||
+      (requireReady && !synologyButtonReady(button)) ||
       [
         "action",
         "method",
@@ -83,7 +93,7 @@
       ]),
     };
   }
-  function totpTarget(payload) {
+  function totpTarget(payload, requireSynologyReady) {
     if (
       !payload ||
       typeof payload.nonce !== "string" ||
@@ -110,7 +120,12 @@
       button = buttons[0],
       form = field.form;
     if (payload.submission === "synology")
-      return synologyTotpTarget(payload, field, button);
+      return synologyTotpTarget(
+        payload,
+        field,
+        button,
+        requireSynologyReady !== false,
+      );
     if (
       !(field instanceof HTMLInputElement) ||
       !["text", "tel", "number"].includes(field.type) ||
@@ -178,14 +193,18 @@
     };
   }
   function probeTotp(payload) {
+    var revision = ++totpRevision;
     totpChallenge = null;
     if (totpSubmitted) throw new Error("challenge");
-    var target = totpTarget(payload);
+    // DSM keeps its Vue Next control disabled until the input event updates
+    // component state. The empty challenge is still valid and safe to arm.
+    var target = totpTarget(payload, false);
     if (target.field.value) throw new Error("challenge");
     totpChallenge = {
       payload: payload,
       target: target,
       expires: Date.now() + 15000,
+      revision: revision,
     };
   }
   function submitTotp(payload) {
@@ -194,6 +213,7 @@
     if (
       totpSubmitted ||
       !challenge ||
+      challenge.revision !== totpRevision ||
       !payload ||
       payload.nonce !== challenge.payload.nonce ||
       typeof payload.code !== "string" ||
@@ -204,7 +224,8 @@
       payload.expires > Date.now() + 3600000
     )
       throw new Error("challenge");
-    var target = totpTarget(challenge.payload),
+    var operation = ++totpRevision;
+    var target = totpTarget(challenge.payload, false),
       original = challenge.target;
     if (
       target.field !== original.field ||
@@ -224,7 +245,7 @@
     target.field.dispatchEvent(new Event("input", { bubbles: true }));
     target.field.dispatchEvent(new Event("change", { bubbles: true }));
     try {
-      var checked = totpTarget(challenge.payload);
+      var checked = totpTarget(challenge.payload, false);
       if (
         checked.field !== original.field ||
         checked.button !== original.button ||
@@ -249,6 +270,66 @@
         },
         { capture: true, once: true },
       );
+    if (
+      challenge.payload.submission === "synology" &&
+      !synologyButtonReady(target.button)
+    ) {
+      totpPendingField = target.field;
+      // Vue may commit the enabled state on its next render tick. Revalidate
+      // the exact captured field/button/panel while waiting; never click a
+      // replacement or carry the code into another challenge.
+      return new Promise(function (resolve, reject) {
+        var deadline = Math.min(
+          challenge.expires,
+          payload.expires,
+          Date.now() + 3000,
+        );
+        function clearAndReject() {
+          if (target.field.value) {
+            setValue.call(target.field, "");
+            target.field.dispatchEvent(new Event("input", { bubbles: true }));
+            target.field.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          if (totpPendingField === target.field) totpPendingField = null;
+          reject(new Error("challenge"));
+        }
+        function ready() {
+          var checked;
+          try {
+            if (
+              closed ||
+              operation !== totpRevision ||
+              Date.now() >= challenge.expires ||
+              Date.now() >= payload.expires
+            )
+              return clearAndReject();
+            checked = totpTarget(challenge.payload, false);
+            if (
+              checked.field !== original.field ||
+              checked.button !== original.button ||
+              checked.form !== original.form ||
+              checked.root !== original.root ||
+              checked.panel !== original.panel ||
+              checked.fingerprint !== original.fingerprint ||
+              checked.field.value !== payload.code
+            )
+              return clearAndReject();
+            if (!synologyButtonReady(checked.button)) {
+              if (Date.now() < deadline) return setTimeout(ready, 25);
+              return clearAndReject();
+            }
+            totpTarget(challenge.payload, true);
+            if (operation !== totpRevision || closed) return clearAndReject();
+            totpPendingField = null;
+            checked.button.click();
+            resolve();
+          } catch (_) {
+            clearAndReject();
+          }
+        }
+        setTimeout(ready, 0);
+      });
+    }
     target.button.click();
   }
   function matches(message) {
@@ -495,11 +576,35 @@
           reply(request, event.origin, "ok");
           return;
         case "totpSubmit":
-          submitTotp(payload);
-          reply(request, event.origin, "ok");
+          var submission = submitTotp(payload);
+          if (submission && typeof submission.then === "function")
+            submission.then(
+              function () {
+                reply(request, event.origin, "ok");
+              },
+              function () {
+                reply(request, event.origin, "failed");
+              },
+            );
+          else reply(request, event.origin, "ok");
           return;
         case "totpCancel":
+          ++totpRevision;
           totpChallenge = null;
+          if (totpPendingField) {
+            var pendingSetValue = Object.getOwnPropertyDescriptor(
+              HTMLInputElement.prototype,
+              "value",
+            ).set;
+            pendingSetValue.call(totpPendingField, "");
+            totpPendingField.dispatchEvent(
+              new Event("input", { bubbles: true }),
+            );
+            totpPendingField.dispatchEvent(
+              new Event("change", { bubbles: true }),
+            );
+            totpPendingField = null;
+          }
           reply(request, event.origin, "ok");
           return;
         case "recordStart":
@@ -556,6 +661,12 @@
             },
           );
           return;
+        case "print":
+          if (typeof nativePrint !== "function") throw new Error("print");
+          if (typeof nativeFocus === "function") nativeFocus.call(window);
+          nativePrint.call(window);
+          reply(request, event.origin, "ok");
+          return;
         default:
           return;
       }
@@ -565,7 +676,9 @@
   });
   window.addEventListener("pagehide", function () {
     closed = true;
+    ++totpRevision;
     totpChallenge = null;
+    totpPendingField = null;
     recording = null;
     if (darkMode) darkMode.dispose();
     document.removeEventListener("click", record, true);

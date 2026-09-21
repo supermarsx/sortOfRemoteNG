@@ -86,6 +86,8 @@ pub struct AttemptSession {
     root_document: Arc<AtomicU64>,
     referrer_document: Arc<Mutex<std::sync::Weak<super::network::ProxyNetworkState>>>,
     handoff_referrer: Arc<Mutex<Option<Option<String>>>>,
+    // A stable browser origin must not merge cookies left by another upstream.
+    native_cookies_only: bool,
 }
 
 impl AttemptSession {
@@ -324,6 +326,12 @@ impl AttemptSession {
     pub fn cookie_store(&self) -> Arc<AttemptCookieStore> {
         Arc::new(AttemptCookieStore(self.clone()))
     }
+    pub(super) fn native_cookies_only(&self) -> bool {
+        self.native_cookies_only
+    }
+    pub(super) fn route_matches(&self, proxy: &Option<String>, min_tls: &str) -> bool {
+        self.attempt.upstream_proxy == *proxy && self.attempt.min_tls == min_tls
+    }
     pub(super) fn provider_control_cookie_header(
         &self,
         alias: &str,
@@ -435,6 +443,11 @@ impl AttemptSession {
         if url.origin().ascii_serialization() != self.origin || !self.is_current() {
             return None;
         }
+        let browser = if self.native_cookies_only {
+            &[][..]
+        } else {
+            browser
+        };
         let jar = self.cookie_store().cookies(url);
         let mut values = Vec::new();
         let mut browser_values = Vec::new();
@@ -637,6 +650,9 @@ impl AttemptSession {
     /// Protected request headers only. These four host-only provider cache
     /// values remain untrusted hints, never native routing/trust authorities.
     pub fn capture_route_cookies(&self, headers: &HeaderMap) {
+        if self.native_cookies_only {
+            return;
+        }
         let mut parsed = BTreeMap::new();
         let mut size = 0usize;
         for value in headers.get_all(COOKIE) {
@@ -803,6 +819,9 @@ struct Ticket {
     released: bool,
     created: Instant,
     referrer_origin: Option<String>,
+    // Set only by consuming review_redirect, never by an arbitrary transfer
+    // caller. A source navigation after review invalidates seamless admission.
+    reviewed_source: Option<(std::sync::Weak<super::AxumProxyState>, u64)>,
 }
 #[derive(Default)]
 pub struct AttemptRegistry {
@@ -819,6 +838,110 @@ fn end(state: &mut AttemptState) {
     state.deferred_login = None;
 }
 impl AttemptRegistry {
+    #[cfg(test)]
+    pub(super) fn expire_ticket_for_test(&mut self, id: &str) {
+        self.tickets.get_mut(id).unwrap().created = Instant::now() - TTL;
+    }
+    pub(super) fn bind_in_session_review(&mut self, id: &str, source: &Arc<super::AxumProxyState>) {
+        if let Some(ticket) = self.tickets.get_mut(id) {
+            ticket.reviewed_source = Some((
+                Arc::downgrade(source),
+                source.document_sequence.load(Ordering::SeqCst),
+            ));
+        }
+    }
+    /// Preview is read-only: building the destination TLS client can fail
+    /// without releasing the source or spending its ticket/login intent.
+    pub(super) fn preview_in_session(
+        &self,
+        source: &AttemptSession,
+        id: &str,
+    ) -> Result<(Url, AttemptSession), String> {
+        let ticket = self.tickets.get(id).ok_or(UNAVAILABLE)?;
+        let state = source.attempt.state.lock().map_err(|_| UNAVAILABLE)?;
+        let destination = Url::parse(&ticket.destination).map_err(|_| UNAVAILABLE)?;
+        if ticket.released
+            || ticket.created.elapsed() >= TTL
+            || !Arc::ptr_eq(&ticket.source.attempt, &source.attempt)
+            || ticket.source.session_id != source.session_id
+            || ticket.source.generation != source.generation
+            || !source.current(&state)
+            || state.hops >= MAX_HOPS
+            || !source
+                .attempt
+                .defaults
+                .permits(&source.origin, &destination)
+            || !ticket
+                .reviewed_source
+                .as_ref()
+                .is_some_and(|(source, sequence)| {
+                    source.upgrade().is_some_and(|state| {
+                        state.document_sequence.load(Ordering::SeqCst) == *sequence
+                    })
+                })
+        {
+            return Err(UNAVAILABLE.into());
+        }
+        let successor = AttemptSession {
+            attempt: source.attempt.clone(),
+            session_id: source.session_id.clone(),
+            origin: destination.origin().ascii_serialization(),
+            generation: source.generation + 1,
+            cache_seeded: Arc::new(AtomicBool::new(false)),
+            root_document: Arc::new(AtomicU64::new(0)),
+            referrer_document: Arc::new(Mutex::new(std::sync::Weak::new())),
+            handoff_referrer: Arc::new(Mutex::new(Some(ticket.referrer_origin.clone()))),
+            native_cookies_only: true,
+        };
+        Ok((destination, successor))
+    }
+
+    /// Called with the listener slot exclusively held and source network work
+    /// retired. No fallible operation follows the generation switch.
+    pub(super) fn commit_in_session(
+        &mut self,
+        source: &AttemptSession,
+        id: &str,
+        successor: &AttemptSession,
+        identity: (bool, Option<String>, bool),
+    ) -> Result<(), String> {
+        let (destination, _) = self.preview_in_session(source, id)?;
+        let mut state = source.attempt.state.lock().map_err(|_| UNAVAILABLE)?;
+        if !source.current(&state)
+            || successor.generation != source.generation + 1
+            || successor.origin != destination.origin().ascii_serialization()
+            || !Arc::ptr_eq(&source.attempt, &successor.attempt)
+        {
+            return Err(UNAVAILABLE.into());
+        }
+        if state
+            .origins
+            .get(&successor.origin)
+            .is_none_or(|saved| saved.tls_identity != identity)
+        {
+            state.origins.insert(
+                successor.origin.clone(),
+                OriginState {
+                    cookies: Default::default(),
+                    route_cookies: BTreeMap::new(),
+                    tls_identity: identity,
+                },
+            );
+        }
+        let renewed = state
+            .deferred_login
+            .as_mut()
+            .and_then(|login| login.continue_redirect());
+        state.generation = successor.generation;
+        state.hops += 1;
+        self.tickets.remove(id);
+        drop(state);
+        if let Some(remaining) = renewed {
+            successor.expire_login_after(remaining);
+        }
+        Ok(())
+    }
+
     pub fn restart(
         &mut self,
         source: &AttemptSession,
@@ -842,6 +965,7 @@ impl AttemptRegistry {
             root_document: Arc::new(AtomicU64::new(0)),
             referrer_document: Arc::new(Mutex::new(std::sync::Weak::new())),
             handoff_referrer: Arc::new(Mutex::new(None)),
+            native_cookies_only: source.native_cookies_only,
         })
     }
     fn prune(&mut self) {
@@ -933,6 +1057,7 @@ impl AttemptRegistry {
                     } else {
                         referrer_origin
                     },
+                    reviewed_source: None,
                 },
             );
             Ok(id)
@@ -1123,6 +1248,7 @@ fn attach(
         root_document: Arc::new(AtomicU64::new(0)),
         referrer_document: Arc::new(Mutex::new(std::sync::Weak::new())),
         handoff_referrer: Arc::new(Mutex::new(None)),
+        native_cookies_only: false,
     }
 }
 

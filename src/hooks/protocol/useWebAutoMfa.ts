@@ -78,13 +78,16 @@ export function useWebAutoMfa(options: Options) {
   const retryRef = useRef(false);
   retryRef.current = canRetry;
   const synologyMfa = options.synologyMfa;
+  const connectionReceipt = options.connection
+    ? receipt(options.connection)
+    : "";
   const identity = `${options.ownerDatabaseId ?? ""}:${options.availability?.generation ?? ""}:${options.navigationKey}:${options.settingsReady}:${options.blocked}:${options.vaultTotp?.scopeKey ?? ""}:${synologyMfa?.runtimeConnectionId ?? ""}:${synologyMfa?.proxySessionId ?? ""}`;
-  const previous = useRef({ identity, connection: options.connection });
+  const previous = useRef({ identity, connectionReceipt });
   if (
     previous.current.identity !== identity ||
-    previous.current.connection !== options.connection
+    previous.current.connectionReceipt !== connectionReceipt
   ) {
-    previous.current = { identity, connection: options.connection };
+    previous.current = { identity, connectionReceipt };
     generation.current++;
   }
   useEffect(() => {
@@ -210,7 +213,8 @@ export function useWebAutoMfa(options: Options) {
         connection.httpApplication?.invalid === true ||
         revoked.current ||
         generation.current !== captured ||
-        live.connection !== connection ||
+        !live.connection ||
+        receipt(live.connection) !== expected ||
         !live.settingsReady ||
         live.blocked ||
         live.availability?.status !== "ready" ||
@@ -304,7 +308,13 @@ export function useWebAutoMfa(options: Options) {
     };
     cancelPending.current = cancelAttempt;
     window.addEventListener("message", onMessage);
-    const deadline = Date.now() + 30000;
+    const deadline = Date.now() + (synologyMfa ? 90000 : 30000);
+    const challengePayload = (nonce: string) => ({
+      nonce,
+      codeSelector: challenge.codeSelector,
+      submitSelector: challenge.submitSelector,
+      submission: challenge.submission,
+    });
     const probe = async () => {
       const nonce = Array.from(
         crypto.getRandomValues(new Uint8Array(16)),
@@ -312,12 +322,7 @@ export function useWebAutoMfa(options: Options) {
       ).join("");
       try {
         valid();
-        await bridge.request("totpProbe", {
-          nonce,
-          codeSelector: challenge.codeSelector,
-          submitSelector: challenge.submitSelector,
-          submission: challenge.submission,
-        });
+        await bridge.request("totpProbe", challengePayload(nonce));
       } catch {
         try {
           valid();
@@ -348,12 +353,24 @@ export function useWebAutoMfa(options: Options) {
           assertCodeCurrent = generated.assertCurrent;
         } else {
           if (!authenticator) throw new Error(failure);
-          const started = Date.now();
+          let started = Date.now();
           expires =
             (Math.floor(started / (authenticator.period * 1000)) + 1) *
             authenticator.period *
             1000;
-          if (expires - started < 3000) throw new Error(failure);
+          if (expires - started < 3000) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, expires - started + 25),
+            );
+            valid();
+            await persisted();
+            started = Date.now();
+            expires =
+              (Math.floor(started / (authenticator.period * 1000)) + 1) *
+              authenticator.period *
+              1000;
+            if (expires - started < 3000) throw new Error(failure);
+          }
           code = await totpApi.computeCode(
             authenticator.secret,
             authenticator.algorithm.toUpperCase() as TotpAlgorithm,
@@ -363,6 +380,14 @@ export function useWebAutoMfa(options: Options) {
         }
         valid();
         await persisted();
+        // Database/vault access and code generation are asynchronous. Require
+        // the page helper to re-arm the exact same reviewed DOM challenge
+        // before disclosing a code or consuming the one-attempt capability.
+        await bridge.request("totpProbe", challengePayload(nonce));
+        valid();
+        if (synologyMfa) await synologyMfa.verifyCurrent(mfaContext(), valid);
+        else await persisted();
+        valid();
         if (
           Date.now() >= expires - 1000 ||
           !(synologyMfa || vault
@@ -404,7 +429,7 @@ export function useWebAutoMfa(options: Options) {
     // Identity/connection snapshots intentionally fence one attempt; live options
     // are rechecked synchronously through latest before every sensitive step.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, options.connection, retry, nativeReady]);
+  }, [identity, connectionReceipt, retry, nativeReady]);
   return {
     status,
     canRetry,

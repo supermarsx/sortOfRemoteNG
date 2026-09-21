@@ -74,13 +74,14 @@ export function isSynologyMfaProofRetired(proof: SynologyMfaProof): boolean {
 /** Only a validated same-tab Synology handoff may retire a proof before stop.
  * The next proxy must redeem its own native continuation; this grants nothing. */
 export function retireSynologyMfaProof(
-  connectionId: string,
+  navigationKey: string,
   proxySessionId: string,
+  runtimeConnectionId = navigationKey,
 ): void {
-  const proof = webNavigation.get(connectionId)?.synologyMfaProof;
+  const proof = webNavigation.get(navigationKey)?.synologyMfaProof;
   if (!proof) return;
   if (
-    proof.runtimeConnectionId !== connectionId ||
+    proof.runtimeConnectionId !== runtimeConnectionId ||
     proof.proxySessionId !== proxySessionId
   )
     throw new Error("The Synology MFA handoff source changed.");
@@ -97,21 +98,40 @@ export function registerRuntimeConnection(
   else webNavigation.delete(connection.id);
 }
 export function getRuntimeWebNavigation(
-  connectionId: string,
+  navigationKey: string,
 ): RuntimeWebNavigation | undefined {
-  return webNavigation.get(connectionId);
+  return webNavigation.get(navigationKey);
+}
+
+/** Tab-local key for a saved connection whose native proxy continued in place. */
+export function runtimeWebNavigationSessionKey(sessionId: string): string {
+  return `web-session:${sessionId}`;
+}
+
+/** Store navigation provenance without shadowing a saved connection record. */
+export function registerRuntimeWebNavigation(
+  navigationKey: string,
+  navigation: RuntimeWebNavigation,
+): void {
+  webNavigation.set(navigationKey, navigation);
+}
+
+export function releaseRuntimeWebNavigation(navigationKey: string): void {
+  webNavigation.get(navigationKey)?.nativeContinuation?.cancel();
+  webNavigation.delete(navigationKey);
 }
 
 /** Call only after a successful start_basic_auth_proxy reply and frame validation.
  * Merely registering/reviewing a redirect never grants MFA authority. */
 export function activateSynologyMfaProof(
-  connectionId: string,
+  navigationKey: string,
   continuation: NonNullable<RuntimeWebNavigation["nativeContinuation"]>,
   proxySessionId: string,
   proxyOrigin: string,
   assertActiveProxy: () => void,
+  runtimeConnectionId = navigationKey,
 ): void {
-  const navigation = webNavigation.get(connectionId);
+  const navigation = webNavigation.get(navigationKey);
   if (
     !navigation ||
     navigation.nativeContinuation !== continuation ||
@@ -127,7 +147,7 @@ export function activateSynologyMfaProof(
     return;
   let revoked = false;
   const proof: SynologyMfaProof = Object.freeze({
-    runtimeConnectionId: connectionId,
+    runtimeConnectionId,
     proxySessionId,
     origin: destination.origin,
     proxyOrigin,
@@ -136,7 +156,7 @@ export function activateSynologyMfaProof(
         if (
           revoked ||
           isSynologyMfaProofRetired(proof) ||
-          webNavigation.get(connectionId) !== navigation ||
+          webNavigation.get(navigationKey) !== navigation ||
           navigation.synologyMfaProof !== proof
         )
           throw new Error();

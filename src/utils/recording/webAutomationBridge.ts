@@ -10,6 +10,7 @@ export type WebAutomationAction =
   | "step"
   | "script"
   | "dark"
+  | "print"
   | "cancel"
   | "totpProbe"
   | "totpSubmit"

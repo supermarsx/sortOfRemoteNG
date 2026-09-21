@@ -189,10 +189,11 @@ impl DocumentReferrerPolicy {
 
 pub struct ProxyNetworkState {
     active: AtomicBool,
+    owns_origin: AtomicBool,
     document: watch::Sender<u64>,
     issued: Mutex<BTreeSet<u64>>,
     document_referrers: Mutex<BTreeMap<u64, DocumentReferrerPolicy>>,
-    origin_lease: Option<crate::webview_origins::ProxyOriginLease>,
+    origin_lease: Option<Arc<crate::webview_origins::ProxyOriginLease>>,
     proxy_origin: Option<String>,
     pub(super) sockets: Arc<Semaphore>,
     pub(super) font_assets: Option<super::font_assets::ReviewedFontAssets>,
@@ -211,6 +212,7 @@ impl Default for ProxyNetworkState {
     fn default() -> Self {
         Self {
             active: AtomicBool::new(true),
+            owns_origin: AtomicBool::new(true),
             document: watch::channel(0).0,
             issued: Mutex::new(BTreeSet::new()),
             document_referrers: Mutex::new(BTreeMap::new()),
@@ -311,7 +313,9 @@ impl ProxyNetworkState {
     }
     pub fn with_origin(origin: &str) -> Result<Self, String> {
         Ok(Self {
-            origin_lease: Some(crate::webview_origins::acquire_proxy_origin(origin)?),
+            origin_lease: Some(Arc::new(crate::webview_origins::acquire_proxy_origin(
+                origin,
+            )?)),
             proxy_origin: Some(origin.into()),
             ..Self::default()
         })
@@ -353,12 +357,33 @@ impl ProxyNetworkState {
     }
 
     pub fn revoke(&self) {
+        self.retire_activity();
+        if self.owns_origin.swap(false, Ordering::AcqRel) {
+            if let Some(lease) = &self.origin_lease {
+                lease.revoke();
+            }
+        }
+    }
+
+    pub(super) fn retire_for_continuation(&self) {
+        self.owns_origin.store(false, Ordering::Release);
+        self.retire_activity();
+    }
+
+    /// Retargeting retires document/socket work but retains the listener's
+    /// registered protected origin. The successor owns the same origin lease.
+    pub(super) fn successor(&self) -> Self {
+        Self {
+            origin_lease: self.origin_lease.clone(),
+            proxy_origin: self.proxy_origin.clone(),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn retire_activity(&self) {
         self.active.store(false, Ordering::Release);
         if let Ok(mut policies) = self.document_referrers.lock() {
             policies.clear();
-        }
-        if let Some(lease) = &self.origin_lease {
-            lease.revoke();
         }
         self.sockets.close();
         if let Some(fonts) = &self.font_assets {

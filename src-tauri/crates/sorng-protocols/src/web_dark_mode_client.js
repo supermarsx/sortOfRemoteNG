@@ -15,6 +15,7 @@ function createWebDarkModeController() {
     revision = 0,
     disposed = false,
     dynamicOwned = false,
+    runtimeInstalled = false,
     // The app says so when the connection's page-script policy forbids loading
     // the engine asset. It is never inferred here and never relaxes a policy:
     // it only decides that this document themes itself with plain CSS.
@@ -107,6 +108,7 @@ function createWebDarkModeController() {
     releaseAdopted();
     var owned = dynamicOwned;
     dynamicOwned = false;
+    runtimeInstalled = false;
     if (owned && window.DarkReader) window.DarkReader.disable();
   }
   function removeBootstrap() {
@@ -114,7 +116,7 @@ function createWebDarkModeController() {
     bootstrap = null;
   }
   function installBootstrap(theme) {
-    if (!bootstrap) {
+    if (!bootstrap || !bootstrap.isConnected) {
       bootstrap = document.createElement("style");
       bootstrap.id = "__sorng_dark_bootstrap_v1";
       (document.head || document.documentElement).appendChild(bootstrap);
@@ -428,7 +430,7 @@ function createWebDarkModeController() {
     Promise.resolve().then(function () {
       scanQueued = false;
       try {
-        rescan();
+        refresh();
       } catch (_) {
         // One malformed frame must not stop the rest of the page theming.
       }
@@ -452,6 +454,15 @@ function createWebDarkModeController() {
   function refresh() {
     if (disposed || !desired) return;
     var theme = desired;
+    // Host pages sometimes remove every style node while replacing their app
+    // shell. Keep the first-paint palette until runtime theming owns the page,
+    // then restore our runtime sheet if the page removes that exact node.
+    if (!runtimeInstalled && (!bootstrap || !bootstrap.isConnected))
+      installBootstrap(theme);
+    if (runtimeInstalled && style && !style.isConnected) {
+      style = null;
+      installStyles(theme);
+    }
     if (frameset() !== framesetStyled) {
       if (style) style.remove();
       style = null;
@@ -584,6 +595,7 @@ function createWebDarkModeController() {
       // through engine loading, and protect commands sent after document start
       // synchronously as well. Never await a network request on a light page.
       installBootstrap(theme);
+      observe();
       cssOnly = payload.cssOnly === true;
       var wanted = theme.mode === "dynamic" || theme.mode === "dynamicFilter";
       // A frameset paints nothing but its gutters, so converting it is wasted
@@ -611,6 +623,7 @@ function createWebDarkModeController() {
             return undefined;
           if (engine) applyDynamic(theme);
           installStyles(theme);
+          runtimeInstalled = true;
           paintBorders(theme);
           observe();
           rescan();

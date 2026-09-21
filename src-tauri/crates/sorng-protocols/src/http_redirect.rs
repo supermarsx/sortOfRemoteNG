@@ -253,6 +253,14 @@ fn record_evidence(
     let Ok(mut manager) = state.global_sessions.lock() else {
         return false;
     };
+    if !state.network.is_active()
+        || state
+            .attempt
+            .as_ref()
+            .is_some_and(|attempt| !attempt.is_current())
+    {
+        return false;
+    }
     manager
         .redirect_reviews
         .retain(|_, pending| pending.current());
@@ -372,6 +380,8 @@ impl ProxySessionManager {
                             )
                             .ok()?,
                     );
+                    self.attempts
+                        .bind_in_session_review(review.continuation_id.as_deref()?, &state);
                     attempt.consume_http_redirect(pending.http_cycle_edge.as_ref());
                 }
             }

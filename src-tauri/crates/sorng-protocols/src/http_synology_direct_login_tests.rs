@@ -105,6 +105,7 @@ async fn fixture() -> Fixture {
     state.global_sessions.lock().unwrap().sessions.insert(
         state.session_id.clone(),
         ProxySessionEntry {
+            runtime: Default::default(),
             attempt: None,
             network,
             website_dark_mode: state.website_dark_mode.clone(),

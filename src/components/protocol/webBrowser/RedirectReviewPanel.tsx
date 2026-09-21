@@ -46,7 +46,10 @@ export default function RedirectReviewPanel({
     insecureApproved: boolean;
   } | null>(null);
   const current = choice?.receiptId === review?.receiptId ? choice : null;
-  const carry = authentication?.available === true && (current?.carry ?? true);
+  const carry =
+    manager.defaultDestination !== true &&
+    authentication?.available === true &&
+    (current?.carry ?? true);
   const insecureApproved = current?.insecureApproved === true;
   const change = (
     values: Partial<{ carry: boolean; insecureApproved: boolean }>,
@@ -280,10 +283,9 @@ export default function RedirectReviewPanel({
                 <div className="space-y-1">
                   <p className="font-medium">Choose where to continue</p>
                   <p className="text-[var(--color-textSecondary)]">
-                    Continue in this tab or open a separate anonymous tab.
-                    Either choice closes the source proxy. Cookies, form bodies,
-                    custom headers, MFA secrets and automation scripts are not
-                    transferred. The anonymous option always starts signed out.
+                    {manager.defaultDestination
+                      ? "Continue in this tab to keep this protected Synology proxy session, including its redirect and sign-in context. Open a separate anonymous tab to start signed out without transferring cookies, form bodies, custom headers, MFA secrets or automation scripts."
+                      : "Continue in this tab or open a separate anonymous tab. Either choice closes the source proxy. Cookies, form bodies, custom headers, MFA secrets and automation scripts are not transferred. The anonymous option always starts signed out."}
                   </p>
                 </div>
               </div>
@@ -300,7 +302,7 @@ export default function RedirectReviewPanel({
                 </p>
               )}
             </div>
-            {authentication?.configured && (
+            {authentication?.configured && !manager.defaultDestination && (
               <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <CheckboxField
                   variant="form"

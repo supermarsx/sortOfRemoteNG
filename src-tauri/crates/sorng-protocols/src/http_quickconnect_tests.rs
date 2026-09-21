@@ -38,6 +38,7 @@ fn register(proxy: &FixtureProxy) {
     state.global_sessions.lock().unwrap().sessions.insert(
         state.session_id.clone(),
         ProxySessionEntry {
+            runtime: Default::default(),
             attempt: state.attempt.clone(),
             network: state.network.clone(),
             website_dark_mode: state.website_dark_mode.clone(),

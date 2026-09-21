@@ -495,7 +495,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
     format!("{}{}{}", &html[..insertion], script, &html[insertion..])
 }
 
-fn early_script_insertion(html: &str) -> usize {
+pub(super) fn early_script_insertion(html: &str) -> usize {
     script_insertion::early_insertion_position(html)
 }
 

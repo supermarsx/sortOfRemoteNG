@@ -381,6 +381,10 @@ export interface SynologyMfaCapability {
   revoke: () => void;
   attempted: () => boolean;
   claim: (context: SynologyMfaContext) => void;
+  verifyCurrent: (
+    context: SynologyMfaContext,
+    assertAttempt: () => void,
+  ) => Promise<void>;
   generate: (
     context: SynologyMfaContext,
     assertAttempt: () => void,
@@ -474,6 +478,36 @@ export function createSynologyMfaCapability(
       throw new Error(REVOKED);
     }
   };
+  const persisted = async (
+    context: SynologyMfaContext,
+    assertAttempt: () => void,
+  ) => {
+    const check = () => {
+      try {
+        assertAttempt();
+      } catch {
+        retired = true;
+        throw new Error(REVOKED);
+      }
+      assertCurrent(context);
+      if (lease.autoMfaAttempted()) throw new Error(REVOKED);
+    };
+    check();
+    await target!.verifyCurrent!();
+    check();
+    const data = await target!.readCurrent!();
+    check();
+    const matches =
+      data?.connections.filter(
+        (item) => item.id === source.savedConnectionId,
+      ) ?? [];
+    if (matches.length !== 1) throw new Error(REVOKED);
+    checkSource(matches[0]);
+    return matches[0];
+  };
+  const revokeFailedCurrentAttempt = () => {
+    if (!retired && !isSynologyMfaProofRetired(proof)) lease.revokeAutoMfa();
+  };
   return Object.freeze({
     runtimeConnectionId: proof.runtimeConnectionId,
     proxySessionId: proof.proxySessionId,
@@ -483,6 +517,17 @@ export function createSynologyMfaCapability(
     claim: (context: SynologyMfaContext) => {
       assertCurrent(context);
       lease.claimAutoMfaAttempt();
+    },
+    verifyCurrent: async (
+      context: SynologyMfaContext,
+      assertAttempt: () => void,
+    ) => {
+      try {
+        await persisted(context, assertAttempt);
+      } catch {
+        revokeFailedCurrentAttempt();
+        throw new Error(REVOKED);
+      }
     },
     generate: async (
       context: SynologyMfaContext,
@@ -501,22 +546,9 @@ export function createSynologyMfaCapability(
         assertCurrent(context);
         if (lease.autoMfaAttempted()) throw new Error(REVOKED);
       };
-      const persisted = async () => {
-        check();
-        await target!.verifyCurrent!();
-        check();
-        const data = await target!.readCurrent!();
-        check();
-        const matches =
-          data?.connections.filter(
-            (item) => item.id === source.savedConnectionId,
-          ) ?? [];
-        if (matches.length !== 1) throw new Error(REVOKED);
-        checkSource(matches[0]);
-        return matches[0];
-      };
+      const readPersisted = () => persisted(context, assertAttempt);
       try {
-        const saved = await persisted();
+        const saved = await readPersisted();
         const consent = checkSource(saved);
         let entries = saved.totpConfigs;
         if (saved.credentialSource?.kind === "vault") {
@@ -583,12 +615,24 @@ export function createSynologyMfaCapability(
             entry.period > 3600
           )
             throw new Error(REVOKED);
-          const started = Date.now();
-          const expires =
+          let started = Date.now();
+          let expires =
             (Math.floor(started / (entry.period * 1000)) + 1) *
             entry.period *
             1000;
-          if (expires - started < 3000) throw new Error(REVOKED);
+          if (expires - started < 3000) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, expires - started + 25),
+            );
+            check();
+            await readPersisted();
+            started = Date.now();
+            expires =
+              (Math.floor(started / (entry.period * 1000)) + 1) *
+              entry.period *
+              1000;
+            if (expires - started < 3000) throw new Error(REVOKED);
+          }
           const code = await invoke<string>("totp_compute_code", {
             secret: entry.secret,
             algorithm: entry.algorithm.toUpperCase() as TotpAlgorithm,
@@ -596,7 +640,7 @@ export function createSynologyMfaCapability(
             period: entry.period,
           });
           check();
-          await persisted();
+          await readPersisted();
           const assertCodeCurrent = () => {
             assertLiveAttempt();
             assertCurrent(context);
@@ -609,8 +653,7 @@ export function createSynologyMfaCapability(
         }
       } catch {
         // A pending generation can finish after its reviewed proxy handoff.
-        if (!retired && !isSynologyMfaProofRetired(proof))
-          lease.revokeAutoMfa();
+        revokeFailedCurrentAttempt();
         throw new Error(REVOKED);
       }
     },

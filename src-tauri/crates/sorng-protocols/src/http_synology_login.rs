@@ -170,6 +170,18 @@ impl DeferredSynologyLogin {
         }
     }
 
+    /// A reviewed in-session hop may rebind an unredeemed form intent, but
+    /// never replay an account/password already released to a document.
+    pub(super) fn continue_redirect(&mut self) -> Option<Duration> {
+        self.expire();
+        match self.phase {
+            Phase::Account { .. } => self.phase = Phase::Pending,
+            Phase::Password { .. } => self.spend(DeferredSynologyLoginStatus::Cancelled),
+            _ => {}
+        }
+        self.renew_intent()
+    }
+
     /// Reading status expires an elapsed grant but never mints or renews one.
     pub(super) fn status(&mut self) -> DeferredSynologyLoginStatus {
         self.expire();

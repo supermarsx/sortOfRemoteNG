@@ -10,7 +10,18 @@ import TrustCheckStatus from "./TrustCheckStatus";
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
   const reviewing = !!(mgr.redirectReview?.review || mgr.redirectReview?.error);
   return (
-    <div className="flex-1 min-h-0 relative" aria-busy={mgr.isLoading}>
+    <div
+      className="flex-1 min-h-0 relative"
+      aria-busy={mgr.isLoading}
+      style={
+        mgr.websiteDarkBootstrap
+          ? {
+              backgroundColor: mgr.websiteDarkBootstrap.backgroundColor,
+              color: mgr.websiteDarkBootstrap.textColor,
+            }
+          : undefined
+      }
+    >
       {/* Proxy-dead banner */}
       {!reviewing && !mgr.proxyAlive && !mgr.isLoading && !mgr.loadError && (
         <div className="absolute top-0 inset-x-0 z-20 bg-error/90 border-b border-error px-4 py-2 flex items-center justify-between text-xs text-error">
@@ -85,6 +96,11 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
               : undefined
           }
           title={mgr.session.name}
+          style={
+            mgr.websiteDarkBootstrap
+              ? { backgroundColor: mgr.websiteDarkBootstrap.backgroundColor }
+              : undefined
+          }
           onLoad={mgr.handleIframeLoad}
           // Start with an opaque, fully sandboxed blank. attachIframe owns the
           // subsequent sandbox/src transition and only enables the existing

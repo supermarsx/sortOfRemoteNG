@@ -74,10 +74,11 @@ export interface HttpRedirectTrustInspection {
 export function useHttpRedirectTrust(
   session: ConnectionSession,
   connection?: Connection,
+  navigationKey = connection?.id ?? "",
 ) {
   const context = useConnections();
-  const latest = useRef({ context, session, connection });
-  latest.current = { context, session, connection };
+  const latest = useRef({ context, session, connection, navigationKey });
+  latest.current = { context, session, connection, navigationKey };
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -97,12 +98,10 @@ export function useHttpRedirectTrust(
   const revisionState = useRef({ identity: "", number: 0 });
 
   const runtimeNavigation = connection
-    ? getRuntimeWebNavigation(connection.id)
+    ? getRuntimeWebNavigation(navigationKey)
     : undefined;
   const inherited = runtimeNavigation?.trustedRedirectSource;
-  const inheritedDefault = connection
-    ? getRuntimeWebNavigation(connection.id)?.synologyRedirectSource
-    : undefined;
+  const inheritedDefault = runtimeNavigation?.synologyRedirectSource;
   const savedId =
     inherited?.savedConnectionId ??
     inheritedDefault?.savedConnectionId ??
@@ -308,7 +307,7 @@ export function useHttpRedirectTrust(
         current.session.protocol !== runtime.protocol ||
         !current.connection ||
         httpRedirectTrustIdentity(current.connection) !== runtimeIdentity ||
-        getRuntimeWebNavigation(runtime.id) !== navigation ||
+        getRuntimeWebNavigation(latest.current.navigationKey) !== navigation ||
         navigation.synologyRedirectSource !== source ||
         navigation.initialUrl !== initialUrl ||
         navigation.redirectHops !== redirectHops ||
@@ -384,14 +383,22 @@ export function useHttpRedirectTrust(
     hasSynologyAutoMfaConsent(saved)
   ) {
     const runtime = connection;
+    const runtimeIdentity = httpRedirectTrustIdentity(runtime);
     const source = inheritedDefault;
     const readSource = () => {
       assertBudgetCurrent();
       const current = latest.current;
-      const navigation = getRuntimeWebNavigation(runtime.id);
-      const origin = httpRedirectConnectionOrigin(runtime);
+      const navigation = getRuntimeWebNavigation(current.navigationKey);
+      // A seamless Synology continuation deliberately keeps the saved
+      // connection identity while the native proxy's reviewed upstream origin
+      // advances. The runtime navigation, not the saved hostname, is the
+      // authoritative destination for the redeemed MFA proof.
+      const origin = navigation
+        ? new URL(navigation.initialUrl).origin
+        : httpRedirectConnectionOrigin(runtime);
       if (
-        current.connection !== runtime ||
+        !current.connection ||
+        httpRedirectTrustIdentity(current.connection) !== runtimeIdentity ||
         current.session.connectionId !== runtime.id ||
         navigation !== runtimeNavigation ||
         navigation?.synologyMfaProof !== proof ||
@@ -493,7 +500,10 @@ export function useHttpRedirectTrust(
     const captured = latest.current;
     const runtime = captured.connection;
     if (!runtime) throw new Error(UNAVAILABLE);
-    const origin = httpRedirectConnectionOrigin(runtime);
+    const runtimeNavigation = getRuntimeWebNavigation(captured.navigationKey);
+    const origin = runtimeNavigation?.synologyRedirectSource
+      ? new URL(runtimeNavigation.initialUrl).origin
+      : httpRedirectConnectionOrigin(runtime);
     const capturedDefaults = latestDefaults.current;
     if (
       !parseHttpRedirectReview(
@@ -507,7 +517,7 @@ export function useHttpRedirectTrust(
       )
     )
       throw new Error(UNAVAILABLE);
-    const upstream = getRuntimeWebNavigation(runtime.id)?.trustedRedirectSource;
+    const upstream = runtimeNavigation?.trustedRedirectSource;
     const defaultProvenance = capturedDefaults.source;
     const sourceId =
       upstream?.savedConnectionId ??

@@ -176,6 +176,7 @@ describe("embedded web failure recovery screen", () => {
         offer,
         accept: vi.fn(),
         cancel: vi.fn(),
+        abort: vi.fn(),
         redirectStep: 2,
         maxRedirectHops: 5,
         trustedDestination: false,
@@ -223,6 +224,7 @@ describe("embedded web failure recovery screen", () => {
         error: "",
         accept: vi.fn(),
         cancel: vi.fn(),
+        abort: vi.fn(),
         offer: vi.fn(),
         authentication: {
           configured: false,
@@ -343,7 +345,7 @@ describe("embedded web failure recovery screen", () => {
     const notifications = screen.getByRole("button", {
       name: "Website notifications",
     });
-    expect(extension.nextElementSibling).toBe(notifications);
+    expect(extension.parentElement?.nextElementSibling).toBe(notifications);
     expect(screen.queryByText(/Website proxy routing/)).toBeNull();
     expect(screen.queryByText(/Sign-in & 2FA help/)).toBeNull();
     expect(
@@ -351,6 +353,7 @@ describe("embedded web failure recovery screen", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     fireEvent.click(extension);
+    fireEvent(window, new Event("resize"));
     expect(
       screen.getByRole("button", { name: "Enable extension" }),
     ).toBeDisabled();
@@ -545,6 +548,30 @@ describe("embedded web failure recovery screen", () => {
       "src",
       "http://p0123456789abcdef0123456789abcdef.localhost:43123/retry",
     );
+  });
+
+  it("paints the browser surface and blank iframe with the website palette before navigation", () => {
+    const { container } = render(
+      <ContentArea
+        mgr={manager({
+          loadError: "",
+          navigationFailure: null,
+          isLoading: true,
+          handleIframeLoad: vi.fn(),
+          websiteDarkBootstrap: {
+            backgroundColor: "#181a1b",
+            textColor: "#e8e6e3",
+          },
+        })}
+      />,
+    );
+    expect(container.firstElementChild).toHaveStyle({
+      backgroundColor: "#181a1b",
+      color: "#e8e6e3",
+    });
+    expect(container.querySelector("iframe")).toHaveStyle({
+      backgroundColor: "#181a1b",
+    });
   });
 
   it("shows structured context and exposes retry, back, external, and diagnostic actions", () => {

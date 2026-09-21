@@ -301,4 +301,16 @@ describe("website automation parent-owned bridge", () => {
     response({ darkOutcome: "engine" });
     expect(await pending).toBeUndefined();
   });
+  it("delivers print to the accepted child document instead of reading its cross-origin Window", async () => {
+    const pending = bridge.request("print");
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "print",
+        documentToken: context!.document.token,
+      }),
+      "http://127.0.0.1:43001",
+    );
+    response();
+    await expect(pending).resolves.toBeUndefined();
+  });
 });

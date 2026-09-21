@@ -21,6 +21,8 @@ let documentHandlers: Map<string, Callback[]>;
 let parentWindow: Window;
 let post: ReturnType<typeof vi.fn>;
 let originalParent: PropertyDescriptor | undefined;
+let nativePrint: ReturnType<typeof vi.fn>;
+let nativeFocus: ReturnType<typeof vi.fn>;
 function command(
   action: string,
   payload?: unknown,
@@ -68,6 +70,18 @@ beforeEach(() => {
     configurable: true,
     value: parentWindow,
   });
+  nativePrint = vi.fn();
+  nativeFocus = vi.fn();
+  Object.defineProperty(window, "print", {
+    configurable: true,
+    writable: true,
+    value: nativePrint,
+  });
+  Object.defineProperty(window, "focus", {
+    configurable: true,
+    writable: true,
+    value: nativeFocus,
+  });
   vi.spyOn(window, "addEventListener").mockImplementation((name, callback) => {
     pageHandlers.set(name, [
       ...(pageHandlers.get(name) ?? []),
@@ -98,6 +112,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("actual injected page-only automation client", () => {
+  it("prints inside the accepted page without trusting a later page override", () => {
+    const hostilePrint = vi.fn();
+    window.print = hostilePrint;
+    command("print");
+    expect(nativeFocus).toHaveBeenCalledOnce();
+    expect(nativePrint).toHaveBeenCalledOnce();
+    expect(hostilePrint).not.toHaveBeenCalled();
+    expect(reports()[0]).toMatchObject({ status: "ok" });
+  });
   const otpProbe = {
     nonce: "b".repeat(32),
     codeSelector: "#otp",

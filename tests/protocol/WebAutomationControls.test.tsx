@@ -499,7 +499,7 @@ describe("mounted website automation controls and ownership", () => {
     expect(current.error).toMatch(/could not be confirmed saved.*disk refused/);
     expect(current.busy).toBe(false);
   });
-  it("cancels pending page operations and review dialogs on full navigation", async () => {
+  it("cancels pending page operations on navigation without flashing dark mode off", async () => {
     const view = await mount();
     let pending!: Promise<void>;
     act(() => {
@@ -513,7 +513,7 @@ describe("mounted website automation controls and ownership", () => {
     expect(sent("cancel").length).toBeGreaterThan(0);
     expect(
       sent("dark").some((request) => request.payload.enabled === false),
-    ).toBe(true);
+    ).toBe(false);
   });
   it("keeps all website capabilities off when connection consent is absent", async () => {
     delete connection.httpAutomation;

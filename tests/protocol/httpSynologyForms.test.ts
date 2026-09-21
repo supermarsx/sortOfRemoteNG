@@ -1286,6 +1286,63 @@ describe("reviewed DSM OTP SPA container", () => {
     });
     expect(submit).toHaveBeenCalledOnce();
   });
+  it("waits for Vue to enable the reviewed OTP button after the input event", async () => {
+    const { send, post, payload } = bridge();
+    const field = document.querySelector(
+      '[name="one-time-code"]',
+    ) as HTMLInputElement;
+    const button = document.querySelector(
+      '[syno-id="otp-panel-next-btn"]',
+    ) as HTMLElement;
+    button.classList.add("disable");
+    field.addEventListener(
+      "input",
+      () => setTimeout(() => button.classList.remove("disable"), 50),
+      { once: true },
+    );
+    send("totpProbe", payload);
+    expect(post.mock.calls[post.mock.calls.length - 1]?.[0]).toMatchObject({
+      status: "ok",
+    });
+    send("totpSubmit", {
+      nonce: payload.nonce,
+      code: "123456",
+      expires: Date.now() + 20000,
+    });
+    expect(field.value).toBe("123456");
+    expect(submit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(75);
+    expect(submit).toHaveBeenCalledOnce();
+    expect(post.mock.calls[post.mock.calls.length - 1]?.[0]).toMatchObject({
+      status: "ok",
+    });
+  });
+  it("cancels a pending Vue enable wait without clicking or retaining the code", async () => {
+    const { send, post, payload } = bridge();
+    const field = document.querySelector(
+      '[name="one-time-code"]',
+    ) as HTMLInputElement;
+    const button = document.querySelector(
+      '[syno-id="otp-panel-next-btn"]',
+    ) as HTMLElement;
+    button.classList.add("disable");
+    send("totpProbe", payload);
+    send("totpSubmit", {
+      nonce: payload.nonce,
+      code: "123456",
+      expires: Date.now() + 20000,
+    });
+    expect(field.value).toBe("123456");
+    send("totpCancel", {});
+    expect(field.value).toBe("");
+    button.classList.remove("disable");
+    await vi.advanceTimersByTimeAsync(75);
+    expect(submit).not.toHaveBeenCalled();
+    expect(post.mock.calls).toContainEqual([
+      expect.objectContaining({ status: "failed" }),
+      location.origin,
+    ]);
+  });
   it.each([
     "replacement",
     "disabled",

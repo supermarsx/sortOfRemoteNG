@@ -92,6 +92,28 @@ describe("injected dark-mode extension runtime", () => {
     expect(node()).toBeNull();
     expect(document.body.innerHTML).toBe(original);
   });
+  it("restores owned first-paint and runtime styles removed by the host page", async () => {
+    const pending = controller.set({ enabled: true, theme: theme() });
+    const bootstrap = document.getElementById("__sorng_dark_bootstrap_v1")!;
+    bootstrap.remove();
+    await vi.waitFor(() =>
+      expect(
+        document.getElementById("__sorng_dark_bootstrap_v1"),
+      ).toBeInTheDocument(),
+    );
+    const api = reader();
+    document.querySelector("script")!.dispatchEvent(new Event("load"));
+    await pending;
+    expect(api.enable).toHaveBeenCalledOnce();
+
+    await controller.set({
+      enabled: true,
+      theme: theme({ mode: "filter" }),
+    });
+    node()!.remove();
+    await vi.waitFor(() => expect(node()).toBeInTheDocument());
+    expect(node()?.getAttribute("data-mode")).toBe("filter");
+  });
   it("combines dynamic conversion with non-inverting adjustments exactly once", async () => {
     const api = reader();
     await controller.set({

@@ -325,9 +325,13 @@ async fn send_inner(
     })?;
     let mut method = method.clone();
     let mut body = body.to_vec();
+    let native_cookies_only = state
+        .attempt
+        .as_ref()
+        .is_some_and(|attempt| attempt.native_cookies_only());
     let browser_cookies: Vec<_> = headers
         .iter()
-        .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+        .filter(|(name, _)| !native_cookies_only && name.eq_ignore_ascii_case("cookie"))
         .map(|(_, value)| value.as_str())
         .collect();
     let mut cookie_overlay = RedirectCookieOverlay {
@@ -377,7 +381,7 @@ async fn send_inner(
                     continue;
                 }
                 if name.eq_ignore_ascii_case("cookie")
-                    && (merged_cookies.is_some() || changed_cookie.is_some())
+                    && (native_cookies_only || merged_cookies.is_some() || changed_cookie.is_some())
                 {
                     continue;
                 }

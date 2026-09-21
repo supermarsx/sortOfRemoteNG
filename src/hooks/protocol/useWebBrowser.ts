@@ -33,6 +33,7 @@ import { useWebRecorder } from "../recording/useWebRecorder";
 import { useDisplayRecorder } from "../recording/useDisplayRecorder";
 import { useWebAutomation } from "./useWebAutomation";
 import { useWebAutoMfa } from "./useWebAutoMfa";
+import { WebAutomationBridge } from "../../utils/recording/webAutomationBridge";
 import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
 import { useRuntimeVaultTotp } from "../security/useRuntimeVaultTotp";
 import {
@@ -61,9 +62,15 @@ import {
 import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
 import {
   getRuntimeWebNavigation,
+  registerRuntimeConnection,
+  registerRuntimeWebNavigation,
+  releaseRuntimeConnection,
+  releaseRuntimeWebNavigation,
+  runtimeWebNavigationSessionKey,
   resolveRuntimeConnection,
   releaseReplacedRuntimeConnection,
   activateSynologyMfaProof,
+  type RuntimeWebNavigation,
 } from "../../utils/session/runtimeConnectionRegistry";
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
@@ -117,6 +124,12 @@ export interface ProxyMediatorResponse {
   local_port: number;
   session_id: string;
   proxy_url: string;
+}
+
+interface SynologyProxyContinuationResponse extends ProxyMediatorResponse {
+  target_url: string;
+  navigation_url: string;
+  navigation_token: string;
 }
 
 export const PROXY_FAILURE_MESSAGE_TYPE = "sorng_proxy_failure" as const;
@@ -507,18 +520,24 @@ export function useWebBrowser(session: ConnectionSession) {
     state.connections,
     session.connectionId,
   );
-  const redirectTrust = useHttpRedirectTrust(session, connection);
+  const sessionNavigationKey = runtimeWebNavigationSessionKey(session.id);
+  const runtimeNavigationKey = getRuntimeWebNavigation(sessionNavigationKey)
+    ? sessionNavigationKey
+    : session.connectionId;
+  const redirectTrust = useHttpRedirectTrust(
+    session,
+    connection,
+    runtimeNavigationKey,
+  );
   const websiteDarkBootstrapCandidate = useMemo(() => {
     try {
       if (
         settingsReady !== true ||
         !normalizeSessionQuickActions(settings.sessionQuickActions)
-          .allowWebForceDark ||
-        normalizeHttpProxyPolicy(connection?.httpProxyPolicy).pageScripts ===
-          "block"
+          .allowWebForceDark
       )
         return null;
-      const navigation = getRuntimeWebNavigation(session.connectionId);
+      const navigation = getRuntimeWebNavigation(runtimeNavigationKey);
       const provenance =
         navigation?.trustedRedirectSource ?? navigation?.synologyRedirectSource;
       let appearanceSource = connection;
@@ -560,7 +579,7 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [
     connection,
     databaseAvailability,
-    session.connectionId,
+    runtimeNavigationKey,
     session.ownerDatabaseId,
     settings.sessionQuickActions,
     settings.websiteDarkMode,
@@ -577,12 +596,10 @@ export function useWebBrowser(session: ConnectionSession) {
       if (
         settingsReady !== true ||
         !normalizeSessionQuickActions(settings.sessionQuickActions)
-          .allowWebForceDark ||
-        normalizeHttpProxyPolicy(connection?.httpProxyPolicy).pageScripts ===
-          "block"
+          .allowWebForceDark
       )
         return null;
-      const navigation = getRuntimeWebNavigation(session.connectionId);
+      const navigation = getRuntimeWebNavigation(runtimeNavigationKey);
       const provenance =
         navigation?.trustedRedirectSource ?? navigation?.synologyRedirectSource;
       const sourceId = provenance?.savedConnectionId ?? connection?.id;
@@ -632,7 +649,7 @@ export function useWebBrowser(session: ConnectionSession) {
     [
       connection,
       databaseAvailability,
-      session.connectionId,
+      runtimeNavigationKey,
       session.ownerDatabaseId,
       settings.sessionQuickActions,
       settings.websiteDarkMode,
@@ -681,8 +698,11 @@ export function useWebBrowser(session: ConnectionSession) {
       // Enter the reviewed SPA route directly. An empty hash would let initial
       // router startup look like a navigation revocation between the two grants.
       if (profile?.loginFlow === "bitwarden") target.hash = "/login";
-      const redirected = getRuntimeWebNavigation(session.connectionId);
-      if (redirected) {
+      const redirected = getRuntimeWebNavigation(runtimeNavigationKey);
+      // Runtime connection handoffs replace the connection authority. A native
+      // in-session continuation deliberately does not: its tab-local target is
+      // validated at navigation time while the saved connection stays intact.
+      if (redirected && runtimeNavigationKey === session.connectionId) {
         const initial = new URL(redirected.initialUrl);
         if (
           initial.origin !== target.origin ||
@@ -727,6 +747,7 @@ export function useWebBrowser(session: ConnectionSession) {
     session.hostname,
     session.protocol,
     session.connectionId,
+    runtimeNavigationKey,
   ]);
   const normalizedHostname = targetResolution.hostname;
 
@@ -805,7 +826,7 @@ export function useWebBrowser(session: ConnectionSession) {
     applicationAuth.login?.upstreamAuthMode,
     synologyRedirectOriginalOrigin,
   ]);
-  const httpsRedirectNavigation = getRuntimeWebNavigation(session.connectionId);
+  const httpsRedirectNavigation = getRuntimeWebNavigation(runtimeNavigationKey);
   const originalHttpsConnectionId =
     httpsRedirectNavigation?.trustedRedirectSource?.savedConnectionId ??
     httpsRedirectNavigation?.synologyRedirectSource?.savedConnectionId;
@@ -855,6 +876,18 @@ export function useWebBrowser(session: ConnectionSession) {
       ? [credentialVault?.scope, credentialVault?.changeRevision]
       : null,
   ]);
+  const continuationOwnerKey = stableJsonStringify([
+    connection && {
+      ...connection,
+      lastConnected: undefined,
+      connectionCount: undefined,
+    },
+    reviewedFlowScope,
+    vaultSource
+      ? [credentialVault?.scope, credentialVault?.changeRevision]
+      : null,
+  ]);
+  const continuationOwnerKeyRef = useRef<string | null>(null);
   const previousProxyInputs = useRef(proxyInputs);
   const previousApplicationAuth = useRef({
     auth: applicationAuth,
@@ -901,6 +934,12 @@ export function useWebBrowser(session: ConnectionSession) {
   // ── State ───────────────────────────────────────────────────
   const [currentUrl, setCurrentUrl] = useState(targetResolution.url);
   const [inputUrl, setInputUrl] = useState(currentUrl);
+  // This authority follows a natively reviewed in-session continuation while
+  // the saved connection and its owning-database identity remain unchanged.
+  const baseTargetRef = useRef(buildTargetUrl().replace(/\/+$/, ""));
+  useEffect(() => {
+    baseTargetRef.current = buildTargetUrl().replace(/\/+$/, "");
+  }, [buildTargetUrl]);
   const handoffTargetRef = useRef<string | null>(null);
   const previousSessionConnectionIdRef = useRef(session.connectionId);
   const [redirectHandoffPending, setRedirectHandoffPending] = useState(false);
@@ -1026,6 +1065,19 @@ export function useWebBrowser(session: ConnectionSession) {
     url: string;
     ownerScope: string;
   } | null>(null);
+  const [automationDocumentRevision, setAutomationDocumentRevision] =
+    useState(0);
+  const publishAutomationDocument = useCallback(
+    (document: typeof currentDocumentRef.current) => {
+      currentDocumentRef.current = document;
+      setAutomationDocumentRevision((revision) => revision + 1);
+    },
+    [],
+  );
+  const acceptAutomationDocument = useCallback(
+    () => setAutomationDocumentRevision((revision) => revision + 1),
+    [],
+  );
   const deferredLogin = useDeferredSynologyLoginStatus({
     activityContext: session.ownerDatabaseId
       ? {
@@ -1386,9 +1438,15 @@ export function useWebBrowser(session: ConnectionSession) {
 
   // ── HTTPS cert trust ───────────────────────────────────────
   const fetchAndVerifyCert = useCallback(
-    async (proxyUrl?: string): Promise<boolean> => {
-      if (session.protocol !== "https") return true;
-      const port = targetResolution.port;
+    async (proxyUrl?: string, targetUrl?: URL): Promise<boolean> => {
+      const targetProtocol = targetUrl?.protocol ?? `${session.protocol}:`;
+      if (targetProtocol !== "https:") return true;
+      const targetHostname = targetUrl?.hostname ?? normalizedHostname;
+      const port = targetUrl
+        ? targetUrl.port
+          ? Number(targetUrl.port)
+          : 443
+        : targetResolution.port;
       if (port === null) {
         applyNavigationFailure(
           localNavigationFailure(
@@ -1439,7 +1497,7 @@ export function useWebBrowser(session: ConnectionSession) {
         "inspection";
       const check: WebTrustCheck = {
         startedAt: Date.now(),
-        host: normalizedHostname,
+        host: targetHostname,
         port,
         route: proxyUrl ? "proxy" : "direct",
       };
@@ -1449,7 +1507,7 @@ export function useWebBrowser(session: ConnectionSession) {
         const info = await invoke<NativeTlsCertificateInfo>(
           "get_tls_certificate_info",
           {
-            host: normalizedHostname,
+            host: targetHostname,
             port,
             proxyUrl,
           },
@@ -1503,7 +1561,7 @@ export function useWebBrowser(session: ConnectionSession) {
           scope: certificateScope,
           identity,
           inspection: {
-            host: normalizedHostname,
+            host: targetHostname,
             port,
             generation: genBefore,
             certificate: info,
@@ -1517,22 +1575,15 @@ export function useWebBrowser(session: ConnectionSession) {
         stage = "verification";
         const result = await retryTransientTrustRead(
           () =>
-            verifyIdentity(
-              normalizedHostname,
-              port,
-              "https",
-              identity,
-              connId,
-              {
-                caTrustMode: httpsCaTrustMode,
-                policy,
-                proxyUrl,
-                ...(info.ca_validation?.status === "verified" &&
-                info.ca_validation.proof_id
-                  ? { caProofId: info.ca_validation.proof_id }
-                  : {}),
-              },
-            ),
+            verifyIdentity(targetHostname, port, "https", identity, connId, {
+              caTrustMode: httpsCaTrustMode,
+              policy,
+              proxyUrl,
+              ...(info.ca_validation?.status === "verified" &&
+              info.ca_validation.proof_id
+                ? { caProofId: info.ca_validation.proof_id }
+                : {}),
+            }),
           abort.signal,
           assertCurrent,
         );
@@ -1592,7 +1643,7 @@ export function useWebBrowser(session: ConnectionSession) {
             describeCertificateInspectionFailure({
               error: err,
               hookStage: stage,
-              host: normalizedHostname,
+              host: targetHostname,
               port,
               route: proxyUrl ? "proxy" : "direct",
               proxyTls: /^https:/i.test(proxyUrl ?? ""),
@@ -1649,12 +1700,13 @@ export function useWebBrowser(session: ConnectionSession) {
         httpsPolicyKey === httpsPolicyKeyRef.current;
       if (!current()) return;
       armNavigationDeadline(generation, activeNavigationUrlRef.current);
-      const port = targetResolution.port;
+      const trustHost = certificateInspection?.host ?? normalizedHostname;
+      const port = certificateInspection?.port ?? targetResolution.port;
       if (trustPrompt && certIdentity && remember) {
         try {
           if (port === null) throw new Error("Saved web port is invalid.");
           await trustIdentity(
-            normalizedHostname,
+            trustHost,
             port,
             "https",
             certIdentity,
@@ -1696,6 +1748,7 @@ export function useWebBrowser(session: ConnectionSession) {
     [
       trustPrompt,
       certIdentity,
+      certificateInspection,
       normalizedHostname,
       targetResolution.port,
       connection,
@@ -1761,34 +1814,43 @@ export function useWebBrowser(session: ConnectionSession) {
   }, []);
 
   // ── Proxy lifecycle ────────────────────────────────────────
-  const stopProxy = useCallback(async (sessionId?: string) => {
-    const id = sessionId ?? proxySessionIdRef.current;
-    if (!id) return;
-    if (id === proxySessionIdRef.current) {
-      proxySessionIdRef.current = "";
-      proxyUrlRef.current = "";
-    }
-    try {
-      await invoke("stop_basic_auth_proxy", { sessionId: id });
-    } catch {
-      // Session may already be gone
-    }
-  }, []);
+  const stopProxy = useCallback(
+    async (sessionId?: string) => {
+      const id = sessionId ?? proxySessionIdRef.current;
+      if (!id) return;
+      if (id === proxySessionIdRef.current) {
+        proxySessionIdRef.current = "";
+        proxyUrlRef.current = "";
+        releaseRuntimeWebNavigation(sessionNavigationKey);
+        continuationOwnerKeyRef.current = null;
+      }
+      try {
+        await invoke("stop_basic_auth_proxy", { sessionId: id });
+      } catch {
+        // Session may already be gone
+      }
+    },
+    [sessionNavigationKey],
+  );
   const cancelPendingContinuation = useCallback(() => {
-    const navigation = getRuntimeWebNavigation(session.connectionId);
+    const navigation = getRuntimeWebNavigation(runtimeNavigationKey);
     const continuation = navigation?.nativeContinuation;
     if (!continuation) return;
     delete navigation!.nativeContinuation;
     continuation.cancel();
-  }, [session.connectionId]);
+  }, [runtimeNavigationKey]);
 
   const redirectReview = useHttpRedirectReview({
     trust: redirectTrust,
     connection: noncredentialConnection,
     session,
-    sourceOrigin: targetResolution.url
-      ? new URL(targetResolution.url).origin
-      : "",
+    sourceOrigin: (() => {
+      try {
+        return new URL(currentUrl).origin;
+      } catch {
+        return "";
+      }
+    })(),
     accessKey: reviewedFlowScope,
     route: getGlobalHttpProxyUrl(),
     enabled:
@@ -1799,6 +1861,137 @@ export function useWebBrowser(session: ConnectionSession) {
     generation: () => navGenRef.current,
     proxySessionId: () => proxySessionIdRef.current,
     navigationToken: () => pendingFrameRef.current?.token ?? null,
+    runtimeNavigationKey,
+    revocationKey: proxyInputs,
+    continueSynologyInSession: async (request) => {
+      request.assertCurrent();
+      const existingProxyUrl = proxyUrlRef.current;
+      if (
+        !existingProxyUrl ||
+        proxySessionIdRef.current !== request.sessionId ||
+        !noncredentialConnection ||
+        !redirectTrust.defaultSource
+      )
+        throw new Error("The Synology proxy session is no longer current.");
+      const destination = new URL(request.destinationUrl);
+      const destinationUsesTls = destination.protocol === "https:";
+      if (
+        destinationUsesTls &&
+        !(await fetchAndVerifyCert(
+          getGlobalHttpProxyUrl({ failClosed: true }),
+          destination,
+        ))
+      )
+        throw new Error(
+          "The Synology redirect destination certificate was not approved.",
+        );
+      request.assertCurrent();
+      const response = await invoke<SynologyProxyContinuationResponse>(
+        "continue_synology_proxy_session",
+        {
+          sessionId: request.sessionId,
+          continuationId: request.continuation.id,
+          tls: {
+            verify_ssl: destinationUsesTls,
+            accepted_cert_fingerprint: destinationUsesTls
+              ? acceptedCertFingerprintRef.current
+              : null,
+            // Destination trust is independently reviewed even when the
+            // source connection disabled certificate verification.
+            require_ca_verification:
+              destinationUsesTls && requireCaVerificationRef.current,
+          },
+        },
+      );
+      try {
+        request.assertCurrent();
+        const protectedProxyUrl = validateProtectedProxyUrl(response);
+        const navigationUrl = new URL(response.navigation_url);
+        const expectedProxyOrigin = new URL(existingProxyUrl).origin;
+        if (
+          response.session_id !== request.sessionId ||
+          protectedProxyUrl !== existingProxyUrl ||
+          new URL(response.target_url).toString() !== destination.toString() ||
+          navigationUrl.origin !== expectedProxyOrigin ||
+          !/^[0-9a-f]{32}$/.test(response.navigation_token) ||
+          navigationUrl.searchParams.getAll(NAVIGATION_QUERY_KEY).length !==
+            1 ||
+          navigationUrl.searchParams.get(NAVIGATION_QUERY_KEY) !==
+            response.navigation_token
+        )
+          throw new Error(
+            "The Synology proxy continuation response is invalid.",
+          );
+
+        const cleanNavigationUrl = new URL(navigationUrl);
+        cleanNavigationUrl.searchParams.delete(NAVIGATION_QUERY_KEY);
+        const source = redirectTrust.defaultSource;
+        const navigation: RuntimeWebNavigation = {
+          initialUrl: destination.toString(),
+          redirectHops: request.redirectHops,
+          assertCurrent: request.assertCurrent,
+          synologyRedirectSource: source,
+          nativeContinuation: request.continuation,
+        };
+        registerRuntimeWebNavigation(sessionNavigationKey, navigation);
+        activateSynologyMfaProof(
+          sessionNavigationKey,
+          request.continuation,
+          response.session_id,
+          expectedProxyOrigin,
+          () => {
+            source.assertOwner();
+            if (
+              proxySessionIdRef.current !== response.session_id ||
+              proxyUrlRef.current !== existingProxyUrl ||
+              baseTargetRef.current !== destination.origin
+            )
+              throw new Error("The Synology MFA proxy is no longer current.");
+          },
+          noncredentialConnection.id,
+        );
+        delete navigation.nativeContinuation;
+        continuationOwnerKeyRef.current = continuationOwnerKey;
+        const generation = ++navGenRef.current;
+        attemptStartRef.current = {
+          epoch: Date.now(),
+          mono: performance.now(),
+          generation,
+        };
+        baseTargetRef.current = destination.origin;
+        activeNavigationUrlRef.current = destination.toString();
+        publishAutomationDocument(null);
+        pendingNavigationRef.current = true;
+        pendingInternalNavigationRef.current = false;
+        awaitingFrameGenerationRef.current = generation;
+        pendingFrameRef.current = {
+          generation,
+          url: navigationUrl.toString(),
+          cleanUrl: cleanNavigationUrl.toString(),
+          token: response.navigation_token,
+          sessionId: response.session_id,
+        };
+        clearNavigationFailure();
+        beginLoadingPresentation(generation);
+        armNavigationDeadline(generation, destination.toString());
+        setRedirectHandoffPending(false);
+        setWaitingForTrust(false);
+        setCurrentUrl(destination.toString());
+        setInputUrl(destination.toString());
+        setIsSecure(destination.protocol === "https:");
+        appendHistory(destination.toString());
+        deferredLoginRef.current.receive(response);
+        setShouldMountIframe(true);
+        if (iframeRef.current) attachIframe(iframeRef.current);
+        markSessionConnected();
+      } catch (error) {
+        releaseRuntimeWebNavigation(sessionNavigationKey);
+        clearFrame();
+        setProxyAlive(false);
+        await stopProxy(response.session_id);
+        throw error;
+      }
+    },
     stopSource: async (id, continuationId, preserveTabContext = false) => {
       // Unlike generic best-effort cleanup, a handoff requires confirmed stop.
       await invoke("stop_basic_auth_proxy", {
@@ -1809,7 +2002,7 @@ export function useWebBrowser(session: ConnectionSession) {
         proxySessionIdRef.current = "";
         proxyUrlRef.current = "";
         pendingFrameRef.current = null;
-        currentDocumentRef.current = null;
+        publishAutomationDocument(null);
         if (preserveTabContext) {
           // Keep the DOM node, not the stopped source document. Restrict before
           // blanking so stale page JavaScript cannot run behind the handoff
@@ -1947,6 +2140,7 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       let urlObj: URL;
+      let continuedNavigationActive = false;
       try {
         if (!targetResolution.url) {
           throw new Error(
@@ -1954,14 +2148,19 @@ export function useWebBrowser(session: ConnectionSession) {
           );
         }
         urlObj = new URL(url);
-        const configuredTarget = new URL(targetResolution.url);
+        const continuedNavigation =
+          getRuntimeWebNavigation(sessionNavigationKey);
+        continuedNavigationActive = continuedNavigation !== undefined;
+        const configuredTarget = new URL(
+          continuedNavigation?.initialUrl ?? targetResolution.url,
+        );
         if (
           (urlObj.protocol !== "http:" && urlObj.protocol !== "https:") ||
           urlObj.username ||
           urlObj.password ||
           urlObj.searchParams.has(NAVIGATION_QUERY_KEY) ||
           urlObj.origin !== configuredTarget.origin ||
-          urlObj.hostname !== targetResolution.hostname
+          urlObj.hostname !== configuredTarget.hostname
         ) {
           throw new Error(
             "Navigation must stay on the saved connection's canonical web authority.",
@@ -2030,13 +2229,17 @@ export function useWebBrowser(session: ConnectionSession) {
           assertReviewedFlow();
         }
         const upstreamProxyUrl = getGlobalHttpProxyUrl({ failClosed: true });
-        if (urlObj.protocol === "https:") {
+        const existingProxy = proxySessionIdRef.current;
+        const reusingContinuedProxy =
+          continuedNavigationActive &&
+          existingProxy.length > 0 &&
+          proxyUrlRef.current.length > 0;
+        if (urlObj.protocol === "https:" && !reusingContinuedProxy) {
           const trusted = await fetchAndVerifyCert(upstreamProxyUrl);
           if (!trusted || gen !== navGenRef.current) return;
           assertReviewedFlow();
           armNavigationDeadline(gen, url);
         }
-        const existingProxy = proxySessionIdRef.current;
         const vault = await resolveVaultCredential(() => {
           if (
             gen !== navGenRef.current ||
@@ -2112,9 +2315,8 @@ export function useWebBrowser(session: ConnectionSession) {
           assertReviewedFlow();
           const redirectBudget = redirectBudgetRef.current;
           redirectBudget?.assertCurrent();
-          const runtimeNavigation = getRuntimeWebNavigation(
-            session.connectionId,
-          );
+          const runtimeNavigation =
+            getRuntimeWebNavigation(runtimeNavigationKey);
           // The registry's assertCurrent is a source-mount launch guard. At
           // destination startup the live destination/DB scope above and the
           // original owner/security lease in redirectBudget are authoritative.
@@ -2330,6 +2532,8 @@ export function useWebBrowser(session: ConnectionSession) {
       requireNetworkGuard,
       redirectTrust.defaultSource?.formLogin,
       resolveWebsiteDarkBootstrap,
+      runtimeNavigationKey,
+      sessionNavigationKey,
     ],
   );
 
@@ -2345,6 +2549,12 @@ export function useWebBrowser(session: ConnectionSession) {
       auth: applicationAuth,
       profile: connection?.httpApplication,
     };
+    if (
+      getRuntimeWebNavigation(sessionNavigationKey) &&
+      continuationOwnerKeyRef.current === continuationOwnerKey
+    )
+      return;
+    continuationOwnerKeyRef.current = null;
     if (
       previousInputs === proxyInputs &&
       previous.profile?.id === connection?.httpApplication?.id &&
@@ -2376,6 +2586,8 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [
     applicationAuth,
     proxyInputs,
+    continuationOwnerKey,
+    sessionNavigationKey,
     connection?.httpApplication,
     session.connectionId,
     stopProxy,
@@ -2421,6 +2633,7 @@ export function useWebBrowser(session: ConnectionSession) {
       pendingNavigationRef.current = false;
       awaitingFrameGenerationRef.current = null;
       pendingFrameRef.current = null;
+      releaseRuntimeWebNavigation(sessionNavigationKey);
       const id = proxySessionIdRef.current;
       proxySessionIdRef.current = "";
       proxyUrlRef.current = "";
@@ -2428,7 +2641,7 @@ export function useWebBrowser(session: ConnectionSession) {
         invoke("stop_basic_auth_proxy", { sessionId: id }).catch(() => {});
       }
     };
-  }, [cancelTrustRead]);
+  }, [cancelTrustRead, sessionNavigationKey]);
 
   // P3/P4: listen for `proxy-credentials-applied`. The Rust-side
   // themed-auth POST handler emits this after the user submits the
@@ -2612,11 +2825,6 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [currentUrl, navigateToUrl, restartOwnedProxy, stopProxy]);
 
   // Track in-proxy navigation
-  const baseTargetRef = useRef(buildTargetUrl().replace(/\/+$/, ""));
-  useEffect(() => {
-    baseTargetRef.current = buildTargetUrl().replace(/\/+$/, "");
-  }, [buildTargetUrl]);
-
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const iframeWindow = iframeRef.current?.contentWindow;
@@ -2840,7 +3048,7 @@ export function useWebBrowser(session: ConnectionSession) {
             }
             if (!pendingNavigationRef.current) startInternalNavigation();
           }
-          currentDocumentRef.current = {
+          const activatedDocument = {
             generation: navGenRef.current,
             sessionId: report.sessionId,
             token: report.documentToken,
@@ -2849,7 +3057,7 @@ export function useWebBrowser(session: ConnectionSession) {
             url,
             ownerScope: trustOwnerScopeRef.current,
           };
-          const activatedDocument = currentDocumentRef.current;
+          publishAutomationDocument(activatedDocument);
           void deferredLoginRef.current.refresh();
           const activationScope = networkReportScope();
           setNetworkRouting({
@@ -2916,10 +3124,10 @@ export function useWebBrowser(session: ConnectionSession) {
             current.ownerScope !== trustOwnerScopeRef.current
           )
             return;
-          currentDocumentRef.current = {
+          publishAutomationDocument({
             ...current,
             generation: navGenRef.current,
-          };
+          });
           clearNavigationFailure();
         } else if (
           !sameDocument ||
@@ -2934,6 +3142,7 @@ export function useWebBrowser(session: ConnectionSession) {
         pendingInternalNavigationRef.current = false;
         awaitingFrameGenerationRef.current = null;
         setIsLoading(false);
+        acceptAutomationDocument();
         setRedirectHandoffPending(false);
         clearLoadingIndicator();
         // DOM readiness is not successful authentication or full resource load.
@@ -2997,6 +3206,8 @@ export function useWebBrowser(session: ConnectionSession) {
     armNavigationDeadline,
     appendHistory,
     networkReportScope,
+    publishAutomationDocument,
+    acceptAutomationDocument,
   ]);
 
   // ── Navigation handlers ────────────────────────────────────
@@ -3087,12 +3298,13 @@ export function useWebBrowser(session: ConnectionSession) {
     clearingSessionRef.current = true;
     setClearingSession(true);
     setShowClearSessionConfirm(false);
+    redirectReviewRef.current.abort();
     const gen = ++navGenRef.current;
     const sid = proxySessionIdRef.current;
-    const runtimeNavigation = getRuntimeWebNavigation(session.connectionId);
+    const runtimeNavigation = getRuntimeWebNavigation(runtimeNavigationKey);
     const continuation = runtimeNavigation?.nativeContinuation;
     pendingFrameRef.current = null;
-    currentDocumentRef.current = null;
+    publishAutomationDocument(null);
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
     setTrustPrompt(null);
@@ -3109,6 +3321,8 @@ export function useWebBrowser(session: ConnectionSession) {
       if (!mountedRef.current || gen !== navGenRef.current) return;
       proxySessionIdRef.current = "";
       proxyUrlRef.current = "";
+      releaseRuntimeWebNavigation(sessionNavigationKey);
+      baseTargetRef.current = targetResolution.url.replace(/\/+$/, "");
       toast.info(
         "Previous session discarded. Opening a fresh session; other tabs and browser data are unchanged.",
       );
@@ -3139,7 +3353,9 @@ export function useWebBrowser(session: ConnectionSession) {
     targetResolution.url,
     toast,
     clearFrame,
-    session.connectionId,
+    publishAutomationDocument,
+    runtimeNavigationKey,
+    sessionNavigationKey,
   ]);
 
   const canGoBack = historyIndex > 0;
@@ -3460,23 +3676,47 @@ export function useWebBrowser(session: ConnectionSession) {
   );
 
   // ── Page actions ───────────────────────────────────────────
+  const pageActionBlockedRef = useRef(false);
+  pageActionBlockedRef.current =
+    waitingForTrust || redirectHandoffPending || !!trustPrompt || !!loadError;
+  const pageActionBridgeRef = useRef<WebAutomationBridge | null>(null);
+  if (!pageActionBridgeRef.current)
+    pageActionBridgeRef.current = new WebAutomationBridge(() => {
+      const document = currentDocumentRef.current;
+      const frame = iframeRef.current?.contentWindow;
+      return document &&
+        frame &&
+        document.generation === navGenRef.current &&
+        document.sessionId === proxySessionIdRef.current &&
+        !pendingNavigationRef.current &&
+        !navigationFailureRef.current &&
+        !pageActionBlockedRef.current
+        ? { frame, document }
+        : null;
+    });
+  const pageActionBridge = pageActionBridgeRef.current;
+  useEffect(() => {
+    const receive = (event: MessageEvent) =>
+      pageActionBridge.handleMessage(event);
+    window.addEventListener("message", receive);
+    return () => {
+      window.removeEventListener("message", receive);
+      pageActionBridge.cancel();
+    };
+  }, [pageActionBridge]);
   const handleSavePage = useCallback(async () => {
     try {
-      const contentWindow = iframeRef.current?.contentWindow;
-      if (!contentWindow) {
-        toast.error("Page is not ready to print");
-        return;
-      }
-      contentWindow.focus?.();
-      contentWindow.print();
+      await pageActionBridge.request("print");
       toast.info(
         "Use the system print dialog to choose Save as PDF or another printer.",
       );
     } catch (e) {
-      console.error("Print page failed:", e);
-      toast.error("Print failed. Check the console for details.");
+      debugLog("WebBrowser", "Print page request failed", { error: e });
+      toast.error(
+        "Print failed. Wait for the current page to finish loading and try again.",
+      );
     }
-  }, [toast]);
+  }, [pageActionBridge, toast]);
 
   const handleCopyAll = useCallback(async () => {
     try {
@@ -3719,12 +3959,12 @@ export function useWebBrowser(session: ConnectionSession) {
       redirectHandoffPending ||
       !!trustPrompt ||
       !!loadError ||
-      !!sslVerifyDisabled ||
+      (!!sslVerifyDisabled && !redirectTrust.synologyMfa) ||
       proxyOptions.policy?.pageScripts === "block" ||
       !!proxyOptions.error ||
       clearingSession,
     currentUrl,
-    navigationKey: `${session.id}:${currentUrl}:${isLoading}`,
+    navigationKey: `${session.id}:${currentUrl}:${isLoading}:${automationDocumentRevision}`,
     iframe: iframeRef,
     getDocument: getAutomationDocument,
   });
@@ -3816,7 +4056,7 @@ export function useWebBrowser(session: ConnectionSession) {
     attachIframe,
     shouldMountIframe,
     redirectHandoffPending,
-    websiteDarkBootstrap,
+    websiteDarkBootstrap: websiteDarkBootstrapCandidate ?? websiteDarkBootstrap,
     pageInteractionBlocked:
       redirectHandoffPending || waitingForTrust || !!trustPrompt || !!loadError,
     handleUrlSubmit,

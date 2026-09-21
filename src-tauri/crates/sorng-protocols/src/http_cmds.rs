@@ -149,7 +149,10 @@ fn proxy_client_builder_with_cookies(
     } else if let Some(fingerprint) = accepted_cert_fingerprint {
         // Some(pin) is an explicit identity requirement, never an invitation
         // to fall back to unverified TLS when the supplied pin is malformed.
-        builder = builder.use_preconfigured_tls(build_pinned_tls_config(fingerprint.into())?);
+        builder = builder.use_preconfigured_tls(build_pinned_tls_config_with_min_version(
+            fingerprint.into(),
+            min_tls,
+        )?);
     } else {
         builder = builder.danger_accept_invalid_certs(!verify_ssl);
     }
@@ -700,30 +703,14 @@ pub async fn start_basic_auth_proxy(
     // takes precedence. Form submissions from the themed challenge
     // hit `/__sortofremoteng_auth`; everything else falls through to
     // the upstream proxy handler.
-    let router = axum::Router::new()
-        .route(
-            "/__sortofremoteng_auth",
-            axum::routing::post(crate::http::themed_auth_post_handler),
-        )
-        // t20: nonce-guarded same-origin credential endpoint for web
-        // auto-login. Registered ahead of the proxy fallback so the credential
-        // hand-out never reaches the fallback's request/recording logs.
-        .route(
-            crate::http::AUTOLOGIN_PATH,
-            axum::routing::get(crate::http::autologin_cred_handler),
-        )
-        .fallback(axum_proxy_handler)
-        .layer(axum::middleware::from_fn_with_state(
-            proxy_state.clone(),
-            crate::http::enforce_proxy_access,
-        ))
-        .with_state(proxy_state);
+    let runtime = ProxySessionRuntime::new(proxy_state);
+    let router = runtime.router();
 
     // Shutdown channel.
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
     // Spawn the server.
-    let server_guard = network.server_guard();
+    let server_guard = runtime.clone();
     tokio::spawn(async move {
         let _server_guard = server_guard;
         axum::serve(listener, router.into_make_service())
@@ -740,6 +727,7 @@ pub async fn start_basic_auth_proxy(
         mgr.sessions.insert(
             session_id.clone(),
             ProxySessionEntry {
+                runtime: Arc::downgrade(&runtime),
                 attempt,
                 network,
                 website_dark_mode,
@@ -850,6 +838,36 @@ pub fn review_proxy_redirect(
         });
     }
     Ok(review)
+}
+
+/// Continue a consumed Synology review without replacing the protected listener.
+/// The destination comes exclusively from the one-use native ticket.
+#[tauri::command]
+pub fn continue_synology_proxy_session(
+    session_id: String,
+    continuation_id: String,
+    tls: SynologyProxyTls,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<SynologyProxyContinuation, String> {
+    let mut manager = sessions
+        .lock()
+        .map_err(|_| "Proxy continuation is unavailable")?;
+    manager.continue_synology_session(
+        &session_id,
+        &continuation_id,
+        tls.clone(),
+        |entry, destination, successor| {
+            proxy_client_builder_with_cookies(
+                tls.verify_ssl,
+                tls.accepted_cert_fingerprint.as_deref(),
+                &entry.min_tls_version,
+                entry.upstream_proxy_url.as_deref(),
+                tls.require_ca_verification,
+                destination.host_str(),
+                Some(successor.cookie_store()),
+            )
+        },
+    )
 }
 
 /// Cancels only an opaque, unredeemed native handoff. Never starts a request.
@@ -1278,27 +1296,12 @@ pub async fn restart_proxy_session(
         })),
     });
 
-    let router = axum::Router::new()
-        .route(
-            "/__sortofremoteng_auth",
-            axum::routing::post(crate::http::themed_auth_post_handler),
-        )
-        // t20: keep the route registered for shape parity; a restarted session
-        // is disarmed, so this endpoint returns 403 until a fresh reconnect.
-        .route(
-            crate::http::AUTOLOGIN_PATH,
-            axum::routing::get(crate::http::autologin_cred_handler),
-        )
-        .fallback(axum_proxy_handler)
-        .layer(axum::middleware::from_fn_with_state(
-            proxy_state.clone(),
-            crate::http::enforce_proxy_access,
-        ))
-        .with_state(proxy_state);
+    let runtime = ProxySessionRuntime::new(proxy_state);
+    let router = runtime.router();
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-    let server_guard = network.server_guard();
+    let server_guard = runtime.clone();
     tokio::spawn(async move {
         let _server_guard = server_guard;
         axum::serve(listener, router.into_make_service())
@@ -1315,6 +1318,7 @@ pub async fn restart_proxy_session(
         mgr.sessions.insert(
             new_session_id.clone(),
             ProxySessionEntry {
+                runtime: Arc::downgrade(&runtime),
                 attempt,
                 network,
                 website_dark_mode,
@@ -2293,6 +2297,61 @@ mod http_authentication_diagnostic_tests {
             .await
             .is_err());
         proxy.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn continuation_tls_client_preserves_minimum_tls_and_never_falls_back_from_proxy() {
+        let acceptor =
+            tls_test_fixture::test_acceptor_versions(&[&tokio_rustls::rustls::version::TLS12]);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let route = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            assert!(request_head(&mut socket)
+                .await
+                .starts_with("CONNECT example.fr3.quickconnect.to:443 HTTP/1.1"));
+            socket
+                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+            assert!(acceptor.accept(socket).await.is_err());
+        });
+        let der = base64::engine::general_purpose::STANDARD
+            .decode(tls_test_fixture::TEST_CERT)
+            .unwrap();
+        let pin = hex::encode(Sha256::digest(&der));
+        let client =
+            proxy_client_builder(true, Some(&pin), "1.3", Some(&route), false, None).unwrap();
+        assert!(client
+            .get("https://example.fr3.quickconnect.to/")
+            .send()
+            .await
+            .is_err());
+        server.await.unwrap();
+
+        let target = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        // The proxy route is now closed. Even a reachable destination receives
+        // no direct request when the configured route cannot be established.
+        let client = proxy_client_builder(true, None, "1.2", Some(&route), false, None).unwrap();
+        assert!(client
+            .get(format!("http://{}/", target.local_addr().unwrap()))
+            .send()
+            .await
+            .is_err());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), target.accept())
+                .await
+                .is_err()
+        );
+        assert!(proxy_client_builder(
+            true,
+            None,
+            "1.2",
+            Some(&route),
+            true,
+            Some("example.fr3.quickconnect.to")
+        )
+        .is_err());
     }
 }
 

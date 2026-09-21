@@ -294,6 +294,22 @@ describe("database-owned trusted HTTP redirect preferences", () => {
       view.result.current.synologyMfa!.claim(mfaContext(target)),
     ).toThrow();
   });
+  it("keeps the redeemed MFA capability across connection bookkeeping updates", () => {
+    const view = fixture(mfaSource());
+    const target = inheritForm(view, true);
+    const capability = view.result.current.synologyMfa!;
+    const updated = {
+      ...target,
+      lastConnected: "2026-09-10T00:00:02.000Z",
+      connectionCount: 8,
+    };
+    view.rerender({
+      connection: updated,
+      session: { ...session, connectionId: updated.id },
+    });
+    expect(view.result.current.synologyMfa).toBe(capability);
+    expect(() => capability.assertCurrent(mfaContext(updated))).not.toThrow();
+  });
   it.each([
     "deleted",
     "duplicate",

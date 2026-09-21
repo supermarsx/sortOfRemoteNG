@@ -245,7 +245,32 @@ function installWebNetworkClient(configuration, reportBlocked) {
       )
     );
   }
+  // Immutable per-document capability supplied by the native continuation
+  // response. Native admission rejects missing/stale tokens independently.
+  var generationKey = "__sorng_generation_v1",
+    requestGeneration = new NativeURL(rootLocation).searchParams.get(
+      "__sorng_navigation_v1",
+    );
   function mapUrl(value, kind, localData, method, navigationReference) {
+    var mapped = routeUrl(value, kind, localData, method, navigationReference);
+    if (!requestGeneration) return mapped;
+    var url = new NativeURL(mapped);
+    var comparable = new NativeURL(url.href);
+    if (comparable.protocol === "ws:") comparable.protocol = "http:";
+    if (comparable.origin === proxyOrigin) {
+      // Preserve exact application query encoding when adding the local proof.
+      var pairs = url.search
+        .slice(1)
+        .split("&")
+        .filter(function (pair) {
+          return pair && pair.split("=")[0] !== generationKey;
+        });
+      pairs.push(generationKey + "=" + requestGeneration);
+      url.search = pairs.join("&");
+    }
+    return url.href;
+  }
+  function routeUrl(value, kind, localData, method, navigationReference) {
     if (!active) throw blocked(kind, "document-closed");
     var target;
     try {
@@ -459,6 +484,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
     }
   }
   function isQuickConnectRelay(url) {
+    if (requestGeneration) {
+      var clean = new NativeURL(url);
+      clean.searchParams.delete(generationKey);
+      url = clean.href;
+    }
     return (
       (quickConnectRpc && url === quickConnectRpc.proxyUrl) ||
       (quickConnectDiscovered &&

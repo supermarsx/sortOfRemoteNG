@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -23,6 +24,7 @@ import {
   getRuntimeWebNavigation,
   resolveRuntimeConnection,
   registerRuntimeConnection,
+  runtimeWebNavigationSessionKey,
 } from "../../src/utils/session/runtimeConnectionRegistry";
 import type { HttpRedirectReview } from "../../src/utils/protocol/httpRedirectReview";
 import * as synologyMfaLease from "../../src/utils/protocol/synologyFormLoginLease";
@@ -146,6 +148,7 @@ const proxies: Array<{
   proxy_url: string;
   target: string;
 }> = [];
+let proxyStartCount = 0;
 const holdFrameLoad = (event: Event) => {
   if (event.target instanceof HTMLIFrameElement)
     event.stopImmediatePropagation();
@@ -181,6 +184,13 @@ function Harness() {
   );
   return <WebBrowser session={session} />;
 }
+function currentWebNavigation() {
+  const session = h.sessions[0];
+  return session
+    ? (getRuntimeWebNavigation(runtimeWebNavigationSessionKey(session.id)) ??
+        getRuntimeWebNavigation(session.connectionId))
+    : undefined;
+}
 beforeEach(() => {
   clearSessionActivityLog();
   h.activate.mockReset().mockResolvedValue(false);
@@ -193,6 +203,7 @@ beforeEach(() => {
   clearRuntimeConnectionsForTests();
   receipts.clear();
   proxies.length = 0;
+  proxyStartCount = 0;
   h.settingsReady = true;
   h.locked = false;
   h.failSave = false;
@@ -246,7 +257,7 @@ beforeEach(() => {
             chain: [],
           };
         if (command === "start_basic_auth_proxy") {
-          const index = proxies.length + 1;
+          const index = ++proxyStartCount;
           const config = args.config as { target_url: string };
           const proxy = {
             deferred_login_status: h.loginStatuses[`proxy-${index}`],
@@ -258,12 +269,41 @@ beforeEach(() => {
           proxies.push(proxy);
           return proxy;
         }
+        if (command === "continue_synology_proxy_session") {
+          const current = [...proxies]
+            .reverse()
+            .find((proxy) => proxy.session_id === args.sessionId);
+          const receipt = receipts.get(args.sessionId as string);
+          if (!current || !receipt)
+            throw new Error("Synthetic continuation unavailable");
+          const target = new URL(receipt.destinationUrl);
+          const navigation = new URL(current.proxy_url);
+          navigation.pathname = target.pathname;
+          navigation.search = target.search;
+          navigation.searchParams.set("__sorng_navigation_v1", "c".repeat(32));
+          navigation.hash = target.hash;
+          const continued = {
+            ...current,
+            target: target.toString(),
+            deferred_login_status:
+              h.loginStatuses[`proxy-${proxies.length + 1}`],
+          };
+          proxies.push(continued);
+          return {
+            ...continued,
+            target_url: target.toString(),
+            navigation_url: navigation.toString(),
+            navigation_token: "c".repeat(32),
+          };
+        }
         if (command === "get_proxy_session_details")
-          return proxies
+          return [...proxies]
+            .reverse()
             .filter((proxy) => proxy.session_id === args.sessionId)
+            .slice(0, 1)
             .map((proxy) => ({
               session_id: proxy.session_id,
-              deferred_login_status: h.loginStatuses[proxy.session_id],
+              deferred_login_status: h.loginStatuses[`proxy-${proxies.length}`],
             }));
         if (command === "review_proxy_redirect")
           return receipts.get(args.sessionId as string) ?? null;
@@ -654,7 +694,7 @@ describe("actual website redirect review integration", () => {
     let certificateHeld = false;
     h.invoke.mockImplementation(async (command, args) => {
       if (
-        command === "get_tls_certificate_info" &&
+        command === "continue_synology_proxy_session" &&
         holdCertificate &&
         !certificateHeld
       ) {
@@ -662,6 +702,14 @@ describe("actual website redirect review integration", () => {
         await new Promise<void>((resolve) => {
           resumeCertificate = resolve;
         });
+        if (
+          h.invoke.mock.calls.some(
+            ([name, value]) =>
+              name === "cancel_proxy_continuation" &&
+              value.continuationId === continuationId,
+          )
+        )
+          throw new Error("Synthetic continuation cancelled");
       }
       const result = await invoke(command, args);
       return includeContinuation &&
@@ -799,8 +847,8 @@ describe("actual website redirect review integration", () => {
           : "https://global.quickconnect.to/",
       );
       await waitFor(() => expect(proxies).toHaveLength(2));
-      const originalLease = getRuntimeWebNavigation(h.sessions[0].connectionId)
-        ?.synologyRedirectSource?.formLogin;
+      const originalLease =
+        currentWebNavigation()?.synologyRedirectSource?.formLogin;
       for (let hop = 1; hop < hops; hop++) {
         await waitFor(() =>
           expect(view.container.querySelector("iframe")?.src).toContain(
@@ -819,8 +867,9 @@ describe("actual website redirect review integration", () => {
         });
         expect(originalLease!.autoMfaAttempted()).toBe(false);
         const runtimeId = h.sessions[0].connectionId;
-        const oldProof = getRuntimeWebNavigation(runtimeId)!.synologyMfaProof!;
-        const oldCapability = capabilities.mock.results
+        const oldProof = currentWebNavigation()!.synologyMfaProof!;
+        const oldCapability = [...capabilities.mock.results]
+          .reverse()
           .map((result) => result.value)
           .find((capability) => capability.runtimeConnectionId === runtimeId)!;
         const oldContext = {
@@ -842,17 +891,16 @@ describe("actual website redirect review integration", () => {
           202,
         );
         await waitFor(() => expect(proxies).toHaveLength(hop + 2));
-        expect(getRuntimeWebNavigation(runtimeId)).toBeUndefined();
+        expect(currentWebNavigation()?.redirectHops).toBe(hop + 1);
         expect(() => oldProof.assertCurrent()).toThrow();
         // A late old-frame callback must fail without poisoning the next hop.
         expect(() => oldCapability.assertCurrent(oldContext)).toThrow();
         await expect(
           oldCapability.generate(oldContext, () => {}),
         ).rejects.toThrow();
-        expect(
-          getRuntimeWebNavigation(h.sessions[0].connectionId)
-            ?.synologyRedirectSource?.formLogin,
-        ).toBe(originalLease);
+        expect(currentWebNavigation()?.synologyRedirectSource?.formLogin).toBe(
+          originalLease,
+        );
         expect(() => originalLease!.assertAutoMfaCurrent()).not.toThrow();
         expect(relay.requests("totpSubmit")).toHaveLength(0);
         expect(
@@ -868,6 +916,12 @@ describe("actual website redirect review integration", () => {
       await waitFor(() => expect(requests("totpProbe")).toHaveLength(1));
       await send({
         ...requests("totpProbe")[0],
+        type: "proxy_web_automation",
+        status: "ok",
+      });
+      await waitFor(() => expect(requests("totpProbe")).toHaveLength(2));
+      await send({
+        ...requests("totpProbe")[1],
         type: "proxy_web_automation",
         status: "ok",
       });
@@ -888,28 +942,27 @@ describe("actual website redirect review integration", () => {
         h.connections,
         h.sessions[0].connectionId,
       )!;
-      expect(runtime.id).not.toBe(h.connections[0].id);
-      expect(runtime.totpConfigs).toBeUndefined();
-      expect(runtime.credentialSource).toBeUndefined();
-      expect(runtime.httpAutoMfa).toBeUndefined();
+      expect(runtime.id).toBe(h.connections[0].id);
       expect(
-        JSON.stringify([
-          runtime,
-          getRuntimeWebNavigation(runtime.id),
-          h.sessions,
-          post.mock.calls,
-        ]),
+        JSON.stringify([currentWebNavigation(), h.sessions, post.mock.calls]),
       ).not.toMatch(/MFA-SEED|fixture-password|vault-password/);
       const starts = h.invoke.mock.calls.filter(
         ([command]) => command === "start_basic_auth_proxy",
       );
-      expect(starts).toHaveLength(hops + 1);
-      for (const [, args] of starts.slice(1))
-        expect(args.config).toMatchObject({
-          username: "",
-          password: "",
-          http_auto_login: false,
-          continuation_id: continuationId,
+      expect(starts).toHaveLength(1);
+      const continuations = h.invoke.mock.calls.filter(
+        ([command]) => command === "continue_synology_proxy_session",
+      );
+      expect(continuations).toHaveLength(hops);
+      for (const [, args] of continuations)
+        expect(args).toMatchObject({
+          sessionId: "proxy-1",
+          continuationId,
+          tls: {
+            verify_ssl: true,
+            accepted_cert_fingerprint: "AA:BB:CC",
+            require_ca_verification: false,
+          },
         });
       if (vault)
         expect(h.vault!.resolve).toHaveBeenCalledWith(
@@ -921,12 +974,14 @@ describe("actual website redirect review integration", () => {
       // the toolbar resolves the original authenticator through its revocable
       // same-tab facade only when the user opens it.
       fireEvent.click(screen.getByRole("button", { name: "2FA Codes" }));
-      const labels = await screen.findAllByText(
-        vault ? "Vault DSM OTP" : /DSM.*NAS account/,
-      );
-      expect(labels.some((label) => !label.classList.contains("sr-only"))).toBe(
-        true,
-      );
+      const panel = await screen.findByRole("region", {
+        name: vault ? /authenticator codes/i : "Website 2FA codes",
+      });
+      expect(
+        within(panel).getAllByText(
+          vault ? "Vault DSM OTP" : "NAS account · DSM",
+        ).length,
+      ).toBeGreaterThan(0);
       expect(screen.queryByText(/MFA-SEED/)).toBeNull();
       expect(requests("totpSubmit")).toHaveLength(1);
     },
@@ -938,6 +993,7 @@ describe("actual website redirect review integration", () => {
   ) {
     const iframe = view.container.querySelector("iframe")!;
     const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+    post.mockClear();
     const url = new URL(iframe.src);
     const navigationToken = url.searchParams.get("__sorng_navigation_v1");
     url.searchParams.delete("__sorng_navigation_v1");
@@ -995,10 +1051,7 @@ describe("actual website redirect review integration", () => {
       let finish: (() => void) | undefined;
       const baseInvoke = h.invoke.getMockImplementation()!;
       h.invoke.mockImplementation(async (command, args) => {
-        if (
-          command === "start_basic_auth_proxy" &&
-          args.config.continuation_id
-        ) {
+        if (command === "continue_synology_proxy_session") {
           if (mode === "failed")
             throw new Error("Synthetic continuation rejected");
           if (mode === "cancelled")
@@ -1018,7 +1071,7 @@ describe("actual website redirect review integration", () => {
         view.unmount();
         await act(async () => finish!());
       } else if (mode === "failed") {
-        await screen.findByText(/Synthetic continuation rejected/);
+        await screen.findByText(/redirect expired or access changed/i);
       } else {
         await waitFor(() => expect(proxies).toHaveLength(2));
         await waitFor(() =>
@@ -1033,7 +1086,7 @@ describe("actual website redirect review integration", () => {
         url.searchParams.delete("__sorng_navigation_v1");
         const identity = {
           version: 1,
-          sessionId: "proxy-2",
+          sessionId: "proxy-1",
           documentToken: "e".repeat(32),
           documentSequence: 1,
           navigationToken,
@@ -1057,9 +1110,7 @@ describe("actual website redirect review integration", () => {
           ),
         ).toHaveLength(0);
       }
-      expect(
-        getRuntimeWebNavigation(h.sessions[0].connectionId)?.synologyMfaProof,
-      ).toBeUndefined();
+      expect(currentWebNavigation()?.synologyMfaProof).toBeUndefined();
       expect(
         h.invoke.mock.calls.filter(
           ([command]) => command === "totp_compute_code",
@@ -1089,14 +1140,18 @@ describe("actual website redirect review integration", () => {
       "title",
       expect.stringContaining("Waiting for the DSM form"),
     );
-    const starts = h.invoke.mock.calls.filter(
-      ([command]) => command === "start_basic_auth_proxy",
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(1);
+    expect(h.invoke).toHaveBeenCalledWith(
+      "continue_synology_proxy_session",
+      expect.objectContaining({
+        sessionId: "proxy-1",
+        continuationId,
+      }),
     );
-    expect(starts[1][1].config).toMatchObject({
-      username: "",
-      password: "",
-      http_auto_login: false,
-    });
     h.loginStatuses["proxy-2"] = "credentials_released";
     await act(async () => fireEvent.click(icon));
     expect(icon).toHaveAttribute(
@@ -1185,7 +1240,7 @@ describe("actual website redirect review integration", () => {
     for (const [response, expected] of [
       [new Error("private backend detail"), "status read failed"],
       [[], "session unavailable"],
-      [[{ session_id: "proxy-2" }], "no native status"],
+      [[{ session_id: "proxy-1" }], "no native status"],
     ] as const) {
       h.invoke.mockImplementation(async (command, args) => {
         if (command === "get_proxy_session_details") {
@@ -1203,7 +1258,7 @@ describe("actual website redirect review integration", () => {
     }
     expect(
       h.invoke.mock.calls.filter(([name]) => name === "start_basic_auth_proxy"),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
   it("keeps visible native auto-fill status and the original form lease over three anonymous same-tab hops", async () => {
     automaticSource();
@@ -1215,8 +1270,8 @@ describe("actual website redirect review integration", () => {
     };
     const { view } = await mountContinuation();
     await waitFor(() => expect(proxies).toHaveLength(2));
-    const originalLease = getRuntimeWebNavigation(h.sessions[0].connectionId)
-      ?.synologyRedirectSource?.formLogin;
+    const originalLease =
+      currentWebNavigation()?.synologyRedirectSource?.formLogin;
     expect(originalLease).toBeDefined();
     for (const [index, destination] of [
       "https://global.quickconnect.to/",
@@ -1229,10 +1284,9 @@ describe("actual website redirect review integration", () => {
       );
       redirect(view.container.querySelector("iframe")!, destination, true, 202);
       await waitFor(() => expect(proxies).toHaveLength(index + 3));
-      expect(
-        getRuntimeWebNavigation(h.sessions[0].connectionId)
-          ?.synologyRedirectSource?.formLogin,
-      ).toBe(originalLease);
+      expect(currentWebNavigation()?.synologyRedirectSource?.formLogin).toBe(
+        originalLease,
+      );
     }
     expect(
       screen.getByRole("button", { name: "Refresh saved login status" }),
@@ -1240,14 +1294,12 @@ describe("actual website redirect review integration", () => {
     const starts = h.invoke.mock.calls.filter(
       ([command]) => command === "start_basic_auth_proxy",
     );
-    for (const [, args] of starts.slice(1)) {
-      expect(args.config).toMatchObject({
-        username: "",
-        password: "",
-        http_auto_login: false,
-      });
-      expect(args.config.continuation_id).toBe(continuationId);
-    }
+    expect(starts).toHaveLength(1);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command]) => command === "continue_synology_proxy_session",
+      ),
+    ).toHaveLength(3);
   });
   it("does not let parent or another frame login reports refresh the current native status", async () => {
     automaticSource();
@@ -1263,7 +1315,7 @@ describe("actual website redirect review integration", () => {
     frameUrl.searchParams.delete("__sorng_navigation_v1");
     const identity = {
       version: 1,
-      sessionId: "proxy-2",
+      sessionId: "proxy-1",
       documentToken: "e".repeat(32),
       documentSequence: 1,
       navigationToken,
@@ -1410,15 +1462,13 @@ describe("actual website redirect review integration", () => {
       automaticSource(change === "vault");
       const { view } = await mountContinuation();
       await waitFor(() => expect(proxies).toHaveLength(2));
-      const starts = h.invoke.mock.calls.filter(
-        ([command]) => command === "start_basic_auth_proxy",
+      expect(h.invoke).toHaveBeenCalledWith(
+        "continue_synology_proxy_session",
+        expect.objectContaining({
+          sessionId: "proxy-1",
+          continuationId,
+        }),
       );
-      expect(starts[1][1].config).toMatchObject({
-        username: "",
-        password: "",
-        http_auto_login: false,
-        continuation_id: continuationId,
-      });
       if (change === "vault") {
         expect(h.vault!.resolve).toHaveBeenCalledTimes(1);
         h.vault = { ...h.vault!, changeRevision: 2 };
@@ -1427,7 +1477,7 @@ describe("actual website redirect review integration", () => {
       view.rerender(<Harness />);
       await waitFor(() =>
         expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
-          sessionId: "proxy-2",
+          sessionId: "proxy-1",
         }),
       );
       expect(view.container.querySelector("iframe")).toBeNull();
@@ -1445,7 +1495,7 @@ describe("actual website redirect review integration", () => {
       }),
     );
     await act(async () => resumeCertificate());
-    expect(proxies).toHaveLength(1);
+    expect(proxyStartCount).toBe(1);
     expect(h.vault.resolve).toHaveBeenCalledTimes(1);
     expect(view.container.querySelector("iframe")).toBeNull();
   });
@@ -1455,7 +1505,7 @@ describe("actual website redirect review integration", () => {
     let resumeStart: (() => void) | undefined;
     h.invoke.mockImplementation(async (command, args) => {
       const result = await invoke(command, args);
-      if (command === "start_basic_auth_proxy" && args.config.continuation_id)
+      if (command === "continue_synology_proxy_session")
         await new Promise<void>((resolve) => {
           resumeStart = resolve;
         });
@@ -1477,41 +1527,79 @@ describe("actual website redirect review integration", () => {
     await act(async () => resumeStart!());
     await waitFor(() =>
       expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
-        sessionId: "proxy-2",
+        sessionId: "proxy-1",
       }),
     );
     expect(view.container.querySelector("iframe")).toBeNull();
   });
 
-  it("redeems a pathful continuation exactly once with the full reviewed URL and anonymous startup", async () => {
+  it("stops a continuation whose native reply arrives after automatic acceptance expires", async () => {
+    automaticSource();
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const invoke = h.invoke.getMockImplementation()!;
+    h.invoke.mockImplementation(async (command, args) => {
+      const result = await invoke(command, args);
+      if (command === "continue_synology_proxy_session") now = 15_001;
+      return result;
+    });
+    const { view } = await mountContinuation();
+    await waitFor(() =>
+      expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+        sessionId: "proxy-1",
+      }),
+    );
+    const retiredFrame = view.container.querySelector("iframe");
+    if (retiredFrame) {
+      expect(retiredFrame.src).toBe("about:blank");
+      expect(retiredFrame).toHaveAttribute("aria-hidden", "true");
+    }
+    expect(currentWebNavigation()).toBeUndefined();
+  });
+
+  it("independently verifies a pathful destination before redeeming it in the existing session", async () => {
+    h.connections[0].httpVerifySsl = false;
     const { view } = await mountContinuation();
     await waitFor(() => expect(proxies).toHaveLength(2));
     const starts = h.invoke.mock.calls.filter(
       ([command]) => command === "start_basic_auth_proxy",
     );
-    expect(starts[1][1].config).toMatchObject({
-      target_url: continuationDestination,
-      continuation_id: continuationId,
-      username: "",
-      password: "",
-      http_auto_login: false,
-      accepted_cert_fingerprint: "AA:BB:CC",
+    expect(starts).toHaveLength(1);
+    expect(h.invoke).toHaveBeenCalledWith("get_tls_certificate_info", {
+      host: "example-nas.de2.quickconnect.to",
+      port: 443,
+      proxyUrl: undefined,
     });
-    expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+    expect(h.verify).toHaveBeenCalledWith(
+      "example-nas.de2.quickconnect.to",
+      443,
+      "https",
+      expect.objectContaining({ fingerprint: "AA:BB:CC" }),
+      "saved-nas",
+      expect.objectContaining({ policy: expect.any(String) }),
+    );
+    expect(h.invoke).toHaveBeenCalledWith("continue_synology_proxy_session", {
       sessionId: "proxy-1",
       continuationId,
+      tls: {
+        verify_ssl: true,
+        accepted_cert_fingerprint: "AA:BB:CC",
+        require_ca_verification: false,
+      },
     });
+    expect(h.invoke).not.toHaveBeenCalledWith(
+      "stop_basic_auth_proxy",
+      expect.objectContaining({ continuationId }),
+    );
     await waitFor(() =>
       expect(
         new URL(view.container.querySelector("iframe")!.src).pathname,
       ).toBe("/webman/"),
     );
+    expect(currentWebNavigation()?.nativeContinuation).toBeUndefined();
     expect(
-      getRuntimeWebNavigation(h.sessions[0].connectionId)?.nativeContinuation,
-    ).toBeUndefined();
-    expect(
-      starts.filter(
-        ([, args]) => args.config.continuation_id === continuationId,
+      h.invoke.mock.calls.filter(
+        ([command]) => command === "continue_synology_proxy_session",
       ),
     ).toHaveLength(1);
   });
@@ -1519,10 +1607,7 @@ describe("actual website redirect review integration", () => {
   it("clears a continuation while TLS is pending before reopening without the previous session capability", async () => {
     const { view, resumeCertificate } = await mountContinuation(true);
     expect(proxies).toHaveLength(1);
-    expect(
-      getRuntimeWebNavigation(h.sessions[0].connectionId)?.nativeContinuation
-        ?.id,
-    ).toBe(continuationId);
+    expect(currentWebNavigation()).toBeUndefined();
     await act(async () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Clear session data" }),
@@ -1531,16 +1616,22 @@ describe("actual website redirect review integration", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Clear and reopen" }));
     });
-    await waitFor(() => expect(proxies).toHaveLength(2));
+    await waitFor(() => expect(proxyStartCount).toBe(2));
     await act(async () => {
       resumeCertificate();
     });
+    await waitFor(() => expect(proxies).toHaveLength(2));
     const starts = h.invoke.mock.calls.filter(
       ([command]) => command === "start_basic_auth_proxy",
     );
     expect(starts).toHaveLength(2);
     expect(starts[1][1].config).not.toHaveProperty("continuation_id");
     expect(starts[1][1].config).toMatchObject({ username: "", password: "" });
+    await waitFor(() =>
+      expect(h.invoke).toHaveBeenCalledWith("cancel_proxy_continuation", {
+        continuationId,
+      }),
+    );
     const cancellation = h.invoke.mock.calls.findIndex(
       ([command, args]) =>
         command === "cancel_proxy_continuation" &&
@@ -1551,7 +1642,7 @@ describe("actual website redirect review integration", () => {
         command === "start_basic_auth_proxy" && args === starts[1][1],
     );
     expect(cancellation).toBeGreaterThan(-1);
-    expect(cancellation).toBeLessThan(freshStart);
+    expect(freshStart).toBeGreaterThan(-1);
     expect(
       h.invoke.mock.calls.filter(
         ([command, args]) =>
@@ -1559,9 +1650,7 @@ describe("actual website redirect review integration", () => {
           args.continuationId === continuationId,
       ),
     ).toHaveLength(1);
-    expect(
-      getRuntimeWebNavigation(h.sessions[0].connectionId)?.nativeContinuation,
-    ).toBeUndefined();
+    expect(currentWebNavigation()?.nativeContinuation).toBeUndefined();
     await waitFor(() =>
       expect(view.container.querySelector("iframe")?.src).toContain(
         proxies[1].proxy_url,
@@ -1579,12 +1668,17 @@ describe("actual website redirect review integration", () => {
     await act(async () => {
       resumeCertificate();
     });
-    expect(proxies).toHaveLength(1);
+    expect(proxyStartCount).toBe(1);
     expect(
       h.invoke.mock.calls.filter(
         ([command]) => command === "start_basic_auth_proxy",
       ),
     ).toHaveLength(1);
+    await waitFor(() =>
+      expect(h.invoke).toHaveBeenCalledWith("cancel_proxy_continuation", {
+        continuationId,
+      }),
+    );
     expect(view.container.querySelector("iframe")).toBeNull();
   });
 
@@ -1787,10 +1881,16 @@ describe("actual website redirect review integration", () => {
       },
     ];
     const view = await mounted();
-    redirect(
-      view.container.querySelector("iframe")!,
-      "https://global.quickconnect.to/",
-    );
+    const sourceFrame = view.container.querySelector("iframe")!;
+    const sourceProxy = proxies[0];
+    const invoke = h.invoke.getMockImplementation()!;
+    h.invoke.mockImplementation(async (command, args) => {
+      const result = await invoke(command, args);
+      return command === "review_proxy_redirect" && args.receiptId && result
+        ? { ...result, continuationId }
+        : result;
+    });
+    redirect(sourceFrame, "https://global.quickconnect.to/");
     expect(
       await screen.findByText("Built-in Synology destination"),
     ).toBeVisible();
@@ -1802,6 +1902,23 @@ describe("actual website redirect review integration", () => {
     expect(h.invoke).not.toHaveBeenCalledWith("stop_basic_auth_proxy", {
       sessionId: "proxy-1",
     });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue in this tab" }),
+    );
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    expect(proxies[1]).toMatchObject({
+      session_id: sourceProxy.session_id,
+      proxy_url: sourceProxy.proxy_url,
+      target: "https://global.quickconnect.to/",
+    });
+    expect(view.container.querySelector("iframe")).toBe(sourceFrame);
+    expect(
+      screen.queryByText(/redirect expired or access changed/i),
+    ).toBeNull();
+    expect(h.invoke).not.toHaveBeenCalledWith(
+      "stop_basic_auth_proxy",
+      expect.objectContaining({ sessionId: "proxy-1" }),
+    );
   });
   it("does not launch a default destination after opt-out while native receipt consumption is pending", async () => {
     h.connections = [

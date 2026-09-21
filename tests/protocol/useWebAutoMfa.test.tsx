@@ -69,7 +69,8 @@ let conn: Connection,
 let api: ReturnType<typeof useWebAutoMfa>,
   ready: boolean,
   blocked: boolean,
-  currentUrl: string;
+  currentUrl: string,
+  documentRevision: number;
 const post = vi.fn();
 const frame = { postMessage: post } as unknown as Window;
 function Fixture() {
@@ -81,7 +82,7 @@ function Fixture() {
     settingsReady: ready,
     blocked,
     currentUrl,
-    navigationKey: `${doc?.generation}:${doc?.token}`,
+    navigationKey: `${doc?.generation}:${doc?.token}:${documentRevision}`,
     iframe,
     getDocument: () => doc,
     vaultTotp,
@@ -116,6 +117,12 @@ async function reply(
     ),
   );
 }
+async function acceptChallenge(probeIndex = 0) {
+  await reply(requests("totpProbe")[probeIndex]);
+  const revalidation = requests("totpProbe")[probeIndex + 1];
+  expect(revalidation).toBeDefined();
+  await reply(revalidation);
+}
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-10T00:00:01Z"));
@@ -129,6 +136,7 @@ beforeEach(() => {
   synologyMfa = undefined;
   blocked = false;
   currentUrl = "https://nas.example/wp-login.php";
+  documentRevision = 0;
   availability = { status: "ready", databaseId: "db", generation: 1 };
   doc = {
     generation: 1,
@@ -350,7 +358,7 @@ describe("explicit origin-bound automatic website 2FA", () => {
     async (vault) => {
       const { capability, vaultApi } = redirectedSynology(vault);
       const view = await mount();
-      await reply(requests("totpProbe")[0]);
+      await acceptChallenge();
       expect(requests("totpSubmit")).toHaveLength(1);
       expect(requests("totpSubmit")[0].payload.code).toBe("123456");
       expect(mock.compute).toHaveBeenCalledWith(
@@ -367,15 +375,56 @@ describe("explicit origin-bound automatic website 2FA", () => {
             : "",
           ["totp"],
         );
-      expect(mock.read).toHaveBeenCalledTimes(2);
+      expect(mock.read).toHaveBeenCalledTimes(3);
       expect(JSON.stringify([conn, capability, post.mock.calls])).not.toMatch(
         /SYNTHETIC-SEED|VAULT-SEED/,
       );
       expect(capability.attempted()).toBe(true);
       view.unmount();
       await mount();
-      expect(requests("totpProbe")).toHaveLength(1);
+      expect(requests("totpProbe")).toHaveLength(2);
       expect(requests("totpSubmit")).toHaveLength(1);
+    },
+  );
+  it.each([false, true])(
+    "rechecks durable redirected consent after the final DOM probe (vault=%s)",
+    async (vault) => {
+      const { capability } = redirectedSynology(vault);
+      await mount();
+      await reply(requests("totpProbe")[0]);
+      expect(requests("totpProbe")).toHaveLength(2);
+      saved.httpAutoMfa!.enabled = false;
+      await reply(requests("totpProbe")[1]);
+      expect(requests("totpSubmit")).toHaveLength(0);
+      expect(() =>
+        capability.assertCurrent({
+          runtimeConnectionId: conn.id,
+          currentUrl,
+          document: doc!,
+        }),
+      ).toThrow();
+    },
+  );
+  it.each([false, true])(
+    "waits for a fresh redirected TOTP period without revoking consent (vault=%s)",
+    async (vault) => {
+      const { capability } = redirectedSynology(vault);
+      vi.setSystemTime(new Date("2026-09-10T00:00:28Z"));
+      await mount();
+      await reply(requests("totpProbe")[0]);
+      expect(mock.compute).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(2100));
+      expect(mock.compute).toHaveBeenCalledOnce();
+      expect(requests("totpProbe")).toHaveLength(2);
+      await reply(requests("totpProbe")[1]);
+      expect(requests("totpSubmit")).toHaveLength(1);
+      expect(() =>
+        capability.assertCurrent({
+          runtimeConnectionId: conn.id,
+          currentUrl,
+          document: doc!,
+        }),
+      ).not.toThrow();
     },
   );
   it.each([
@@ -484,7 +533,7 @@ describe("explicit origin-bound automatic website 2FA", () => {
     };
     await mount();
     expect(vaultTotp.generate).not.toHaveBeenCalled();
-    await reply(requests("totpProbe")[0]);
+    await acceptChallenge();
     expect(vaultTotp.generate).toHaveBeenCalledWith("auth");
     expect(mock.compute).not.toHaveBeenCalled();
     expect(requests("totpSubmit")[0].payload.code).toBe("87654321");
@@ -579,9 +628,9 @@ describe("explicit origin-bound automatic website 2FA", () => {
     expect(mock.compute).not.toHaveBeenCalled();
     await reply(requests("totpProbe")[0], "failed");
     await act(async () => vi.advanceTimersByTimeAsync(1000));
-    await reply(requests("totpProbe")[1]);
+    await acceptChallenge(1);
     expect(mock.compute).toHaveBeenCalledOnce();
-    expect(mock.read).toHaveBeenCalledTimes(2);
+    expect(mock.read).toHaveBeenCalledTimes(3);
     expect(requests("totpSubmit")).toHaveLength(1);
     expect(requests("totpSubmit")[0].payload.code).toBe("123456");
     expect(JSON.stringify(post.mock.calls)).not.toContain("SYNTHETIC-SEED");
@@ -602,11 +651,11 @@ describe("explicit origin-bound automatic website 2FA", () => {
   });
   it("does not repeat across document navigation but permits a new proxy session", async () => {
     const view = await mount();
-    await reply(requests("totpProbe")[0]);
+    await acceptChallenge();
     await reply(requests("totpSubmit")[0]);
     doc = { ...doc!, generation: 2, token: "e".repeat(32) };
     view.rerender(<Fixture />);
-    expect(requests("totpProbe")).toHaveLength(1);
+    expect(requests("totpProbe")).toHaveLength(2);
     doc = {
       ...doc,
       generation: 3,
@@ -614,8 +663,29 @@ describe("explicit origin-bound automatic website 2FA", () => {
       token: "f".repeat(32),
     };
     view.rerender(<Fixture />);
-    await reply(requests("totpProbe")[1]);
+    await acceptChallenge(2);
     expect(requests("totpSubmit")).toHaveLength(2);
+  });
+  it("starts detection when the accepted document becomes ready at the same URL", async () => {
+    const accepted = doc;
+    doc = null;
+    const view = await mount();
+    expect(requests("totpProbe")).toHaveLength(0);
+    doc = accepted;
+    documentRevision++;
+    view.rerender(<Fixture />);
+    expect(requests("totpProbe")).toHaveLength(1);
+  });
+  it("keeps a pending MFA attempt across connection bookkeeping updates", async () => {
+    const view = await mount();
+    conn = {
+      ...conn,
+      lastConnected: "2026-09-10T00:00:02.000Z",
+      connectionCount: 8,
+    };
+    view.rerender(<Fixture />);
+    await acceptChallenge();
+    expect(requests("totpSubmit")).toHaveLength(1);
   });
   it("offers an explicit pre-submission retry after the bounded observation window", async () => {
     await mount();

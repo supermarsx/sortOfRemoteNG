@@ -598,6 +598,7 @@ define_command_group!(
         cloudflare_commands::connect_cloudflare,
         // SSH3 (SSH over HTTP/3 QUIC) commands
         ssh_commands::connect_ssh3,
+        http_commands::continue_synology_proxy_session,
         cloudflare_commands::create_cloudflare_dns_record,
         cloudflare_commands::delete_cloudflare_dns_record,
         cloudflare_commands::deploy_cloudflare_worker,
@@ -1834,6 +1835,14 @@ mod tests {
     #[test]
     fn proxy_website_dark_mode_update_command_is_registered() {
         let command = "update_proxy_website_dark_mode";
+        assert!(is_command(command));
+        let registration = format!("http_commands::{command},");
+        assert!(include_str!("core_handler.rs").contains(&registration));
+    }
+
+    #[test]
+    fn synology_in_session_continuation_command_is_registered() {
+        let command = "continue_synology_proxy_session";
         assert!(is_command(command));
         let registration = format!("http_commands::{command},");
         assert!(include_str!("core_handler.rs").contains(&registration));

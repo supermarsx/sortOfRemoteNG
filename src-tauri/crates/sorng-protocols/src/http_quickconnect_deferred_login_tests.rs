@@ -221,6 +221,7 @@ async fn login_proxy(
     state.global_sessions.lock().unwrap().sessions.insert(
         id,
         ProxySessionEntry {
+            runtime: Default::default(),
             attempt: state.attempt.clone(),
             network: state.network.clone(),
             website_dark_mode: state.website_dark_mode.clone(),

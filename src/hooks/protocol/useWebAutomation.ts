@@ -542,8 +542,11 @@ export function useWebAutomation(options: Options) {
   const executionKey = `${options.navigationKey}:${options.blocked}:${accessKey}:${JSON.stringify(permissions.value)}`;
   useEffect(() => {
     cancel();
-    bridge.cancel(true);
-    appearanceBridge.cancel(true);
+    bridge.cancel(false);
+    // A document replacement invalidates pending requests, but it must not
+    // briefly disable the proxy's first-paint palette before the replacement
+    // document receives its own dark-mode command.
+    appearanceBridge.cancel(false);
   }, [executionKey, cancel, bridge, appearanceBridge]);
 
   const darkMode = useWebsiteDarkMode({

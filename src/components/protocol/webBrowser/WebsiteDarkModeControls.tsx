@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Moon, X } from "lucide-react";
 import type {
   WebsiteDarkModeController,
@@ -7,7 +7,7 @@ import type {
 import { normalizeWebsiteDarkModeConfig } from "../../../utils/connection/websiteDarkMode";
 import { WebsiteDarkModeFields } from "../../websites/WebsiteDarkModeFields";
 import { Checkbox } from "../../ui/forms";
-import { Modal } from "../../ui/overlays/Modal";
+import { PopoverSurface } from "../../ui/overlays/PopoverSurface";
 
 /** Enabled is not one state: the page may be converted, flattened, or untouched. */
 const TOOLTIPS: Record<WebsiteDarkModeStatus["kind"], string> = {
@@ -23,15 +23,17 @@ export default function WebsiteDarkModeControls({
   controller: WebsiteDarkModeController;
 }) {
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   return (
-    <>
+    <div ref={anchorRef} className="relative">
       <button
         type="button"
         aria-label="Dark-mode extension"
         aria-pressed={controller.enabled}
         aria-haspopup="dialog"
+        aria-expanded={open}
         data-tooltip={TOOLTIPS[controller.status.kind]}
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen((value) => !value)}
         className={`sor-icon-btn-sm ${controller.enabled ? "text-primary ring-1 ring-inset ring-primary/40" : ""}`}
       >
         <Moon size={16} />
@@ -40,23 +42,27 @@ export default function WebsiteDarkModeControls({
         <AppearanceDialog
           key={controller.scopeKey}
           controller={controller}
+          anchorRef={anchorRef}
           onClose={() => setOpen(false)}
         />
       )}
-    </>
+    </div>
   );
 }
 
 function AppearanceDialog({
   controller,
+  anchorRef,
   onClose,
 }: {
   controller: WebsiteDarkModeController;
+  anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(controller.configuration);
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const busy = controller.busy || saving;
   // A save problem is about what the user just did, so it outranks the page's.
   const alert =
@@ -95,15 +101,39 @@ function AppearanceDialog({
       setSaving(false);
     }
   };
+  useEffect(() => {
+    const outside = (event: MouseEvent) => {
+      if (busy) return;
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (
+        panelRef.current?.contains(target) ||
+        anchorRef.current?.contains(target) ||
+        (target instanceof Element && target.closest(".sor-select-dropdown"))
+      )
+        return;
+      onClose();
+    };
+    document.addEventListener("mousedown", outside);
+    return () => document.removeEventListener("mousedown", outside);
+  }, [anchorRef, busy, onClose]);
   return (
-    <Modal
+    <PopoverSurface
       isOpen
       onClose={busy ? undefined : onClose}
-      ariaLabel="Dark-mode extension settings"
-      panelClassName="w-[min(36rem,calc(100vw-2rem))] !max-w-[36rem] max-h-[85vh] overflow-y-auto rounded-xl"
+      anchorRef={anchorRef}
+      align="end"
+      offset={4}
+      closeOnOutside={false}
+      className="sor-popover-panel sor-popover-panel-strong z-[99999] w-[36rem] max-w-[calc(100vw-2rem)] max-h-[min(85dvh,42rem)] overflow-y-auto"
+      dataTestId="website-dark-mode-popover"
     >
-      <div className="p-5 space-y-5">
-        <div className="flex items-center justify-between gap-3">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-label="Dark-mode extension settings"
+      >
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-border)]">
           <h3 className="font-semibold flex gap-2 items-center">
             <Moon size={18} />
             Dark-mode extension
@@ -118,87 +148,91 @@ function AppearanceDialog({
             <X size={16} />
           </button>
         </div>
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-sm text-[var(--color-textSecondary)]">
-            {controller.savedConnectionName
-              ? `Appearance changes are saved to “${controller.savedConnectionName}”.`
-              : "Appearance changes require a verified saved connection."}{" "}
-            App defaults do not enable other websites.
-          </p>
-          <button
-            type="button"
-            className="sor-btn-primary-sm shrink-0"
-            disabled={busy || !controller.available}
-            onClick={() => void toggle()}
-          >
-            {controller.enabled ? "Disable extension" : "Enable extension"}
-          </button>
-        </div>
-        {!controller.available &&
-          controller.unavailableReason !== controller.error &&
-          controller.unavailableReason !== failure && (
-            <p role="status" className="text-sm text-warning">
-              {controller.unavailableReason}
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-[var(--color-textSecondary)]">
+              {controller.savedConnectionName
+                ? `Appearance changes are saved to “${controller.savedConnectionName}”.`
+                : "Appearance changes require a verified saved connection."}{" "}
+              App defaults do not enable other websites.
+            </p>
+            <button
+              type="button"
+              className="sor-btn-primary-sm shrink-0"
+              disabled={busy || !controller.available}
+              onClick={() => void toggle()}
+            >
+              {controller.enabled ? "Disable extension" : "Enable extension"}
+            </button>
+          </div>
+          {!controller.available &&
+            controller.unavailableReason !== controller.error &&
+            controller.unavailableReason !== failure && (
+              <p role="status" className="text-sm text-warning">
+                {controller.unavailableReason}
+              </p>
+            )}
+          {alert && (
+            <p role="alert" className="text-sm text-error">
+              {alert}
             </p>
           )}
-        {alert && (
-          <p role="alert" className="text-sm text-error">
-            {alert}
-          </p>
-        )}
-        {/* Themed, but not by the engine: say so, and say why, where the
+          {/* Themed, but not by the engine: say so, and say why, where the
             unexpectedly plain page is being configured. */}
-        {controller.status.kind === "cssOnly" && (
-          <p
-            role="status"
-            className="text-sm text-[var(--color-textSecondary)]"
-          >
-            {controller.status.message}
-          </p>
-        )}
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={draft.useGlobalDefaults}
-            disabled={busy || !controller.available}
-            onChange={(useGlobalDefaults) =>
-              setDraft({ ...draft, useGlobalDefaults })
+          {controller.status.kind === "cssOnly" && (
+            <p
+              role="status"
+              className="text-sm text-[var(--color-textSecondary)]"
+            >
+              {controller.status.message}
+            </p>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={draft.useGlobalDefaults}
+              disabled={busy || !controller.available}
+              onChange={(useGlobalDefaults) =>
+                setDraft({ ...draft, useGlobalDefaults })
+              }
+            />
+            Use app appearance defaults
+          </label>
+          <WebsiteDarkModeFields
+            theme={
+              draft.useGlobalDefaults ? controller.defaultTheme : draft.theme
+            }
+            disabled={busy || !controller.available || draft.useGlobalDefaults}
+            presets={controller.presets}
+            onChange={(theme) =>
+              setDraft({ ...draft, useGlobalDefaults: false, theme })
             }
           />
-          Use app appearance defaults
-        </label>
-        <WebsiteDarkModeFields
-          theme={
-            draft.useGlobalDefaults ? controller.defaultTheme : draft.theme
-          }
-          disabled={busy || !controller.available || draft.useGlobalDefaults}
-          presets={controller.presets}
-          onChange={(theme) =>
-            setDraft({ ...draft, useGlobalDefaults: false, theme })
-          }
-        />
-        <p className="text-xs text-[var(--color-textMuted)]">
-          Manage app defaults and custom presets in Settings → Web Browser →
-          Website appearance.
-        </p>
-        <div className="flex justify-between gap-3">
-          <button
-            type="button"
-            className="sor-btn-secondary-sm"
-            disabled={busy || !controller.available}
-            onClick={() => setDraft(normalizeWebsiteDarkModeConfig(undefined))}
-          >
-            Reset to app defaults
-          </button>
-          <button
-            type="button"
-            className="sor-btn-primary-sm"
-            disabled={busy || !controller.available}
-            onClick={() => void apply()}
-          >
-            {busy ? "Saving…" : "Save appearance"}
-          </button>
+          <p className="text-xs text-[var(--color-textMuted)]">
+            Manage app defaults and custom presets in Settings → Web Browser →
+            Website appearance.
+          </p>
+          <div className="flex justify-between gap-3">
+            <button
+              type="button"
+              className="sor-btn-secondary-sm"
+              disabled={busy || !controller.available}
+              onClick={() =>
+                setDraft(normalizeWebsiteDarkModeConfig(undefined))
+              }
+            >
+              Reset to app defaults
+            </button>
+            <button
+              type="button"
+              className="sor-btn-primary-sm"
+              disabled={busy || !controller.available}
+              onClick={() => void apply()}
+            >
+              {busy ? "Saving…" : "Save appearance"}
+            </button>
+          </div>
         </div>
       </div>
-    </Modal>
+    </PopoverSurface>
   );
 }

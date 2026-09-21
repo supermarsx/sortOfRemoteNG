@@ -39,9 +39,29 @@ function select(label: string, option: string) {
 }
 function open() {
   fireEvent.click(screen.getByRole("button", { name: "Dark-mode extension" }));
+  // PopoverSurface positions on the next animation frame in production. A
+  // resize drives that same positioning path synchronously in jsdom.
+  fireEvent(window, new Event("resize"));
 }
 
 describe("Dark-mode extension UI", () => {
+  it("opens as an anchored certificate-style popover and dismisses with Escape", () => {
+    render(<WebsiteDarkModeControls controller={controller()} />);
+    const trigger = screen.getByRole("button", {
+      name: "Dark-mode extension",
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    open();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("website-dark-mode-popover")).toContainElement(
+      screen.getByRole("dialog", { name: "Dark-mode extension settings" }),
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(
+      screen.queryByRole("dialog", { name: "Dark-mode extension settings" }),
+    ).toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
   it("previews app defaults immediately without discarding the saved override", () => {
     const override = { ...DEFAULT_WEBSITE_DARK_THEME, brightness: 72 };
     const value = controller({
@@ -92,6 +112,7 @@ describe("Dark-mode extension UI", () => {
         controller={{ ...initial, scopeKey: "owner:2" }}
       />,
     );
+    fireEvent(window, new Event("resize"));
     expect(screen.getByRole("slider", { name: "Brightness" })).toHaveValue(
       "100",
     );
