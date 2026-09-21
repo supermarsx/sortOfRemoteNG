@@ -20,6 +20,7 @@ function createWebDarkModeController() {
     // it only decides that this document themes itself with plain CSS.
     cssOnly = false,
     style = null,
+    bootstrap = document.getElementById("__sorng_dark_bootstrap_v1"),
     loading = null,
     abortLoading = null,
     // Only the outermost proxied document carries the filter layer: a filter on
@@ -107,6 +108,24 @@ function createWebDarkModeController() {
     var owned = dynamicOwned;
     dynamicOwned = false;
     if (owned && window.DarkReader) window.DarkReader.disable();
+  }
+  function removeBootstrap() {
+    if (bootstrap) bootstrap.remove();
+    bootstrap = null;
+  }
+  function installBootstrap(theme) {
+    if (!bootstrap) {
+      bootstrap = document.createElement("style");
+      bootstrap.id = "__sorng_dark_bootstrap_v1";
+      (document.head || document.documentElement).appendChild(bootstrap);
+    }
+    bootstrap.textContent =
+      "html:root{color-scheme:dark!important}" +
+      "html:root,html:root body,html:root frameset{background-color:" +
+      theme.backgroundColor +
+      "!important;color:" +
+      theme.textColor +
+      "!important}";
   }
   function adjustments(theme) {
     return (
@@ -545,16 +564,26 @@ function createWebDarkModeController() {
         !payload ||
         typeof payload.enabled !== "boolean" ||
         (payload.cssOnly !== undefined && typeof payload.cssOnly !== "boolean")
-      )
+      ) {
+        removeBootstrap();
         return Promise.reject(new Error("Invalid dark-mode extension command"));
-      if (!payload.enabled) return Promise.resolve();
+      }
+      if (!payload.enabled) {
+        removeBootstrap();
+        return Promise.resolve();
+      }
       var theme;
       try {
         theme = themeOf(payload.theme);
       } catch (error) {
+        removeBootstrap();
         return Promise.reject(error);
       }
       desired = theme;
+      // The proxy's static palette is already present on first paint. Keep it
+      // through engine loading, and protect commands sent after document start
+      // synchronously as well. Never await a network request on a light page.
+      installBootstrap(theme);
       cssOnly = payload.cssOnly === true;
       var wanted = theme.mode === "dynamic" || theme.mode === "dynamicFilter";
       // A frameset paints nothing but its gutters, so converting it is wasted
@@ -585,6 +614,10 @@ function createWebDarkModeController() {
           paintBorders(theme);
           observe();
           rescan();
+          // enable() installs the engine's own fallback synchronously; CSS-only
+          // and filter paths also own their styles now. Release in this task so
+          // a filter cannot invert the already-dark bootstrap on a later paint.
+          removeBootstrap();
           // A frameset root that skipped the engine on purpose reports nothing:
           // its frames answer for the content the user actually sees.
           if (engine) return "engine";
@@ -594,6 +627,8 @@ function createWebDarkModeController() {
           if (ticket === revision) {
             desired = null;
             removeStyles();
+            // Keep the explicit dark palette if the engine throws. A later
+            // disable/dispose still restores the upstream appearance.
           }
           throw error;
         });
@@ -606,6 +641,7 @@ function createWebDarkModeController() {
       document.removeEventListener("DOMContentLoaded", settle);
       window.removeEventListener("load", settle);
       try {
+        removeBootstrap();
         removeStyles();
       } catch (_) {
         // The page may have replaced its own API. Teardown must still let the

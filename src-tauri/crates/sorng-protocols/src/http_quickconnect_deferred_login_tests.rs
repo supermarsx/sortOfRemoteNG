@@ -223,6 +223,7 @@ async fn login_proxy(
         ProxySessionEntry {
             attempt: state.attempt.clone(),
             network: state.network.clone(),
+            website_dark_mode: state.website_dark_mode.clone(),
             target_url: target.into(),
             username: String::new(),
             password: String::new(),

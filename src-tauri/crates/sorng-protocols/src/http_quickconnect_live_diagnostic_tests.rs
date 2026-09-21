@@ -455,6 +455,7 @@ async fn mediator_with_attempt(
     let state = Arc::new(AxumProxyState {
         attempt,
         network: Arc::new(network),
+        website_dark_mode: Default::default(),
         session_id,
         connection_id: "anonymous-document-diagnostic".into(),
         target_origin: target.origin().ascii_serialization(),
@@ -500,6 +501,7 @@ async fn mediator_with_attempt(
                 ProxySessionEntry {
                     attempt: state.attempt.clone(),
                     network: state.network.clone(),
+                    website_dark_mode: state.website_dark_mode.clone(),
                     target_url: target.to_string(),
                     username: String::new(),
                     password: String::new(),

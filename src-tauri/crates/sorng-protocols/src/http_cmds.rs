@@ -531,6 +531,9 @@ pub async fn start_basic_auth_proxy(
         return Err("CA verification admission is only supported for HTTPS targets".into());
     }
     let proxy_policy = config.proxy_policy.clone().unwrap_or_default();
+    if let Some(palette) = &config.website_dark_mode {
+        palette.validate()?;
+    }
     validate_reviewed_login_config(&config)?;
     proxy_policy.validate(&validated_target)?;
     if let Some(options) = &config.http_form_automation {
@@ -649,9 +652,11 @@ pub async fn start_basic_auth_proxy(
         .as_ref()
         .map(crate::theme_tokens::ThemeTokens::sanitized)
         .unwrap_or_else(crate::theme_tokens::ThemeTokens::dark_default);
+    let website_dark_mode = Arc::new(std::sync::RwLock::new(config.website_dark_mode.clone()));
     let proxy_state = Arc::new(AxumProxyState {
         attempt: attempt.clone(),
         network: network.clone(),
+        website_dark_mode: website_dark_mode.clone(),
         session_id: session_id.clone(),
         connection_id: connection_id.clone(),
         target_url: target_url.clone(),
@@ -737,6 +742,7 @@ pub async fn start_basic_auth_proxy(
             ProxySessionEntry {
                 attempt,
                 network,
+                website_dark_mode,
                 target_url: target_url.clone(),
                 username: config.username.clone(),
                 password: config.password.clone(),
@@ -1078,6 +1084,30 @@ pub async fn check_proxy_health(
     Ok(results)
 }
 
+/// Update the first-paint palette for future documents without restarting the
+/// listener. The renderer still sends its existing dark command to the current
+/// document; null disables this native bootstrap for subsequent navigations.
+#[tauri::command]
+pub async fn update_proxy_website_dark_mode(
+    session_id: String,
+    palette: Option<WebsiteDarkModeBootstrap>,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<(), String> {
+    if let Some(palette) = &palette {
+        palette.validate()?;
+    }
+    let slot = sessions
+        .lock()
+        .map_err(|_| "Proxy session manager is unavailable")?
+        .sessions
+        .get(&session_id)
+        .ok_or("Proxy session not found")?
+        .website_dark_mode
+        .clone();
+    *slot.write().map_err(|_| "Website palette is unavailable")? = palette;
+    Ok(())
+}
+
 /// Restart a dead proxy session.  Uses the stored credentials and target_url
 /// from the original session to spin up a fresh axum server (potentially on a
 /// different local port).  Returns the new proxy URL.
@@ -1105,6 +1135,7 @@ pub async fn restart_proxy_session(
         require_ca_verification,
         min_tls,
         previous_attempt,
+        website_dark_mode,
     ) = {
         let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         let entry = mgr
@@ -1127,6 +1158,7 @@ pub async fn restart_proxy_session(
             entry.require_ca_verification,
             entry.min_tls_version.clone(),
             entry.attempt.clone(),
+            entry.website_dark_mode.clone(),
         )
     };
 
@@ -1194,6 +1226,7 @@ pub async fn restart_proxy_session(
     let proxy_state = Arc::new(AxumProxyState {
         attempt: attempt.clone(),
         network: network.clone(),
+        website_dark_mode: website_dark_mode.clone(),
         session_id: new_session_id.clone(),
         connection_id: connection_id.clone(),
         target_url: target_url.clone(),
@@ -1284,6 +1317,7 @@ pub async fn restart_proxy_session(
             ProxySessionEntry {
                 attempt,
                 network,
+                website_dark_mode,
                 target_url,
                 username,
                 password,

@@ -282,6 +282,7 @@ fn synology_direct_documents_keep_their_own_page_nonce_outside_the_shared_slot()
     let state = AxumProxyState {
         attempt: None,
         network: Arc::new(ProxyNetworkState::default()),
+        website_dark_mode: Default::default(),
         session_id: "synthetic-session".into(),
         connection_id: "synthetic-owner".into(),
         target_url: "https://nas.invalid/".into(),

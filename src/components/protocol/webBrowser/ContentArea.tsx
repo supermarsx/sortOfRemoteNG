@@ -93,6 +93,18 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           sandbox={EMPTY_WEB_FRAME_SANDBOX}
         />
       )}
+      {mgr.redirectHandoffPending && !mgr.loadError && (
+        <div
+          className="absolute inset-0 z-10 bg-[var(--color-background)]"
+          data-testid="web-redirect-handoff-shield"
+          aria-label="Preparing redirected website"
+          style={
+            mgr.websiteDarkBootstrap
+              ? { backgroundColor: mgr.websiteDarkBootstrap.backgroundColor }
+              : undefined
+          }
+        />
+      )}
       {reviewing && (
         <div className="absolute inset-0 z-20">
           <RedirectReviewPanel

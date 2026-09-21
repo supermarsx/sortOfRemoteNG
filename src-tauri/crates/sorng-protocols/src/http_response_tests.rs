@@ -2,6 +2,8 @@
 //! are synthetic. No Tauri profile or desktop runtime is initialized.
 #[path = "http_attempt_response_tests.rs"]
 mod attempt_response_tests;
+#[path = "http_dark_mode_tests.rs"]
+mod dark_mode_tests;
 #[path = "http_font_asset_tests.rs"]
 mod font_asset_tests;
 #[path = "http_local_observation_tests.rs"]
@@ -111,6 +113,7 @@ async fn proxy_with_redirect_profile(
     let state = Arc::new(AxumProxyState {
         attempt: None,
         network,
+        website_dark_mode: Default::default(),
         session_id: "synthetic-proxy-session".into(),
         connection_id: "fixture".into(),
         target_origin: reqwest::Url::parse(&target)
@@ -221,6 +224,7 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
         ProxySessionEntry {
             attempt: state.attempt.clone(),
             network: state.network.clone(),
+            website_dark_mode: state.website_dark_mode.clone(),
             target_url: state.target_url.clone(),
             username: "synthetic-user".into(),
             password: "synthetic-master-password".into(),

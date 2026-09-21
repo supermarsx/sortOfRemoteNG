@@ -17,6 +17,17 @@ pub(super) fn inject_page_scripts(html: &str, scripts: &str) -> String {
     format!("{}{}{}", &html[..index], scripts, &html[index..])
 }
 
+pub(super) fn inject_dark_mode_bootstrap(
+    html: &str,
+    palette: &super::WebsiteDarkModeBootstrap,
+) -> String {
+    let Some(style) = palette.style() else {
+        return html.to_string();
+    };
+    let index = early_script_insertion(html);
+    format!("{}{}{}", &html[..index], style, &html[index..])
+}
+
 /// Keep absolute URLs absolute: app scripts commonly pass these strings to
 /// URL() without a base. Removing the origin breaks those scripts. Never turn
 /// a different authority with a matching prefix into a local proxy address.
@@ -485,51 +496,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
 }
 
 fn early_script_insertion(html: &str) -> usize {
-    let lower = html.to_ascii_lowercase();
-    let bytes = lower.as_bytes();
-    let mut cursor = 0;
-    let mut fallback = 0;
-    while let Some(offset) = lower[cursor..].find('<') {
-        let start = cursor + offset;
-        if lower[start..].starts_with("<!--") {
-            let Some(end) = lower[start + 4..].find("-->") else {
-                break;
-            };
-            cursor = start + 4 + end + 3;
-            continue;
-        }
-        let mut end = start + 1;
-        let mut quote = None;
-        while end < bytes.len() {
-            let c = bytes[end];
-            if let Some(q) = quote {
-                if c == q {
-                    quote = None;
-                }
-            } else if c == b'\'' || c == b'"' {
-                quote = Some(c);
-            } else if c == b'>' {
-                break;
-            }
-            end += 1;
-        }
-        if end == bytes.len() {
-            break;
-        }
-        let name = lower[start + 1..end]
-            .split(|c: char| c.is_ascii_whitespace() || c == '/')
-            .next()
-            .unwrap_or("");
-        match name {
-            "head" => return end + 1,
-            "script" => return start,
-            "body" => return end + 1,
-            "!doctype" | "html" => fallback = end + 1,
-            _ => {}
-        }
-        cursor = end + 1;
-    }
-    fallback
+    script_insertion::early_insertion_position(html)
 }
 
 pub(super) fn is_editable(content_type: Option<&str>) -> bool {

@@ -68,6 +68,7 @@ async fn fixture() -> Fixture {
     let state = Arc::new(AxumProxyState {
         attempt: None,
         network: network.clone(),
+        website_dark_mode: Default::default(),
         session_id: "synthetic-direct-session".into(),
         connection_id: "synthetic-direct-owner".into(),
         target_origin: reqwest::Url::parse(&target)
@@ -106,6 +107,7 @@ async fn fixture() -> Fixture {
         ProxySessionEntry {
             attempt: None,
             network,
+            website_dark_mode: state.website_dark_mode.clone(),
             target_url: target,
             username: String::new(),
             password: String::new(),

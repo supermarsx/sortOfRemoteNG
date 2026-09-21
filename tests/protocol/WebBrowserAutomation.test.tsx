@@ -23,6 +23,7 @@ const native = vi.hoisted(() => ({
   invoke: vi.fn(),
   dispatch: vi.fn(),
   connections: [] as Connection[],
+  persistedConnections: undefined as Connection[] | undefined,
   sessions: [] as ConnectionSession[],
   locked: false,
   vaultApi: undefined as DatabaseCredentialVaultApi | undefined,
@@ -103,7 +104,12 @@ vi.mock("../../src/utils/connection/databaseManager", () => {
       assertAccessible: () => {
         if (native.locked) throw new Error("locked");
       },
-      readCurrent: async () => ({ connections: native.connections }),
+      verifyCurrent: async () => {
+        if (native.locked) throw new Error("locked");
+      },
+      readCurrent: async () => ({
+        connections: native.persistedConnections ?? native.connections,
+      }),
     }),
   };
   return {
@@ -165,9 +171,11 @@ beforeEach(() => {
       },
     },
   ];
+  native.persistedConnections = undefined;
   native.invoke.mockReset().mockImplementation(async (command) => {
     if (command === "start_basic_auth_proxy") return proxy;
     if (command === "stop_basic_auth_proxy") return undefined;
+    if (command === "update_proxy_website_dark_mode") return undefined;
     if (command === "read_macro_library")
       return JSON.stringify(
         normalizeWebAutomationLibrary({
@@ -238,6 +246,14 @@ async function mount() {
 describe("real WebBrowser iframe and website automation integration", () => {
   it("reapplies saved appearance and global defaults without replacing the iframe or restarting authentication", async () => {
     const { iframe, post, emit, rerender } = await mount();
+    expect(native.invoke).toHaveBeenCalledWith("start_basic_auth_proxy", {
+      config: expect.objectContaining({
+        website_dark_mode: {
+          backgroundColor: "#181a1b",
+          textColor: "#e8e6e3",
+        },
+      }),
+    });
     emit("proxy_document_start");
     emit("proxy_dom_ready");
     await waitFor(() =>
@@ -265,11 +281,13 @@ describe("real WebBrowser iframe and website automation integration", () => {
             theme: {
               ...normalizeWebsiteDarkModeConfig(undefined).theme,
               brightness: 72,
+              backgroundColor: "#101112",
             },
           },
         },
       },
     ];
+    native.persistedConnections = structuredClone(native.connections);
     rerender(<WebBrowser session={session} />);
     await waitFor(() =>
       expect(
@@ -280,6 +298,18 @@ describe("real WebBrowser iframe and website automation integration", () => {
             data.payload.theme.brightness === 72,
         ),
       ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith(
+        "update_proxy_website_dark_mode",
+        {
+          sessionId: proxy.session_id,
+          palette: {
+            backgroundColor: "#101112",
+            textColor: "#e8e6e3",
+          },
+        },
+      ),
     );
     for (const [data] of post.mock.calls)
       if (data.action === "dark")
@@ -293,8 +323,10 @@ describe("real WebBrowser iframe and website automation integration", () => {
         },
       },
     ];
+    native.persistedConnections = structuredClone(native.connections);
     const global = normalizeWebsiteDarkModeSettings(undefined);
     global.defaults.brightness = 83;
+    global.defaults.backgroundColor = "#202122";
     Object.assign(native.settings, { websiteDarkMode: global });
     rerender(<WebBrowser session={session} />);
     await waitFor(() =>
@@ -307,6 +339,18 @@ describe("real WebBrowser iframe and website automation integration", () => {
         ),
       ).toBe(true),
     );
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith(
+        "update_proxy_website_dark_mode",
+        {
+          sessionId: proxy.session_id,
+          palette: {
+            backgroundColor: "#202122",
+            textColor: "#e8e6e3",
+          },
+        },
+      ),
+    );
     expect(screen.getByTitle(session.name)).toBe(iframe);
     expect(
       native.invoke.mock.calls.filter(
@@ -318,6 +362,59 @@ describe("real WebBrowser iframe and website automation integration", () => {
         ([command]) => command === "stop_basic_auth_proxy",
       ),
     ).toBe(false);
+  });
+
+  it("does not send an optimistic unsaved dark palette to the proxy", async () => {
+    const { rerender } = await mount();
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith(
+        "update_proxy_website_dark_mode",
+        {
+          sessionId: proxy.session_id,
+          palette: {
+            backgroundColor: "#181a1b",
+            textColor: "#e8e6e3",
+          },
+        },
+      ),
+    );
+    native.invoke.mockClear();
+    native.persistedConnections = structuredClone(native.connections);
+    native.connections = [
+      {
+        ...native.connections[0],
+        httpAutomation: {
+          ...native.connections[0].httpAutomation!,
+          darkMode: {
+            ...normalizeWebsiteDarkModeConfig(undefined),
+            useGlobalDefaults: false,
+            theme: {
+              ...normalizeWebsiteDarkModeConfig(undefined).theme,
+              backgroundColor: "#abcdef",
+            },
+          },
+        },
+      },
+    ];
+    rerender(<WebBrowser session={native.sessions[0]} />);
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith(
+        "update_proxy_website_dark_mode",
+        {
+          sessionId: proxy.session_id,
+          palette: {
+            backgroundColor: "#181a1b",
+            textColor: "#e8e6e3",
+          },
+        },
+      ),
+    );
+    expect(native.invoke).not.toHaveBeenCalledWith(
+      "update_proxy_website_dark_mode",
+      expect.objectContaining({
+        palette: expect.objectContaining({ backgroundColor: "#abcdef" }),
+      }),
+    );
   });
   it.each([false, true])(
     "releases a replaced redirect registry only when no other tab owns it (other owner=%s)",
@@ -573,11 +670,13 @@ describe("real WebBrowser iframe and website automation integration", () => {
       ).toBeEnabled(),
     );
     expect(iframe).not.toHaveAttribute("inert");
-    expect(
-      post.mock.calls.some(
-        ([data]) => data.action === "dark" && data.payload.enabled === true,
-      ),
-    ).toBe(true);
+    await waitFor(() =>
+      expect(
+        post.mock.calls.some(
+          ([data]) => data.action === "dark" && data.payload.enabled === true,
+        ),
+      ).toBe(true),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Demo page action" }));
     expect(post.mock.calls.some(([data]) => data.action === "script")).toBe(
       false,

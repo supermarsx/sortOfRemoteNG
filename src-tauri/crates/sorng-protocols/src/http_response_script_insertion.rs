@@ -209,9 +209,87 @@ pub(super) fn insertion_position(html: &str) -> Option<usize> {
     (templates == 0 && foreign.is_empty()).then_some(html.len())
 }
 
+/// Only traverse a document's inert preamble, never search for a head inside
+/// raw text, templates, attributes or foreign content. Keeping leading meta
+/// elements in place preserves charset sniffing. Stop before an upstream meta
+/// CSP so the proxy-owned first-paint style is not retroactively blocked,
+/// while still preceding application styles/scripts.
+pub(super) fn early_insertion_position(html: &str) -> usize {
+    let lower = html.to_ascii_lowercase();
+    let mut cursor = if lower.starts_with('\u{feff}') { 3 } else { 0 };
+    let mut phase = 0;
+    loop {
+        while lower
+            .as_bytes()
+            .get(cursor)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            cursor += 1;
+        }
+        if lower[cursor..].starts_with("<!--") {
+            let Some(end) = lower[cursor + 4..].find("-->") else {
+                return cursor;
+            };
+            let content = &lower[cursor + 4..cursor + 4 + end];
+            if content.starts_with('>')
+                || content.starts_with("->")
+                || content.contains("--!")
+                || content.contains("<!--")
+            {
+                return cursor;
+            }
+            cursor += 4 + end + 3;
+            continue;
+        }
+        if lower.as_bytes().get(cursor) != Some(&b'<') {
+            return cursor;
+        }
+        let Some((name, false, end)) = delimited_tag(&lower, cursor) else {
+            return cursor;
+        };
+        if name == "meta" {
+            let tag = &lower[cursor..end];
+            if tag.contains("http-equiv") && tag.contains("content-security-policy") {
+                return cursor;
+            }
+        }
+        phase = match (name, phase) {
+            ("", 0) => 1, // Valid doctype (checked by delimited_tag).
+            ("html", 0..=1) => 2,
+            ("head", 0..=2) => 3,
+            ("meta", _) => 3,
+            _ => return cursor,
+        };
+        cursor = end;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_paint_insertion_stays_outside_raw_text_and_preserves_metadata() {
+        for (prefix, rest) in [
+            ("\u{feff}<!DOCTYPE html><html><head><meta charset='utf-8'>", "<style>body{background:white}</style>"),
+            ("<!doctype html><!-- header --><html><head data-label='>'>", "<meta http-equiv='Content-Security-Policy' content=\"style-src 'none'\"><script>app()</script>"),
+            ("<!doctype html><html><head><meta charset='utf-8'>", "<meta content=\"style-src 'none'\" HTTP-EQUIV='content-security-policy'><style>body{background:white}</style>"),
+            ("<!doctype html>", "<template><head>inert</head></template>"),
+            ("<!doctype html>", "<textarea><head>fake</head></textarea>"),
+            ("<!doctype html>", "<style>/* <head> */</style>"),
+            ("<!doctype html>", "<svg><head>foreign</head></svg>"),
+            ("<!doctype html>", "<!--><template><!-- broken -->"),
+            ("<!doctype html>", "<plaintext><head>text"),
+            ("", "<body>fragment</body>"),
+            ("", "<head!><script>app()</script>"),
+        ] {
+            let html = format!("{prefix}{rest}");
+            assert_eq!(early_insertion_position(&html), prefix.len(), "{html}");
+            let palette = crate::http::WebsiteDarkModeBootstrap { background_color: "#181a1b".into(), text_color: "#e8e6e3".into() };
+            let injected = super::super::inject_dark_mode_bootstrap(&html, &palette);
+            assert_eq!(injected, format!("{prefix}{}{rest}", palette.style().unwrap()));
+        }
+    }
 
     #[test]
     fn executable_tail_matches_shared_browser_fixtures() {

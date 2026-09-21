@@ -718,6 +718,7 @@ define_command_group!(
         ssh_commands::test_ssh_connection,
         cloudflare_commands::update_cloudflare_dns_record,
         ssh_commands::update_highlight_rule,
+        http_commands::update_proxy_website_dark_mode,
         ssh_commands::update_ssh_compression_config,
         ssh_commands::update_ssh_session_auth,
         ssh_commands::validate_ssh_key_file,
@@ -1825,6 +1826,14 @@ mod tests {
     #[test]
     fn proxy_request_log_capacity_command_is_registered() {
         let command = "set_proxy_request_log_capacity";
+        assert!(is_command(command));
+        let registration = format!("http_commands::{command},");
+        assert!(include_str!("core_handler.rs").contains(&registration));
+    }
+
+    #[test]
+    fn proxy_website_dark_mode_update_command_is_registered() {
+        let command = "update_proxy_website_dark_mode";
         assert!(is_command(command));
         let registration = format!("http_commands::{command},");
         assert!(include_str!("core_handler.rs").contains(&registration));

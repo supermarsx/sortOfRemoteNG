@@ -39,6 +39,8 @@ pub use log_diagnostics::ProxyLogDiagnostic;
 #[path = "http_attempt.rs"]
 #[doc(hidden)]
 pub mod attempt;
+#[path = "http_dark_mode.rs"]
+mod dark_mode;
 #[cfg(test)]
 #[path = "http_request_log_tests.rs"]
 mod request_log_tests;
@@ -47,6 +49,7 @@ mod request_log_tests;
 mod tls_test_fixture;
 #[path = "http_web_automation.rs"]
 mod web_automation;
+pub use dark_mode::WebsiteDarkModeBootstrap;
 pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
 #[path = "http_font_assets.rs"]
 mod font_assets;
@@ -693,6 +696,10 @@ pub struct BasicAuthProxyConfig {
     /// back to the dark-theme defaults in `theme_tokens::Default`.
     #[serde(default)]
     pub theme_tokens: Option<crate::theme_tokens::ThemeTokens>,
+    /// Explicit website forced-dark opt-in, separate from the application's
+    /// error-page theme. Null/omitted leaves upstream appearance unchanged.
+    #[serde(default)]
+    pub website_dark_mode: Option<WebsiteDarkModeBootstrap>,
     /// t20: web auto-login arming for this proxy session. When `true`, the
     /// proxy auto-submits the session's saved `username`/`password` into the
     /// device's login form on connect (the mRemoteNG + cdp-auth behaviour).
@@ -1079,6 +1086,7 @@ pub struct ProxySessionEntry {
     #[doc(hidden)]
     pub attempt: Option<attempt::AttemptSession>,
     pub network: Arc<ProxyNetworkState>,
+    pub website_dark_mode: Arc<std::sync::RwLock<Option<WebsiteDarkModeBootstrap>>>,
     pub target_url: String,
     pub username: String,
     pub password: String,
@@ -1344,6 +1352,7 @@ pub struct AxumProxyState {
     #[doc(hidden)]
     pub attempt: Option<attempt::AttemptSession>,
     pub network: Arc<ProxyNetworkState>,
+    pub website_dark_mode: Arc<std::sync::RwLock<Option<WebsiteDarkModeBootstrap>>>,
     pub session_id: String,
     pub connection_id: String,
     pub target_url: String,
@@ -2546,6 +2555,24 @@ pub async fn axum_proxy_handler(
                     &state.proxy_policy,
                 )
                 .into_bytes();
+            }
+
+            // Insert last so the static palette precedes even the readiness
+            // bridge. This also works with scripts blocked, without changing
+            // the page's resource/CSP permissions or requesting an engine.
+            if is_html {
+                let palette = state
+                    .website_dark_mode
+                    .read()
+                    .ok()
+                    .and_then(|slot| slot.clone());
+                if let Some(palette) = palette {
+                    final_body = proxy_response::inject_dark_mode_bootstrap(
+                        &String::from_utf8_lossy(&final_body),
+                        &palette,
+                    )
+                    .into_bytes();
+                }
             }
 
             // Build response, stripping headers that block iframe display

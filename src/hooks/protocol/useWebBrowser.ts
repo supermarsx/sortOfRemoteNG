@@ -82,6 +82,16 @@ import {
   validateHttpCustomHeaders,
 } from "../../utils/connection/httpProxyPolicy";
 import { normalizeHttpFormAutomation } from "../../utils/connection/httpFormAutomation";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
+import {
+  normalizeHttpAutomation,
+  normalizeSessionQuickActions,
+} from "../../utils/connection/sessionQuickActions";
+import {
+  normalizeWebsiteDarkModeConfig,
+  normalizeWebsiteDarkModeSettings,
+} from "../../utils/connection/websiteDarkMode";
+import { httpRedirectTrustIdentity } from "../../utils/protocol/httpRedirectTrustIdentity";
 import type {
   CertificateInspection,
   NativeTlsCertificateInfo,
@@ -498,6 +508,137 @@ export function useWebBrowser(session: ConnectionSession) {
     session.connectionId,
   );
   const redirectTrust = useHttpRedirectTrust(session, connection);
+  const websiteDarkBootstrapCandidate = useMemo(() => {
+    try {
+      if (
+        settingsReady !== true ||
+        !normalizeSessionQuickActions(settings.sessionQuickActions)
+          .allowWebForceDark ||
+        normalizeHttpProxyPolicy(connection?.httpProxyPolicy).pageScripts ===
+          "block"
+      )
+        return null;
+      const navigation = getRuntimeWebNavigation(session.connectionId);
+      const provenance =
+        navigation?.trustedRedirectSource ?? navigation?.synologyRedirectSource;
+      let appearanceSource = connection;
+      if (provenance) {
+        provenance.assertOwner();
+        if (
+          databaseAvailability?.status !== "ready" ||
+          databaseAvailability.databaseId !== session.ownerDatabaseId ||
+          databaseAvailability.databaseId !== provenance.databaseId
+        )
+          return null;
+        const matches = state.connections.filter(
+          (item) => item.id === provenance.savedConnectionId,
+        );
+        if (matches.length !== 1) return null;
+        provenance.assertIdentity(matches[0]);
+        appearanceSource = matches[0];
+      } else if (
+        !appearanceSource ||
+        !state.connections.some((item) => item.id === appearanceSource?.id) ||
+        databaseAvailability?.status !== "ready" ||
+        databaseAvailability.databaseId !== session.ownerDatabaseId
+      )
+        return null;
+      const automation = normalizeHttpAutomation(
+        appearanceSource.httpAutomation,
+      );
+      if (!automation.forceDark) return null;
+      const config = normalizeWebsiteDarkModeConfig(automation.darkMode);
+      const global = normalizeWebsiteDarkModeSettings(settings.websiteDarkMode);
+      const theme = config.useGlobalDefaults ? global.defaults : config.theme;
+      return {
+        backgroundColor: theme.backgroundColor,
+        textColor: theme.textColor,
+      };
+    } catch {
+      return null;
+    }
+  }, [
+    connection,
+    databaseAvailability,
+    session.connectionId,
+    session.ownerDatabaseId,
+    settings.sessionQuickActions,
+    settings.websiteDarkMode,
+    settingsReady,
+    state.connections,
+  ]);
+  const [websiteDarkBootstrap, setWebsiteDarkBootstrap] = useState<{
+    backgroundColor: string;
+    textColor: string;
+  } | null>(null);
+  const resolveWebsiteDarkBootstrap = useCallback(
+    async (assertAttempt: () => void) => {
+      assertAttempt();
+      if (
+        settingsReady !== true ||
+        !normalizeSessionQuickActions(settings.sessionQuickActions)
+          .allowWebForceDark ||
+        normalizeHttpProxyPolicy(connection?.httpProxyPolicy).pageScripts ===
+          "block"
+      )
+        return null;
+      const navigation = getRuntimeWebNavigation(session.connectionId);
+      const provenance =
+        navigation?.trustedRedirectSource ?? navigation?.synologyRedirectSource;
+      const sourceId = provenance?.savedConnectionId ?? connection?.id;
+      if (!sourceId || !session.ownerDatabaseId) return null;
+      const manager = DatabaseManager.getInstance();
+      const target = manager.captureCurrentDatabaseDataTarget();
+      if (
+        databaseAvailability?.status !== "ready" ||
+        databaseAvailability.databaseId !== session.ownerDatabaseId ||
+        target?.databaseId !== session.ownerDatabaseId ||
+        !target.assertAccessible ||
+        !target.verifyCurrent ||
+        !target.readCurrent
+      )
+        return null;
+      target.assertAccessible();
+      await target.verifyCurrent();
+      assertAttempt();
+      target.assertAccessible();
+      const snapshot = await target.readCurrent();
+      assertAttempt();
+      target.assertAccessible();
+      const rows =
+        snapshot?.connections.filter((item) => item.id === sourceId) ?? [];
+      if (rows.length !== 1) return null;
+      const persisted = rows[0];
+      if (provenance) {
+        provenance.assertOwner();
+        if (provenance.databaseId !== target.databaseId) return null;
+        provenance.assertIdentity(persisted);
+      } else if (
+        !connection ||
+        httpRedirectTrustIdentity(persisted) !==
+          httpRedirectTrustIdentity(connection)
+      )
+        return null;
+      const automation = normalizeHttpAutomation(persisted.httpAutomation);
+      if (!automation.forceDark) return null;
+      const config = normalizeWebsiteDarkModeConfig(automation.darkMode);
+      const global = normalizeWebsiteDarkModeSettings(settings.websiteDarkMode);
+      const theme = config.useGlobalDefaults ? global.defaults : config.theme;
+      return {
+        backgroundColor: theme.backgroundColor,
+        textColor: theme.textColor,
+      };
+    },
+    [
+      connection,
+      databaseAvailability,
+      session.connectionId,
+      session.ownerDatabaseId,
+      settings.sessionQuickActions,
+      settings.websiteDarkMode,
+      settingsReady,
+    ],
+  );
   const targetResolution = useMemo(() => {
     const protocol = session.protocol === "https" ? "https" : "http";
     const defaultPort = protocol === "https" ? 443 : 80;
@@ -1925,6 +2066,21 @@ export function useWebBrowser(session: ConnectionSession) {
           reviewedFlowStartedRef.current = reviewedFlowScopeRef.current;
         }
         setWaitingForTrust(false);
+        let durableWebsiteDarkBootstrap: {
+          backgroundColor: string;
+          textColor: string;
+        } | null = null;
+        try {
+          durableWebsiteDarkBootstrap =
+            await resolveWebsiteDarkBootstrap(assertReviewedFlow);
+        } catch (error) {
+          assertReviewedFlow();
+          debugLog("WebBrowser", "Skipped unverified dark bootstrap", {
+            error,
+          });
+        }
+        assertReviewedFlow();
+        setWebsiteDarkBootstrap(durableWebsiteDarkBootstrap);
         // ── Universal proxy mediation (P1) ──
         // Every http/https tab now routes through `start_basic_auth_proxy`
         // regardless of whether Basic Auth is configured. Reasons:
@@ -2036,6 +2192,7 @@ export function useWebBrowser(session: ConnectionSession) {
                 // themes mid-session they can refresh the tab to
                 // pick up the new palette.
                 theme_tokens: readThemeTokens(),
+                website_dark_mode: durableWebsiteDarkBootstrap,
               },
             },
           ).catch((error: unknown) => {
@@ -2172,6 +2329,7 @@ export function useWebBrowser(session: ConnectionSession) {
       vaultSource,
       requireNetworkGuard,
       redirectTrust.defaultSource?.formLogin,
+      resolveWebsiteDarkBootstrap,
     ],
   );
 
@@ -3566,6 +3724,42 @@ export function useWebBrowser(session: ConnectionSession) {
     getDocument: getAutomationDocument,
   });
 
+  const websiteDarkBootstrapKey = stableJsonStringify(
+    websiteDarkBootstrapCandidate,
+  );
+  useEffect(() => {
+    const sessionId = proxySessionIdRef.current;
+    if (!sessionId) return;
+    let cancelled = false;
+    const assertCurrent = () => {
+      if (
+        cancelled ||
+        !mountedRef.current ||
+        proxySessionIdRef.current !== sessionId
+      )
+        throw new Error("The website dark-mode update was cancelled.");
+    };
+    void resolveWebsiteDarkBootstrap(assertCurrent)
+      .then(async (palette) => {
+        assertCurrent();
+        await invoke("update_proxy_website_dark_mode", {
+          sessionId,
+          palette,
+        });
+        assertCurrent();
+        setWebsiteDarkBootstrap(palette);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        debugLog("WebBrowser", "Failed to update proxy dark bootstrap", {
+          error,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveWebsiteDarkBootstrap, websiteDarkBootstrapKey]);
+
   return {
     webNetworkRouting:
       networkRouting?.scope === networkReportScope()
@@ -3617,6 +3811,7 @@ export function useWebBrowser(session: ConnectionSession) {
     attachIframe,
     shouldMountIframe,
     redirectHandoffPending,
+    websiteDarkBootstrap,
     pageInteractionBlocked:
       redirectHandoffPending || waitingForTrust || !!trustPrompt || !!loadError,
     handleUrlSubmit,
