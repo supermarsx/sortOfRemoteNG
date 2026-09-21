@@ -581,73 +581,83 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     [databaseManager, publishDatabaseAvailability],
   );
 
+  const clearDatabaseRows = useCallback(() => {
+    const lostUnsaved = dirtyRevisionRef.current > persistedRevisionRef.current;
+    loadGenerationRef.current += 1;
+    saveGenerationRef.current += 1;
+    setRecycleAccessGeneration((generation) => generation + 1);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+    saveLoopRef.current = null;
+    activeDatabaseTargetRef.current = null;
+    pendingSnapshotRef.current = null;
+    hasLoadedRef.current = false;
+    recycleLoadingRef.current = false;
+    setRecycleLoading(false);
+    dirtyRevisionRef.current = 0;
+    persistedRevisionRef.current = 0;
+    tabGroupSavePendingRef.current = false;
+    connectionsRef.current = [];
+    tabGroupsRef.current = [];
+    recycleBinRef.current = emptyRecycleBin();
+    loadedStorageRef.current = null;
+    automationFaultRef.current = false;
+    documentsFaultRef.current = false;
+    databaseSettingsFaultRef.current = false;
+    vaultFaultRef.current = false;
+    vaultReviewsRef.current.clear();
+    recycleReviewsRef.current.clear();
+    stateRef.current = {
+      ...stateRef.current,
+      connections: [],
+      tabGroups: [],
+      selectedConnection: null,
+      selectedConnectionIds: new Set(),
+      recycleBinData: recycleBinRef.current,
+    };
+    baseDispatch({ type: "SET_CONNECTIONS", payload: [] });
+    baseDispatch({ type: "SET_TAB_GROUPS", payload: [] });
+    baseDispatch({ type: "CLEAR_SELECTION" });
+    baseDispatch({ type: "SELECT_CONNECTION", payload: null });
+    baseDispatch({ type: "SET_RECYCLE_BIN", payload: recycleBinRef.current });
+    setPersistence({
+      dirty: false,
+      saving: false,
+      error: lostUnsaved
+        ? "Database closed before pending changes could be saved. Decrypted pending data was cleared; it was not persisted."
+        : null,
+    });
+    publishDatabaseAvailability();
+  }, [publishDatabaseAvailability]);
+
   useEffect(
     () =>
       databaseManager.onCurrentDatabaseChange((change) => {
         // An unrelated database being created/unlocked is not a new lease for
         // the current tree or its open tool drafts.
         if (
-          change.database?.id === databaseAvailabilityRef.current.databaseId &&
+          change.database &&
+          change.database.id === databaseAvailabilityRef.current.databaseId &&
           change.databaseId !== change.database?.id
         )
           return;
+        if (
+          !change.database &&
+          !activeDatabaseTargetRef.current &&
+          !hasLoadedRef.current &&
+          !recycleLoadingRef.current
+        ) {
+          // Detached windows can carry session-only connection snapshots. They
+          // never make the tree available and are not an unloaded owner payload.
+          publishDatabaseAvailability();
+          return;
+        }
         const changedOwner =
           !!change.database &&
           !!activeDatabaseTargetRef.current &&
           change.database.id !== activeDatabaseTargetRef.current.databaseId;
-        if (
-          changedOwner ||
-          (!change.database &&
-            ["close", "lock", "delete"].includes(change.reason))
-        ) {
-          const lostUnsaved =
-            dirtyRevisionRef.current > persistedRevisionRef.current;
-          loadGenerationRef.current += 1;
-          saveGenerationRef.current += 1;
-          setRecycleAccessGeneration((generation) => generation + 1);
-          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = null;
-          saveLoopRef.current = null;
-          activeDatabaseTargetRef.current = null;
-          pendingSnapshotRef.current = null;
-          hasLoadedRef.current = false;
-          dirtyRevisionRef.current = 0;
-          persistedRevisionRef.current = 0;
-          tabGroupSavePendingRef.current = false;
-          connectionsRef.current = [];
-          tabGroupsRef.current = [];
-          recycleBinRef.current = emptyRecycleBin();
-          loadedStorageRef.current = null;
-          automationFaultRef.current = false;
-          documentsFaultRef.current = false;
-          databaseSettingsFaultRef.current = false;
-          vaultFaultRef.current = false;
-          vaultReviewsRef.current.clear();
-          recycleReviewsRef.current.clear();
-          stateRef.current = {
-            ...stateRef.current,
-            connections: [],
-            tabGroups: [],
-            selectedConnection: null,
-            selectedConnectionIds: new Set(),
-            recycleBinData: recycleBinRef.current,
-          };
-          baseDispatch({ type: "SET_CONNECTIONS", payload: [] });
-          baseDispatch({ type: "SET_TAB_GROUPS", payload: [] });
-          baseDispatch({ type: "CLEAR_SELECTION" });
-          baseDispatch({ type: "SELECT_CONNECTION", payload: null });
-          baseDispatch({
-            type: "SET_RECYCLE_BIN",
-            payload: recycleBinRef.current,
-          });
-          setPersistence({
-            dirty: false,
-            saving: false,
-            error: lostUnsaved
-              ? "Database closed before pending changes could be saved. Decrypted pending data was cleared; it was not persisted."
-              : null,
-          });
-          publishDatabaseAvailability();
+        if (changedOwner || !change.database) {
+          clearDatabaseRows();
           return;
         }
         if (
@@ -673,7 +683,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         publishDatabaseAvailability();
       }),
-    [databaseManager, publishDatabaseAvailability],
+    [databaseManager, publishDatabaseAvailability, clearDatabaseRows],
   );
 
   const markPersistenceDirty = useCallback(() => {
@@ -1070,6 +1080,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const loadData = useCallback(
     async (expectedDatabaseId?: string) => {
+      if (!databaseManager.getCurrentDatabase()) {
+        clearDatabaseRows();
+        return false;
+      }
       const generation = ++loadGenerationRef.current;
       recycleLoadingRef.current = true;
       setRecycleLoading(true);
@@ -1168,7 +1182,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         throw error;
       }
     },
-    [databaseManager, flushPendingSave, publishDatabaseAvailability],
+    [
+      databaseManager,
+      flushPendingSave,
+      publishDatabaseAvailability,
+      clearDatabaseRows,
+    ],
   );
 
   const captureRecycleScope = useCallback((): RecycleBinScope => {

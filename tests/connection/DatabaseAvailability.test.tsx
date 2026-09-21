@@ -86,6 +86,90 @@ async function createDatabase() {
   return database.id;
 }
 describe("authoritative database availability", () => {
+  it("clears loaded rows synchronously when reload finds no selected database", async () => {
+    const id = await createDatabase();
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(() => result.current.loadData(id));
+    expect(result.current.state.connections[0].id).toBe(connection.id);
+    act(() => {
+      result.current.dispatch({
+        type: "SELECT_CONNECTION",
+        payload: connection,
+      });
+      result.current.dispatch({
+        type: "ADD_SESSION",
+        payload: session("live", "ssh"),
+      });
+    });
+    // Covers a restored/HMR provider that missed the manager's unload event.
+    vi.spyOn(manager, "getCurrentDatabase").mockReturnValue(null);
+    let reload!: Promise<boolean>;
+    act(() => {
+      reload = result.current.loadData(id);
+    });
+    expect(result.current.state.connections).toEqual([]);
+    expect(result.current.state.selectedConnection).toBeNull();
+    expect(result.current.databaseAvailability?.status).toBe("none");
+    expect(result.current.state.sessions[0].id).toBe("live");
+    await expect(reload).resolves.toBe(false);
+  });
+
+  it("clears an unloaded database independently of the event reason", async () => {
+    const id = await createDatabase();
+    let notify!: Parameters<DatabaseManager["onCurrentDatabaseChange"]>[0];
+    vi.spyOn(manager, "onCurrentDatabaseChange").mockImplementation(
+      (listener) => {
+        notify = listener;
+        return () => {};
+      },
+    );
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(() => result.current.loadData(id));
+    vi.spyOn(manager, "getCurrentDatabase").mockReturnValue(null);
+    act(() =>
+      notify({
+        reason: "open",
+        database: null,
+        databaseId: id,
+        previousDatabaseId: id,
+        connectionIds: [],
+        trustActivation: Promise.resolve(),
+      }),
+    );
+    expect(result.current.state.connections).toEqual([]);
+    expect(result.current.databaseAvailability?.status).toBe("none");
+    expect(result.current.automationLibrary?.scope).toBeNull();
+  });
+
+  it("cannot republish stale rows when a pending load completes after unload", async () => {
+    const id = await createDatabase();
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(() => result.current.loadData(id));
+    const target = manager.captureCurrentDatabaseDataTarget()!;
+    const data = await target.load();
+    const gate = deferred();
+    vi.spyOn(manager, "captureCurrentDatabaseDataTarget").mockReturnValue({
+      ...target,
+      load: async () => {
+        await gate.promise;
+        return data;
+      },
+    });
+    let reload!: Promise<boolean>;
+    await act(async () => {
+      reload = result.current.loadData(id);
+    });
+    act(() => manager.closeCurrentDatabase());
+    expect(result.current.state.connections).toEqual([]);
+    expect(result.current.databaseAvailability?.status).toBe("none");
+    await act(async () => {
+      gate.resolve();
+      expect(await reload).toBe(false);
+    });
+    expect(result.current.state.connections).toEqual([]);
+    expect(result.current.databaseAvailability?.status).toBe("none");
+  });
+
   it("keeps ownerless detached snapshots readable but never treats them as an opened database or persists them", async () => {
     const save = vi.spyOn(manager, "saveDatabaseData");
     const capture = vi.spyOn(manager, "captureCurrentDatabaseDataTarget");
@@ -116,6 +200,9 @@ describe("authoritative database availability", () => {
     expect(save).not.toHaveBeenCalled();
     expect(capture).not.toHaveBeenCalled();
     expect(result.current.persistence.dirty).toBe(false);
+    await act(() => manager.createDatabase("Unopened unrelated database"));
+    expect(result.current.state.connections).toEqual([connection]);
+    expect(result.current.databaseAvailability?.status).toBe("none");
     render(
       <ConnectionContext.Provider value={result.current}>
         <ConnectionTree
