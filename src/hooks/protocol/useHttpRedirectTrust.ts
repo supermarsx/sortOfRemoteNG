@@ -8,6 +8,7 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import {
   getRuntimeWebNavigation,
+  isSynologyMfaProofRetired,
   type TrustedRedirectSource,
   type SynologyRedirectSource,
 } from "../../utils/session/runtimeConnectionRegistry";
@@ -272,6 +273,7 @@ export function useHttpRedirectTrust(
   let synologyMfa: SynologyMfaCapability | undefined;
   if (
     proof &&
+    !isSynologyMfaProofRetired(proof) &&
     inheritedDefault?.formLogin &&
     formLoginCurrent &&
     connection &&
@@ -325,7 +327,8 @@ export function useHttpRedirectTrust(
       }
       synologyMfa = mfaRef.current.capability;
     } catch {
-      source.formLogin?.revoke();
+      // Source/DB/vault failures revoke through assertBudgetCurrent and the
+      // source lease. A stale proxy/runtime proof only disables this capability.
     }
   }
   const latestDefaults = useRef({ defaults, source: defaultSource });

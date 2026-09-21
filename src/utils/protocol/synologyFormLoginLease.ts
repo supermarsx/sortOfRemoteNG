@@ -1,8 +1,9 @@
 import type { Connection } from "../../types/connection/connection";
 import type { DatabaseCredentialVaultApi } from "../../types/security/databaseCredentialVault";
-import type {
-  SynologyRedirectSource,
-  SynologyMfaProof,
+import {
+  isSynologyMfaProofRetired,
+  type SynologyRedirectSource,
+  type SynologyMfaProof,
 } from "../session/runtimeConnectionRegistry";
 import { DatabaseManager } from "../connection/databaseManager";
 import {
@@ -138,6 +139,7 @@ export function createSynologyMfaCapability(
   readVault: () => DatabaseCredentialVaultApi | undefined,
 ): SynologyMfaCapability {
   const lease = source.formLogin!;
+  let retired = false;
   const manager = DatabaseManager.getInstance();
   const target = manager.captureCurrentDatabaseDataTarget();
   const checkSource = (current: Connection) => {
@@ -168,9 +170,24 @@ export function createSynologyMfaCapability(
     return consent;
   };
   const assertCurrent = (context: SynologyMfaContext) => {
+    // Expected handoff invalidates this capability, not the shared source lease.
+    if (retired || isSynologyMfaProofRetired(proof)) throw new Error(REVOKED);
+    let current: Connection;
     try {
       proof.assertCurrent();
-      checkSource(readSource());
+      current = readSource();
+    } catch {
+      // readSource's budget check owns chain-wide source/DB/vault revocation.
+      retired = true;
+      throw new Error(REVOKED);
+    }
+    try {
+      checkSource(current);
+    } catch {
+      lease?.revokeAutoMfa();
+      throw new Error(REVOKED);
+    }
+    try {
       const upstream = new URL(context.currentUrl),
         local = new URL(context.document.url);
       const challenge = getHttpApplicationProfile(
@@ -191,7 +208,7 @@ export function createSynologyMfaCapability(
       )
         throw new Error(REVOKED);
     } catch {
-      lease?.revokeAutoMfa();
+      retired = true;
       throw new Error(REVOKED);
     }
   };
@@ -209,8 +226,16 @@ export function createSynologyMfaCapability(
       context: SynologyMfaContext,
       assertAttempt: () => void,
     ) => {
+      const assertLiveAttempt = () => {
+        try {
+          assertAttempt();
+        } catch {
+          retired = true;
+          throw new Error(REVOKED);
+        }
+      };
       const check = () => {
-        assertAttempt();
+        assertLiveAttempt();
         assertCurrent(context);
         if (lease.autoMfaAttempted()) throw new Error(REVOKED);
       };
@@ -311,7 +336,7 @@ export function createSynologyMfaCapability(
           check();
           await persisted();
           const assertCodeCurrent = () => {
-            assertAttempt();
+            assertLiveAttempt();
             assertCurrent(context);
             if (Date.now() >= expires - 1000) throw new Error(REVOKED);
           };
@@ -321,7 +346,9 @@ export function createSynologyMfaCapability(
           return { code, expires, assertCurrent: assertCodeCurrent };
         }
       } catch {
-        lease.revokeAutoMfa();
+        // A pending generation can finish after its reviewed proxy handoff.
+        if (!retired && !isSynologyMfaProofRetired(proof))
+          lease.revokeAutoMfa();
         throw new Error(REVOKED);
       }
     },

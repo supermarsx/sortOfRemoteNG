@@ -25,6 +25,7 @@ import {
   registerRuntimeConnection,
 } from "../../src/utils/session/runtimeConnectionRegistry";
 import type { HttpRedirectReview } from "../../src/utils/protocol/httpRedirectReview";
+import * as synologyMfaLease from "../../src/utils/protocol/synologyFormLoginLease";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 import { mergeLocalSessionUpdate } from "../../src/utils/session/sessionLifecycle";
 import { OPEN_RUNTIME_CONNECTION_EVENT } from "../../src/hooks/session/useRuntimeConnectionLaunch";
@@ -715,9 +716,20 @@ describe("actual website redirect review integration", () => {
         compareAndSwap: vi.fn(),
       };
   }
-  it.each([false, true])(
-    "automatically submits original TOTP only through the redeemed destination proxy (vault=%s)",
-    async (vault) => {
+  it.each([
+    { vault: false, hops: 1 },
+    { vault: true, hops: 1 },
+    { vault: false, hops: 2 },
+    { vault: true, hops: 2 },
+    { vault: false, hops: 3 },
+    { vault: true, hops: 3 },
+  ])(
+    "automatically submits original TOTP after $hops redeemed same-tab redirects (vault=$vault)",
+    async ({ vault, hops }) => {
+      const capabilities = vi.spyOn(
+        synologyMfaLease,
+        "createSynologyMfaCapability",
+      );
       automaticSource(vault);
       const totpId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
       const localEntry = {
@@ -781,43 +793,77 @@ describe("actual website redirect review integration", () => {
       );
       const { view } = await mountContinuation(
         false,
-        "https://example-nas.de2.quickconnect.to/webman/index.cgi",
+        hops === 1
+          ? "https://example-nas.de2.quickconnect.to/webman/index.cgi"
+          : "https://global.quickconnect.to/",
       );
       await waitFor(() => expect(proxies).toHaveLength(2));
+      const originalLease = getRuntimeWebNavigation(h.sessions[0].connectionId)
+        ?.synologyRedirectSource?.formLogin;
+      for (let hop = 1; hop < hops; hop++) {
+        await waitFor(() =>
+          expect(view.container.querySelector("iframe")?.src).toContain(
+            proxies[hop].proxy_url,
+          ),
+        );
+        const relay = await readyMfaFrame(view, hop);
+        await waitFor(() =>
+          expect(relay.requests("totpProbe")).toHaveLength(1),
+        );
+        // The relay is ready, but has no OTP field. It has not spent the attempt.
+        await relay.send({
+          ...relay.requests("totpProbe")[0],
+          type: "proxy_web_automation",
+          status: "failed",
+        });
+        expect(originalLease!.autoMfaAttempted()).toBe(false);
+        const runtimeId = h.sessions[0].connectionId;
+        const oldProof = getRuntimeWebNavigation(runtimeId)!.synologyMfaProof!;
+        const oldCapability = capabilities.mock.results
+          .map((result) => result.value)
+          .find((capability) => capability.runtimeConnectionId === runtimeId)!;
+        const oldContext = {
+          runtimeConnectionId: runtimeId,
+          currentUrl: proxies[hop].target,
+          document: {
+            sessionId: proxies[hop].session_id,
+            url: relay.identity.url,
+          },
+        };
+        expect(() => oldCapability.assertCurrent(oldContext)).not.toThrow();
+        expect(() => oldProof.assertCurrent()).not.toThrow();
+        redirect(
+          relay.iframe,
+          hop === hops - 1
+            ? "https://example-nas.de2.quickconnect.to/webman/index.cgi"
+            : "https://www.quickconnect.to/",
+          true,
+          202,
+        );
+        await waitFor(() => expect(proxies).toHaveLength(hop + 2));
+        expect(getRuntimeWebNavigation(runtimeId)).toBeUndefined();
+        expect(() => oldProof.assertCurrent()).toThrow();
+        // A late old-frame callback must fail without poisoning the next hop.
+        expect(() => oldCapability.assertCurrent(oldContext)).toThrow();
+        await expect(
+          oldCapability.generate(oldContext, () => {}),
+        ).rejects.toThrow();
+        expect(
+          getRuntimeWebNavigation(h.sessions[0].connectionId)
+            ?.synologyRedirectSource?.formLogin,
+        ).toBe(originalLease);
+        expect(() => originalLease!.assertAutoMfaCurrent()).not.toThrow();
+        expect(relay.requests("totpSubmit")).toHaveLength(0);
+        expect(
+          h.invoke.mock.calls.filter(([name]) => name === "totp_compute_code"),
+        ).toHaveLength(0);
+      }
       await waitFor(() =>
         expect(view.container.querySelector("iframe")?.src).toContain(
-          proxies[1].proxy_url,
+          proxies[hops].proxy_url,
         ),
       );
-      const iframe = view.container.querySelector("iframe")!;
-      const post = vi.spyOn(iframe.contentWindow!, "postMessage");
-      const url = new URL(iframe.src);
-      const navigationToken = url.searchParams.get("__sorng_navigation_v1");
-      url.searchParams.delete("__sorng_navigation_v1");
-      const identity = {
-        version: 1,
-        sessionId: "proxy-2",
-        documentToken: "e".repeat(32),
-        documentSequence: 1,
-        navigationToken,
-        url: url.href,
-      };
-      const send = async (data: Record<string, unknown>) =>
-        act(async () => {
-          window.dispatchEvent(
-            new MessageEvent("message", {
-              source: iframe.contentWindow,
-              origin: url.origin,
-              data,
-            }),
-          );
-        });
-      await send({ ...identity, type: "proxy_document_start" });
-      await send({ ...identity, type: "proxy_dom_ready" });
-      const requests = (action: string) =>
-        post.mock.calls
-          .map(([data]) => data)
-          .filter((data) => data.action === action);
+      const { post, send, requests } = await readyMfaFrame(view, hops);
       await waitFor(() => expect(requests("totpProbe")).toHaveLength(1));
       await send({
         ...requests("totpProbe")[0],
@@ -856,12 +902,14 @@ describe("actual website redirect review integration", () => {
       const starts = h.invoke.mock.calls.filter(
         ([command]) => command === "start_basic_auth_proxy",
       );
-      expect(starts[1][1].config).toMatchObject({
-        username: "",
-        password: "",
-        http_auto_login: false,
-        continuation_id: continuationId,
-      });
+      expect(starts).toHaveLength(hops + 1);
+      for (const [, args] of starts.slice(1))
+        expect(args.config).toMatchObject({
+          username: "",
+          password: "",
+          http_auto_login: false,
+          continuation_id: continuationId,
+        });
       if (vault)
         expect(h.vault!.resolve).toHaveBeenCalledWith(
           expect.anything(),
@@ -876,6 +924,42 @@ describe("actual website redirect review integration", () => {
       expect(requests("totpSubmit")).toHaveLength(1);
     },
   );
+
+  async function readyMfaFrame(
+    view: Awaited<ReturnType<typeof mounted>>,
+    proxyIndex: number,
+  ) {
+    const iframe = view.container.querySelector("iframe")!;
+    const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+    const url = new URL(iframe.src);
+    const navigationToken = url.searchParams.get("__sorng_navigation_v1");
+    url.searchParams.delete("__sorng_navigation_v1");
+    const identity = {
+      version: 1,
+      sessionId: proxies[proxyIndex].session_id,
+      documentToken: "e".repeat(32),
+      documentSequence: 1,
+      navigationToken,
+      url: url.href,
+    };
+    const send = async (data: Record<string, unknown>) =>
+      act(async () => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: url.origin,
+            data,
+          }),
+        );
+      });
+    await send({ ...identity, type: "proxy_document_start" });
+    await send({ ...identity, type: "proxy_dom_ready" });
+    const requests = (action: string) =>
+      post.mock.calls
+        .map(([data]) => data)
+        .filter((data) => data.action === action);
+    return { iframe, post, send, requests, identity };
+  }
   it.each(["missing", "failed", "cancelled"])(
     "never arms MFA for a %s native continuation",
     async (mode) => {

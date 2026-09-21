@@ -276,12 +276,75 @@ describe("explicit origin-bound automatic website 2FA", () => {
     );
     return {
       capability: synologyMfa,
+      lease,
       vaultApi,
       deactivate: () => {
         active = false;
       },
     };
   }
+  it.each([false, true])(
+    "discards a code finishing after proxy retirement without revoking the source lease (vault=%s)",
+    async (vault) => {
+      const { capability, lease, deactivate } = redirectedSynology(vault);
+      let finish!: (code: string) => void;
+      mock.compute.mockImplementation(
+        () =>
+          new Promise<string>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await mount();
+      await reply(requests("totpProbe")[0]);
+      expect(mock.compute).toHaveBeenCalledOnce();
+      deactivate();
+      await act(async () => finish("123456"));
+      expect(requests("totpSubmit")).toHaveLength(0);
+      expect(() => lease.assertAutoMfaCurrent()).not.toThrow();
+      expect(lease.autoMfaAttempted()).toBe(false);
+      const context = {
+        runtimeConnectionId: conn.id,
+        currentUrl,
+        document: doc!,
+      };
+      await expect(capability.generate(context, () => {})).rejects.toThrow();
+      expect(mock.compute).toHaveBeenCalledOnce();
+      expect(() => lease.assertAutoMfaCurrent()).not.toThrow();
+      // Access/lock revocation remains chain-wide even after local retirement.
+      capability.revoke();
+      expect(() => lease.assertAutoMfaCurrent()).toThrow();
+    },
+  );
+  it.each(["context", "generation"])(
+    "retires only the old MFA capability for a stale %s",
+    async (mode) => {
+      const { capability, lease } = redirectedSynology();
+      const context = {
+        runtimeConnectionId: conn.id,
+        currentUrl,
+        document: doc!,
+      };
+      if (mode === "context") {
+        expect(() =>
+          capability.assertCurrent({
+            ...context,
+            runtimeConnectionId: "old-target",
+          }),
+        ).toThrow();
+      } else {
+        await expect(
+          capability.generate(context, () => {
+            throw new Error("old generation");
+          }),
+        ).rejects.toThrow();
+      }
+      expect(() => lease.assertAutoMfaCurrent()).not.toThrow();
+      // Restoring old inputs must not resurrect that retired capability.
+      await expect(capability.generate(context, () => {})).rejects.toThrow();
+      expect(mock.compute).not.toHaveBeenCalled();
+      expect(() => lease.assertAutoMfaCurrent()).not.toThrow();
+    },
+  );
   it.each([false, true])(
     "generates original TOTP through the redeemed MFA-only capability (vault=%s)",
     async (vault) => {

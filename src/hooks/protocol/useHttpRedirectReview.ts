@@ -12,6 +12,7 @@ import {
   getRuntimeWebNavigation,
   registerRuntimeConnection,
   releaseRuntimeConnection,
+  retireSynologyMfaProof,
 } from "../../utils/session/runtimeConnectionRegistry";
 import { OPEN_RUNTIME_CONNECTION_EVENT } from "../session/useRuntimeConnectionLaunch";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
@@ -25,7 +26,10 @@ import {
   parseHttpRedirectReview,
   type HttpRedirectReview,
 } from "../../utils/protocol/httpRedirectReview";
-import type { EffectiveHttpProxyPolicy } from "../../utils/protocol/synologyRedirectDefaults";
+import {
+  isSynologyDefaultRedirect,
+  type EffectiveHttpProxyPolicy,
+} from "../../utils/protocol/synologyRedirectDefaults";
 import {
   assertHttpRedirectDepth,
   httpRedirectHandoffLimit,
@@ -530,6 +534,27 @@ export function useHttpRedirectReview(options: Options) {
           ? nativeContinuation
           : undefined;
       assertSourceBudgetCurrent();
+      if (
+        transferContinuation &&
+        new URL(captured.sourceOrigin).protocol === "https:" &&
+        new URL(consumed.destinationUrl).protocol === "https:" &&
+        isSynologyDefaultRedirect(
+          captured.effectivePolicy,
+          captured.sourceOrigin,
+          consumed.destinationUrl,
+        )
+      ) {
+        // Retire before the awaited stop can trigger old-frame callbacks or a
+        // render. Preserve only the shared source lease and one-shot counter.
+        retireSynologyMfaProof(
+          captured.connection.id,
+          receipt.review.sessionId,
+        );
+      } else {
+        // Anonymous tabs, missing tickets, generic redirects and HTTP hops
+        // cannot re-arm MFA later merely by retaining form-login provenance.
+        synologyRedirectSource?.formLogin?.revokeAutoMfa();
+      }
       await withinDeadline(() =>
         transferContinuation
           ? captured.stopSource(

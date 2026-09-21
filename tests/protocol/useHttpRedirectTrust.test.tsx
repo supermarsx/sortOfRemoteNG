@@ -169,7 +169,11 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     ...qc(),
     httpApplication: { version: 1, id: "synology-dsm", loginMode: "form" },
   });
-  function inheritForm(view: ReturnType<typeof fixture>, redeem = false) {
+  function inheritForm(
+    view: ReturnType<typeof fixture>,
+    redeem = false,
+    assertActiveProxy = () => {},
+  ) {
     const original = view.result.current.defaultSource!;
     const target = anonymousRedirectConnection(
       view.context.state.connections[0],
@@ -193,7 +197,7 @@ describe("database-owned trusted HTTP redirect preferences", () => {
         continuation,
         "proxy",
         "http://127.0.0.1:41000",
-        () => {},
+        assertActiveProxy,
       );
     view.rerender({
       connection: target,
@@ -248,6 +252,26 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     expect(view.result.current.synologyMfa).toBeUndefined();
     inheritForm(view);
     expect(view.result.current.synologyMfa).toBeUndefined();
+  });
+  it("does not revoke the original form lease when an old proxy proof becomes stale", () => {
+    const original = mfaSource();
+    const view = fixture(original);
+    let active = true;
+    const target = inheritForm(view, true, () => {
+      if (!active) throw new Error("old proxy stopped");
+    });
+    const oldCapability = view.result.current.synologyMfa!;
+    const lease = view.result.current.defaultSource!.formLogin!;
+    active = false;
+    view.rerender({
+      connection: target,
+      session: { ...session, connectionId: target.id },
+    });
+    expect(view.result.current.synologyMfa).toBeUndefined();
+    expect(view.result.current.formLoginCurrent).toBe(true);
+    expect(() => oldCapability.assertCurrent(mfaContext(target))).toThrow();
+    expect(() => lease.assertCurrent(original, undefined)).not.toThrow();
+    expect(() => lease.assertAutoMfaCurrent()).not.toThrow();
   });
   it("exposes only a proof-bound MFA capability, never the saved source or its secrets", () => {
     const view = fixture(mfaSource());

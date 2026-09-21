@@ -65,6 +65,28 @@ export interface RuntimeWebNavigation {
   synologyMfaProof?: SynologyMfaProof;
 }
 const webNavigation = new Map<string, RuntimeWebNavigation>();
+const retiredSynologyMfaProofs = new WeakSet<SynologyMfaProof>();
+
+export function isSynologyMfaProofRetired(proof: SynologyMfaProof): boolean {
+  return retiredSynologyMfaProofs.has(proof);
+}
+
+/** Only a validated same-tab Synology handoff may retire a proof before stop.
+ * The next proxy must redeem its own native continuation; this grants nothing. */
+export function retireSynologyMfaProof(
+  connectionId: string,
+  proxySessionId: string,
+): void {
+  const proof = webNavigation.get(connectionId)?.synologyMfaProof;
+  if (!proof) return;
+  if (
+    proof.runtimeConnectionId !== connectionId ||
+    proof.proxySessionId !== proxySessionId
+  )
+    throw new Error("The Synology MFA handoff source changed.");
+  proof.assertCurrent();
+  retiredSynologyMfaProofs.add(proof);
+}
 
 export function registerRuntimeConnection(
   connection: Connection,
@@ -113,6 +135,7 @@ export function activateSynologyMfaProof(
       try {
         if (
           revoked ||
+          isSynologyMfaProofRetired(proof) ||
           webNavigation.get(connectionId) !== navigation ||
           navigation.synologyMfaProof !== proof
         )

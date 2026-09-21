@@ -7,7 +7,12 @@ import {
   registerRuntimeConnection,
   resolveRuntimeConnection,
   releaseRuntimeConnection,
+  activateSynologyMfaProof,
+  isSynologyMfaProofRetired,
+  retireSynologyMfaProof,
 } from "../../src/utils/session/runtimeConnectionRegistry";
+import { captureSynologyFormLoginLease } from "../../src/utils/protocol/synologyFormLoginLease";
+import { withSynologyRedirectDefaults } from "../../src/utils/protocol/synologyRedirectDefaults";
 import { OPEN_RUNTIME_CONNECTION_EVENT } from "../../src/hooks/session/useRuntimeConnectionLaunch";
 import type {
   Connection,
@@ -121,6 +126,150 @@ beforeEach(() => {
   h.invoke.mockResolvedValue(receipt);
 });
 describe("reviewed anonymous redirect handoff", () => {
+  it.each([
+    "same-tab",
+    "anonymous",
+    "generic",
+    "http",
+    "missing",
+    "wrong-proxy",
+    "stop-failed",
+  ])(
+    "retires only the exact validated MFA proxy before stop (%s)",
+    async (mode) => {
+      const original: Connection = {
+        ...source,
+        hostname: "example-nas.fr3.quickconnect.to",
+        httpApplication: { version: 1, id: "synology-dsm", loginMode: "form" },
+      };
+      const formLogin = captureSynologyFormLoginLease(original, undefined)!;
+      const provenance = {
+        originalOrigin: "https://example-nas.fr3.quickconnect.to",
+        enabled: true,
+        databaseId: "db-a",
+        savedConnectionId: original.id,
+        assertOwner: () => {},
+        assertIdentity: () => {},
+        formLogin,
+      };
+      const relay = {
+        ...source,
+        id: "relay",
+        hostname: "global.quickconnect.to",
+      };
+      const reviewed = {
+        ...receipt,
+        sourceOrigin: "https://global.quickconnect.to",
+        destinationUrl:
+          mode === "generic"
+            ? "https://target.invalid/"
+            : mode === "http"
+              ? "http://example-nas.quickconnect.to/"
+              : "https://example-nas.de2.quickconnect.to/webman/index.cgi",
+      };
+      const first = { id: "first-ticket", cancel: vi.fn() };
+      registerRuntimeConnection(relay, {
+        initialUrl: reviewed.sourceOrigin,
+        redirectHops: 1,
+        assertCurrent: () => {},
+        synologyRedirectSource: provenance,
+        nativeContinuation: first,
+      });
+      let active = true;
+      activateSynologyMfaProof(
+        relay.id,
+        first,
+        mode === "wrong-proxy" ? "other-proxy" : "proxy",
+        "http://127.0.0.1:41000",
+        () => {
+          if (!active) throw new Error("stopped");
+        },
+      );
+      const oldNavigation = getRuntimeWebNavigation(relay.id)!;
+      const oldProof = oldNavigation.synologyMfaProof!;
+      delete oldNavigation.nativeContinuation;
+      const nextTicket = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+      h.invoke.mockImplementation(async (command, input) =>
+        command === "review_proxy_redirect"
+          ? input.receiptId && mode !== "missing"
+            ? { ...reviewed, continuationId: nextTicket }
+            : reviewed
+          : undefined,
+      );
+      const view = fixture(true, true);
+      const options = {
+        ...view.options,
+        connection: relay,
+        session: { ...session, connectionId: relay.id },
+        sourceOrigin: reviewed.sourceOrigin,
+        effectivePolicy: withSynologyRedirectDefaults(
+          { ...DEFAULT_HTTP_PROXY_POLICY, allowCrossOriginRedirects: true },
+          { version: 1, originalOrigin: provenance.originalOrigin },
+        ),
+      };
+      view.rerender(options);
+      view.stopSource.mockImplementation(async () => {
+        // This runs before native stop resolves or releases the runtime record.
+        const eligible = mode === "same-tab" || mode === "stop-failed";
+        expect(isSynologyMfaProofRetired(oldProof)).toBe(eligible);
+        if (eligible) {
+          expect(() => oldProof.assertCurrent()).toThrow();
+          expect(() => formLogin.assertAutoMfaCurrent()).not.toThrow();
+          // A competing handoff cannot claim the retired source proof again.
+          expect(() => retireSynologyMfaProof(relay.id, "proxy")).toThrow();
+        }
+        if (mode === "stop-failed") throw new Error("stop failed");
+        active = false;
+        releaseRuntimeConnection(relay.id);
+      });
+      const launched = vi.fn();
+      window.addEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launched);
+      try {
+        await act(() => view.result.current.offer());
+        expect(view.result.current.review).not.toBeNull();
+        await act(() =>
+          view.result.current.accept(
+            mode === "anonymous" ? "anonymous" : "current",
+          ),
+        );
+        if (mode === "wrong-proxy" || mode === "stop-failed") {
+          expect(view.continueInTab).not.toHaveBeenCalled();
+          expect(launched).not.toHaveBeenCalled();
+          expect(h.invoke).toHaveBeenCalledWith("cancel_proxy_continuation", {
+            continuationId: nextTicket,
+          });
+          return;
+        }
+        expect(view.stopSource).toHaveBeenCalledOnce();
+        const target: Connection =
+          mode === "anonymous"
+            ? launched.mock.calls[0][0].detail.connection
+            : view.continueInTab.mock.calls[0][0];
+        const navigation = getRuntimeWebNavigation(target.id)!;
+        // A handoff never copies its old proof or auto-login secrets.
+        expect(navigation.synologyMfaProof).toBeUndefined();
+        expect(target.credentialSource).toBeUndefined();
+        expect(target.totpConfigs).toBeUndefined();
+        expect(target.basicAuthPassword).toBeUndefined();
+        if (mode === "same-tab") {
+          expect(navigation.nativeContinuation?.id).toBe(nextTicket);
+          expect(() => formLogin.assertAutoMfaCurrent()).not.toThrow();
+        } else {
+          expect(() => formLogin.assertAutoMfaCurrent()).toThrow();
+          // MFA revocation must not cancel the shared native form-login lease.
+          expect(() =>
+            formLogin.assertCurrent(original, undefined),
+          ).not.toThrow();
+          if (mode === "anonymous" || mode === "missing")
+            expect(navigation.nativeContinuation).toBeUndefined();
+        }
+      } finally {
+        window.removeEventListener(OPEN_RUNTIME_CONNECTION_EVENT, launched);
+        view.unmount();
+      }
+    },
+  );
+
   it("stops unsaved Synology form intent instead of transferring its native capsule", async () => {
     const id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
     const form: Connection = {
