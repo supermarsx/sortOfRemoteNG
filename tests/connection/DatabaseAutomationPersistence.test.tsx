@@ -137,6 +137,7 @@ beforeEach(() => {
           baseline = structuredClone(state.saved);
           return structuredClone(state.saved);
         },
+        readCurrent: async () => structuredClone(state.saved),
         save: async (data) => {
           await state.save(data);
           baseline = structuredClone(data);
@@ -266,7 +267,9 @@ describe("owning database automation persistence", () => {
     };
     await act(() => hook.result.current.actions.run(ref));
     expect(replay).toHaveBeenCalledOnce();
-    expect(hook.result.current.actions.error).toContain("another window");
+    expect(hook.result.current.actions.error).toContain(
+      "No substitute was used",
+    );
     expect(state.save).toHaveBeenCalledOnce();
     hook.unmount();
   });

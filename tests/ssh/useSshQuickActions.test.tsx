@@ -6,6 +6,7 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import type { ConnectionAction } from "../../src/contexts/ConnectionContextTypes";
+import type { DatabaseAvailability } from "../../src/contexts/ConnectionContextTypes";
 import type { DatabaseAutomationApi } from "../../src/types/recording/automationLibrary";
 import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
 const fixture = vi.hoisted(() => ({
@@ -18,6 +19,11 @@ const fixture = vi.hoisted(() => ({
   flush: vi.fn(),
   save: vi.fn(),
   databaseLibrary: undefined as DatabaseAutomationApi | undefined,
+  availability: {
+    status: "ready",
+    databaseId: "db-a",
+    generation: 1,
+  } as DatabaseAvailability,
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
@@ -25,6 +31,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
     flushPendingSave: fixture.flush,
     dispatchAndFlush: fixture.save,
     automationLibrary: fixture.databaseLibrary,
+    databaseAvailability: fixture.availability,
   }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
@@ -100,14 +107,33 @@ const setup = (
     replayMacro: vi.fn(),
     ...overrides,
   };
-  return { ...renderHook(() => useSshQuickActions(options)), options, actor };
+  return {
+    ...renderHook(
+      (props: typeof options | undefined) =>
+        useSshQuickActions(props ?? options),
+      { initialProps: options as typeof options | undefined },
+    ),
+    options,
+    actor,
+  };
 };
 beforeEach(() => {
   fixture.database = "db-a";
   fixture.accessible = true;
   fixture.settings = {};
   fixture.connections = [connection()];
-  fixture.databaseLibrary = undefined;
+  fixture.availability = {
+    status: "ready",
+    databaseId: "db-a",
+    generation: 1,
+  };
+  fixture.databaseLibrary = {
+    scope: { databaseId: "db-a", generation: 1 },
+    changeRevision: 0,
+    read: vi.fn(async () => emptyDatabaseAutomationLibrary()),
+    readSsh: vi.fn(async () => emptyDatabaseAutomationLibrary()),
+    compareAndSwap: vi.fn(),
+  };
   fixture.scripts.mockReset().mockResolvedValue({ value: [script] });
   fixture.macros.mockReset().mockResolvedValue([macro]);
   fixture.flush.mockReset().mockResolvedValue(undefined);
@@ -119,11 +145,191 @@ beforeEach(() => {
     });
 });
 describe("SSH connection favorites", () => {
+  it("fails closed when read-only refresh is unavailable instead of flushing through the legacy reader", async () => {
+    delete fixture.databaseLibrary!.readSsh;
+    const view = setup();
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.error).toContain("backend-unavailable");
+    expect(fixture.databaseLibrary!.read).not.toHaveBeenCalled();
+    expect(fixture.flush).not.toHaveBeenCalled();
+    expect(fixture.save).not.toHaveBeenCalled();
+    expect(view.result.current.available).toEqual([]);
+  });
+
+  it("does not substitute legacy reads or app-wide favorites when the exact-owner refresh fails", async () => {
+    vi.mocked(fixture.databaseLibrary!.readSsh!).mockRejectedValue(
+      new Error("The owning database changed"),
+    );
+    const view = setup();
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.error).toContain(
+      "Owning database actions (conflict)",
+    );
+    expect(fixture.databaseLibrary!.read).not.toHaveBeenCalled();
+    expect(fixture.flush).not.toHaveBeenCalled();
+    expect(view.result.current.available).toEqual([]);
+    await act(() => view.result.current.run({ kind: "script", id: script.id }));
+    expect(view.options.runScript).not.toHaveBeenCalled();
+  });
+
+  it("loads the action library only when availability and API scope match the exact owner", async () => {
+    const read = vi.mocked(fixture.databaseLibrary!.readSsh!);
+    const view = setup();
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(read).toHaveBeenCalledWith(
+      { databaseId: "db-a", generation: 1 },
+      "connection-a",
+    );
+    expect(fixture.databaseLibrary!.read).not.toHaveBeenCalled();
+    expect(view.result.current.unavailable).toBeNull();
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it("reports matching owner reloads as loading and resumes without a false conflict", async () => {
+    const read = vi.mocked(fixture.databaseLibrary!.readSsh!);
+    fixture.availability = {
+      status: "loading",
+      databaseId: "db-a",
+      generation: 2,
+    };
+    fixture.databaseLibrary!.scope = null;
+    const view = setup();
+    expect(view.result.current.loading).toBe(true);
+    expect(view.result.current.unavailable).toBeNull();
+    expect(view.result.current.error).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+
+    act(() => {
+      fixture.availability = {
+        status: "ready",
+        databaseId: "db-a",
+        generation: 3,
+      };
+      fixture.databaseLibrary!.scope = {
+        databaseId: "db-a",
+        generation: 2,
+      };
+      view.rerender();
+    });
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(read).toHaveBeenCalledWith(
+      { databaseId: "db-a", generation: 2 },
+      "connection-a",
+    );
+    expect(view.result.current.unavailable).toBeNull();
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it("fails closed when provider availability belongs to another database", async () => {
+    const read = vi.mocked(fixture.databaseLibrary!.readSsh!);
+    fixture.availability = {
+      status: "ready",
+      databaseId: "db-b",
+      generation: 2,
+    };
+    fixture.databaseLibrary!.scope = { databaseId: "db-b", generation: 2 };
+    const view = setup();
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.unavailable).toContain(
+      "Owning database actions (conflict)",
+    );
+    expect(view.result.current.unavailable).toContain(
+      "No app-wide substitute was used",
+    );
+    expect(read).not.toHaveBeenCalled();
+    expect(view.result.current.available).toEqual([]);
+  });
+
+  it("fails closed while the matching owner is suspended and recovers after unlock", async () => {
+    const read = vi.mocked(fixture.databaseLibrary!.readSsh!);
+    fixture.availability = {
+      status: "suspended",
+      databaseId: "db-a",
+      generation: 2,
+    };
+    fixture.databaseLibrary!.scope = null;
+    const view = setup();
+    expect(view.result.current.loading).toBe(false);
+    expect(view.result.current.unavailable).toContain(
+      "Owning database actions (locked)",
+    );
+    expect(read).not.toHaveBeenCalled();
+
+    act(() => {
+      fixture.availability = {
+        status: "ready",
+        databaseId: "db-a",
+        generation: 3,
+      };
+      fixture.databaseLibrary!.scope = {
+        databaseId: "db-a",
+        generation: 2,
+      };
+      view.rerender();
+    });
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(read).toHaveBeenCalledOnce();
+    expect(view.result.current.unavailable).toBeNull();
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it("retires a stale read across availability and session identity rerenders without retaining conflict", async () => {
+    let finish!: (
+      value: ReturnType<typeof emptyDatabaseAutomationLibrary>,
+    ) => void;
+    const first = new Promise<
+      ReturnType<typeof emptyDatabaseAutomationLibrary>
+    >((resolve) => {
+      finish = resolve;
+    });
+    const read = vi
+      .mocked(fixture.databaseLibrary!.readSsh!)
+      .mockImplementationOnce(async () => first)
+      .mockResolvedValue(emptyDatabaseAutomationLibrary());
+    fixture.connections = [
+      connection(),
+      { ...connection(), id: "connection-b", name: "Redirected identity" },
+    ];
+    const view = setup();
+    await waitFor(() => expect(read).toHaveBeenCalledOnce());
+
+    act(() => {
+      fixture.availability = {
+        status: "ready",
+        databaseId: "db-a",
+        generation: 2,
+      };
+      view.rerender({
+        ...view.options,
+        session: {
+          ...session,
+          connectionId: "connection-b",
+          name: "Redirected identity",
+        },
+      });
+    });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.error).toBeNull();
+    expect(view.result.current.unavailable).toBeNull();
+
+    await act(async () => {
+      finish(emptyDatabaseAutomationLibrary());
+      await first;
+    });
+    expect(view.result.current.error).toBeNull();
+    expect(view.result.current.unavailable).toBeNull();
+    expect(fixture.save).not.toHaveBeenCalled();
+  });
+
   it("names a failed database library without telling the user to unlock app-wide encryption", async () => {
     fixture.databaseLibrary = {
       scope: { databaseId: "db-a", generation: 1 },
       changeRevision: 0,
       read: vi.fn().mockRejectedValue("Database key unavailable SECRET_PATH"),
+      readSsh: vi
+        .fn()
+        .mockRejectedValue("Database key unavailable SECRET_PATH"),
       compareAndSwap: vi.fn(),
     };
     const view = setup();
@@ -185,6 +391,7 @@ describe("SSH connection favorites", () => {
       scope: { databaseId: "db-a", generation: 1 },
       changeRevision: 0,
       read: vi.fn(async () => structuredClone(db)),
+      readSsh: vi.fn(async () => structuredClone(db)),
       compareAndSwap: vi.fn(),
     };
     const ref = {
@@ -379,6 +586,7 @@ describe("SSH connection favorites", () => {
     act(() => {
       running = view.result.current.run({ kind: "script", id: "script-a" });
     });
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
     fixture.accessible = false;
     await act(async () => {
       finish({ value: [script] });

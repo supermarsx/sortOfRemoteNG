@@ -86,6 +86,18 @@ export interface DatabaseAutomationApi {
   read(
     expectedScope: DatabaseAutomationScope,
   ): Promise<DatabaseAutomationLibrary>;
+  /** Refresh website previews without advancing the database writer baseline.
+   * Execution must compare the selected payload with a new read. */
+  readWebsite?(
+    expectedScope: DatabaseAutomationScope,
+  ): Promise<DatabaseAutomationLibrary>;
+  /** Read current SSH actions without flushing drafts or advancing writer
+   * baselines. Refuse changes to the saved connection's action configuration.
+   * Execution must revalidate the reviewed payload with another read. */
+  readSsh?(
+    expectedScope: DatabaseAutomationScope,
+    connectionId: string,
+  ): Promise<DatabaseAutomationLibrary>;
   compareAndSwap(
     expectedScope: DatabaseAutomationScope,
     expected: DatabaseAutomationLibrary,

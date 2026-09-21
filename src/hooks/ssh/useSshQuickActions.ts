@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
+import type { ConnectionContextType } from "../../contexts/ConnectionContextTypes";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import type { ConnectionSession } from "../../types/connection/connection";
 import type { QuickActionReference } from "../../types/connection/sessionQuickActions";
@@ -31,6 +32,62 @@ import type { MacroLibraryReadAccess } from "../../utils/storage/macroLibraryRea
 
 type LibrarySource =
   "App-wide scripts" | "App-wide terminal macros" | "Owning database actions";
+
+const OWNER_LIBRARY_CONFLICT =
+  "Owning database actions (conflict): Open and unlock this connection's exact owning database, then reload its action library. No app-wide substitute was used.";
+const OWNER_LIBRARY_LOCKED =
+  "Owning database actions (locked): Unlock this connection's exact owning database, then reload its action library. No app-wide substitute was used.";
+
+type OwnerLibraryAccess =
+  | { status: "ready" | "loading"; key: string; message: null }
+  | { status: "conflict"; key: string; message: string };
+
+function resolveOwnerLibraryAccess(
+  context: Pick<
+    ConnectionContextType,
+    "automationLibrary" | "databaseAvailability"
+  >,
+  ownerDatabaseId: string | undefined,
+): OwnerLibraryAccess {
+  const availability = context.databaseAvailability;
+  const scope = context.automationLibrary?.scope;
+  const key = JSON.stringify([
+    ownerDatabaseId ?? null,
+    availability?.databaseId ?? null,
+    availability?.status ?? null,
+    availability?.generation ?? null,
+    scope?.databaseId ?? null,
+    scope?.generation ?? null,
+    context.automationLibrary?.changeRevision ?? null,
+  ]);
+
+  if (
+    ownerDatabaseId &&
+    availability?.databaseId === ownerDatabaseId &&
+    availability.status === "loading"
+  )
+    return { status: "loading", key, message: null };
+
+  if (
+    !ownerDatabaseId ||
+    availability?.status !== "ready" ||
+    availability.databaseId !== ownerDatabaseId ||
+    !scope ||
+    scope.databaseId !== ownerDatabaseId
+  )
+    return {
+      status: "conflict",
+      key,
+      message:
+        availability?.status === "suspended" &&
+        availability.databaseId === ownerDatabaseId
+          ? OWNER_LIBRARY_LOCKED
+          : OWNER_LIBRARY_CONFLICT,
+    };
+
+  return { status: "ready", key, message: null };
+}
+
 async function readLibrary<T>(
   source: LibrarySource,
   read: () => Promise<T>,
@@ -43,10 +100,12 @@ async function readLibrary<T>(
     // unlocking a different store or expose a native path/script in an error.
     const message =
       source === "Owning database actions"
-        ? diagnostic.code === "invalid-library" ||
-          diagnostic.code === "recovery-required"
-          ? "This database's action library could not be validated. Review its storage recovery and retry. Existing records were retained."
-          : "Open and unlock this connection's owning database, then reload its action library. No app-wide substitute was used."
+        ? failure instanceof AutomationLibraryAccessError
+          ? diagnostic.message
+          : diagnostic.code === "invalid-library" ||
+              diagnostic.code === "recovery-required"
+            ? "This database's action library could not be validated. Review its storage recovery and retry. Existing records were retained."
+            : "Open and unlock this connection's owning database, then reload its action library. No app-wide substitute was used."
         : diagnostic.message;
     throw new AutomationLibraryAccessError({
       ...diagnostic,
@@ -96,35 +155,61 @@ export function useSshQuickActions(options: Options) {
   const enabled =
     options.session.protocol === "ssh" &&
     normalizeSessionQuickActions(settings.sessionQuickActions).sshEnabled;
+  const ownerAccess = resolveOwnerLibraryAccess(context, ownerId);
+  const sessionAccessKey = JSON.stringify([
+    options.session.id,
+    options.session.connectionId,
+    ownerAccess.key,
+  ]);
+  const sessionAccessKeyRef = useRef(sessionAccessKey);
+  sessionAccessKeyRef.current = sessionAccessKey;
 
-  const assertOwner = useCallback(() => {
-    if (
-      !normalizeSessionQuickActions(
-        current.current.settings.sessionQuickActions,
-      ).sshEnabled
-    )
-      throw new Error("SSH quick actions are disabled in Settings.");
-    if (!ownerId || manager.getCurrentDatabase()?.id !== ownerId)
-      throw new Error(
-        "Open the owning database to use this SSH connection's favorites.",
+  const assertOwner = useCallback(
+    (expectedAccessKey?: string) => {
+      if (
+        !normalizeSessionQuickActions(
+          current.current.settings.sessionQuickActions,
+        ).sshEnabled
+      )
+        throw new Error("SSH quick actions are disabled in Settings.");
+      if (
+        current.current.options.session.ownerDatabaseId !== ownerId ||
+        (expectedAccessKey !== undefined &&
+          sessionAccessKeyRef.current !== expectedAccessKey)
+      )
+        throw new Error("SSH action library access changed. Reload favorites.");
+      const liveAccess = resolveOwnerLibraryAccess(
+        current.current.context,
+        ownerId,
       );
-    const target = manager.captureCurrentDatabaseDataTarget();
-    if (
-      !target ||
-      target.databaseId !== ownerId ||
-      typeof target.assertAccessible !== "function"
-    )
-      throw new Error("Unlock the owning database before using favorites.");
-    target.assertAccessible();
-    const connection = current.current.context.state.connections.find(
-      (item) => item.id === current.current.options.session.connectionId,
-    );
-    if (!connection || connection.isGroup || connection.protocol !== "ssh")
-      throw new Error(
-        "Favorites require a saved SSH connection in the owning database.",
+      if (liveAccess.status !== "ready")
+        throw new Error(
+          liveAccess.message ??
+            "The owning database action library is still loading.",
+        );
+      if (!ownerId || manager.getCurrentDatabase()?.id !== ownerId)
+        throw new Error(
+          "Open the owning database to use this SSH connection's favorites.",
+        );
+      const target = manager.captureCurrentDatabaseDataTarget();
+      if (
+        !target ||
+        target.databaseId !== ownerId ||
+        typeof target.assertAccessible !== "function"
+      )
+        throw new Error("Unlock the owning database before using favorites.");
+      target.assertAccessible();
+      const connection = current.current.context.state.connections.find(
+        (item) => item.id === current.current.options.session.connectionId,
       );
-    return { connection, target };
-  }, [manager, ownerId]);
+      if (!connection || connection.isGroup || connection.protocol !== "ssh")
+        throw new Error(
+          "Favorites require a saved SSH connection in the owning database.",
+        );
+      return { connection, target };
+    },
+    [manager, ownerId],
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -154,7 +239,11 @@ export function useSshQuickActions(options: Options) {
     void context.state.connections;
     try {
       if (!enabled) return { references: [], unavailable: null };
-      const { connection } = assertOwner();
+      if (ownerAccess.status === "loading")
+        return { references: [], unavailable: null };
+      if (ownerAccess.status === "conflict")
+        return { references: [], unavailable: ownerAccess.message };
+      const { connection } = assertOwner(sessionAccessKey);
       return {
         references: normalizeSshQuickActions(connection.sshQuickActions).items,
         unavailable: null,
@@ -168,14 +257,22 @@ export function useSshQuickActions(options: Options) {
             : "Favorites unavailable. Reopen the connection settings to repair the configuration.",
       };
     }
-  }, [accessEpoch, enabled, assertOwner, context.state.connections]);
+  }, [
+    accessEpoch,
+    enabled,
+    assertOwner,
+    context.state.connections,
+    ownerAccess.message,
+    ownerAccess.status,
+    sessionAccessKey,
+  ]);
 
   const hasConnection = context.state.connections.some(
     (item) => item.id === options.session.connectionId,
   );
   const readDatabase = useCallback(
-    async (databaseId: string) => {
-      assertOwner();
+    async (databaseId: string, expectedAccessKey: string) => {
+      const { connection } = assertOwner(expectedAccessKey);
       const api = current.current.context.automationLibrary;
       const scope = api?.scope;
       if (
@@ -188,10 +285,18 @@ export function useSshQuickActions(options: Options) {
           "Open and unlock this favorite's exact owning database. No app-wide substitute was used.",
         );
       const capturedScope = { ...scope };
-      const stored = await api.read(capturedScope);
-      assertOwner();
+      if (!api.readSsh)
+        throw new AutomationLibraryAccessError({
+          code: "backend-unavailable",
+          message:
+            "SSH library refresh is unavailable. Restart the updated desktop app and reopen the owning database before retrying.",
+          retryable: true,
+        });
+      const stored = await api.readSsh(capturedScope, connection.id);
+      assertOwner(expectedAccessKey);
       const latestScope = current.current.context.automationLibrary?.scope;
       if (
+        sessionAccessKeyRef.current !== expectedAccessKey ||
         !latestScope ||
         latestScope.databaseId !== capturedScope.databaseId ||
         latestScope.generation !== capturedScope.generation
@@ -202,10 +307,10 @@ export function useSshQuickActions(options: Options) {
     [assertOwner, ownerId],
   );
   const resolveAction = useCallback(
-    async (reference: QuickActionReference) => {
+    async (reference: QuickActionReference, expectedAccessKey: string) => {
       const scope = quickActionReferenceScope(reference);
       if (scope.kind === "database") {
-        const stored = await readDatabase(scope.databaseId);
+        const stored = await readDatabase(scope.databaseId, expectedAccessKey);
         return reference.kind === "script"
           ? [
               ...stored.terminalScripts.customScripts,
@@ -213,6 +318,9 @@ export function useSshQuickActions(options: Options) {
             ].find((item) => item.id === reference.id)
           : stored.terminalMacros.find((item) => item.id === reference.id);
       }
+      // App-wide favorites still belong to this saved connection. Revalidate
+      // its current persisted configuration before reviewing or executing one.
+      await readDatabase(ownerId!, expectedAccessKey);
       return reference.kind === "script"
         ? resolveManagedScripts(
             getDefaultScripts(),
@@ -222,10 +330,12 @@ export function useSshQuickActions(options: Options) {
             (item) => item.id === reference.id,
           );
     },
-    [readDatabase],
+    [ownerId, readDatabase],
   );
   const refresh = useCallback(async () => {
     void hasConnection;
+    const capturedAccessKey = sessionAccessKey;
+    if (capturedAccessKey !== sessionAccessKeyRef.current) return;
     const captured = ++generation.current;
     libraryRead.current?.abort();
     if (!mounted.current) return;
@@ -234,11 +344,23 @@ export function useSshQuickActions(options: Options) {
       setLoading(false);
       return;
     }
+    if (ownerAccess.status === "loading") {
+      setLibrary([]);
+      setError(null);
+      setLoading(true);
+      return;
+    }
+    if (ownerAccess.status === "conflict") {
+      setLibrary([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     libraryRead.current = controller;
     setLoading(true);
     try {
-      const { target } = assertOwner();
+      const { target } = assertOwner(capturedAccessKey);
       const session = current.current.options.session;
       const access: MacroLibraryReadAccess = {
         signal: controller.signal,
@@ -247,6 +369,7 @@ export function useSshQuickActions(options: Options) {
             controller.signal.aborted ||
             !mounted.current ||
             captured !== generation.current ||
+            capturedAccessKey !== sessionAccessKeyRef.current ||
             current.current.options.active === false ||
             current.current.options.session.id !== session.id ||
             current.current.options.session.connectionId !==
@@ -257,7 +380,7 @@ export function useSshQuickActions(options: Options) {
               "Library access changed. Reload before continuing.",
             );
           target.assertAccessible?.();
-          assertOwner();
+          assertOwner(capturedAccessKey);
         },
       };
       access.assertCurrent();
@@ -266,11 +389,15 @@ export function useSshQuickActions(options: Options) {
         readLibrary("App-wide terminal macros", () =>
           macroService.loadMacros(access),
         ),
-        current.current.context.automationLibrary?.scope?.databaseId === ownerId
-          ? readLibrary("Owning database actions", () => readDatabase(ownerId!))
-          : Promise.resolve(null),
+        readLibrary("Owning database actions", () =>
+          readDatabase(ownerId!, capturedAccessKey),
+        ),
       ]);
-      if (captured !== generation.current) return;
+      if (
+        captured !== generation.current ||
+        capturedAccessKey !== sessionAccessKeyRef.current
+      )
+        return;
       access.assertCurrent();
       const items: SshQuickActionItem[] = [
         ...resolveManagedScripts(getDefaultScripts(), scripts.value).map(
@@ -317,7 +444,11 @@ export function useSshQuickActions(options: Options) {
       setLibrary(items);
       setError(null);
     } catch (failure) {
-      if (captured !== generation.current) return;
+      if (
+        captured !== generation.current ||
+        capturedAccessKey !== sessionAccessKeyRef.current
+      )
+        return;
       controller.abort();
       setLibrary([]);
       setError(
@@ -328,7 +459,11 @@ export function useSshQuickActions(options: Options) {
     } finally {
       controller.abort();
       if (libraryRead.current === controller) libraryRead.current = null;
-      if (captured === generation.current) setLoading(false);
+      if (
+        captured === generation.current &&
+        capturedAccessKey === sessionAccessKeyRef.current
+      )
+        setLoading(false);
     }
   }, [
     assertOwner,
@@ -336,7 +471,9 @@ export function useSshQuickActions(options: Options) {
     options.active,
     hasConnection,
     ownerId,
+    ownerAccess.status,
     readDatabase,
+    sessionAccessKey,
   ]);
 
   useEffect(() => {
@@ -359,12 +496,7 @@ export function useSshQuickActions(options: Options) {
       invalidate();
       window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
     };
-  }, [
-    accessEpoch,
-    refresh,
-    context.automationLibrary?.changeRevision,
-    context.automationLibrary?.scope?.generation,
-  ]);
+  }, [accessEpoch, refresh, sessionAccessKey]);
 
   const mutate = useCallback(
     async (
@@ -375,8 +507,9 @@ export function useSshQuickActions(options: Options) {
       setBusy(true);
       setError(null);
       const captured = generation.current;
+      const capturedAccessKey = sessionAccessKeyRef.current;
       try {
-        const { connection, target } = assertOwner();
+        const { connection, target } = assertOwner(capturedAccessKey);
         const expected = normalizeSshQuickActions(connection.sshQuickActions);
         const next = normalizeSshQuickActions({
           version: 1,
@@ -384,9 +517,10 @@ export function useSshQuickActions(options: Options) {
         });
         await current.current.context.flushPendingSave();
         target.assertAccessible?.();
-        const latest = assertOwner().connection;
+        const latest = assertOwner(capturedAccessKey).connection;
         if (
           generation.current !== captured ||
+          sessionAccessKeyRef.current !== capturedAccessKey ||
           JSON.stringify(normalizeSshQuickActions(latest.sshQuickActions)) !==
             JSON.stringify(expected)
         )
@@ -402,7 +536,7 @@ export function useSshQuickActions(options: Options) {
           },
         });
         target.assertAccessible?.();
-        assertOwner();
+        assertOwner(capturedAccessKey);
       } catch (failure) {
         setError(
           failure instanceof Error
@@ -468,8 +602,9 @@ export function useSshQuickActions(options: Options) {
       setBusy(true);
       setError(null);
       const captured = generation.current;
+      const capturedAccessKey = sessionAccessKeyRef.current;
       try {
-        const { connection, target } = assertOwner();
+        const { connection, target } = assertOwner(capturedAccessKey);
         if (
           !normalizeSshQuickActions(connection.sshQuickActions).items.some(
             (item) => key(item) === key(reference),
@@ -477,7 +612,7 @@ export function useSshQuickActions(options: Options) {
         )
           throw new Error("This favorite is no longer configured.");
         const assertCurrentSession = current.current.options.captureSession();
-        const payload = await resolveAction(reference);
+        const payload = await resolveAction(reference, capturedAccessKey);
         if (!payload)
           throw new Error(
             "This exact library entry was removed or is unavailable. No substitute was used.",
@@ -485,9 +620,10 @@ export function useSshQuickActions(options: Options) {
         const reviewed = JSON.stringify(payload);
         const assertCurrent = () => {
           target.assertAccessible?.();
-          const latest = assertOwner().connection;
+          const latest = assertOwner(capturedAccessKey).connection;
           if (
             captured !== generation.current ||
+            capturedAccessKey !== sessionAccessKeyRef.current ||
             !normalizeSshQuickActions(latest.sshQuickActions).items.some(
               (item) => key(item) === key(reference),
             )
@@ -497,7 +633,7 @@ export function useSshQuickActions(options: Options) {
         };
         const assertReviewed = async () => {
           assertCurrent();
-          const latest = await resolveAction(reference);
+          const latest = await resolveAction(reference, capturedAccessKey);
           assertCurrent();
           if (!latest || JSON.stringify(latest) !== reviewed)
             throw new Error(
@@ -543,12 +679,14 @@ export function useSshQuickActions(options: Options) {
     );
   }, [configuration.references, library]);
   const normalizedQuery = query.trim().toLowerCase();
+  const effectiveLoading = loading || ownerAccess.status === "loading";
+  const visibleError = ownerAccess.status === "ready" ? error : null;
   return {
     enabled,
     unavailable: configuration.unavailable,
-    error,
+    error: visibleError,
     busy,
-    loading,
+    loading: effectiveLoading,
     query,
     setQuery,
     favorites,
@@ -567,7 +705,8 @@ export function useSshQuickActions(options: Options) {
           .toLowerCase()
           .includes(normalizedQuery),
     ),
-    canRun: options.ready && !busy && !configuration.unavailable && !loading,
+    canRun:
+      options.ready && !busy && !configuration.unavailable && !effectiveLoading,
     add,
     remove,
     move,

@@ -345,7 +345,7 @@ export function useWebAutomation(options: Options) {
   }, [assertAccess]);
 
   const readDatabase = useCallback(
-    async (scope: AutomationScope, captured: number) => {
+    async (scope: AutomationScope, captured: number, review = false) => {
       assertAccess(captured);
       const api = database.current,
         receipt = api?.scope;
@@ -360,7 +360,10 @@ export function useWebAutomation(options: Options) {
           "The exact owning database library is unavailable; no app-wide fallback was used.",
         );
       const expected = { ...receipt };
-      const value = await api.read(expected);
+      const value =
+        review && api.readWebsite
+          ? await api.readWebsite(expected)
+          : await api.read(expected);
       assertAccess(captured);
       if (JSON.stringify(database.current?.scope) !== JSON.stringify(expected))
         throw new Error(
@@ -383,6 +386,7 @@ export function useWebAutomation(options: Options) {
       const result = await readDatabase(
         { kind: "database", databaseId: scope.databaseId },
         captured,
+        true,
       );
       if (read !== databaseReadGeneration.current) return;
       setDatabaseLibrary({
@@ -497,7 +501,7 @@ export function useWebAutomation(options: Options) {
       scope.kind === "app"
         ? ((await webAutomationStore.load()).value ??
           EMPTY_WEB_AUTOMATION_LIBRARY)
-        : (await readDatabase(scope, captured)).value.website;
+        : (await readDatabase(scope, captured, true)).value.website;
     assertAccess(captured);
     checkOwner();
     const saved = [...current.macros, ...current.scripts].find(
@@ -1293,6 +1297,9 @@ export function useWebAutomation(options: Options) {
     execute,
     cancel,
     reload: async () => {
+      // Reload is a new review, never approval of an old confirmation or run.
+      cancel();
+      setDatabaseLibrary(null);
       await reload();
       await reloadDatabase();
     },

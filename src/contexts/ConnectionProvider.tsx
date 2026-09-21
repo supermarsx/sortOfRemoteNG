@@ -80,6 +80,10 @@ import {
   formatConnectionDiff,
 } from "../utils/connection/diffConnection";
 import { normalizeAdvancedProtocolConnection } from "../utils/connection/normalizeAdvancedProtocolConnection";
+import {
+  normalizeHttpAutomation,
+  normalizeSshQuickActions,
+} from "../utils/connection/sessionQuickActions";
 import { applyTrustedRedirectChanges } from "../utils/security/trustedRedirectManagement";
 import { resolveDefaultTabGroup } from "../utils/session/resolveDefaultTabGroup";
 import {
@@ -1592,6 +1596,83 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         return normalizeDatabaseAutomationLibrary(
           loadedStorageRef.current?.automationLibrary,
         );
+      },
+      async readWebsite(expectedScope) {
+        expectedScope = { ...expectedScope };
+        assertAutomationScope(expectedScope);
+        await requireDesktop();
+        assertAutomationScope(expectedScope);
+        const target = activeDatabaseTargetRef.current;
+        if (!target?.readCurrent)
+          throw new Error(
+            "Database library refresh is unavailable. Reopen the updated desktop app before using this library.",
+          );
+        // A library review is read-only: neither flush local drafts nor load a
+        // new whole-database writer baseline. Either would risk replacing other
+        // fields changed in another window with our stale provider snapshot.
+        const data = await target.readCurrent();
+        assertAutomationScope(expectedScope);
+        if (target !== activeDatabaseTargetRef.current || !data)
+          throw new Error("The owning database changed. Reload its library.");
+        // Refreshing action payloads must not retain consent revoked elsewhere.
+        // Connection policy changes need a full database reload so the rendered
+        // connection and execution permissions agree with persisted state.
+        const policies = (connections: Connection[]) =>
+          connections
+            .filter((connection) =>
+              ["http", "https"].includes(connection.protocol),
+            )
+            .map((connection) => ({
+              id: connection.id,
+              automation: normalizeHttpAutomation(connection.httpAutomation),
+            }))
+            .sort((left, right) => left.id.localeCompare(right.id));
+        if (
+          JSON.stringify(policies(data.connections)) !==
+          JSON.stringify(policies(connectionsRef.current))
+        )
+          throw new Error(
+            "Website connection settings changed in another window. Reload the owning database and review its website permissions before running an action.",
+          );
+        return normalizeDatabaseAutomationLibrary(data.automationLibrary);
+      },
+      async readSsh(expectedScope, connectionId) {
+        expectedScope = { ...expectedScope };
+        assertAutomationScope(expectedScope);
+        await requireDesktop();
+        assertAutomationScope(expectedScope);
+        const target = activeDatabaseTargetRef.current;
+        if (!target?.readCurrent)
+          throw new Error(
+            "Database library refresh is unavailable. Reopen the updated desktop app before using this library.",
+          );
+        // A library refresh must not flush stale drafts or change either the
+        // provider's captured writer baseline or the manager's write baseline.
+        const data = await target.readCurrent();
+        assertAutomationScope(expectedScope);
+        if (target !== activeDatabaseTargetRef.current || !data)
+          throw new Error("The owning database changed. Reload its library.");
+        const saved = data.connections.find((item) => item.id === connectionId);
+        const live = connectionsRef.current.find(
+          (item) => item.id === connectionId,
+        );
+        if (
+          !saved ||
+          !live ||
+          saved.isGroup ||
+          live.isGroup ||
+          saved.protocol !== "ssh" ||
+          live.protocol !== "ssh" ||
+          JSON.stringify(normalizeSshQuickActions(saved.sshQuickActions)) !==
+            JSON.stringify(normalizeSshQuickActions(live.sshQuickActions))
+        )
+          throw new AutomationLibraryAccessError({
+            code: "conflict",
+            message:
+              "SSH connection settings changed in another window. Reload the owning database and review its favorites before running an action.",
+            retryable: true,
+          });
+        return normalizeDatabaseAutomationLibrary(data.automationLibrary);
       },
       async compareAndSwap(expectedScope, expected, replacement) {
         expectedScope = { ...expectedScope };

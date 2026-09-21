@@ -6,6 +6,7 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
+import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
 
 const h = vi.hoisted(() => ({
   owner: "db-a",
@@ -23,6 +24,18 @@ vi.mock("../../src/contexts/useConnections", () => ({
     state: { connections: h.connections },
     flushPendingSave: vi.fn(),
     dispatchAndFlush: vi.fn(),
+    databaseAvailability: {
+      status: "ready",
+      databaseId: h.owner,
+      generation: h.epoch,
+    },
+    automationLibrary: {
+      scope: { databaseId: h.owner, generation: h.epoch },
+      changeRevision: 0,
+      read: async () => emptyDatabaseAutomationLibrary(),
+      readSsh: async () => emptyDatabaseAutomationLibrary(),
+      compareAndSwap: vi.fn(),
+    },
   }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
