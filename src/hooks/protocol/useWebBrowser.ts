@@ -3044,6 +3044,11 @@ export function useWebBrowser(session: ConnectionSession) {
     pendingNavigationRef.current = false;
     pendingInternalNavigationRef.current = false;
     awaitingFrameGenerationRef.current = null;
+    // Some real appliances allow their own scripts but suppress the injected
+    // readiness bridge with CSP. A completed load of the validated protected
+    // proxy URL is still sufficient to retire the opaque handoff shield; the
+    // stricter document identity checks continue to gate automation and MFA.
+    setRedirectHandoffPending(false);
     clearLoadingIndicator();
     if (navigationFailureRef.current) return;
     try {

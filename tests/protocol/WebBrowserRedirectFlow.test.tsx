@@ -33,6 +33,7 @@ import type {
   DatabaseCredentialSnapshot,
   DatabaseCredentialVaultApi,
 } from "../../src/types/security/databaseCredentialVault";
+import { PROXY_WEB_FRAME_SANDBOX } from "../../src/utils/protocol/webBrowserFrame";
 
 const h = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -1874,14 +1875,31 @@ describe("actual website redirect review integration", () => {
         "https://global.quickconnect.to/",
         "https://www.quickconnect.to/",
       ];
+      const retainedIframe = view.container.querySelector("iframe")!;
       for (const [index, destination] of destinations.entries()) {
-        redirect(view.container.querySelector("iframe")!, destination);
+        redirect(retainedIframe, destination);
         await waitFor(() => expect(proxies).toHaveLength(index + 2));
         await waitFor(() =>
           expect(view.container.querySelector("iframe")?.src).toContain(
             proxies[index + 1].proxy_url,
           ),
         );
+        expect(view.container.querySelector("iframe")).toBe(retainedIframe);
+        expect(retainedIframe.getAttribute("sandbox")).toBe(
+          PROXY_WEB_FRAME_SANDBOX,
+        );
+        expect(
+          screen.getByTestId("web-redirect-handoff-shield"),
+        ).toBeInTheDocument();
+        document.removeEventListener("load", holdFrameLoad, true);
+        fireEvent.load(retainedIframe);
+        document.addEventListener("load", holdFrameLoad, true);
+        await waitFor(() =>
+          expect(
+            screen.queryByTestId("web-redirect-handoff-shield"),
+          ).toBeNull(),
+        );
+        expect(retainedIframe).not.toHaveAttribute("inert");
         expect(
           screen.queryByRole("region", { name: "Redirect review" }),
         ).toBeNull();
