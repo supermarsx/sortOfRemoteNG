@@ -11,6 +11,7 @@ import {
   isSynologyMfaProofRetired,
   type TrustedRedirectSource,
   type SynologyRedirectSource,
+  type RuntimeWebNavigation,
 } from "../../utils/session/runtimeConnectionRegistry";
 import {
   parseHttpRedirectReview,
@@ -30,8 +31,10 @@ import { normalizeSynologySettings } from "../../types/protocols/synology";
 import {
   captureSynologyFormLoginLease,
   createSynologyMfaCapability,
+  createSynologyManualTotpController,
   hasSynologyAutoMfaConsent,
   type SynologyMfaCapability,
+  type SynologyManualTotpController,
 } from "../../utils/protocol/synologyFormLoginLease";
 import {
   isSynologyDefaultRedirect,
@@ -49,6 +52,13 @@ const SAVE_FAILED =
   "The trusted destination could not be verified as saved. Restore database access and retry; no automatic continuation was approved.";
 const FULL =
   "This connection already has 32 trusted redirect destinations. Remove an unused destination in its HTTP(S) settings before remembering another.";
+
+// Original tab binding stays outside serializable source/navigation objects.
+// A separate anonymous tab may inherit routing provenance, but not this UI grant.
+const formLoginTabs = new WeakMap<
+  NonNullable<SynologyRedirectSource["formLogin"]>,
+  string
+>();
 
 export interface HttpRedirectTrustInspection {
   trusted: boolean;
@@ -68,7 +78,7 @@ export function useHttpRedirectTrust(
   const context = useConnections();
   const latest = useRef({ context, session, connection });
   latest.current = { context, session, connection };
-  const mounted = useRef(false);
+  const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -167,6 +177,10 @@ export function useHttpRedirectTrust(
               : null,
           ]);
           if (defaultSourceRef.current?.key !== key) {
+            const formLogin = saved
+              ? captureSynologyFormLoginLease(source, context.credentialVault)
+              : undefined;
+            if (formLogin) formLoginTabs.set(formLogin, session.id);
             defaultSourceRef.current = {
               key,
               value: {
@@ -175,12 +189,7 @@ export function useHttpRedirectTrust(
                 databaseId: availability.databaseId!,
                 databaseGeneration: availability.generation,
                 savedConnectionId: saved?.id,
-                formLogin: saved
-                  ? captureSynologyFormLoginLease(
-                      source,
-                      context.credentialVault,
-                    )
-                  : undefined,
+                formLogin,
                 assertOwner: captureSessionDatabaseAccess(session),
                 assertIdentity: (current) => {
                   if (httpRedirectTrustIdentity(current) !== identity)
@@ -265,6 +274,100 @@ export function useHttpRedirectTrust(
     assertBudgetCurrent();
   };
   const formLoginCurrent = !!budgetSource?.formLogin && !!redirectBudget;
+  const manualTotpRef = useRef<{
+    navigation: RuntimeWebNavigation;
+    controller: SynologyManualTotpController;
+  } | null>(null);
+  if (manualTotpRef.current?.navigation !== runtimeNavigation) {
+    manualTotpRef.current?.controller.revoke();
+    manualTotpRef.current = null;
+  }
+  let synologyManualTotp: SynologyManualTotpController | undefined;
+  if (
+    runtimeNavigation &&
+    inheritedDefault?.formLogin &&
+    formLoginCurrent &&
+    connection &&
+    formLoginTabs.get(inheritedDefault.formLogin) === session.id
+  ) {
+    const runtime = connection;
+    const source = inheritedDefault;
+    const navigation = runtimeNavigation;
+    const tabId = session.id;
+    const initialUrl = navigation.initialUrl;
+    const redirectHops = navigation.redirectHops;
+    const runtimeIdentity = httpRedirectTrustIdentity(runtime);
+    const checkNavigation = () => {
+      const current = latest.current;
+      const origin = httpRedirectConnectionOrigin(runtime);
+      const destination = new URL(initialUrl);
+      if (
+        current.session.id !== tabId ||
+        current.session.connectionId !== runtime.id ||
+        current.session.hostname !== runtime.hostname ||
+        current.session.protocol !== runtime.protocol ||
+        !current.connection ||
+        httpRedirectTrustIdentity(current.connection) !== runtimeIdentity ||
+        getRuntimeWebNavigation(runtime.id) !== navigation ||
+        navigation.synologyRedirectSource !== source ||
+        navigation.initialUrl !== initialUrl ||
+        navigation.redirectHops !== redirectHops ||
+        !Number.isSafeInteger(redirectHops) ||
+        redirectHops < 1 ||
+        redirectHops > 20 ||
+        runtime.httpAutoLogin !== false ||
+        runtime.credentialSource ||
+        runtime.httpApplication ||
+        current.context.state.connections.some(
+          (item) => item.id === runtime.id,
+        ) ||
+        destination.origin !== origin ||
+        destination.username ||
+        destination.password ||
+        (origin !== source.originalOrigin &&
+          !isSynologyDefaultRedirectOrigin(source.originalOrigin, origin))
+      )
+        throw new Error(UNAVAILABLE);
+    };
+    try {
+      checkNavigation();
+      if (!manualTotpRef.current) {
+        manualTotpRef.current = {
+          navigation,
+          controller: createSynologyManualTotpController(
+            source,
+            () => {
+              if (!mounted.current) throw new Error(UNAVAILABLE);
+              // navigation.assertCurrent is a launch guard tied to the stopped
+              // source transport. Ongoing manual access uses registry identity
+              // and the original database/source lease instead.
+              checkNavigation();
+              assertBudgetCurrent();
+              const originals = latest.current.context.state.connections.filter(
+                (item) => item.id === source.savedConnectionId,
+              );
+              if (originals.length !== 1) throw new Error(UNAVAILABLE);
+              return originals[0];
+            },
+            () => latest.current.context.credentialVault,
+          ),
+        };
+      } else {
+        try {
+          // Observe changes against the original snapshot even if nobody has
+          // opened the panel. A later restored value must not revive its grant.
+          manualTotpRef.current.controller.assertCurrent();
+        } catch {
+          // Retain the stable, now-inert facade for this navigation.
+        }
+      }
+      synologyManualTotp = manualTotpRef.current.controller;
+    } catch {
+      manualTotpRef.current?.controller.revoke();
+    }
+  } else {
+    manualTotpRef.current?.controller.revoke();
+  }
   const mfaRef = useRef<{
     proof: unknown;
     capability: SynologyMfaCapability;
@@ -713,6 +816,7 @@ export function useHttpRedirectTrust(
     defaultSource,
     formLoginCurrent,
     assertFormLoginCurrent,
+    ...(synologyManualTotp ? { synologyManualTotp } : {}),
     ...(synologyMfa ? { synologyMfa } : {}),
     ...(redirectBudget ? { redirectBudget } : {}),
   };

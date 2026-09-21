@@ -760,6 +760,9 @@ export function useWebBrowser(session: ConnectionSession) {
   // ── State ───────────────────────────────────────────────────
   const [currentUrl, setCurrentUrl] = useState(targetResolution.url);
   const [inputUrl, setInputUrl] = useState(currentUrl);
+  const handoffTargetRef = useRef<string | null>(null);
+  const previousSessionConnectionIdRef = useRef(session.connectionId);
+  const [redirectHandoffPending, setRedirectHandoffPending] = useState(false);
   const [showClearSessionConfirm, setShowClearSessionConfirm] = useState(false);
   const [clearingSession, setClearingSession] = useState(false);
   const clearingSessionRef = useRef(false);
@@ -1097,6 +1100,7 @@ export function useWebBrowser(session: ConnectionSession) {
       setNavigationFailure(failure);
       setLoadError(failure.detail || failure.reason);
       setIsLoading(false);
+      setRedirectHandoffPending(false);
       pendingNavigationRef.current = false;
       pendingInternalNavigationRef.current = false;
       awaitingFrameGenerationRef.current = null;
@@ -1228,6 +1232,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const pendingRecordingRef = useRef<unknown>(null);
 
   const totpConfigs = vaultSource ? [] : (connection?.totpConfigs ?? []);
+  const redirectedManualTotp = redirectTrust.synologyManualTotp;
 
   const closeFolderDropdown = useCallback((idx: number) => {
     setOpenFolders((prev) => {
@@ -1653,7 +1658,7 @@ export function useWebBrowser(session: ConnectionSession) {
     generation: () => navGenRef.current,
     proxySessionId: () => proxySessionIdRef.current,
     navigationToken: () => pendingFrameRef.current?.token ?? null,
-    stopSource: async (id, continuationId) => {
+    stopSource: async (id, continuationId, preserveTabContext = false) => {
       // Unlike generic best-effort cleanup, a handoff requires confirmed stop.
       await invoke("stop_basic_auth_proxy", {
         sessionId: id,
@@ -1664,14 +1669,20 @@ export function useWebBrowser(session: ConnectionSession) {
         proxyUrlRef.current = "";
         pendingFrameRef.current = null;
         currentDocumentRef.current = null;
-        clearFrame();
+        if (preserveTabContext) {
+          // Keep the DOM node, not the stopped source document. Restrict before
+          // blanking so stale page JavaScript cannot run behind the handoff
+          // shield while the destination proxy is prepared.
+          clearWebBrowserFrame(iframeRef.current);
+          setRedirectHandoffPending(true);
+        } else clearFrame();
         setProxyAlive(false);
       }
     },
     continueInTab: (target) => {
       // The redirect hook consumed the native receipt and stopped the original
-      // proxy. A new connection ID remounts WebBrowser with fresh trust, cookies,
-      // history and automation state while preserving this tab's position/owner.
+      // proxy. Replace only the volatile target: SessionViewer keeps this
+      // WebBrowser and its iframe mounted while the new protected proxy starts.
       const currentSessions = sessionsRef.current ?? [];
       const currentSession = currentSessions.find(
         (item) => item.id === session.id,
@@ -1683,6 +1694,7 @@ export function useWebBrowser(session: ConnectionSession) {
         throw new Error(
           "The redirect source session changed before its replacement was applied.",
         );
+      handoffTargetRef.current = target.id;
       dispatch({
         type: "UPDATE_SESSION",
         payload: {
@@ -2185,6 +2197,7 @@ export function useWebBrowser(session: ConnectionSession) {
       sameHttpApplicationLogin(previous.auth.login, applicationAuth.login)
     )
       return;
+    if (handoffTargetRef.current === session.connectionId) return;
     cancelPendingContinuation();
     navGenRef.current += 1;
     trustResolveRef.current?.(false);
@@ -2206,6 +2219,7 @@ export function useWebBrowser(session: ConnectionSession) {
     applicationAuth,
     proxyInputs,
     connection?.httpApplication,
+    session.connectionId,
     stopProxy,
     applyNavigationFailure,
     clearFrame,
@@ -2216,6 +2230,23 @@ export function useWebBrowser(session: ConnectionSession) {
   useEffect(() => {
     navigateToUrl(currentUrl);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: initial navigation
+
+  // A reviewed same-tab handoff changes the volatile connection id without
+  // replacing this component or iframe. Start the destination only after the
+  // rerender has installed its target, policy and continuation closures.
+  useEffect(() => {
+    const previous = previousSessionConnectionIdRef.current;
+    if (previous === session.connectionId) return;
+    previousSessionConnectionIdRef.current = session.connectionId;
+    if (handoffTargetRef.current !== session.connectionId) return;
+    handoffTargetRef.current = null;
+    const target = targetResolution.url;
+    activeNavigationUrlRef.current = target;
+    setCurrentUrl(target);
+    setInputUrl(target);
+    setIsSecure(target.startsWith("https:"));
+    void navigateToUrl(target, true);
+  }, [session.connectionId, targetResolution.url, navigateToUrl]);
 
   // Cleanup proxy and timeout on unmount
   useEffect(() => {
@@ -2745,6 +2776,7 @@ export function useWebBrowser(session: ConnectionSession) {
         pendingInternalNavigationRef.current = false;
         awaitingFrameGenerationRef.current = null;
         setIsLoading(false);
+        setRedirectHandoffPending(false);
         clearLoadingIndicator();
         // DOM readiness is not successful authentication or full resource load.
         void deferredLoginRef.current.refresh();
@@ -3499,6 +3531,7 @@ export function useWebBrowser(session: ConnectionSession) {
       : "",
     blocked:
       waitingForTrust ||
+      redirectHandoffPending ||
       !!trustPrompt ||
       !!loadError ||
       proxyOptions.policy?.pageScripts === "block" ||
@@ -3520,6 +3553,7 @@ export function useWebBrowser(session: ConnectionSession) {
     settingsReady: settingsReady === true,
     blocked:
       waitingForTrust ||
+      redirectHandoffPending ||
       !!trustPrompt ||
       !!loadError ||
       !!sslVerifyDisabled ||
@@ -3547,6 +3581,7 @@ export function useWebBrowser(session: ConnectionSession) {
     handleClearSessionData,
     automation,
     autoMfa,
+    redirectedManualTotp,
     // Context
     session,
     connection: noncredentialConnection,
@@ -3581,7 +3616,9 @@ export function useWebBrowser(session: ConnectionSession) {
     iframeRef,
     attachIframe,
     shouldMountIframe,
-    pageInteractionBlocked: waitingForTrust || !!trustPrompt || !!loadError,
+    redirectHandoffPending,
+    pageInteractionBlocked:
+      redirectHandoffPending || waitingForTrust || !!trustPrompt || !!loadError,
     handleUrlSubmit,
     handleIframeLoad,
     handleRefresh,

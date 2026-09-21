@@ -595,7 +595,10 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "connected" ||
         session.status === "reconnecting")
     ) {
-      return <WebBrowser key={session.connectionId} session={session} />;
+      // A reviewed redirect replaces the tab's volatile target, not the tab.
+      // Keeping this component mounted preserves the iframe, toolbar state and
+      // automation lifetime while the next protected proxy is prepared.
+      return <WebBrowser session={session} />;
     }
 
     if (

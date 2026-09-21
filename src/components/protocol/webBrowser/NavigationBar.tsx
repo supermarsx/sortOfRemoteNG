@@ -281,7 +281,35 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
             </span>
           )}
         </button>
+        {mgr.showTotpPanel && mgr.redirectedManualTotp && (
+          <RuntimeVaultTotpPanel
+            controller={mgr.redirectedManualTotp}
+            anchorRef={mgr.totpBtnRef}
+            onClose={() => mgr.setShowTotpPanel(false)}
+            footer={
+              mgr.autoMfa.status ? (
+                <div className="border-t border-[var(--color-border)] pt-3 space-y-2">
+                  <p
+                    role="status"
+                    className="text-xs text-[var(--color-textSecondary)]"
+                  >
+                    {mgr.autoMfa.status}
+                  </p>
+                  <button
+                    type="button"
+                    className="sor-btn sor-btn-secondary"
+                    disabled={!mgr.autoMfa.canRetry}
+                    onClick={mgr.autoMfa.retry}
+                  >
+                    Check for 2FA challenge again
+                  </button>
+                </div>
+              ) : undefined
+            }
+          />
+        )}
         {mgr.showTotpPanel &&
+          !mgr.redirectedManualTotp &&
           mgr.connection?.credentialSource?.kind === "vault" && (
             <RuntimeVaultTotpPanel
               controller={mgr.vaultTotp}
@@ -310,6 +338,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
             />
           )}
         {mgr.showTotpPanel &&
+          !mgr.redirectedManualTotp &&
           mgr.connection?.credentialSource?.kind !== "vault" && (
             <WebTotpPanel
               configs={mgr.totpConfigs}

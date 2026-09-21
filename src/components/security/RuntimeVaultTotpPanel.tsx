@@ -17,6 +17,7 @@ type Props = {
 type Code = Awaited<ReturnType<RuntimeVaultTotpController["generate"]>>;
 
 function Codes({ controller, onClose, footer }: Omit<Props, "anchorRef">) {
+  const connectionSource = controller.sourceKind === "connection";
   const [entries, setEntries] = useState<RuntimeVaultTotpEntry[]>([]);
   const [code, setCode] = useState<Code | null>(null);
   const [error, setError] = useState("");
@@ -40,7 +41,7 @@ function Codes({ controller, onClose, footer }: Omit<Props, "anchorRef">) {
       .catch(() => {
         if (epoch.current === ticket)
           setError(
-            "Vault authenticators are unavailable. Unlock the owning database and reopen this panel.",
+            `${connectionSource ? "Connection" : "Vault"} authenticators are unavailable. Unlock the owning database and reopen this panel.`,
           );
       })
       .finally(() => {
@@ -113,12 +114,12 @@ function Codes({ controller, onClose, footer }: Omit<Props, "anchorRef">) {
   return (
     <section
       className="w-80 max-w-[calc(100vw-2rem)] space-y-3 p-4"
-      aria-label="Vault authenticator codes"
+      aria-label={`${connectionSource ? "Connection" : "Vault"} authenticator codes`}
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-medium">
           <KeyRound size={16} />
-          Vault authenticator codes
+          {connectionSource ? "Connection" : "Vault"} authenticator codes
         </h3>
         <button
           type="button"
@@ -131,7 +132,8 @@ function Codes({ controller, onClose, footer }: Omit<Props, "anchorRef">) {
       </div>
       <p className="text-xs text-[var(--color-textSecondary)]">
         Generate and copy explicitly. Codes are not pasted or submitted
-        automatically. Connection-local authenticators are ignored.
+        automatically.
+        {!connectionSource && " Connection-local authenticators are ignored."}
       </p>
       {error && (
         <p role="alert" className="text-xs text-error">
@@ -145,7 +147,8 @@ function Codes({ controller, onClose, footer }: Omit<Props, "anchorRef">) {
       )}
       {busy && (
         <p role="status" className="text-xs">
-          Reading the owning database vault…
+          Reading the owning database{" "}
+          {connectionSource ? "connection" : "vault"}…
         </p>
       )}
       {!busy && !entries.length && !error && (

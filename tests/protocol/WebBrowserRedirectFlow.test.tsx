@@ -178,7 +178,7 @@ function Harness() {
       }
     },
   );
-  return <WebBrowser key={session.connectionId} session={session} />;
+  return <WebBrowser session={session} />;
 }
 beforeEach(() => {
   clearSessionActivityLog();
@@ -916,11 +916,17 @@ describe("actual website redirect review integration", () => {
           "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
           ["totp"],
         );
-      // The toolbar and destination connection receive neither source references nor seeds.
+      // The destination still receives neither source references nor seeds;
+      // the toolbar resolves the original authenticator through its revocable
+      // same-tab facade only when the user opens it.
       fireEvent.click(screen.getByRole("button", { name: "2FA Codes" }));
-      expect(
-        screen.queryByText(vault ? "Vault DSM OTP" : "NAS account"),
-      ).toBeNull();
+      const labels = await screen.findAllByText(
+        vault ? "Vault DSM OTP" : /DSM.*NAS account/,
+      );
+      expect(labels.some((label) => !label.classList.contains("sr-only"))).toBe(
+        true,
+      );
+      expect(screen.queryByText(/MFA-SEED/)).toBeNull();
       expect(requests("totpSubmit")).toHaveLength(1);
     },
   );
@@ -2495,7 +2501,7 @@ describe("actual website redirect review integration", () => {
           proxies[hop].proxy_url,
         ),
       );
-      expect(view.container.querySelector("iframe")).not.toBe(iframe);
+      expect(view.container.querySelector("iframe")).toBe(iframe);
       const session = h.sessions[0];
       expect(session).toMatchObject({
         id: "web-tab",

@@ -16,6 +16,15 @@ import type { TotpAlgorithm } from "../../types/totp";
 import { resolveHttpApplicationLogin } from "../auth/httpApplicationLogin";
 import { stableJsonStringify } from "../core/stableJsonStringify";
 import { httpRedirectTrustIdentity } from "./httpRedirectTrustIdentity";
+import type {
+  RuntimeVaultTotpController,
+  RuntimeVaultTotpEntry,
+} from "../../hooks/security/useRuntimeVaultTotp";
+
+export interface SynologyManualTotpController extends RuntimeVaultTotpController {
+  assertCurrent: () => void;
+  revoke: () => void;
+}
 
 const REVOKED =
   "The original Synology login or credential access changed. Reload the original saved connection to start a new login attempt.";
@@ -81,6 +90,259 @@ export function captureSynologyFormLoginLease(
       }
     },
   };
+}
+
+/** Manual disclosure only. The caller binds readSource to an accepted same-tab
+ * navigation; neither a proxy MFA proof nor automatic-submission consent is used.
+ * All private values stay in operation-local variables, never in the facade. */
+export function createSynologyManualTotpController(
+  source: SynologyRedirectSource,
+  readSource: () => Connection,
+  readVault: () => DatabaseCredentialVaultApi | undefined,
+): SynologyManualTotpController {
+  const lease = source.formLogin;
+  const databaseId = source.databaseId;
+  const savedConnectionId = source.savedConnectionId;
+  const originalOrigin = source.originalOrigin;
+  const manager = DatabaseManager.getInstance();
+  const target = manager.captureCurrentDatabaseDataTarget();
+  const scopeKey = `synology-manual-totp:${crypto.randomUUID()}`;
+  let revoked = false;
+  let vaultRevision: number | undefined;
+  const revoke = () => {
+    // Manual-panel cancellation must not consume or revoke automatic MFA.
+    revoked = true;
+  };
+  const checkSource = (current: Connection) => {
+    if (
+      !lease ||
+      source.formLogin !== lease ||
+      source.databaseId !== databaseId ||
+      source.savedConnectionId !== savedConnectionId ||
+      source.originalOrigin !== originalOrigin ||
+      !savedConnectionId ||
+      current.id !== savedConnectionId ||
+      current.httpApplication?.id !== "synology-dsm" ||
+      current.httpApplication.invalid ||
+      current.httpApplication.loginMode !== "form"
+    )
+      throw new Error(REVOKED);
+    lease.assertCurrent(current, readVault());
+    source.assertIdentity(current);
+  };
+  const guard = <T>(operation: () => T): T => {
+    try {
+      if (revoked) throw new Error(REVOKED);
+      return operation();
+    } catch {
+      revoke();
+      throw new Error(REVOKED);
+    }
+  };
+  const assertCurrent = () =>
+    guard(() => {
+      source.assertOwner();
+      if (
+        manager.getCurrentDatabase()?.id !== databaseId ||
+        target?.databaseId !== databaseId ||
+        !target.assertAccessible ||
+        !target.verifyCurrent ||
+        !target.readCurrent
+      )
+        throw new Error(REVOKED);
+      target.assertAccessible();
+      checkSource(readSource());
+    });
+  const persisted = async () => {
+    assertCurrent();
+    await target!.verifyCurrent!();
+    assertCurrent();
+    const data = await target!.readCurrent!();
+    assertCurrent();
+    const matches =
+      data?.connections.filter((entry) => entry.id === savedConnectionId) ?? [];
+    return guard(() => {
+      if (matches.length !== 1) throw new Error(REVOKED);
+      checkSource(matches[0]);
+      return matches[0];
+    });
+  };
+  type Entry = RuntimeVaultTotpEntry & { secret: string };
+  const readEntries = async (): Promise<Entry[]> => {
+    try {
+      const saved = await persisted();
+      let entries: Entry[];
+      if (saved.credentialSource?.kind === "vault") {
+        const reference = saved.credentialSource;
+        const api = readVault();
+        const scope = api?.scope ? { ...api.scope } : null;
+        if (!api || scope?.databaseId !== databaseId) throw new Error(REVOKED);
+        const snapshot = await api.list(scope);
+        assertCurrent();
+        if (
+          snapshot.scope.databaseId !== scope.databaseId ||
+          snapshot.scope.generation !== scope.generation ||
+          !Number.isSafeInteger(snapshot.revision) ||
+          snapshot.revision < 0 ||
+          (vaultRevision !== undefined && snapshot.revision !== vaultRevision)
+        )
+          throw new Error(REVOKED);
+        vaultRevision = snapshot.revision;
+        const rows = snapshot.entries.filter(
+          (entry) => entry.id === reference.credentialId,
+        );
+        if (rows.length !== 1 || !rows[0].availableFacets.includes("totp"))
+          throw new Error(REVOKED);
+        let facets = await api.resolve(snapshot, reference.credentialId, [
+          "totp",
+        ]);
+        try {
+          assertCurrent();
+          const selected = reference.totpId
+            ? facets.totp?.filter((entry) => entry.id === reference.totpId)
+            : facets.totp;
+          if (!selected || (reference.totpId && selected.length !== 1))
+            throw new Error(REVOKED);
+          // Explicit allowlist: an over-returning backend cannot leak other facets.
+          entries = selected.map(
+            ({ id, label, secret, digits, algorithm, period }) => ({
+              id,
+              label,
+              secret,
+              digits,
+              algorithm,
+              period,
+            }),
+          );
+        } finally {
+          facets = {};
+        }
+      } else {
+        entries = (saved.totpConfigs ?? []).map((entry, index) => ({
+          id: entry.id ?? `legacy-${index}`,
+          label: [entry.issuer, entry.account].filter(Boolean).join(" — "),
+          secret: entry.secret,
+          digits: entry.digits as Entry["digits"],
+          algorithm: entry.algorithm,
+          period: entry.period,
+        }));
+      }
+      const ids = new Set<string>();
+      for (const entry of entries) {
+        if (
+          typeof entry.id !== "string" ||
+          !entry.id ||
+          ids.has(entry.id) ||
+          typeof entry.label !== "string" ||
+          typeof entry.secret !== "string" ||
+          !entry.secret ||
+          entry.secret.length > 4096 ||
+          !["sha1", "sha256", "sha512"].includes(entry.algorithm) ||
+          ![6, 8].includes(entry.digits) ||
+          !Number.isInteger(entry.period) ||
+          entry.period < 1 ||
+          entry.period > 3600
+        )
+          throw new Error(REVOKED);
+        ids.add(entry.id);
+      }
+      // Recheck durable source selection after vault disclosure, not just React.
+      await persisted();
+      return entries;
+    } catch {
+      revoke();
+      throw new Error(REVOKED);
+    }
+  };
+  const metadata = (entry: Entry, index: number): RuntimeVaultTotpEntry => ({
+    // Opaque, controller-local handles also support legacy local entries with no ID.
+    id: `${scopeKey}:${index}`,
+    label: entry.label,
+    digits: entry.digits,
+    algorithm: entry.algorithm,
+    period: entry.period,
+  });
+  assertCurrent();
+  const sourceKind = guard(() => {
+    const current = readSource();
+    checkSource(current);
+    return current.credentialSource?.kind === "vault" ? "vault" : "connection";
+  });
+  return Object.freeze({
+    scopeKey,
+    sourceKind,
+    get available() {
+      try {
+        assertCurrent();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    get unavailableReason() {
+      return this.available ? "" : REVOKED;
+    },
+    assertCurrent,
+    revoke,
+    load: async () => {
+      let entries = await readEntries();
+      try {
+        assertCurrent();
+        return entries.map(metadata);
+      } finally {
+        entries = [];
+      }
+    },
+    generate: async (id: string) => {
+      let entries = await readEntries();
+      try {
+        assertCurrent();
+        const entry = entries.find(
+          (item, index) => metadata(item, index).id === id,
+        );
+        if (!entry) throw new Error("The chosen authenticator is unavailable.");
+        const started = Date.now();
+        const expires =
+          (Math.floor(started / (entry.period * 1000)) + 1) *
+          entry.period *
+          1000;
+        if (expires - started < 3000)
+          throw new Error(
+            "Wait for the next authenticator time window, then generate a fresh code.",
+          );
+        let code: string;
+        try {
+          code = await invoke<string>("totp_compute_code", {
+            secret: entry.secret,
+            algorithm: entry.algorithm.toUpperCase() as TotpAlgorithm,
+            digits: entry.digits,
+            period: entry.period,
+          });
+          assertCurrent();
+          await persisted();
+        } catch {
+          revoke();
+          throw new Error(REVOKED);
+        }
+        const assertCodeCurrent = () => {
+          assertCurrent();
+          if (Date.now() >= expires)
+            throw new Error("This authenticator code expired.");
+        };
+        assertCodeCurrent();
+        if (
+          Date.now() >= expires - 1000 ||
+          !new RegExp(`^\\d{${entry.digits}}$`).test(code)
+        )
+          throw new Error(
+            "The generated code expired or was invalid. Generate a fresh code.",
+          );
+        return { code, expires, assertCurrent: assertCodeCurrent };
+      } finally {
+        entries = [];
+      }
+    },
+  });
 }
 
 export interface SynologyMfaContext {

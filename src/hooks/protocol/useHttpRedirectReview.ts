@@ -49,7 +49,11 @@ interface Options {
   generation: () => number;
   proxySessionId: () => string;
   navigationToken: () => string | null;
-  stopSource: (sessionId: string, continuationId?: string) => Promise<void>;
+  stopSource: (
+    sessionId: string,
+    continuationId?: string,
+    preserveTabContext?: boolean,
+  ) => Promise<void>;
   /** Replace only the tab's ephemeral target, never the saved connection. */
   continueInTab?: (connection: Connection) => void;
   trust?: ReturnType<typeof useHttpRedirectTrust>;
@@ -536,23 +540,26 @@ export function useHttpRedirectReview(options: Options) {
       assertSourceBudgetCurrent();
       if (
         transferContinuation &&
-        new URL(captured.sourceOrigin).protocol === "https:" &&
-        new URL(consumed.destinationUrl).protocol === "https:" &&
         isSynologyDefaultRedirect(
           captured.effectivePolicy,
           captured.sourceOrigin,
           consumed.destinationUrl,
         )
       ) {
-        // Retire before the awaited stop can trigger old-frame callbacks or a
-        // render. Preserve only the shared source lease and one-shot counter.
-        retireSynologyMfaProof(
-          captured.connection.id,
-          receipt.review.sessionId,
-        );
+        // Retire an active HTTPS proof before the awaited stop can trigger an
+        // old-frame callback. HTTP portal hops never receive an OTP proof, but
+        // the one-use native continuation still preserves the original lease
+        // so a later reviewed HTTPS destination can activate one. Revoking the
+        // lease here made real QuickConnect chains lose MFA on their first
+        // transport-only portal redirect.
+        if (sourceNavigation?.synologyMfaProof)
+          retireSynologyMfaProof(
+            captured.connection.id,
+            receipt.review.sessionId,
+          );
       } else {
-        // Anonymous tabs, missing tickets, generic redirects and HTTP hops
-        // cannot re-arm MFA later merely by retaining form-login provenance.
+        // Anonymous tabs, missing tickets and non-default redirects cannot
+        // re-arm MFA later merely by retaining form-login provenance.
         synologyRedirectSource?.formLogin?.revokeAutoMfa();
       }
       await withinDeadline(() =>
@@ -560,8 +567,11 @@ export function useHttpRedirectReview(options: Options) {
           ? captured.stopSource(
               receipt.review.sessionId,
               transferContinuation.id,
+              destination === "current",
             )
-          : captured.stopSource(receipt.review.sessionId),
+          : destination === "current"
+            ? captured.stopSource(receipt.review.sessionId, undefined, true)
+            : captured.stopSource(receipt.review.sessionId),
       );
       assertLaunchCurrent();
       if (token !== action.current) return;

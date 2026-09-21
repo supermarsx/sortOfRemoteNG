@@ -210,7 +210,8 @@ describe("reviewed anonymous redirect handoff", () => {
       view.rerender(options);
       view.stopSource.mockImplementation(async () => {
         // This runs before native stop resolves or releases the runtime record.
-        const eligible = mode === "same-tab" || mode === "stop-failed";
+        const eligible =
+          mode === "same-tab" || mode === "http" || mode === "stop-failed";
         expect(isSynologyMfaProofRetired(oldProof)).toBe(eligible);
         if (eligible) {
           expect(() => oldProof.assertCurrent()).toThrow();
@@ -251,7 +252,7 @@ describe("reviewed anonymous redirect handoff", () => {
         expect(target.credentialSource).toBeUndefined();
         expect(target.totpConfigs).toBeUndefined();
         expect(target.basicAuthPassword).toBeUndefined();
-        if (mode === "same-tab") {
+        if (mode === "same-tab" || mode === "http") {
           expect(navigation.nativeContinuation?.id).toBe(nextTicket);
           expect(() => formLogin.assertAutoMfaCurrent()).not.toThrow();
         } else {
@@ -333,7 +334,7 @@ describe("reviewed anonymous redirect handoff", () => {
     await act(() => view.result.current.offer());
     await act(() => view.result.current.accept("current"));
     const target = view.continueInTab.mock.calls[0][0] as Connection;
-    expect(view.stopSource).toHaveBeenCalledExactlyOnceWith("proxy", id);
+    expect(view.stopSource).toHaveBeenCalledExactlyOnceWith("proxy", id, true);
     expect(JSON.stringify(target)).not.toContain(id);
     expect(getRuntimeWebNavigation(target.id)?.nativeContinuation?.id).toBe(id);
     expect(getRuntimeWebNavigation(target.id)?.initialUrl).toBe(
@@ -596,7 +597,7 @@ describe("reviewed anonymous redirect handoff", () => {
     const view = fixture();
     await act(() => view.result.current.offer());
     await act(() => view.result.current.accept("current"));
-    expect(view.stopSource).toHaveBeenCalledWith("proxy");
+    expect(view.stopSource).toHaveBeenCalledWith("proxy", undefined, true);
     expect(view.continueInTab).toHaveBeenCalledOnce();
     expect(view.stopSource.mock.invocationCallOrder[0]).toBeLessThan(
       view.continueInTab.mock.invocationCallOrder[0],

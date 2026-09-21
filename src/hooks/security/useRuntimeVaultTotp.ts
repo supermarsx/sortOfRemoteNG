@@ -13,6 +13,7 @@ import { totpApi } from "../totp/useTOTP";
 export type RuntimeVaultTotpEntry = Omit<VaultTotpFacet, "secret">;
 export interface RuntimeVaultTotpController {
   scopeKey: string;
+  sourceKind?: "connection" | "vault";
   available: boolean;
   unavailableReason: string;
   load: () => Promise<RuntimeVaultTotpEntry[]>;
@@ -66,6 +67,7 @@ export function useRuntimeVaultTotp(
   };
   return {
     scopeKey: `${session.id}:${session.ownerDatabaseId ?? ""}:${revision}`,
+    sourceKind: "vault",
     available,
     unavailableReason: available
       ? ""
