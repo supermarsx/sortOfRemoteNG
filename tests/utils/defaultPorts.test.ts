@@ -5,6 +5,13 @@ import {
 } from "../../src/utils/discovery/defaultPorts";
 
 describe("defaultPorts", () => {
+  it.each(["gcp", "integration:gdrive"])(
+    "uses the no-port sentinel for %s",
+    (protocol) => {
+      expect(DEFAULT_PORTS[protocol]).toBe(0);
+      expect(getDefaultPort(protocol)).toBe(0);
+    },
+  );
   it("has correct port for RDP", () => {
     expect(DEFAULT_PORTS.rdp).toBe(3389);
   });

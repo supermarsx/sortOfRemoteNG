@@ -2005,6 +2005,52 @@ describe("useImportExport", () => {
 
   // ── Import file processing ──────────────────────────────────
 
+  it("omits endpoint warnings only for managed Google services", async () => {
+    const connections = ["gcp", "integration:gdrive", "ssh"].map(
+      (protocol, index) => ({
+        id: `google-policy-${index}`,
+        name: `Service ${index}`,
+        protocol,
+        hostname: "",
+        port: 0,
+      }),
+    );
+    connections.splice(2, 0, {
+      id: "google-policy-web",
+      name: "Google web application",
+      protocol: "https",
+      hostname: "",
+      port: 0,
+      httpApplication: {
+        version: 1,
+        id: "google-search-console",
+        loginMode: "manual",
+      },
+    } as (typeof connections)[number]);
+    mockImportConnections.mockResolvedValueOnce(connections);
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    const { result } = renderImportExport();
+    const file = new File([JSON.stringify(connections)], "google.json", {
+      type: "application/json",
+    });
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    const items = result.current.importResult!.previewItems!;
+    expect(items).toHaveLength(4);
+    for (const item of items.slice(0, 3)) {
+      expect(item.issues.map(({ code }) => code)).not.toContain(
+        "missing_hostname",
+      );
+      expect(item.issues.map(({ code }) => code)).not.toContain("invalid_port");
+    }
+    expect(items[3].issues.map(({ code }) => code)).toEqual(
+      expect.arrayContaining(["missing_hostname", "invalid_port"]),
+    );
+  });
+
   it("handleFileSelect sets importResult on success", async () => {
     const importedConns = [{ id: "imp-1", name: "Imported", protocol: "ssh" }];
     mockImportConnections.mockResolvedValueOnce(importedConns);

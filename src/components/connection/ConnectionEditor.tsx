@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { isEndpointFreeGoogleService } from "../../utils/connection/googleServiceAddressPolicy";
+import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import {
   Save,
@@ -1578,35 +1580,37 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            {t("connectionEditor.integration.host", "Host")}{" "}
-            <span className="text-error">*</span>
-          </label>
-          <input
-            type="text"
-            data-testid="editor-hostname"
-            value={integration.host || ""}
-            onChange={(e) => updateIntegration({ host: e.target.value })}
-            className="sor-form-input text-sm font-mono"
-            placeholder="service.example.com"
-          />
+      {!isEndpointFreeGoogleService(protocol) && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+              {t("connectionEditor.integration.host", "Host")}{" "}
+              <span className="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              data-testid="editor-hostname"
+              value={integration.host || ""}
+              onChange={(e) => updateIntegration({ host: e.target.value })}
+              className="sor-form-input text-sm font-mono"
+              placeholder="service.example.com"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+              {t("connectionEditor.integration.baseUrl", "Base URL")}
+            </label>
+            <input
+              type="text"
+              data-testid="editor-integration-base-url"
+              value={integration.baseUrl || ""}
+              onChange={(e) => updateIntegration({ baseUrl: e.target.value })}
+              className="sor-form-input text-sm font-mono"
+              placeholder="https://service.example.com"
+            />
+          </div>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            {t("connectionEditor.integration.baseUrl", "Base URL")}
-          </label>
-          <input
-            type="text"
-            data-testid="editor-integration-base-url"
-            value={integration.baseUrl || ""}
-            onChange={(e) => updateIntegration({ baseUrl: e.target.value })}
-            className="sor-form-input text-sm font-mono"
-            placeholder="https://service.example.com"
-          />
-        </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -1714,10 +1718,20 @@ const ConnectionFields: React.FC<{
   const hasHttpApplication =
     (p === "http" || p === "https") &&
     mgr.formData.httpApplication !== undefined;
+  const hasManagedGoogleAddress =
+    getFirstPartyGoogleHostedApplicationUrl(
+      mgr.formData.httpApplication?.id,
+    ) !== undefined;
   if (isIntegrationConnectionProtocol(p)) {
     return <IntegrationConnectionFields mgr={mgr} />;
   }
-  if (p === "rustdesk" || p === "serial") return null;
+  if (
+    p === "rustdesk" ||
+    p === "serial" ||
+    isEndpointFreeGoogleService(p) ||
+    hasManagedGoogleAddress
+  )
+    return null;
 
   return (
     <div className="space-y-2">

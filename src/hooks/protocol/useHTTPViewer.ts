@@ -12,6 +12,7 @@ import { useSettings } from "../../contexts/SettingsContext";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import { validateProtectedProxyUrl } from "./useWebBrowser";
+import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
 
 interface ProxyMediatorResponse {
   local_port: number;
@@ -61,10 +62,22 @@ export function useHTTPViewer(session: ConnectionSession) {
 
   const buildTargetUrl = useCallback(() => {
     if (!connection) return "";
+    const googleHostedUrl = getFirstPartyGoogleHostedApplicationUrl(
+      connection.httpApplication?.id,
+    );
+    const canonicalGoogleUrl = googleHostedUrl
+      ? new URL(googleHostedUrl)
+      : undefined;
     const protocol = session.protocol === "https" ? "https" : "http";
     const defaultPort = session.protocol === "https" ? 443 : 80;
     const port = Number(connection.port || defaultPort);
-    const rawHost = connection.hostname.trim();
+    const rawHost = connection.hostname?.trim() ?? "";
+    if (
+      canonicalGoogleUrl &&
+      (!rawHost || rawHost.toLowerCase() === canonicalGoogleUrl.hostname)
+    ) {
+      return canonicalGoogleUrl.href;
+    }
     if (
       !rawHost ||
       Array.from(rawHost).some((character) => {

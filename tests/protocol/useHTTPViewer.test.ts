@@ -36,6 +36,51 @@ vi.mock("../../src/contexts/useConnections", () => ({
           createdAt: new Date(),
           updatedAt: new Date(),
         },
+        {
+          id: "conn-google-blank",
+          name: "Imported Google Analytics",
+          hostname: "",
+          port: 0,
+          protocol: "https",
+          httpApplication: {
+            version: 1,
+            id: "google-analytics",
+            loginMode: "manual",
+          },
+          isGroup: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: "conn-google-custom",
+          name: "Custom Google entry",
+          hostname: "custom.example.com",
+          port: 8443,
+          protocol: "https",
+          httpApplication: {
+            version: 1,
+            id: "google-account",
+            loginMode: "manual",
+          },
+          isGroup: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: "conn-google-canonical-legacy",
+          name: "Legacy Gmail",
+          hostname: "mail.google.com",
+          port: 80,
+          protocol: "http",
+          httpApplication: {
+            version: 1,
+            id: "gmail",
+            loginMode: "manual",
+          },
+          isGroup: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       ],
     },
     dispatch: mockDispatch,
@@ -125,6 +170,49 @@ describe("useHTTPViewer", () => {
       useHTTPViewer(makeSession({ connectionId: "nonexistent" })),
     );
     expect(result.current.buildTargetUrl()).toBe("");
+  });
+
+  it("buildTargetUrl resolves an imported blank Google profile from its built-in destination", () => {
+    const { result } = renderHook(() =>
+      useHTTPViewer(
+        makeSession({
+          connectionId: "conn-google-blank",
+          protocol: "https",
+          hostname: "",
+        }),
+      ),
+    );
+    expect(result.current.buildTargetUrl()).toBe(
+      "https://analytics.google.com/analytics/web/",
+    );
+  });
+
+  it("buildTargetUrl preserves an explicit custom destination on a Google profile", () => {
+    const { result } = renderHook(() =>
+      useHTTPViewer(
+        makeSession({
+          connectionId: "conn-google-custom",
+          protocol: "https",
+          hostname: "custom.example.com",
+        }),
+      ),
+    );
+    expect(result.current.buildTargetUrl()).toBe(
+      "https://custom.example.com:8443",
+    );
+  });
+
+  it("repairs legacy protocol and port data for a canonical Google host", () => {
+    const { result } = renderHook(() =>
+      useHTTPViewer(
+        makeSession({
+          connectionId: "conn-google-canonical-legacy",
+          protocol: "http",
+          hostname: "mail.google.com",
+        }),
+      ),
+    );
+    expect(result.current.buildTargetUrl()).toBe("https://mail.google.com/");
   });
 
   // ── resolveCredentials ─────────────────────────────────────────────────

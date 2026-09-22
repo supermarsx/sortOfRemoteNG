@@ -222,6 +222,7 @@ describe("ConnectionEditor subcomponents", () => {
     );
 
     expect(screen.getByText(/Google Cloud Configuration/i)).toBeInTheDocument();
+    expect(screen.queryByText("API Endpoint Override")).not.toBeInTheDocument();
     expect(container.querySelector('input[type="text"]')?.className).toContain(
       "sor-form-input",
     );

@@ -57,6 +57,17 @@ export const HTTP_APPLICATION_CATEGORIES = {
 } as const;
 export type HttpApplicationCategory = keyof typeof HTTP_APPLICATION_CATEGORIES;
 export const CLOUDFLARE_DASHBOARD_URL = "https://dash.cloudflare.com/";
+export const FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS = [
+  "google-account",
+  "google-cloud-console",
+  "google-analytics",
+  "google-business-profile",
+  "google-search-console",
+  "google-ads",
+  "youtube",
+  "gmail",
+  "gdrive",
+] as const;
 
 export const JOOMLA_VERSION_OPTIONS = [
   { value: "auto", label: "Auto-detect reviewed Joomla 3–6 forms" },
@@ -553,6 +564,9 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     category: "mailStorage",
     label: "Google Drive",
     capability: "manual",
+    requiresHttps: true,
+    loginModes: ["manual"],
+    hostedLoginUrl: "https://drive.google.com/drive/",
     description:
       "Manual browsing only. Native OAuth tokens are not transferred to the Google website; external identity-provider sign-in is not automated.",
   },
@@ -602,6 +616,22 @@ export function getHttpApplicationProfile(
   id: string,
 ): HttpApplicationProfile | undefined {
   return HTTP_APPLICATION_PROFILES.find((profile) => profile.id === id);
+}
+
+const FIRST_PARTY_GOOGLE_HTTP_APPLICATION_ID_SET = new Set<string>(
+  FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS,
+);
+
+/** Canonical reviewed web entry point for first-party Google applications. */
+export function getFirstPartyGoogleHostedApplicationUrl(
+  id: unknown,
+): string | undefined {
+  if (
+    typeof id !== "string" ||
+    !FIRST_PARTY_GOOGLE_HTTP_APPLICATION_ID_SET.has(id)
+  )
+    return undefined;
+  return getHttpApplicationProfile(id)?.hostedLoginUrl;
 }
 
 export function getHttpApplicationLoginModes(

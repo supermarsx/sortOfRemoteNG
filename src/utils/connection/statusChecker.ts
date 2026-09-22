@@ -1,5 +1,10 @@
-import { Connection, ConnectionStatus } from "../../types/connection/connection";
+import {
+  Connection,
+  ConnectionStatus,
+} from "../../types/connection/connection";
 import { SettingsManager } from "../settings/settingsManager";
+import { isEndpointFreeGoogleService } from "./googleServiceAddressPolicy";
+import { getFirstPartyGoogleHostedApplicationUrl } from "./httpApplicationProfiles";
 
 /**
  * Singleton service responsible for monitoring connection health.
@@ -35,6 +40,11 @@ export class StatusChecker {
    * wait for the first interval tick.
    */
   startChecking(connection: Connection): void {
+    if (isEndpointFreeGoogleService(connection.protocol)) {
+      this.stopChecking(connection.id);
+      this.statusMap.delete(connection.id);
+      return;
+    }
     if (!this.settingsManager.getSettings().enableStatusChecking) return;
     if (!connection.statusCheck?.enabled) return;
 
@@ -70,6 +80,22 @@ export class StatusChecker {
    * loop continues even when a check fails.
    */
   private async checkConnection(connection: Connection): Promise<void> {
+    if (isEndpointFreeGoogleService(connection.protocol)) return;
+    const googleHostedUrl = getFirstPartyGoogleHostedApplicationUrl(
+      connection.httpApplication?.id,
+    );
+    const canonicalGoogleUrl = googleHostedUrl
+      ? new URL(googleHostedUrl)
+      : undefined;
+    const effectiveConnection =
+      canonicalGoogleUrl && !connection.hostname.trim()
+        ? {
+            ...connection,
+            protocol: "https" as const,
+            hostname: canonicalGoogleUrl.hostname,
+            port: 443,
+          }
+        : connection;
     const startTime = Date.now();
     let status: ConnectionStatus["status"] = "checking";
     let responseTime: number | undefined;
@@ -87,16 +113,20 @@ export class StatusChecker {
 
       switch (method) {
         case "socket":
-          await this.checkSocket(connection.hostname, connection.port, timeout);
+          await this.checkSocket(
+            effectiveConnection.hostname,
+            effectiveConnection.port,
+            timeout,
+          );
           status = "online";
           break;
         case "http":
-          await this.checkHttp(connection, timeout);
+          await this.checkHttp(effectiveConnection, timeout);
           status = "online";
           break;
         case "ping":
           // Note: Browser ping is limited, using fetch as fallback
-          await this.checkHttp(connection, timeout);
+          await this.checkHttp(effectiveConnection, timeout);
           status = "online";
           break;
         default:

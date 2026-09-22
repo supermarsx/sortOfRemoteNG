@@ -81,6 +81,67 @@ const value = () =>
   JSON.parse(screen.getByTestId("value").textContent!) as Partial<Connection>;
 
 describe("HTTP Application subtab", () => {
+  it("applies Google's built-in authority to a blank record without overwriting a custom destination", () => {
+    const { unmount } = render(
+      <Fixture
+        value={{
+          protocol: "http",
+          hostname: "",
+          port: 80,
+          httpVerifySsl: false,
+        }}
+      />,
+    );
+    choose("Website application", "Google Drive");
+    expect(value()).toMatchObject({
+      protocol: "https",
+      hostname: "drive.google.com",
+      port: 443,
+      httpVerifySsl: false,
+      httpApplication: { version: 1, id: "gdrive", loginMode: "manual" },
+    });
+    unmount();
+
+    render(<Fixture />);
+    choose("Website application", "Google Cloud Console");
+    expect(value()).toMatchObject({
+      ...initial,
+      httpApplication: {
+        version: 1,
+        id: "google-cloud-console",
+        loginMode: "manual",
+      },
+    });
+  });
+
+  it("replaces a previously managed Google authority when switching profiles", () => {
+    render(
+      <Fixture
+        value={{
+          protocol: "http",
+          hostname: "mail.google.com",
+          port: 80,
+          httpApplication: {
+            version: 1,
+            id: "gmail",
+            loginMode: "manual",
+          },
+        }}
+      />,
+    );
+    choose("Website application", "Google Cloud Console");
+    expect(value()).toMatchObject({
+      protocol: "https",
+      hostname: "console.cloud.google.com",
+      port: 443,
+      httpApplication: {
+        version: 1,
+        id: "google-cloud-console",
+        loginMode: "manual",
+      },
+    });
+  });
+
   it("edits and clears only the Tactical API origin without changing login or authority", () => {
     render(<Fixture />);
     expect(

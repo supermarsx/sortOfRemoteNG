@@ -115,6 +115,118 @@ afterEach(() => {
 });
 
 describe("connection editor draft ownership", () => {
+  it.each(["gcp", "integration:gdrive"] as const)(
+    "uses no endpoint port when selecting %s",
+    (protocol) => {
+      const { result } = editor();
+      act(() => result.current.handleProtocolChange(protocol));
+      expect(result.current.formData.port).toBe(0);
+    },
+  );
+
+  it.each([0, 22, 8443])(
+    "preserves the stored GCP address and port %s on save",
+    async (port) => {
+      const { result } = editor({
+        ...connectionA,
+        protocol: "gcp",
+        hostname: "legacy.example",
+        port,
+      });
+      act(() =>
+        result.current.setFormData((draft) => ({
+          ...draft,
+          name: "Edited Google",
+        })),
+      );
+      await act(() => result.current.saveNow());
+      expect(mocks.flush).toHaveBeenCalledOnce();
+      expect(mocks.flush.mock.calls[0][0].payload).toMatchObject({
+        protocol: "gcp",
+        hostname: "legacy.example",
+        port,
+      });
+    },
+  );
+
+  it("saves a GCP connection without an address", async () => {
+    const { result } = editor({
+      ...connectionA,
+      protocol: "gcp",
+      hostname: "",
+      port: 0,
+    });
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        name: "Edited Google",
+      })),
+    );
+    await act(() => result.current.saveNow());
+    expect(mocks.flush.mock.calls[0][0].payload).toMatchObject({
+      protocol: "gcp",
+      hostname: "",
+      port: 0,
+    });
+  });
+
+  it.each([0, 443])(
+    "preserves independent Drive compatibility fields and port %s",
+    async (port) => {
+      mocks.createInstance.mockImplementation(async (input) => ({
+        ...input,
+        id: "drive-instance",
+      }));
+      const { result } = editor({
+        ...connectionA,
+        protocol: "integration:gdrive",
+        hostname: "",
+        port,
+        integration: {
+          descriptorKey: "gdrive",
+          host: "legacy-host",
+          baseUrl: "https://legacy.example",
+        },
+      });
+      act(() =>
+        result.current.setFormData((draft) => ({
+          ...draft,
+          name: "Edited Drive",
+        })),
+      );
+      await act(() => result.current.saveNow());
+      expect(mocks.flush).toHaveBeenCalledOnce();
+      expect(mocks.flush.mock.calls[0][0].payload).toMatchObject({
+        hostname: "",
+        port,
+        integration: { host: "legacy-host", baseUrl: "https://legacy.example" },
+      });
+    },
+  );
+  it("creates Drive with no host, URL or port supplied", async () => {
+    mocks.createInstance.mockImplementation(async (input) => ({
+      ...input,
+      id: "drive-new",
+    }));
+    const { result } = renderHook(() =>
+      useConnectionEditor(undefined, true, mocks.close),
+    );
+    act(() => result.current.handleProtocolChange("integration:gdrive"));
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        name: "Drive",
+        hostname: "",
+      })),
+    );
+    await act(() => result.current.handleSubmit(submitEvent()));
+    expect(mocks.flush).toHaveBeenCalledOnce();
+    expect(mocks.flush.mock.calls[0][0].payload).toMatchObject({
+      hostname: "",
+      port: 0,
+      integration: { host: "", baseUrl: "" },
+    });
+  });
   const vaultId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const vaultApi = (): DatabaseCredentialVaultApi => ({
     scope: { databaseId: "db-a", generation: 1 },

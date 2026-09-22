@@ -10,9 +10,11 @@ import { RAW_SOCKET_CONNECTION_EDITOR_SEARCH_DESCRIPTOR } from "../../connection
 import { RLOGIN_CONNECTION_EDITOR_SEARCH_DESCRIPTORS } from "../../connectionEditor/rloginOptions/searchMetadata";
 import { POWERSHELL_REMOTING_CONNECTION_EDITOR_SEARCH_DESCRIPTOR } from "../../connectionEditor/powerShellRemoting/searchMetadata";
 import { normalizeArdSettings } from "../../../types/protocols/ard";
+import { isEndpointFreeGoogleService } from "../../../utils/connection/googleServiceAddressPolicy";
 import {
   HTTP_APPLICATION_PROFILES,
   HTTP_APPLICATION_CATEGORIES,
+  getFirstPartyGoogleHostedApplicationUrl,
 } from "../../../utils/connection/httpApplicationProfiles";
 
 export type ConnectionEditorTabId =
@@ -1121,6 +1123,10 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         copy: ["Server address"],
         excludedProtocols: ["rustdesk", "serial"],
         visibleWhen: (formData) =>
+          !isEndpointFreeGoogleService(formData.protocol) &&
+          !getFirstPartyGoogleHostedApplicationUrl(
+            (formData.httpApplication as { id?: unknown } | undefined)?.id,
+          ) &&
           !String(formData.protocol ?? "").startsWith("integration:"),
         valuePaths: ["hostname"],
       },
@@ -1129,6 +1135,10 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Port",
         excludedProtocols: ["rustdesk", "serial", "integration:exchange"],
         visibleWhen: (formData) =>
+          !isEndpointFreeGoogleService(formData.protocol) &&
+          !getFirstPartyGoogleHostedApplicationUrl(
+            (formData.httpApplication as { id?: unknown } | undefined)?.id,
+          ) &&
           !String(formData.protocol ?? "").startsWith("integration:"),
       },
       {
@@ -1208,6 +1218,8 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Host",
         protocolPrefixes: ["integration:"],
         excludedProtocols: ["integration:exchange"],
+        visibleWhen: (formData) =>
+          !isEndpointFreeGoogleService(formData.protocol),
         valuePaths: ["integration.host"],
       },
       {
@@ -1215,6 +1227,8 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Base URL",
         protocolPrefixes: ["integration:"],
         excludedProtocols: ["integration:exchange"],
+        visibleWhen: (formData) =>
+          !isEndpointFreeGoogleService(formData.protocol),
         valuePaths: ["integration.baseUrl"],
       },
       {

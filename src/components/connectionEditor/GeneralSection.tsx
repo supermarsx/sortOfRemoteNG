@@ -14,6 +14,8 @@ import {
 import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { getDefaultPort } from "../../utils/discovery/defaultPorts";
+import { isEndpointFreeGoogleService } from "../../utils/connection/googleServiceAddressPolicy";
+import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
 import {
   getConnectionDepth,
   getMaxDescendantDepth,
@@ -164,6 +166,9 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
   availableGroups,
   allConnections = [],
 }) => {
+  const hasManagedGoogleAddress =
+    getFirstPartyGoogleHostedApplicationUrl(formData.httpApplication?.id) !==
+    undefined;
   const { t } = useTranslation();
   const { state: connectionsState } = useConnections();
   const tabGroups = connectionsState.tabGroups;
@@ -638,75 +643,82 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("connectionEditor.hostnameLabel", "Hostname/IP *")}
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.hostname || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, hostname: e.target.value })
-                }
-                onBlur={(e) => sanitizeHostnameField(e.target.value)}
-                onPaste={(e) => {
-                  // P8: sanitise on paste too so a `http://x:8080/admin`
-                  // gets normalised the moment it lands in the field —
-                  // not only after the user tabs away. Defer one tick so
-                  // React lets the paste land first.
-                  const text = e.clipboardData?.getData("text");
-                  if (text) {
-                    requestAnimationFrame(() => sanitizeHostnameField(text));
-                  }
-                }}
-                data-testid="editor-hostname"
-                className="sor-form-input"
-                placeholder={t(
-                  "connectionEditor.hostnamePlaceholder",
-                  "192.168.1.100 or server.example.com",
-                )}
-              />
-            </div>
+            {!isEndpointFreeGoogleService(formData.protocol) &&
+              !hasManagedGoogleAddress && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                      {t("connectionEditor.hostnameLabel", "Hostname/IP *")}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.hostname || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, hostname: e.target.value })
+                      }
+                      onBlur={(e) => sanitizeHostnameField(e.target.value)}
+                      onPaste={(e) => {
+                        // P8: sanitise on paste too so a `http://x:8080/admin`
+                        // gets normalised the moment it lands in the field —
+                        // not only after the user tabs away. Defer one tick so
+                        // React lets the paste land first.
+                        const text = e.clipboardData?.getData("text");
+                        if (text) {
+                          requestAnimationFrame(() =>
+                            sanitizeHostnameField(text),
+                          );
+                        }
+                      }}
+                      data-testid="editor-hostname"
+                      className="sor-form-input"
+                      placeholder={t(
+                        "connectionEditor.hostnamePlaceholder",
+                        "192.168.1.100 or server.example.com",
+                      )}
+                    />
+                  </div>
 
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("connectionEditor.portLabel", "Port")}
-              </label>
-              <NumberInput
-                value={formData.port || 0}
-                onChange={(v: number) => {
-                  setFormData({ ...formData, port: v });
-                  if (portError) setPortError(null);
-                }}
-                onBlur={() => {
-                  const p = formData.port ?? 0;
-                  if (!Number.isFinite(p) || p < 1 || p > 65535) {
-                    setPortError(
-                      t(
-                        "connectionEditor.portError",
-                        "Port must be between 1 and 65535",
-                      ),
-                    );
-                  }
-                }}
-                variant="form"
-                min={1}
-                max={65535}
-                data-testid="editor-port"
-                aria-invalid={portError ? true : undefined}
-                aria-describedby={portError ? "port-error" : undefined}
-              />
-              {portError && (
-                <span
-                  id="port-error"
-                  className="text-sm text-error"
-                  role="alert"
-                >
-                  {portError}
-                </span>
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                      {t("connectionEditor.portLabel", "Port")}
+                    </label>
+                    <NumberInput
+                      value={formData.port || 0}
+                      onChange={(v: number) => {
+                        setFormData({ ...formData, port: v });
+                        if (portError) setPortError(null);
+                      }}
+                      onBlur={() => {
+                        const p = formData.port ?? 0;
+                        if (!Number.isFinite(p) || p < 1 || p > 65535) {
+                          setPortError(
+                            t(
+                              "connectionEditor.portError",
+                              "Port must be between 1 and 65535",
+                            ),
+                          );
+                        }
+                      }}
+                      variant="form"
+                      min={1}
+                      max={65535}
+                      data-testid="editor-port"
+                      aria-invalid={portError ? true : undefined}
+                      aria-describedby={portError ? "port-error" : undefined}
+                    />
+                    {portError && (
+                      <span
+                        id="port-error"
+                        className="text-sm text-error"
+                        role="alert"
+                      >
+                        {portError}
+                      </span>
+                    )}
+                  </div>
+                </>
               )}
-            </div>
 
             {formData.protocol === "rdp" && (
               <div>

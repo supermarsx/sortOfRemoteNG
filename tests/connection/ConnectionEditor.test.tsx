@@ -67,6 +67,13 @@ const toastMocks = vi.hoisted(() => ({
 
 const mockIntegrationRegistry = vi.hoisted(() => [
   {
+    key: "gdrive",
+    label: "Google Drive",
+    category: "cloud",
+    icon: () => null,
+    importPanel: async () => ({ default: () => null }),
+  },
+  {
     key: "pfsense",
     label: "pfSense",
     category: "networking",
@@ -292,7 +299,7 @@ const renderWithProviders = (
 
 /** Retired picker entries remain editable when they already exist in a database. */
 const renderSavedIntegration = (
-  key: "netbox" | "pfsense" | "exchange",
+  key: "netbox" | "pfsense" | "exchange" | "gdrive",
   onConnections?: (connections: Connection[]) => void,
   onClose = vi.fn(),
 ) => {
@@ -853,6 +860,8 @@ describe("ConnectionEditor", () => {
         expect(protocolToggle).toHaveTextContent(/Google Cloud/i),
       );
       expect(protocolToggle).not.toHaveTextContent(/no direct session/i);
+      expect(screen.queryByTestId("editor-hostname")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("editor-port")).not.toBeInTheDocument();
 
       fireEvent.click(protocolToggle);
       fireEvent.change(
@@ -1979,6 +1988,18 @@ describe("ConnectionEditor", () => {
       expect(screen.getByTestId("editor-password")).toBeInTheDocument();
       expect(screen.getByTestId("editor-integration-tls-verify")).toBeChecked();
       expect(screen.getByTestId("editor-integration-timeout")).toHaveValue(30);
+    });
+
+    it("opens Google Drive without host, URL or port fields", () => {
+      renderSavedIntegration("gdrive");
+      expect(
+        screen.getByTestId("editor-integration-instance-id"),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId("editor-hostname")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("editor-integration-base-url"),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("editor-port")).not.toBeInTheDocument();
     });
 
     it("exposes independently combinable pfSense API and WebGUI settings", () => {

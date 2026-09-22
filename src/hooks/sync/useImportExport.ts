@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { isEndpointFreeGoogleService } from "../../utils/connection/googleServiceAddressPolicy";
+import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
 import {
   Connection,
   ConnectionDatabase,
@@ -926,7 +928,12 @@ const buildImportPreviewItems = (
         });
       }
 
-      if (!connection.isGroup && !hostname.trim()) {
+      const requiresEndpoint =
+        !isEndpointFreeGoogleService(connection.protocol) &&
+        !getFirstPartyGoogleHostedApplicationUrl(
+          connection.httpApplication?.id,
+        );
+      if (!connection.isGroup && requiresEndpoint && !hostname.trim()) {
         issues.push({
           severity: "warning",
           code: "missing_hostname",
@@ -935,7 +942,11 @@ const buildImportPreviewItems = (
         });
       }
 
-      if (!connection.isGroup && (!Number.isFinite(port) || port <= 0)) {
+      if (
+        !connection.isGroup &&
+        requiresEndpoint &&
+        (!Number.isFinite(port) || port <= 0)
+      ) {
         issues.push({
           severity: "warning",
           code: "invalid_port",

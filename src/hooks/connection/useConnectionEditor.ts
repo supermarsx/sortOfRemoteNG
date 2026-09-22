@@ -31,6 +31,7 @@ import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
 import { getDefaultPort } from "../../utils/discovery/defaultPorts";
+import { isEndpointFreeGoogleService } from "../../utils/connection/googleServiceAddressPolicy";
 import { generateId } from "../../utils/core/id";
 import {
   buildParentFolderProjection,
@@ -500,9 +501,11 @@ export const PROTOCOL_COLOR_MAP: Record<string, string> = {
 };
 
 const getDefaultConnectionPort = (protocol: string | undefined): number =>
-  isIntegrationConnectionProtocol(protocol)
-    ? 443
-    : getDefaultPort(protocol || "rdp");
+  isEndpointFreeGoogleService(protocol)
+    ? 0
+    : isIntegrationConnectionProtocol(protocol)
+      ? 443
+      : getDefaultPort(protocol || "rdp");
 
 const hostFromBaseUrl = (baseUrl: string | undefined): string => {
   if (!baseUrl) {
@@ -591,11 +594,12 @@ const buildIntegrationSettings = (
     instanceName: current?.instanceName ?? "",
     credentialRefId: current?.credentialRefId,
     credentialRefIds: current?.credentialRefIds,
-    host:
-      current?.host ||
-      source?.hostname ||
-      (exchangeFields ? exchangeConnectionHost(exchangeFields) : "") ||
-      hostFromBaseUrl(baseUrl),
+    host: isEndpointFreeGoogleService(protocol)
+      ? (current?.host ?? source?.hostname ?? "")
+      : current?.host ||
+        source?.hostname ||
+        (exchangeFields ? exchangeConnectionHost(exchangeFields) : "") ||
+        hostFromBaseUrl(baseUrl),
     baseUrl,
     authToken: current?.authToken ?? "",
     apiKey: current?.apiKey ?? "",
@@ -638,7 +642,9 @@ const normalizeIntegrationFields = (
 
   return {
     ...data,
-    hostname: integration.host ?? data.hostname ?? "",
+    hostname: isEndpointFreeGoogleService(data.protocol)
+      ? (data.hostname ?? "")
+      : (integration.host ?? data.hostname ?? ""),
     username: integration.username ?? data.username ?? "",
     password: "",
     timeout: integration.timeout ?? data.timeout,
@@ -1268,9 +1274,10 @@ export function useConnectionEditor(
         name: effectiveFormData.name || "New Connection",
         protocol: effectiveFormData.protocol as Connection["protocol"],
         hostname: effectiveFormData.hostname || "",
-        port:
-          effectiveFormData.port ||
-          getDefaultConnectionPort(effectiveFormData.protocol as string),
+        port: isEndpointFreeGoogleService(effectiveFormData.protocol)
+          ? (effectiveFormData.port ?? 0)
+          : effectiveFormData.port ||
+            getDefaultConnectionPort(effectiveFormData.protocol as string),
         isGroup: effectiveFormData.isGroup || false,
         tags: effectiveFormData.tags || [],
         // Saving is not a reordering gesture. Carry the stored `order`

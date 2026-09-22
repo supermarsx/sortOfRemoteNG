@@ -129,18 +129,6 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
               placeholder="https://www.googleapis.com/auth/cloud-platform"
             />
             <CloudField
-              id="cloud-gcp-endpoint"
-              label="API Endpoint Override"
-              tooltip="Optional API endpoint override for controlled or private environments."
-              value={normalized.gcpSettings?.endpointOverride ?? ""}
-              onChange={(endpointOverride) =>
-                updateSettings("gcpSettings", {
-                  endpointOverride: endpointOverride || undefined,
-                })
-              }
-              placeholder="https://compute.googleapis.com"
-            />
-            <CloudField
               id="cloud-gcp-service-account"
               label="Service Account JSON"
               tooltip="The service-account JSON is stored only in the protected connection credential."

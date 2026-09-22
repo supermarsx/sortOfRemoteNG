@@ -38,7 +38,9 @@ export const DEFAULT_PORTS: Record<string, number> = {
   // netcat-style plaintext starting point and remains fully editable.
   raw: 23,
   rlogin: 513,
-  gcp: 22,
+  // Native Google clients select endpoints internally; 0 means not applicable.
+  gcp: 0,
+  "integration:gdrive": 0,
   azure: 22,
   "ibm-csp": 22,
   "digital-ocean": 22,

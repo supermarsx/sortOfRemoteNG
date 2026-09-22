@@ -9,6 +9,7 @@ import {
   type RawSocketTransport,
 } from "../../types/protocols/rawSocket";
 import { DEFAULT_PORTS } from "../../utils/discovery/defaultPorts";
+import { isEndpointFreeGoogleService } from "../../utils/connection/googleServiceAddressPolicy";
 import {
   normalizeImportedProtocol,
   protocolFromUrlScheme,
@@ -182,6 +183,22 @@ const resolveImportedEndpoint = (
   portValue: unknown,
   urlValue?: unknown,
 ): ResolvedImportedEndpoint => {
+  // Native service addresses are compatibility data, not URL evidence. Keep
+  // them verbatim and do not infer ports or protocols from an unused address.
+  const nativeProtocol =
+    typeof rawProtocol === "string"
+      ? rawProtocol.trim().toLowerCase()
+      : undefined;
+  if (isEndpointFreeGoogleService(nativeProtocol)) {
+    return {
+      protocol: nativeProtocol as Connection["protocol"],
+      hostname: String(hostnameValue ?? ""),
+      port:
+        typeof portValue === "number"
+          ? portValue
+          : (parseImportedPort(portValue) ?? 0),
+    };
+  }
   const hostnameText = String(hostnameValue ?? "").trim();
   const urlText = String(urlValue ?? "").trim() || hostnameText;
   const sanitized = sanitizeHostname(urlText);
@@ -2388,7 +2405,13 @@ const normalizeJsonConnection = (conn: any): Connection => {
   // evidence even when `hostname` is given separately.
   const endpoint = resolveImportedEndpoint(
     rawProtocol,
-    conn.hostname || conn.host || conn.address || conn.url || "",
+    isEndpointFreeGoogleService(
+      typeof rawProtocol === "string"
+        ? rawProtocol.trim().toLowerCase()
+        : undefined,
+    )
+      ? (conn.hostname ?? conn.host ?? conn.address ?? conn.url ?? "")
+      : conn.hostname || conn.host || conn.address || conn.url || "",
     conn.port,
     conn.url,
   );

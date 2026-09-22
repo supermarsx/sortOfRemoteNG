@@ -91,6 +91,42 @@ describe("GeneralSection validation", () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each(["gcp", "integration:gdrive"] as const)(
+    "hides unused address fields for %s",
+    (protocol) => {
+      render(
+        <GeneralSection
+          {...defaultProps}
+          formData={{ name: "Google", protocol, hostname: "", port: 0 }}
+        />,
+      );
+      expect(screen.queryByTestId("editor-hostname")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("editor-port")).not.toBeInTheDocument();
+      expect(screen.getByTestId("editor-protocol")).toBeInTheDocument();
+    },
+  );
+
+  it("hides internally managed address fields for a Google web profile", () => {
+    render(
+      <GeneralSection
+        {...defaultProps}
+        formData={{
+          name: "Google Analytics",
+          protocol: "https",
+          hostname: "",
+          port: 0,
+          httpApplication: {
+            version: 1,
+            id: "google-analytics",
+            loginMode: "manual",
+          },
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("editor-hostname")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("editor-port")).not.toBeInTheDocument();
+  });
+
   it("keeps a saved protocol visible but disabled when this build omits it", () => {
     runtimeCapabilityState.value = {
       cloud: false,

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { HOSTED_DASHBOARD_PROFILES } from "../../src/utils/connection/hostedDashboardProfiles";
 import {
   HTTP_APPLICATION_PROFILES,
+  FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS,
+  getFirstPartyGoogleHostedApplicationUrl,
   getHttpApplicationLoginModes,
   getHttpApplicationProfile,
   normalizeHttpApplicationSettings,
@@ -66,6 +68,31 @@ const connection = (
 });
 
 describe("source-reviewed dashboard presets", () => {
+  it("owns canonical HTTPS destinations for every first-party Google web profile", () => {
+    expect(FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS).toEqual([
+      "google-account",
+      "google-cloud-console",
+      "google-analytics",
+      "google-business-profile",
+      "google-search-console",
+      "google-ads",
+      "youtube",
+      "gmail",
+      "gdrive",
+    ]);
+    for (const id of FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS) {
+      const destination = getFirstPartyGoogleHostedApplicationUrl(id);
+      expect(destination).toBe(getHttpApplicationProfile(id)?.hostedLoginUrl);
+      expect(new URL(destination!).protocol).toBe("https:");
+    }
+    expect(
+      getFirstPartyGoogleHostedApplicationUrl("cloudflare"),
+    ).toBeUndefined();
+    expect(getHttpApplicationProfile("gdrive")?.hostedLoginUrl).toBe(
+      "https://drive.google.com/drive/",
+    );
+  });
+
   it("registers exactly the requested distinct providers without duplicating Gitea", () => {
     expect(HOSTED_DASHBOARD_PROFILES.map((p) => p.id)).toEqual(ids);
     expect(

@@ -10,6 +10,7 @@ import {
   HTTP_APPLICATION_PROFILES,
   CLOUDFLARE_DASHBOARD_URL,
   getHttpApplicationProfile,
+  getFirstPartyGoogleHostedApplicationUrl,
   getHttpApplicationLoginModes,
   normalizeHttpApplicationSettings,
   normalizeTacticalRmmApiOrigin,
@@ -67,17 +68,39 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
   });
   const vaultCredentials = mgr.formData.credentialSource?.kind === "vault";
   const selectProfile = (id: string) =>
-    mgr.setFormData((previous) => ({
-      ...previous,
-      httpApplication: id ? { version: 1, id, loginMode: "manual" } : undefined,
-      // A fresh selection must never revive a prior app's automatic submission.
-      httpAutoLogin: false,
-      httpAutoLoginSelectors: undefined,
-      httpAutoMfa: { version: 1, enabled: false },
-      synologySettings: previous.synologySettings
-        ? { ...previous.synologySettings, accessMode: "website" }
-        : undefined,
-    }));
+    mgr.setFormData((previous) => {
+      const googleHostedUrl = getFirstPartyGoogleHostedApplicationUrl(id);
+      const previousGoogleHostedUrl = getFirstPartyGoogleHostedApplicationUrl(
+        previous.httpApplication?.id,
+      );
+      const previousGoogleHost = previousGoogleHostedUrl
+        ? new URL(previousGoogleHostedUrl).hostname
+        : undefined;
+      const applyBuiltInGoogleAuthority =
+        googleHostedUrl !== undefined &&
+        (!previous.hostname?.trim() ||
+          (previousGoogleHost !== undefined &&
+            previous.hostname.trim().toLowerCase() === previousGoogleHost));
+      const googleUrl = applyBuiltInGoogleAuthority
+        ? new URL(googleHostedUrl)
+        : undefined;
+      return {
+        ...previous,
+        ...(googleUrl
+          ? { protocol: "https", hostname: googleUrl.hostname, port: 443 }
+          : {}),
+        httpApplication: id
+          ? { version: 1, id, loginMode: "manual" }
+          : undefined,
+        // A fresh selection must never revive a prior app's automatic submission.
+        httpAutoLogin: false,
+        httpAutoLoginSelectors: undefined,
+        httpAutoMfa: { version: 1, enabled: false },
+        synologySettings: previous.synologySettings
+          ? { ...previous.synologySettings, accessMode: "website" }
+          : undefined,
+      };
+    });
   const updateSettings = (change: Partial<HttpApplicationSettings>) => {
     if (!settings) return;
     mgr.setFormData((previous) => ({
@@ -373,8 +396,10 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                 <span className="font-mono break-all">
                   {profile.hostedLoginUrl}
                 </span>
-                . This preset requires that HTTPS origin. Selection has not
-                changed your address or certificate policy.
+                . This preset requires that HTTPS origin.
+                {getFirstPartyGoogleHostedApplicationUrl(profile.id)
+                  ? " Blank connections use this built-in address automatically; an existing custom address is preserved."
+                  : " Selection has not changed your address or certificate policy."}
               </p>
               <button
                 type="button"

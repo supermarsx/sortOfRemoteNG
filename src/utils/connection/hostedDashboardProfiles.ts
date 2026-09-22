@@ -21,7 +21,9 @@ const hosted = (
 
 /** Public entry points only, never credentials, redirect parameters or API endpoints.
  * Primary evidence and reviewed source revisions: docs/hosted-dashboard-profiles.md.
- * Selection remains manual and never launches a browser or changes a saved host. */
+ * Selection remains manual and never launches a browser. First-party Google
+ * presets fill their reviewed address only when the connection is blank or
+ * already uses the previous managed Google address; custom hosts are preserved. */
 export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
   hosted(
     "namecheap",
