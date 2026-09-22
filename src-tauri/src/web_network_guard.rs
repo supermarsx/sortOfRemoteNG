@@ -1,5 +1,5 @@
-//! Desktop integration for the bounded native frame-navigation guard.
-//! macOS/Linux retain the parent/proxy CSP layer, not a claimed native firewall.
+//! Desktop integration for native Windows frame and HTTP(S) request enforcement.
+//! macOS/Linux retain the parent/proxy CSP layer without native mediation status.
 
 use crate::http::webview_origins;
 #[cfg(target_os = "windows")]
@@ -54,6 +54,13 @@ pub fn install(app: &tauri::App) {
                     "http://tauri.localhost".into()
                 }
             });
+        // Tauri's Windows IPC custom protocol uses the window's configured
+        // scheme even when the frontend runs on a development server.
+        let ipc_origin = if main.is_some_and(|window| window.use_https_scheme) {
+            "https://ipc.localhost"
+        } else {
+            "http://ipc.localhost"
+        };
         let Some(webview) = app.get_webview_window("main") else {
             webview_origins::mark_frame_guard_failed();
             return;
@@ -66,7 +73,7 @@ pub fn install(app: &tauri::App) {
                         &platform.environment(),
                         std::sync::Arc::new(webview_origins::allows_frame_url),
                         std::sync::Arc::new(move |url| {
-                            webview_origins::allows_document_url(url, &app_origin)
+                            webview_origins::allows_resource_url(url, &app_origin, Some(ipc_origin))
                         }),
                         std::sync::Arc::new(webview_origins::mark_frame_guard_failed),
                     )

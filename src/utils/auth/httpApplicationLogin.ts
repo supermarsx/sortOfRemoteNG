@@ -31,6 +31,18 @@ export function getReviewedApplicationProfile(
   return "tacticalrmm";
 }
 
+/** Exact non-secret API origin; only valid reviewed Tactical profiles may supply it. */
+export function getReviewedApplicationApiOrigin(
+  connection: Partial<Connection> | null | undefined,
+): string | undefined {
+  const settings = normalizeHttpApplicationSettings(
+    connection?.httpApplication,
+  );
+  return settings?.id === "tacticalrmm" && !settings.invalid
+    ? settings.apiOrigin
+    : undefined;
+}
+
 /** Hosted presets cannot label an arbitrary origin as their provider's login. */
 export function validateHttpApplicationTarget(
   connection: Partial<Connection> | null | undefined,

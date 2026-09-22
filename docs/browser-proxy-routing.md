@@ -435,16 +435,19 @@ endpoint under the authenticated page's origin.
 
 A connection using the reviewed Tactical RMM application preset receives one
 ephemeral background-request capability. For an HTTPS dashboard at
-`https://rmm.example.com`, it permits only default-port HTTPS fetch/XHR requests
-to the exact derived origin `https://api.rmm.example.com`. The browser maps these
-requests to a protected loopback endpoint; native code independently validates
-the profile, source host, active document and full destination before egress.
+`https://rmm.example.com`, it permits default-port HTTPS fetch/XHR requests to
+the exact common origins `https://api.rmm.example.com` and
+`https://api.example.com`. A connection may instead add one explicitly reviewed,
+canonical HTTPS API origin for a nonstandard deployment. The browser maps only
+this bounded set to a protected loopback endpoint; native code independently
+validates the profile, source host, active document and full destination before
+egress.
 
 The capability does not use broad suffix matching and cannot be selected by a
 generic website or malformed imported profile. It rejects navigation, WebSocket,
 workers, WebRTC, WebTransport, credentials in URLs, nondefault ports, fragments,
-sibling hosts and redirects outside the exact API origin. It is revoked when the
-owning document or proxy session changes.
+unlisted sibling hosts and redirects outside the exact API-origin set. It is
+revoked when the owning document or proxy session changes.
 
 The API uses a dedicated native client with normal certificate verification, an
 independent cookie jar, the configured upstream network proxy and the connection's
@@ -514,21 +517,20 @@ engine traffic, or other browser-internal connections. No process-wide egress
 firewall or isolated browser-network context is claimed.
 
 On Windows, native frame navigation permits only registered live proxy origins
-and blank/srcdoc frames. The native pre-request filter observes **all HTTP(S)
-resource categories**, but its enforcement remains **document-only**: it refuses
-unapproved document requests with a local 403 response; it also permits the
-compiled application origin needed to bootstrap the main shell. Frame checks
-still refuse embedding that application origin. Popups and external navigation
-are denied. Frame-navigation cancellation alone is insufficient: a browser can
-start a request before delivering that event.
+and blank/srcdoc frames. Its pre-request filter also enforces the same exact
+origin policy for every intercepted HTTP(S) resource category and source,
+including page fetch/XHR, parser and dynamic resources, and worker HTTP(S)
+requests. It permits only the compiled application origin, Tauri's exact IPC
+origin, and live protected proxy leases; rejected requests receive a local 403
+before response data is available. Popups and external navigation are denied.
 
-The additional observation does not reroute, allow, cancel or change general
-subresource requests. It leaves existing shell requests and Tauri handlers
-unchanged. It does not cover WebSockets, and speculative TCP connections remain
-possible. It is not an all-network
-firewall. Other platforms report the native guard as unsupported rather than
-claiming equivalent enforcement. Mandatory CSP and the document client do not
-replace that missing platform guarantee.
+This Windows callback is defense in depth, not the portable routing mechanism.
+All platforms retain the protected same-origin proxy, mandatory response CSP,
+and page routing hooks; unsupported workers and socket APIs are disabled or fail
+closed, with no direct-network fallback. The Windows callback does not cover
+WebRTC or other arbitrary socket transports, and speculative empty TCP
+connections can still occur. Other platforms report the native guard as
+unsupported rather than claiming an equivalent OS-specific callback.
 
 The expanded protection details offer a native HTTP snapshot, refreshed on
 opening or explicit **Refresh snapshot**, with no background polling. It is
@@ -566,15 +568,16 @@ a frontend hot reload cannot install a new native callback. Closing a proxy
 revokes its exact origin, so a stale manager entry cannot provide a usable
 unauthenticated loopback replacement URL.
 
-Protection details also show the page routing module's **v5 acknowledgement**
-for fixed QuickConnect navigation, initial discovery, same-NAS probes and
-same-NAS direct/regional navigation. Its five boolean capabilities are compared with
-the current connection after the existing primary-document identity checks.
+Protection details also show the page routing module's **v6 acknowledgement**
+for fetch, XHR and portable page mediation, the bounded Tactical API-origin set,
+fixed QuickConnect navigation, initial discovery, same-NAS probes and same-NAS
+direct/regional navigation. These capabilities are compared with the current
+connection after the existing primary-document identity checks.
 A missing/older acknowledgement or a settings mismatch is diagnostic guidance,
 not permission to replay a request or bypass trust. Restart the desktop process
 after native updates; refreshing the application UI cannot replace an older
-native proxy's injected module. Even a current v5 acknowledgement is not proof
-that every browser request or channel is captured.
+native proxy's injected module. The acknowledgement is advisory: strict CSP and
+native proxy destination validation remain independent enforcement boundaries.
 
 ## Developer checks and limits
 

@@ -21,6 +21,14 @@ function installWebNetworkClient(configuration, reportBlocked) {
     reports = new Set(),
     restores = [],
     pendingReaders = new Set(),
+    fetchInterception = false,
+    xhrInterception = false,
+    beaconInterception = true,
+    eventSourceInterception = true,
+    websocketInterception = true,
+    restrictedContextInterception = true,
+    resourceAttributeInterception = false,
+    formInterception = true,
     active = true,
     disposed = false;
 
@@ -176,34 +184,48 @@ function installWebNetworkClient(configuration, reportBlocked) {
       };
     }
   }
-  // Closed Tactical RMM background-request capability. The native proxy
-  // independently derives and validates the same exact api.<dashboard-host>
-  // origin on every request; this client mapping is compatibility only.
+  // Closed Tactical RMM background-request capability. Native independently
+  // validates this bounded exact-origin set on every request; this client
+  // mapping is compatibility only and never grants a network destination.
   if (configuration.tacticalRmmApi !== undefined) {
     var tactical = configuration.tacticalRmmApi,
       source = new NativeURL(sourceOrigin),
-      api = tactical && new NativeURL(tactical.apiOrigin),
-      expectedApiHost = "api." + source.hostname;
+      tacticalOrigins = new Set();
     if (
       !tactical ||
-      tactical.version !== 1 ||
+      tactical.version !== 2 ||
       source.protocol !== "https:" ||
       source.port ||
-      api.protocol !== "https:" ||
-      api.port ||
-      api.username ||
-      api.password ||
-      api.origin !== tactical.apiOrigin ||
-      api.hostname !== expectedApiHost ||
-      api.pathname !== "/" ||
-      api.search ||
-      api.hash ||
+      !Array.isArray(tactical.apiOrigins) ||
+      tactical.apiOrigins.length < 1 ||
+      tactical.apiOrigins.length > 3 ||
       tactical.proxyUrl !==
         proxyOrigin + "/__sortofremoteng_tactical_rmm_api_v1"
     )
       throw new TypeError("Invalid Tactical RMM API route configuration");
+    tactical.apiOrigins.forEach(function (value) {
+      if (typeof value !== "string")
+        throw new TypeError("Invalid Tactical RMM API route configuration");
+      var api = new NativeURL(value);
+      if (
+        api.protocol !== "https:" ||
+        api.port ||
+        api.username ||
+        api.password ||
+        api.origin !== value ||
+        !api.hostname.includes(".") ||
+        api.hostname === "localhost" ||
+        api.hostname.endsWith(".") ||
+        api.pathname !== "/" ||
+        api.search ||
+        api.hash ||
+        tacticalOrigins.has(api.origin)
+      )
+        throw new TypeError("Invalid Tactical RMM API route configuration");
+      tacticalOrigins.add(api.origin);
+    });
     tacticalRmmApi = {
-      apiOrigin: api.origin,
+      apiOrigins: tacticalOrigins,
       proxyUrl: tactical.proxyUrl,
     };
   }
@@ -383,7 +405,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     if (
       tacticalRmmApi &&
       (kind === "fetch" || kind === "xhr") &&
-      target.origin === tacticalRmmApi.apiOrigin
+      tacticalRmmApi.apiOrigins.has(target.origin)
     ) {
       if (target.hash || target.href.length > 16_384)
         throw blocked(kind, "invalid-url", target.origin);
@@ -446,7 +468,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     return result.href;
   }
   function replace(object, name, value) {
-    if (!object) return;
+    if (!object) return false;
     var descriptor = Object.getOwnPropertyDescriptor(object, name);
     try {
       Object.defineProperty(object, name, {
@@ -459,13 +481,15 @@ function installWebNetworkClient(configuration, reportBlocked) {
         if (descriptor) Object.defineProperty(object, name, descriptor);
         else delete object[name];
       });
+      return true;
     } catch (_) {
       blocked("compatibility", "unavailable-interceptor");
+      return false;
     }
   }
   function wrapConstructor(name, kind) {
     var Native = window[name];
-    if (typeof Native !== "function") return;
+    if (typeof Native !== "function") return true;
     var Wrapped = function () {
       if (!new.target) throw new TypeError("Constructor requires new");
       var args = Array.prototype.slice.call(arguments);
@@ -478,7 +502,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     };
     Object.setPrototypeOf(Wrapped, Native);
     Wrapped.prototype = Native.prototype;
-    replace(window, name, Wrapped);
+    return replace(window, name, Wrapped);
   }
   async function requestBody(request) {
     if (!request.body) return null;
@@ -553,7 +577,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
         credentials: "omit",
       });
     }
-    replace(window, "fetch", function (input, init) {
+    fetchInterception = replace(window, "fetch", function (input, init) {
       try {
         if (NativeRequest && input instanceof NativeRequest) {
           var url = mapUrl(
@@ -607,7 +631,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     var xhrPrototype = window.XMLHttpRequest.prototype,
       nativeOpen = xhrPrototype.open,
       nativeSetRequestHeader = xhrPrototype.setRequestHeader;
-    replace(xhrPrototype, "open", function () {
+    xhrInterception = replace(xhrPrototype, "open", function () {
       var args = Array.prototype.slice.call(arguments);
       args[1] = mapUrl(args[1], "xhr", false, args[0]);
       var control = isQuickConnectRelay(args[1]);
@@ -626,7 +650,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
   }
   if (typeof navigator.sendBeacon === "function") {
     var nativeBeacon = navigator.sendBeacon;
-    replace(navigator, "sendBeacon", function (url, data) {
+    beaconInterception = replace(navigator, "sendBeacon", function (url, data) {
       try {
         return Reflect.apply(nativeBeacon, navigator, [
           mapUrl(url, "beacon"),
@@ -637,8 +661,8 @@ function installWebNetworkClient(configuration, reportBlocked) {
       }
     });
   }
-  wrapConstructor("EventSource", "eventsource");
-  wrapConstructor("WebSocket", "websocket");
+  eventSourceInterception = wrapConstructor("EventSource", "eventsource");
+  websocketInterception = wrapConstructor("WebSocket", "websocket");
   [
     "RTCPeerConnection",
     "webkitRTCPeerConnection",
@@ -685,29 +709,36 @@ function installWebNetworkClient(configuration, reportBlocked) {
       // An immutable native host cannot be masked by this JS layer. Preserve
       // the other routing hooks and report the known containment limitation.
       blocked("compatibility", "unavailable-interceptor");
+      restrictedContextInterception = false;
     }
   });
   ["Worker", "SharedWorker", "WebTransport"].forEach(function (name) {
     if (typeof window[name] === "function")
-      replace(window, name, function () {
-        throw blocked(name, "unsupported-network-context");
-      });
+      restrictedContextInterception =
+        replace(window, name, function () {
+          throw blocked(name, "unsupported-network-context");
+        }) && restrictedContextInterception;
   });
   if (navigator.serviceWorker)
-    replace(navigator.serviceWorker, "register", function () {
-      return Promise.reject(
-        blocked("serviceworker", "unsupported-network-context"),
-      );
-    });
+    restrictedContextInterception =
+      replace(navigator.serviceWorker, "register", function () {
+        return Promise.reject(
+          blocked("serviceworker", "unsupported-network-context"),
+        );
+      }) && restrictedContextInterception;
   if (window.Worklet)
-    replace(window.Worklet.prototype, "addModule", function () {
-      return Promise.reject(blocked("worklet", "unsupported-network-context"));
-    });
+    restrictedContextInterception =
+      replace(window.Worklet.prototype, "addModule", function () {
+        return Promise.reject(
+          blocked("worklet", "unsupported-network-context"),
+        );
+      }) && restrictedContextInterception;
   if (typeof window.open === "function")
-    replace(window, "open", function () {
-      blocked("window", "unsupported-network-context");
-      return null;
-    });
+    restrictedContextInterception =
+      replace(window, "open", function () {
+        blocked("window", "unsupported-network-context");
+        return null;
+      }) && restrictedContextInterception;
 
   // Synchronous property/attribute hooks help dynamic resources before insertion.
   // Parser-created resources, cached native setters, HTML strings, CSS escapes,
@@ -820,14 +851,18 @@ function installWebNetworkClient(configuration, reportBlocked) {
     RoutedFontFace.prototype = NativeFontFace.prototype;
     replace(window, "FontFace", RoutedFontFace);
   }
-  replace(Element.prototype, "setAttribute", function (name, value) {
-    var lower = String(name).toLowerCase();
-    if (lower === "srcset" && /^(IMG|SOURCE)$/.test(this.tagName))
-      value = srcset(value);
-    else if (lower === "style") value = css(value);
-    else value = resourceUrl(this, String(name), value);
-    return Reflect.apply(nativeSetAttribute, this, [name, value]);
-  });
+  resourceAttributeInterception = replace(
+    Element.prototype,
+    "setAttribute",
+    function (name, value) {
+      var lower = String(name).toLowerCase();
+      if (lower === "srcset" && /^(IMG|SOURCE)$/.test(this.tagName))
+        value = srcset(value);
+      else if (lower === "style") value = css(value);
+      else value = resourceUrl(this, String(name), value);
+      return Reflect.apply(nativeSetAttribute, this, [name, value]);
+    },
+  );
   function mapSetter(object, name, mapper) {
     if (!object) return;
     var descriptor = Object.getOwnPropertyDescriptor(object, name);
@@ -961,10 +996,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
     ["submit", "requestSubmit"].forEach(function (name) {
       var native = window.HTMLFormElement.prototype[name];
       if (typeof native !== "function") return;
-      replace(window.HTMLFormElement.prototype, name, function (submitter) {
-        prepareForm(this, submitter);
-        return Reflect.apply(native, this, arguments);
-      });
+      formInterception =
+        replace(window.HTMLFormElement.prototype, name, function (submitter) {
+          prepareForm(this, submitter);
+          return Reflect.apply(native, this, arguments);
+        }) && formInterception;
     });
   }
   function submit(event) {
@@ -1049,8 +1085,23 @@ function installWebNetworkClient(configuration, reportBlocked) {
     // Advisory installation receipt only; this does not prove engine-wide
     // interception and must never create permission in the parent application.
     capabilities: Object.freeze({
-      version: 5,
-      tacticalRmmApi: tacticalRmmApi !== null,
+      version: 6,
+      tacticalRmmApi:
+        tacticalRmmApi !== null && fetchInterception && xhrInterception,
+      tacticalRmmApiOrigins: Object.freeze(
+        tacticalRmmApi ? Array.from(tacticalRmmApi.apiOrigins) : [],
+      ),
+      fetchInterception: fetchInterception,
+      xhrInterception: xhrInterception,
+      pageNetworkInterception:
+        fetchInterception &&
+        xhrInterception &&
+        beaconInterception &&
+        eventSourceInterception &&
+        websocketInterception &&
+        restrictedContextInterception &&
+        resourceAttributeInterception &&
+        formInterception,
       quickConnectNavigation:
         navigationOrigins.size > 0 ||
         directNavigationAlias !== null ||

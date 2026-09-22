@@ -1,6 +1,6 @@
-//! Windows-only frame navigation enforcement, shared with the isolated native
-//! integration fixture. No Referer inference or JavaScript timing dependency.
-//! Deliberately not described as a WebSocket/WebRTC/resource-request firewall.
+//! Windows-only frame and HTTP(S) request enforcement, shared with the isolated
+//! native integration fixture. No Referer inference or JavaScript dependency.
+//! Other socket protocols such as WebSocket/WebRTC are outside this contract.
 
 use super::windows_api as windows61;
 use std::sync::Arc;
@@ -20,6 +20,9 @@ pub struct InstalledGuard {
 
 impl Drop for InstalledGuard {
     fn drop(&mut self) {
+        // Removing a mandatory handler immediately invalidates its capability.
+        // Failure stays latched; dropping/reinstalling cannot reset protection.
+        super::webview_origins::mark_frame_guard_failed();
         unsafe {
             if let Some(token) = self.resource.take() {
                 let _ = self.core.remove_WebResourceRequested(token);
@@ -52,7 +55,7 @@ pub fn install(
     core: &ICoreWebView2,
     environment: &ICoreWebView2Environment,
     allows: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-    allows_document: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    allows_resource: Arc<dyn Fn(&str) -> bool + Send + Sync>,
     failed: Arc<dyn Fn() + Send + Sync>,
 ) -> windows61::core::Result<InstalledGuard> {
     let mut installed = InstalledGuard {
@@ -68,9 +71,9 @@ pub fn install(
     let stop = core.clone();
     unsafe {
         // The older FrameNavigationStarting event can be too late to prevent
-        // HTTP transmission. This filter observes all resource categories, but
-        // enforcement remains DOCUMENT-only, including nested frames. Do not
-        // use the deprecated filter that misses cross-origin iframes.
+        // HTTP transmission. Enforce every resource category and source,
+        // including nested frames and workers. Do not use the deprecated filter
+        // that misses cross-origin iframes.
         core.cast::<ICoreWebView2_22>()?
             .AddWebResourceRequestedFilterWithRequestSourceKinds(
                 &HSTRING::from("*"),
@@ -92,10 +95,9 @@ pub fn install(
                     request.Uri(&mut uri).ok()?;
                     Some(take_pwstr(uri))
                 })();
-                let blocked = context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT
-                    && !uri.as_deref().is_some_and(|uri| allows_document(uri));
+                let blocked = !uri.as_deref().is_some_and(|uri| allows_resource(uri));
                 // Best-effort global diagnostics have no frame/session identity.
-                // Never read body/headers or mutate a non-document request.
+                // Never read body/headers or retain paths or query strings.
                 if let Some(uri) = uri {
                     let method = (|| {
                         let request = args.Request().ok()?;
@@ -111,7 +113,7 @@ pub fn install(
                 }
                 if blocked {
                     let response = environment.CreateWebResourceResponse(None, 403,
-                        &HSTRING::from("Blocked by application navigation policy"),
+                        &HSTRING::from("Blocked by application network policy"),
                         &HSTRING::from("Content-Length: 0\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'"))?;
                     args.SetResponse(&response)?;
                 }

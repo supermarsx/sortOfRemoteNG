@@ -46,7 +46,7 @@ const snapshot = () => ({
 const status = () => ({
   platform: "windows",
   frameNavigation: "enforced",
-  allNetworkRequestsMediated: false,
+  allNetworkRequestsMediated: true,
   httpObservations: snapshot(),
 });
 const PROXY = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
@@ -151,7 +151,7 @@ describe("native HTTP diagnostic validation", () => {
       ).toEqual({
         platform: "windows",
         frameNavigation: "enforced",
-        allNetworkRequestsMediated: false,
+        allNetworkRequestsMediated: true,
       });
     }
     expect(
@@ -159,6 +159,7 @@ describe("native HTTP diagnostic validation", () => {
         ...status(),
         platform: "linux",
         frameNavigation: "unsupported",
+        allNetworkRequestsMediated: false,
       }).httpObservations,
     ).toBeUndefined();
   });

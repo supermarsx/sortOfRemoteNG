@@ -49,12 +49,66 @@ export interface WebNetworkRoutingStatus {
   status: "current" | "missing" | "mismatch";
   tacticalRmmApi: boolean;
   tacticalRmmApiExpected: boolean;
+  tacticalRmmApiOrigins: string[];
+  fetchInterception: boolean;
+  xhrInterception: boolean;
+  pageNetworkInterception: boolean;
   quickConnectNavigation: boolean;
   quickConnectDiscovery: boolean;
   quickConnectDiscovered: boolean;
   quickConnectDirectNavigation: boolean;
   quickConnectRegionalNavigation: boolean;
 }
+
+function emptyRoutingStatus(
+  expectedTacticalRmmApi: boolean,
+): WebNetworkRoutingStatus {
+  return {
+    status: "missing",
+    tacticalRmmApi: false,
+    tacticalRmmApiExpected: expectedTacticalRmmApi,
+    tacticalRmmApiOrigins: [],
+    fetchInterception: false,
+    xhrInterception: false,
+    pageNetworkInterception: false,
+    quickConnectNavigation: false,
+    quickConnectDiscovery: false,
+    quickConnectDiscovered: false,
+    quickConnectDirectNavigation: false,
+    quickConnectRegionalNavigation: false,
+  };
+}
+
+/** Page code can report only a compact, canonical set of reviewed API origins.
+ * The receipt is advisory and never widens the native route. */
+function parseTacticalRmmApiOrigins(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 3) return null;
+  const origins: string[] = [];
+  for (const valueOrigin of value) {
+    if (typeof valueOrigin !== "string" || valueOrigin.length > 512)
+      return null;
+    let url: URL;
+    try {
+      url = new URL(valueOrigin);
+    } catch {
+      return null;
+    }
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.origin !== valueOrigin ||
+      !url.hostname.includes(".") ||
+      url.hostname === "localhost" ||
+      url.hostname.endsWith(".") ||
+      origins.includes(valueOrigin)
+    )
+      return null;
+    origins.push(valueOrigin);
+  }
+  return origins;
+}
+
 /** Advisory only; invoke after the existing primary-document readiness fence. */
 export function webNetworkRoutingStatus(
   value: unknown,
@@ -63,40 +117,41 @@ export function webNetworkRoutingStatus(
   expectedTacticalRmmApi = false,
 ): WebNetworkRoutingStatus {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    return {
-      status: "missing",
-      tacticalRmmApi: false,
-      tacticalRmmApiExpected: expectedTacticalRmmApi,
-      quickConnectNavigation: false,
-      quickConnectDiscovery: false,
-      quickConnectDiscovered: false,
-      quickConnectDirectNavigation: false,
-      quickConnectRegionalNavigation: false,
-    };
+    return emptyRoutingStatus(expectedTacticalRmmApi);
   const data = value as Record<string, unknown>;
+  const tacticalRmmApiOrigins = parseTacticalRmmApiOrigins(
+    data.tacticalRmmApiOrigins,
+  );
   if (
-    data.version !== 5 ||
+    data.version !== 6 ||
     typeof data.tacticalRmmApi !== "boolean" ||
+    tacticalRmmApiOrigins === null ||
+    typeof data.fetchInterception !== "boolean" ||
+    typeof data.xhrInterception !== "boolean" ||
+    typeof data.pageNetworkInterception !== "boolean" ||
     typeof data.quickConnectNavigation !== "boolean" ||
     typeof data.quickConnectDiscovery !== "boolean" ||
     typeof data.quickConnectDiscovered !== "boolean" ||
     typeof data.quickConnectDirectNavigation !== "boolean" ||
     typeof data.quickConnectRegionalNavigation !== "boolean"
   )
-    return {
-      status: "missing",
-      tacticalRmmApi: false,
-      tacticalRmmApiExpected: expectedTacticalRmmApi,
-      quickConnectNavigation: false,
-      quickConnectDiscovery: false,
-      quickConnectDiscovered: false,
-      quickConnectDirectNavigation: false,
-      quickConnectRegionalNavigation: false,
-    };
+    return emptyRoutingStatus(expectedTacticalRmmApi);
+  const pageNetworkInterceptionReady =
+    data.fetchInterception &&
+    data.xhrInterception &&
+    data.pageNetworkInterception;
+  const tacticalRmmApiReady =
+    data.tacticalRmmApi &&
+    tacticalRmmApiOrigins.length > 0 &&
+    pageNetworkInterceptionReady;
+  const tacticalRmmApiMatches = expectedTacticalRmmApi
+    ? tacticalRmmApiReady
+    : !data.tacticalRmmApi && tacticalRmmApiOrigins.length === 0;
   return {
     status:
       data.quickConnectNavigation === expectedQuickConnect &&
-      data.tacticalRmmApi === expectedTacticalRmmApi &&
+      pageNetworkInterceptionReady &&
+      tacticalRmmApiMatches &&
       data.quickConnectDiscovery === expectedAliasRoutes &&
       data.quickConnectDiscovered === expectedAliasRoutes &&
       data.quickConnectDirectNavigation === expectedAliasRoutes &&
@@ -105,6 +160,10 @@ export function webNetworkRoutingStatus(
         : "mismatch",
     tacticalRmmApi: data.tacticalRmmApi,
     tacticalRmmApiExpected: expectedTacticalRmmApi,
+    tacticalRmmApiOrigins,
+    fetchInterception: data.fetchInterception,
+    xhrInterception: data.xhrInterception,
+    pageNetworkInterception: data.pageNetworkInterception,
     quickConnectNavigation: data.quickConnectNavigation,
     quickConnectDiscovery: data.quickConnectDiscovery,
     quickConnectDiscovered: data.quickConnectDiscovered,

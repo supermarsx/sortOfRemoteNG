@@ -375,9 +375,12 @@ describe("mounted website network boundary", () => {
           status === "missing"
             ? undefined
             : {
-                version: status === "legacy" ? 4 : 5,
+                version: status === "legacy" ? 4 : 6,
                 tacticalRmmApi: false,
-                tacticalRmmApiExpected: false,
+                tacticalRmmApiOrigins: [],
+                fetchInterception: true,
+                xhrInterception: true,
+                pageNetworkInterception: true,
                 quickConnectNavigation: status === "current",
                 quickConnectDiscovery: false,
                 quickConnectDiscovered: false,
@@ -410,7 +413,7 @@ describe("mounted website network boundary", () => {
           ? "Restart the desktop application"
           : status === "mismatch"
             ? "differ from the current connection settings"
-            : "Page routing module v5 reported",
+            : "Page routing module v6 reported",
       );
       expect(proxies).toHaveLength(1);
       await act(async () => {

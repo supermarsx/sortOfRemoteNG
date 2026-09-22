@@ -43,6 +43,10 @@ export default function WebNetworkNotice({
     routing?.status === "missing" ||
     routing?.status === "mismatch" ||
     (guard && !["enforced", "unsupported"].includes(guard.frameNavigation));
+  const pageMediationActive =
+    routing?.status === "current" && routing.pageNetworkInterception;
+  const nativeHttpGuardActive =
+    guard?.platform === "windows" && guard.allNetworkRequestsMediated;
   return (
     <section
       aria-label="Website network restrictions"
@@ -56,7 +60,9 @@ export default function WebNetworkNotice({
         />
         Proxy routing
         <span className="ml-auto font-normal text-[var(--color-textMuted)]">
-          Partial browser enforcement
+          {pageMediationActive
+            ? "Cross-platform page mediation"
+            : "Page mediation unconfirmed"}
         </span>
         <WebsiteDiagnosticsCopyButton
           text={websiteDiagnosticsText(
@@ -67,7 +73,11 @@ export default function WebNetworkNotice({
           )}
         />
       </h3>
-      <p>Not every browser network channel is intercepted.</p>
+      <p>
+        {pageMediationActive
+          ? "Portable page routing hooks are active. Strict response policy and the protected proxy independently deny direct HTTP(S) fallback."
+          : "Page request mediation is not confirmed for this document."}
+      </p>
       {attention && (
         <p className="rounded bg-[var(--color-background)] p-3 font-medium text-warning">
           {expired
@@ -103,7 +113,11 @@ export default function WebNetworkNotice({
                 : guard.frameNavigation === "unsupported"
                   ? "Native frame navigation protection is not available on this platform."
                   : "Native frame navigation protection is not ready."}{" "}
-              Browser-wide network interception is not yet enforced.
+              {guard.platform === "windows"
+                ? nativeHttpGuardActive
+                  ? "The Windows native HTTP(S) guard is active."
+                  : "The Windows native HTTP(S) guard is not active."
+                : "A Windows native HTTP(S) guard is not available on this platform."}
             </p>
           )}
           {routing && (
@@ -115,8 +129,30 @@ export default function WebNetworkNotice({
               ) : (
                 <>
                   <p className="text-[var(--color-textMuted)]">
-                    Page routing module v5 reported
+                    Page routing module v6 reported
                   </p>
+                  <dl className="rounded bg-[var(--color-background)] p-3 space-y-2">
+                    {(
+                      [
+                        ["Fetch interception", routing.fetchInterception],
+                        ["XHR interception", routing.xhrInterception],
+                        [
+                          "Page request mediation",
+                          routing.pageNetworkInterception,
+                        ],
+                      ] as const
+                    ).map(([label, active]) => (
+                      <div
+                        key={label}
+                        className="flex items-start justify-between gap-3"
+                      >
+                        <dt>{label}</dt>
+                        <dd className="shrink-0 text-[var(--color-textMuted)]">
+                          {active ? "Active" : "Not active"}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
                   {quickConnectRelevant && (
                     <dl className="rounded bg-[var(--color-background)] p-3 space-y-2">
                       {(
@@ -166,7 +202,8 @@ export default function WebNetworkNotice({
                   ? routing.tacticalRmmApiExpected
                     ? "Expected; page module not reported"
                     : "Not reported"
-                  : routing.tacticalRmmApi === routing.tacticalRmmApiExpected
+                  : routing.status === "current" &&
+                      routing.tacticalRmmApi === routing.tacticalRmmApiExpected
                     ? routing.tacticalRmmApi
                       ? "Available"
                       : "Off"
@@ -174,18 +211,23 @@ export default function WebNetworkNotice({
                       ? "Expected, unavailable"
                       : "Unexpectedly available"}
               </p>
+              {routing.tacticalRmmApiOrigins.length > 0 && (
+                <p className="text-[var(--color-textMuted)] break-words">
+                  Tactical RMM API origins:{" "}
+                  {routing.tacticalRmmApiOrigins.join(", ")}
+                </p>
+              )}
               <p className="text-[var(--color-textMuted)]">
-                This is a page-module diagnostic, not proof that every request
-                is captured.
+                This advisory receipt does not approve destinations. Strict CSP
+                and native proxy validation apply independently.
               </p>
             </div>
           )}
           <p className="mt-2">
             Redirect approval is separate from background-request routing. A
             permitted destination can still have requests without a supported
-            proxy route. Workers, WebRTC and WebTransport are unsupported here.
-            The page may be incomplete; no destination is approved by this
-            notice.
+            proxy route. Workers, WebRTC and WebTransport are disabled or fail
+            closed. No destination is approved by this notice.
           </p>
           <ul className="space-y-2">
             {reports.map((report) => (
@@ -216,7 +258,7 @@ export default function WebNetworkNotice({
           </ul>
           <p className="mt-2">
             Only destination origins are shown. This notice is not proof that
-            every browser network channel is intercepted.
+            every browser or native network channel is intercepted.
           </p>
           {reports.length > 0 && (
             <p className="mt-2">

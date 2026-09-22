@@ -75,6 +75,7 @@ import {
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import {
+  getReviewedApplicationApiOrigin,
   getReviewedApplicationProfile,
   resolveHttpApplicationLogin,
   sameHttpApplicationLogin,
@@ -2328,6 +2329,8 @@ export function useWebBrowser(session: ConnectionSession) {
           const continuation = runtimeNavigation?.nativeContinuation;
           const reviewedApplicationProfile =
             getReviewedApplicationProfile(connection);
+          const reviewedApplicationApiOrigin =
+            getReviewedApplicationApiOrigin(connection);
           const response = await invoke<ProxyMediatorResponse>(
             "start_basic_auth_proxy",
             {
@@ -2370,6 +2373,12 @@ export function useWebBrowser(session: ConnectionSession) {
                 ...(reviewedApplicationProfile
                   ? {
                       reviewed_application_profile: reviewedApplicationProfile,
+                    }
+                  : {}),
+                ...(reviewedApplicationApiOrigin
+                  ? {
+                      reviewed_application_api_origin:
+                        reviewedApplicationApiOrigin,
                     }
                   : {}),
                 // If the app has a global HTTP(S) proxy, the loopback
@@ -2570,6 +2579,7 @@ export function useWebBrowser(session: ConnectionSession) {
       previousInputs === proxyInputs &&
       previous.profile?.id === connection?.httpApplication?.id &&
       previous.profile?.loginPath === connection?.httpApplication?.loginPath &&
+      previous.profile?.apiOrigin === connection?.httpApplication?.apiOrigin &&
       previous.profile?.joomlaVersion ===
         connection?.httpApplication?.joomlaVersion &&
       previous.auth.error === applicationAuth.error &&

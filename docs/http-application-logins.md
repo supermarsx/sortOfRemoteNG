@@ -130,21 +130,24 @@ approval are not generalized into automatic TOTP.
 
 Tactical RMM requires an HTTPS dashboard address. Standard installations configure
 the frontend's `PROD_URL` as a separate API origin. A reviewed Tactical RMM preset
-derives one exact background-request route from the saved dashboard host: for
-`https://rmm.example.com`, fetch/XHR may use only
-`https://api.rmm.example.com` on the default HTTPS port. The native proxy validates
-the destination on every request and performs its normal certificate checks.
+derives the two common exact background-request layouts from the saved dashboard
+host: for `https://rmm.example.com`, fetch/XHR may use
+`https://api.rmm.example.com` or `https://api.example.com` on the default HTTPS
+port. The connection editor also accepts one explicitly reviewed canonical HTTPS
+API origin for a nonstandard deployment. The native proxy validates the exact
+origin and full destination on every request and performs normal certificate
+checks.
 
 This is not a suffix-wide subdomain grant. It does not approve navigation,
-WebSocket, workers, WebRTC, WebTransport, a sibling such as
-`https://api.example.com`, or any other host/port. The route expires with the
+WebSocket, workers, WebRTC, WebTransport, an unlisted sibling, or any other
+host/port. The route expires with the
 owning document. Dashboard cookies, custom headers, saved HTTP credentials and
 connection query parameters are not copied to the API origin; Tactical's own
 request authorization remains available. The API route is intentionally
 stateless: it neither forwards nor retains cookies and suppresses the dashboard
 referrer while preserving its origin for the API's normal CORS checks.
-Nonstandard API layouts still require the session's explicit external-browser
-action at the original website origin.
+Malformed imported API origins invalidate the reviewed profile instead of
+silently widening or dropping its route.
 
 Passkeys and security keys (including YubiKey WebAuthn) depend on the website's
 real relying-party origin. Use the system browser at that origin; the localhost

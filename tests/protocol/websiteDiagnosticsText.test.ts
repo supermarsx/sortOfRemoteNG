@@ -11,6 +11,10 @@ describe("privacy-bounded website diagnostic copy", () => {
       status: "current" as const,
       tacticalRmmApi: false,
       tacticalRmmApiExpected: false,
+      tacticalRmmApiOrigins: [],
+      fetchInterception: true,
+      xhrInterception: true,
+      pageNetworkInterception: true,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -72,6 +76,44 @@ describe("privacy-bounded website diagnostic copy", () => {
         false,
       ),
     ).toContain("Tactical RMM API route: expected but unavailable");
+  });
+  it("copies only canonical Tactical origins and labels page and native coverage separately", () => {
+    const text = websiteDiagnosticsText(
+      [],
+      {
+        platform: "windows",
+        frameNavigation: "enforced",
+        allNetworkRequestsMediated: false,
+      },
+      {
+        status: "current",
+        tacticalRmmApi: true,
+        tacticalRmmApiExpected: true,
+        tacticalRmmApiOrigins: ["https://api.rmm.example.test"],
+        fetchInterception: true,
+        xhrInterception: true,
+        pageNetworkInterception: true,
+        quickConnectNavigation: false,
+        quickConnectDiscovery: false,
+        quickConnectDiscovered: false,
+        quickConnectDirectNavigation: false,
+        quickConnectRegionalNavigation: false,
+      },
+      false,
+    );
+    expect(text).toContain(
+      "Coverage: cross-platform page request mediation is active.",
+    );
+    expect(text).toContain("Windows native HTTP(S) guard: not active");
+    expect(text).toContain(
+      "Tactical RMM API origins: https://api.rmm.example.test",
+    );
+    expect(text).toMatch(
+      /Workers, WebRTC and WebTransport are disabled or fail closed/,
+    );
+    expect(text).toMatch(
+      /Strict CSP, native proxy validation and this advisory page receipt are independent/,
+    );
   });
   const snapshot = (): NativeHttpObservationsSnapshot => ({
     scope: "application",

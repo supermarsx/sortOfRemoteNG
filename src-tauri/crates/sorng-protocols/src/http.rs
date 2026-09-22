@@ -688,6 +688,10 @@ pub struct BasicAuthProxyConfig {
     /// application profile. Native code independently derives every route.
     #[serde(default)]
     pub reviewed_application_profile: Option<ReviewedApplicationProfile>,
+    /// Optional provider-reviewed exact API origin. Tactical RMM accepts only
+    /// a canonical HTTPS/default-port origin and still validates every request.
+    #[serde(default)]
+    pub reviewed_application_api_origin: Option<String>,
     /// One-use native continuation, never a persisted setting or log identity.
     #[serde(default)]
     pub continuation_id: Option<String>,
@@ -1170,6 +1174,7 @@ pub struct ProxySessionEntry {
     pub proxy_policy: HttpProxyPolicy,
     pub redirect_profile: Option<BrowserRedirectProfile>,
     pub reviewed_application_profile: Option<ReviewedApplicationProfile>,
+    pub reviewed_application_api_origin: Option<String>,
     pub custom_headers: HashMap<String, String>,
     pub upstream_proxy_url: Option<String>,
     pub target_origin: String,

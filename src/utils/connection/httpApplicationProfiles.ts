@@ -250,7 +250,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
       },
     ],
     description:
-      "HTTPS dashboard account login at /login, followed by the website's separate authenticator-token prompt. The embedded viewer supports the standard exact https://api.<dashboard-host> backend through its protected proxy; other API hosts remain blocked. API keys and MeshCentral credentials are not dashboard passwords; SSO and security keys stay interactive.",
+      "HTTPS dashboard account login at /login, followed by the website's separate authenticator-token prompt. Set the exact API origin below when this deployment needs a specific backend address. API keys and MeshCentral credentials are not dashboard passwords; SSO and security keys stay interactive.",
   },
   {
     id: "meshcentral",
@@ -629,6 +629,34 @@ export function isSafeHttpApplicationLoginPath(
   );
 }
 
+/** Canonical, non-secret Tactical API authority; never discard URL secrets or paths. */
+export function normalizeTacticalRmmApiOrigin(
+  value: unknown,
+): string | undefined {
+  if (
+    typeof value !== "string" ||
+    value.length > 2048 ||
+    !/^https:\/\/[^/?#\\@%\s]+\/?$/i.test(value)
+  )
+    return undefined;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    )
+      return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
 export function normalizeHttpApplicationSettings(
   value: unknown,
 ): HttpApplicationSettings | undefined {
@@ -663,6 +691,11 @@ export function normalizeHttpApplicationSettings(
     raw.joomlaVersion === undefined ||
     (id === "joomla" &&
       JOOMLA_VERSION_OPTIONS.some(({ value }) => value === raw.joomlaVersion));
+  const apiOrigin =
+    id === "tacticalrmm"
+      ? normalizeTacticalRmmApiOrigin(raw.apiOrigin)
+      : undefined;
+  const apiOriginValid = raw.apiOrigin === undefined || apiOrigin !== undefined;
   const valid =
     raw.version === 1 &&
     !!profile &&
@@ -671,11 +704,13 @@ export function normalizeHttpApplicationSettings(
     realmValid &&
     loginPathValid &&
     joomlaVersionValid &&
+    apiOriginValid &&
     raw.invalid !== true;
   return {
     version: 1,
     id,
     loginMode: validMode ? loginMode : "manual",
+    ...(apiOrigin ? { apiOrigin } : {}),
     ...(id === "proxmox" && realmValid && typeof raw.realm === "string"
       ? { realm: raw.realm }
       : {}),

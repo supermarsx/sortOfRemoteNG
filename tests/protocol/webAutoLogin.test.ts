@@ -271,6 +271,9 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
         upstream_auth_mode: loginMode === "basic" ? "basic" : "none",
         http_auto_login: loginMode === "form",
       });
+      expect(lastProxyConfig()).not.toHaveProperty(
+        "reviewed_application_api_origin",
+      );
       expect(lastProxyConfig()?.http_auto_login_selectors).toEqual(
         loginMode === "form"
           ? {
@@ -310,87 +313,148 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     });
   });
 
-  it("uses the same form-only policy in the legacy HTTP viewer", async () => {
-    connections.push({
-      id: "conn-1",
-      hostname: "device.local",
-      protocol: "http",
-      username: "app-user",
-      password: "app-password",
-      httpApplication: { version: 1, id: "tacticalrmm", loginMode: "form" },
-    });
-    renderHook(() => useHTTPViewer(session));
-    await waitFor(() => expect(lastProxyConfig()).toBeDefined());
-    expect(lastProxyConfig()).toMatchObject({
-      username: "app-user",
-      password: "app-password",
-      upstream_auth_mode: "none",
-      http_auto_login: true,
-      reviewed_application_profile: "tacticalrmm",
-    });
-  });
+  it.each([undefined, "HTTPS://API.example.test:443/"])(
+    "uses the same form-only policy in the legacy HTTP viewer with API origin %s",
+    async (apiOrigin) => {
+      connections.push({
+        id: "conn-1",
+        hostname: "device.local",
+        protocol: "http",
+        username: "app-user",
+        password: "app-password",
+        httpApplication: {
+          version: 1,
+          id: "tacticalrmm",
+          loginMode: "form",
+          apiOrigin,
+        },
+      });
+      renderHook(() => useHTTPViewer(session));
+      await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+      expect(lastProxyConfig()).toMatchObject({
+        username: "app-user",
+        password: "app-password",
+        upstream_auth_mode: "none",
+        http_auto_login: true,
+        reviewed_application_profile: "tacticalrmm",
+      });
+      if (apiOrigin) {
+        expect(lastProxyConfig()).toHaveProperty(
+          "reviewed_application_api_origin",
+          "https://api.example.test",
+        );
+      } else {
+        expect(lastProxyConfig()).not.toHaveProperty(
+          "reviewed_application_api_origin",
+        );
+      }
+    },
+  );
 
-  it("passes the reviewed Tactical RMM marker to the browser proxy", async () => {
-    const httpsSession: ConnectionSession = {
-      ...session,
-      protocol: "https",
-      hostname: "rmm.example.test",
-    };
-    connections.push({
-      id: "conn-1",
-      hostname: "rmm.example.test",
-      protocol: "https",
-      port: 443,
-      username: "app-user",
-      password: "app-password",
-      httpApplication: { version: 1, id: "tacticalrmm", loginMode: "form" },
-    });
-    mockResolveEffectiveTrustPolicy.mockReturnValue("tofu");
-    mockVerifyIdentity.mockResolvedValue({ status: "trusted" });
-    mockInvoke.mockImplementation(async (command) => {
-      if (command === "get_tls_certificate_info")
-        return {
-          fingerprint: "sha256:tactical-rmm-cert",
-          subject: "CN=rmm.example.test",
-          issuer: "CN=Test CA",
-          pem: null,
-          valid_from: null,
-          valid_to: null,
-          serial: null,
-          signature_algorithm: null,
-          san: [],
-          subject_cn: "rmm.example.test",
-          subject_org: null,
-          subject_ou: null,
-          subject_country: null,
-          subject_state: null,
-          subject_locality: null,
-          subject_email: null,
-          issuer_cn: "Test CA",
-          issuer_org: null,
-          issuer_country: null,
-          key_algorithm: null,
-          key_size: null,
-          version: null,
-          chain: null,
-        };
-      return {
-        local_port: 9000,
-        session_id: "proxy-1",
-        proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
+  it.each([undefined, "HTTPS://API.example.test:443/"])(
+    "passes the reviewed Tactical RMM marker and API origin %s to the browser proxy and revokes edits",
+    async (apiOrigin) => {
+      const httpsSession: ConnectionSession = {
+        ...session,
+        protocol: "https",
+        hostname: "rmm.example.test",
       };
-    });
+      connections.push({
+        id: "conn-1",
+        hostname: "rmm.example.test",
+        protocol: "https",
+        port: 443,
+        username: "app-user",
+        password: "app-password",
+        httpApplication: {
+          version: 1,
+          id: "tacticalrmm",
+          loginMode: "form",
+          apiOrigin,
+        },
+      });
+      mockResolveEffectiveTrustPolicy.mockReturnValue("tofu");
+      mockVerifyIdentity.mockResolvedValue({ status: "trusted" });
+      mockInvoke.mockImplementation(async (command) => {
+        if (command === "get_tls_certificate_info")
+          return {
+            fingerprint: "sha256:tactical-rmm-cert",
+            subject: "CN=rmm.example.test",
+            issuer: "CN=Test CA",
+            pem: null,
+            valid_from: null,
+            valid_to: null,
+            serial: null,
+            signature_algorithm: null,
+            san: [],
+            subject_cn: "rmm.example.test",
+            subject_org: null,
+            subject_ou: null,
+            subject_country: null,
+            subject_state: null,
+            subject_locality: null,
+            subject_email: null,
+            issuer_cn: "Test CA",
+            issuer_org: null,
+            issuer_country: null,
+            key_algorithm: null,
+            key_size: null,
+            version: null,
+            chain: null,
+          };
+        return {
+          local_port: 9000,
+          session_id: "proxy-1",
+          proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
+        };
+      });
 
-    const { result } = renderHook(() => useWebBrowser(httpsSession));
-    await act(async () => {
-      await result.current.navigateToUrl("https://rmm.example.test/login");
-    });
+      const { result, rerender } = renderHook(() =>
+        useWebBrowser(httpsSession),
+      );
+      await act(async () => {
+        await result.current.navigateToUrl("https://rmm.example.test/login");
+      });
 
-    expect(lastProxyConfig()).toMatchObject({
-      target_url: "https://rmm.example.test/",
-      reviewed_application_profile: "tacticalrmm",
-    });
-  });
+      expect(lastProxyConfig()).toMatchObject({
+        target_url: "https://rmm.example.test/",
+        reviewed_application_profile: "tacticalrmm",
+      });
+      if (apiOrigin) {
+        expect(lastProxyConfig()).toHaveProperty(
+          "reviewed_application_api_origin",
+          "https://api.example.test",
+        );
+      } else {
+        expect(lastProxyConfig()).not.toHaveProperty(
+          "reviewed_application_api_origin",
+        );
+      }
+      const starts = mockInvoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ).length;
+      connections[0] = {
+        ...connections[0],
+        httpApplication: {
+          version: 1,
+          id: "tacticalrmm",
+          loginMode: "form",
+          apiOrigin: "https://new-api.example.test",
+        },
+      };
+      rerender();
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+          sessionId: "proxy-1",
+        }),
+      );
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) => command === "start_basic_auth_proxy",
+        ),
+      ).toHaveLength(starts);
+    },
+  );
 
   it("disposes the legacy viewer's late form grant after unmount", async () => {
     let finish!: (value: unknown) => void;

@@ -1,7 +1,9 @@
 export interface WebNetworkGuardStatus {
   platform: string;
   frameNavigation: "enforced" | "initializing" | "failed" | "unsupported";
-  allNetworkRequestsMediated: false;
+  /** Windows native HTTP(S) WebView request enforcement only. Portable page
+   * mediation is reported separately by the page routing receipt. */
+  allNetworkRequestsMediated: boolean;
   httpObservations?: NativeHttpObservationsSnapshot;
 }
 
@@ -142,7 +144,10 @@ export function parseWebNetworkGuardStatus(
     !["enforced", "initializing", "failed", "unsupported"].includes(
       String(status.frameNavigation),
     ) ||
-    status.allNetworkRequestsMediated !== false ||
+    typeof status.allNetworkRequestsMediated !== "boolean" ||
+    (status.allNetworkRequestsMediated &&
+      (status.platform !== "windows" ||
+        status.frameNavigation !== "enforced")) ||
     (status.platform === "windows" && status.frameNavigation === "unsupported")
   )
     throw new Error(
@@ -152,7 +157,7 @@ export function parseWebNetworkGuardStatus(
     platform: status.platform,
     frameNavigation:
       status.frameNavigation as WebNetworkGuardStatus["frameNavigation"],
-    allNetworkRequestsMediated: false,
+    allNetworkRequestsMediated: status.allNetworkRequestsMediated,
   };
   // Optional diagnostics must not break the independently validated navigation
   // guard. Invalid snapshots are omitted, not shown or treated as authority.

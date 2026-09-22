@@ -1,9 +1,10 @@
 //! Closed Tactical RMM API-origin capability.
 //!
-//! Tactical's dashboard reads `window._env_.PROD_URL` and commonly places the
-//! API at `https://api.<dashboard-host>`. The renderer may request that exact
-//! origin through one reserved loopback endpoint, but native code derives and
-//! validates the destination independently for every request.
+//! Tactical's dashboard reads `window._env_.PROD_URL`. Deployments commonly
+//! place the API either at `https://api.<dashboard-host>` or beside an `rmm`
+//! dashboard at `https://api.<parent-domain>`. The renderer may request only
+//! the small exact-origin set disclosed in the manifest; native code derives
+//! and validates the destination independently for every request.
 
 use super::{ProxyNetworkState, ReviewedApplicationProfile};
 
@@ -14,7 +15,7 @@ const GENERATION_PARAMETER: &str = "__sorng_generation_v1";
 #[derive(Clone)]
 #[doc(hidden)]
 pub struct TacticalRmmApiRoute {
-    api_origin: String,
+    api_origins: Vec<String>,
     client: reqwest::Client,
 }
 
@@ -23,6 +24,7 @@ impl TacticalRmmApiRoute {
     pub fn new(
         profile: Option<ReviewedApplicationProfile>,
         source: &reqwest::Url,
+        configured_api_origin: Option<&str>,
         client: reqwest::Client,
     ) -> Option<Self> {
         if profile != Some(ReviewedApplicationProfile::TacticalRmm)
@@ -44,9 +46,18 @@ impl TacticalRmmApiRoute {
             }
             _ => return None,
         };
-        let api = reqwest::Url::parse(&format!("https://api.{host}/")).ok()?;
+        let mut api_origins = Vec::with_capacity(3);
+        push_exact_origin(&mut api_origins, &format!("https://api.{host}/"))?;
+
+        let (_, parent) = host.split_once('.')?;
+        push_exact_origin(&mut api_origins, &format!("https://api.{parent}/"))?;
+
+        if let Some(configured) = configured_api_origin {
+            push_exact_origin(&mut api_origins, configured)?;
+        }
+
         Some(Self {
-            api_origin: api.origin().ascii_serialization(),
+            api_origins,
             client,
         })
     }
@@ -57,8 +68,8 @@ impl TacticalRmmApiRoute {
 
     pub(super) fn manifest(&self, proxy_origin: &str) -> serde_json::Value {
         serde_json::json!({
-            "version": 1,
-            "apiOrigin": self.api_origin,
+            "version": 2,
+            "apiOrigins": self.api_origins,
             "proxyUrl": format!("{proxy_origin}{PATH}"),
         })
     }
@@ -69,7 +80,7 @@ impl TacticalRmmApiRoute {
         }
         let destination =
             reqwest::Url::parse(value).map_err(|_| "The Tactical RMM API URL is invalid.")?;
-        if destination.origin().ascii_serialization() != self.api_origin
+        if !self.permits(&destination)
             || destination.scheme() != "https"
             || destination.port_or_known_default() != Some(443)
             || destination.username() != ""
@@ -82,13 +93,35 @@ impl TacticalRmmApiRoute {
     }
 
     pub(super) fn permits(&self, destination: &reqwest::Url) -> bool {
-        destination.origin().ascii_serialization() == self.api_origin
+        self.api_origins
+            .iter()
+            .any(|origin| destination.origin().ascii_serialization() == *origin)
             && destination.scheme() == "https"
             && destination.port_or_known_default() == Some(443)
             && destination.username().is_empty()
             && destination.password().is_none()
             && destination.fragment().is_none()
     }
+}
+
+fn push_exact_origin(origins: &mut Vec<String>, value: &str) -> Option<()> {
+    let parsed = reqwest::Url::parse(value).ok()?;
+    if parsed.scheme() != "https"
+        || parsed.port_or_known_default() != Some(443)
+        || parsed.username() != ""
+        || parsed.password().is_some()
+        || !matches!(parsed.host(), Some(url::Host::Domain(host)) if host.contains('.') && host != "localhost" && !host.ends_with('.'))
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return None;
+    }
+    let origin = parsed.origin().ascii_serialization();
+    if !origins.contains(&origin) {
+        origins.push(origin);
+    }
+    Some(())
 }
 
 pub(super) fn destination(
@@ -134,9 +167,17 @@ mod tests {
     use super::*;
 
     fn route(source: &str) -> Option<TacticalRmmApiRoute> {
+        route_with_config(source, None)
+    }
+
+    fn route_with_config(
+        source: &str,
+        configured_api_origin: Option<&str>,
+    ) -> Option<TacticalRmmApiRoute> {
         TacticalRmmApiRoute::new(
             Some(ReviewedApplicationProfile::TacticalRmm),
             &reqwest::Url::parse(source).unwrap(),
+            configured_api_origin,
             reqwest::Client::new(),
         )
     }
@@ -150,19 +191,24 @@ mod tests {
     }
 
     #[test]
-    fn derives_only_the_exact_api_child_of_a_canonical_https_dashboard() {
+    fn derives_only_exact_common_api_origins_for_a_canonical_https_dashboard() {
         let capability = route("https://rmm.apps.vogue-homes.com/").unwrap();
         assert_eq!(
-            capability.api_origin,
-            "https://api.rmm.apps.vogue-homes.com"
+            capability.api_origins,
+            [
+                "https://api.rmm.apps.vogue-homes.com",
+                "https://api.apps.vogue-homes.com"
+            ]
         );
         assert!(capability
             .validate_destination("https://api.rmm.apps.vogue-homes.com/accounts/login/")
             .is_ok());
+        assert!(capability
+            .validate_destination("https://api.apps.vogue-homes.com/accounts/login/")
+            .is_ok());
         for destination in [
             "http://api.rmm.apps.vogue-homes.com/",
             "https://api.rmm.apps.vogue-homes.com:8443/",
-            "https://api.apps.vogue-homes.com/",
             "https://other.rmm.apps.vogue-homes.com/",
             "https://api.rmm.apps.vogue-homes.com.evil.test/",
             "https://user@api.rmm.apps.vogue-homes.com/",
@@ -180,6 +226,7 @@ mod tests {
         assert!(TacticalRmmApiRoute::new(
             None,
             &reqwest::Url::parse("https://rmm.example.test/").unwrap(),
+            None,
             reqwest::Client::new(),
         )
         .is_none());
@@ -194,6 +241,41 @@ mod tests {
             assert!(
                 route(source).is_none(),
                 "unexpected capability for {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_one_configured_canonical_exact_api_origin() {
+        let capability = route_with_config(
+            "https://rmm.example.test/",
+            Some("https://api.vendor.example/"),
+        )
+        .unwrap();
+        assert_eq!(
+            capability.api_origins,
+            [
+                "https://api.rmm.example.test",
+                "https://api.example.test",
+                "https://api.vendor.example"
+            ]
+        );
+        assert!(capability
+            .validate_destination("https://api.vendor.example/v3/checkin")
+            .is_ok());
+
+        for configured in [
+            "http://api.vendor.example/",
+            "https://api.vendor.example:8443/",
+            "https://user@api.vendor.example/",
+            "https://api.vendor.example/path",
+            "https://api.vendor.example/?query=true",
+            "https://api.vendor.example/#fragment",
+            "https://localhost/",
+        ] {
+            assert!(
+                route_with_config("https://rmm.example.test/", Some(configured)).is_none(),
+                "unexpected configured capability for {configured}"
             );
         }
     }
@@ -219,12 +301,17 @@ mod tests {
             "https://api.rmm.apps.vogue-homes.com/v3/checkin/?agent=42"
         );
 
-        assert!(destination(
+        let sibling = destination(
             Some(&capability),
             &network,
             &request_uri("https://api.apps.vogue-homes.com/v3/checkin/", 7),
         )
-        .is_err());
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            sibling.as_str(),
+            "https://api.apps.vogue-homes.com/v3/checkin/"
+        );
 
         network.document_issued(8, false);
         network.activate_document(8).unwrap();

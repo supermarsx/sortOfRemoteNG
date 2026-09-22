@@ -36,6 +36,10 @@ function manager(overrides: Partial<Manager> = {}): Manager {
       status: "current",
       tacticalRmmApi: false,
       tacticalRmmApiExpected: false,
+      tacticalRmmApiOrigins: [],
+      fetchInterception: true,
+      xhrInterception: true,
+      pageNetworkInterception: true,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -88,7 +92,7 @@ describe("website notifications popover", () => {
         /QuickConnect|Same-NAS|Regional navigation/,
       );
       expect(
-        within(dialog).getByText("Page routing module v5 reported"),
+        within(dialog).getByText("Page routing module v6 reported"),
       ).toBeVisible();
       expect(screen.getByTestId("observation")).toHaveAttribute(
         "data-active",
@@ -161,7 +165,7 @@ describe("website notifications popover", () => {
     const dialog = await open();
     expect(button).toHaveAttribute("aria-controls", dialog.id);
     expect(
-      within(dialog).getByText(/Partial browser enforcement/),
+      within(dialog).getByText(/Cross-platform page mediation/),
     ).toBeVisible();
     expect(screen.getByTestId("observation")).toHaveAttribute(
       "data-active",
@@ -181,7 +185,7 @@ describe("website notifications popover", () => {
     );
     expect(
       within(dialog).getByText(
-        /Browser-wide network interception is not yet enforced/,
+        /The Windows native HTTP\(S\) guard is not active/,
       ),
     ).toBeVisible();
     fireEvent.keyDown(document, { key: "Escape" });

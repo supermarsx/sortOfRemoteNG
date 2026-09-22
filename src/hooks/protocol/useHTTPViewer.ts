@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  getReviewedApplicationApiOrigin,
   getReviewedApplicationProfile,
   resolveHttpApplicationLogin,
 } from "../../utils/auth/httpApplicationLogin";
@@ -158,6 +159,8 @@ export function useHTTPViewer(session: ConnectionSession) {
       const creds = login.credentials;
       const reviewedApplicationProfile =
         getReviewedApplicationProfile(connection);
+      const reviewedApplicationApiOrigin =
+        getReviewedApplicationApiOrigin(connection);
       const proxyConfig = {
         target_url: targetUrl,
         username: creds?.username ?? "",
@@ -171,6 +174,9 @@ export function useHTTPViewer(session: ConnectionSession) {
         upstream_proxy_url: getGlobalHttpProxyUrl(),
         ...(reviewedApplicationProfile
           ? { reviewed_application_profile: reviewedApplicationProfile }
+          : {}),
+        ...(reviewedApplicationApiOrigin
+          ? { reviewed_application_api_origin: reviewedApplicationApiOrigin }
           : {}),
         http_auto_login: login.autoLogin,
         http_auto_login_selectors: login.selectors

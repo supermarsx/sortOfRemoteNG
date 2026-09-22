@@ -29,7 +29,7 @@ interface ClientConfiguration extends ReturnType<typeof config> {
   };
   tacticalRmmApi?: {
     version: number;
-    apiOrigin: string;
+    apiOrigins: string[];
     proxyUrl: string;
   };
 }
@@ -39,6 +39,10 @@ interface Controller {
   capabilities: {
     version: number;
     tacticalRmmApi: boolean;
+    tacticalRmmApiOrigins: readonly string[];
+    fetchInterception: boolean;
+    xhrInterception: boolean;
+    pageNetworkInterception: boolean;
     quickConnectNavigation: boolean;
     quickConnectDiscovery: boolean;
     quickConnectDiscovered: boolean;
@@ -166,16 +170,23 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   const tacticalConfig = (): ClientConfiguration => ({
     ...config(),
     tacticalRmmApi: {
-      version: 1,
-      apiOrigin: "https://api.device.example",
+      version: 2,
+      apiOrigins: ["https://api.device.example", "https://api.example"],
       proxyUrl: tacticalApiProxy,
     },
   });
-  it("routes only the exact Tactical API child through its document-fenced endpoint", async () => {
+  it("routes only the exact Tactical API origins through its document-fenced endpoint", async () => {
     start(tacticalConfig());
     expect(controller!.capabilities).toMatchObject({
-      version: 5,
+      version: 6,
       tacticalRmmApi: true,
+      tacticalRmmApiOrigins: [
+        "https://api.device.example",
+        "https://api.example",
+      ],
+      fetchInterception: true,
+      xhrInterception: true,
+      pageNetworkInterception: true,
     });
     const destination =
       "https://api.device.example/accounts/login/?next=agents";
@@ -199,7 +210,6 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     for (const blocked of [
       "http://api.device.example/accounts/",
       "https://api.device.example:8443/accounts/",
-      "https://api.example/accounts/",
       "https://other.device.example/accounts/",
       "https://api.device.example.evil.test/accounts/",
     ])
@@ -214,25 +224,45 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
         "origin-not-approved",
       );
   });
-  it("rejects renderer-supplied Tactical routes that are not the exact API child", () => {
-    for (const apiOrigin of [
-      "http://api.device.example",
-      "https://api.example",
-      "https://other.device.example",
-      "https://api.device.example:8443",
+  it("rejects malformed renderer-supplied Tactical exact-origin sets", () => {
+    for (const apiOrigins of [
+      ["http://api.device.example"],
+      ["https://api.device.example:8443"],
+      ["https://user@api.device.example"],
+      ["https://api.device.example/path"],
+      ["https://api.device.example", "https://api.device.example"],
+      [],
+      [
+        "https://api.one.example",
+        "https://api.two.example",
+        "https://api.three.example",
+        "https://api.four.example",
+      ],
     ]) {
       expect(() =>
         start({
           ...tacticalConfig(),
           tacticalRmmApi: {
-            version: 1,
-            apiOrigin,
+            version: 2,
+            apiOrigins,
             proxyUrl: tacticalApiProxy,
           },
         }),
       ).toThrow("Invalid Tactical RMM API route configuration");
       controller = undefined;
     }
+  });
+  it("routes a configured exact Tactical origin without widening other contexts", () => {
+    const input = tacticalConfig();
+    input.tacticalRmmApi!.apiOrigins.push("https://api.vendor.example");
+    start(input);
+    const destination = "https://api.vendor.example/v3/checkin";
+    expect(controller!.mapUrl(destination, "xhr")).toContain(
+      encodeURIComponent(destination),
+    );
+    expect(() => controller!.mapUrl(destination, "resource")).toThrow(
+      "origin-not-approved",
+    );
   });
   const directProbe =
     "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
@@ -570,8 +600,12 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   it("acknowledges only installed capabilities and routes the HTTPS alias without broad origin permission", () => {
     start(quickConfig());
     expect(controller!.capabilities).toEqual({
-      version: 5,
+      version: 6,
       tacticalRmmApi: false,
+      tacticalRmmApiOrigins: [],
+      fetchInterception: true,
+      xhrInterception: true,
+      pageNetworkInterception: true,
       quickConnectNavigation: true,
       quickConnectDiscovery: true,
       quickConnectDiscovered: false,
@@ -599,8 +633,12 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     controller!.dispose();
     start();
     expect(controller!.capabilities).toEqual({
-      version: 5,
+      version: 6,
       tacticalRmmApi: false,
+      tacticalRmmApiOrigins: [],
+      fetchInterception: true,
+      xhrInterception: true,
+      pageNetworkInterception: true,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -922,6 +960,35 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     );
     controller = factory(host)(config(), report);
   }
+  it("does not advertise Tactical or page interception when a required hook cannot install", () => {
+    const host = isolatedHost();
+    Object.defineProperty(host, "fetch", {
+      configurable: false,
+      writable: false,
+      value: fetch,
+    });
+    const factory = window.eval(
+      `(function(window){${source}\nreturn installWebNetworkClient;})`,
+    );
+    controller = factory(host)(tacticalConfig(), report);
+    expect(controller!.capabilities).toMatchObject({
+      version: 6,
+      tacticalRmmApi: false,
+      tacticalRmmApiOrigins: [
+        "https://api.device.example",
+        "https://api.example",
+      ],
+      fetchInterception: false,
+      xhrInterception: true,
+      pageNetworkInterception: false,
+    });
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "compatibility",
+        reason: "unavailable-interceptor",
+      }),
+    );
+  });
   it("makes all RTC feature checks unavailable and skips optional local-IP discovery", () => {
     const control = vi.fn(function () {
       throw new DOMException("Blocked", "SecurityError");

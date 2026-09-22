@@ -48,7 +48,7 @@ describe("compact website network notice", () => {
     });
     expect(region).not.toHaveClass("bg-warning/5");
     expect(
-      screen.getByText(/Browser-wide network interception is not yet enforced/),
+      screen.getByText(/The Windows native HTTP\(S\) guard is not active/),
     ).not.toBeVisible();
     fireEvent.click(screen.getByText("Protection details"));
     expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
@@ -69,7 +69,7 @@ describe("compact website network notice", () => {
       />,
     );
     expect(
-      screen.getByText(/Browser-wide network interception is not yet enforced/),
+      screen.getByText(/The Windows native HTTP\(S\) guard is not active/),
     ).not.toBeVisible();
     expect(screen.getByTestId("native-observation-activity")).toHaveAttribute(
       "data-active",
@@ -82,7 +82,7 @@ describe("compact website network notice", () => {
       />,
     );
     expect(
-      screen.getByText(/Browser-wide network interception is not yet enforced/),
+      screen.getByText(/The Windows native HTTP\(S\) guard is not active/),
     ).not.toBeVisible();
   });
   it("only activates native observation snapshots while Windows details are expanded", async () => {
@@ -151,6 +151,10 @@ describe("compact website network notice", () => {
             status,
             tacticalRmmApi: false,
             tacticalRmmApiExpected: false,
+            tacticalRmmApiOrigins: [],
+            fetchInterception: true,
+            xhrInterception: true,
+            pageNetworkInterception: true,
             quickConnectNavigation: false,
             quickConnectDiscovery: false,
             quickConnectDiscovered: false,
@@ -175,7 +179,7 @@ describe("compact website network notice", () => {
       ).toBeNull();
       expect(
         screen.getByTestId("web-network-routing-status"),
-      ).toHaveTextContent("not proof that every request is captured");
+      ).toHaveTextContent("advisory receipt does not approve destinations");
     },
   );
   it("reports the Tactical RMM API capability independently of redirect approval", () => {
@@ -187,6 +191,10 @@ describe("compact website network notice", () => {
           status: "current",
           tacticalRmmApi: true,
           tacticalRmmApiExpected: true,
+          tacticalRmmApiOrigins: ["https://api.rmm.example.test"],
+          fetchInterception: true,
+          xhrInterception: true,
+          pageNetworkInterception: true,
           quickConnectNavigation: false,
           quickConnectDiscovery: false,
           quickConnectDiscovered: false,
@@ -304,7 +312,7 @@ describe("compact website network notice", () => {
       screen.getByText(/Native frame navigation protection is not available/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Browser-wide network interception is not yet enforced/),
+      screen.getByText(/A Windows native HTTP\(S\) guard is not available/),
     ).toBeInTheDocument();
   });
   it("offers one explicit reload for an expired document, with no automatic retry", () => {

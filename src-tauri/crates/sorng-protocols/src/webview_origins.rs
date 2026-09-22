@@ -1,5 +1,5 @@
-//! Native frame-navigation allowlist. Entries are live proxy leases, never a
-//! wildcard localhost rule. This is NOT a WebSocket/WebRTC egress firewall.
+//! Native frame-navigation and HTTP(S) request allowlist. Entries are live proxy
+//! leases, never a wildcard localhost rule. This is not a WebSocket/WebRTC firewall.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -27,16 +27,25 @@ pub fn mark_frame_guard_failed() {
 pub struct FrameGuardStatus {
     pub platform: &'static str,
     pub frame_navigation: &'static str,
+    /// Windows native HTTP(S) request enforcement only. This legacy wire name
+    /// does not assert cross-platform, WebSocket, WebRTC or WebTransport coverage.
     pub all_network_requests_mediated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_observations: Option<http_observations::HttpObservations>,
 }
 
 pub fn frame_guard_status() -> FrameGuardStatus {
+    status_for_state(
+        FRAME_GUARD.load(Ordering::SeqCst),
+        cfg!(target_os = "windows"),
+    )
+}
+
+fn status_for_state(state: u8, supported: bool) -> FrameGuardStatus {
     FrameGuardStatus {
         platform: std::env::consts::OS,
-        frame_navigation: if cfg!(target_os = "windows") {
-            match FRAME_GUARD.load(Ordering::SeqCst) {
+        frame_navigation: if supported {
+            match state {
                 1 => "enforced",
                 2 => "failed",
                 _ => "initializing",
@@ -44,9 +53,10 @@ pub fn frame_guard_status() -> FrameGuardStatus {
         } else {
             "unsupported"
         },
-        all_network_requests_mediated: false,
-        http_observations: if cfg!(target_os = "windows") && FRAME_GUARD.load(Ordering::SeqCst) == 1
-        {
+        // This capability covers HTTP(S) WebView requests, not arbitrary socket
+        // protocols. Ready is published only after the native handler installs.
+        all_network_requests_mediated: supported && state == 1,
+        http_observations: if supported && state == 1 {
             http_observations::snapshot()
         } else {
             None
@@ -148,24 +158,122 @@ pub fn allows_frame_url(value: &str) -> bool {
         .is_ok_and(|registry| registry.origins.contains_key(&origin))
 }
 
-/// The document request event also observes the top-level app bootstrap. Its
-/// origin is supplied by compiled Tauri configuration, never page headers.
-/// Frame navigation still does NOT allow this app origin.
-pub fn allows_document_url(value: &str, app_origin: &str) -> bool {
-    if allows_frame_url(value) {
+/// Apply the native HTTP(S) policy to every resource category and source.
+/// The app and IPC origins come from trusted native configuration. Non-HTTP(S)
+/// schemes are outside this policy; the separate frame/external handlers retain
+/// their stricter rules. Malformed URLs fail closed, as do userinfo and stale leases.
+pub fn allows_resource_url(value: &str, app_origin: &str, ipc_origin: Option<&str>) -> bool {
+    let Ok(url) = url::Url::parse(value) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https") {
         return true;
     }
-    url::Url::parse(value).is_ok_and(|url| {
-        app_origin != "null"
-            && url.username().is_empty()
-            && url.password().is_none()
-            && matches!(url.scheme(), "http" | "https" | "tauri")
-            && url.origin().ascii_serialization() == app_origin
-    })
+    if !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+    let origin = url.origin().ascii_serialization();
+    origin == app_origin
+        || ipc_origin.is_some_and(|ipc| {
+            matches!(ipc, "http://ipc.localhost" | "https://ipc.localhost") && origin == ipc
+        })
+        || allows_frame_url(value)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn http_resources_require_exact_configured_or_leased_origins() {
+        use super::*;
+        let app = "http://localhost:3001";
+        let ipc = Some("http://ipc.localhost");
+        for allowed in [
+            "http://localhost:3001/api?secret=redacted",
+            "http://ipc.localhost/invoke",
+            "HTTP://LOCALHOST:3001/static.js",
+        ] {
+            assert!(allows_resource_url(allowed, app, ipc), "{allowed}");
+        }
+        for denied in [
+            "https://localhost:3001/api",
+            "http://localhost:3002/api",
+            "http://127.0.0.1:3001/api",
+            "http://localhost:3001.evil.test/api",
+            "http://user@localhost:3001/api",
+            "http://ipc.localhost:3001/invoke",
+            "http://ipc.localhost.evil.test/invoke",
+            "https://ipc.localhost/invoke",
+            "https://api.example.com/",
+            "http://[invalid",
+            "",
+        ] {
+            assert!(!allows_resource_url(denied, app, ipc), "{denied}");
+        }
+        assert!(!allows_resource_url("http://ipc.localhost/", app, None));
+        assert!(!allows_resource_url(
+            "https://foreign.test/",
+            app,
+            Some("https://foreign.test")
+        ));
+        assert!(allows_resource_url(
+            "https://ipc.localhost/",
+            app,
+            Some("https://ipc.localhost")
+        ));
+        assert!(allows_resource_url(
+            "https://app.test/a",
+            "https://app.test",
+            None
+        ));
+        let origin = "http://p1123456789abcdef0123456789abcdef.localhost:43129";
+        let resource = format!("{origin}/api");
+        assert!(!allows_resource_url(&resource, app, ipc));
+        let lease = acquire_proxy_origin(origin).unwrap();
+        assert!(allows_resource_url(&resource, app, ipc));
+        assert!(!allows_resource_url(
+            &resource.replace(":43129", ":43130"),
+            app,
+            ipc
+        ));
+        lease.revoke();
+        assert!(!allows_resource_url(&resource, app, ipc));
+    }
+
+    #[test]
+    fn local_schemes_are_not_foreign_http_requests() {
+        for value in [
+            "about:blank",
+            "about:srcdoc",
+            "data:image/png;base64,aA==",
+            "blob:http://localhost:3001/id",
+            "tauri://localhost/index.html",
+        ] {
+            assert!(super::allows_resource_url(
+                value,
+                "http://localhost:3001",
+                None
+            ));
+        }
+        assert!(!super::allows_frame_url("data:text/html,hello"));
+    }
+
+    #[test]
+    fn mediation_is_reported_only_for_installed_windows_handler() {
+        for supported in [true, false] {
+            for state in [0, 1, 2] {
+                let status = super::status_for_state(state, supported);
+                assert_eq!(
+                    status.all_network_requests_mediated,
+                    supported && state == 1
+                );
+                assert_eq!(
+                    status.frame_navigation == "enforced",
+                    supported && state == 1
+                );
+            }
+        }
+    }
+
     #[test]
     fn only_exact_live_proxy_origin_is_allowed_and_stop_is_immediate() {
         use super::*;
@@ -214,26 +322,31 @@ mod tests {
         }
         assert!(allows_frame_url("about:blank"));
         assert!(allows_frame_url("about:srcdoc"));
-        assert!(allows_document_url(
+        assert!(allows_resource_url(
             "http://tauri.localhost/index.html",
-            "http://tauri.localhost"
+            "http://tauri.localhost",
+            None
         ));
         assert!(!allows_frame_url("http://tauri.localhost/index.html"));
-        assert!(allows_document_url(
+        assert!(allows_resource_url(
             "http://localhost:3001/",
-            "http://localhost:3001"
+            "http://localhost:3001",
+            None
         ));
-        assert!(!allows_document_url(
+        assert!(!allows_resource_url(
             "http://localhost:3002/",
-            "http://localhost:3001"
+            "http://localhost:3001",
+            None
         ));
-        assert!(!allows_document_url(
+        assert!(!allows_resource_url(
             "http://user@tauri.localhost/",
-            "http://tauri.localhost"
+            "http://tauri.localhost",
+            None
         ));
-        assert!(!allows_document_url(
+        assert!(!allows_resource_url(
             "https://remote.test/",
-            "http://tauri.localhost"
+            "http://tauri.localhost",
+            None
         ));
     }
 }

@@ -113,7 +113,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             || !matches!(method, "GET" | "POST") || !matches!(version, "HTTP/1.1" | "HTTP/1.0")
                             || !path.starts_with('/') { return; }
                         if !forbidden { requests.lock().unwrap().push(path.to_string()); }
-                        if path.starts_with("/observation-") {
+                        if path == "/worker.js" {
+                            let body = format!("fetch('{sink_origin}/foreign-worker',{{mode:'no-cors'}}).catch(()=>{{}});fetch('/observation-worker');");
+                            let _ = socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+                            return;
+                        }
+                        if path.starts_with("/observation-") || path.starts_with("/proof-") {
                             let (mime, body): (&str, &[u8]) = if path.starts_with("/observation-font") {
                                 ("font/woff2", font.as_slice())
                             } else if path.starts_with("/observation-style") {
@@ -131,14 +136,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "/" => ("200 OK", String::new(), format!(r#"<!doctype html><html><head>
 <link rel="stylesheet" href="/observation-style"><script src="/observation-script"></script></head><body>
 <span id="font-proof">Font proof</span><img src="/observation-image">
+<link rel="stylesheet" href="{sink_origin}/foreign-style"><script src="{sink_origin}/foreign-script"></script>
+<img src="{sink_origin}/foreign-image">
+<style>@font-face{{font-family:Foreign;src:url('{sink_origin}/foreign-font')}}#foreign-font{{font-family:Foreign}}</style><span id="foreign-font">Foreign font proof</span>
 <iframe src="{sink_origin}/parser"></iframe>
 <iframe src="{proxy_origin}/redirect"></iframe>
 <iframe src="{proxy_origin}/meta"></iframe>
 <iframe src="{proxy_origin}/control"></iframe>
 <script>var f=document.createElement('iframe');f.src='{sink_origin}/dynamic';document.body.append(f);
-var print=document.createElement('iframe');print.srcdoc='<p>Local print content</p>';print.sandbox='allow-same-origin allow-modals';document.body.append(print);</script>
-<script>fetch('http://localhost:{root_port}/observation-fetch?privateQuery=fixture-secret');
-var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixture-secret');xhr.send('fixture-secret-body');</script>
+var print=document.createElement('iframe');print.srcdoc='<p>Local print content</p>';print.sandbox='allow-same-origin allow-modals';print.onload=()=>{{if(print.contentDocument.body.textContent==='Local print content')fetch('/proof-print');}};document.body.append(print);</script>
+<script>
+fetch('/observation-fetch?privateQuery=fixture-secret').then(r=>{{if(r.ok)return r.text();}}).then(t=>{{if(t==='fixture response')fetch('/proof-app-fetch');}});
+var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixture-secret');xhr.onload=()=>{{if(xhr.status===200&&xhr.responseText==='fixture response')fetch('/proof-app-xhr');}};xhr.send('fixture-secret-body');
+fetch('{proxy_origin}/observation-proxy-fetch').then(r=>r.text()).then(t=>{{if(t==='fixture response')fetch('/proof-proxy-fetch');}});
+var px=new XMLHttpRequest();px.open('GET','{proxy_origin}/observation-proxy-xhr');px.onload=()=>{{if(px.status===200&&px.responseText==='fixture response')fetch('/proof-proxy-xhr');}};px.send();
+fetch('{sink_origin}/foreign-fetch',{{mode:'no-cors'}}).catch(()=>{{}});
+var foreign=new XMLHttpRequest();foreign.open('POST','{sink_origin}/foreign-xhr');foreign.send('fixture-secret-body');
+fetch('http://localhost:{root_port}/alias-fetch',{{mode:'no-cors'}}).catch(()=>{{}});
+new Worker('/worker.js');
+var localScript=document.createElement('script');localScript.src=URL.createObjectURL(new Blob(["fetch('/proof-blob')"],{{type:'application/javascript'}}));document.body.append(localScript);
+</script>
 </body></html>"#)),
                             "/self-source" => ("200 OK", String::new(), format!("<script>location.assign('{sink_origin}/self-navigation')</script>")),
                             "/nested" => ("200 OK", String::new(), format!("<iframe src='{proxy_origin}/nested-inner'></iframe>")),
@@ -192,7 +209,7 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
             let shell_origin = format!("http://127.0.0.1:{root_port}");
             let denied = denied.clone();
             Arc::new(move |url| {
-                let allowed = webview_origins::allows_document_url(url, &shell_origin);
+                let allowed = webview_origins::allows_resource_url(url, &shell_origin, None);
                 if !allowed {
                     // The authoritative request filter can run before the
                     // navigation event (which then need not occur at all).
@@ -215,7 +232,7 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
         webview_origins::frame_guard_status().frame_navigation,
         "enforced"
     );
-    assert!(!webview_origins::frame_guard_status().all_network_requests_mediated);
+    assert!(webview_origins::frame_guard_status().all_network_requests_mediated);
     webview.load_url(&format!("http://127.0.0.1:{root_port}/"))?;
     let started = Instant::now();
     let mut revoked = false;
@@ -237,22 +254,24 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
                 nested_started = true;
                 webview.evaluate_script(&format!("var sourceNestedNavigation=document.createElement('iframe');sourceNestedNavigation.src='{proxy_origin}/nested';document.body.append(sourceNestedNavigation);")).unwrap();
             }
-            let all_attempts_observed = ["/parser", "/dynamic", "/self-navigation", "/nested-navigation", "/redirect-destination", "/meta-destination"]
+            let all_attempts_observed = ["/parser", "/dynamic", "/self-navigation", "/nested-navigation", "/redirect-destination", "/meta-destination", "/foreign-fetch", "/foreign-xhr", "/foreign-image", "/foreign-script", "/foreign-style", "/foreign-font", "/foreign-worker", "/alias-fetch"]
                 .iter().all(|path| denied.lock().unwrap().iter().any(|url| url.ends_with(path)));
             let resources_observed = webview_origins::http_observations::snapshot().is_some_and(|snapshot| {
                 ["xhr", "stylesheet", "font", "image", "script"].iter()
                     .all(|kind| snapshot.recent.iter().any(|row| row.resource_kind == *kind))
                     && snapshot.recent.iter().any(|row|
-                        row.origin == format!("http://localhost:{root_port}")
+                        row.origin == format!("http://127.0.0.1:{sink_port}")
                         && row.method == "GET"
                         && matches!(row.resource_kind, "xhr" | "fetch"))
             });
-            if !revoked && all_attempts_observed && resources_observed && requests.lock().unwrap().iter().any(|path| path == "/control") {
+            let allowed_requests_complete = ["/control", "/proof-app-fetch", "/proof-app-xhr", "/proof-proxy-fetch", "/proof-proxy-xhr", "/proof-print", "/proof-blob", "/observation-worker"]
+                .iter().all(|expected| requests.lock().unwrap().iter().any(|path| path == expected));
+            if !revoked && all_attempts_observed && resources_observed && allowed_requests_complete {
                 lease.revoke();
                 revoked = true;
-                webview.evaluate_script(&format!("var revoked=document.createElement('iframe');revoked.src='{proxy_origin}/revoked';document.body.append(revoked);")).unwrap();
+                webview.evaluate_script(&format!("var revoked=document.createElement('iframe');revoked.src='{proxy_origin}/revoked';document.body.append(revoked);fetch('{proxy_origin}/revoked-fetch',{{mode:'no-cors'}}).catch(()=>{{}});var rx=new XMLHttpRequest();rx.open('GET','{proxy_origin}/revoked-xhr');rx.send();var ri=new Image();ri.src='{proxy_origin}/revoked-image';")).unwrap();
             }
-            if revoked && denied.lock().unwrap().iter().any(|url| url.ends_with("/revoked")) && started.elapsed() > Duration::from_secs(2) {
+            if revoked && ["/revoked", "/revoked-fetch", "/revoked-xhr", "/revoked-image"].iter().all(|path| denied.lock().unwrap().iter().any(|url| url.ends_with(path))) && started.elapsed() > Duration::from_secs(2) {
                 complete = true;
                 *flow = ControlFlow::Exit;
             } else if failed.load(Ordering::SeqCst) || started.elapsed() > Duration::from_secs(12) {
@@ -268,7 +287,7 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
         .lock()
         .unwrap()
         .iter()
-        .any(|path| path == "/revoked");
+        .any(|path| path.starts_with("/revoked"));
     println!("Native frame fixture outcome: complete={complete}, handler_failed={failed}, sink_requests={sink_requests}, sink_tcp_connections={}, revoked_request={revoked_request}, observations={:?}, allowed_requests={:?}, denied={:?}", sink_connections.load(Ordering::SeqCst), sink_observations.lock().unwrap(), requests.lock().unwrap(), denied.lock().unwrap());
     if let Some(snapshot) = webview_origins::http_observations::snapshot() {
         println!(
@@ -276,7 +295,15 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
             serde_json::to_string(&snapshot)?
         );
     }
+    let observations = webview_origins::http_observations::snapshot().unwrap();
     drop(installed_guard);
+    assert!(!webview_origins::frame_guard_status().all_network_requests_mediated);
+    assert!(webview_origins::require_frame_guard_ready().is_err());
+    webview_origins::mark_frame_guard_ready();
+    assert_eq!(
+        webview_origins::frame_guard_status().frame_navigation,
+        "failed"
+    );
     unsafe {
         webview.controller().Close()?;
     }
@@ -317,12 +344,16 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
     assert!(!failed, "Native event handler failed");
     assert!(
         complete,
-        "Fixture did not observe all navigation attempts: {:?}",
+        "Fixture did not complete navigation/resource requests: {:?}",
         denied.lock().unwrap()
     );
     assert_eq!(sink_requests, 0, "A blocked destination received a request");
     assert!(!revoked_request);
-    let observations = webview_origins::http_observations::snapshot().unwrap();
+    assert!(!requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|path| path == "/alias-fetch"));
     assert_eq!(observations.scope, "application");
     for kind in ["xhr", "stylesheet", "font", "image", "script"] {
         assert!(
@@ -338,7 +369,7 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
         .iter()
         .any(|row| row.method == "POST" && row.resource_kind == "xhr"));
     assert!(observations.recent.iter().any(|row| row.origin
-        == format!("http://localhost:{root_port}")
+        == format!("http://127.0.0.1:{sink_port}")
         && row.method == "GET"
         && matches!(row.resource_kind, "xhr" | "fetch")
         && !row.document_blocked));
@@ -347,7 +378,7 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
     assert!(!diagnostic.contains("fixture-secret"));
     assert!(!diagnostic.contains("observation-"));
     assert!(!diagnostic.contains("privateQuery"));
-    println!("Native HTTP observation: distinct POST XHR and cross-origin GET fetch workloads observed, plus stylesheet/font/image/script; this runtime can classify fetch as xhr. Cross-origin fetch unchanged; snapshot contains only canonical origins and fixed native categories.");
+    println!("Native HTTP observation: foreign POST XHR/GET fetch and resource requests denied; app/proxy responses consumed successfully; snapshot contains only canonical origins and fixed native categories. This runtime can classify fetch as xhr.");
     assert!(
         requests
             .lock()
@@ -356,7 +387,7 @@ var xhr=new XMLHttpRequest();xhr.open('POST','/observation-xhr?privateQuery=fixt
             .any(|path| path == "/self-source"),
         "The self-navigation source was never delivered"
     );
-    println!("Windows native frame guard: parser, dynamic, self, nested, HTTP redirect, meta-refresh and revoked-origin navigation denied; zero sink HTTP bytes; allowed frame and local print preserved. This fixture reports speculative TCP separately and does not claim all-network egress containment.");
+    println!("Windows native HTTP(S) guard: foreign frame, fetch, XHR, image, script, stylesheet, font and worker requests denied; live app/proxy requests succeeded; lease revocation blocks subsequent resources; zero sink HTTP bytes. Blob scripts and local print preserved. Speculative TCP is reported separately; this is Windows HTTP(S) defense-in-depth, not cross-platform or other-protocol coverage.");
     if let Some(error) = cleanup_error {
         return Err(error.into());
     }

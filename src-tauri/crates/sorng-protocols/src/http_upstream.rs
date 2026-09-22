@@ -595,6 +595,7 @@ mod tactical_scope_tests {
         let route = crate::http::tactical_rmm::TacticalRmmApiRoute::new(
             Some(ReviewedApplicationProfile::TacticalRmm),
             &reqwest::Url::parse("https://rmm.example.test/").unwrap(),
+            None,
             reqwest::Client::new(),
         )
         .unwrap();

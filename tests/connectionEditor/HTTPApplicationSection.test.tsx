@@ -81,6 +81,76 @@ const value = () =>
   JSON.parse(screen.getByTestId("value").textContent!) as Partial<Connection>;
 
 describe("HTTP Application subtab", () => {
+  it("edits and clears only the Tactical API origin without changing login or authority", () => {
+    render(<Fixture />);
+    expect(
+      screen.queryByLabelText("Tactical RMM API origin (optional)"),
+    ).not.toBeInTheDocument();
+    choose("Website application", "Tactical RMM");
+    const api = screen.getByLabelText("Tactical RMM API origin (optional)");
+    expect(api).toHaveAttribute("placeholder", "https://api.example.com");
+    expect(
+      screen.getByText(/Blank keeps default API routing/),
+    ).toBeInTheDocument();
+    fireEvent.change(api, {
+      target: { value: "http://api.example.com/private" },
+    });
+    expect(api).toHaveAttribute("aria-invalid", "true");
+    expect(
+      screen.getByText(/Enter an HTTPS origin such as/),
+    ).toBeInTheDocument();
+    fireEvent.change(api, {
+      target: { value: "https://API.example.com:443/" },
+    });
+    fireEvent.blur(api);
+    expect(api).toHaveValue("https://api.example.com");
+    expect(api).toHaveAttribute("aria-invalid", "false");
+    expect(value()).toMatchObject({
+      ...initial,
+      httpApplication: {
+        version: 1,
+        id: "tacticalrmm",
+        loginMode: "manual",
+        apiOrigin: "https://api.example.com",
+      },
+      httpAutoLogin: false,
+      httpAutoMfa: { version: 1, enabled: false },
+    });
+    fireEvent.change(api, { target: { value: "" } });
+    expect(value().httpApplication?.apiOrigin).toBeUndefined();
+    expect(api).toHaveAttribute("aria-invalid", "false");
+    fireEvent.change(api, { target: { value: "https://api.example.com" } });
+    choose("Website application", "Joomla Administrator");
+    expect(
+      screen.queryByLabelText("Tactical RMM API origin (optional)"),
+    ).not.toBeInTheDocument();
+    expect(value().httpApplication?.apiOrigin).toBeUndefined();
+  });
+
+  it("shows an invalid imported Tactical origin and permits correcting the address", () => {
+    render(
+      <Fixture
+        value={{
+          ...initial,
+          httpApplication: {
+            version: 1,
+            id: "tacticalrmm",
+            loginMode: "manual",
+            apiOrigin: "https://api.example.com/accounts/",
+          },
+        }}
+      />,
+    );
+    const api = screen.getByLabelText("Tactical RMM API origin (optional)");
+    expect(api).toHaveValue("https://api.example.com/accounts/");
+    expect(api).toHaveAttribute("aria-invalid", "true");
+    fireEvent.change(api, { target: { value: "https://api.example.com" } });
+    expect(
+      screen.queryByText(/This imported application profile is invalid/),
+    ).not.toBeInTheDocument();
+    expect(value().httpApplication?.loginMode).toBe("manual");
+  });
+
   it("selects Joomla versions without changing path, overrides, authority or consent", () => {
     render(
       <Fixture

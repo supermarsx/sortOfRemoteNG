@@ -12,6 +12,7 @@ import {
   getHttpApplicationProfile,
   getHttpApplicationLoginModes,
   normalizeHttpApplicationSettings,
+  normalizeTacticalRmmApiOrigin,
   isSafeHttpApplicationLoginPath,
   getJoomlaLoginSelectors,
   JOOMLA_VERSION_OPTIONS,
@@ -41,6 +42,20 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
     mgr.formData.httpApplication,
   );
   const profile = settings ? getHttpApplicationProfile(settings.id) : undefined;
+  const apiOrigin = mgr.formData.httpApplication?.apiOrigin;
+  const normalizedApiOrigin = normalizeTacticalRmmApiOrigin(apiOrigin);
+  const invalidApiOrigin = apiOrigin !== undefined && !normalizedApiOrigin;
+  const updateApiOrigin = (value: string) =>
+    mgr.setFormData((previous) => {
+      if (previous.httpApplication?.id !== "tacticalrmm") return previous;
+      return {
+        ...previous,
+        httpApplication: {
+          ...previous.httpApplication,
+          apiOrigin: value || undefined,
+        },
+      };
+    });
   const reviewedSelectors =
     profile?.id === "joomla"
       ? getJoomlaLoginSelectors(settings?.joomlaVersion)
@@ -192,6 +207,47 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
             formData={mgr.formData}
             setFormData={mgr.setFormData}
           />
+          {profile.id === "tacticalrmm" && (
+            <div className="max-w-xl space-y-2">
+              <label
+                htmlFor="tactical-api-origin"
+                className="block text-sm font-medium"
+              >
+                Tactical RMM API origin (optional)
+              </label>
+              <input
+                id="tactical-api-origin"
+                className="sor-form-input"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={2048}
+                placeholder="https://api.example.com"
+                value={typeof apiOrigin === "string" ? apiOrigin : ""}
+                aria-invalid={invalidApiOrigin}
+                aria-describedby="tactical-api-origin-help"
+                onChange={(event) => updateApiOrigin(event.target.value)}
+                onBlur={() => {
+                  if (normalizedApiOrigin) updateApiOrigin(normalizedApiOrigin);
+                }}
+              />
+              <p
+                id="tactical-api-origin-help"
+                className="text-xs text-[var(--color-textMuted)]"
+              >
+                The exact API address for this Tactical RMM deployment. Blank
+                keeps default API routing. Use HTTPS on port 443 with no path,
+                query, fragment or credentials. This is an address, not an API
+                key; it does not change the dashboard address or login settings.
+              </p>
+              {invalidApiOrigin && (
+                <p role="alert" className="text-sm text-error">
+                  Enter an HTTPS origin such as https://api.example.com, without
+                  a path, query, fragment, credentials or a non-443 port.
+                </p>
+              )}
+            </div>
+          )}
           {profile.id === "joomla" && (
             <div className="max-w-xl space-y-2">
               <label

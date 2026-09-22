@@ -24,6 +24,19 @@ const report = {
   reason: "origin-not-approved",
   origin: "https://cdn.example",
 };
+const routingReceipt = {
+  version: 6,
+  tacticalRmmApi: false,
+  tacticalRmmApiOrigins: [],
+  fetchInterception: true,
+  xhrInterception: true,
+  pageNetworkInterception: true,
+  quickConnectNavigation: false,
+  quickConnectDiscovery: false,
+  quickConnectDiscovered: false,
+  quickConnectDirectNavigation: false,
+  quickConnectRegionalNavigation: false,
+};
 describe("untrusted page network report boundary", () => {
   it("distinguishes missing page module from disabled and mismatched capabilities without leaking input", () => {
     for (const value of [
@@ -32,54 +45,33 @@ describe("untrusted page network report boundary", () => {
       { version: 1 },
       { version: 2, quickConnectNavigation: true, quickConnectDiscovery: true },
       {
-        version: 4,
+        version: 5,
         quickConnectNavigation: "private",
         quickConnectDiscovery: true,
       },
     ])
       expect(webNetworkRoutingStatus(value, true).status).toBe("missing");
-    expect(
-      webNetworkRoutingStatus(
-        {
-          version: 5,
-          tacticalRmmApi: false,
-          quickConnectNavigation: false,
-          quickConnectDiscovery: false,
-          quickConnectDiscovered: false,
-          quickConnectDirectNavigation: false,
-          quickConnectRegionalNavigation: false,
-        },
-        false,
-      ),
-    ).toEqual({
+    expect(webNetworkRoutingStatus(routingReceipt, false)).toEqual({
       status: "current",
       tacticalRmmApi: false,
       tacticalRmmApiExpected: false,
+      tacticalRmmApiOrigins: [],
+      fetchInterception: true,
+      xhrInterception: true,
+      pageNetworkInterception: true,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
       quickConnectDirectNavigation: false,
       quickConnectRegionalNavigation: false,
     });
+    expect(webNetworkRoutingStatus(routingReceipt, true).status).toBe(
+      "mismatch",
+    );
     expect(
       webNetworkRoutingStatus(
         {
-          version: 5,
-          tacticalRmmApi: false,
-          quickConnectNavigation: false,
-          quickConnectDiscovery: false,
-          quickConnectDiscovered: false,
-          quickConnectDirectNavigation: false,
-          quickConnectRegionalNavigation: false,
-        },
-        true,
-      ).status,
-    ).toBe("mismatch");
-    expect(
-      webNetworkRoutingStatus(
-        {
-          version: 5,
-          tacticalRmmApi: false,
+          ...routingReceipt,
           quickConnectNavigation: true,
           quickConnectDiscovery: true,
           quickConnectDiscovered: true,
@@ -94,6 +86,10 @@ describe("untrusted page network report boundary", () => {
       status: "current",
       tacticalRmmApi: false,
       tacticalRmmApiExpected: false,
+      tacticalRmmApiOrigins: [],
+      fetchInterception: true,
+      xhrInterception: true,
+      pageNetworkInterception: true,
       quickConnectNavigation: true,
       quickConnectDiscovery: true,
       quickConnectDiscovered: true,
@@ -103,8 +99,7 @@ describe("untrusted page network report boundary", () => {
   });
   it("requires the current alias capabilities but accepts an aliasless or disabled source", () => {
     const aliasless = {
-      version: 5,
-      tacticalRmmApi: false,
+      ...routingReceipt,
       quickConnectNavigation: true,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -133,7 +128,11 @@ describe("untrusted page network report boundary", () => {
     });
     expect(
       webNetworkRoutingStatus(
-        { ...all, tacticalRmmApi: true },
+        {
+          ...all,
+          tacticalRmmApi: true,
+          tacticalRmmApiOrigins: ["https://api.rmm.example.test"],
+        },
         true,
         true,
         true,
@@ -149,6 +148,83 @@ describe("untrusted page network report boundary", () => {
         expect(
           webNetworkRoutingStatus({ ...all, [key]: value }, true, true).status,
         ).toBe("missing");
+  });
+  it("requires exact canonical Tactical origins and working page hooks", () => {
+    const receipt = {
+      ...routingReceipt,
+      tacticalRmmApi: true,
+      tacticalRmmApiOrigins: [
+        "https://api.rmm.apps.vogue-homes.com",
+        "https://api.apps.vogue-homes.com",
+      ],
+    };
+    expect(webNetworkRoutingStatus(receipt, false, false, true)).toMatchObject({
+      status: "current",
+      tacticalRmmApiOrigins: receipt.tacticalRmmApiOrigins,
+      fetchInterception: true,
+      xhrInterception: true,
+      pageNetworkInterception: true,
+    });
+    for (const change of [
+      { tacticalRmmApiOrigins: ["https://api.example.test/path"] },
+      { tacticalRmmApiOrigins: ["http://api.example.test"] },
+      { tacticalRmmApiOrigins: ["https://api.example.test/"] },
+      { tacticalRmmApiOrigins: ["https://localhost"] },
+      { tacticalRmmApiOrigins: ["https://user:secret@api.example.test"] },
+      {
+        tacticalRmmApiOrigins: [
+          "https://api.example.test",
+          "https://api.example.test",
+        ],
+      },
+      {
+        tacticalRmmApiOrigins: Array.from(
+          { length: 4 },
+          (_, index) => `https://api${index}.example.test`,
+        ),
+      },
+    ])
+      expect(
+        webNetworkRoutingStatus({ ...receipt, ...change }, false, false, true)
+          .status,
+      ).toBe("missing");
+    for (const change of [
+      { fetchInterception: false },
+      { xhrInterception: false },
+      { pageNetworkInterception: false },
+    ])
+      expect(
+        webNetworkRoutingStatus({ ...receipt, ...change }, false, false, true)
+          .status,
+      ).toBe("mismatch");
+    expect(
+      webNetworkRoutingStatus(
+        { ...routingReceipt, pageNetworkInterception: false },
+        false,
+      ).status,
+    ).toBe("mismatch");
+    expect(webNetworkRoutingStatus(receipt, false, false, false).status).toBe(
+      "mismatch",
+    );
+    expect(
+      webNetworkRoutingStatus(
+        {
+          ...routingReceipt,
+          tacticalRmmApiOrigins: ["https://api.example.test"],
+        },
+        false,
+      ).status,
+    ).toBe("mismatch");
+    for (const change of [
+      { tacticalRmmApiOrigins: "https://api.example.test" },
+      { fetchInterception: "true" },
+      { xhrInterception: null },
+      { pageNetworkInterception: 1 },
+    ])
+      expect(
+        webNetworkRoutingStatus({ ...receipt, ...change }, false, false, true)
+          .status,
+      ).toBe("missing");
   });
   it("accepts a fenced fixed QuickConnect method reason without including page-supplied body details", () => {
     expect(
@@ -222,7 +298,7 @@ describe("untrusted page network report boundary", () => {
   });
 });
 describe("native frame guard status contract", () => {
-  it("accepts honest enforced and unsupported partial coverage", () => {
+  it("accepts the Windows native guard separately from cross-platform page coverage", () => {
     for (const status of [
       { platform: "windows", frameNavigation: "enforced" },
       { platform: "linux", frameNavigation: "unsupported" },
@@ -233,6 +309,13 @@ describe("native frame guard status contract", () => {
           allNetworkRequestsMediated: false,
         }).allNetworkRequestsMediated,
       ).toBe(false);
+    expect(
+      parseWebNetworkGuardStatus({
+        platform: "windows",
+        frameNavigation: "enforced",
+        allNetworkRequestsMediated: true,
+      }).allNetworkRequestsMediated,
+    ).toBe(true);
   });
   it.each([
     undefined,
@@ -241,11 +324,6 @@ describe("native frame guard status contract", () => {
       platform: "windows",
       frameNavigation: "unsupported",
       allNetworkRequestsMediated: false,
-    },
-    {
-      platform: "windows",
-      frameNavigation: "enforced",
-      allNetworkRequestsMediated: true,
     },
     {
       platform: "windows",

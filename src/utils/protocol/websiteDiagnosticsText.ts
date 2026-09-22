@@ -26,11 +26,16 @@ export function websiteDiagnosticsText(
 ): string {
   const lines = [
     "Website routing diagnostics",
-    "Coverage: partial browser enforcement; not every network channel is intercepted.",
+    routing?.status === "current" && routing.pageNetworkInterception
+      ? "Coverage: cross-platform page request mediation is active."
+      : "Coverage: page request mediation is not confirmed.",
   ];
   const frame = guard?.frameNavigation;
   lines.push(
     `Native document navigation: ${frame && ["enforced", "failed", "initializing", "unsupported"].includes(frame) ? frame : "unavailable"}`,
+  );
+  lines.push(
+    `Windows native HTTP(S) guard: ${guard?.platform === "windows" ? (guard.allNetworkRequestsMediated ? "active" : "not active") : "not available on this platform"}`,
   );
   const status = routing?.status;
   lines.push(
@@ -42,7 +47,8 @@ export function websiteDiagnosticsText(
         ? routing.tacticalRmmApiExpected
           ? "expected; page module not reported"
           : "not reported"
-        : routing.tacticalRmmApi === routing.tacticalRmmApiExpected
+        : routing.status === "current" &&
+            routing.tacticalRmmApi === routing.tacticalRmmApiExpected
           ? routing.tacticalRmmApi
             ? "available (native validation required)"
             : "off"
@@ -50,6 +56,13 @@ export function websiteDiagnosticsText(
             ? "expected but unavailable"
             : "unexpectedly available";
     lines.push(`Tactical RMM API route: ${tacticalStatus}`);
+    if (routing.tacticalRmmApiOrigins.length)
+      lines.push(
+        `Tactical RMM API origins: ${routing.tacticalRmmApiOrigins.join(", ")}`,
+      );
+    lines.push(
+      `Page interception: fetch ${routing.fetchInterception ? "active" : "not active"}; XHR ${routing.xhrInterception ? "active" : "not active"}; page network ${routing.pageNetworkInterception ? "active" : "not active"}`,
+    );
   }
   if (routing && quickConnectRelevant) {
     for (const [label, value] of [
@@ -85,7 +98,7 @@ export function websiteDiagnosticsText(
       );
   }
   lines.push(
-    "Redirect approval is separate from background routing. No paths, queries, headers, bodies or credentials included.",
+    "Redirect approval is separate from background routing. Strict CSP, native proxy validation and this advisory page receipt are independent. Workers, WebRTC and WebTransport are disabled or fail closed. No paths, queries, headers, bodies or credentials included.",
   );
   return lines.join("\n");
 }

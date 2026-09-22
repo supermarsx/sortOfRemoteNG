@@ -612,6 +612,7 @@ pub async fn start_basic_auth_proxy(
             crate::http::tactical_rmm::TacticalRmmApiRoute::new(
                 config.reviewed_application_profile,
                 &validated_target,
+                config.reviewed_application_api_origin.as_deref(),
                 api_client,
             )
         } else {
@@ -766,6 +767,7 @@ pub async fn start_basic_auth_proxy(
                 proxy_policy,
                 redirect_profile: config.redirect_profile,
                 reviewed_application_profile: config.reviewed_application_profile,
+                reviewed_application_api_origin: config.reviewed_application_api_origin.clone(),
                 custom_headers: config.custom_headers.clone(),
                 upstream_proxy_url,
                 target_origin,
@@ -1175,6 +1177,7 @@ pub async fn restart_proxy_session(
         proxy_policy,
         redirect_profile,
         reviewed_application_profile,
+        reviewed_application_api_origin,
         custom_headers,
         upstream_proxy_url,
         target_origin,
@@ -1199,6 +1202,7 @@ pub async fn restart_proxy_session(
             entry.proxy_policy.clone(),
             entry.redirect_profile,
             entry.reviewed_application_profile,
+            entry.reviewed_application_api_origin.clone(),
             entry.custom_headers.clone(),
             entry.upstream_proxy_url.clone(),
             entry.target_origin.clone(),
@@ -1274,6 +1278,7 @@ pub async fn restart_proxy_session(
             crate::http::tactical_rmm::TacticalRmmApiRoute::new(
                 reviewed_application_profile,
                 &validated_target,
+                reviewed_application_api_origin.as_deref(),
                 api_client,
             )
         } else {
@@ -1383,6 +1388,7 @@ pub async fn restart_proxy_session(
                 proxy_policy,
                 redirect_profile,
                 reviewed_application_profile,
+                reviewed_application_api_origin,
                 custom_headers,
                 upstream_proxy_url,
                 target_origin,
