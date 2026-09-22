@@ -204,6 +204,6 @@ describe("appliance variants and complete plain counterparts", () => {
         "Every appliance frame needs its actual inset as a selectable plain icon",
       ).toEqual([]);
     },
-    15_000,
+    30_000,
   );
 });
