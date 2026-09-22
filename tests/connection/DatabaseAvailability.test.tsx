@@ -86,6 +86,104 @@ async function createDatabase() {
   return database.id;
 }
 describe("authoritative database availability", () => {
+  it("clears the tree when an index reload discovers cross-window deletion", async () => {
+    const id = await createDatabase();
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(() => result.current.loadData(id));
+    const store = await openDB("mremote-keyval", 1);
+    await store.put("keyval", JSON.stringify([]), "mremote-databases");
+    await act(() => manager.getAllDatabases());
+    expect(manager.getCurrentDatabase()).toBeNull();
+    expect(result.current.state.connections).toEqual([]);
+    expect(result.current.databaseAvailability?.status).toBe("none");
+
+    // A delayed detached-window snapshot must never reopen the rendered tree.
+    act(() =>
+      result.current.dispatch({
+        type: "SET_CONNECTIONS",
+        payload: [connection],
+      }),
+    );
+    expect(result.current.state.connections).toEqual([]);
+    const view = render(
+      <ConnectionContext.Provider value={result.current}>
+        <ConnectionTree
+          onConnect={vi.fn()}
+          onDisconnect={vi.fn()}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </ConnectionContext.Provider>,
+    );
+    expect(screen.queryByText(connection.name)).toBeNull();
+    expect(screen.getByRole("tree")).toHaveTextContent("Open and unlock");
+    view.unmount();
+
+    let nextId!: string;
+    await act(async () => {
+      nextId = await createDatabase();
+      await result.current.loadData(nextId);
+    });
+    expect(result.current.databaseAvailability).toMatchObject({
+      status: "ready",
+      databaseId: nextId,
+    });
+    expect(result.current.state.connections[0].id).toBe(connection.id);
+  });
+
+  it("reconciles a close that occurs before the provider subscribes", async () => {
+    await createDatabase();
+    const subscribe = manager.onCurrentDatabaseChange.bind(manager);
+    vi.spyOn(manager, "onCurrentDatabaseChange").mockImplementation(
+      (listener) => {
+        manager.closeCurrentDatabase();
+        return subscribe(listener);
+      },
+    );
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    expect(result.current.databaseAvailability?.status).toBe("none");
+    expect(result.current.state.connections).toEqual([]);
+  });
+
+  it("uses current selection rather than a stale unrelated-database event", async () => {
+    const id = await createDatabase();
+    const oldDatabase = manager.getCurrentDatabase();
+    let notify!: Parameters<DatabaseManager["onCurrentDatabaseChange"]>[0];
+    vi.spyOn(manager, "onCurrentDatabaseChange").mockImplementation(
+      (listener) => {
+        notify = listener;
+        return () => {};
+      },
+    );
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(() => result.current.loadData(id));
+    vi.spyOn(manager, "getCurrentDatabase").mockReturnValue(null);
+    act(() =>
+      notify({
+        reason: "create",
+        database: oldDatabase,
+        databaseId: "unrelated",
+        previousDatabaseId: id,
+        connectionIds: [],
+        trustActivation: Promise.resolve(),
+      }),
+    );
+    expect(result.current.databaseAvailability?.status).toBe("none");
+    expect(result.current.state.connections).toEqual([]);
+  });
+
+  it("ignores a reload for an old owner without leaving the current tree loading", async () => {
+    const id = await createDatabase();
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(() => result.current.loadData(id));
+    const before = result.current.databaseAvailability;
+    await act(async () => {
+      expect(await result.current.loadData("old-owner")).toBe(false);
+    });
+    expect(result.current.databaseAvailability).toEqual(before);
+    expect(result.current.state.connections[0].id).toBe(connection.id);
+  });
+
   it("clears loaded rows synchronously when reload finds no selected database", async () => {
     const id = await createDatabase();
     const { result } = renderHook(() => useConnections(), { wrapper });

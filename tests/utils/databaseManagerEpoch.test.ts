@@ -40,6 +40,105 @@ beforeEach(async () => {
 });
 
 describe("database credential epochs", () => {
+  it("does not let an old empty-index result clear a newly reopened selection", async () => {
+    const manager = DatabaseManager.getInstance();
+    await manager.selectDatabase(collection.id, "fixture-password");
+    let finish!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    bridge.invoke.mockImplementationOnce(async () => {
+      started();
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { value: [], source: "current" };
+    });
+    const staleReload = manager.getAllDatabases();
+    await pending;
+    manager.closeCurrentDatabase();
+    await manager.selectDatabase(collection.id, "fixture-password");
+    finish();
+    await staleReload;
+    expect(manager.getCurrentDatabase()?.id).toBe(collection.id);
+  });
+
+  it("retains the active selection when the index cannot be read", async () => {
+    const manager = DatabaseManager.getInstance();
+    await manager.selectDatabase(collection.id, "fixture-password");
+    bridge.invoke.mockRejectedValueOnce(new Error("temporary read failure"));
+    await expect(manager.getAllDatabases()).rejects.toThrow(
+      "temporary read failure",
+    );
+    expect(manager.getCurrentDatabase()?.id).toBe(collection.id);
+  });
+
+  it("cancels pending and queued opens when Close is pressed with no active database", async () => {
+    const manager = DatabaseManager.getInstance();
+    let finish!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const update = manager.updateDatabase.bind(manager);
+    vi.spyOn(manager, "updateDatabase").mockImplementationOnce(
+      async (database) => {
+        started();
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        return update(database);
+      },
+    );
+    const opening = manager.selectDatabase(collection.id, "fixture-password");
+    const queued = manager.selectDatabase(collection.id, "fixture-password");
+    const results = Promise.allSettled([opening, queued]);
+    await pending;
+    expect(manager.getCurrentDatabase()).toBeNull();
+    manager.closeCurrentDatabase();
+    finish();
+    expect((await results).map((result) => result.status)).toEqual([
+      "rejected",
+      "rejected",
+    ]);
+    expect(manager.getCurrentDatabase()).toBeNull();
+    await manager.selectDatabase(collection.id, "fixture-password");
+    expect(manager.getCurrentDatabase()?.id).toBe(collection.id);
+  });
+
+  it("does not publish a selection if its metadata update fails", async () => {
+    const manager = DatabaseManager.getInstance();
+    vi.spyOn(manager, "updateDatabase").mockRejectedValueOnce(
+      new Error("index conflict"),
+    );
+    await expect(
+      manager.selectDatabase(collection.id, "fixture-password"),
+    ).rejects.toThrow("index conflict");
+    expect(manager.getCurrentDatabase()).toBeNull();
+  });
+
+  it.each([null, { value: [], source: "current" }])(
+    "clears a removed active database after a native index reload (%j)",
+    async (index) => {
+      const manager = DatabaseManager.getInstance();
+      await manager.selectDatabase(collection.id, "fixture-password");
+      const target = manager.captureCurrentDatabaseDataTarget()!;
+      const listener = vi.fn();
+      const stop = manager.onCurrentDatabaseChange(listener);
+      bridge.invoke.mockImplementation(async (command: string) =>
+        command === "databases_list" ? index : undefined,
+      );
+      expect(await manager.getAllDatabases()).toEqual([]);
+      expect(manager.getCurrentDatabase()).toBeNull();
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "delete", database: null }),
+      );
+      expect(() => target.assertAccessible?.()).toThrow();
+      stop();
+    },
+  );
+
   it("reads current data for authorization without advancing a writer's CAS baseline", async () => {
     const manager = DatabaseManager.getInstance();
     await manager.selectDatabase(collection.id, "fixture-password");

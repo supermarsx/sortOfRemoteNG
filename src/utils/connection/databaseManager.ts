@@ -458,6 +458,7 @@ export class DatabaseManager {
   private readonly legacyDatabasesKey = "mremote-collections";
   private currentDatabase: ConnectionDatabase | null = null;
   private currentPassword: string | null = null;
+  private selectionGeneration = 0;
   private readonly unlockedDatabasePasswords = new Map<string, string>();
   // Bound to the credential that actually decrypted this generation, never to
   // metadata refreshed by a different window or an ordinary metadata edit.
@@ -935,6 +936,7 @@ export class DatabaseManager {
 
   /** Call after the durable flush, synchronously before global lock's async cleanup. */
   invalidatePendingDatabaseOperations(): void {
+    this.selectionGeneration += 1;
     this.securityEpoch += 1;
     this.unlockedDatabasePasswords.clear();
     this.credentialSecurityRevisions.clear();
@@ -1198,6 +1200,31 @@ export class DatabaseManager {
   }
 
   async getAllDatabases(): Promise<ConnectionDatabase[]> {
+    const selected = this.currentDatabase;
+    const generation = this.selectionGeneration;
+    const reconcile = (rows: ConnectionDatabase[]): ConnectionDatabase[] => {
+      // A successful index reload can discover a deletion in another window.
+      // Only invalidate the selection this read actually observed.
+      if (
+        selected &&
+        this.currentDatabase === selected &&
+        this.selectionGeneration === generation &&
+        !rows.some((row) => row.id === selected.id)
+      ) {
+        this.selectionGeneration += 1;
+        this.currentDatabase = null;
+        this.currentPassword = null;
+        this.forgetUnlockedDatabase(selected.id);
+        this.announceDatabaseChange({
+          reason: "delete",
+          database: null,
+          databaseId: null,
+          previousDatabaseId: selected.id,
+          connectionIds: [],
+        });
+      }
+      return rows;
+    };
     try {
       const invoke = await getInvoke();
       if (invoke) {
@@ -1205,7 +1232,7 @@ export class DatabaseManager {
         const envelope = await invoke<LoadResultEnvelope<
           ConnectionDatabase[]
         > | null>("databases_list");
-        if (envelope == null) return [];
+        if (envelope == null) return reconcile([]);
         if (envelope.source !== "current") {
           logRecovery("databases index", envelope.source);
         }
@@ -1214,23 +1241,25 @@ export class DatabaseManager {
             "Database index is malformed; no changes were made.",
           );
         const list = envelope.value;
-        return this.rememberIndexSnapshot(
-          list,
-          list.map((c: any) => ({
-            ...c,
-            createdAt:
-              typeof c.createdAt === "string"
-                ? c.createdAt
-                : new Date(c.createdAt).toISOString(),
-            updatedAt:
-              typeof c.updatedAt === "string"
-                ? c.updatedAt
-                : new Date(c.updatedAt).toISOString(),
-            lastAccessed:
-              typeof c.lastAccessed === "string"
-                ? c.lastAccessed
-                : new Date(c.lastAccessed).toISOString(),
-          })),
+        return reconcile(
+          this.rememberIndexSnapshot(
+            list,
+            list.map((c: any) => ({
+              ...c,
+              createdAt:
+                typeof c.createdAt === "string"
+                  ? c.createdAt
+                  : new Date(c.createdAt).toISOString(),
+              updatedAt:
+                typeof c.updatedAt === "string"
+                  ? c.updatedAt
+                  : new Date(c.updatedAt).toISOString(),
+              lastAccessed:
+                typeof c.lastAccessed === "string"
+                  ? c.lastAccessed
+                  : new Date(c.lastAccessed).toISOString(),
+            })),
+          ),
         );
       }
 
@@ -1264,26 +1293,28 @@ export class DatabaseManager {
           throw new CorruptedDataError(
             "Database index is malformed; no changes were made.",
           );
-        return this.rememberIndexSnapshot(
-          collections,
-          collections.map((c: any) => ({
-            ...c,
-            createdAt:
-              typeof c.createdAt === "string"
-                ? c.createdAt
-                : new Date(c.createdAt).toISOString(),
-            updatedAt:
-              typeof c.updatedAt === "string"
-                ? c.updatedAt
-                : new Date(c.updatedAt).toISOString(),
-            lastAccessed:
-              typeof c.lastAccessed === "string"
-                ? c.lastAccessed
-                : new Date(c.lastAccessed).toISOString(),
-          })),
+        return reconcile(
+          this.rememberIndexSnapshot(
+            collections,
+            collections.map((c: any) => ({
+              ...c,
+              createdAt:
+                typeof c.createdAt === "string"
+                  ? c.createdAt
+                  : new Date(c.createdAt).toISOString(),
+              updatedAt:
+                typeof c.updatedAt === "string"
+                  ? c.updatedAt
+                  : new Date(c.updatedAt).toISOString(),
+              lastAccessed:
+                typeof c.lastAccessed === "string"
+                  ? c.lastAccessed
+                  : new Date(c.lastAccessed).toISOString(),
+            })),
+          ),
         );
       }
-      return [];
+      return reconcile([]);
     } catch (error) {
       console.error("Failed to load databases:", error);
       throw error;
@@ -1310,9 +1341,10 @@ export class DatabaseManager {
   }
 
   async selectDatabase(id: string, password?: string): Promise<void> {
+    const generation = this.selectionGeneration;
     const transition = this.databaseTransitionQueue
       .catch(() => undefined)
-      .then(() => this.selectDatabaseInner(id, password));
+      .then(() => this.selectDatabaseInner(id, password, generation));
     this.databaseTransitionQueue = transition.then(
       () => undefined,
       () => undefined,
@@ -1323,7 +1355,15 @@ export class DatabaseManager {
   private async selectDatabaseInner(
     id: string,
     password?: string,
+    generation = this.selectionGeneration,
   ): Promise<void> {
+    const assertSelectionCurrent = () => {
+      if (generation !== this.selectionGeneration)
+        throw new Error(
+          "Database opening was cancelled because the selection was closed.",
+        );
+    };
+    assertSelectionCurrent();
     const epoch = this.captureDatabaseEpoch(id);
     const previousDatabaseId = this.currentDatabase?.id ?? null;
     const switchingDatabase =
@@ -1360,14 +1400,16 @@ export class DatabaseManager {
     }
     this.assertDatabaseEpoch(id, epoch);
     if (loaded) await this.assertSnapshotCurrent(id, loaded);
-    this.currentDatabase = collection;
-    this.currentPassword = resolvedPassword || null;
-
     // Update last accessed time
     collection.lastAccessed = new Date().toISOString();
     await this.updateDatabase(collection);
     this.assertDatabaseEpoch(id, epoch);
     if (loaded) await this.assertSnapshotCurrent(id, loaded);
+    this.assertDatabaseEpoch(id, epoch);
+    assertSelectionCurrent();
+    // Publish selection only after every asynchronous validation succeeds.
+    this.currentDatabase = collection;
+    this.currentPassword = resolvedPassword || null;
 
     // Log collection selection/opening
     SettingsManager.getInstance().logAction(
@@ -1557,6 +1599,8 @@ export class DatabaseManager {
   closeCurrentDatabase(
     reason: "close" | "lock" = "close",
   ): string | null | Promise<string | null> {
+    // Also cancel queued/in-flight opens when there is not yet a selection.
+    this.selectionGeneration += 1;
     const closing = this.currentDatabase;
     if (!closing) return null;
     if (
@@ -1904,6 +1948,7 @@ export class DatabaseManager {
 
     const wasCurrent = this.currentDatabase?.id === id;
     if (wasCurrent) {
+      this.selectionGeneration += 1;
       this.currentDatabase = null;
       this.currentPassword = null;
     }

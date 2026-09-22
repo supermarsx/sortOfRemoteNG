@@ -1,6 +1,7 @@
 import React, {
   useReducer,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   useRef,
@@ -456,6 +457,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const settingsManager = useMemo(() => SettingsManager.getInstance(), []);
   // Track whether data has been loaded to prevent overwriting on initial mount
   const hasLoadedRef = useRef(false);
+  // Detached viewers may start with session snapshots, but once an owning
+  // database is unloaded no late snapshot/edit may restore its private rows.
+  const databaseRowsRevokedRef = useRef(false);
   // Track if this is the first render to skip auto-save on mount
   const isInitialMountRef = useRef(true);
   const mountedRef = useRef(true);
@@ -582,6 +586,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const clearDatabaseRows = useCallback(() => {
+    databaseRowsRevokedRef.current = true;
     const lostUnsaved = dirtyRevisionRef.current > persistedRevisionRef.current;
     loadGenerationRef.current += 1;
     saveGenerationRef.current += 1;
@@ -630,61 +635,66 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     publishDatabaseAvailability();
   }, [publishDatabaseAvailability]);
 
-  useEffect(
-    () =>
-      databaseManager.onCurrentDatabaseChange((change) => {
-        // An unrelated database being created/unlocked is not a new lease for
-        // the current tree or its open tool drafts.
-        if (
-          change.database &&
-          change.database.id === databaseAvailabilityRef.current.databaseId &&
-          change.databaseId !== change.database?.id
-        )
-          return;
-        if (
-          !change.database &&
-          !activeDatabaseTargetRef.current &&
-          !hasLoadedRef.current &&
-          !recycleLoadingRef.current
-        ) {
-          // Detached windows can carry session-only connection snapshots. They
-          // never make the tree available and are not an unloaded owner payload.
-          publishDatabaseAvailability();
-          return;
-        }
-        const changedOwner =
-          !!change.database &&
-          !!activeDatabaseTargetRef.current &&
-          change.database.id !== activeDatabaseTargetRef.current.databaseId;
-        if (changedOwner || !change.database) {
-          clearDatabaseRows();
-          return;
-        }
-        if (
-          change.reason !== "security-change" ||
-          !change.database ||
-          change.database.id !== activeDatabaseTargetRef.current?.databaseId
-        ) {
-          publishDatabaseAvailability();
-          return;
-        }
-        const target = databaseManager.captureCurrentDatabaseDataTarget();
-        if (!target || target.databaseId !== change.database.id) return;
-        activeDatabaseTargetRef.current = target;
-        // Keep any failed/dirty snapshot and its revision, but stop routing its
-        // retry through a revoked credential capture after a committed change.
-        if (
-          pendingSnapshotRef.current?.target.databaseId === target.databaseId
-        ) {
-          pendingSnapshotRef.current = {
-            ...pendingSnapshotRef.current,
-            target,
-          };
-        }
+  useLayoutEffect(() => {
+    const unsubscribe = databaseManager.onCurrentDatabaseChange((change) => {
+      // Event payloads can outlive their selection (including reentrant
+      // close listeners). The manager is the authority for the visible tree.
+      const database = databaseManager.getCurrentDatabase();
+      // An unrelated database being created/unlocked is not a new lease for
+      // the current tree or its open tool drafts.
+      if (
+        database &&
+        database.id === databaseAvailabilityRef.current.databaseId &&
+        change.databaseId !== database.id
+      )
+        return;
+      if (
+        !database &&
+        !activeDatabaseTargetRef.current &&
+        !hasLoadedRef.current &&
+        !recycleLoadingRef.current
+      ) {
+        // Detached windows can carry session-only connection snapshots. They
+        // never make the tree available and are not an unloaded owner payload.
         publishDatabaseAvailability();
-      }),
-    [databaseManager, publishDatabaseAvailability, clearDatabaseRows],
-  );
+        return;
+      }
+      const changedOwner =
+        !!database &&
+        !!activeDatabaseTargetRef.current &&
+        database.id !== activeDatabaseTargetRef.current.databaseId;
+      if (changedOwner || !database) {
+        clearDatabaseRows();
+        return;
+      }
+      if (
+        change.reason !== "security-change" ||
+        database.id !== activeDatabaseTargetRef.current?.databaseId
+      ) {
+        publishDatabaseAvailability();
+        return;
+      }
+      const target = databaseManager.captureCurrentDatabaseDataTarget();
+      if (!target || target.databaseId !== database.id) return;
+      activeDatabaseTargetRef.current = target;
+      // Keep any failed/dirty snapshot and its revision, but stop routing its
+      // retry through a revoked credential capture after a committed change.
+      if (pendingSnapshotRef.current?.target.databaseId === target.databaseId) {
+        pendingSnapshotRef.current = {
+          ...pendingSnapshotRef.current,
+          target,
+        };
+      }
+      publishDatabaseAvailability();
+    });
+    // Close/open can happen between the initial render and subscription.
+    if (
+      databaseManager.getCurrentDatabase()?.id !==
+      databaseAvailabilityRef.current.databaseId
+    )
+      clearDatabaseRows();
+    return unsubscribe;
+  }, [databaseManager, publishDatabaseAvailability, clearDatabaseRows]);
 
   const markPersistenceDirty = useCallback(() => {
     dirtyRevisionRef.current += 1;
@@ -786,6 +796,18 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       if (action.type === "RECYCLE_CONNECTIONS")
         activeDatabaseTargetRef.current?.assertAccessible?.();
+      const currentState = stateRef.current;
+      const nextState = connectionReducer(currentState, action);
+      if (
+        databaseRowsRevokedRef.current &&
+        (nextState.connections !== currentState.connections ||
+          nextState.tabGroups !== currentState.tabGroups ||
+          nextState.recycleBinData !== currentState.recycleBinData ||
+          nextState.selectedConnection !== currentState.selectedConnection ||
+          nextState.selectedConnectionIds !==
+            currentState.selectedConnectionIds)
+      )
+        return;
       try {
         switch (action.type) {
           case "SET_CONNECTIONS": {
@@ -897,8 +919,6 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error("Action logging failed:", logErr);
       }
 
-      const currentState = stateRef.current;
-      const nextState = connectionReducer(currentState, action);
       stateRef.current = nextState;
       connectionsRef.current = nextState.connections;
       tabGroupsRef.current = nextState.tabGroups;
@@ -1084,6 +1104,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         clearDatabaseRows();
         return false;
       }
+      if (
+        expectedDatabaseId &&
+        databaseManager.getCurrentDatabase()?.id !== expectedDatabaseId
+      )
+        return false;
       const generation = ++loadGenerationRef.current;
       recycleLoadingRef.current = true;
       setRecycleLoading(true);
@@ -1095,6 +1120,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         // a dirty generation. This also covers callers that changed the manager
         // selection without going through App.handleDatabaseSelect.
         await flushPendingSave();
+
+        if (generation !== loadGenerationRef.current) return false;
 
         const target = databaseManager.captureCurrentDatabaseDataTarget();
         if (!target) {
@@ -1156,6 +1183,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         // Mark as loaded after successfully loading data
         activeDatabaseTargetRef.current = target;
+        databaseRowsRevokedRef.current = false;
         hasLoadedRef.current = true;
         recycleLoadingRef.current = false;
         setRecycleLoading(false);
