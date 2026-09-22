@@ -435,6 +435,7 @@ async fn mediator_with_attempt(
         false,
         target.host_str(),
         attempt.as_ref().map(|attempt| attempt.cookie_store()),
+        false,
     )
     .map_err(|_| "Strict proxy transport initialization failed")?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
