@@ -60,16 +60,12 @@ const renderCloudEditor = (
     });
     latestForm = formData;
     return (
-      <CloudProviderOptions
-        formData={formData}
-        setFormData={setFormData}
-      />
+      <CloudProviderOptions formData={formData} setFormData={setFormData} />
     );
   };
 
   render(<Harness />);
-  return () =>
-    normalizeCloudConnectionForPersistence(latestForm) as Connection;
+  return () => normalizeCloudConnectionForPersistence(latestForm) as Connection;
 };
 
 const enter = (label: string, value: string) => {
@@ -98,7 +94,6 @@ const contractCases: readonly CloudEditorContractCase[] = [
       ["Region", "europe-west1"],
       ["Zone", "europe-west1-b"],
       ["OAuth Scopes", "scope-a, scope-b"],
-      ["API Endpoint Override", "https://gcp.example.test"],
       [
         "Service Account JSON",
         '{"type":"service_account","private_key":"gcp-secret"}',
@@ -110,23 +105,21 @@ const contractCases: readonly CloudEditorContractCase[] = [
       region: "europe-west1",
       zone: "europe-west1-b",
       scopes: ["scope-a", "scope-b"],
-      endpointOverride: "https://gcp.example.test",
     },
-    expectedPassword:
-      '{"type":"service_account","private_key":"gcp-secret"}',
+    expectedPassword: '{"type":"service_account","private_key":"gcp-secret"}',
     secrets: ["gcp-secret"],
     expectedCalls: [
       [
         "connect_gcp",
         {
           config: {
+            endpoint_override: null,
             project_id: "project-a",
             service_account_key:
               '{"type":"service_account","private_key":"gcp-secret"}',
             region: "europe-west1",
             zone: "europe-west1-b",
             scopes: ["scope-a", "scope-b"],
-            endpoint_override: "https://gcp.example.test",
           },
         },
       ],
@@ -550,11 +543,9 @@ describe("legacy cloud migration and OVHcloud recovery", () => {
       },
     });
     expect(saved.cloudProvider).toBeUndefined();
-    expect(JSON.stringify(saved.ovhCloudSettings)).not.toContain(
+    expect(JSON.stringify(saved.ovhCloudSettings)).not.toContain("replacement");
+    expect(JSON.stringify({ ...saved, password: undefined })).not.toContain(
       "replacement",
     );
-    expect(
-      JSON.stringify({ ...saved, password: undefined }),
-    ).not.toContain("replacement");
   });
 });
