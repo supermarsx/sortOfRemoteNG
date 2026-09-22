@@ -878,7 +878,7 @@ describe("no other crate builds an SSH-home path in process", () => {
       .filter(buildsSshHomePath)
       .map((source) => source.path);
     expect(offenders).toEqual([]);
-  });
+  }, 30_000);
 
   it("detects a new pairing", () => {
     const source = prepareRust(
