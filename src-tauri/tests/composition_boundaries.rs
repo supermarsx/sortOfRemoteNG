@@ -73,11 +73,11 @@ fn remaining_startup_registrars_are_concrete_and_preserve_state_identity() {
 
 #[test]
 fn moved_registrar_inventory_is_complete_and_feature_sensitive() {
-    assert_eq!(sorng_app_startup_state::MAX_MANAGED_STATE_REGISTRATIONS, 85);
+    assert_eq!(sorng_app_startup_state::MAX_MANAGED_STATE_REGISTRATIONS, 86);
     assert_eq!(sorng_app_startup_state::ACCESS_REGISTRATION_ORDER.len(), 5);
     assert_eq!(
         sorng_app_startup_state::PLATFORM_REGISTRATION_ORDER.len(),
-        13
+        14
     );
     assert_eq!(sorng_app_startup_state::COLLAB_REGISTRATION_ORDER.len(), 11);
     assert_eq!(sorng_app_startup_state::API_REGISTRATION_ORDER.len(), 3);
@@ -134,7 +134,7 @@ fn root_registry_only_orchestrates_external_registrars_in_original_order() {
 }
 
 #[test]
-fn startup_state_crate_owns_all_eighty_five_manage_monomorphizations() {
+fn startup_state_crate_owns_all_eighty_six_manage_monomorphizations() {
     let sources = [
         include_str!("../crates/sorng-app-startup-state/src/lib.rs"),
         include_str!("../crates/sorng-app-startup-state/src/security_data.rs"),
@@ -146,7 +146,7 @@ fn startup_state_crate_owns_all_eighty_five_manage_monomorphizations() {
         .iter()
         .map(|source| source.matches("app.manage(").count())
         .sum::<usize>();
-    assert_eq!(registrations, 85);
+    assert_eq!(registrations, 86);
 }
 
 fn assert_source_fragments_in_order(source: &str, registrar: &str, fragments: &[&str]) {
@@ -339,6 +339,6 @@ fn ops_startup_state_registrar_is_exported_by_the_domain_crate() {
     );
     assert_eq!(
         sorng_app_domains::ops_startup_state::MANAGED_STATE_REGISTRATIONS,
-        75
+        74
     );
 }
