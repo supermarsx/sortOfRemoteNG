@@ -141,6 +141,18 @@ describe("folder New subfolder context action", () => {
   it("creates an empty child of the clicked folder, expands that parent, and uses the existing rename flow", async () => {
     await mounted();
     const dialog = await createChild();
+    expect(
+      within(dialog).getByRole("dialog", { name: "Rename Connection" }),
+    ).toBeVisible();
+    const title = within(dialog).getByText("Rename Connection");
+    const closeButton = within(dialog).getByRole("button", { name: "Close" });
+    expect(title).toHaveClass("sor-modal-title");
+    expect(title).not.toHaveClass("absolute");
+    expect(closeButton.parentElement).toHaveClass("sor-modal-header-actions");
+    expect(
+      title.compareDocumentPosition(closeButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const added = current().filter(
       (item) => !seeds.some((seed) => seed.id === item.id),
     );

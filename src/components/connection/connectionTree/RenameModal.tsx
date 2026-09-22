@@ -5,20 +5,17 @@ import { useTranslation } from "react-i18next";
 function RenameModal({ mgr }: { mgr: ConnectionTreeMgr }) {
   const { t } = useTranslation();
   if (!mgr.renameTarget) return null;
+  const title = t("connections.renameConnection", "Rename Connection");
   return (
     <Modal
       isOpen={Boolean(mgr.renameTarget)}
       onClose={() => mgr.setRenameTarget(null)}
       panelClassName="max-w-md mx-4"
       dataTestId="connection-tree-rename-modal"
+      ariaLabel={title}
     >
       <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full relative">
-        <ModalHeader
-          onClose={() => mgr.setRenameTarget(null)}
-          className="relative h-12 border-b border-[var(--color-border)]"
-          titleClassName="absolute left-5 top-3 text-sm font-semibold text-[var(--color-text)]"
-          title={t("connections.renameConnection", "Rename Connection")}
-        />
+        <ModalHeader onClose={() => mgr.setRenameTarget(null)} title={title} />
         <div className="p-6">
           <label className="block text-sm text-[var(--color-textSecondary)] mb-2">
             {t("connections.connectionName", "Connection Name")}
