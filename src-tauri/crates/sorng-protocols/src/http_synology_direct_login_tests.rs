@@ -81,6 +81,7 @@ async fn fixture() -> Fixture {
         upstream_auth_mode: UpstreamAuthMode::SynologyForm,
         proxy_policy: HttpProxyPolicy::default(),
         redirect_profile: None,
+        tactical_rmm_api: None,
         custom_headers: HashMap::new(),
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(
@@ -115,6 +116,7 @@ async fn fixture() -> Fixture {
             upstream_auth_mode: UpstreamAuthMode::SynologyForm,
             proxy_policy: HttpProxyPolicy::default(),
             redirect_profile: None,
+            reviewed_application_profile: None,
             custom_headers: HashMap::new(),
             upstream_proxy_url: None,
             target_origin: state.target_origin.clone(),

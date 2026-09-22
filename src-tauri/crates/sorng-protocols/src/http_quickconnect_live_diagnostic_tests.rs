@@ -465,6 +465,7 @@ async fn mediator_with_attempt(
         upstream_auth_mode: UpstreamAuthMode::None,
         proxy_policy: policy,
         redirect_profile: Some(BrowserRedirectProfile::Synology),
+        tactical_rmm_api: None,
         custom_headers: HashMap::new(),
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(
@@ -509,6 +510,7 @@ async fn mediator_with_attempt(
                     upstream_auth_mode: UpstreamAuthMode::None,
                     proxy_policy: state.proxy_policy.clone(),
                     redirect_profile: state.redirect_profile,
+                    reviewed_application_profile: None,
                     custom_headers: HashMap::new(),
                     upstream_proxy_url: None,
                     target_origin: state.target_origin.clone(),

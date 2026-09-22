@@ -317,7 +317,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
       protocol: "http",
       username: "app-user",
       password: "app-password",
-      httpApplication: { version: 1, id: "ilo", loginMode: "form" },
+      httpApplication: { version: 1, id: "tacticalrmm", loginMode: "form" },
     });
     renderHook(() => useHTTPViewer(session));
     await waitFor(() => expect(lastProxyConfig()).toBeDefined());
@@ -326,6 +326,69 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
       password: "app-password",
       upstream_auth_mode: "none",
       http_auto_login: true,
+      reviewed_application_profile: "tacticalrmm",
+    });
+  });
+
+  it("passes the reviewed Tactical RMM marker to the browser proxy", async () => {
+    const httpsSession: ConnectionSession = {
+      ...session,
+      protocol: "https",
+      hostname: "rmm.example.test",
+    };
+    connections.push({
+      id: "conn-1",
+      hostname: "rmm.example.test",
+      protocol: "https",
+      port: 443,
+      username: "app-user",
+      password: "app-password",
+      httpApplication: { version: 1, id: "tacticalrmm", loginMode: "form" },
+    });
+    mockResolveEffectiveTrustPolicy.mockReturnValue("tofu");
+    mockVerifyIdentity.mockResolvedValue({ status: "trusted" });
+    mockInvoke.mockImplementation(async (command) => {
+      if (command === "get_tls_certificate_info")
+        return {
+          fingerprint: "sha256:tactical-rmm-cert",
+          subject: "CN=rmm.example.test",
+          issuer: "CN=Test CA",
+          pem: null,
+          valid_from: null,
+          valid_to: null,
+          serial: null,
+          signature_algorithm: null,
+          san: [],
+          subject_cn: "rmm.example.test",
+          subject_org: null,
+          subject_ou: null,
+          subject_country: null,
+          subject_state: null,
+          subject_locality: null,
+          subject_email: null,
+          issuer_cn: "Test CA",
+          issuer_org: null,
+          issuer_country: null,
+          key_algorithm: null,
+          key_size: null,
+          version: null,
+          chain: null,
+        };
+      return {
+        local_port: 9000,
+        session_id: "proxy-1",
+        proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
+      };
+    });
+
+    const { result } = renderHook(() => useWebBrowser(httpsSession));
+    await act(async () => {
+      await result.current.navigateToUrl("https://rmm.example.test/login");
+    });
+
+    expect(lastProxyConfig()).toMatchObject({
+      target_url: "https://rmm.example.test/",
+      reviewed_application_profile: "tacticalrmm",
     });
   });
 

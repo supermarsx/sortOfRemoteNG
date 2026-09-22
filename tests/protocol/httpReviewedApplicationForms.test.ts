@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getHttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
 import {
+  getReviewedApplicationProfile,
   resolveHttpApplicationLogin,
   validateHttpApplicationTarget,
 } from "../../src/utils/auth/httpApplicationLogin";
@@ -65,6 +66,35 @@ afterEach(() => {
 });
 
 describe("reviewed HTTP application login forms", () => {
+  it.each(["manual", "form"] as const)(
+    "marks only a valid Tactical RMM %s profile for proxy routing",
+    (loginMode) => {
+      expect(
+        getReviewedApplicationProfile({
+          httpApplication: { version: 1, id: "tacticalrmm", loginMode },
+        }),
+      ).toBe("tacticalrmm");
+    },
+  );
+
+  it.each([
+    undefined,
+    null,
+    { version: 1, id: "generic-form", loginMode: "form" },
+    { version: 1, id: "tacticalrmm", loginMode: "unknown" },
+    { version: 1, id: "tacticalrmm", loginMode: "form", invalid: true },
+    { version: 1, id: "unknown", loginMode: "form" },
+  ] as const)(
+    "does not mark a generic or invalid application profile %j",
+    (httpApplication) => {
+      expect(
+        getReviewedApplicationProfile({
+          httpApplication: httpApplication as never,
+        }),
+      ).toBeUndefined();
+    },
+  );
+
   it.each(Object.keys(forms) as (keyof typeof forms)[])(
     "fills only the primary %s form with the real injected client",
     async (id) => {

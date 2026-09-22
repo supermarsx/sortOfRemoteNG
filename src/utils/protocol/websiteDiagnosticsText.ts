@@ -36,6 +36,21 @@ export function websiteDiagnosticsText(
   lines.push(
     `Page routing module: ${status && ["current", "missing", "mismatch"].includes(status) ? status : "not reported"}`,
   );
+  if (routing) {
+    const tacticalStatus =
+      routing.status === "missing"
+        ? routing.tacticalRmmApiExpected
+          ? "expected; page module not reported"
+          : "not reported"
+        : routing.tacticalRmmApi === routing.tacticalRmmApiExpected
+          ? routing.tacticalRmmApi
+            ? "available (native validation required)"
+            : "off"
+          : routing.tacticalRmmApiExpected
+            ? "expected but unavailable"
+            : "unexpectedly available";
+    lines.push(`Tactical RMM API route: ${tacticalStatus}`);
+  }
   if (routing && quickConnectRelevant) {
     for (const [label, value] of [
       ["QuickConnect navigation", routing.quickConnectNavigation],

@@ -250,7 +250,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
       },
     ],
     description:
-      "HTTPS dashboard account login at /login, followed by the website's separate authenticator-token prompt. Standard installations use a separate API origin, which may not work through this single-origin viewer: use the external browser if the backend is unavailable. API keys and MeshCentral credentials are not dashboard passwords; SSO and security keys stay interactive.",
+      "HTTPS dashboard account login at /login, followed by the website's separate authenticator-token prompt. The embedded viewer supports the standard exact https://api.<dashboard-host> backend through its protected proxy; other API hosts remain blocked. API keys and MeshCentral credentials are not dashboard passwords; SSO and security keys stay interactive.",
   },
   {
     id: "meshcentral",

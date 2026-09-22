@@ -115,7 +115,7 @@ export default function WebNetworkNotice({
               ) : (
                 <>
                   <p className="text-[var(--color-textMuted)]">
-                    Page routing module v4 reported
+                    Page routing module v5 reported
                   </p>
                   {quickConnectRelevant && (
                     <dl className="rounded bg-[var(--color-background)] p-3 space-y-2">
@@ -160,6 +160,20 @@ export default function WebNetworkNotice({
                   )}
                 </>
               )}
+              <p className="text-[var(--color-textMuted)]">
+                Tactical RMM API route:{" "}
+                {routing.status === "missing"
+                  ? routing.tacticalRmmApiExpected
+                    ? "Expected; page module not reported"
+                    : "Not reported"
+                  : routing.tacticalRmmApi === routing.tacticalRmmApiExpected
+                    ? routing.tacticalRmmApi
+                      ? "Available"
+                      : "Off"
+                    : routing.tacticalRmmApiExpected
+                      ? "Expected, unavailable"
+                      : "Unexpectedly available"}
+              </p>
               <p className="text-[var(--color-textMuted)]">
                 This is a page-module diagnostic, not proof that every request
                 is captured.

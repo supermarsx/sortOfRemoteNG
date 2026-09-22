@@ -39,6 +39,8 @@ function manager(): Manager {
     ],
     webNetworkRouting: {
       status: "current",
+      tacticalRmmApi: false,
+      tacticalRmmApiExpected: false,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,

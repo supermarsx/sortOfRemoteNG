@@ -126,6 +126,7 @@ async fn proxy_with_redirect_profile(
         upstream_auth_mode: auth_mode,
         proxy_policy: policy,
         redirect_profile,
+        tactical_rmm_api: None,
         custom_headers,
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(
@@ -232,6 +233,7 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
             upstream_auth_mode: mode,
             proxy_policy: Default::default(),
             redirect_profile: state.redirect_profile,
+            reviewed_application_profile: None,
             custom_headers: HashMap::new(),
             upstream_proxy_url: None,
             target_origin: state.target_origin.clone(),

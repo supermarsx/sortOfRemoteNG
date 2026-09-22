@@ -47,6 +47,8 @@ export interface WebNetworkReport {
 }
 export interface WebNetworkRoutingStatus {
   status: "current" | "missing" | "mismatch";
+  tacticalRmmApi: boolean;
+  tacticalRmmApiExpected: boolean;
   quickConnectNavigation: boolean;
   quickConnectDiscovery: boolean;
   quickConnectDiscovered: boolean;
@@ -58,10 +60,13 @@ export function webNetworkRoutingStatus(
   value: unknown,
   expectedQuickConnect: boolean,
   expectedAliasRoutes = false,
+  expectedTacticalRmmApi = false,
 ): WebNetworkRoutingStatus {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return {
       status: "missing",
+      tacticalRmmApi: false,
+      tacticalRmmApiExpected: expectedTacticalRmmApi,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -70,7 +75,8 @@ export function webNetworkRoutingStatus(
     };
   const data = value as Record<string, unknown>;
   if (
-    data.version !== 4 ||
+    data.version !== 5 ||
+    typeof data.tacticalRmmApi !== "boolean" ||
     typeof data.quickConnectNavigation !== "boolean" ||
     typeof data.quickConnectDiscovery !== "boolean" ||
     typeof data.quickConnectDiscovered !== "boolean" ||
@@ -79,6 +85,8 @@ export function webNetworkRoutingStatus(
   )
     return {
       status: "missing",
+      tacticalRmmApi: false,
+      tacticalRmmApiExpected: expectedTacticalRmmApi,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -88,12 +96,15 @@ export function webNetworkRoutingStatus(
   return {
     status:
       data.quickConnectNavigation === expectedQuickConnect &&
+      data.tacticalRmmApi === expectedTacticalRmmApi &&
       data.quickConnectDiscovery === expectedAliasRoutes &&
       data.quickConnectDiscovered === expectedAliasRoutes &&
       data.quickConnectDirectNavigation === expectedAliasRoutes &&
       data.quickConnectRegionalNavigation === expectedAliasRoutes
         ? "current"
         : "mismatch",
+    tacticalRmmApi: data.tacticalRmmApi,
+    tacticalRmmApiExpected: expectedTacticalRmmApi,
     quickConnectNavigation: data.quickConnectNavigation,
     quickConnectDiscovery: data.quickConnectDiscovery,
     quickConnectDiscovered: data.quickConnectDiscovered,

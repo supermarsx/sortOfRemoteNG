@@ -27,12 +27,18 @@ interface ClientConfiguration extends ReturnType<typeof config> {
     directNavigation?: { version: number; alias: string };
     regionalNavigation?: { version: number; alias: string };
   };
+  tacticalRmmApi?: {
+    version: number;
+    apiOrigin: string;
+    proxyUrl: string;
+  };
 }
 interface Controller {
   mapUrl(value: unknown, kind: string, local?: boolean): string;
   dispose(): void;
   capabilities: {
     version: number;
+    tacticalRmmApi: boolean;
     quickConnectNavigation: boolean;
     quickConnectDiscovery: boolean;
     quickConnectDiscovered: boolean;
@@ -156,6 +162,78 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       },
     };
   };
+  const tacticalApiProxy = proxy + "/__sortofremoteng_tactical_rmm_api_v1";
+  const tacticalConfig = (): ClientConfiguration => ({
+    ...config(),
+    tacticalRmmApi: {
+      version: 1,
+      apiOrigin: "https://api.device.example",
+      proxyUrl: tacticalApiProxy,
+    },
+  });
+  it("routes only the exact Tactical API child through its document-fenced endpoint", async () => {
+    start(tacticalConfig());
+    expect(controller!.capabilities).toMatchObject({
+      version: 5,
+      tacticalRmmApi: true,
+    });
+    const destination =
+      "https://api.device.example/accounts/login/?next=agents";
+    const expected = new URL(tacticalApiProxy);
+    expected.searchParams.set("destination", destination);
+    expected.searchParams.set("__sorng_tactical_document_v1", "3");
+
+    expect(controller!.mapUrl(destination, "fetch")).toBe(expected.href);
+    await window.fetch(destination, {
+      method: "POST",
+      body: "synthetic",
+    });
+    expect(fetch).toHaveBeenCalledWith(expected.href, {
+      method: "POST",
+      body: "synthetic",
+    });
+    const xhr = new XMLHttpRequest();
+    xhr.open("PATCH", destination);
+    expect(xhrOpen).toHaveBeenCalledWith("PATCH", expected.href);
+
+    for (const blocked of [
+      "http://api.device.example/accounts/",
+      "https://api.device.example:8443/accounts/",
+      "https://api.example/accounts/",
+      "https://other.device.example/accounts/",
+      "https://api.device.example.evil.test/accounts/",
+    ])
+      expect(() => controller!.mapUrl(blocked, "fetch")).toThrow(
+        "origin-not-approved",
+      );
+    expect(() =>
+      controller!.mapUrl("https://user@api.device.example/accounts/", "fetch"),
+    ).toThrow("url-credentials");
+    for (const kind of ["navigation", "resource", "form", "websocket"])
+      expect(() => controller!.mapUrl(destination, kind)).toThrow(
+        "origin-not-approved",
+      );
+  });
+  it("rejects renderer-supplied Tactical routes that are not the exact API child", () => {
+    for (const apiOrigin of [
+      "http://api.device.example",
+      "https://api.example",
+      "https://other.device.example",
+      "https://api.device.example:8443",
+    ]) {
+      expect(() =>
+        start({
+          ...tacticalConfig(),
+          tacticalRmmApi: {
+            version: 1,
+            apiOrigin,
+            proxyUrl: tacticalApiProxy,
+          },
+        }),
+      ).toThrow("Invalid Tactical RMM API route configuration");
+      controller = undefined;
+    }
+  });
   const directProbe =
     "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
   const relayProbe =
@@ -492,7 +570,8 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   it("acknowledges only installed capabilities and routes the HTTPS alias without broad origin permission", () => {
     start(quickConfig());
     expect(controller!.capabilities).toEqual({
-      version: 4,
+      version: 5,
+      tacticalRmmApi: false,
       quickConnectNavigation: true,
       quickConnectDiscovery: true,
       quickConnectDiscovered: false,
@@ -520,7 +599,8 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     controller!.dispose();
     start();
     expect(controller!.capabilities).toEqual({
-      version: 4,
+      version: 5,
+      tacticalRmmApi: false,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,

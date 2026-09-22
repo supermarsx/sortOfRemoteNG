@@ -48,6 +48,7 @@ fn register(proxy: &FixtureProxy) {
             upstream_auth_mode: state.upstream_auth_mode,
             proxy_policy: state.proxy_policy.clone(),
             redirect_profile: state.redirect_profile,
+            reviewed_application_profile: None,
             custom_headers: HashMap::new(),
             upstream_proxy_url: None,
             target_origin: state.target_origin.clone(),

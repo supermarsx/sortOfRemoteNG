@@ -578,6 +578,7 @@ pub(super) fn bootstrap(
     source_origin: &str,
     proxy_origin: &str,
     policy: &HttpProxyPolicy,
+    tactical_rmm_api: Option<&super::tactical_rmm::TacticalRmmApiRoute>,
 ) -> String {
     let mut config = serde_json::json!({
         "version": 1, "sessionId": session_id, "documentSequence": sequence,
@@ -588,6 +589,9 @@ pub(super) fn bootstrap(
         super::quickconnect_control::manifest(policy, source_origin, proxy_origin)
     {
         config["synologyQuickConnect"] = capability;
+    }
+    if let Some(capability) = tactical_rmm_api {
+        config["tacticalRmmApi"] = capability.manifest(proxy_origin);
     }
     let json = config
         .to_string()

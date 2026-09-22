@@ -75,6 +75,7 @@ import {
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import {
+  getReviewedApplicationProfile,
   resolveHttpApplicationLogin,
   sameHttpApplicationLogin,
   validateHttpApplicationTarget,
@@ -1131,6 +1132,9 @@ export function useWebBrowser(session: ConnectionSession) {
     synologyDefaultRedirectOrigins(
       proxyOptions.policy.synologyQuickConnectDefaults.originalOrigin,
     ).length === 4;
+  const expectedTacticalRmmRouting = useRef(false);
+  expectedTacticalRmmRouting.current =
+    getReviewedApplicationProfile(connection) === "tacticalrmm";
   const networkReportScope = useCallback(
     () =>
       JSON.stringify([
@@ -2322,6 +2326,8 @@ export function useWebBrowser(session: ConnectionSession) {
           // original owner/security lease in redirectBudget are authoritative.
           runtimeNavigation?.synologyRedirectSource?.assertOwner();
           const continuation = runtimeNavigation?.nativeContinuation;
+          const reviewedApplicationProfile =
+            getReviewedApplicationProfile(connection);
           const response = await invoke<ProxyMediatorResponse>(
             "start_basic_auth_proxy",
             {
@@ -2361,6 +2367,11 @@ export function useWebBrowser(session: ConnectionSession) {
                   ? { require_ca_verification: true }
                   : {}),
                 connection_id: connection?.id ?? "",
+                ...(reviewedApplicationProfile
+                  ? {
+                      reviewed_application_profile: reviewedApplicationProfile,
+                    }
+                  : {}),
                 // If the app has a global HTTP(S) proxy, the loopback
                 // mediator owns that outbound hop. The iframe still talks only
                 // to its protected p<token>.localhost authority.
@@ -3066,6 +3077,7 @@ export function useWebBrowser(session: ConnectionSession) {
               report.networkRouting,
               expectedNetworkRouting.current,
               expectedAliasRouting.current,
+              expectedTacticalRmmRouting.current,
             ),
           });
           void invoke<boolean>("activate_proxy_network_document", {

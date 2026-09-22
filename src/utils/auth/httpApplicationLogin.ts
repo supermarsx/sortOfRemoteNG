@@ -13,6 +13,24 @@ import { normalizeConnectionCredentialSource } from "../security/databaseCredent
 
 export { YEALINK_SERVLET_UPSTREAM_SUPPORTED };
 
+/**
+ * Return only the backend's reviewed Tactical RMM capability marker.
+ *
+ * This is runtime plumbing for one proxy session, not connection metadata:
+ * keep it derived from the normalized profile so malformed imports, generic
+ * websites, and other application profiles cannot opt into the route.
+ */
+export function getReviewedApplicationProfile(
+  connection: Partial<Connection> | null | undefined,
+): "tacticalrmm" | undefined {
+  const settings = normalizeHttpApplicationSettings(
+    connection?.httpApplication,
+  );
+  if (!settings || settings.invalid || settings.id !== "tacticalrmm")
+    return undefined;
+  return "tacticalrmm";
+}
+
 /** Hosted presets cannot label an arbitrary origin as their provider's login. */
 export function validateHttpApplicationTarget(
   connection: Partial<Connection> | null | undefined,

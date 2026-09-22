@@ -41,7 +41,8 @@ describe("untrusted page network report boundary", () => {
     expect(
       webNetworkRoutingStatus(
         {
-          version: 4,
+          version: 5,
+          tacticalRmmApi: false,
           quickConnectNavigation: false,
           quickConnectDiscovery: false,
           quickConnectDiscovered: false,
@@ -52,6 +53,8 @@ describe("untrusted page network report boundary", () => {
       ),
     ).toEqual({
       status: "current",
+      tacticalRmmApi: false,
+      tacticalRmmApiExpected: false,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -61,7 +64,8 @@ describe("untrusted page network report boundary", () => {
     expect(
       webNetworkRoutingStatus(
         {
-          version: 4,
+          version: 5,
+          tacticalRmmApi: false,
           quickConnectNavigation: false,
           quickConnectDiscovery: false,
           quickConnectDiscovered: false,
@@ -74,7 +78,8 @@ describe("untrusted page network report boundary", () => {
     expect(
       webNetworkRoutingStatus(
         {
-          version: 4,
+          version: 5,
+          tacticalRmmApi: false,
           quickConnectNavigation: true,
           quickConnectDiscovery: true,
           quickConnectDiscovered: true,
@@ -87,6 +92,8 @@ describe("untrusted page network report boundary", () => {
       ),
     ).toEqual({
       status: "current",
+      tacticalRmmApi: false,
+      tacticalRmmApiExpected: false,
       quickConnectNavigation: true,
       quickConnectDiscovery: true,
       quickConnectDiscovered: true,
@@ -96,7 +103,8 @@ describe("untrusted page network report boundary", () => {
   });
   it("requires the current alias capabilities but accepts an aliasless or disabled source", () => {
     const aliasless = {
-      version: 4,
+      version: 5,
+      tacticalRmmApi: false,
       quickConnectNavigation: true,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -118,7 +126,21 @@ describe("untrusted page network report boundary", () => {
     };
     expect(webNetworkRoutingStatus(all, true, true).status).toBe("current");
     expect(webNetworkRoutingStatus(all, false, false).status).toBe("mismatch");
+    expect(webNetworkRoutingStatus(all, true, true, true)).toMatchObject({
+      status: "mismatch",
+      tacticalRmmApi: false,
+      tacticalRmmApiExpected: true,
+    });
+    expect(
+      webNetworkRoutingStatus(
+        { ...all, tacticalRmmApi: true },
+        true,
+        true,
+        true,
+      ).status,
+    ).toBe("current");
     for (const key of [
+      "tacticalRmmApi",
       "quickConnectDiscovered",
       "quickConnectDirectNavigation",
       "quickConnectRegionalNavigation",

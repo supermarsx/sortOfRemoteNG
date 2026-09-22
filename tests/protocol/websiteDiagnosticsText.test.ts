@@ -9,6 +9,8 @@ describe("privacy-bounded website diagnostic copy", () => {
   it("copies closed report fields and omits unrelated QuickConnect capabilities", () => {
     const status = {
       status: "current" as const,
+      tacticalRmmApi: false,
+      tacticalRmmApiExpected: false,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -40,9 +42,36 @@ describe("privacy-bounded website diagnostic copy", () => {
     expect(text).not.toMatch(
       /private-token|secret-kind|secret-reason|QuickConnect|Same-NAS/,
     );
+    expect(text).toContain("Tactical RMM API route: off");
     expect(websiteDiagnosticsText([], null, status, true)).toContain(
       "QuickConnect navigation: off or unavailable",
     );
+    expect(
+      websiteDiagnosticsText(
+        [],
+        null,
+        {
+          ...status,
+          tacticalRmmApi: true,
+          tacticalRmmApiExpected: true,
+        },
+        false,
+      ),
+    ).toContain(
+      "Tactical RMM API route: available (native validation required)",
+    );
+    expect(
+      websiteDiagnosticsText(
+        [],
+        null,
+        {
+          ...status,
+          status: "mismatch",
+          tacticalRmmApiExpected: true,
+        },
+        false,
+      ),
+    ).toContain("Tactical RMM API route: expected but unavailable");
   });
   const snapshot = (): NativeHttpObservationsSnapshot => ({
     scope: "application",

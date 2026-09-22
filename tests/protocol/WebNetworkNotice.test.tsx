@@ -149,6 +149,8 @@ describe("compact website network notice", () => {
           quickConnectRelevant
           routing={{
             status,
+            tacticalRmmApi: false,
+            tacticalRmmApiExpected: false,
             quickConnectNavigation: false,
             quickConnectDiscovery: false,
             quickConnectDiscovered: false,
@@ -176,6 +178,29 @@ describe("compact website network notice", () => {
       ).toHaveTextContent("not proof that every request is captured");
     },
   );
+  it("reports the Tactical RMM API capability independently of redirect approval", () => {
+    render(
+      <WebNetworkNotice
+        reports={[]}
+        guard={null}
+        routing={{
+          status: "current",
+          tacticalRmmApi: true,
+          tacticalRmmApiExpected: true,
+          quickConnectNavigation: false,
+          quickConnectDiscovery: false,
+          quickConnectDiscovered: false,
+          quickConnectDirectNavigation: false,
+          quickConnectRegionalNavigation: false,
+        }}
+        onReload={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Protection details"));
+    expect(screen.getByTestId("web-network-routing-status")).toHaveTextContent(
+      "Tactical RMM API route: Available",
+    );
+  });
   it("explains a blocked font without claiming unrelated SecurityErrors have the same cause", () => {
     render(
       <WebNetworkNotice

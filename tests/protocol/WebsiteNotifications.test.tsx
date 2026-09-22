@@ -34,6 +34,8 @@ function manager(overrides: Partial<Manager> = {}): Manager {
     webNetworkReports: [],
     webNetworkRouting: {
       status: "current",
+      tacticalRmmApi: false,
+      tacticalRmmApiExpected: false,
       quickConnectNavigation: false,
       quickConnectDiscovery: false,
       quickConnectDiscovered: false,
@@ -86,7 +88,7 @@ describe("website notifications popover", () => {
         /QuickConnect|Same-NAS|Regional navigation/,
       );
       expect(
-        within(dialog).getByText("Page routing module v4 reported"),
+        within(dialog).getByText("Page routing module v5 reported"),
       ).toBeVisible();
       expect(screen.getByTestId("observation")).toHaveAttribute(
         "data-active",

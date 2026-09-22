@@ -457,6 +457,7 @@ pub(super) fn inject_readiness(
     source_origin: &str,
     proxy_origin: &str,
     policy: &super::HttpProxyPolicy,
+    tactical_rmm_api: Option<&super::tactical_rmm::TacticalRmmApiRoute>,
 ) -> String {
     if sequence == 0 || sequence > 9_007_199_254_740_991 {
         return html.to_string();
@@ -488,8 +489,14 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
         automation_client = include_str!("web_automation_client.js"),
         dark_mode_client = include_str!("web_dark_mode_client.js"),
         synology_progress_client = include_str!("synology_login_progress_client.js"),
-        network_client =
-            super::network::bootstrap(session_id, sequence, source_origin, proxy_origin, policy),
+        network_client = super::network::bootstrap(
+            session_id,
+            sequence,
+            source_origin,
+            proxy_origin,
+            policy,
+            tactical_rmm_api,
+        ),
     );
     let insertion = early_script_insertion(html);
     format!("{}{}{}", &html[..insertion], script, &html[insertion..])
@@ -878,6 +885,7 @@ mod tests {
                 "https://device.test",
                 "http://p0123456789abcdef0123456789abcdef.localhost:43123",
                 &super::super::HttpProxyPolicy::default(),
+                None,
             );
             assert!(result.starts_with("<!DOCTYPE html>"));
             assert!(result.contains("proxy_dom_ready"));

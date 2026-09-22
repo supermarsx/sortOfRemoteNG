@@ -13,6 +13,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     navigationOrigins = new Set(),
     quickConnectRpc = null,
     quickConnectDiscovered = null,
+    tacticalRmmApi = null,
     regionalNavigationAlias = null,
     directNavigationAlias = null,
     redirectEndpoint = null,
@@ -174,6 +175,37 @@ function installWebNetworkClient(configuration, reportBlocked) {
         proxyUrl: discovered.proxyUrl,
       };
     }
+  }
+  // Closed Tactical RMM background-request capability. The native proxy
+  // independently derives and validates the same exact api.<dashboard-host>
+  // origin on every request; this client mapping is compatibility only.
+  if (configuration.tacticalRmmApi !== undefined) {
+    var tactical = configuration.tacticalRmmApi,
+      source = new NativeURL(sourceOrigin),
+      api = tactical && new NativeURL(tactical.apiOrigin),
+      expectedApiHost = "api." + source.hostname;
+    if (
+      !tactical ||
+      tactical.version !== 1 ||
+      source.protocol !== "https:" ||
+      source.port ||
+      api.protocol !== "https:" ||
+      api.port ||
+      api.username ||
+      api.password ||
+      api.origin !== tactical.apiOrigin ||
+      api.hostname !== expectedApiHost ||
+      api.pathname !== "/" ||
+      api.search ||
+      api.hash ||
+      tactical.proxyUrl !==
+        proxyOrigin + "/__sortofremoteng_tactical_rmm_api_v1"
+    )
+      throw new TypeError("Invalid Tactical RMM API route configuration");
+    tacticalRmmApi = {
+      apiOrigin: api.origin,
+      proxyUrl: tactical.proxyUrl,
+    };
   }
 
   function blocked(kind, reason, destination) {
@@ -347,6 +379,21 @@ function installWebNetworkClient(configuration, reportBlocked) {
         reviewUrl.searchParams.set("destination", target.href);
         return reviewUrl.href;
       }
+    }
+    if (
+      tacticalRmmApi &&
+      (kind === "fetch" || kind === "xhr") &&
+      target.origin === tacticalRmmApi.apiOrigin
+    ) {
+      if (target.hash || target.href.length > 16_384)
+        throw blocked(kind, "invalid-url", target.origin);
+      var tacticalApiUrl = new NativeURL(tacticalRmmApi.proxyUrl);
+      tacticalApiUrl.searchParams.set("destination", target.href);
+      tacticalApiUrl.searchParams.set(
+        "__sorng_tactical_document_v1",
+        String(sequence),
+      );
+      return tacticalApiUrl.href;
     }
     if (fontAssets.has(target.href)) {
       if (kind === "font" || kind === "css") return fontAssets.get(target.href);
@@ -1002,7 +1049,8 @@ function installWebNetworkClient(configuration, reportBlocked) {
     // Advisory installation receipt only; this does not prove engine-wide
     // interception and must never create permission in the parent application.
     capabilities: Object.freeze({
-      version: 4,
+      version: 5,
+      tacticalRmmApi: tacticalRmmApi !== null,
       quickConnectNavigation:
         navigationOrigins.size > 0 ||
         directNavigationAlias !== null ||

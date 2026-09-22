@@ -66,6 +66,9 @@ mod redirect;
 mod synology_login;
 #[path = "http_synology_redirect_defaults.rs"]
 mod synology_redirect_defaults;
+#[path = "http_tactical_rmm.rs"]
+#[doc(hidden)]
+pub mod tactical_rmm;
 #[path = "http_upstream.rs"]
 mod upstream;
 #[path = "http_websocket.rs"]
@@ -646,6 +649,14 @@ pub enum BrowserRedirectProfile {
     Synology,
 }
 
+/// Runtime-only reviewed application identity. This is not redirect trust and
+/// must never be inferred from selectors or persisted as a generic proxy rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewedApplicationProfile {
+    TacticalRmm,
+}
+
 pub fn same_origin_redirect_limit(profile: Option<BrowserRedirectProfile>) -> usize {
     match profile {
         Some(BrowserRedirectProfile::Synology) => 20,
@@ -673,6 +684,10 @@ pub struct BasicAuthProxyConfig {
     /// the ordinary ten-redirect same-origin limit.
     #[serde(default)]
     pub redirect_profile: Option<BrowserRedirectProfile>,
+    /// Closed provider capability selector derived from the normalized saved
+    /// application profile. Native code independently derives every route.
+    #[serde(default)]
+    pub reviewed_application_profile: Option<ReviewedApplicationProfile>,
     /// One-use native continuation, never a persisted setting or log identity.
     #[serde(default)]
     pub continuation_id: Option<String>,
@@ -770,7 +785,8 @@ pub struct HttpAutoLoginSelectors {
 mod upstream_auth_mode_tests {
     use super::{
         collect_upstream_headers, permits_upstream_retry, proxy_request_headers_are_authorized,
-        same_origin_redirect_limit, BasicAuthProxyConfig, BrowserRedirectProfile, UpstreamAuthMode,
+        retain_tactical_api_headers, same_origin_redirect_limit, BasicAuthProxyConfig,
+        BrowserRedirectProfile, UpstreamAuthMode,
     };
 
     #[test]
@@ -831,6 +847,49 @@ mod upstream_auth_mode_tests {
             "p0123456789abcdef0123456789abcdef.localhost:9000",
             origin
         ));
+    }
+
+    #[test]
+    fn tactical_api_keeps_page_authorization_and_origin_but_no_cookie_or_referrer() {
+        let proxy_origin = "http://p0123456789abcdef0123456789abcdef.localhost:9000";
+        let mut incoming = axum::http::HeaderMap::new();
+        let referer = format!("{proxy_origin}/private/dashboard");
+        for (name, value) in [
+            ("origin", proxy_origin),
+            ("referer", referer.as_str()),
+            ("authorization", "Bearer tactical-session"),
+            ("cookie", "dashboard=private"),
+        ] {
+            incoming.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                value.parse().unwrap(),
+            );
+        }
+        let mut headers = collect_upstream_headers(
+            &incoming,
+            UpstreamAuthMode::None,
+            proxy_origin,
+            "https://rmm.example.test",
+        );
+        retain_tactical_api_headers(&mut headers);
+        let request = headers
+            .into_iter()
+            .fold(
+                reqwest::Client::new().get("https://api.rmm.example.test/v3/"),
+                |request, (name, value)| request.header(name, value),
+            )
+            .build()
+            .unwrap();
+        assert_eq!(
+            request.headers()[reqwest::header::AUTHORIZATION],
+            "Bearer tactical-session"
+        );
+        assert_eq!(
+            request.headers()[reqwest::header::ORIGIN],
+            "https://rmm.example.test"
+        );
+        assert!(!request.headers().contains_key(reqwest::header::COOKIE));
+        assert!(!request.headers().contains_key(reqwest::header::REFERER));
     }
 
     #[test]
@@ -1110,6 +1169,7 @@ pub struct ProxySessionEntry {
     pub upstream_auth_mode: UpstreamAuthMode,
     pub proxy_policy: HttpProxyPolicy,
     pub redirect_profile: Option<BrowserRedirectProfile>,
+    pub reviewed_application_profile: Option<ReviewedApplicationProfile>,
     pub custom_headers: HashMap<String, String>,
     pub upstream_proxy_url: Option<String>,
     pub target_origin: String,
@@ -1378,6 +1438,8 @@ pub struct AxumProxyState {
     pub upstream_auth_mode: UpstreamAuthMode,
     pub proxy_policy: HttpProxyPolicy,
     pub redirect_profile: Option<BrowserRedirectProfile>,
+    #[doc(hidden)]
+    pub tactical_rmm_api: Option<tactical_rmm::TacticalRmmApiRoute>,
     pub custom_headers: HashMap<String, String>,
     pub pending_nonce: Arc<std::sync::RwLock<Option<String>>>,
     /// P7: live snapshot of the frontend's `:root --color-*` tokens.
@@ -1505,6 +1567,12 @@ fn collect_upstream_headers(
         proxy_response::ACCEPT_ENCODING.into(),
     ));
     forwarded
+}
+
+fn retain_tactical_api_headers(headers: &mut Vec<(String, String)>) {
+    headers.retain(|(name, _)| {
+        !name.eq_ignore_ascii_case("cookie") && !name.eq_ignore_ascii_case("referer")
+    });
 }
 
 fn permits_upstream_retry(method: &axum::http::Method) -> bool {
@@ -1878,6 +1946,34 @@ pub async fn axum_proxy_handler(
             req_start,
         );
     }
+    let tactical_api_destination =
+        match tactical_rmm::destination(state.tactical_rmm_api.as_ref(), &state.network, req.uri())
+        {
+            Ok(destination) => destination,
+            Err(detail) => {
+                return Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .header("Cache-Control", "no-store")
+                    .body(Body::from(detail))
+                    .expect("static Tactical RMM route refusal");
+            }
+        };
+    if tactical_api_destination.is_some()
+        && (websocket::is_upgrade_candidate(req.headers())
+            || req
+                .headers()
+                .get("sec-fetch-dest")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|destination| destination != "empty"))
+    {
+        return Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("Cache-Control", "no-store")
+            .body(Body::from(
+                "The Tactical RMM API route accepts only background HTTP requests.",
+            ))
+            .expect("static Tactical RMM request-kind refusal");
+    }
     if websocket::is_upgrade_candidate(req.headers()) {
         return websocket::handle(state, req).await;
     }
@@ -1891,9 +1987,13 @@ pub async fn axum_proxy_handler(
         .path_and_query()
         .map(|pq| pq.as_str().to_string())
         .unwrap_or_else(|| "/".to_string());
-    let (path_and_query, navigation_token) = proxy_response::navigation_request(&path_and_query);
-    let document_request =
-        proxy_response::is_document_request(req.headers(), navigation_token.as_deref());
+    let (path_and_query, navigation_token) = if tactical_api_destination.is_some() {
+        (path_and_query, None)
+    } else {
+        proxy_response::navigation_request(&path_and_query)
+    };
+    let document_request = tactical_api_destination.is_none()
+        && proxy_response::is_document_request(req.headers(), navigation_token.as_deref());
     if state.proxy_policy.page_scripts != PageScripts::Allow
         && req
             .headers()
@@ -1955,13 +2055,17 @@ pub async fn axum_proxy_handler(
         );
     }
 
-    let full_url = format!(
-        "{}{}",
-        state.target_url.trim_end_matches('/'),
-        path_and_query
-    );
-    let request_url = full_url.clone();
-    let full_url = state.proxy_policy.redacted_url(&full_url);
+    let request_url = tactical_api_destination
+        .as_ref()
+        .map(reqwest::Url::to_string)
+        .unwrap_or_else(|| {
+            format!(
+                "{}{}",
+                state.target_url.trim_end_matches('/'),
+                path_and_query
+            )
+        });
+    let full_url = state.proxy_policy.redacted_url(&request_url);
 
     let method_str = method.to_string();
 
@@ -1975,12 +2079,25 @@ pub async fn axum_proxy_handler(
         _ => reqwest::Method::GET,
     };
 
+    let forwarding_auth_mode = if tactical_api_destination.is_some() {
+        // Tactical's API authorization belongs to the website. Preserve it,
+        // but never interpret saved HTTP credentials as API credentials.
+        UpstreamAuthMode::None
+    } else {
+        state.upstream_auth_mode
+    };
     let mut fwd_headers = collect_upstream_headers(
         req.headers(),
-        state.upstream_auth_mode,
+        forwarding_auth_mode,
         &state.proxy_origin,
         &state.target_origin,
     );
+    if tactical_api_destination.is_some() {
+        // A real cross-origin browser request would not send the dashboard's
+        // host-only cookies. This closed route is deliberately stateless, and
+        // suppressing Referer is safe for every browser referrer policy.
+        retain_tactical_api_headers(&mut fwd_headers);
+    }
     if document_request
         && navigation_token.is_some()
         && matches!(method, axum::http::Method::GET | axum::http::Method::HEAD)
@@ -2011,14 +2128,18 @@ pub async fn axum_proxy_handler(
             )
         });
     }
-    for (name, value) in &state.custom_headers {
-        fwd_headers.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
-        fwd_headers.push((name.clone(), value.clone()));
+    if tactical_api_destination.is_none() {
+        for (name, value) in &state.custom_headers {
+            fwd_headers.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
+            fwd_headers.push((name.clone(), value.clone()));
+        }
     }
     // After the custom headers, so an explicitly configured `Cookie` is merged
     // with the phone's session rather than replacing it. A session that never
     // pre-authenticated leaves the headers untouched.
-    yealink_login::apply_session_cookie(&mut fwd_headers, &state.yealink_session);
+    if tactical_api_destination.is_none() {
+        yealink_login::apply_session_cookie(&mut fwd_headers, &state.yealink_session);
+    }
     if state.proxy_policy.cache_mode == CacheMode::Bypass {
         fwd_headers.retain(|(name, _)| {
             !matches!(
@@ -2502,7 +2623,10 @@ pub async fn axum_proxy_handler(
             // Preserve absolute URL semantics while routing matching-origin
             // resources through the protected proxy. Vendor fixes are strictly
             // versioned, not a global URL/Location override.
-            let mut final_body = if is_rewritable && !state.target_origin.is_empty() {
+            let mut final_body = if is_rewritable
+                && tactical_api_destination.is_none()
+                && !state.target_origin.is_empty()
+            {
                 let text = String::from_utf8_lossy(&raw_bytes);
                 let text = proxy_response::rewrite_target_origin(
                     &text,
@@ -2570,6 +2694,7 @@ pub async fn axum_proxy_handler(
                     &state.target_origin,
                     &state.proxy_origin,
                     &state.proxy_policy,
+                    state.tactical_rmm_api.as_ref(),
                 )
                 .into_bytes();
             }
@@ -2642,6 +2767,7 @@ pub async fn axum_proxy_handler(
                     || k == "content-security-policy-report-only"
                     || k == "access-control-allow-origin"
                     || k == "access-control-allow-credentials"
+                    || (tactical_api_destination.is_some() && k == "set-cookie")
                 {
                     continue;
                 }

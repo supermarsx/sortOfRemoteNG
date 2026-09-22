@@ -96,6 +96,7 @@ fn proxy_client_builder(
         require_ca_verification,
         ca_target_host,
         None,
+        true,
     )
 }
 
@@ -107,6 +108,7 @@ fn proxy_client_builder_with_cookies(
     require_ca_verification: bool,
     ca_target_host: Option<&str>,
     cookies: Option<Arc<crate::http::attempt::AttemptCookieStore>>,
+    retain_cookies: bool,
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         // Route ownership is explicit. Ambient process proxy variables must
@@ -125,11 +127,12 @@ fn proxy_client_builder_with_cookies(
         .tcp_keepalive(std::time::Duration::from_secs(30))
         // The request mediator validates every redirect BEFORE resending.
         .redirect(reqwest::redirect::Policy::none())
-        .min_tls_version(resolve_min_tls_version(min_tls))
-        .cookie_store(true);
+        .min_tls_version(resolve_min_tls_version(min_tls));
 
     if let Some(cookies) = cookies {
         builder = builder.cookie_provider(cookies);
+    } else if retain_cookies {
+        builder = builder.cookie_store(true);
     }
 
     if let Some(proxy_url) = upstream_proxy_url {
@@ -589,7 +592,31 @@ pub async fn start_basic_auth_proxy(
         config.require_ca_verification,
         validated_target.host_str(),
         attempt.as_ref().map(|attempt| attempt.cookie_store()),
+        true,
     )?;
+    let tactical_rmm_api =
+        if config.reviewed_application_profile == Some(ReviewedApplicationProfile::TacticalRmm) {
+            // The provider API is a separate, stateless TLS security domain. It
+            // inherits only the network proxy and minimum TLS floor, never the
+            // dashboard's certificate bypass/pin or either origin's cookies.
+            let api_client = proxy_client_builder_with_cookies(
+                true,
+                None,
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                false,
+                None,
+                None,
+                false,
+            )?;
+            crate::http::tactical_rmm::TacticalRmmApiRoute::new(
+                config.reviewed_application_profile,
+                &validated_target,
+                api_client,
+            )
+        } else {
+            None
+        };
 
     // t96 Route A: sign in to a Yealink phone natively, before the frame loads
     // a single byte, and hold its web session for this arm. Exactly one
@@ -668,6 +695,7 @@ pub async fn start_basic_auth_proxy(
         upstream_auth_mode: config.upstream_auth_mode,
         proxy_policy: proxy_policy.clone(),
         redirect_profile: config.redirect_profile,
+        tactical_rmm_api,
         custom_headers: config.custom_headers.clone(),
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(theme_tokens)),
@@ -737,6 +765,7 @@ pub async fn start_basic_auth_proxy(
                 upstream_auth_mode: config.upstream_auth_mode,
                 proxy_policy,
                 redirect_profile: config.redirect_profile,
+                reviewed_application_profile: config.reviewed_application_profile,
                 custom_headers: config.custom_headers.clone(),
                 upstream_proxy_url,
                 target_origin,
@@ -865,6 +894,7 @@ pub fn continue_synology_proxy_session(
                 tls.require_ca_verification,
                 destination.host_str(),
                 Some(successor.cookie_store()),
+                true,
             )
         },
     )
@@ -1144,6 +1174,7 @@ pub async fn restart_proxy_session(
         upstream_auth_mode,
         proxy_policy,
         redirect_profile,
+        reviewed_application_profile,
         custom_headers,
         upstream_proxy_url,
         target_origin,
@@ -1167,6 +1198,7 @@ pub async fn restart_proxy_session(
             entry.upstream_auth_mode,
             entry.proxy_policy.clone(),
             entry.redirect_profile,
+            entry.reviewed_application_profile,
             entry.custom_headers.clone(),
             entry.upstream_proxy_url.clone(),
             entry.target_origin.clone(),
@@ -1215,6 +1247,7 @@ pub async fn restart_proxy_session(
         require_ca_verification,
         validated_target.host_str(),
         attempt.as_ref().map(|attempt| attempt.cookie_store()),
+        true,
     )?;
 
     // Bind to a new random free port.
@@ -1226,6 +1259,26 @@ pub async fn restart_proxy_session(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
+    let tactical_rmm_api =
+        if reviewed_application_profile == Some(ReviewedApplicationProfile::TacticalRmm) {
+            let api_client = proxy_client_builder_with_cookies(
+                true,
+                None,
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                false,
+                None,
+                None,
+                false,
+            )?;
+            crate::http::tactical_rmm::TacticalRmmApiRoute::new(
+                reviewed_application_profile,
+                &validated_target,
+                api_client,
+            )
+        } else {
+            None
+        };
     let network = Arc::new(
         ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_public_routes(
             upstream_proxy_url
@@ -1253,6 +1306,7 @@ pub async fn restart_proxy_session(
         upstream_auth_mode,
         proxy_policy: proxy_policy.clone(),
         redirect_profile,
+        tactical_rmm_api,
         custom_headers: custom_headers.clone(),
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         // P7: a restart reuses whichever theme was active at the
@@ -1328,6 +1382,7 @@ pub async fn restart_proxy_session(
                 upstream_auth_mode,
                 proxy_policy,
                 redirect_profile,
+                reviewed_application_profile,
                 custom_headers,
                 upstream_proxy_url,
                 target_origin,
@@ -2062,6 +2117,44 @@ mod http_authentication_diagnostic_tests {
             assert!(bytes.len() < 16 * 1024);
         }
         String::from_utf8(bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn stateless_client_does_not_replay_upstream_set_cookie() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = format!("http://{}/", listener.local_addr().unwrap());
+        let cookie_seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = cookie_seen.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().fallback(move |headers: axum::http::HeaderMap| {
+                    let observed = observed.clone();
+                    async move {
+                        observed
+                            .lock()
+                            .unwrap()
+                            .push(headers.contains_key(axum::http::header::COOKIE));
+                        (
+                            [(
+                                axum::http::header::SET_COOKIE,
+                                "api-session=must-not-replay; Path=/",
+                            )],
+                            "ok",
+                        )
+                    }
+                }),
+            )
+            .await
+            .unwrap();
+        });
+        let client =
+            proxy_client_builder_with_cookies(true, None, "1.2", None, false, None, None, false)
+                .unwrap();
+        client.get(&target).send().await.unwrap();
+        client.get(&target).send().await.unwrap();
+        assert_eq!(*cookie_seen.lock().unwrap(), [false, false]);
+        server.abort();
     }
 
     #[tokio::test]

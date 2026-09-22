@@ -312,6 +312,26 @@ pub(super) async fn send_websocket(
     .map_err(|_| UpstreamError::Deadline)?
 }
 
+fn scoped_request_url(
+    policy: &super::HttpProxyPolicy,
+    tactical_rmm_api: Option<&super::tactical_rmm::TacticalRmmApiRoute>,
+    input_url: &str,
+) -> Result<(reqwest::Url, bool), UpstreamError> {
+    let parsed_input = reqwest::Url::parse(input_url)
+        .map_err(|_| UpstreamError::Policy("The upstream request URL is invalid."))?;
+    let tactical_api_request = tactical_rmm_api.is_some_and(|route| route.permits(&parsed_input));
+    // Connection query parameters belong only to the configured dashboard.
+    // Never project them onto the separately scoped Tactical API capability.
+    let url = if tactical_api_request {
+        parsed_input
+    } else {
+        policy.request_url(input_url).map_err(|_| {
+            UpstreamError::Policy("The configured HTTP query parameters could not be applied.")
+        })?
+    };
+    Ok((url, tactical_api_request))
+}
+
 async fn send_inner(
     state: &AxumProxyState,
     method: &reqwest::Method,
@@ -320,9 +340,35 @@ async fn send_inner(
     body: &[u8],
     websocket: bool,
 ) -> Result<reqwest::Response, UpstreamError> {
-    let mut url = state.proxy_policy.request_url(input_url).map_err(|_| {
-        UpstreamError::Policy("The configured HTTP query parameters could not be applied.")
-    })?;
+    let (mut url, tactical_api_request) = scoped_request_url(
+        &state.proxy_policy,
+        state.tactical_rmm_api.as_ref(),
+        input_url,
+    )?;
+    let approved_origin = if url.origin().ascii_serialization() == state.target_origin {
+        state.target_origin.clone()
+    } else if state
+        .tactical_rmm_api
+        .as_ref()
+        .is_some_and(|route| route.permits(&url))
+    {
+        url.origin().ascii_serialization()
+    } else {
+        return Err(UpstreamError::Policy(
+            "The request is outside this connection's approved origin. Credentials were not sent.",
+        ));
+    };
+    let client = if tactical_api_request {
+        state
+            .tactical_rmm_api
+            .as_ref()
+            .map(|route| route.client())
+            .ok_or(UpstreamError::Policy(
+                "The Tactical RMM API route is unavailable.",
+            ))?
+    } else {
+        &state.client
+    };
     let mut method = method.clone();
     let mut body = body.to_vec();
     let native_cookies_only = state
@@ -335,7 +381,7 @@ async fn send_inner(
         .map(|(_, value)| value.as_str())
         .collect();
     let mut cookie_overlay = RedirectCookieOverlay {
-        origin: state.target_origin.clone(),
+        origin: approved_origin.clone(),
         updates: Vec::new(),
         issued: Vec::new(),
         issued_bytes: 0,
@@ -347,7 +393,7 @@ async fn send_inner(
     let redirect_limit = super::same_origin_redirect_limit(state.redirect_profile);
     let mut redirect_referrer = RedirectReferrerPolicy::OriginAllowed;
     for redirect in 0..=redirect_limit {
-        if url.origin().ascii_serialization() != state.target_origin
+        if url.origin().ascii_serialization() != approved_origin
             || !url.username().is_empty()
             || url.password().is_some()
             || (state.proxy_policy.https_only && url.scheme() != "https")
@@ -355,7 +401,7 @@ async fn send_inner(
             return Err(UpstreamError::Policy("The upstream redirected outside this connection's approved origin. Credentials were not sent. Open the destination as a separate connection and review its trust."));
         }
         let request = |authorization: Option<String>, cookies: &RedirectCookieOverlay| {
-            let mut request = state.client.request(method.clone(), url.clone());
+            let mut request = client.request(method.clone(), url.clone());
             if websocket {
                 request = request.version(reqwest::Version::HTTP_11);
             }
@@ -398,9 +444,11 @@ async fn send_inner(
             } else if let Some(cookies) = changed_cookie.filter(|value| !value.is_empty()) {
                 request = request.header(reqwest::header::COOKIE, cookies);
             }
-            request = state
-                .upstream_auth_mode
-                .apply_credentials(request, &user, &password);
+            if !tactical_api_request {
+                request = state
+                    .upstream_auth_mode
+                    .apply_credentials(request, &user, &password);
+            }
             if let Some(value) = authorization {
                 request = request.header(reqwest::header::AUTHORIZATION, value);
             }
@@ -410,13 +458,14 @@ async fn send_inner(
             request
         };
         let mut response = request(None, &cookie_overlay).send().await?;
-        if !websocket {
+        if !websocket && !tactical_api_request {
             cookie_overlay.observe(
                 &response,
                 state.upstream_auth_mode == UpstreamAuthMode::Digest,
             )?;
         }
-        if state.upstream_auth_mode == UpstreamAuthMode::Digest
+        if !tactical_api_request
+            && state.upstream_auth_mode == UpstreamAuthMode::Digest
             && response.status() == reqwest::StatusCode::UNAUTHORIZED
         {
             let mut challenge =
@@ -458,7 +507,7 @@ async fn send_inner(
         }
         let status = response.status();
         if !matches!(status.as_u16(), 301 | 302 | 303 | 307 | 308) {
-            if !websocket {
+            if !websocket && !tactical_api_request {
                 cookie_overlay.synchronize_browser(&mut response)?;
             }
             return Ok(response);
@@ -506,9 +555,13 @@ async fn send_inner(
                 },
             )));
         }
-        let next = state.proxy_policy.request_url(next.as_str()).map_err(|_| {
-            UpstreamError::Policy("The configured HTTP query parameters could not be applied.")
-        })?;
+        let next = if tactical_api_request {
+            next
+        } else {
+            state.proxy_policy.request_url(next.as_str()).map_err(|_| {
+                UpstreamError::Policy("The configured HTTP query parameters could not be applied.")
+            })?
+        };
         if cookie_overlay.has_ambiguous_scope(&next, &browser_cookies) {
             // The raw browser header cannot identify which path each value
             // belongs to. Do not silently discard one session identity, nor
@@ -524,6 +577,50 @@ async fn send_inner(
         url = next;
     }
     Err(UpstreamError::RedirectLoop)
+}
+
+#[cfg(test)]
+mod tactical_scope_tests {
+    use super::scoped_request_url;
+    use crate::http::proxy_policy::QueryParameter;
+    use crate::http::{HttpProxyPolicy, ReviewedApplicationProfile};
+
+    #[test]
+    fn connection_query_parameters_are_never_projected_onto_tactical_api() {
+        let mut policy = HttpProxyPolicy::default();
+        policy.query_parameters.push(QueryParameter {
+            name: "dashboard-secret".into(),
+            value: "must-not-cross-origin".into(),
+        });
+        let route = crate::http::tactical_rmm::TacticalRmmApiRoute::new(
+            Some(ReviewedApplicationProfile::TacticalRmm),
+            &reqwest::Url::parse("https://rmm.example.test/").unwrap(),
+            reqwest::Client::new(),
+        )
+        .unwrap();
+
+        let Ok((dashboard, tactical)) = scoped_request_url(
+            &policy,
+            Some(&route),
+            "https://rmm.example.test/login?next=agents",
+        ) else {
+            panic!("dashboard URL should be accepted");
+        };
+        assert!(!tactical);
+        assert!(dashboard
+            .query_pairs()
+            .any(|(name, value)| name == "dashboard-secret" && value == "must-not-cross-origin"));
+
+        let Ok((api, tactical)) = scoped_request_url(
+            &policy,
+            Some(&route),
+            "https://api.rmm.example.test/v3/checkin?agent=42",
+        ) else {
+            panic!("Tactical API URL should be accepted");
+        };
+        assert!(tactical);
+        assert_eq!(api.query(), Some("agent=42"));
+    }
 }
 
 #[cfg(test)]
