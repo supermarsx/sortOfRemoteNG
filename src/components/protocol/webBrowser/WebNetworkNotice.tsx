@@ -217,6 +217,20 @@ export default function WebNetworkNotice({
                   {routing.tacticalRmmApiOrigins.join(", ")}
                 </p>
               )}
+              {routing.googleSession && (
+                <p className="text-[var(--color-textMuted)]">
+                  Google session routing:{" "}
+                  {routing.googleSession.status === "ready"
+                    ? "Available for the exact session destinations"
+                    : "Incomplete or unavailable"}
+                  . HTTP cookies stay in the native session and the WebView
+                  User-Agent is passed through unchanged. Browser-visible
+                  cookies are synchronized with the native, domain-scoped
+                  session without exposing HttpOnly values. This does not
+                  confirm successful sign-in; Google may reject embedded
+                  browsers.
+                </p>
+              )}
               <p className="text-[var(--color-textMuted)]">
                 This advisory receipt does not approve destinations. Strict CSP
                 and native proxy validation apply independently.

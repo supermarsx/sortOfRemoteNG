@@ -225,26 +225,35 @@ pub fn build_autologin_injection_from_slots(
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
 
-    Some(autologin_client_script(&nonce, &selectors_json, false))
+    Some(autologin_client_script(&nonce, &selectors_json, None))
 }
 
 /// `&AxumProxyState` wrapper over [`build_autologin_injection_from_slots`] for
 /// the proxy handler's call site.
-pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64) -> Option<String> {
+pub fn build_autologin_injection(
+    state: &AxumProxyState,
+    document_sequence: u64,
+    document_url: &str,
+) -> Option<String> {
     if let Some(attempt) = state
         .attempt
         .as_ref()
         .filter(|attempt| attempt.uses_deferred_synology_login())
     {
         let nonce = attempt.deferred_login_nonce(document_sequence)?;
-        return Some(autologin_client_script(&nonce, "null", true));
+        return Some(autologin_client_script(&nonce, "null", Some("synology")));
     }
     if state.upstream_auth_mode == crate::http::UpstreamAuthMode::SynologyForm {
         // Each DSM document keeps its own bounded page grant instead of the
         // single nonce slot: a later child frame cannot overwrite, rebind or
         // redeem it. Redemption requires this document to be selected.
         let nonce = bitwarden::bind_synology_document(state, document_sequence)?;
-        return Some(autologin_client_script(&nonce, "null", true));
+        return Some(autologin_client_script(&nonce, "null", Some("synology")));
+    }
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::GoogleForm {
+        let (nonce, flow) =
+            bitwarden::bind_google_document(state, document_sequence, document_url)?;
+        return Some(autologin_client_script(&nonce, "null", Some(flow)));
     }
     let injection = build_autologin_injection_from_slots(
         &state.auto_login_armed,
@@ -278,7 +287,7 @@ pub fn build_autologin_injection(state: &AxumProxyState, document_sequence: u64)
 /// Only native Synology authorization emits the fixed third argument; it asks
 /// that client to wait for reviewed account controls before reading a credential.
 /// Generic and Bitwarden dispatch remain unchanged. There is no inline fallback.
-fn autologin_client_script(nonce: &str, selectors_json: &str, synology: bool) -> String {
+fn autologin_client_script(nonce: &str, selectors_json: &str, login_flow: Option<&str>) -> String {
     format!(
         r#"<script>(function(){{
 'use strict';
@@ -295,7 +304,12 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
 }})();</script>"#,
         nonce = nonce,
         selectors_json = selectors_json,
-        flow_hint = if synology { ", 'synology'" } else { "" },
+        flow_hint = match login_flow {
+            Some("synology") => ", 'synology'",
+            Some("google") => ", 'google'",
+            Some("google-password") => ", 'google-password'",
+            _ => "",
+        },
     )
 }
 
@@ -353,7 +367,9 @@ pub async fn autologin_cred_handler(
     }
     if matches!(
         state.upstream_auth_mode,
-        crate::http::UpstreamAuthMode::BitwardenForm | crate::http::UpstreamAuthMode::SynologyForm
+        crate::http::UpstreamAuthMode::BitwardenForm
+            | crate::http::UpstreamAuthMode::SynologyForm
+            | crate::http::UpstreamAuthMode::GoogleForm
     ) {
         return bitwarden::dispense(&state, &query);
     }

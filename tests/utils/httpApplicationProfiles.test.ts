@@ -47,7 +47,15 @@ describe("HTTP application profile policy", () => {
       "vaultwarden",
       "nextcloud",
       "gitlab-self-hosted",
+      "google-account",
+      "google-cloud-console",
+      "google-analytics",
+      "google-business-profile",
+      "google-search-console",
+      "google-ads",
+      "youtube",
       "sqlpad",
+      "gmail",
       "matomo",
       "plausible",
       "odoo",
@@ -69,6 +77,7 @@ describe("HTTP application profile policy", () => {
       "payload-cms",
       "webmin",
       "voip-phone",
+      "gdrive",
     ]);
   });
   it("makes Cloudflare manual-only and ignores retained website credentials, API headers, and automatic selectors", () => {
@@ -335,14 +344,14 @@ describe("HTTP application profile policy", () => {
       }),
     ).toThrow(/both/);
   });
-  it("keeps iLO generic and refuses automatic modes for manual-only/native apps", () => {
+  it("keeps iLO generic and refuses automatic modes for native apps", () => {
     expect(
       resolveHttpApplicationLogin({
         ...connection(),
         httpApplication: { version: 1, id: "ilo", loginMode: "form" },
       }).selectors,
     ).toBeUndefined();
-    for (const id of ["gdrive", "exchange", "mssql"])
+    for (const id of ["exchange", "mssql"])
       expect(() =>
         resolveHttpApplicationLogin({
           ...connection(),

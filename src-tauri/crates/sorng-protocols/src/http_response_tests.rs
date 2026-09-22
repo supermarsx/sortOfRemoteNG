@@ -256,7 +256,9 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
         // The app-marked first document is selected on issuance.
         state.network.document_issued(1, true);
     }
-    let html = crate::themed_autologin::build_autologin_injection(state, 1).unwrap();
+    let html =
+        crate::themed_autologin::build_autologin_injection(state, 1, "https://device.invalid/")
+            .unwrap();
     assert!(!html.contains("synthetic-user") && !html.contains("synthetic-master-password"));
     assert_eq!(
         html.contains("fetchCredsAndRun(NONCE,SEL, 'synology')"),
@@ -268,7 +270,11 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
 /// Direct DSM page grants belong to their own document, never the single
 /// nonce slot; rendering the same document again returns the same nonce.
 fn reviewed_synology_page_nonce(proxy: &FixtureProxy, document: u64) -> Option<String> {
-    let html = crate::themed_autologin::build_autologin_injection(&proxy.state, document)?;
+    let html = crate::themed_autologin::build_autologin_injection(
+        &proxy.state,
+        document,
+        "https://device.invalid/",
+    )?;
     assert!(proxy.state.auto_login_nonce.read().unwrap().is_none());
     Some(
         html.split_once("var NONCE=\"")?
@@ -360,7 +366,12 @@ async fn assert_reviewed_staged_grants(mode: UpstreamAuthMode) {
         .unwrap()
         .request_log
         .is_empty());
-    assert!(crate::themed_autologin::build_autologin_injection(&proxy.state, 1).is_none());
+    assert!(crate::themed_autologin::build_autologin_injection(
+        &proxy.state,
+        1,
+        "https://device.invalid/",
+    )
+    .is_none());
 }
 
 #[tokio::test]
@@ -489,7 +500,12 @@ async fn reviewed_vault_old_document_nonce_cannot_begin_after_new_navigation() {
             .status(),
         StatusCode::FORBIDDEN
     );
-    assert!(crate::themed_autologin::build_autologin_injection(&proxy.state, 1).is_none());
+    assert!(crate::themed_autologin::build_autologin_injection(
+        &proxy.state,
+        1,
+        "https://device.invalid/",
+    )
+    .is_none());
 }
 
 #[tokio::test]

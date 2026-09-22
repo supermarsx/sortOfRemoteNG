@@ -14,6 +14,8 @@ function installWebNetworkClient(configuration, reportBlocked) {
     quickConnectRpc = null,
     quickConnectDiscovered = null,
     tacticalRmmApi = null,
+    googleSession = null,
+    googleDocuments = new Set(),
     regionalNavigationAlias = null,
     directNavigationAlias = null,
     redirectEndpoint = null,
@@ -80,6 +82,44 @@ function installWebNetworkClient(configuration, reportBlocked) {
     if (!entry) throw new TypeError("Invalid network route configuration");
     addRoute(entry.upstreamOrigin, entry.proxyOrigin);
   });
+  if (configuration.googleSession !== undefined) {
+    var google = configuration.googleSession;
+    if (
+      !google ||
+      google.version !== 1 ||
+      google.nativeCookies !== true ||
+      !Array.isArray(google.routes) ||
+      google.routes.length < 3 ||
+      google.routes.length > 20
+    )
+      throw new TypeError("Invalid Google session configuration");
+    var googleOrigins = new Set();
+    google.routes.forEach(function (entry) {
+      if (!entry || typeof entry.documents !== "boolean")
+        throw new TypeError("Invalid Google session route");
+      var upstream = new NativeURL(origin(entry.upstreamOrigin, false));
+      var local = new NativeURL(origin(entry.proxyOrigin, true));
+      if (
+        upstream.protocol !== "https:" ||
+        upstream.port ||
+        googleOrigins.has(upstream.origin) ||
+        local.port !== new NativeURL(proxyOrigin).port
+      )
+        throw new TypeError("Invalid Google session route");
+      googleOrigins.add(upstream.origin);
+      if (upstream.origin === sourceOrigin) {
+        if (local.origin !== proxyOrigin)
+          throw new TypeError("Google document route mismatch");
+      } else addRoute(upstream.origin, local.origin);
+      if (entry.documents) {
+        googleDocuments.add(upstream.origin);
+        googleDocuments.add(local.origin);
+      }
+    });
+    if (!googleOrigins.has(sourceOrigin))
+      throw new TypeError("Missing Google document route");
+    googleSession = { origins: Array.from(googleOrigins) };
+  }
   // These are closed binary asset routes, NOT permission to fetch from a CDN
   // origin. Native independently validates the path, response and anonymous route.
   var configuredFonts =
@@ -339,6 +379,13 @@ function installWebNetworkClient(configuration, reportBlocked) {
     if (target.username || target.password)
       throw blocked(kind, "url-credentials");
     if (
+      googleSession &&
+      (kind === "navigation" || kind === "form" || kind === "document") &&
+      !googleDocuments.has(target.origin)
+    ) {
+      throw blocked(kind, "origin-not-approved", target.origin);
+    }
+    if (
       quickConnectRpc &&
       (target.href === quickConnectRpc.upstreamUrl ||
         (sourceOrigin === "https://global.quickconnect.to" &&
@@ -568,6 +615,18 @@ function installWebNetworkClient(configuration, reportBlocked) {
     );
   }
   if (typeof nativeFetch === "function") {
+    function googleRequestOptions(url, options, credentials) {
+      if (!googleSession) return options;
+      var target = new NativeURL(url);
+      if (!proxies.has(target.origin)) return options;
+      var headers = new Headers(options?.headers);
+      var mode = credentials || options?.credentials || "same-origin";
+      var include =
+        mode === "include" ||
+        (mode === "same-origin" && target.origin === location.origin);
+      headers.set("X-Sorng-Google-Credentials", include ? "include" : "omit");
+      return Object.assign({}, options, { headers: headers });
+    }
     function controlRequestOptions(url, options) {
       if (!isQuickConnectRelay(url)) return options;
       var headers = new Headers(options?.headers);
@@ -602,6 +661,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
               signal: input.signal,
             };
             requestOptions = controlRequestOptions(url, requestOptions);
+            requestOptions = googleRequestOptions(
+              url,
+              requestOptions,
+              input.credentials,
+            );
             // Chromium refuses streaming uploads over this HTTP/1.1 mediator.
             // Bounded buffering preserves Request bodies, never a direct fallback.
             return requestBody(input).then(function (body) {
@@ -620,6 +684,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
         } else {
           input = mapUrl(input, "fetch", false, init?.method ?? "GET");
           init = controlRequestOptions(input, init);
+          init = googleRequestOptions(input, init, init?.credentials);
         }
         return Reflect.apply(nativeFetch, window, [input, init]);
       } catch (error) {
@@ -630,11 +695,15 @@ function installWebNetworkClient(configuration, reportBlocked) {
   if (window.XMLHttpRequest) {
     var xhrPrototype = window.XMLHttpRequest.prototype,
       nativeOpen = xhrPrototype.open,
-      nativeSetRequestHeader = xhrPrototype.setRequestHeader;
+      nativeSetRequestHeader = xhrPrototype.setRequestHeader,
+      nativeSend = xhrPrototype.send,
+      googleXhr = new WeakMap();
     xhrInterception = replace(xhrPrototype, "open", function () {
       var args = Array.prototype.slice.call(arguments);
       args[1] = mapUrl(args[1], "xhr", false, args[0]);
       var control = isQuickConnectRelay(args[1]);
+      var mapped = new NativeURL(args[1]);
+      var googleControl = googleSession && proxies.has(mapped.origin);
       if (control && (args[3] || args[4]))
         throw blocked("xhr", "url-credentials");
       if (control && typeof nativeSetRequestHeader !== "function")
@@ -645,8 +714,19 @@ function installWebNetworkClient(configuration, reportBlocked) {
           "X-Sorng-QuickConnect-Document",
           String(sequence),
         ]);
+      if (googleControl) googleXhr.set(this, mapped.origin === location.origin);
       return result;
     });
+    if (typeof nativeSend === "function")
+      replace(xhrPrototype, "send", function () {
+        if (googleXhr.has(this)) {
+          Reflect.apply(nativeSetRequestHeader, this, [
+            "X-Sorng-Google-Credentials",
+            this.withCredentials || googleXhr.get(this) ? "include" : "omit",
+          ]);
+        }
+        return Reflect.apply(nativeSend, this, arguments);
+      });
   }
   if (typeof navigator.sendBeacon === "function") {
     var nativeBeacon = navigator.sendBeacon;
@@ -1086,6 +1166,22 @@ function installWebNetworkClient(configuration, reportBlocked) {
     // interception and must never create permission in the parent application.
     capabilities: Object.freeze({
       version: 6,
+      ...(googleSession
+        ? {
+            googleSession: Object.freeze({
+              version: 1,
+              origins: Object.freeze(googleSession.origins),
+              documents: true, // Native-issued exact local aliases + response rewriting.
+              forms: formInterception && resourceAttributeInterception,
+              fetch: fetchInterception,
+              xhr: xhrInterception,
+              resources: resourceAttributeInterception,
+              nativeCookies: true,
+              nativeUserAgent: true,
+              documentCookieBridge: true,
+            }),
+          }
+        : {}),
       tacticalRmmApi:
         tacticalRmmApi !== null && fetchInterception && xhrInterception,
       tacticalRmmApiOrigins: Object.freeze(

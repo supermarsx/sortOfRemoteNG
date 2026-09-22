@@ -58,6 +58,18 @@ export interface WebNetworkRoutingStatus {
   quickConnectDiscovered: boolean;
   quickConnectDirectNavigation: boolean;
   quickConnectRegionalNavigation: boolean;
+  googleSession?: {
+    status: "ready" | "unavailable";
+    origins: string[];
+    documents: boolean;
+    forms: boolean;
+    fetch: boolean;
+    xhr: boolean;
+    resources: boolean;
+    nativeCookies: boolean;
+    nativeUserAgent: boolean;
+    documentCookieBridge: boolean;
+  };
 }
 
 function emptyRoutingStatus(
@@ -115,6 +127,7 @@ export function webNetworkRoutingStatus(
   expectedQuickConnect: boolean,
   expectedAliasRoutes = false,
   expectedTacticalRmmApi = false,
+  expectedGoogleOrigins: readonly string[] = [],
 ): WebNetworkRoutingStatus {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return emptyRoutingStatus(expectedTacticalRmmApi);
@@ -147,11 +160,41 @@ export function webNetworkRoutingStatus(
   const tacticalRmmApiMatches = expectedTacticalRmmApi
     ? tacticalRmmApiReady
     : !data.tacticalRmmApi && tacticalRmmApiOrigins.length === 0;
+  const google =
+    data.googleSession && typeof data.googleSession === "object"
+      ? (data.googleSession as Record<string, unknown>)
+      : {};
+  const googleOrigins =
+    Array.isArray(google.origins) &&
+    google.origins.length === expectedGoogleOrigins.length &&
+    new Set(google.origins).size === expectedGoogleOrigins.length &&
+    google.origins.every((origin) => expectedGoogleOrigins.includes(origin))
+      ? [...expectedGoogleOrigins]
+      : [];
+  const googleReady =
+    pageNetworkInterceptionReady &&
+    google.version === 1 &&
+    googleOrigins.length > 0 &&
+    [
+      "documents",
+      "forms",
+      "fetch",
+      "xhr",
+      "resources",
+      "nativeCookies",
+      "nativeUserAgent",
+    ].every((key) => google[key] === true) &&
+    google.documentCookieBridge === true;
+  const googleMatches =
+    expectedGoogleOrigins.length > 0
+      ? googleReady
+      : data.googleSession === undefined;
   return {
     status:
       data.quickConnectNavigation === expectedQuickConnect &&
       pageNetworkInterceptionReady &&
       tacticalRmmApiMatches &&
+      googleMatches &&
       data.quickConnectDiscovery === expectedAliasRoutes &&
       data.quickConnectDiscovered === expectedAliasRoutes &&
       data.quickConnectDirectNavigation === expectedAliasRoutes &&
@@ -169,6 +212,22 @@ export function webNetworkRoutingStatus(
     quickConnectDiscovered: data.quickConnectDiscovered,
     quickConnectDirectNavigation: data.quickConnectDirectNavigation,
     quickConnectRegionalNavigation: data.quickConnectRegionalNavigation,
+    ...(expectedGoogleOrigins.length || data.googleSession !== undefined
+      ? {
+          googleSession: {
+            status: googleReady ? ("ready" as const) : ("unavailable" as const),
+            origins: googleOrigins,
+            documents: google.documents === true,
+            forms: google.forms === true,
+            fetch: google.fetch === true,
+            xhr: google.xhr === true,
+            resources: google.resources === true,
+            nativeCookies: google.nativeCookies === true,
+            nativeUserAgent: google.nativeUserAgent === true,
+            documentCookieBridge: google.documentCookieBridge === true,
+          },
+        }
+      : {}),
   };
 }
 export interface WebNetworkDocument {

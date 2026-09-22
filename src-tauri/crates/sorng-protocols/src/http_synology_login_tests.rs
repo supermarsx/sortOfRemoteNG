@@ -342,6 +342,7 @@ fn status_serialization_is_a_closed_scalar_and_old_session_responses_remain_read
         local_port: 1234,
         session_id: "fixture".into(),
         proxy_url: "http://fixture.localhost:1234/".into(),
+        google_routes: Vec::new(),
         deferred_login_status: Some(status),
     };
     let json = serde_json::to_value(response).unwrap();
@@ -390,6 +391,7 @@ fn status_wire_parity_between_start_and_session_details() {
             local_port: 1234,
             session_id: "fixture-session".into(),
             proxy_url: "http://fixture.localhost:1234/".into(),
+            google_routes: Vec::new(),
             deferred_login_status: status,
         };
         let details = vec![ProxySessionDetail {
@@ -782,6 +784,7 @@ fn status_wire_snapshot_is_unchanged() {
         local_port: 1234,
         session_id: "fixture".into(),
         proxy_url: "http://fixture.localhost:1234/".into(),
+        google_routes: Vec::new(),
         deferred_login_status: Some(Status::WaitingForForm),
     };
     assert_eq!(

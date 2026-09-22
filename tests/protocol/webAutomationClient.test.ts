@@ -61,6 +61,7 @@ function setupPage(html: string) {
   ] as unknown as DOMRectList);
 }
 beforeEach(() => {
+  history.replaceState({}, "", "/v3/signin/challenge/totp");
   pageHandlers = new Map();
   documentHandlers = new Map();
   post = vi.fn();
@@ -151,6 +152,39 @@ describe("actual injected page-only automation client", () => {
     command("totpProbe", { ...otpProbe, nonce: "c".repeat(32) });
     expect(submit).toHaveBeenCalledOnce();
     expect(reports().filter((item) => item.status === "step")).toEqual([]);
+    expect(JSON.stringify(reports())).not.toContain("123456");
+  });
+  it("submits the exact Google Account authenticator challenge once", () => {
+    setupPage(
+      '<form><input id="totpPin" name="totpPin" type="tel" autocomplete="one-time-code"><div id="totpNext"><button type="button">Next</button></div></form>',
+    );
+    const button =
+      document.querySelector<HTMLButtonElement>("#totpNext button")!;
+    const click = vi.spyOn(button, "click");
+    const challenge = {
+      nonce: "b".repeat(32),
+      codeSelector:
+        'input#totpPin[name="totpPin"][autocomplete="one-time-code"]',
+      submitSelector:
+        '#totpNext button[type="button"], button#totpNext[type="button"]',
+      submission: "google",
+    };
+    command("totpProbe", challenge);
+    command("totpSubmit", {
+      nonce: challenge.nonce,
+      code: "123456",
+      expires: Date.now() + 20_000,
+    });
+    expect(document.querySelector<HTMLInputElement>("#totpPin")!.value).toBe(
+      "123456",
+    );
+    expect(click).toHaveBeenCalledOnce();
+    command("totpSubmit", {
+      nonce: challenge.nonce,
+      code: "654321",
+      expires: Date.now() + 20_000,
+    });
+    expect(click).toHaveBeenCalledOnce();
     expect(JSON.stringify(reports())).not.toContain("123456");
   });
   it.each([

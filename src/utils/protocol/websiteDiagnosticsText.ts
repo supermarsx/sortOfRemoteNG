@@ -76,6 +76,22 @@ export function websiteDiagnosticsText(
         `${label}: ${value === true ? "available (native validation required)" : "off or unavailable"}`,
       );
   }
+  if (routing?.googleSession) {
+    const google = routing.googleSession;
+    lines.push(
+      `Google session routes: ${google.status === "ready" ? "available; exact native destinations only" : "unavailable or incomplete"}`,
+    );
+    lines.push(`Google routes: ${google.origins.join(", ")}`);
+    lines.push(
+      `Google mediation: documents ${google.documents}; forms ${google.forms}; fetch ${google.fetch}; XHR ${google.xhr}; resources ${google.resources}`,
+    );
+    lines.push(
+      `Native scoped cookies: ${google.nativeCookies}; native WebView User-Agent pass-through: ${google.nativeUserAgent}`,
+    );
+    lines.push(
+      `Browser-visible cookie synchronization: ${google.documentCookieBridge}. HttpOnly cookies remain native. Route availability is not proof of successful Google sign-in or browser-wide interception; Google may reject embedded sign-in.`,
+    );
+  }
   for (const report of reports.slice(0, 32)) {
     const safe = parseWebNetworkReport(
       {

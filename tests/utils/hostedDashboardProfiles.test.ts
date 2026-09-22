@@ -116,7 +116,15 @@ describe("source-reviewed dashboard presets", () => {
     }
   });
 
-  it.each(HOSTED_DASHBOARD_PROFILES.filter((p) => p.hostedLoginUrl))(
+  it.each(
+    HOSTED_DASHBOARD_PROFILES.filter(
+      (p) =>
+        p.hostedLoginUrl &&
+        !FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS.includes(
+          p.id as (typeof FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS)[number],
+        ),
+    ),
+  )(
     "$id pins its HTTPS host, keeps credentials inert and does not invent MFA selectors",
     (p) => {
       const url = new URL(p.hostedLoginUrl!);
@@ -150,6 +158,29 @@ describe("source-reviewed dashboard presets", () => {
         ).toThrow(/requires HTTPS/);
       }
       expect(p.description).toMatch(/system browser/);
+    },
+  );
+
+  it.each(FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS)(
+    "%s uses the exact staged Google sign-in and TOTP contract",
+    (id) => {
+      const p = getHttpApplicationProfile(id)!;
+      expect(p.capability).toBe("known-form");
+      expect(p.loginFlow).toBe("google");
+      expect(getHttpApplicationLoginModes(p)).toEqual(["manual", "form"]);
+      expect(p.selectors).toBeUndefined();
+      expect(p.totpChallenges).toEqual([
+        expect.objectContaining({
+          submission: "google",
+          origins: ["https://accounts.google.com"],
+        }),
+      ]);
+      expect(resolveHttpApplicationLogin(connection(id, "form"))).toMatchObject(
+        {
+          upstreamAuthMode: "google-form",
+          autoLogin: true,
+        },
+      );
     },
   );
 

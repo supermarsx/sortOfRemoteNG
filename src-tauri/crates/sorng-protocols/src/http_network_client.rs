@@ -199,6 +199,8 @@ pub struct ProxyNetworkState {
     pub(super) font_assets: Option<super::font_assets::ReviewedFontAssets>,
     pub(super) quickconnect_control:
         Option<super::quickconnect_control::ReviewedQuickConnectControl>,
+    #[doc(hidden)]
+    pub google: Option<Arc<super::google::GoogleSession>>,
 }
 
 pub struct ProxyNetworkServerGuard(Arc<ProxyNetworkState>);
@@ -221,6 +223,7 @@ impl Default for ProxyNetworkState {
             sockets: Arc::new(Semaphore::new(16)),
             font_assets: None,
             quickconnect_control: None,
+            google: None,
         }
     }
 }
@@ -346,6 +349,18 @@ impl ProxyNetworkState {
         self
     }
 
+    pub fn with_google_routes(mut self, google: Option<super::google::GoogleSession>) -> Self {
+        self.google = google.map(Arc::new);
+        self
+    }
+
+    pub fn google_routes(&self) -> Vec<super::google::GoogleProxyRoute> {
+        self.google
+            .as_ref()
+            .map(|google| google.routes.clone())
+            .unwrap_or_default()
+    }
+
     pub fn proxy_url(&self) -> Option<String> {
         self.is_active()
             .then(|| {
@@ -358,6 +373,9 @@ impl ProxyNetworkState {
 
     pub fn revoke(&self) {
         self.retire_activity();
+        if let Some(google) = &self.google {
+            google.revoke();
+        }
         if self.owns_origin.swap(false, Ordering::AcqRel) {
             if let Some(lease) = &self.origin_lease {
                 lease.revoke();
@@ -579,6 +597,7 @@ pub(super) fn bootstrap(
     proxy_origin: &str,
     policy: &HttpProxyPolicy,
     tactical_rmm_api: Option<&super::tactical_rmm::TacticalRmmApiRoute>,
+    google: Option<&super::google::GoogleSession>,
 ) -> String {
     let mut config = serde_json::json!({
         "version": 1, "sessionId": session_id, "documentSequence": sequence,
@@ -592,6 +611,9 @@ pub(super) fn bootstrap(
     }
     if let Some(capability) = tactical_rmm_api {
         config["tacticalRmmApi"] = capability.manifest(proxy_origin);
+    }
+    if let Some(google) = google {
+        config["googleSession"] = google.manifest();
     }
     let json = config
         .to_string()

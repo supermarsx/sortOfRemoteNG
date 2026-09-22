@@ -449,15 +449,20 @@ pub(super) fn navigation_request(path_and_query: &str) -> (String, Option<String
     (path, token)
 }
 
+pub(super) struct ReadinessNetworkContext<'a> {
+    pub(super) source_origin: &'a str,
+    pub(super) proxy_origin: &'a str,
+    pub(super) policy: &'a super::HttpProxyPolicy,
+    pub(super) tactical_rmm_api: Option<&'a super::tactical_rmm::TacticalRmmApiRoute>,
+    pub(super) google: Option<&'a super::google::GoogleSession>,
+}
+
 pub(super) fn inject_readiness(
     html: &str,
     session_id: &str,
     token: Option<&str>,
     sequence: u64,
-    source_origin: &str,
-    proxy_origin: &str,
-    policy: &super::HttpProxyPolicy,
-    tactical_rmm_api: Option<&super::tactical_rmm::TacticalRmmApiRoute>,
+    network: ReadinessNetworkContext<'_>,
 ) -> String {
     if sequence == 0 || sequence > 9_007_199_254_740_991 {
         return html.to_string();
@@ -474,7 +479,7 @@ pub(super) fn inject_readiness(
         .replace('\u{2029}', "\\u2029");
     let script = format!(
         r#"<script>(function(){{'use strict';var p={json};
-var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){{return v.split('=')[0]!=='{NAVIGATION_MARKER}';}}).join('&');
+var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){{return v.split('=')[0]!=='{NAVIGATION_MARKER}'&&v.split('=')[0]!=='__sorng_google_hop_v1';}}).join('&');
 u.search=q?'?'+q:'';try{{history.replaceState(history.state,'',u.href);}}catch(_){{}}
 function emit(type){{p.type=type;p.url=u.href;try{{window.parent.postMessage(p,'*');}}catch(_){{}}}}
 {network_client}
@@ -492,10 +497,11 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
         network_client = super::network::bootstrap(
             session_id,
             sequence,
-            source_origin,
-            proxy_origin,
-            policy,
-            tactical_rmm_api,
+            network.source_origin,
+            network.proxy_origin,
+            network.policy,
+            network.tactical_rmm_api,
+            network.google,
         ),
     );
     let insertion = early_script_insertion(html);
@@ -882,10 +888,13 @@ mod tests {
                 "fixture",
                 Some("0123456789abcdef0123456789abcdef"),
                 1,
-                "https://device.test",
-                "http://p0123456789abcdef0123456789abcdef.localhost:43123",
-                &super::super::HttpProxyPolicy::default(),
-                None,
+                ReadinessNetworkContext {
+                    source_origin: "https://device.test",
+                    proxy_origin: "http://p0123456789abcdef0123456789abcdef.localhost:43123",
+                    policy: &super::super::HttpProxyPolicy::default(),
+                    tactical_rmm_api: None,
+                    google: None,
+                },
             );
             assert!(result.starts_with("<!DOCTYPE html>"));
             assert!(result.contains("proxy_dom_ready"));

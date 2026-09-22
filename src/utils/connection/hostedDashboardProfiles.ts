@@ -19,9 +19,45 @@ const hosted = (
   description: `${detail} ${interactive}`,
 });
 
+const GOOGLE_TOTP_CHALLENGE = {
+  id: "google-account-totp",
+  label: "Google Account authenticator code",
+  codeSelector: 'input#totpPin[name="totpPin"][autocomplete="one-time-code"]',
+  submitSelector:
+    '#totpNext button[type="button"], button#totpNext[type="button"]',
+  paths: [
+    "/v3/signin/challenge/totp",
+    "/signin/v2/challenge/totp",
+    "/signin/challenge/totp",
+  ],
+  submission: "google" as const,
+  origins: ["https://accounts.google.com"],
+};
+
+/** Exact first-party Google website profile. Unknown challenges fail closed. */
+export const googleHosted = (
+  id: string,
+  label: string,
+  hostedLoginUrl: string,
+  category: HttpApplicationProfile["category"],
+  detail: string,
+): HttpApplicationProfile => ({
+  id,
+  label,
+  category,
+  capability: "known-form",
+  requiresHttps: true,
+  loginModes: ["manual", "form"],
+  loginFlow: "google",
+  hostedLoginUrl,
+  usernameLabel: "Google Account email",
+  totpChallenges: [GOOGLE_TOTP_CHALLENGE],
+  description: `${detail} Automatic sign-in is limited to Google's exact identifier, password and enrolled TOTP pages. Account chooser, SSO, CAPTCHA, passkeys, recovery, SMS, device approval and every unknown challenge remain interactive. Google may reject embedded browsers.`,
+});
+
 /** Public entry points only, never credentials, redirect parameters or API endpoints.
  * Primary evidence and reviewed source revisions: docs/hosted-dashboard-profiles.md.
- * Selection remains manual and never launches a browser. First-party Google
+ * Profile selection never launches a browser or enables login. First-party Google
  * presets fill their reviewed address only when the connection is blank or
  * already uses the previous managed Google address; custom hosts are preserved. */
 export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
@@ -101,42 +137,42 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     description:
       "Reviewed current GitLab local account form only when username and password are visible together in the same POST form. Two-step username routing, LDAP tabs, SSO, CAPTCHA and MFA remain interactive. Personal access tokens are not website passwords; use the original site for passkeys/security keys. Custom and older forms may need manual sign-in.",
   },
-  hosted(
+  googleHosted(
     "google-account",
     "Google Account",
     "https://myaccount.google.com/",
     "business",
     "Google account and security dashboard. Google can reject embedded browsers; use the system browser for sign-in.",
   ),
-  hosted(
+  googleHosted(
     "google-cloud-console",
     "Google Cloud Console",
     "https://console.cloud.google.com/",
     "management",
     "Google Cloud website console, not service-account or API-key authentication. Google sign-in redirects to its account origin.",
   ),
-  hosted(
+  googleHosted(
     "google-analytics",
     "Google Analytics",
     "https://analytics.google.com/analytics/web/",
     "monitoring",
     "Analytics website dashboard through Google Account sign-in; no Analytics API setup is performed.",
   ),
-  hosted(
+  googleHosted(
     "google-business-profile",
     "Google Business Profile",
     "https://business.google.com/locations",
     "business",
     "Business Profile locations dashboard through Google Account sign-in.",
   ),
-  hosted(
+  googleHosted(
     "google-search-console",
     "Google Search Console",
     "https://search.google.com/search-console/",
     "monitoring",
     "Search Console website dashboard through Google Account sign-in; this does not verify a property or create API access.",
   ),
-  hosted(
+  googleHosted(
     "google-ads",
     "Google Ads",
     "https://ads.google.com/aw/overview",
@@ -171,7 +207,7 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "business",
     "Adobe account, subscriptions and identity-provider sign-in. This does not launch Creative Cloud desktop applications.",
   ),
-  hosted(
+  googleHosted(
     "youtube",
     "YouTube",
     "https://www.youtube.com/",
@@ -258,7 +294,7 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     description:
       "Interactive Network-M2/M3 web administration at your UPS network-card address. Firmware and local/LDAP/RADIUS configurations differ; no universal login selectors or MFA support are assumed. Trust the correct device certificate; no default credentials or TLS bypass are supplied.",
   },
-  hosted(
+  googleHosted(
     "gmail",
     "Gmail",
     "https://mail.google.com/",

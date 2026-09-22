@@ -291,6 +291,7 @@ fn synology_direct_documents_keep_their_own_page_nonce_outside_the_shared_slot()
         upstream_auth_mode: UpstreamAuthMode::SynologyForm,
         proxy_policy: HttpProxyPolicy::default(),
         redirect_profile: None,
+        tactical_rmm_api: None,
         custom_headers: HashMap::new(),
         pending_nonce: Arc::new(RwLock::new(None)),
         theme: Arc::new(RwLock::new(
@@ -314,8 +315,10 @@ fn synology_direct_documents_keep_their_own_page_nonce_outside_the_shared_slot()
         credentials_applied: None,
     };
     // The page (document 1) is rendered after a child (document 2) started.
-    let page = build_autologin_injection(&state, 1).expect("page bootstrap");
-    let child = build_autologin_injection(&state, 2).expect("child bootstrap");
+    let page =
+        build_autologin_injection(&state, 1, "https://nas.invalid/").expect("page bootstrap");
+    let child =
+        build_autologin_injection(&state, 2, "https://nas.invalid/").expect("child bootstrap");
     let (page_nonce, child_nonce) = (served_nonce(&page), served_nonce(&child));
     assert_ne!(page_nonce, child_nonce);
     for html in [&page, &child] {
@@ -325,12 +328,12 @@ fn synology_direct_documents_keep_their_own_page_nonce_outside_the_shared_slot()
     assert!(state.auto_login_nonce.read().unwrap().is_none());
     // Re-rendering a document returns its own grant; the child never replaced it.
     assert_eq!(
-        served_nonce(&build_autologin_injection(&state, 1).unwrap()),
+        served_nonce(&build_autologin_injection(&state, 1, "https://nas.invalid/").unwrap(),),
         page_nonce
     );
     // Disarmed sessions ship no DSM bootstrap for any document.
     state
         .auto_login_armed
         .store(false, std::sync::atomic::Ordering::SeqCst);
-    assert!(build_autologin_injection(&state, 3).is_none());
+    assert!(build_autologin_injection(&state, 3, "https://nas.invalid/").is_none());
 }

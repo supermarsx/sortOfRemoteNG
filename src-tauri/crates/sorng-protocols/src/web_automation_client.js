@@ -98,7 +98,7 @@
       !payload ||
       typeof payload.nonce !== "string" ||
       !/^[0-9a-f]{32}$/.test(payload.nonce) ||
-      !["post", "spa", "synology"].includes(payload.submission)
+      !["post", "spa", "synology", "google"].includes(payload.submission)
     )
       throw new Error("challenge");
     var selectors = [payload.codeSelector, payload.submitSelector];
@@ -126,6 +126,51 @@
         button,
         requireSynologyReady !== false,
       );
+    if (payload.submission === "google") {
+      if (
+        payload.codeSelector !==
+          'input#totpPin[name="totpPin"][autocomplete="one-time-code"]' ||
+        payload.submitSelector !==
+          '#totpNext button[type="button"], button#totpNext[type="button"]' ||
+        ![
+          "/v3/signin/challenge/totp",
+          "/signin/v2/challenge/totp",
+          "/signin/challenge/totp",
+        ].includes(location.pathname) ||
+        !(field instanceof HTMLInputElement) ||
+        !["text", "tel", "number"].includes(field.type) ||
+        !(button instanceof HTMLButtonElement) ||
+        field.disabled ||
+        field.readOnly ||
+        button.disabled ||
+        !visible(field) ||
+        !visible(button) ||
+        Array.prototype.some.call(
+          document.querySelectorAll(
+            'input[type="password"], input[name*="captcha" i], iframe[src*="recaptcha" i], input[name*="recovery" i]',
+          ),
+          visible,
+        )
+      )
+        throw new Error("challenge");
+      var googleRoot = field.closest("form") || field.parentElement;
+      if (
+        !googleRoot ||
+        !googleRoot.isConnected ||
+        !googleRoot.contains(button)
+      )
+        throw new Error("challenge");
+      return {
+        field: field,
+        button: button,
+        form: googleRoot,
+        fingerprint: JSON.stringify([
+          location.href,
+          document.baseURI,
+          payload.submission,
+        ]),
+      };
+    }
     if (
       !(field instanceof HTMLInputElement) ||
       !["text", "tel", "number"].includes(field.type) ||

@@ -5,6 +5,7 @@ import type {
 import {
   getHttpApplicationProfile,
   getJoomlaLoginSelectors,
+  getFirstPartyGoogleHostedApplicationUrl,
   normalizeHttpApplicationSettings,
 } from "../connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "./httpCredentials";
@@ -14,7 +15,7 @@ import { normalizeConnectionCredentialSource } from "../security/databaseCredent
 export { YEALINK_SERVLET_UPSTREAM_SUPPORTED };
 
 /**
- * Return only the backend's reviewed Tactical RMM capability marker.
+ * Return only the backend's reviewed application capability marker.
  *
  * This is runtime plumbing for one proxy session, not connection metadata:
  * keep it derived from the normalized profile so malformed imports, generic
@@ -22,13 +23,15 @@ export { YEALINK_SERVLET_UPSTREAM_SUPPORTED };
  */
 export function getReviewedApplicationProfile(
   connection: Partial<Connection> | null | undefined,
-): "tacticalrmm" | undefined {
+): "tacticalrmm" | "google-hosted" | undefined {
   const settings = normalizeHttpApplicationSettings(
     connection?.httpApplication,
   );
-  if (!settings || settings.invalid || settings.id !== "tacticalrmm")
-    return undefined;
-  return "tacticalrmm";
+  if (!settings || settings.invalid) return undefined;
+  if (settings.id === "tacticalrmm") return "tacticalrmm";
+  return getFirstPartyGoogleHostedApplicationUrl(settings.id)
+    ? "google-hosted"
+    : undefined;
 }
 
 /** Exact non-secret API origin; only valid reviewed Tactical profiles may supply it. */
@@ -86,8 +89,9 @@ export interface HttpApplicationLogin {
     | "header"
     | "bitwarden-form"
     | "synology-form"
+    | "google-form"
     | "yealink-servlet";
-  loginFlow?: "bitwarden" | "synology" | "yealink";
+  loginFlow?: "bitwarden" | "synology" | "google" | "yealink";
   autoLogin: boolean;
   selectors?: HttpAutoLoginSelectors;
 }
@@ -99,6 +103,7 @@ const STAGED_LOGIN_UPSTREAM_MODES: Record<
 > = {
   bitwarden: "bitwarden-form",
   synology: "synology-form",
+  google: "google-form",
   yealink: "yealink-servlet",
 };
 

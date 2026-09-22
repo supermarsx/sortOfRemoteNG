@@ -240,10 +240,14 @@ export function useWebAutoMfa(options: Options) {
         throw new Error(failure);
       const upstream = new URL(live.currentUrl);
       const local = new URL(doc.url);
+      const challengeOrigins = new Set([
+        config.origin,
+        ...(challenge?.origins ?? []),
+      ]);
       if (
         (!synologyMfa &&
           (getHttpAutoMfaOrigin(connection) !== config.origin ||
-            upstream.origin !== config.origin)) ||
+            !challengeOrigins.has(upstream.origin))) ||
         upstream.protocol !== "https:" ||
         upstream.username ||
         upstream.password ||

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "profiles": {
+    "google-account": "https://myaccount.google.com",
+    "google-cloud-console": "https://console.cloud.google.com",
+    "google-analytics": "https://analytics.google.com",
+    "google-business-profile": "https://business.google.com",
+    "google-search-console": "https://search.google.com",
+    "google-ads": "https://ads.google.com",
+    "youtube": "https://www.youtube.com",
+    "gmail": "https://mail.google.com",
+    "gdrive": "https://drive.google.com"
+  },
+  "loginOrigins": ["https://accounts.google.com", "https://www.google.com"],
+  "resourceOrigins": [
+    "https://www.gstatic.com",
+    "https://ssl.gstatic.com",
+    "https://fonts.gstatic.com",
+    "https://fonts.googleapis.com",
+    "https://apis.google.com"
+  ],
+  "profileOrigins": {
+    "youtube": ["https://accounts.youtube.com"],
+    "google-cloud-console": ["https://cloudconsole-pa.clients6.google.com"],
+    "google-analytics": [
+      "https://analyticsadmin.googleapis.com",
+      "https://analyticsdata.googleapis.com"
+    ],
+    "gdrive": ["https://clients6.google.com", "https://content.googleapis.com"]
+  }
+}

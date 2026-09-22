@@ -211,9 +211,17 @@ export function useHTTPViewer(session: ConnectionSession) {
       startedSession = response.session_id;
       const protectedProxyUrl = validateProtectedProxyUrl(response);
       proxySessionIdRef.current = response.session_id;
-      setProxyUrl(protectedProxyUrl);
+      const entry = new URL(targetUrl);
+      const initialProxyUrl =
+        reviewedApplicationProfile === "google-hosted"
+          ? protectedProxyUrl.replace(/\/$/, "") +
+            entry.pathname +
+            entry.search +
+            entry.hash
+          : protectedProxyUrl;
+      setProxyUrl(initialProxyUrl);
       setProxySessionId(response.session_id);
-      setHistory([protectedProxyUrl]);
+      setHistory([initialProxyUrl]);
       setHistoryIndex(0);
       setStatus("connected");
     } catch (err) {

@@ -656,16 +656,49 @@ pub async fn start_basic_auth_proxy(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
+    let google =
+        if config.reviewed_application_profile == Some(ReviewedApplicationProfile::GoogleHosted) {
+            crate::http::google::GoogleSession::new(
+                config.reviewed_application_profile,
+                &validated_target,
+                &protected_endpoint.origin,
+                proxy_client_builder_with_cookies(
+                    verify_ssl,
+                    accepted_cert_fingerprint.as_deref(),
+                    &min_tls,
+                    upstream_proxy_url.as_deref(),
+                    config.require_ca_verification,
+                    validated_target.host_str(),
+                    None,
+                    false,
+                )?,
+                proxy_client_builder_with_cookies(
+                    true,
+                    None,
+                    &min_tls,
+                    upstream_proxy_url.as_deref(),
+                    false,
+                    None,
+                    None,
+                    false,
+                )?,
+            )?
+        } else {
+            None
+        };
     let network = Arc::new(
-        ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_public_routes(
-            upstream_proxy_url
-                .as_deref()
-                .map(validate_upstream_proxy)
-                .transpose()?,
-            &min_tls,
-            &proxy_policy,
-        ),
+        ProxyNetworkState::with_origin(&protected_endpoint.origin)?
+            .with_reviewed_public_routes(
+                upstream_proxy_url
+                    .as_deref()
+                    .map(validate_upstream_proxy)
+                    .transpose()?,
+                &min_tls,
+                &proxy_policy,
+            )
+            .with_google_routes(google),
     );
+    let google_routes = network.google_routes();
 
     let request_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
@@ -795,6 +828,7 @@ pub async fn start_basic_auth_proxy(
         local_port,
         session_id: session_id.clone(),
         proxy_url: protected_endpoint.url,
+        google_routes,
         deferred_login_status,
     })
 }
@@ -963,6 +997,7 @@ pub fn list_proxy_sessions(
                 local_port: entry.local_port,
                 session_id: id.clone(),
                 proxy_url: entry.network.proxy_url()?,
+                google_routes: entry.network.google_routes(),
                 deferred_login_status: entry
                     .attempt
                     .as_ref()
@@ -1284,16 +1319,48 @@ pub async fn restart_proxy_session(
         } else {
             None
         };
+    let google = if reviewed_application_profile == Some(ReviewedApplicationProfile::GoogleHosted) {
+        crate::http::google::GoogleSession::new(
+            reviewed_application_profile,
+            &validated_target,
+            &protected_endpoint.origin,
+            proxy_client_builder_with_cookies(
+                verify_ssl,
+                accepted_cert_fingerprint.as_deref(),
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                require_ca_verification,
+                validated_target.host_str(),
+                None,
+                false,
+            )?,
+            proxy_client_builder_with_cookies(
+                true,
+                None,
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                false,
+                None,
+                None,
+                false,
+            )?,
+        )?
+    } else {
+        None
+    };
     let network = Arc::new(
-        ProxyNetworkState::with_origin(&protected_endpoint.origin)?.with_reviewed_public_routes(
-            upstream_proxy_url
-                .as_deref()
-                .map(validate_upstream_proxy)
-                .transpose()?,
-            &min_tls,
-            &proxy_policy,
-        ),
+        ProxyNetworkState::with_origin(&protected_endpoint.origin)?
+            .with_reviewed_public_routes(
+                upstream_proxy_url
+                    .as_deref()
+                    .map(validate_upstream_proxy)
+                    .transpose()?,
+                &min_tls,
+                &proxy_policy,
+            )
+            .with_google_routes(google),
     );
+    let google_routes = network.google_routes();
 
     let request_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
@@ -1416,6 +1483,7 @@ pub async fn restart_proxy_session(
         local_port,
         session_id: new_session_id,
         proxy_url: protected_endpoint.url,
+        google_routes,
         deferred_login_status,
     })
 }

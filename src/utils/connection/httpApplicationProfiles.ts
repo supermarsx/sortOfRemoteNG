@@ -7,7 +7,10 @@ import { NPM_AUTO_LOGIN_SELECTORS } from "../../components/integrations/nginxPro
 import { PROXMOX_AUTO_LOGIN_SELECTORS } from "../../components/integrations/proxmox/webUiLaunch";
 import { PFSENSE_AUTO_LOGIN_SELECTORS } from "../../components/integrations/pfsense/webUiLaunch";
 import { SELF_HOSTED_VAULT_PROFILES } from "./selfHostedVaultProfiles";
-import { HOSTED_DASHBOARD_PROFILES } from "./hostedDashboardProfiles";
+import {
+  HOSTED_DASHBOARD_PROFILES,
+  googleHosted,
+} from "./hostedDashboardProfiles";
 import { ANALYTICS_CMS_PROFILES } from "./analyticsCmsProfiles";
 
 export interface HttpApplicationProfile {
@@ -31,7 +34,7 @@ export interface HttpApplicationProfile {
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];
   requiresHttps?: boolean;
-  loginFlow?: "bitwarden" | "synology" | "yealink";
+  loginFlow?: "bitwarden" | "synology" | "google" | "yealink";
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -41,7 +44,9 @@ export interface HttpApplicationTotpChallenge {
   codeSelector: string;
   submitSelector: string;
   paths: readonly string[];
-  submission: "post" | "spa" | "synology";
+  submission: "post" | "spa" | "synology" | "google";
+  /** Additional reviewed identity-provider origins for this challenge. */
+  origins?: readonly string[];
 }
 
 export const HTTP_APPLICATION_CATEGORIES = {
@@ -559,17 +564,13 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     description:
       "Manual web login; native Exchange/Graph credentials are not an Outlook Web Access browser session. External identity-provider redirects may require an external browser.",
   },
-  {
-    id: "gdrive",
-    category: "mailStorage",
-    label: "Google Drive",
-    capability: "manual",
-    requiresHttps: true,
-    loginModes: ["manual"],
-    hostedLoginUrl: "https://drive.google.com/drive/",
-    description:
-      "Manual browsing only. Native OAuth tokens are not transferred to the Google website; external identity-provider sign-in is not automated.",
-  },
+  googleHosted(
+    "gdrive",
+    "Google Drive",
+    "https://drive.google.com/drive/",
+    "mailStorage",
+    "Google Drive website through the reviewed Google Account identifier, password and optional authenticator challenge. Native OAuth tokens are never transferred to the website.",
+  ),
   unavailable(
     "vmwareDesktop",
     "VMware Workstation / Fusion",

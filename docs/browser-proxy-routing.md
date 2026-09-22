@@ -61,6 +61,35 @@ certificate pin are not reusable permission for another origin. A source
 WebSocket cannot redirect those values to another server. HTTPS inspection and
 the connection itself remain subject to the existing trust workflow.
 
+## First-party Google website sessions
+
+The built-in Google website profiles create a closed, profile-specific route
+catalog. The selected service origin, exact Google Account origins and reviewed
+resource/API origins receive distinct random localhost aliases on one listener.
+HTML rewriting and the page routing module map supported documents, forms,
+fetch/XHR and resource attributes to those aliases. The native handler rejects
+unknown listener hosts and any destination outside the catalog; there is no
+direct-network fallback. Routes are volatile and revoked when the session ends.
+
+The session uses one bounded native cookie jar across its exact upstream
+origins. HttpOnly values never enter page JavaScript. Browser-visible cookie
+writes are synchronized back without allowing them to overwrite an HttpOnly
+name, and upstream expiry is mirrored to the current alias. Fetch/XHR credential
+mode controls whether the native jar participates. Upstream CORS approval is
+translated to the requesting alias; the proxy does not manufacture approval
+for a destination Google did not allow.
+
+Cross-origin Google redirects remain in the current frame and preserve the
+browser method semantics, bounded to twenty hops. The saved connection's secret
+headers and query additions are not copied onto sibling Google origins. Only
+the exact Google Account alias exposes the one-use automatic-login endpoint.
+The incoming WebView `User-Agent` is forwarded unchanged; no browser identity
+is synthesized. Google can nevertheless reject embedded sign-in.
+
+This route covers the supported document/page channels listed above on every
+desktop platform. It does not turn workers, WebRTC, WebTransport or arbitrary
+Google hostnames into routes, and those channels remain blocked/unsupported.
+
 ## Synology default redirect destinations
 
 For Synology DSM website profiles and recognized QuickConnect HTTP(S)

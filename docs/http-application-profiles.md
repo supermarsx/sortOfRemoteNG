@@ -7,7 +7,7 @@ permalink: /http-application-profiles/
 
 In an HTTP or HTTPS connection, open **Protocol → Application**. Choose a category, or keep **All website applications** to search across the available website profiles. The selector separates containers, virtualization, server management/BMC, networking/proxies, monitoring, business applications, and mail/storage. Native-only integrations are listed separately with an explanation; an API integration does not necessarily provide a website.
 
-Selecting a profile starts in **Manual browsing**. It does not change the TLS/trust policy or saved credentials. First-party Google profiles supply their reviewed HTTPS address internally when the connection is blank, so their hostname and port do not need to be entered. Switching between Google profiles replaces only the previous managed Google address; an explicit custom destination is preserved. Other profiles do not change the host or port. Basics shows a shortcut to Application settings instead of a second username/password editor. Choose **Generic website** to return to the existing HTTP Authentication and Advanced controls.
+Selecting a profile starts in **Manual browsing**. It does not change the TLS/trust policy or saved credentials. First-party Google profiles supply their reviewed HTTPS address internally when the connection is blank, so their hostname and port do not need to be entered. Switching between Google profiles replaces only the previous managed Google address; an explicit custom destination is preserved. Google profiles also offer an explicit **Automatic form login** choice for the reviewed Google Account identifier/password flow; selecting the profile alone never enables it. Other profiles do not change the host or port. Basics shows a shortcut to Application settings instead of a second username/password editor. Choose **Generic website** to return to the existing HTTP Authentication and Advanced controls.
 
 Application and Organize can suggest a matching existing icon. The preview is optional: select **Use suggested icon** to apply it. Changing the application never overwrites your current icon automatically; Custom application uses a generic website suggestion.
 
@@ -25,6 +25,36 @@ Use the website account, not an API key or bearer token. Dedicated Basic usernam
 Portainer, Nginx Proxy Manager, Proxmox VE, and pfSense reuse the app's existing reviewed login selectors. Nginx Proxy Manager uses the website email/password. Proxmox adds the selected realm only at runtime when the username does not already contain `@realm`; it does not rewrite the saved username. pfSense uses the WebGUI account, not REST API client credentials. Existing **Open web UI** actions use these same form-only or manual modes; API-token actions never turn tokens into web passwords.
 
 HP/HPE iLO, other BMCs, and the other generic-form profiles use optional generic form detection. Their firmware/application-specific sign-in is not claimed verified. In particular, iLO Redfish/RIBCL sessions are not browser login sessions. Manual-only profiles do not offer unsupported automatic authentication. MFA, CAPTCHA, external SSO, and rejected passwords remain manual; this feature does not bypass them.
+
+## Google websites
+
+Google Account, Cloud Console, Analytics, Business Profile, Search Console,
+Ads, YouTube, Gmail and Drive use fixed first-party entry points and a closed
+set of exact Google login/resource origins. Each origin receives a separate
+protected localhost alias behind the same native session. Redirects remain in
+the current tab and share the session's native cookie jar; an unlisted origin,
+lookalike hostname, custom port, WebSocket, worker, WebRTC or WebTransport route
+is refused without a direct-network fallback.
+
+When **Automatic form login** is selected, the native dispenser releases the
+saved Google Account email only to an exact reviewed identifier document, then
+releases the password once to the following exact password document. Either a
+connection credential or the explicitly selected application-vault credential
+can supply that pair. Grants are document-bound, single-use and short-lived.
+Account chooser, SSO, CAPTCHA, passkey, recovery, SMS and unknown challenge
+pages remain interactive.
+
+Optional automatic 2FA recognizes only Google's exact enrolled-authenticator
+page and the authenticator explicitly linked in Application settings. The code
+is generated after the page challenge is revalidated and submitted once; the
+secret is never sent to the page. Redirecting from the saved Google service to
+`accounts.google.com` does not change or discard the original database-owned
+consent. Other Google verification methods remain manual.
+
+The proxy forwards the embedded WebView's native `User-Agent` unchanged; it
+does not substitute a desktop Chrome string. Google can still reject embedded
+or software-controlled sign-in. That outcome does not permit bypassing the
+proxy or silently opening the system browser.
 
 Webmin has reviewed username/password selectors for its classic and Authentic Theme session-login forms. The usual endpoint is HTTPS on port 10000, but selecting Webmin never changes an existing host, port, path, or TLS policy. Banners, two-factor codes, and password reset remain manual. This is a form-profile fixture check, not a live server sign-in guarantee. See the [official connection instructions](https://webmin.com/download/), [classic form source](https://github.com/webmin/webmin/blob/master/session_login.cgi), and [Authentic Theme form source](https://github.com/webmin/authentic-theme/blob/master/session_login.cgi).
 

@@ -11,6 +11,7 @@ fn bootstrap_reports_installed_network_capabilities_on_existing_readiness_payloa
         "http://fixture.localhost:1234",
         &HttpProxyPolicy::default(),
         None,
+        None,
     );
     assert!(script.contains("p.networkRouting = installWebNetworkClient("));
     assert!(script.ends_with(").capabilities;"));

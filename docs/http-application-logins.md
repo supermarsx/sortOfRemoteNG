@@ -18,20 +18,30 @@ API tokens, agent credentials, remote desktop passwords, and native integration
 sessions are not interchangeable with website authentication. A failed login is
 not automatically retried. Custom forms can require reviewed selector overrides.
 
-| Application          | Reviewed password form                                            | Automatic authenticator challenge                                                                                           |
-| -------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Tactical RMM         | Dashboard `/login`, reviewed against web v0.101.64                | Separate authenticator dialog at `/login`                                                                                   |
-| WordPress            | Core `/wp-login.php`                                              | Maintained Two-Factor plugin's `Two_Factor_Totp` provider only                                                              |
-| Joomla Administrator | Reviewed Joomla 3–6 administrator forms; auto or explicit version | Manual: 3/4.0–4.1 same-form code pauses submission; 4.2+/5/6 separate captive challenge has overlapping email/TOTP controls |
-| Drupal               | Core user login, Drupal 11 source                                 | Manual: contributed TFA modules select different validation providers                                                       |
-| Payload CMS          | Core admin login, normally `/admin/login`                         | Manual: authentication strategies and MFA are project-specific                                                              |
-| MeshCentral          | Web account login, not account reset                              | Manual: authenticator/email/SMS challenges share controls                                                                   |
-| Apache Guacamole     | Username/password login, reviewed against 1.6.0                   | Installed TOTP extension, already-enrolled challenge only, at `/guacamole/` or `/`                                          |
+| Application                 | Reviewed password form                                                     | Automatic authenticator challenge                                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tactical RMM                | Dashboard `/login`, reviewed against web v0.101.64                         | Separate authenticator dialog at `/login`                                                                                                    |
+| WordPress                   | Core `/wp-login.php`                                                       | Maintained Two-Factor plugin's `Two_Factor_Totp` provider only                                                                               |
+| Joomla Administrator        | Reviewed Joomla 3–6 administrator forms; auto or explicit version          | Manual: 3/4.0–4.1 same-form code pauses submission; 4.2+/5/6 separate captive challenge has overlapping email/TOTP controls                  |
+| Drupal                      | Core user login, Drupal 11 source                                          | Manual: contributed TFA modules select different validation providers                                                                        |
+| Payload CMS                 | Core admin login, normally `/admin/login`                                  | Manual: authentication strategies and MFA are project-specific                                                                               |
+| MeshCentral                 | Web account login, not account reset                                       | Manual: authenticator/email/SMS challenges share controls                                                                                    |
+| Apache Guacamole            | Username/password login, reviewed against 1.6.0                            | Installed TOTP extension, already-enrolled challenge only, at `/guacamole/` or `/`                                                           |
+| First-party Google websites | Exact Google Account identifier then password pages; one-use staged grants | Exact enrolled authenticator-code page on `accounts.google.com`; account chooser, recovery, SMS, passkeys and unknown challenges stay manual |
 
 These are source-reviewed templates and synthetic regression fixtures, not a
 claim that every deployed version, custom theme, authentication extension, or
 signed-in site has been tested. Login paths and challenge DOM must match. Changed
 or unsupported forms remain interactive rather than receiving a guessed code.
+
+For a first-party Google website, the service page, Google Account login and
+reviewed static/API origins stay inside one native proxy session with distinct
+protected aliases and shared native cookies. The proxy keeps the WebView's
+native `User-Agent` exactly as supplied. Automatic form login can use this
+connection's credential or its selected application-vault credential. The
+email, password and optional TOTP code are each released only at their exact
+reviewed stage; navigation, expiry, replay or an unknown challenge closes the
+grant. Google may still refuse an embedded browser.
 
 For Joomla, choose the version and optional custom administrator entry path in
 Application settings; these choices never enable login or MFA. A legacy

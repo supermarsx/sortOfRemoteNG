@@ -1103,6 +1103,21 @@
         report: report,
       });
     }
+    if (loginFlow === "google" || loginFlow === "google-password") {
+      var google = window.__sorng_google_login;
+      if (!google) {
+        report({ ok: false, reason: "autologin-client-unavailable" });
+        return;
+      }
+      var googleHelpers = {
+        fillField: fillField,
+        isVisible: isVisible,
+        report: report,
+      };
+      return loginFlow === "google"
+        ? google.runWhenReady(nonce, googleHelpers)
+        : google.runPasswordWhenReady(nonce, googleHelpers);
+    }
     if (loginFlow != null) {
       report({ ok: false, reason: "invalid-login-flow" });
       return;

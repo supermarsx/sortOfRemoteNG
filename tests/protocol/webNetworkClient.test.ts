@@ -32,6 +32,15 @@ interface ClientConfiguration extends ReturnType<typeof config> {
     apiOrigins: string[];
     proxyUrl: string;
   };
+  googleSession?: {
+    version: number;
+    nativeCookies: boolean;
+    routes: Array<{
+      upstreamOrigin: string;
+      proxyOrigin: string;
+      documents: boolean;
+    }>;
+  };
 }
 interface Controller {
   mapUrl(value: unknown, kind: string, local?: boolean): string;
@@ -48,6 +57,13 @@ interface Controller {
     quickConnectDiscovered: boolean;
     quickConnectDirectNavigation: boolean;
     quickConnectRegionalNavigation: boolean;
+    googleSession?: {
+      version: number;
+      origins: readonly string[];
+      nativeCookies: boolean;
+      nativeUserAgent: boolean;
+      documentCookieBridge: boolean;
+    };
   };
 }
 let controller: Controller | undefined;
@@ -174,6 +190,85 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       apiOrigins: ["https://api.device.example", "https://api.example"],
       proxyUrl: tacticalApiProxy,
     },
+  });
+  const googleConfig = (): ClientConfiguration => ({
+    ...config(),
+    sourceOrigin: "https://analytics.google.com",
+    googleSession: {
+      version: 1,
+      nativeCookies: true,
+      routes: [
+        {
+          upstreamOrigin: "https://analytics.google.com",
+          proxyOrigin: proxy,
+          documents: true,
+        },
+        {
+          upstreamOrigin: "https://accounts.google.com",
+          proxyOrigin:
+            "http://p11111111111111111111111111111111.localhost:43123",
+          documents: true,
+        },
+        {
+          upstreamOrigin: "https://www.gstatic.com",
+          proxyOrigin:
+            "http://p22222222222222222222222222222222.localhost:43123",
+          documents: false,
+        },
+      ],
+    },
+  });
+  it("routes exact Google origins with credential mode markers and no direct fallback", async () => {
+    start(googleConfig());
+    expect(controller!.capabilities.googleSession).toMatchObject({
+      version: 1,
+      origins: [
+        "https://analytics.google.com",
+        "https://accounts.google.com",
+        "https://www.gstatic.com",
+      ],
+      nativeCookies: true,
+      nativeUserAgent: true,
+      documentCookieBridge: true,
+    });
+    const account = "http://p11111111111111111111111111111111.localhost:43123";
+    expect(
+      controller!.mapUrl(
+        "https://accounts.google.com/v3/signin/identifier?continue=analytics",
+        "navigation",
+      ),
+    ).toBe(`${account}/v3/signin/identifier?continue=analytics`);
+    expect(() =>
+      controller!.mapUrl(
+        "https://accounts.google.com.attacker.test/",
+        "navigation",
+      ),
+    ).toThrow("origin-not-approved");
+    expect(() =>
+      controller!.mapUrl("https://www.gstatic.com/document", "navigation"),
+    ).toThrow("origin-not-approved");
+
+    await window.fetch("https://accounts.google.com/session", {
+      credentials: "include",
+    });
+    const [url, init] = fetch.mock.calls[fetch.mock.calls.length - 1] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe(`${account}/session`);
+    expect(new Headers(init.headers).get("X-Sorng-Google-Credentials")).toBe(
+      "include",
+    );
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "https://accounts.google.com/session");
+    xhr.withCredentials = true;
+    xhr.send();
+    expect(xhrOpen).toHaveBeenLastCalledWith("GET", `${account}/session`);
+    expect(xhrHeader).toHaveBeenLastCalledWith(
+      "X-Sorng-Google-Credentials",
+      "include",
+    );
   });
   it("routes only the exact Tactical API origins through its document-fenced endpoint", async () => {
     start(tacticalConfig());

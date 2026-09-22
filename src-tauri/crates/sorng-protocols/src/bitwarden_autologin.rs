@@ -18,6 +18,7 @@ pub struct BitwardenContinuation(Grant);
 enum Grant {
     Vault(VaultContinuation),
     Synology(DirectSynologyLogin),
+    Google(GoogleContinuation),
 }
 
 struct VaultContinuation {
@@ -25,6 +26,28 @@ struct VaultContinuation {
     document_sequence: u64,
     issued: Instant,
     password_stage: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GoogleStage {
+    Identifier,
+    Password,
+}
+
+struct GoogleContinuation {
+    token: String,
+    document_sequence: u64,
+    issued: Instant,
+    stage: GoogleStage,
+}
+
+impl GoogleContinuation {
+    fn valid(&self, token: &str, sequence: u64, stage: GoogleStage) -> bool {
+        self.token == token
+            && self.document_sequence == sequence
+            && self.stage == stage
+            && self.issued.elapsed() < GRANT_LIFETIME
+    }
 }
 impl VaultContinuation {
     fn valid(&self, token: &str, sequence: u64, password_stage: bool) -> bool {
@@ -51,6 +74,51 @@ pub fn bind_document(state: &AxumProxyState, sequence: u64) -> Option<()> {
             password_stage: false,
         })));
     Some(())
+}
+
+/// Bind only the exact reviewed Google Account identifier/password documents.
+/// The returned token is embedded in that document, never in a service page.
+pub fn bind_google_document(
+    state: &AxumProxyState,
+    sequence: u64,
+    document_url: &str,
+) -> Option<(String, &'static str)> {
+    let url = reqwest::Url::parse(document_url).ok()?;
+    if url.origin().ascii_serialization() != "https://accounts.google.com" {
+        return None;
+    }
+    let identifier = matches!(
+        url.path(),
+        "/v3/signin/identifier" | "/signin/v2/identifier" | "/signin/identifier"
+    );
+    let password = matches!(
+        url.path(),
+        "/v3/signin/challenge/pwd" | "/signin/v2/challenge/pwd" | "/signin/challenge/pwd"
+    );
+    let mut pending = state.bitwarden_continuation.lock().ok()?;
+    if identifier && state.auto_login_armed.load(Ordering::SeqCst) {
+        let token = crate::themed_auth::fresh_nonce();
+        *state.auto_login_nonce.write().ok()? = Some(token.clone());
+        *pending = Some(BitwardenContinuation(Grant::Google(GoogleContinuation {
+            token: token.clone(),
+            document_sequence: sequence,
+            issued: Instant::now(),
+            stage: GoogleStage::Identifier,
+        })));
+        return Some((token, "google"));
+    }
+    if password {
+        let Some(BitwardenContinuation(Grant::Google(grant))) = pending.as_mut() else {
+            return None;
+        };
+        if grant.stage != GoogleStage::Password || grant.issued.elapsed() >= GRANT_LIFETIME {
+            *pending = None;
+            return None;
+        }
+        grant.document_sequence = sequence;
+        return Some((grant.token.clone(), "google-password"));
+    }
+    None
 }
 
 /// Record this armed DSM document's own page grant and return its nonce.
@@ -81,7 +149,9 @@ pub fn bind_synology_document(state: &AxumProxyState, sequence: u64) -> Option<S
 pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
     if !matches!(
         config.upstream_auth_mode,
-        UpstreamAuthMode::BitwardenForm | UpstreamAuthMode::SynologyForm
+        UpstreamAuthMode::BitwardenForm
+            | UpstreamAuthMode::SynologyForm
+            | UpstreamAuthMode::GoogleForm
     ) {
         return Ok(());
     }
@@ -98,6 +168,14 @@ pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
     });
     if !https || config.http_auto_login_selectors.is_some() || !options_supported {
         return Err("Reviewed staged login requires HTTPS and its fixed two-stage controls. Clear advanced selector, timing, fill-only and extra-field overrides, or use manual login.".into());
+    }
+    if config.upstream_auth_mode == UpstreamAuthMode::GoogleForm
+        && config.reviewed_application_profile
+            != Some(crate::http::ReviewedApplicationProfile::GoogleHosted)
+    {
+        return Err(
+            "Reviewed Google form login requires an exact built-in Google website profile.".into(),
+        );
     }
     Ok(())
 }
@@ -122,6 +200,7 @@ pub(crate) fn reviewed_flow_label(mode: UpstreamAuthMode) -> Option<&'static str
     match mode {
         UpstreamAuthMode::BitwardenForm => Some("bitwarden"),
         UpstreamAuthMode::SynologyForm => Some("synology"),
+        UpstreamAuthMode::GoogleForm => Some("google"),
         UpstreamAuthMode::Basic
         | UpstreamAuthMode::Digest
         | UpstreamAuthMode::Header
@@ -152,6 +231,9 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
     };
     if state.upstream_auth_mode == UpstreamAuthMode::SynologyForm {
         return dispense_synology(state, &mut pending, query);
+    }
+    if state.upstream_auth_mode == UpstreamAuthMode::GoogleForm {
+        return dispense_google(state, &mut pending, query);
     }
     fn vault(pending: &Option<BitwardenContinuation>) -> Option<&VaultContinuation> {
         match pending {
@@ -206,6 +288,58 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
         password_stage: true,
     })));
     json(serde_json::json!({"loginFlow":flow, "username": &*username, "continuation":token}))
+}
+
+fn dispense_google(
+    state: &AxumProxyState,
+    pending: &mut Option<BitwardenContinuation>,
+    query: &AutoLoginQuery,
+) -> Response<Body> {
+    let sequence = state.document_sequence.load(Ordering::SeqCst);
+    let Some(BitwardenContinuation(Grant::Google(grant))) = pending.as_ref() else {
+        return forbidden("reviewed Google login document changed or expired");
+    };
+    if query.phase.as_deref() == Some("password") {
+        if !grant.valid(&query.nonce, sequence, GoogleStage::Password) {
+            if grant.issued.elapsed() >= GRANT_LIFETIME {
+                *pending = None;
+            }
+            return forbidden("reviewed Google password continuation expired or invalid");
+        }
+        *pending = None;
+        let password = match state.password.read() {
+            Ok(password) => password,
+            Err(_) => return forbidden("reviewed Google credential unavailable"),
+        };
+        return json(serde_json::json!({"loginFlow":"google", "password": &*password}));
+    }
+    if query.phase.is_some() || !state.auto_login_armed.load(Ordering::SeqCst) {
+        return forbidden("reviewed Google login not armed");
+    }
+    if !grant.valid(&query.nonce, sequence, GoogleStage::Identifier) {
+        return forbidden("reviewed Google identifier document changed or expired");
+    }
+    let mut nonce = match state.auto_login_nonce.write() {
+        Ok(nonce) => nonce,
+        Err(_) => return forbidden("reviewed Google login nonce unavailable"),
+    };
+    if query.nonce.is_empty() || nonce.as_deref() != Some(&query.nonce) {
+        return forbidden("reviewed Google login nonce invalid");
+    }
+    *nonce = None;
+    state.auto_login_armed.store(false, Ordering::SeqCst);
+    let username = match state.username.read() {
+        Ok(username) => username,
+        Err(_) => return forbidden("reviewed Google credential unavailable"),
+    };
+    let token = crate::themed_auth::fresh_nonce();
+    *pending = Some(BitwardenContinuation(Grant::Google(GoogleContinuation {
+        token: token.clone(),
+        document_sequence: sequence,
+        issued: Instant::now(),
+        stage: GoogleStage::Password,
+    })));
+    json(serde_json::json!({"loginFlow":"google", "username": &*username, "continuation":token}))
 }
 
 /// Direct DSM grants are bound to the selected document, never the global
@@ -277,6 +411,22 @@ mod tests {
     }
 
     #[test]
+    fn reviewed_google_grants_expire_and_never_cross_stage_or_document() {
+        let mut grant = GoogleContinuation {
+            token: "fixture".into(),
+            document_sequence: 7,
+            issued: Instant::now(),
+            stage: GoogleStage::Identifier,
+        };
+        assert!(grant.valid("fixture", 7, GoogleStage::Identifier));
+        assert!(!grant.valid("fixture", 7, GoogleStage::Password));
+        assert!(!grant.valid("fixture", 8, GoogleStage::Identifier));
+        assert!(!grant.valid("wrong", 7, GoogleStage::Identifier));
+        grant.issued = Instant::now() - GRANT_LIFETIME;
+        assert!(!grant.valid("fixture", 7, GoogleStage::Identifier));
+    }
+
+    #[test]
     fn vault_stages_stay_thirty_seconds_while_synology_windows_are_longer() {
         assert_eq!(GRANT_LIFETIME, Duration::from_secs(30));
         assert_eq!(
@@ -325,6 +475,10 @@ mod tests {
         assert_eq!(
             reviewed_flow_label(UpstreamAuthMode::SynologyForm),
             Some("synology")
+        );
+        assert_eq!(
+            reviewed_flow_label(UpstreamAuthMode::GoogleForm),
+            Some("google")
         );
         // The HTTPS/fixed-control gate is for the two document flows only; a
         // plain-HTTP phone signs in natively and must not be pulled into it.

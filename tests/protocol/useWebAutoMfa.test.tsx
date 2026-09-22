@@ -110,7 +110,7 @@ async function reply(
     window.dispatchEvent(
       new MessageEvent("message", {
         source: frame,
-        origin: "http://127.0.0.1:41000",
+        origin: new URL(doc!.url).origin,
         data: { ...request, type: "proxy_web_automation", status },
         ...event,
       }),
@@ -185,6 +185,74 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("explicit origin-bound automatic website 2FA", () => {
+  it("keeps saved Google consent while accepting the exact Account TOTP origin", async () => {
+    conn = {
+      ...conn,
+      hostname: "analytics.google.com",
+      httpApplication: {
+        version: 1,
+        id: "google-analytics",
+        loginMode: "form",
+      },
+      httpAutoMfa: {
+        ...conn.httpAutoMfa!,
+        origin: "https://analytics.google.com",
+        challengeId: "google-account-totp",
+      },
+    };
+    saved = structuredClone(conn);
+    currentUrl = "https://accounts.google.com/v3/signin/challenge/totp";
+    doc = {
+      ...doc!,
+      url: "http://p11111111111111111111111111111111.localhost:41000/v3/signin/challenge/totp",
+    };
+    await mount();
+    expect(requests("totpProbe")).toHaveLength(1);
+    expect(requests("totpProbe")[0].payload).toMatchObject({
+      codeSelector:
+        'input#totpPin[name="totpPin"][autocomplete="one-time-code"]',
+      submitSelector:
+        '#totpNext button[type="button"], button#totpNext[type="button"]',
+      submission: "google",
+    });
+    await reply(requests("totpProbe")[0]);
+    expect(mock.verify).toHaveBeenCalled();
+    expect(mock.read).toHaveBeenCalled();
+    expect(mock.compute).toHaveBeenCalledWith("SYNTHETIC-SEED", "SHA1", 6, 30);
+    expect(requests("totpProbe")).toHaveLength(2);
+    await reply(requests("totpProbe")[1]);
+    expect(mock.compute).toHaveBeenCalledWith("SYNTHETIC-SEED", "SHA1", 6, 30);
+    expect(requests("totpSubmit")).toHaveLength(1);
+    expect(requests("totpSubmit")[0].payload.code).toBe("123456");
+  });
+
+  it("rejects Google Account lookalikes even with saved Google consent", async () => {
+    conn = {
+      ...conn,
+      hostname: "analytics.google.com",
+      httpApplication: {
+        version: 1,
+        id: "google-analytics",
+        loginMode: "form",
+      },
+      httpAutoMfa: {
+        ...conn.httpAutoMfa!,
+        origin: "https://analytics.google.com",
+        challengeId: "google-account-totp",
+      },
+    };
+    saved = structuredClone(conn);
+    currentUrl =
+      "https://accounts.google.com.attacker.test/v3/signin/challenge/totp";
+    doc = {
+      ...doc!,
+      url: "http://p11111111111111111111111111111111.localhost:41000/v3/signin/challenge/totp",
+    };
+    await mount();
+    expect(requests("totpProbe")).toHaveLength(0);
+    expect(mock.compute).not.toHaveBeenCalled();
+  });
+
   function redirectedSynology(vault = false) {
     const totpId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     saved = {

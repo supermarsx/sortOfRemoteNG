@@ -56,6 +56,12 @@ pub use dark_mode::WebsiteDarkModeBootstrap;
 pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
 #[path = "http_font_assets.rs"]
 mod font_assets;
+#[path = "http_google.rs"]
+#[doc(hidden)]
+pub mod google;
+#[cfg(test)]
+#[path = "http_google_tests.rs"]
+mod google_tests;
 #[path = "http_digest.rs"]
 mod http_digest;
 #[path = "http_network_client.rs"]
@@ -545,6 +551,10 @@ pub enum UpstreamAuthMode {
     BitwardenForm,
     #[serde(rename = "synology-form")]
     SynologyForm,
+    /// Reviewed Google Account identifier -> password flow. Credentials are
+    /// released only on exact accounts.google.com proxy documents.
+    #[serde(rename = "google-form")]
+    GoogleForm,
     /// Form-only or manual application login: never inject proxy credentials
     /// into Authorization. Opted-in form fill may still consume them once.
     #[serde(rename = "none")]
@@ -582,6 +592,7 @@ impl UpstreamAuthMode {
             | Self::None
             | Self::BitwardenForm
             | Self::SynologyForm
+            | Self::GoogleForm
             | Self::YealinkServlet
             | Self::Unknown => None,
             Self::PfSenseV1 if !username.is_empty() && !password.is_empty() => {
@@ -602,6 +613,7 @@ impl UpstreamAuthMode {
             | Self::None
             | Self::BitwardenForm
             | Self::SynologyForm
+            | Self::GoogleForm
             | Self::YealinkServlet
             | Self::Unknown => String::new(),
         }
@@ -627,6 +639,7 @@ impl UpstreamAuthMode {
             | Self::None
             | Self::BitwardenForm
             | Self::SynologyForm
+            | Self::GoogleForm
             | Self::YealinkServlet
             | Self::Unknown => request,
         }
@@ -655,6 +668,8 @@ pub enum BrowserRedirectProfile {
 #[serde(rename_all = "lowercase")]
 pub enum ReviewedApplicationProfile {
     TacticalRmm,
+    #[serde(rename = "google-hosted")]
+    GoogleHosted,
 }
 
 pub fn same_origin_redirect_limit(profile: Option<BrowserRedirectProfile>) -> usize {
@@ -1134,6 +1149,9 @@ pub struct ProxyMediatorResponse {
     pub session_id: String,
     /// The proxied URL to use
     pub proxy_url: String,
+    /// Native-issued exact aliases for this session. Never persisted as trust.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub google_routes: Vec<google::GoogleProxyRoute>,
     /// Native intent only; the redirected connection remains anonymous.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deferred_login_status: Option<DeferredSynologyLoginStatus>,
@@ -1594,11 +1612,16 @@ pub async fn enforce_proxy_access(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    if !proxy_request_headers_are_authorized(
-        request.headers(),
-        &state.proxy_authority,
-        &state.proxy_origin,
-    ) {
+    let authorized = if let Some(google) = &state.network.google {
+        google.request_state(&state, &request).is_ok()
+    } else {
+        proxy_request_headers_are_authorized(
+            request.headers(),
+            &state.proxy_authority,
+            &state.proxy_origin,
+        )
+    };
+    if !authorized {
         return axum::http::Response::builder()
             .status(axum::http::StatusCode::FORBIDDEN)
             .header("Cache-Control", "no-store")
@@ -1625,7 +1648,10 @@ pub async fn enforce_proxy_access(
     };
     // Enforce on every response, including errors, redirects, JS/CSS and
     // worker candidates. Never depend on successful HTML injection.
-    let policy = network::content_security_policy(&state.proxy_policy, &state.proxy_authority);
+    let policy = state.network.google.as_ref().map_or_else(
+        || network::content_security_policy(&state.proxy_policy, &state.proxy_authority),
+        |google| google.content_security_policy(&state.proxy_policy),
+    );
     response.headers_mut().insert(
         "x-dns-prefetch-control",
         axum::http::HeaderValue::from_static("off"),
@@ -1906,6 +1932,24 @@ pub async fn axum_proxy_handler(
 
     let req_start = std::time::Instant::now();
     let method = req.method().clone();
+    // Middleware rejects foreign listener hosts. The handler must also use the
+    // exact alias-scoped upstream state; validating an alias and then retaining
+    // the primary service origin would silently send Account/resource requests
+    // to the wrong Google host.
+    let state = if let Some(google) = state.network.google.clone() {
+        match google.request_state(&state, &req) {
+            Ok(scoped) => scoped,
+            Err(detail) => {
+                return Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .header("Cache-Control", "no-store")
+                    .body(Body::from(detail))
+                    .expect("static Google route refusal")
+            }
+        }
+    } else {
+        state
+    };
     if proxy_request_headers_are_authorized(
         req.headers(),
         &state.proxy_authority,
@@ -1997,6 +2041,19 @@ pub async fn axum_proxy_handler(
     } else {
         proxy_response::navigation_request(&path_and_query)
     };
+    let (path_and_query, google_hop) = if state.network.google.is_some() {
+        match google::request_path(&path_and_query) {
+            Ok(value) => value,
+            Err(detail) => {
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from(detail))
+                    .expect("Google route refusal")
+            }
+        }
+    } else {
+        (path_and_query, 0)
+    };
     let document_request = tactical_api_destination.is_none()
         && proxy_response::is_document_request(req.headers(), navigation_token.as_deref());
     if state.proxy_policy.page_scripts != PageScripts::Allow
@@ -2028,6 +2085,8 @@ pub async fn axum_proxy_handler(
                 **slot = None;
             }
             next
+        } else if state.upstream_auth_mode == UpstreamAuthMode::GoogleForm {
+            state.document_sequence.fetch_add(1, Ordering::SeqCst) + 1
         } else {
             state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1
         }
@@ -2070,7 +2129,11 @@ pub async fn axum_proxy_handler(
                 path_and_query
             )
         });
-    let full_url = state.proxy_policy.redacted_url(&request_url);
+    let full_url = if state.network.google.is_some() {
+        state.target_origin.clone()
+    } else {
+        state.proxy_policy.redacted_url(&request_url)
+    };
 
     let method_str = method.to_string();
 
@@ -2097,6 +2160,52 @@ pub async fn axum_proxy_handler(
         &state.proxy_origin,
         &state.target_origin,
     );
+    let google_credentials_preflight = state.network.google.is_some()
+        && req.method() == axum::http::Method::OPTIONS
+        && req
+            .headers()
+            .get("access-control-request-headers")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| {
+                value.split(',').any(|header| {
+                    header
+                        .trim()
+                        .eq_ignore_ascii_case("x-sorng-google-credentials")
+                })
+            });
+    let cors_origin = if let Some(google) = &state.network.google {
+        let include_credentials = match google.includes_credentials(req.headers()) {
+            Ok(value) => value,
+            Err(detail) => {
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .header("Cache-Control", "no-store")
+                    .body(Body::from(detail))
+                    .expect("static Google credentials-mode refusal")
+            }
+        };
+        let google_target = reqwest::Url::parse(&request_url).ok();
+        if include_credentials
+            && google_target.as_ref().is_none_or(|target| {
+                google
+                    .observe_browser_cookies(req.headers(), target)
+                    .is_err()
+            })
+        {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Cache-Control", "no-store")
+                .body(Body::from("Invalid Google browser cookie state"))
+                .expect("static Google cookie refusal");
+        }
+        fwd_headers = google.request_headers(req.headers(), &state.target_origin);
+        req.headers()
+            .get("origin")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    } else {
+        None
+    };
     if tactical_api_destination.is_some() {
         // A real cross-origin browser request would not send the dashboard's
         // host-only cookies. This closed route is deliberately stateless, and
@@ -2218,6 +2327,19 @@ pub async fn axum_proxy_handler(
     // Execute the upstream request.
     match result {
         Ok(resp) => {
+            // Google redirects stay in the browser's current frame, with the
+            // original 30x method semantics and the same native cookie jar.
+            if let Some(google) = &state.network.google {
+                if matches!(resp.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
+                    return google.redirect_response(
+                        &resp,
+                        google_hop,
+                        navigation_token.as_deref(),
+                        document_request,
+                        cors_origin.as_deref(),
+                    );
+                }
+            }
             let status_code = resp.status();
             let status_u16 = status_code.as_u16();
 
@@ -2633,11 +2755,15 @@ pub async fn axum_proxy_handler(
                 && !state.target_origin.is_empty()
             {
                 let text = String::from_utf8_lossy(&raw_bytes);
-                let text = proxy_response::rewrite_target_origin(
-                    &text,
-                    &state.target_origin,
-                    &state.proxy_origin,
-                );
+                let text = if let Some(google) = &state.network.google {
+                    google.rewrite(&text)
+                } else {
+                    proxy_response::rewrite_target_origin(
+                        &text,
+                        &state.target_origin,
+                        &state.proxy_origin,
+                    )
+                };
                 let text = font_assets::rewrite(&text, &state.proxy_origin);
                 // Apply the versioned adapter last: its deliberately bound
                 // upstream discovery origin must not be rewritten to loopback.
@@ -2670,9 +2796,12 @@ pub async fn axum_proxy_handler(
                 // device login form. Returns None (and injects nothing extra)
                 // when not armed. The injected HTML carries ONLY a per-page
                 // nonce + non-secret selectors — never the credential.
-                let autologin_script =
-                    crate::themed_autologin::build_autologin_injection(&state, document_sequence)
-                        .unwrap_or_default();
+                let autologin_script = crate::themed_autologin::build_autologin_injection(
+                    &state,
+                    document_sequence,
+                    &request_url,
+                )
+                .unwrap_or_default();
                 // e5 hardened client asset defines
                 // `window.__sorng_autologin.fetchCredsAndRun`, which the e3
                 // bootstrap checks for and defers to. It MUST appear BEFORE the
@@ -2696,10 +2825,13 @@ pub async fn axum_proxy_handler(
                     &state.session_id,
                     navigation_token.as_deref(),
                     document_sequence,
-                    &state.target_origin,
-                    &state.proxy_origin,
-                    &state.proxy_policy,
-                    state.tactical_rmm_api.as_ref(),
+                    proxy_response::ReadinessNetworkContext {
+                        source_origin: &state.target_origin,
+                        proxy_origin: &state.proxy_origin,
+                        policy: &state.proxy_policy,
+                        tactical_rmm_api: state.tactical_rmm_api.as_ref(),
+                        google: state.network.google.as_deref(),
+                    },
                 )
                 .into_bytes();
             }
@@ -2772,6 +2904,8 @@ pub async fn axum_proxy_handler(
                     || k == "content-security-policy-report-only"
                     || k == "access-control-allow-origin"
                     || k == "access-control-allow-credentials"
+                    || (state.network.google.is_some() && k == "permissions-policy")
+                    || (state.network.google.is_some() && matches!(k.as_str(), "refresh" | "link" | "alt-svc"))
                     || (tactical_api_destination.is_some() && k == "set-cookie")
                 {
                     continue;
@@ -2792,8 +2926,28 @@ pub async fn axum_proxy_handler(
                 }
             }
             builder = builder.header("Content-Length", final_body.len().to_string());
-            builder = builder.header("Access-Control-Allow-Origin", state.proxy_origin.as_str());
-            builder = builder.header("Access-Control-Allow-Credentials", "true");
+            if let Some(google) = &state.network.google {
+                if let Some(origin) =
+                    google.translated_cors_origin(cors_origin.as_deref(), &resp_hdrs)
+                {
+                    builder = builder.header("Access-Control-Allow-Origin", origin);
+                    if google_credentials_preflight {
+                        builder = builder
+                            .header("Access-Control-Allow-Headers", "X-Sorng-Google-Credentials");
+                    }
+                    if resp_hdrs
+                        .get("access-control-allow-credentials")
+                        .and_then(|value| value.to_str().ok())
+                        .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+                    {
+                        builder = builder.header("Access-Control-Allow-Credentials", "true");
+                    }
+                }
+            } else {
+                builder =
+                    builder.header("Access-Control-Allow-Origin", state.proxy_origin.as_str());
+                builder = builder.header("Access-Control-Allow-Credentials", "true");
+            }
 
             builder.body(Body::from(final_body)).unwrap_or_else(|_| {
                 Response::builder()

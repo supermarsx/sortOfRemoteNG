@@ -291,10 +291,21 @@ pub(super) async fn send(
 ) -> Result<reqwest::Response, UpstreamError> {
     // Keep one overall budget for authentication + all redirect hops, rather
     // than multiplying the client's timeout for each reissued request.
-    tokio::time::timeout(
-        std::time::Duration::from_secs(120),
-        send_inner(state, method, input_url, headers, body, false),
-    )
+    tokio::time::timeout(std::time::Duration::from_secs(120), async {
+        if let Some(google) = &state.network.google {
+            let url = reqwest::Url::parse(input_url)
+                .map_err(|_| UpstreamError::Policy("Invalid Google request URL"))?;
+            let include_credentials = headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("x-sorng-google-credentials"))
+                .is_none_or(|(_, value)| value == "include");
+            google
+                .send(method, &url, headers, body, include_credentials)
+                .await
+        } else {
+            send_inner(state, method, input_url, headers, body, false).await
+        }
+    })
     .await
     .map_err(|_| UpstreamError::Deadline)?
 }

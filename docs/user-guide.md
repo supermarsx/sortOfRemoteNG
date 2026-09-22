@@ -55,7 +55,7 @@ Check whether the destination needs a proxy, VPN, tunnel, or SSH jump host. Conf
 
 For a web management interface, consult [Web viewer trust and authentication]({{ '/http-viewer-trust/' | relative_url }}). A successful TLS diagnostic followed by HTTP 401 can be an anonymous authentication challenge; it is not proof that a saved password was rejected.
 
-[Website application profiles]({{ '/http-application-profiles/' | relative_url }}) adds categorized HTTP/HTTPS application choices, explicit manual/form/Basic login modes, and Custom application selectors. First-party Google profiles supply their reviewed HTTPS address on blank connections; other profiles leave the host unchanged. No profile silently enables automatic sign-in.
+[Website application profiles]({{ '/http-application-profiles/' | relative_url }}) adds categorized HTTP/HTTPS application choices, explicit manual/form/Basic login modes, and Custom application selectors. First-party Google profiles supply their reviewed HTTPS address on blank connections and offer an explicit reviewed Google Account form/TOTP flow; other profiles leave the host unchanged. No profile silently enables automatic sign-in.
 
 ## Use administration tools
 

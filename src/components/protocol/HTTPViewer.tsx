@@ -251,7 +251,7 @@ function IframeContent({ m }: { m: Mgr }) {
           src={m.proxyUrl}
           className="absolute inset-0 w-full h-full border-0 bg-white"
           onLoad={m.handleIframeLoad}
-          sandbox="allow-scripts allow-forms allow-popups allow-modals"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
           title={`HTTP Viewer - ${m.connection?.name || m.session.hostname}`}
         />
       )}

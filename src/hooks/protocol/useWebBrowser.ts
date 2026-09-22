@@ -1,4 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import {
+  googleUpstreamForProxy,
+  validateGoogleProxyRoutes,
+  type GoogleProxyRoute,
+} from "../../utils/protocol/googleProxySession";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import { retryTransientTrustRead } from "../../utils/auth/retryTransientTrustRead";
 import { debugLog } from "../../utils/core/debugLogger";
@@ -126,6 +131,7 @@ export interface ProxyMediatorResponse {
   local_port: number;
   session_id: string;
   proxy_url: string;
+  google_routes?: unknown;
 }
 
 interface SynologyProxyContinuationResponse extends ProxyMediatorResponse {
@@ -1031,6 +1037,7 @@ export function useWebBrowser(session: ConnectionSession) {
   // ── Proxy tracking ─────────────────────────────────────────
   const proxySessionIdRef = useRef<string>("");
   const proxyUrlRef = useRef<string>("");
+  const googleRoutesRef = useRef<GoogleProxyRoute[]>([]);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
   /** Start of the current navigation attempt: epoch for display, monotonic for elapsed. */
@@ -1826,6 +1833,7 @@ export function useWebBrowser(session: ConnectionSession) {
       if (id === proxySessionIdRef.current) {
         proxySessionIdRef.current = "";
         proxyUrlRef.current = "";
+        googleRoutesRef.current = [];
         releaseRuntimeWebNavigation(sessionNavigationKey);
         continuationOwnerKeyRef.current = null;
       }
@@ -2153,6 +2161,36 @@ export function useWebBrowser(session: ConnectionSession) {
           );
         }
         urlObj = new URL(url);
+        const googleRoute = googleRoutesRef.current.find(
+          (route) => route.documents && route.upstreamOrigin === urlObj.origin,
+        );
+        if (
+          googleRoute &&
+          proxySessionIdRef.current &&
+          proxyUrlRef.current &&
+          !urlObj.username &&
+          !urlObj.password &&
+          !urlObj.searchParams.has(NAVIGATION_QUERY_KEY) &&
+          !urlObj.searchParams.has("__sorng_google_hop_v1")
+        ) {
+          // An existing native session owns these exact origins. Reuse its
+          // listener, cookies, document sequence and tab identity on reload/back.
+          setWaitingForTrust(false);
+          armNavigationDeadline(gen, url);
+          navigateFrame(
+            googleRoute.proxyOrigin +
+              urlObj.pathname +
+              urlObj.search +
+              urlObj.hash,
+            gen,
+            proxySessionIdRef.current,
+          );
+          setCurrentUrl(url);
+          setInputUrl(url);
+          setIsSecure(true);
+          if (addToHistory) appendHistory(url);
+          return;
+        }
         const continuedNavigation =
           getRuntimeWebNavigation(sessionNavigationKey);
         continuedNavigationActive = continuedNavigation !== undefined;
@@ -2432,6 +2470,11 @@ export function useWebBrowser(session: ConnectionSession) {
           try {
             assertReviewedFlow();
             protectedProxyUrl = validateProtectedProxyUrl(response);
+            googleRoutesRef.current = validateGoogleProxyRoutes(
+              response.google_routes,
+              urlObj.origin,
+              protectedProxyUrl,
+            );
           } catch (error) {
             await stopProxy(response.session_id);
             throw error;
@@ -2732,9 +2775,15 @@ export function useWebBrowser(session: ConnectionSession) {
         { sessionId: sid },
       );
       let protectedProxyUrl: string;
+      let googleRoutes: GoogleProxyRoute[];
       try {
         vault?.assertCurrent();
         protectedProxyUrl = validateProtectedProxyUrl(resp);
+        googleRoutes = validateGoogleProxyRoutes(
+          resp.google_routes,
+          baseTargetRef.current,
+          protectedProxyUrl,
+        );
       } catch (error) {
         await stopProxy(resp.session_id);
         throw error;
@@ -2745,6 +2794,7 @@ export function useWebBrowser(session: ConnectionSession) {
       }
       proxySessionIdRef.current = resp.session_id;
       proxyUrlRef.current = protectedProxyUrl;
+      googleRoutesRef.current = googleRoutes;
       deferredLoginRef.current.receive(resp);
       setProxyAlive(true);
       clearNavigationFailure();
@@ -2754,7 +2804,9 @@ export function useWebBrowser(session: ConnectionSession) {
       beginLoadingPresentation(gen);
       armNavigationDeadline(gen, urlObj.toString());
       navigateFrame(
-        protectedProxyUrl.replace(/\/+$/, "") +
+        (googleRoutesRef.current.find(
+          (route) => route.documents && route.upstreamOrigin === urlObj.origin,
+        )?.proxyOrigin ?? protectedProxyUrl.replace(/\/+$/, "")) +
           urlObj.pathname +
           urlObj.search +
           urlObj.hash,
@@ -2858,7 +2910,15 @@ export function useWebBrowser(session: ConnectionSession) {
       } catch {
         return;
       }
-      if (event.origin !== expectedOrigin) return;
+      if (event.origin !== expectedOrigin) {
+        if (
+          !googleRoutesRef.current.some(
+            (route) => route.documents && route.proxyOrigin === event.origin,
+          )
+        )
+          return;
+        expectedOrigin = event.origin;
+      }
       if (event.data?.type === "proxy_synology_login_progress") {
         const current = currentDocumentRef.current;
         const report = event.data;
@@ -2943,6 +3003,11 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       const targetUrlFor = (reported: URL) => {
+        const googleUrl = googleUpstreamForProxy(
+          googleRoutesRef.current,
+          reported,
+        );
+        if (googleUrl) return googleUrl;
         // Assign components rather than resolving a path: a leading // is a
         // legitimate path here, never permission to change the saved authority.
         const target = new URL(baseTargetRef.current);
@@ -3045,7 +3110,8 @@ export function useWebBrowser(session: ConnectionSession) {
               pending.generation !== navGenRef.current ||
               pending.sessionId !== report.sessionId ||
               report.navigationToken !== pending.token ||
-              url !== pending.cleanUrl
+              (url !== pending.cleanUrl &&
+                !googleUpstreamForProxy(googleRoutesRef.current, reported))
             )
               return;
           } else {
@@ -3088,6 +3154,7 @@ export function useWebBrowser(session: ConnectionSession) {
               expectedNetworkRouting.current,
               expectedAliasRouting.current,
               expectedTacticalRmmRouting.current,
+              googleRoutesRef.current.map((route) => route.upstreamOrigin),
             ),
           });
           void invoke<boolean>("activate_proxy_network_document", {

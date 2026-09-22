@@ -350,6 +350,14 @@ async fn dispatch(
         };
         *request.uri_mut() = uri;
     }
+    let state = if let Some(google) = &state.network.google {
+        match google.request_state(&state, &request) {
+            Ok(scoped) => scoped,
+            Err(_) => return gone(),
+        }
+    } else {
+        state
+    };
     request.extensions_mut().insert(state.clone());
     // Cancels old in-flight work as soon as its generation's network retires;
     // late responses cannot install cookies, documents, nonces or review UI.
