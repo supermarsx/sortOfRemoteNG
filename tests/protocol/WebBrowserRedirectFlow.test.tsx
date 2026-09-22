@@ -1293,9 +1293,11 @@ describe("actual website redirect review integration", () => {
         originalLease,
       );
     }
-    expect(
-      screen.getByRole("button", { name: "Refresh saved login status" }),
-    ).toHaveTextContent("Auto-fill: page helper unconfirmed");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Refresh saved login status" }),
+      ).toHaveTextContent("Auto-fill: page helper unconfirmed"),
+    );
     const starts = h.invoke.mock.calls.filter(
       ([command]) => command === "start_basic_auth_proxy",
     );

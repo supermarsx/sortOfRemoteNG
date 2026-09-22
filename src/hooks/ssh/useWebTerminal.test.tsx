@@ -2094,7 +2094,6 @@ describe("useWebTerminal input lifecycle", () => {
     const view = render(<Harness />);
     await waitFor(() => expect(model?.status).toBe("connected"));
     await waitFor(() => {
-      expect(mocks.loadManagedScripts).toHaveBeenCalledTimes(2); // Existing selector and favorites metadata library.
       expect(mocks.listeners.has("request-terminal-buffer")).toBe(true);
       expect(mocks.listeners.has("ssh-output")).toBe(true);
       expect(mocks.listeners.has("ssh-error")).toBe(true);

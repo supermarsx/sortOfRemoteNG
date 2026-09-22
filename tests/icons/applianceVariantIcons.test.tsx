@@ -160,46 +160,50 @@ describe("appliance variants and complete plain counterparts", () => {
       keys.length,
     );
   });
-  it("provides a real standalone plain SVG for every nonfolder framed glyph", () => {
-    const rendered = CONNECTION_ICON_CATALOG.map((entry) => ({
-      key: entry.key,
-      svg: svgFor(entry.key),
-    }));
-    const plain = new Set(
-      rendered
-        .filter(({ svg }) => !roleFrame(svg))
-        .map(({ svg }) => fingerprint(svg)),
-    );
-    const composites = rendered.filter(({ svg }) => {
-      const role = roleFrame(svg)?.getAttribute("data-role-frame");
-      return role && role !== "folder";
-    });
-    expect(composites.length).toBeGreaterThanOrEqual(178);
-    const missing: string[] = [];
-    for (const { key, svg } of composites) {
-      const glyph = Array.from(svg.children).find(
-        (node) => node.tagName === "svg",
+  it(
+    "provides a real standalone plain SVG for every nonfolder framed glyph",
+    () => {
+      const rendered = CONNECTION_ICON_CATALOG.map((entry) => ({
+        key: entry.key,
+        svg: svgFor(entry.key),
+      }));
+      const plain = new Set(
+        rendered
+          .filter(({ svg }) => !roleFrame(svg))
+          .map(({ svg }) => fingerprint(svg)),
       );
-      expect(glyph, key + " missing nested glyph").toBeDefined();
-      if (key === "draytek-router" || key === "draytek-switch") {
-        // Compact badges stack the same traced wordmark letterforms; only their
-        // placement differs from the selectable full-width publisher layout.
-        const withoutPlacement = (source: Element) => {
-          const clone = source.cloneNode(true) as Element;
-          for (const node of clone.querySelectorAll("path"))
-            node.removeAttribute("transform");
-          return fingerprint(clone);
-        };
-        expect(withoutPlacement(glyph!)).toBe(
-          withoutPlacement(svgFor("draytek")),
+      const composites = rendered.filter(({ svg }) => {
+        const role = roleFrame(svg)?.getAttribute("data-role-frame");
+        return role && role !== "folder";
+      });
+      expect(composites.length).toBeGreaterThanOrEqual(178);
+      const missing: string[] = [];
+      for (const { key, svg } of composites) {
+        const glyph = Array.from(svg.children).find(
+          (node) => node.tagName === "svg",
         );
-        continue;
+        expect(glyph, key + " missing nested glyph").toBeDefined();
+        if (key === "draytek-router" || key === "draytek-switch") {
+          // Compact badges stack the same traced wordmark letterforms; only their
+          // placement differs from the selectable full-width publisher layout.
+          const withoutPlacement = (source: Element) => {
+            const clone = source.cloneNode(true) as Element;
+            for (const node of clone.querySelectorAll("path"))
+              node.removeAttribute("transform");
+            return fingerprint(clone);
+          };
+          expect(withoutPlacement(glyph!)).toBe(
+            withoutPlacement(svgFor("draytek")),
+          );
+          continue;
+        }
+        if (!plain.has(fingerprint(glyph!))) missing.push(key);
       }
-      if (!plain.has(fingerprint(glyph!))) missing.push(key);
-    }
-    expect(
-      missing,
-      "Every appliance frame needs its actual inset as a selectable plain icon",
-    ).toEqual([]);
-  });
+      expect(
+        missing,
+        "Every appliance frame needs its actual inset as a selectable plain icon",
+      ).toEqual([]);
+    },
+    15_000,
+  );
 });

@@ -2,7 +2,10 @@ use crate::ssh::{
     service::connect_ssh_on_state, SshCompressionConfig, SshConnectionConfig, SshServiceState,
 };
 use rquickjs::prelude::Async;
-use rquickjs::{AsyncContext, AsyncRuntime, Function, Object};
+use rquickjs::promise::MaybePromise;
+use rquickjs::{
+    AsyncContext, AsyncRuntime, CatchResultExt, Coerced, Ctx, FromJs, Function, Object, Value,
+};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -192,6 +195,31 @@ fn remove_ts_inline_syntax(code: &str) -> String {
     r
 }
 
+/// Keep strings unquoted and primitives readable; use JSON for structured results.
+/// JSON's normal semantics apply (including toJSON and omitted undefined properties).
+/// Cycles, nested BigInts, and throwing conversion hooks remain script errors.
+fn serialize_script_value<'js>(ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<String> {
+    if value.is_object() && !value.is_function() {
+        return match ctx.json_stringify(value)? {
+            Some(json) => json.to_string(),
+            None => Ok("undefined".into()),
+        };
+    }
+    // JS ToString rejects symbols, although their descriptive string is useful output.
+    if let Some(symbol) = value.as_symbol() {
+        let description = symbol.description()?;
+        return Ok(format!(
+            "Symbol({})",
+            if description.is_undefined() {
+                String::new()
+            } else {
+                String::from_js(ctx, description)?
+            }
+        ));
+    }
+    Coerced::<String>::from_js(ctx, value).map(|value| value.0)
+}
+
 impl ScriptService {
     pub fn new(ssh_service: SshServiceState) -> ScriptServiceState {
         Arc::new(Mutex::new(ScriptService { ssh_service }))
@@ -352,17 +380,21 @@ impl ScriptService {
                                                         let _ = global.set("ssh", ssh_obj);
                                                     }
 
-                                                    // Execute the script and await the promise
-                                                    let promise = ctx.eval_promise::<String>(code);
-                                                    match promise {
-                                                        Ok(p) => {
-                                                            match p.into_future().await {
-                                                                Ok(res) => Ok::<String, String>(res),
-                                                                Err(e) => Err(format!("Script runtime error: {}", e))
-                                                            }
-                                                        },
-                                                        Err(e) => Err(format!("Script eval error: {}", e))
-                                                    }
+                                                    let promise = ctx.eval_promise(code).catch(&ctx)
+                                                        .map_err(|e| format!("Script eval error: {e}"))?;
+                                                    // QuickJS's async global eval wraps the completion in
+                                                    // { value: ... }, even for strings and undefined. Unwrap
+                                                    // this engine-owned object exactly once, never user data.
+                                                    let completion = promise.into_future::<Object>().await.catch(&ctx)
+                                                        .map_err(|e| format!("Script runtime error: {e}"))?;
+                                                    let value: MaybePromise = completion.get("value").catch(&ctx)
+                                                        .map_err(|e| format!("Script result error: {e}"))?;
+                                                    // Preserve top-level await and also await a promise
+                                                    // returned by the final expression before serialization.
+                                                    let value = value.into_future::<Value>().await.catch(&ctx)
+                                                        .map_err(|e| format!("Script runtime error: {e}"))?;
+                                                    serialize_script_value(&ctx, value).catch(&ctx)
+                                                        .map_err(|e| format!("Script result serialization error: {e}"))
                                                 }).await;
 
                                                 let _ = tx.send(result);
@@ -408,7 +440,184 @@ impl ScriptService {
 
 #[cfg(test)]
 mod tests {
-    use super::remove_ts_inline_syntax;
+    use super::{remove_ts_inline_syntax, ScriptContext, ScriptResult, ScriptService};
+    use crate::ssh::SshService;
+
+    async fn execute(code: &str) -> ScriptResult {
+        let service = ScriptService::new(SshService::new());
+        let result = service
+            .lock()
+            .await
+            .execute_script(code.into(), "javascript".into(), ScriptContext::default())
+            .await
+            .unwrap_or_else(|error| panic!("Script execution failed: {error}"));
+        result
+    }
+
+    async fn assert_output(code: &str, expected: &str) {
+        let result = execute(code).await;
+        assert!(result.success, "ScriptResult.error: {:?}", result.error);
+        assert_eq!(result.result.as_deref(), Some(expected));
+        assert!(result.error.is_none());
+    }
+
+    // Keep the five application coverage regressions exercised directly by this crate,
+    // with value assertions and useful error diagnostics.
+    #[tokio::test]
+    async fn test_execute_javascript_simple() {
+        assert_output("2 + 2", "4").await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_javascript_console_log() {
+        assert_output(r#""console.log test""#, "console.log test").await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_javascript_variables() {
+        assert_output("let x = 10; let y = 20; x + y", "30").await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_javascript_function() {
+        assert_output("function add(a, b) { return a + b; } add(5, 3)", "8").await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_script_with_connection_context() {
+        let service = ScriptService::new(SshService::new());
+        let result = service
+            .lock()
+            .await
+            .execute_script(
+                r#""Connection context test executed""#.into(),
+                "javascript".into(),
+                ScriptContext {
+                    connection_id: Some("conn_123".into()),
+                    session_id: Some("session_456".into()),
+                    trigger: "connection_event".into(),
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("Script execution failed: {error}"));
+        assert!(result.success, "ScriptResult.error: {:?}", result.error);
+        assert_eq!(
+            result.result.as_deref(),
+            Some("Connection context test executed")
+        );
+    }
+
+    #[tokio::test]
+    async fn serializes_script_values_without_unwrapping_user_objects() {
+        for (code, expected) in [
+            ("undefined", "undefined"),
+            ("null", "null"),
+            ("true", "true"),
+            ("1.5", "1.5"),
+            ("NaN", "NaN"),
+            ("Infinity", "Infinity"),
+            ("12345678901234567890n", "12345678901234567890"),
+            ("Symbol('result')", "Symbol(result)"),
+            ("Symbol()", "Symbol()"),
+            ("''", ""),
+            ("console.log('test')", "undefined"),
+            ("let x = 1;", "undefined"),
+            ("[1, 'two', null]", r#"[1,"two",null]"#),
+            ("({value: {value: 42}})", r#"{"value":{"value":42}}"#),
+            ("Object.create(null)", "{}"),
+            ("({toJSON() { return undefined; }})", "undefined"),
+            (
+                "String = () => 'wrong'; JSON.stringify = () => 'wrong'; ({ok:true})",
+                r#"{"ok":true}"#,
+            ),
+        ] {
+            assert_output(code, expected).await;
+        }
+        let result = execute("(function answer() { return 42; })").await;
+        assert!(result.success, "ScriptResult.error: {:?}", result.error);
+        assert!(result.result.unwrap().contains("function answer()"));
+    }
+
+    #[tokio::test]
+    async fn awaits_top_level_and_final_expression_promises() {
+        for (code, expected) in [
+            ("const x = await Promise.resolve(20); x + 22", "42"),
+            ("Promise.resolve(42).then(x => x + 1)", "43"),
+            (
+                "(async () => { await Promise.resolve(); return {value:42}; })()",
+                r#"{"value":42}"#,
+            ),
+        ] {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                assert_output(code, expected),
+            )
+            .await
+            .expect("script promise did not settle");
+        }
+    }
+
+    #[tokio::test]
+    async fn preserves_evaluation_rejection_and_serialization_errors() {
+        for (code, expected) in [
+            ("function broken { return 1; }", "Script eval error:"),
+            ("throw new Error('runtime sentinel')", "runtime sentinel"),
+            (
+                "await Promise.reject(new Error('await sentinel'))",
+                "await sentinel",
+            ),
+            (
+                "Promise.reject(new Error('promise sentinel'))",
+                "promise sentinel",
+            ),
+            (
+                "Promise.reject('string rejection sentinel')",
+                "string rejection sentinel",
+            ),
+            (
+                "let x = {}; x.self = x; x",
+                "Script result serialization error:",
+            ),
+            ("({value: 1n})", "Script result serialization error:"),
+            (
+                "({toJSON() { throw new Error('serialization sentinel'); }})",
+                "serialization sentinel",
+            ),
+        ] {
+            let result = execute(code).await;
+            assert!(!result.success, "Unexpected success for {code}");
+            assert!(result.result.is_none());
+            assert!(
+                result
+                    .error
+                    .as_deref()
+                    .is_some_and(|error| error.contains(expected)),
+                "Expected {expected:?}, ScriptResult.error: {:?}",
+                result.error
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn keeps_unsafe_script_rejection_before_evaluation() {
+        let service = ScriptService::new(SshService::new());
+        for code in [
+            "eval('2+2')",
+            "require('fs')",
+            "new Function('return 1')()",
+            "import('fs')",
+            "globalThis",
+        ] {
+            let result = service
+                .lock()
+                .await
+                .execute_script(code.into(), "javascript".into(), ScriptContext::default())
+                .await;
+            assert!(
+                matches!(result, Err(error) if error.starts_with("Potentially unsafe code detected:"))
+            );
+        }
+    }
 
     #[test]
     fn strips_return_types_without_dropping_javascript_delimiters() {
