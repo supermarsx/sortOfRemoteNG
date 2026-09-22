@@ -423,13 +423,36 @@ prove response success or full browser-network interception.
 ## Foreign origins and unsupported traffic
 
 Third-party origins are currently **blocked, not transparently proxied**, except
-for the closed QuickConnect control/probe routes above and public-font
-capability below.
+for the closed QuickConnect control/probe routes above, the reviewed Tactical RMM
+API route below, and public-font capability below.
 This includes a CDN or API that an otherwise trusted page references. A trusted
 redirect destination is not automatically an approved subresource origin or
 TLS identity. Supporting such origins requires a separate origin mapping and
 trust decision; arbitrary URLs are not sent through a generic native fetch
 endpoint under the authenticated page's origin.
+
+### Reviewed Tactical RMM API origin
+
+A connection using the reviewed Tactical RMM application preset receives one
+ephemeral background-request capability. For an HTTPS dashboard at
+`https://rmm.example.com`, it permits only default-port HTTPS fetch/XHR requests
+to the exact derived origin `https://api.rmm.example.com`. The browser maps these
+requests to a protected loopback endpoint; native code independently validates
+the profile, source host, active document and full destination before egress.
+
+The capability does not use broad suffix matching and cannot be selected by a
+generic website or malformed imported profile. It rejects navigation, WebSocket,
+workers, WebRTC, WebTransport, credentials in URLs, nondefault ports, fragments,
+sibling hosts and redirects outside the exact API origin. It is revoked when the
+owning document or proxy session changes.
+
+The API uses a dedicated native client with normal certificate verification, an
+independent cookie jar, the configured upstream network proxy and the connection's
+minimum TLS floor. It never inherits the dashboard's certificate bypass or pin.
+Source cookies, custom headers, saved proxy/form credentials and connection query
+parameters are not copied across origins. Tactical's own `Authorization` header is
+forwarded; upstream `Set-Cookie` stays in the API jar and is not exposed under the
+loopback browser origin.
 
 ### Reviewed Synology public fonts
 
@@ -543,14 +566,14 @@ a frontend hot reload cannot install a new native callback. Closing a proxy
 revokes its exact origin, so a stale manager entry cannot provide a usable
 unauthenticated loopback replacement URL.
 
-Protection details also show the page routing module's **v4 acknowledgement**
+Protection details also show the page routing module's **v5 acknowledgement**
 for fixed QuickConnect navigation, initial discovery, same-NAS probes and
 same-NAS direct/regional navigation. Its five boolean capabilities are compared with
 the current connection after the existing primary-document identity checks.
 A missing/older acknowledgement or a settings mismatch is diagnostic guidance,
 not permission to replay a request or bypass trust. Restart the desktop process
 after native updates; refreshing the application UI cannot replace an older
-native proxy's injected module. Even a current v4 acknowledgement is not proof
+native proxy's injected module. Even a current v5 acknowledgement is not proof
 that every browser request or channel is captured.
 
 ## Developer checks and limits
