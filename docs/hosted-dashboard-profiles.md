@@ -6,9 +6,12 @@ description: Reviewed dashboard addresses, browser sign-in boundaries and provid
 # Hosted dashboards and website sign-in
 
 In an HTTP/HTTPS connection, choose **Protocol → Application**. Every new preset
-starts in **Manual** mode. Selecting a preset does not overwrite your saved
-address or icon, launch a browser, or send credentials. For hosted services use
-the explicit **Use hosted login address** action, review the change, and save.
+starts in **Manual** mode. Selecting a preset does not overwrite your icon,
+launch a browser, or send credentials. First-party Google presets own their
+reviewed HTTPS destination: a blank connection receives it automatically, and
+switching between Google presets replaces the previous managed Google address.
+An explicit custom address is preserved. For other hosted services use the
+explicit **Use hosted login address** action, review the change, and save.
 Hosted presets require their exact HTTPS origin; choosing one cannot relabel an
 unrelated server as that provider. Self-hosted presets keep your server address
 and expose a reviewed relative sign-in path.

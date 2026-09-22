@@ -7,7 +7,7 @@ permalink: /http-application-profiles/
 
 In an HTTP or HTTPS connection, open **Protocol → Application**. Choose a category, or keep **All website applications** to search across the available website profiles. The selector separates containers, virtualization, server management/BMC, networking/proxies, monitoring, business applications, and mail/storage. Native-only integrations are listed separately with an explanation; an API integration does not necessarily provide a website.
 
-Selecting a profile starts in **Manual browsing**. It does not change the host, port, TLS/trust policy, or saved credentials. Basics shows a shortcut to Application settings instead of a second username/password editor. Choose **Generic website** to return to the existing HTTP Authentication and Advanced controls.
+Selecting a profile starts in **Manual browsing**. It does not change the TLS/trust policy or saved credentials. First-party Google profiles supply their reviewed HTTPS address internally when the connection is blank, so their hostname and port do not need to be entered. Switching between Google profiles replaces only the previous managed Google address; an explicit custom destination is preserved. Other profiles do not change the host or port. Basics shows a shortcut to Application settings instead of a second username/password editor. Choose **Generic website** to return to the existing HTTP Authentication and Advanced controls.
 
 Application and Organize can suggest a matching existing icon. The preview is optional: select **Use suggested icon** to apply it. Changing the application never overwrites your current icon automatically; Custom application uses a generic website suggestion.
 
