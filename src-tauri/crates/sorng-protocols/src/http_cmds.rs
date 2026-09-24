@@ -100,6 +100,10 @@ fn proxy_client_builder(
     )
 }
 
+// Keep the transport policy inputs explicit at each call site. Grouping them
+// would hide security-sensitive TLS, CA, proxy, and cookie choices behind a
+// partially initialized options object.
+#[allow(clippy::too_many_arguments)]
 fn proxy_client_builder_with_cookies(
     verify_ssl: bool,
     accepted_cert_fingerprint: Option<&str>,
