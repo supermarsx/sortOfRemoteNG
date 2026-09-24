@@ -18,20 +18,34 @@ export function clearWebBrowserFrame(iframe: HTMLIFrameElement | null) {
 
 export function assertWebBrowserFrameNavigation(
   url: string,
-  protectedProxyUrl: string,
+  protectedProxyUrls: string | readonly string[],
   parentOrigin: string,
 ) {
-  const target = new URL(url),
-    proxy = new URL(protectedProxyUrl);
+  const target = new URL(url);
+  const proxyUrls =
+    typeof protectedProxyUrls === "string"
+      ? [protectedProxyUrls]
+      : protectedProxyUrls;
+  const proxies = proxyUrls.map((value) => new URL(value));
+  const listenerPort = proxies[0]?.port;
   if (
-    proxy.protocol !== "http:" ||
-    !/^p[0-9a-f]{32}\.localhost$/u.test(proxy.hostname) ||
-    !proxy.port ||
-    proxy.username ||
-    proxy.password ||
+    proxies.length === 0 ||
+    proxies.some(
+      (proxy) =>
+        proxy.protocol !== "http:" ||
+        !/^p[0-9a-f]{32}\.localhost$/u.test(proxy.hostname) ||
+        !proxy.port ||
+        proxy.port !== listenerPort ||
+        proxy.username ||
+        proxy.password ||
+        proxy.pathname !== "/" ||
+        proxy.search ||
+        proxy.hash ||
+        proxy.origin === parentOrigin,
+    ) ||
     target.username ||
     target.password ||
-    target.origin !== proxy.origin ||
+    !proxies.some((proxy) => target.origin === proxy.origin) ||
     target.origin === parentOrigin
   )
     throw new Error(
@@ -42,11 +56,11 @@ export function assertWebBrowserFrameNavigation(
 export function navigateWebBrowserFrame(
   iframe: HTMLIFrameElement,
   url: string,
-  protectedProxyUrl: string,
+  protectedProxyUrls: string | readonly string[],
 ) {
   assertWebBrowserFrameNavigation(
     url,
-    protectedProxyUrl,
+    protectedProxyUrls,
     iframe.ownerDocument.location.origin,
   );
   // The already-active opaque blank stays opaque. These flags take effect on

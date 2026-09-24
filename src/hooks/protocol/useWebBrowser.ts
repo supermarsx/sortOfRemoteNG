@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
+  googleAccountsEntryFor,
+  googleProxyForUpstream,
   googleUpstreamForProxy,
   validateGoogleProxyRoutes,
   type GoogleProxyRoute,
@@ -87,6 +89,7 @@ import {
   validateHttpApplicationTarget,
 } from "../../utils/auth/httpApplicationLogin";
 import {
+  getFirstPartyGoogleHostedApplicationUrl,
   getHttpApplicationProfile,
   normalizeHttpApplicationSettings,
 } from "../../utils/connection/httpApplicationProfiles";
@@ -665,16 +668,48 @@ export function useWebBrowser(session: ConnectionSession) {
     ],
   );
   const targetResolution = useMemo(() => {
-    const protocol = session.protocol === "https" ? "https" : "http";
-    const defaultPort = protocol === "https" ? 443 : 80;
     try {
-      const authority = parseCanonicalWebAuthority(session.hostname);
-      if (authority.sourceScheme && authority.sourceScheme !== protocol) {
+      const profileSettings = normalizeHttpApplicationSettings(
+        connection?.httpApplication,
+      );
+      const profile =
+        profileSettings && !profileSettings.invalid
+          ? getHttpApplicationProfile(profileSettings.id)
+          : undefined;
+      const googleHostedUrl = getFirstPartyGoogleHostedApplicationUrl(
+        profileSettings?.id,
+      );
+      const canonicalGoogle = googleHostedUrl
+        ? new URL(googleHostedUrl)
+        : undefined;
+      const savedHostname = session.hostname.trim();
+      const useCanonicalGoogle =
+        canonicalGoogle !== undefined &&
+        (!savedHostname ||
+          savedHostname.toLowerCase() === canonicalGoogle.hostname);
+      const protocol = useCanonicalGoogle
+        ? canonicalGoogle.protocol.slice(0, -1)
+        : session.protocol === "https"
+          ? "https"
+          : "http";
+      const defaultPort = protocol === "https" ? 443 : 80;
+      const authority = parseCanonicalWebAuthority(
+        useCanonicalGoogle ? canonicalGoogle.hostname : session.hostname,
+      );
+      if (
+        !useCanonicalGoogle &&
+        authority.sourceScheme &&
+        authority.sourceScheme !== protocol
+      ) {
         throw new Error(
           `Saved hostname uses ${authority.sourceScheme}, but this session requires ${protocol}.`,
         );
       }
-      const configuredPort = connection?.port || undefined;
+      const configuredPort = useCanonicalGoogle
+        ? canonicalGoogle.port
+          ? Number(canonicalGoogle.port)
+          : defaultPort
+        : connection?.port || undefined;
       if (
         authority.port &&
         configuredPort &&
@@ -689,16 +724,11 @@ export function useWebBrowser(session: ConnectionSession) {
         throw new Error("Saved connection contains an invalid web port.");
       }
 
-      const target = new URL(`${protocol}://${authority.hostname}/`);
+      const target = useCanonicalGoogle
+        ? new URL(canonicalGoogle.href)
+        : new URL(`${protocol}://${authority.hostname}/`);
       target.port = port === defaultPort ? "" : String(port);
-      const profileSettings = normalizeHttpApplicationSettings(
-        connection?.httpApplication,
-      );
-      const profile =
-        profileSettings && !profileSettings.invalid
-          ? getHttpApplicationProfile(profileSettings.id)
-          : undefined;
-      if (profile?.hostedLoginUrl)
+      if (!useCanonicalGoogle && profile?.hostedLoginUrl)
         target.pathname = new URL(profile.hostedLoginUrl).pathname;
       else if (profileSettings?.loginPath && !profileSettings.invalid)
         target.pathname = profileSettings.loginPath;
@@ -1208,14 +1238,24 @@ export function useWebBrowser(session: ConnectionSession) {
       pending.sessionId === proxySessionIdRef.current
     ) {
       awaitingFrameGenerationRef.current = pending.generation;
-      navigateWebBrowserFrame(iframe, pending.url, proxyUrlRef.current);
+      const documentAliases = googleRoutesRef.current
+        .filter((route) => route.documents)
+        .map((route) => route.proxyOrigin);
+      navigateWebBrowserFrame(
+        iframe,
+        pending.url,
+        documentAliases.length ? documentAliases : proxyUrlRef.current,
+      );
     }
   }, []);
   const navigateFrame = useCallback(
     (url: string, generation: number, sessionId: string) => {
+      const documentAliases = googleRoutesRef.current
+        .filter((route) => route.documents)
+        .map((route) => route.proxyOrigin);
       assertWebBrowserFrameNavigation(
         url,
-        proxyUrlRef.current,
+        documentAliases.length ? documentAliases : proxyUrlRef.current,
         window.location.origin,
       );
       const target = new URL(url);
@@ -2474,6 +2514,7 @@ export function useWebBrowser(session: ConnectionSession) {
               response.google_routes,
               urlObj.origin,
               protectedProxyUrl,
+              reviewedApplicationProfile === "google-hosted",
             );
           } catch (error) {
             await stopProxy(response.session_id);
@@ -2504,8 +2545,13 @@ export function useWebBrowser(session: ConnectionSession) {
             delete runtimeNavigation.nativeContinuation;
           }
           deferredLoginRef.current.receive(response);
+          const initialGoogleEntry = googleAccountsEntryFor(
+            googleRoutesRef.current,
+            urlObj,
+          );
           navigateFrame(
-            protectedProxyUrl.replace(/\/+$/, "") + pagePath,
+            initialGoogleEntry ??
+              protectedProxyUrl.replace(/\/+$/, "") + pagePath,
             gen,
             response.session_id,
           );
@@ -2783,6 +2829,7 @@ export function useWebBrowser(session: ConnectionSession) {
           resp.google_routes,
           baseTargetRef.current,
           protectedProxyUrl,
+          getReviewedApplicationProfile(connection) === "google-hosted",
         );
       } catch (error) {
         await stopProxy(resp.session_id);
@@ -2803,19 +2850,22 @@ export function useWebBrowser(session: ConnectionSession) {
       pendingInternalNavigationRef.current = false;
       beginLoadingPresentation(gen);
       armNavigationDeadline(gen, urlObj.toString());
+      const googleRestartUrl = googleRoutesRef.current.length
+        ? googleProxyForUpstream(googleRoutesRef.current, urlObj)
+        : undefined;
       navigateFrame(
-        (googleRoutesRef.current.find(
-          (route) => route.documents && route.upstreamOrigin === urlObj.origin,
-        )?.proxyOrigin ?? protectedProxyUrl.replace(/\/+$/, "")) +
-          urlObj.pathname +
-          urlObj.search +
-          urlObj.hash,
+        googleRestartUrl ??
+          protectedProxyUrl.replace(/\/+$/, "") +
+            urlObj.pathname +
+            urlObj.search +
+            urlObj.hash,
         gen,
         resp.session_id,
       );
       return true;
     },
     [
+      connection,
       clearNavigationFailure,
       stopProxy,
       armNavigationDeadline,

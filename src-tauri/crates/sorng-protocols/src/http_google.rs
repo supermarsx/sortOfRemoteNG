@@ -6,12 +6,35 @@ use super::{AxumProxyState, ReviewedApplicationProfile};
 use reqwest::{header::HeaderValue, Url};
 use serde::{Deserialize, Serialize};
 use std::{
+    cmp::Ordering,
     collections::BTreeMap,
     sync::{Arc, Mutex},
 };
 
 const CATALOG: &str = include_str!("../../../../src/utils/protocol/googleHostedRoutes.json");
 pub(super) const REDIRECT_MARKER: &str = "__sorng_google_hop_v1";
+
+fn cookie_domain_order(cookie: &cookie_store::Cookie<'_>, target: &Url) -> (u8, usize) {
+    let host = target.host_str().unwrap_or_default();
+    match &cookie.domain {
+        cookie_store::CookieDomain::HostOnly(domain) if domain == host => (0, usize::MAX),
+        cookie_store::CookieDomain::Suffix(domain) if domain == host => (1, usize::MAX),
+        cookie_store::CookieDomain::Suffix(domain) => (2, usize::MAX - domain.len()),
+        _ => (3, usize::MAX),
+    }
+}
+
+fn browser_cookie_order(
+    left: &cookie_store::Cookie<'_>,
+    right: &cookie_store::Cookie<'_>,
+    target: &Url,
+) -> Ordering {
+    right
+        .path
+        .len()
+        .cmp(&left.path.len())
+        .then_with(|| cookie_domain_order(left, target).cmp(&cookie_domain_order(right, target)))
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -198,7 +221,28 @@ impl GoogleSession {
     ) -> Vec<(String, String)> {
         let mut headers =
             super::collect_upstream_headers(incoming, super::UpstreamAuthMode::None, "", target);
-        headers.retain(|(name, _)| !matches!(name.as_str(), "cookie" | "origin" | "referer"));
+        let accounts_navigation = target == "https://accounts.google.com"
+            && incoming
+                .get("sec-fetch-mode")
+                .and_then(|value| value.to_str().ok())
+                == Some("navigate")
+            && incoming
+                .get("sec-fetch-dest")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| matches!(value, "document" | "iframe"));
+        headers.retain(|(name, _)| {
+            !matches!(name.as_str(), "cookie" | "origin" | "referer")
+                && !(accounts_navigation
+                    && matches!(
+                        name.as_str(),
+                        // These values describe the protected localhost alias
+                        // and iframe, not the upstream Accounts navigation.
+                        // Forwarding that contradictory topology makes Google
+                        // reject ServiceLogin as malformed. Background request
+                        // metadata remains intact for upstream CSRF policy.
+                        "sec-fetch-dest" | "sec-fetch-mode" | "sec-fetch-site" | "sec-fetch-user"
+                    ))
+        });
         for (name, value) in &mut headers {
             if name == "access-control-request-headers" {
                 *value = value
@@ -278,6 +322,7 @@ impl GoogleSession {
             .filter(|cookie| cookie.http_only() == Some(true))
             .map(|cookie| cookie.name().to_string())
             .collect::<std::collections::BTreeSet<_>>();
+        let mut occurrences = std::collections::BTreeMap::<String, usize>::new();
         for pair in value.split(';').take(128) {
             let Some((name, value)) = pair.trim().split_once('=') else {
                 continue;
@@ -295,30 +340,61 @@ impl GoogleSession {
             {
                 continue;
             }
-            // The browser's localhost alias cannot preserve an upstream Domain
-            // attribute. Remove matching visible values first so the native
-            // request never carries both the stale server value and the page's
-            // newer value. HttpOnly names were excluded above and always win.
-            let replaced = jar
+            let occurrence = occurrences.entry(name.to_owned()).or_default();
+            // The localhost alias cannot express Google's upstream Domain
+            // attribute. Match duplicate names in browser Cookie order (longest
+            // path first), then update only that native cookie. This preserves
+            // original domain/path/attribute scope through the roundtrip.
+            let mut existing = jar
                 .matches(target)
                 .into_iter()
                 .filter(|cookie| cookie.name() == name && cookie.http_only() != Some(true))
-                .map(|cookie| {
-                    (
-                        String::from(&cookie.domain),
-                        cookie.path.as_ref().to_owned(),
-                        cookie.name().to_owned(),
-                    )
-                })
+                .cloned()
                 .collect::<Vec<_>>();
-            for (domain, path, existing_name) in replaced {
-                jar.remove(&domain, &path, &existing_name);
-            }
-            let raw = format!("{name}={value}; Path=/; Secure");
-            let Ok(cookie) = cookie_store::Cookie::parse(raw, target) else {
+            existing.sort_by(|left, right| browser_cookie_order(left, right, target));
+            // localhost cannot represent two upstream domains with the same
+            // name and path. Reconcile only the deterministic projected winner.
+            existing.dedup_by(|left, right| left.path.as_ref() == right.path.as_ref());
+            let selected = existing.get(*occurrence).cloned();
+            *occurrence += 1;
+            let Some(cookie) = selected else {
+                // A new browser-only name has no upstream scope to preserve.
+                // Import only its first occurrence as a host-only root cookie;
+                // later duplicates are ambiguous and therefore ignored.
+                if *occurrence != 1 {
+                    continue;
+                }
+                let raw = format!("{name}={value}; Path=/; Secure");
+                let Ok(cookie) = cookie_store::Cookie::parse(raw, target) else {
+                    continue;
+                };
+                match jar.insert(cookie.into_owned(), target) {
+                    Ok(_) | Err(cookie_store::CookieError::Expired) => {}
+                    Err(_) => return Err("Invalid Google browser cookie"),
+                }
                 continue;
             };
-            match jar.insert(cookie.into_owned(), target) {
+            if cookie.value() == value {
+                continue;
+            }
+            let path = cookie.path.as_ref().to_owned();
+            let secure = cookie.secure();
+            let http_only = cookie.http_only();
+            let same_site = cookie.same_site();
+            let partitioned = cookie.partitioned();
+            let mut raw: cookie_store::RawCookie<'static> = cookie.into();
+            raw.set_value(value.to_owned());
+            // cookie_store's Cookie -> RawCookie conversion intentionally omits
+            // these fields. Restore them, and make an implicit effective path
+            // explicit, before parsing the replacement into native scope.
+            raw.set_path(path);
+            raw.set_secure(secure);
+            raw.set_http_only(http_only);
+            raw.set_same_site(same_site);
+            raw.set_partitioned(partitioned);
+            let replacement = cookie_store::Cookie::try_from_raw_cookie(&raw, target)
+                .map_err(|_| "Invalid Google browser cookie")?;
+            match jar.insert(replacement.into_owned(), target) {
                 Ok(_) | Err(cookie_store::CookieError::Expired) => {}
                 Err(_) => return Err("Invalid Google browser cookie"),
             }
@@ -452,7 +528,20 @@ impl GoogleSession {
         let Ok(jar) = self.cookies.lock() else {
             return Vec::new();
         };
-        jar.matches(url)
+        let mut cookies = jar.matches(url);
+        cookies.sort_by(|left, right| {
+            left.name()
+                .cmp(right.name())
+                .then_with(|| left.path.as_ref().cmp(right.path.as_ref()))
+                // Never expose a visible value when an HttpOnly cookie would
+                // collapse onto the same localhost name/path.
+                .then_with(|| right.http_only().cmp(&left.http_only()))
+                .then_with(|| browser_cookie_order(left, right, url))
+        });
+        cookies.dedup_by(|left, right| {
+            left.name() == right.name() && left.path.as_ref() == right.path.as_ref()
+        });
+        cookies
             .into_iter()
             .take(128)
             .filter_map(|cookie| {
@@ -564,6 +653,12 @@ impl GoogleSession {
             {
                 builder = builder.header("access-control-allow-credentials", "true");
             }
+        }
+        // `send` has already replaced upstream Set-Cookie values with safe
+        // localhost projections. Preserve those projections on redirects so
+        // browser-visible state advances in lockstep with the native jar.
+        for value in response.headers().get_all(reqwest::header::SET_COOKIE) {
+            builder = builder.header(axum::http::header::SET_COOKIE, value);
         }
         builder.body(Body::empty()).unwrap()
     }

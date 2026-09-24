@@ -36,6 +36,7 @@ import type {
   DatabaseCredentialVaultApi,
 } from "../../src/types/security/databaseCredentialVault";
 import { PROXY_WEB_FRAME_SANDBOX } from "../../src/utils/protocol/webBrowserFrame";
+import { expectedGoogleOrigins } from "../../src/utils/protocol/googleProxySession";
 
 const h = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -50,6 +51,7 @@ const h = vi.hoisted(() => ({
   runtimeStart: null as Connection | null,
   failSave: false,
   failSaveAfterDispatch: false,
+  omitGoogleRoutes: false,
   sessions: [] as ConnectionSession[],
   settingsReady: true,
   locked: false,
@@ -147,12 +149,33 @@ const proxies: Array<{
   session_id: string;
   proxy_url: string;
   target: string;
+  google_routes?: Array<{
+    upstreamOrigin: string;
+    proxyOrigin: string;
+    documents: boolean;
+  }>;
 }> = [];
 let proxyStartCount = 0;
 const holdFrameLoad = (event: Event) => {
   if (event.target instanceof HTMLIFrameElement)
     event.stopImmediatePropagation();
 };
+const googleAnalyticsConnection = (): Connection => ({
+  id: "saved-google",
+  name: "Google Analytics",
+  hostname: "",
+  port: 0,
+  protocol: "https",
+  isGroup: false,
+  createdAt: "2026-09-24",
+  updatedAt: "2026-09-24",
+  httpApplication: {
+    version: 1,
+    id: "google-analytics",
+    loginMode: "manual",
+  },
+  httpProxyPolicy: DEFAULT_HTTP_PROXY_POLICY,
+});
 const initialSession = (): ConnectionSession => ({
   id: "web-tab",
   connectionId: (h.runtimeStart ?? h.connections[0]).id,
@@ -208,6 +231,7 @@ beforeEach(() => {
   h.locked = false;
   h.failSave = false;
   h.failSaveAfterDispatch = false;
+  h.omitGoogleRoutes = false;
   h.runtimeStart = null;
   h.vault = undefined;
   h.loginStatuses = {};
@@ -258,13 +282,31 @@ beforeEach(() => {
           };
         if (command === "start_basic_auth_proxy") {
           const index = ++proxyStartCount;
-          const config = args.config as { target_url: string };
+          const config = args.config as {
+            target_url: string;
+            reviewed_application_profile?: string;
+          };
           const proxy = {
             deferred_login_status: h.loginStatuses[`proxy-${index}`],
             session_id: `proxy-${index}`,
             local_port: 43080 + index,
             proxy_url: `http://p${index.toString(16).padStart(32, "0")}.localhost:${43080 + index}/`,
             target: config.target_url,
+            ...(config.reviewed_application_profile === "google-hosted" &&
+            !h.omitGoogleRoutes
+              ? {
+                  google_routes: [
+                    ...expectedGoogleOrigins(new URL(config.target_url).origin),
+                  ].map(([upstreamOrigin, documents], routeIndex) => ({
+                    upstreamOrigin,
+                    documents,
+                    proxyOrigin:
+                      routeIndex === 0
+                        ? `http://p${index.toString(16).padStart(32, "0")}.localhost:${43080 + index}`
+                        : `http://p${(routeIndex + 10).toString(16).padStart(32, "0")}.localhost:${43080 + index}`,
+                  })),
+                }
+              : {}),
           };
           proxies.push(proxy);
           return proxy;
@@ -354,6 +396,48 @@ async function inspectWebsiteNotifications() {
 }
 
 describe("mounted website network boundary", () => {
+  it("enters a reviewed Google service through its Accounts alias", async () => {
+    h.connections = [googleAnalyticsConnection()];
+    h.persistedConnections = structuredClone(h.connections);
+    const view = render(<Harness />);
+
+    await waitFor(() => expect(proxies).toHaveLength(1));
+    const account = proxies[0].google_routes?.find(
+      (route) => route.upstreamOrigin === "https://accounts.google.com",
+    );
+    expect(account).toBeDefined();
+    await waitFor(() =>
+      expect(new URL(view.container.querySelector("iframe")!.src).origin).toBe(
+        account!.proxyOrigin,
+      ),
+    );
+    const entry = new URL(view.container.querySelector("iframe")!.src);
+    expect(entry.pathname).toBe("/ServiceLogin");
+    expect(entry.searchParams.get("continue")).toBe(
+      "https://analytics.google.com/analytics/web/",
+    );
+    expect(entry.searchParams.get("followup")).toBe(
+      "https://analytics.google.com/analytics/web/",
+    );
+  });
+
+  it("fails closed when a reviewed Google session omits native aliases", async () => {
+    h.connections = [googleAnalyticsConnection()];
+    h.persistedConnections = structuredClone(h.connections);
+    h.omitGoogleRoutes = true;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const view = render(<Harness />);
+
+    await waitFor(() => expect(proxies).toHaveLength(1));
+    await waitFor(() =>
+      expect(h.invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+        sessionId: "proxy-1",
+      }),
+    );
+    expect(view.container.querySelector("iframe")).toBeNull();
+    errorSpy.mockRestore();
+  });
+
   it.each(["missing", "legacy", "mismatch", "current"] as const)(
     "uses only fenced primary readiness for %s routing-module diagnostics",
     async (status) => {

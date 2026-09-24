@@ -103,6 +103,8 @@ const defaultProxyResponse = {
   session_id: "proxy-default",
   proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
 };
+const googleAccountsProxy =
+  "http://paaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.localhost:9000";
 
 const makeSession = (
   overrides: Partial<ConnectionSession> = {},
@@ -275,6 +277,92 @@ describe("useHTTPViewer", () => {
         }),
       }),
     );
+  });
+
+  it("starts reviewed Google profiles at Accounts and returns to the selected service", async () => {
+    mockInvoke.mockResolvedValue({
+      ...defaultProxyResponse,
+      session_id: "google-proxy",
+      google_routes: [
+        {
+          upstreamOrigin: "https://analytics.google.com",
+          proxyOrigin: defaultProxyResponse.proxy_url.replace(/\/$/, ""),
+          documents: true,
+        },
+        {
+          upstreamOrigin: "https://accounts.google.com",
+          proxyOrigin: googleAccountsProxy,
+          documents: true,
+        },
+        {
+          upstreamOrigin: "https://www.google.com",
+          proxyOrigin:
+            "http://pbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.localhost:9000",
+          documents: true,
+        },
+        ...[
+          "www.gstatic.com",
+          "ssl.gstatic.com",
+          "fonts.gstatic.com",
+          "fonts.googleapis.com",
+          "apis.google.com",
+          "analyticsadmin.googleapis.com",
+          "analyticsdata.googleapis.com",
+        ].map((host, index) => ({
+          upstreamOrigin: `https://${host}`,
+          proxyOrigin: `http://p${(index + 12).toString(16).padStart(32, "0")}.localhost:9000`,
+          documents: false,
+        })),
+      ],
+    });
+    const { result } = renderHook(() =>
+      useHTTPViewer(
+        makeSession({
+          connectionId: "conn-google-blank",
+          protocol: "https",
+          hostname: "",
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+
+    const entry = new URL(result.current.proxyUrl);
+    expect(entry.origin).toBe(googleAccountsProxy);
+    expect(entry.pathname).toBe("/ServiceLogin");
+    expect(entry.searchParams.get("continue")).toBe(
+      "https://analytics.google.com/analytics/web/",
+    );
+    expect(entry.searchParams.get("followup")).toBe(
+      "https://analytics.google.com/analytics/web/",
+    );
+    expect(result.current.history).toEqual([entry.href]);
+  });
+
+  it("fails closed when the backend omits the reviewed Google Accounts route", async () => {
+    mockInvoke.mockResolvedValue({
+      ...defaultProxyResponse,
+      session_id: "google-proxy-invalid",
+      google_routes: [],
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { result } = renderHook(() =>
+      useHTTPViewer(
+        makeSession({
+          connectionId: "conn-google-blank",
+          protocol: "https",
+          hostname: "",
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    expect(result.current.proxyUrl).toBe("");
+    expect(mockInvoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: "google-proxy-invalid",
+    });
+    errorSpy.mockRestore();
   });
 
   it("initProxy sets error when connection not found", async () => {

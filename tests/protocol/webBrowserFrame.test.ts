@@ -86,4 +86,35 @@ describe("website iframe navigation sandbox boundary", () => {
       ),
     ).toThrow();
   });
+  it("accepts only explicitly supplied document aliases from the protected listener", () => {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);
+    const account = "http://p11111111111111111111111111111111.localhost:43081/";
+    navigateWebBrowserFrame(iframe, `${account}ServiceLogin?continue=service`, [
+      proxy,
+      account,
+    ]);
+    expect(iframe.getAttribute("src")).toBe(
+      `${account}ServiceLogin?continue=service`,
+    );
+    expect(() =>
+      navigateWebBrowserFrame(
+        iframe,
+        "http://p22222222222222222222222222222222.localhost:43081/",
+        [proxy, account],
+      ),
+    ).toThrow();
+    expect(() =>
+      navigateWebBrowserFrame(iframe, `${account}ServiceLogin`, [
+        proxy,
+        "https://accounts.google.com/",
+      ]),
+    ).toThrow();
+    expect(() =>
+      navigateWebBrowserFrame(iframe, `${account}ServiceLogin`, [
+        proxy,
+        "http://p11111111111111111111111111111111.localhost:43082/",
+      ]),
+    ).toThrow();
+  });
 });

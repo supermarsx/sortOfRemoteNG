@@ -36,6 +36,15 @@ the current tab and share the session's native cookie jar; an unlisted origin,
 lookalike hostname, custom port, WebSocket, worker, WebRTC or WebTransport route
 is refused without a direct-network fallback.
 
+First-party Google profiles resolve their built-in reviewed HTTPS entry point
+when the saved host is blank or already canonical. They do not require a user
+to enter a URL, hostname, IP address or port.
+
+The first document opens the reviewed Google Account alias and carries the
+selected service URL as its exact return destination. This avoids depending on
+a service-specific passive-login redirect before the identifier page is ready;
+the service remains the owner of the native session and certificate policy.
+
 When **Automatic form login** is selected, the native dispenser releases the
 saved Google Account email only to an exact reviewed identifier document, then
 releases the password once to the following exact password document. Either a

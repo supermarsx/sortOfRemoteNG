@@ -13,11 +13,16 @@ import { useSessionFullscreen } from "../session/useSessionFullscreen";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import { validateProtectedProxyUrl } from "./useWebBrowser";
 import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
+import {
+  googleAccountsEntryFor,
+  validateGoogleProxyRoutes,
+} from "../../utils/protocol/googleProxySession";
 
 interface ProxyMediatorResponse {
   local_port: number;
   session_id: string;
   proxy_url: string;
+  google_routes?: unknown;
 }
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
@@ -214,10 +219,20 @@ export function useHTTPViewer(session: ConnectionSession) {
       const entry = new URL(targetUrl);
       const initialProxyUrl =
         reviewedApplicationProfile === "google-hosted"
-          ? protectedProxyUrl.replace(/\/$/, "") +
-            entry.pathname +
-            entry.search +
-            entry.hash
+          ? (googleAccountsEntryFor(
+              validateGoogleProxyRoutes(
+                response.google_routes,
+                entry.origin,
+                protectedProxyUrl,
+                true,
+              ),
+              entry,
+            ) ??
+            (() => {
+              throw new Error(
+                "Backend did not provide a safe Google Accounts entry route.",
+              );
+            })())
           : protectedProxyUrl;
       setProxyUrl(initialProxyUrl);
       setProxySessionId(response.session_id);

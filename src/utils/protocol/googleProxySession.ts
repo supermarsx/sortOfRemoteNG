@@ -29,12 +29,21 @@ export function validateGoogleProxyRoutes(
   value: unknown,
   source: string,
   proxy: string,
+  required: boolean,
 ): GoogleProxyRoute[] {
-  if (value === undefined || (Array.isArray(value) && value.length === 0))
-    return [];
   const expected = expectedGoogleOrigins(new URL(source).origin);
+  if (
+    !required &&
+    (value === undefined || (Array.isArray(value) && !value.length))
+  )
+    return [];
+  if (!expected.size) {
+    if (value === undefined || (Array.isArray(value) && value.length === 0))
+      throw new Error("Native Google routes are unavailable for this target.");
+    throw new Error("Unexpected native Google session routes.");
+  }
   const base = new URL(proxy);
-  if (!expected.size || !Array.isArray(value) || value.length !== expected.size)
+  if (!Array.isArray(value) || value.length !== expected.size)
     throw new Error("Invalid native Google session routes.");
   const seen = new Set<string>();
   const origins = new Set<string>();
@@ -76,4 +85,46 @@ export function googleUpstreamForProxy(
   );
   if (!route || url.username || url.password) return undefined;
   return route.upstreamOrigin + url.pathname + url.search + url.hash;
+}
+
+/** Map one reviewed upstream document URL onto its native-issued alias. */
+export function googleProxyForUpstream(
+  routes: readonly GoogleProxyRoute[],
+  url: URL,
+): string | undefined {
+  const route = routes.find(
+    (route) => route.documents && route.upstreamOrigin === url.origin,
+  );
+  if (!route || url.username || url.password) return undefined;
+  return route.proxyOrigin + url.pathname + url.search + url.hash;
+}
+
+/**
+ * Start a reviewed Google service at Accounts, then return to the exact service
+ * URL through the already-approved redirect routes. The service remains the
+ * native session owner; Accounts is only the first in-session document.
+ */
+export function googleAccountsEntryFor(
+  routes: readonly GoogleProxyRoute[],
+  target: URL,
+): string | undefined {
+  if (
+    target.protocol !== "https:" ||
+    target.username ||
+    target.password ||
+    target.port ||
+    !routes.some(
+      (route) => route.documents && route.upstreamOrigin === target.origin,
+    )
+  )
+    return undefined;
+  const account = routes.find(
+    (route) =>
+      route.documents && route.upstreamOrigin === "https://accounts.google.com",
+  );
+  if (!account) return undefined;
+  const entry = new URL("/ServiceLogin", account.proxyOrigin);
+  entry.searchParams.set("continue", target.href);
+  entry.searchParams.set("followup", target.href);
+  return entry.href;
 }

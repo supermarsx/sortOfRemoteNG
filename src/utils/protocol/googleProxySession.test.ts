@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   expectedGoogleOrigins,
+  googleAccountsEntryFor,
+  googleProxyForUpstream,
   googleUpstreamForProxy,
   type GoogleProxyRoute,
   validateGoogleProxyRoutes,
@@ -50,6 +52,7 @@ describe("Google proxy session routes", () => {
         routes,
         `${source}/analytics/web/`,
         `${proxy}/`,
+        true,
       ),
     ).toEqual(routes);
 
@@ -75,12 +78,37 @@ describe("Google proxy session routes", () => {
     ]) {
       const copy = structuredClone(routes);
       mutate(copy);
-      expect(() => validateGoogleProxyRoutes(copy, source, proxy)).toThrow();
+      expect(() =>
+        validateGoogleProxyRoutes(copy, source, proxy, true),
+      ).toThrow();
     }
   });
 
+  it("requires the complete native manifest for a reviewed Google source", () => {
+    expect(() =>
+      validateGoogleProxyRoutes(undefined, source, proxy, true),
+    ).toThrow();
+    expect(() => validateGoogleProxyRoutes([], source, proxy, true)).toThrow();
+    expect(validateGoogleProxyRoutes(undefined, source, proxy, false)).toEqual(
+      [],
+    );
+    expect(() =>
+      validateGoogleProxyRoutes(
+        undefined,
+        "https://secure.example.test",
+        proxy,
+        true,
+      ),
+    ).toThrow();
+  });
+
   it("maps document aliases exactly and has no direct-url fallback", () => {
-    const routes = validateGoogleProxyRoutes(nativeRoutes(), source, proxy);
+    const routes = validateGoogleProxyRoutes(
+      nativeRoutes(),
+      source,
+      proxy,
+      true,
+    );
     const account = routes.find(
       (route) => route.upstreamOrigin === "https://accounts.google.com",
     )!;
@@ -111,6 +139,22 @@ describe("Google proxy session routes", () => {
         new URL(
           account.proxyOrigin.replace(".localhost", ".localhost.attacker.test"),
         ),
+      ),
+    ).toBeUndefined();
+
+    const destination = new URL(`${source}/analytics/web/?authuser=1#report`);
+    expect(googleProxyForUpstream(routes, destination)).toBe(
+      `${proxy}/analytics/web/?authuser=1#report`,
+    );
+    const entry = new URL(googleAccountsEntryFor(routes, destination)!);
+    expect(entry.origin).toBe(account.proxyOrigin);
+    expect(entry.pathname).toBe("/ServiceLogin");
+    expect(entry.searchParams.get("continue")).toBe(destination.href);
+    expect(entry.searchParams.get("followup")).toBe(destination.href);
+    expect(
+      googleAccountsEntryFor(
+        routes,
+        new URL("https://accounts.google.com.attacker.test/"),
       ),
     ).toBeUndefined();
   });

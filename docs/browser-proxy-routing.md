@@ -79,12 +79,19 @@ mode controls whether the native jar participates. Upstream CORS approval is
 translated to the requesting alias; the proxy does not manufacture approval
 for a destination Google did not allow.
 
-Cross-origin Google redirects remain in the current frame and preserve the
-browser method semantics, bounded to twenty hops. The saved connection's secret
+The initial document enters through the native-issued Google Account alias with
+the selected service URL as its exact return destination. Cross-origin Google
+redirects then remain in the current frame and preserve the browser method
+semantics, bounded to twenty hops. Redirect responses retain the proxy's safe
+cookie projections so browser-visible and native session state advance together.
+The saved connection's secret
 headers and query additions are not copied onto sibling Google origins. Only
 the exact Google Account alias exposes the one-use automatic-login endpoint.
 The incoming WebView `User-Agent` is forwarded unchanged; no browser identity
-is synthesized. Google can nevertheless reject embedded sign-in.
+is synthesized. Fetch Metadata is preserved for background requests, but it is
+omitted on reviewed Google Account document navigations when it describes the
+localhost iframe rather than the upstream topology. Google can nevertheless
+reject embedded sign-in.
 
 This route covers the supported document/page channels listed above on every
 desktop platform. It does not turn workers, WebRTC, WebTransport or arbitrary
