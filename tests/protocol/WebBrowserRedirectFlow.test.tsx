@@ -396,29 +396,23 @@ async function inspectWebsiteNotifications() {
 }
 
 describe("mounted website network boundary", () => {
-  it("enters a reviewed Google service through its Accounts alias", async () => {
+  it("hands a reviewed Google service to the supported system browser", async () => {
     h.connections = [googleAnalyticsConnection()];
     h.persistedConnections = structuredClone(h.connections);
     const view = render(<Harness />);
 
     await waitFor(() => expect(proxies).toHaveLength(1));
-    const account = proxies[0].google_routes?.find(
-      (route) => route.upstreamOrigin === "https://accounts.google.com",
-    );
-    expect(account).toBeDefined();
     await waitFor(() =>
-      expect(new URL(view.container.querySelector("iframe")!.src).origin).toBe(
-        account!.proxyOrigin,
-      ),
+      expect(
+        screen.getByRole("heading", {
+          name: "Continue securely in your browser",
+        }),
+      ).toBeVisible(),
     );
-    const entry = new URL(view.container.querySelector("iframe")!.src);
-    expect(entry.pathname).toBe("/ServiceLogin");
-    expect(entry.searchParams.get("continue")).toBe(
-      "https://analytics.google.com/analytics/web/",
-    );
-    expect(entry.searchParams.get("followup")).toBe(
-      "https://analytics.google.com/analytics/web/",
-    );
+    expect(view.container.querySelector("iframe")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Open Google Analytics" }),
+    ).toBeVisible();
   });
 
   it("fails closed when a reviewed Google session omits native aliases", async () => {
