@@ -880,6 +880,7 @@
       var options;
       var activeCapture;
       var waitingForStability = false;
+      var waitingForCpanelSubmit = false;
       function finish(result) {
         if (finished) return;
         finished = true;
@@ -994,7 +995,9 @@
               fail();
             }
           };
-          if (options.submitDelayMs)
+          if (readinessProfile === "cpanel")
+            waitForCpanelSubmit(captured, submit);
+          else if (options.submitDelayMs)
             retryTimer = setTimeout(submit, options.submitDelayMs);
           else submit();
         } catch (_) {
@@ -1014,6 +1017,36 @@
         if (typeof window.requestAnimationFrame === "function")
           window.requestAnimationFrame(callback);
         else retryTimer = setTimeout(callback, 0);
+      }
+      function waitForCpanelSubmit(captured, submit) {
+        if (waitingForCpanelSubmit || finished) return;
+        waitingForCpanelSubmit = true;
+        // cPanel's login page may attach field observers after the form first
+        // becomes enabled. Let both native input/change delivery and two paint
+        // turns complete after the credential write before invoking its real
+        // submit control. The previous readiness gate only waited before fill,
+        // so the click still occurred in the same task as the writes.
+        nextVisualFrame(function () {
+          nextVisualFrame(function () {
+            waitingForCpanelSubmit = false;
+            if (finished) return;
+            try {
+              if (
+                document.readyState !== "complete" ||
+                !guarded(captured) ||
+                !submitControlReady(captured.target)
+              ) {
+                fail();
+                return;
+              }
+              if (options.submitDelayMs)
+                retryTimer = setTimeout(submit, options.submitDelayMs);
+              else submit();
+            } catch (_) {
+              fail();
+            }
+          });
+        });
       }
       function waitForCpanelStability(captured) {
         if (waitingForStability || finished) return;

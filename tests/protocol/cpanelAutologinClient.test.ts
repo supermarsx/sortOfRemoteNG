@@ -88,7 +88,7 @@ describe("cPanel auto-login readiness", () => {
     vi.useRealTimers();
   });
 
-  it("waits for complete load and two stable render frames before submitting", async () => {
+  it("waits for stable render frames before and after filling", async () => {
     installForm();
     const pending = client.fetchCredsAndRun("nonce", selectors, "cpanel");
     await vi.advanceTimersByTimeAsync(400);
@@ -100,6 +100,10 @@ describe("cPanel auto-login readiness", () => {
     readyState = "complete";
     await vi.advanceTimersByTimeAsync(400);
     expect(frames).toHaveLength(1);
+    runFrame();
+    expect(submit).not.toHaveBeenCalled();
+    runFrame();
+    expect(submit).not.toHaveBeenCalled();
     runFrame();
     expect(submit).not.toHaveBeenCalled();
     runFrame();
@@ -124,6 +128,8 @@ describe("cPanel auto-login readiness", () => {
     await vi.advanceTimersByTimeAsync(400);
     runFrame();
     runFrame();
+    runFrame();
+    runFrame();
 
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(submit).toHaveBeenCalledOnce();
@@ -141,8 +147,42 @@ describe("cPanel auto-login readiness", () => {
     expect(frames).toHaveLength(1);
     runFrame();
     runFrame();
+    runFrame();
+    runFrame();
 
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(submit).toHaveBeenCalledOnce();
+  });
+
+  it("lets cPanel consume field events before the login click", async () => {
+    readyState = "complete";
+    installForm();
+    const observed = { username: "", password: "" };
+    const username = document.querySelector("#user") as HTMLInputElement;
+    const password = document.querySelector("#pass") as HTMLInputElement;
+    username.addEventListener("input", () => {
+      requestAnimationFrame(() => {
+        observed.username = username.value;
+      });
+    });
+    password.addEventListener("input", () => {
+      requestAnimationFrame(() => {
+        observed.password = password.value;
+      });
+    });
+    let submittedState: typeof observed | undefined;
+    document.querySelector("form")!.addEventListener("submit", () => {
+      submittedState = { ...observed };
+    });
+
+    const pending = client.fetchCredsAndRun("nonce", selectors, "cpanel");
+    await vi.advanceTimersByTimeAsync(0);
+    while (frames.length) runFrame();
+
+    await expect(pending).resolves.toMatchObject({ reason: "submitted" });
+    expect(submittedState).toEqual({
+      username: "cp-user",
+      password: "cp-secret",
+    });
   });
 });
