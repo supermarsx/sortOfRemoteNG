@@ -6,16 +6,31 @@ import {
   credentialVaultScopeKey,
   FACET_LABELS,
 } from "../../hooks/security/useDatabaseCredentialVault";
-import { normalizeConnectionCredentialSource } from "../../utils/security/databaseCredentialVault";
+import {
+  normalizeConnectionCredentialSource,
+  normalizeDatabaseCredentialEntry,
+} from "../../utils/security/databaseCredentialVault";
+import {
+  clearLocalCredentialFields,
+  convertibleVaultFacets,
+  localCredentialFacets,
+  LOCAL_CREDENTIAL_FACETS,
+  vaultCredentialLocalFields,
+} from "../../utils/security/connectionCredentialConversion";
 import { Select } from "../ui/forms";
 import { useVaultTotpChoices } from "../../hooks/security/useVaultTotpChoices";
 
 export default function CredentialSourceSection({
   formData,
   setFormData,
+  credentialConversion,
 }: {
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
+  credentialConversion?: {
+    read: () => Partial<Connection>;
+    apply: (patch: Partial<Connection>) => void;
+  };
 }) {
   const authenticators = useVaultTotpChoices(formData);
   const context = useContext(ConnectionContext),
@@ -26,6 +41,22 @@ export default function CredentialSourceSection({
     owner.current = key;
   const latest = useRef({ api, key });
   latest.current = { api, key };
+  const currentDraft = useRef({ formData, credentialConversion });
+  currentDraft.current = { formData, credentialConversion };
+  const alive = useRef(true),
+    converting = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const [conversionOpen, setConversionOpen] = useState(false);
+  const [conversionTarget, setConversionTarget] = useState("");
+  const [conversionName, setConversionName] = useState("");
+  const [conversionBusy, setConversionBusy] = useState(false);
+  const [conversionError, setConversionError] = useState("");
+  const [conversionStatus, setConversionStatus] = useState("");
   const [choosing, setChoosing] = useState(false),
     [snapshot, setSnapshot] = useState<DatabaseCredentialSnapshot | null>(null),
     [loading, setLoading] = useState(false),
@@ -39,7 +70,7 @@ export default function CredentialSourceSection({
     invalid = true;
   }
   const vault = source?.kind === "vault",
-    open = vault || choosing;
+    open = vault || choosing || conversionOpen;
   const accessible = !!api?.scope && key === owner.current;
   useEffect(() => {
     let alive = true;
@@ -71,6 +102,7 @@ export default function CredentialSourceSection({
       : [];
   const selected = source?.kind === "vault" ? source.credentialId : "";
   const mutate = (credentialSource: Connection["credentialSource"]) => {
+    if (converting.current) return;
     if (
       credentialSource?.kind === "vault" &&
       (!accessible ||
@@ -101,6 +133,188 @@ export default function CredentialSourceSection({
       };
     });
   };
+  const convert = async (direction: "vault" | "local") => {
+    if (converting.current || !accessible || !api?.scope) return;
+    converting.current = true;
+    setConversionBusy(true);
+    setConversionError("");
+    setConversionStatus("");
+    const original = currentDraft.current;
+    const draft = original.credentialConversion?.read() ?? original.formData;
+    const draftVersion = JSON.stringify(draft);
+    const scope = { ...api.scope };
+    const check = () => {
+      if (
+        !alive.current ||
+        latest.current.key !== owner.current ||
+        latest.current.key !== key ||
+        credentialVaultScopeKey(api) !== key ||
+        currentDraft.current.formData !== original.formData ||
+        JSON.stringify(
+          currentDraft.current.credentialConversion?.read() ??
+            currentDraft.current.formData,
+        ) !== draftVersion
+      )
+        throw new Error("Credential conversion context changed.");
+    };
+    try {
+      check();
+      const review = await api.list(scope);
+      check();
+      if (
+        review.scope.databaseId !== scope.databaseId ||
+        review.scope.generation !== scope.generation
+      )
+        throw new Error("Credential owner changed.");
+      let patch: Partial<Connection>;
+      if (direction === "vault") {
+        if (
+          normalizeConnectionCredentialSource(draft.credentialSource)?.kind ===
+          "vault"
+        )
+          throw new Error();
+        const facets = localCredentialFacets(draft);
+        const existing = conversionTarget
+          ? review.entries.find((entry) => entry.id === conversionTarget)
+          : undefined;
+        if (conversionTarget && !existing) throw new Error();
+        const retainedFacets =
+          existing?.availableFacets.filter(
+            (facet) =>
+              !LOCAL_CREDENTIAL_FACETS.some((local) => local === facet),
+          ) ?? [];
+        const retained =
+          existing && retainedFacets.length
+            ? await api.resolve(review, existing.id, retainedFacets)
+            : {};
+        check();
+        const now = new Date().toISOString();
+        const entry = normalizeDatabaseCredentialEntry({
+          id: existing?.id ?? crypto.randomUUID(),
+          name: existing?.name ?? conversionName.trim(),
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+          facets: { ...retained, ...facets },
+        });
+        await api.compareAndSwap(review, [{ operation: "put", entry }]);
+        check();
+        const verified = await api.list(scope);
+        check();
+        if (
+          verified.scope.databaseId !== scope.databaseId ||
+          verified.scope.generation !== scope.generation ||
+          verified.revision <= review.revision ||
+          !verified.entries.some((row) => row.id === entry.id)
+        )
+          throw new Error();
+        const stored = await api.resolve(
+          verified,
+          entry.id,
+          LOCAL_CREDENTIAL_FACETS.filter(
+            (facet) => facets[facet] !== undefined,
+          ),
+        );
+        check();
+        if (
+          Object.entries(facets).some(
+            ([facet, value]) =>
+              JSON.stringify(stored[facet as keyof typeof stored]) !==
+              JSON.stringify(value),
+          )
+        )
+          throw new Error("Credential verification failed.");
+        patch = {
+          ...clearLocalCredentialFields(),
+          credentialSource: {
+            kind: "vault",
+            credentialId: entry.id,
+            ...(draft.totpSecret
+              ? {
+                  totpId: facets.totp?.find(
+                    (item) =>
+                      item.secret ===
+                      draft.totpSecret?.replace(/\s/g, "").toUpperCase(),
+                  )?.id,
+                }
+              : {}),
+          },
+        };
+        setSnapshot(verified);
+      } else {
+        const reference = normalizeConnectionCredentialSource(
+          draft.credentialSource,
+        );
+        if (reference?.kind !== "vault") throw new Error();
+        const row = review.entries.find(
+          (entry) => entry.id === reference.credentialId,
+        );
+        if (!row) throw new Error();
+        const required =
+          draft.protocol === "ssh" && draft.authType === "key"
+            ? (["username", "privateKey"] as const)
+            : (["username", "password"] as const);
+        if (required.some((facet) => !row.availableFacets.includes(facet)))
+          throw new Error();
+        const needed = convertibleVaultFacets(row, draft);
+        if (!needed.length) throw new Error();
+        const facets = await api.resolve(review, row.id, needed);
+        check();
+        if (needed.some((facet) => facets[facet] === undefined))
+          throw new Error();
+        normalizeDatabaseCredentialEntry({
+          id: row.id,
+          name: row.name,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          facets,
+        });
+        const selectedTotp = facets.totp?.find(
+          (entry) => entry.id === reference.totpId,
+        );
+        if (
+          draft.protocol === "ssh" &&
+          selectedTotp &&
+          (selectedTotp.digits !== 6 ||
+            selectedTotp.period !== 30 ||
+            selectedTotp.algorithm !== "sha1")
+        )
+          throw new Error();
+        patch = {
+          ...vaultCredentialLocalFields(facets, reference.totpId),
+          credentialSource: { kind: "local" },
+        };
+      }
+      check();
+      patch.httpAutoMfa = draft.httpAutoMfa
+        ? { version: 1, enabled: false }
+        : undefined;
+      if (original.credentialConversion)
+        original.credentialConversion.apply(patch);
+      else
+        setFormData((previous) =>
+          previous === original.formData &&
+          alive.current &&
+          latest.current.key === key
+            ? { ...previous, ...patch }
+            : previous,
+        );
+      setChoosing(false);
+      setConversionOpen(false);
+      setConversionStatus(
+        direction === "vault"
+          ? "Vault write verified. Local credential fields were cleared in this draft. Save the connection to keep the new source."
+          : "Vault credentials copied into this draft. The reusable vault entry is unchanged. Save the connection to keep the local source.",
+      );
+    } catch {
+      if (alive.current)
+        setConversionError(
+          "Conversion could not be completed. The connection's source and local fields were kept. Unlock and reload the owning database, review the destination, then retry. A completed vault write may remain even if verification failed.",
+        );
+    } finally {
+      converting.current = false;
+      if (alive.current) setConversionBusy(false);
+    }
+  };
   return (
     <section
       data-editor-search-section="credential-source"
@@ -117,6 +331,7 @@ export default function CredentialSourceSection({
           type="button"
           className="sor-option-chip"
           aria-pressed={!open && !invalid}
+          disabled={conversionBusy}
           onClick={() => {
             setChoosing(false);
             mutate({ kind: "local" });
@@ -128,12 +343,92 @@ export default function CredentialSourceSection({
           type="button"
           className="sor-option-chip"
           aria-pressed={open}
-          disabled={!accessible}
+          disabled={!accessible || conversionBusy}
           onClick={() => setChoosing(true)}
         >
           Database vault
         </button>
       </div>
+      <button
+        type="button"
+        className="sor-btn sor-btn-secondary"
+        disabled={!accessible || invalid || conversionBusy}
+        onClick={() => {
+          if (vault) void convert("local");
+          else {
+            setConversionOpen(true);
+            setConversionName(formData.name ?? "");
+          }
+        }}
+      >
+        {conversionBusy
+          ? "Converting credentials…"
+          : vault
+            ? "Copy vault credentials to connection-local"
+            : "Move local credentials to vault"}
+      </button>
+      {conversionOpen && !vault && (
+        <div className="space-y-2 rounded border border-[var(--color-border)] p-3">
+          <Select
+            label="Conversion destination"
+            variant="form"
+            value={conversionTarget}
+            disabled={conversionBusy || loading || !accessible}
+            options={[
+              { value: "", label: "New vault credential" },
+              ...rows.map((row) => ({ value: row.id, label: row.name })),
+            ]}
+            onChange={setConversionTarget}
+          />
+          {!conversionTarget && (
+            <label className="block">
+              New credential name
+              <input
+                className="sor-form-input"
+                value={conversionName}
+                disabled={conversionBusy}
+                maxLength={128}
+                onChange={(event) => setConversionName(event.target.value)}
+              />
+            </label>
+          )}
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            {conversionTarget
+              ? "Username, password, domain, key and authenticator fields in the selected shared credential will be replaced. Other connections using it will use the updated credentials. Provider bindings and trusted devices are preserved. "
+              : "A reusable credential will be saved in this database. "}
+            Local fields are cleared only after the vault write is verified.
+            Recovery codes and separate HTTP accounts cannot be moved together.
+            Automatic 2FA must be reviewed again after conversion.
+          </p>
+          <button
+            type="button"
+            className="sor-btn sor-btn-primary"
+            disabled={
+              conversionBusy ||
+              loading ||
+              !accessible ||
+              (!conversionTarget && !conversionName.trim())
+            }
+            onClick={() => void convert("vault")}
+          >
+            Save to vault and switch source
+          </button>
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={conversionBusy}
+            onClick={() => setConversionOpen(false)}
+          >
+            Cancel conversion
+          </button>
+        </div>
+      )}
+      {conversionError && (
+        <p role="alert" className="text-error">
+          {conversionError}
+        </p>
+      )}
+      {conversionStatus && <p role="status">{conversionStatus}</p>}
       {invalid && (
         <p role="alert" className="text-error">
           The saved credential source is invalid. Choose a source explicitly; it
@@ -159,7 +454,7 @@ export default function CredentialSourceSection({
             variant="form"
             searchable
             searchPlaceholder="Search credential names or types"
-            disabled={!accessible || loading}
+            disabled={!accessible || loading || conversionBusy}
             value={selected}
             placeholder={
               loading ? "Loading credential metadata…" : "Choose a credential"
@@ -210,7 +505,11 @@ export default function CredentialSourceSection({
                 label="Vault authenticator for login challenges"
                 variant="form"
                 value={source?.kind === "vault" ? (source.totpId ?? "") : ""}
-                disabled={!authenticators.available || authenticators.loading}
+                disabled={
+                  !authenticators.available ||
+                  authenticators.loading ||
+                  conversionBusy
+                }
                 options={[
                   { value: "", label: "None — enter codes manually" },
                   ...authenticators.entries.map((entry) => ({

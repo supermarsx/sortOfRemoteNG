@@ -76,6 +76,69 @@ describe("useConnectionEditor SSH secret handling", () => {
     mockToastSuccess.mockClear();
   });
 
+  it("converts the current managed SSH secrets and persists converted local values", async () => {
+    const { result } = renderHook(() =>
+      useConnectionEditor(baseConnection, true, vi.fn()),
+    );
+    await waitFor(() =>
+      expect(result.current.formData.hostname).toBe("server.example.com"),
+    );
+    act(() =>
+      result.current.sshSecrets.handlePasswordChange("latest-password"),
+    );
+    expect(result.current.credentialConversion.read()).toMatchObject({
+      password: "latest-password",
+      passphrase: "stored-passphrase",
+      privateKey: baseConnection.privateKey,
+      totpSecret: "stored-totp-secret",
+    });
+    act(() =>
+      result.current.credentialConversion.apply({
+        credentialSource: {
+          kind: "vault",
+          credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+        username: "",
+        password: "",
+        passphrase: "",
+        privateKey: "",
+        totpSecret: "",
+      }),
+    );
+    expect(result.current.sshSecrets.getPassword()).toBe("");
+    expect(result.current.sshSecrets.getPrivateKey()).toBe("");
+    act(() =>
+      result.current.credentialConversion.apply({
+        credentialSource: { kind: "local" },
+        username: "copied-user",
+        password: "copied-password",
+        passphrase: "copied-passphrase",
+        privateKey: "copied-key",
+        totpSecret: "copied-seed",
+      }),
+    );
+    expect(result.current.formData.password).toBe("");
+    expect(result.current.formData.privateKey).toBe("");
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(mockDispatchAndFlush).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          credentialSource: { kind: "local" },
+          username: "copied-user",
+          password: "copied-password",
+          privateKey: "copied-key",
+          passphrase: "copied-passphrase",
+          totpSecret: "copied-seed",
+          sshConnectionConfigOverride: expect.objectContaining({
+            proxyCommandPassword: "stored-proxy-password",
+          }),
+        }),
+      }),
+    );
+  });
+
   it("keeps SSH secrets out of formData but still persists them on save", async () => {
     const { result } = renderHook(() =>
       useConnectionEditor(baseConnection, true, vi.fn()),

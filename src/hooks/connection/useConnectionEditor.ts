@@ -1992,6 +1992,30 @@ export function useConnectionEditor(
     protocolOptions,
     formData,
     setFormData,
+    credentialConversion: {
+      read: () => mergeManagedSshSecrets(formData),
+      apply: (patch: Partial<Connection>) => {
+        if (formData.protocol === "ssh") {
+          hydrateManagedSshSecrets({
+            password: patch.password ?? "",
+            passphrase: patch.passphrase ?? "",
+            privateKey: patch.privateKey ?? "",
+          });
+          sshTotpSecretRef.current = patch.totpSecret ?? "";
+          setSshSecretRevision((current) => current + 1);
+          setFormData((previous) => ({
+            ...previous,
+            ...patch,
+            password: "",
+            passphrase: "",
+            privateKey: "",
+            totpSecret: "",
+          }));
+        } else {
+          setFormData((previous) => ({ ...previous, ...patch }));
+        }
+      },
+    },
     expandedSections,
     autoSaveStatus,
     allTags,

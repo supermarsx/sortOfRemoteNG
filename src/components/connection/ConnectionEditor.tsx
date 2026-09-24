@@ -2217,6 +2217,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                     <CredentialSourceSection
                       formData={mgr.formData}
                       setFormData={mgr.setFormData}
+                      credentialConversion={mgr.credentialConversion}
                     />
                     <ConnectionFields
                       mgr={mgr}
