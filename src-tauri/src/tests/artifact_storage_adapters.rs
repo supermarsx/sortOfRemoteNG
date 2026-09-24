@@ -109,6 +109,37 @@ fn put(path: &Path, bytes: &[u8]) {
 }
 
 #[tokio::test]
+async fn database_write_stages_are_excluded_from_the_artifact_inventory() {
+    let (_dir, roots, state) = fixture().await;
+    let databases = roots.app_data.join("databases");
+    let transient = [
+        databases.join("index.json.tmp"),
+        databases.join("fixture.json.tmp"),
+        databases.join("fixture.trust.json.tmp"),
+    ];
+    for path in &transient {
+        put(path, b"incomplete-write");
+    }
+
+    let inventory = scan(&roots, &state).await.unwrap();
+
+    for kind in [
+        ArtifactKind::Connections,
+        ArtifactKind::DatabasesIndex,
+        ArtifactKind::TrustStore,
+    ] {
+        let row = status(&inventory, kind);
+        assert_eq!(row.unverified_files, 0, "{kind:?}: {:?}", row.reason);
+        assert_eq!(row.disk_state, DiskState::Absent, "{kind:?}");
+    }
+    assert!(inventory
+        .files
+        .iter()
+        .all(|file| !file.path.to_string_lossy().ends_with(".tmp")));
+    assert!(transient.iter().all(|path| path.exists()));
+}
+
+#[tokio::test]
 async fn opaque_macro_libraries_are_inventoried_and_convert_without_json_canonicalization() {
     let (_dir, roots, state) = fixture().await;
     let raw = " { \"z\": [\"script body\\nkept verbatim\"], \"a\": 1 }\n";

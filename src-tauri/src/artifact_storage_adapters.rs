@@ -498,6 +498,13 @@ pub async fn scan_selected(
             if name.starts_with(".sorng-artifact-") {
                 continue;
             }
+            // Database `.tmp` siblings are incomplete writer stages, never
+            // recovery generations. The database read ladder deliberately
+            // ignores them and full rotation removes abandoned instances only
+            // after the durable generations have committed successfully.
+            if default_kind == ArtifactKind::Connections && name.ends_with(".tmp") {
+                continue;
+            }
             let (base, _) = recovery_base(name);
             let (kind, encoding) = match default_kind {
                 ArtifactKind::Connections => {
