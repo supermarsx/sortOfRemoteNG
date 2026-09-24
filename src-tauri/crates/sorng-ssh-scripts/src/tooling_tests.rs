@@ -223,13 +223,16 @@ async fn powershell_actual_ast_does_not_execute_hostile_source_when_installed() 
     let escaped = marker.to_string_lossy().replace('\'', "''");
     let source =
         format!("[IO.File]::WriteAllText('{escaped}','MUST NOT RUN'); Write-Output $(Get-Date); (");
-    let result = run_powershell(&path, PS_ANALYZE, &source).await.unwrap();
+    let deadline = installed_tool_deadline();
+    let result = run_powershell_with_deadline(&path, PS_ANALYZE, &source, deadline)
+        .await
+        .unwrap();
     assert!(!marker.exists());
     assert_eq!(result["tool"], "PowerShell AST parser");
     assert!(!result["diagnostics"].as_array().unwrap().is_empty());
     let valid_source =
         format!("[IO.File]::WriteAllText('{escaped}','MUST NOT RUN'); Write-Output $(Get-Date)");
-    let valid = run_powershell(&path, PS_ANALYZE, &valid_source)
+    let valid = run_powershell_with_deadline(&path, PS_ANALYZE, &valid_source, deadline)
         .await
         .unwrap();
     assert!(!marker.exists());
@@ -268,10 +271,11 @@ async fn installed_powershell_formatter_returns_only_a_draft() {
         eprintln!("PowerShell unavailable: optional formatter smoke");
         return;
     };
-    let output = run_powershell(
+    let output = run_powershell_with_deadline(
         &path,
         PS_FORMAT,
         "if($true){\nwrite-output 'literal only'\n}",
+        installed_tool_deadline(),
     )
     .await
     .unwrap();
@@ -283,6 +287,14 @@ async fn installed_powershell_formatter_returns_only_a_draft() {
         formatted.replace("\r\n", "\n"),
         "if ($true) {\n    Write-Output 'literal only'\n}"
     );
+}
+
+fn installed_tool_deadline() -> Duration {
+    if std::env::var_os("CARGO_LLVM_COV").is_some() {
+        Duration::from_secs(15)
+    } else {
+        DEADLINE
+    }
 }
 
 // Invoked only as fixed Rust child-process fixtures by the tests above, never as
