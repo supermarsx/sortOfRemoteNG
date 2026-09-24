@@ -21,6 +21,10 @@ const theme = (values: Record<string, unknown> = {}) => ({
 });
 const node = () =>
   document.querySelector<HTMLStyleElement>(".sorng-website-dark-mode");
+const expectCpanelSupplement = () => {
+  expect(node()?.getAttribute("data-mode")).toBe("dynamic");
+  expect(node()?.textContent).toContain("#cpanel_body");
+};
 function reader() {
   const api = { enable: vi.fn(), disable: vi.fn(), setFetchMethod: vi.fn() };
   vi.stubGlobal("DarkReader", api);
@@ -68,7 +72,7 @@ describe("injected dark-mode extension runtime", () => {
       }),
       { ignoreImageAnalysis: ["*"] },
     );
-    expect(node()).toBeNull();
+    expectCpanelSupplement();
     await controller.set({ enabled: false });
     expect(api.disable).toHaveBeenCalledOnce();
   });
@@ -146,7 +150,8 @@ describe("injected dark-mode extension runtime", () => {
       enabled: true,
       theme: theme({ customCss: "p{color:rgb(220,220,220)!important}" }),
     });
-    expect(node()?.sheet?.cssRules.length).toBe(1);
+    expect(node()?.sheet?.cssRules.length).toBe(4);
+    expect(node()?.textContent).toContain("#cpanel_body");
     await controller.set({
       enabled: true,
       theme: theme({
@@ -225,7 +230,7 @@ describe("injected dark-mode extension runtime", () => {
     document.querySelector("script")!.dispatchEvent(new Event("load"));
     expect(await retry).toBe("engine");
     expect(api.enable).toHaveBeenCalledOnce();
-    expect(node()).toBeNull();
+    expectCpanelSupplement();
   });
   it("still uses an engine that installs just inside the budget", async () => {
     vi.useFakeTimers();
@@ -235,7 +240,7 @@ describe("injected dark-mode extension runtime", () => {
     document.querySelector("script")!.dispatchEvent(new Event("load"));
     expect(await pending).toBe("engine");
     expect(api.enable).toHaveBeenCalledOnce();
-    expect(node()).toBeNull();
+    expectCpanelSupplement();
   });
   it("themes with CSS when the website's own policy refuses the engine", async () => {
     const api = reader();
@@ -307,7 +312,7 @@ describe("injected dark-mode extension runtime", () => {
     const api = reader();
     await controller.set({ enabled: true, theme: theme() });
     expect(api.enable).toHaveBeenCalledOnce();
-    expect(node()).toBeNull();
+    expectCpanelSupplement();
     await controller.set({
       enabled: true,
       theme: theme({ mode: "filter", backgroundColor: "#000000" }),
@@ -399,7 +404,7 @@ describe("injected dark-mode extension runtime", () => {
     expect(node()?.textContent).toContain("html,body{background-color");
     await controller.set({ enabled: true, theme: theme() });
     expect(api.enable).toHaveBeenCalledOnce();
-    expect(node()).toBeNull();
+    expectCpanelSupplement();
   });
 });
 

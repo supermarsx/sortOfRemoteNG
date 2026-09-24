@@ -77,6 +77,7 @@ describe("HTTP application profile policy", () => {
       "payload-cms",
       "webmin",
       "voip-phone",
+      "cpanel",
       "gdrive",
     ]);
   });

@@ -247,7 +247,8 @@ describe("dark-mode delivery across frames", () => {
     expect(outer.enable).toHaveBeenCalledOnce();
     expect(inner.enable).toHaveBeenCalledOnce();
     expect(text(root.doc)).toContain("html{filter:brightness(90%)");
-    expect(styles(child.doc)).toHaveLength(0);
+    expect(styles(child.doc)).toHaveLength(1);
+    expect(text(child.doc)).toContain("#cpanel_body");
   });
 
   it("falls back to CSS in every frame, late ones included, when the engine is refused", async () => {
@@ -414,7 +415,8 @@ describe("dark-mode delivery into frameset documents", () => {
     const controller = install(root, reader);
     await controller.set({ enabled: true, theme: theme() });
     expect(reader.enable).toHaveBeenCalledOnce();
-    expect(styles(root.doc)).toHaveLength(0);
+    expect(styles(root.doc)).toHaveLength(1);
+    expect(text(root.doc)).toContain("#cpanel_body");
 
     const frameset = root.doc.createElement("frameset");
     root.doc.documentElement.appendChild(frameset);
@@ -558,6 +560,7 @@ describe("the root-realm dark-mode registry", () => {
 
     await first.set({ enabled: true, theme: theme() });
     expect(reader.enable).toHaveBeenCalledOnce();
-    expect(styles(root.doc)).toHaveLength(0);
+    expect(styles(root.doc)).toHaveLength(1);
+    expect(text(root.doc)).toContain("#cpanel_body");
   });
 });
