@@ -39,7 +39,7 @@ mod tests {
                     cmd: "script_catalog_fetch".into(),
                     callback: tauri::ipc::CallbackFn(0),
                     error: tauri::ipc::CallbackFn(1),
-                    url: "http://tauri.localhost".parse().unwrap(),
+                    url: view.url().expect("fixture webview URL"),
                     body: tauri::ipc::InvokeBody::Json(body.clone()),
                     headers: Default::default(),
                     invoke_key: tauri::test::INVOKE_KEY.to_string(),
