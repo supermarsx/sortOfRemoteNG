@@ -713,12 +713,30 @@ mod tests {
     use sorng_encryption::commands::{disable_settings_inner, migrate_settings_inner};
     use sorng_encryption::MasterDek;
     use sorng_encryption::MasterKeyStorage;
+    use std::future::{poll_fn, Future};
+    use std::pin::Pin;
+    use std::task::Poll;
     use tempfile::tempdir;
 
     fn icon_library(label: &str) -> Value {
         serde_json::json!({"version":1,"customIcons":[],"builtInOverrides":{
             "folder":{"label":label,"notes":"fixture metadata"}
         }})
+    }
+
+    async fn assert_queued_on_settings_coordinator<F>(
+        mut operation: Pin<&mut F>,
+        operation_name: &str,
+    ) where
+        F: Future + ?Sized,
+    {
+        poll_fn(|cx| match operation.as_mut().poll(cx) {
+            Poll::Pending => Poll::Ready(()),
+            Poll::Ready(_) => {
+                panic!("{operation_name} completed while the transaction lock was held")
+            }
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -1230,13 +1248,15 @@ mod tests {
         let writer_dir = dir.clone();
         let writer_state = state.clone();
         let writer = tokio::spawn(async move {
-            let _ = writer_started_tx.send(());
-            write_app_settings_inner(
+            let write = write_app_settings_inner(
                 &writer_dir,
                 &writer_state,
                 serde_json::json!({ "restApi": { "enabled": true } }),
-            )
-            .await
+            );
+            tokio::pin!(write);
+            assert_queued_on_settings_coordinator(write.as_mut(), "writer").await;
+            let _ = writer_started_tx.send(());
+            write.await
         });
         writer_started_rx.await.unwrap();
         assert!(!writer.is_finished());
@@ -1245,8 +1265,11 @@ mod tests {
         let reader_dir = dir.clone();
         let reader_state = state.clone();
         let reader = tokio::spawn(async move {
+            let read = read_app_settings_secure_inner(&reader_dir, &reader_state);
+            tokio::pin!(read);
+            assert_queued_on_settings_coordinator(read.as_mut(), "reader").await;
             let _ = reader_started_tx.send(());
-            read_app_settings_secure_inner(&reader_dir, &reader_state).await
+            read.await
         });
         reader_started_rx.await.unwrap();
         assert!(!reader.is_finished());
@@ -1406,9 +1429,15 @@ mod tests {
         let migration_dir = dir.clone();
         let migration_state = state.clone();
         let migration = tokio::spawn(async move {
+            let migrate = migrate_settings_inner(
+                &migration_dir,
+                &migration_state,
+                MasterKeyStorage::Password,
+            );
+            tokio::pin!(migrate);
+            assert_queued_on_settings_coordinator(migrate.as_mut(), "migration").await;
             let _ = migration_started_tx.send(());
-            migrate_settings_inner(&migration_dir, &migration_state, MasterKeyStorage::Password)
-                .await
+            migrate.await
         });
         migration_started_rx.await.unwrap();
         assert!(!migration.is_finished());
@@ -1417,13 +1446,15 @@ mod tests {
         let write_dir = dir.clone();
         let write_state = state.clone();
         let writer = tokio::spawn(async move {
-            let _ = write_started_tx.send(());
-            write_app_settings_inner(
+            let write = write_app_settings_inner(
                 &write_dir,
                 &write_state,
                 serde_json::json!({ "language": "fr", "windowSize": 1080 }),
-            )
-            .await
+            );
+            tokio::pin!(write);
+            assert_queued_on_settings_coordinator(write.as_mut(), "writer").await;
+            let _ = write_started_tx.send(());
+            write.await
         });
         write_started_rx.await.unwrap();
         assert!(!writer.is_finished());
@@ -1461,8 +1492,11 @@ mod tests {
         let disable_dir = dir.clone();
         let disable_state = state.clone();
         let disable = tokio::spawn(async move {
+            let disable = disable_settings_inner(&disable_dir, &disable_state);
+            tokio::pin!(disable);
+            assert_queued_on_settings_coordinator(disable.as_mut(), "disable").await;
             let _ = disable_started_tx.send(());
-            disable_settings_inner(&disable_dir, &disable_state).await
+            disable.await
         });
         disable_started_rx.await.unwrap();
         assert!(!disable.is_finished());
@@ -1471,13 +1505,15 @@ mod tests {
         let write_dir = dir.clone();
         let write_state = state.clone();
         let writer = tokio::spawn(async move {
-            let _ = write_started_tx.send(());
-            write_app_settings_inner(
+            let write = write_app_settings_inner(
                 &write_dir,
                 &write_state,
                 serde_json::json!({ "language": "fr", "windowSize": 1080 }),
-            )
-            .await
+            );
+            tokio::pin!(write);
+            assert_queued_on_settings_coordinator(write.as_mut(), "writer").await;
+            let _ = write_started_tx.send(());
+            write.await
         });
         write_started_rx.await.unwrap();
         assert!(!writer.is_finished());
