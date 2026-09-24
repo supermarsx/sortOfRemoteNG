@@ -397,6 +397,16 @@ impl GoogleSession {
             .0
             .lock()
             .map_err(|_| "Google session cookies unavailable")?;
+        if jar.iter_unexpired().any(|existing| {
+            existing.http_only() == Some(true)
+                && existing.name() == cookie.name()
+                && existing.domain == cookie.domain
+                && existing.path == cookie.path
+        }) {
+            // Match browser semantics: document.cookie cannot replace or
+            // expire an existing HttpOnly cookie at the same storage key.
+            return Ok(());
+        }
         match jar.insert(cookie.into_owned(), &target) {
             Ok(_) | Err(cookie_store::CookieError::Expired) => Ok(()),
             Err(_) => Err("Invalid Google document cookie"),
@@ -522,20 +532,9 @@ impl GoogleSession {
             let Some(cookie) = super::upstream::validated_response_cookie(header, url)? else {
                 continue;
             };
-            let name = cookie.name().to_owned();
-            let expired = cookie.is_expired();
             match jar.insert(cookie, url) {
                 Ok(_) | Err(cookie_store::CookieError::Expired) => {}
                 Err(_) => return Err("Invalid Google session cookie"),
-            }
-            if expired {
-                // Browser-visible writes are represented as host-only `/`
-                // cookies because a localhost alias cannot retain Google's
-                // Domain attribute. Apply the upstream deletion to that mirror
-                // as well so a stale page value cannot be re-imported.
-                if let Some(host) = url.host_str() {
-                    jar.remove(host, "/", &name);
-                }
             }
         }
         if jar.iter_unexpired().count() > 512

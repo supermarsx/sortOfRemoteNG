@@ -477,6 +477,29 @@ async fn document_cookie_bridge_is_synchronous_path_scoped_and_hides_httponly_st
     assert!(native.contains("SID=server-secret"));
     assert!(native.contains("probe=accepted"));
 
+    for value in [
+        "SID=browser-overwrite; Domain=.google.com; Path=/; Secure",
+        "SID=; Domain=.google.com; Path=/; Max-Age=0; Secure",
+    ] {
+        let request = Request::builder()
+            .method("POST")
+            .uri(google::COOKIE_BRIDGE_PATH)
+            .header("x-sorng-google-cookie-path", "/v3/signin/identifier")
+            .body(Body::from(value))
+            .unwrap();
+        assert_eq!(
+            session
+                .document_cookie_response(origin, request)
+                .await
+                .status(),
+            axum::http::StatusCode::NO_CONTENT
+        );
+    }
+    let native = session.cookie_header(&target).unwrap();
+    let native = native.to_str().unwrap();
+    assert!(native.contains("SID=server-secret"));
+    assert!(!native.contains("SID=browser-overwrite"));
+
     let request = Request::builder()
         .method("POST")
         .uri(google::COOKIE_BRIDGE_PATH)
@@ -684,6 +707,38 @@ fn native_cookie_jar_keeps_httponly_values_and_upstream_scope() {
         .to_str()
         .unwrap()
         .contains("visible="));
+}
+
+#[test]
+fn upstream_domain_expiry_does_not_delete_a_distinct_host_only_cookie() {
+    let session = session("https://analytics.google.com/");
+    let target = Url::parse("https://accounts.google.com/").unwrap();
+    let mut server = reqwest::header::HeaderMap::new();
+    server.append(
+        header::SET_COOKIE,
+        "shared=host-only; Path=/; Secure".parse().unwrap(),
+    );
+    server.append(
+        header::SET_COOKIE,
+        "shared=domain; Domain=.google.com; Path=/; Secure"
+            .parse()
+            .unwrap(),
+    );
+    session.observe_cookies(&server, &target).unwrap();
+
+    let mut expiry = reqwest::header::HeaderMap::new();
+    expiry.append(
+        header::SET_COOKIE,
+        "shared=; Domain=.google.com; Path=/; Max-Age=0; Secure"
+            .parse()
+            .unwrap(),
+    );
+    session.observe_cookies(&expiry, &target).unwrap();
+
+    let native = session.cookie_header(&target).unwrap();
+    let native = native.to_str().unwrap();
+    assert!(native.contains("shared=host-only"));
+    assert!(!native.contains("shared=domain"));
 }
 
 #[test]
