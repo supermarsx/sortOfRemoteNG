@@ -396,23 +396,78 @@ async function inspectWebsiteNotifications() {
 }
 
 describe("mounted website network boundary", () => {
-  it("hands a reviewed Google service to the supported system browser", async () => {
+  it("enters a reviewed Google service through Accounts in the same proxy tab", async () => {
     h.connections = [googleAnalyticsConnection()];
     h.persistedConnections = structuredClone(h.connections);
     const view = render(<Harness />);
 
     await waitFor(() => expect(proxies).toHaveLength(1));
-    await waitFor(() =>
-      expect(
-        screen.getByRole("heading", {
-          name: "Continue securely in your browser",
-        }),
-      ).toBeVisible(),
+    const account = proxies[0].google_routes?.find(
+      (route) => route.upstreamOrigin === "https://accounts.google.com",
     );
-    expect(view.container.querySelector("iframe")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Open Google Analytics" }),
-    ).toBeVisible();
+    expect(account).toBeDefined();
+    await waitFor(() =>
+      expect(new URL(view.container.querySelector("iframe")!.src).origin).toBe(
+        account!.proxyOrigin,
+      ),
+    );
+    const iframe = view.container.querySelector("iframe")!;
+    expect(iframe).toHaveAttribute("sandbox", PROXY_WEB_FRAME_SANDBOX);
+    const entry = new URL(iframe.src);
+    expect(entry.pathname).toBe("/ServiceLogin");
+    expect(entry.searchParams.get("continue")).toBe(
+      "https://analytics.google.com/analytics/web/",
+    );
+    expect(entry.searchParams.get("followup")).toBe(
+      "https://analytics.google.com/analytics/web/",
+    );
+    const navigationToken = entry.searchParams.get("__sorng_navigation_v1");
+    entry.searchParams.delete("__sorng_navigation_v1");
+    const documents = [
+      { url: entry.href, navigationToken },
+      {
+        url: `${account!.proxyOrigin}/v3/signin/identifier`,
+        navigationToken: null,
+      },
+      {
+        url: `${new URL(proxies[0].proxy_url).origin}/analytics/web/`,
+        navigationToken: null,
+      },
+    ];
+    for (const [index, document] of documents.entries()) {
+      for (const type of ["proxy_document_start", "proxy_dom_ready"]) {
+        await act(async () =>
+          window.dispatchEvent(
+            new MessageEvent("message", {
+              source: iframe.contentWindow,
+              origin: new URL(document.url).origin,
+              data: {
+                ...document,
+                version: 1,
+                sessionId: "proxy-1",
+                documentToken: (index + 1).toString().repeat(32),
+                documentSequence: index + 1,
+                type,
+              },
+            }),
+          ),
+        );
+      }
+      expect(view.container.querySelector("iframe")).toBe(iframe);
+      expect(h.activate).toHaveBeenLastCalledWith({
+        sessionId: "proxy-1",
+        documentSequence: index + 1,
+      });
+    }
+    expect(proxies).toHaveLength(1);
+    expect(h.invoke).not.toHaveBeenCalledWith(
+      "stop_basic_auth_proxy",
+      expect.anything(),
+    );
+    expect(h.invoke).not.toHaveBeenCalledWith(
+      "open_url_external",
+      expect.anything(),
+    );
   });
 
   it("fails closed when a reviewed Google session omits native aliases", async () => {

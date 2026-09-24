@@ -10,7 +10,6 @@ import { validateHttpApplicationTarget } from "./httpApplicationLogin";
 export interface HttpApplicationExternalTarget {
   label: string;
   url: string;
-  requiresExternalSignIn?: boolean;
 }
 
 /** No current page URLs, query parameters, fragments, credentials or proxy URLs. */
@@ -37,7 +36,6 @@ export function getHttpApplicationExternalTarget(
       return {
         label: profile?.label ?? "Google",
         url: external.toString(),
-        requiresExternalSignIn: true,
       };
     }
     const authority = parseCanonicalWebAuthority(connection.hostname ?? "");

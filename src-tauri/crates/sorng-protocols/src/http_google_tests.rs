@@ -364,6 +364,11 @@ fn alias_scope_preserves_the_native_webview_user_agent_but_not_connection_secret
     incoming.insert("sec-fetch-site", "same-site".parse().unwrap());
     incoming.insert("sec-fetch-user", "?1".parse().unwrap());
     incoming.insert(
+        "sec-ch-ua",
+        "\"WebView fixture\";v=\"126\"".parse().unwrap(),
+    );
+    incoming.insert("sec-ch-ua-platform", "\"Windows\"".parse().unwrap());
+    incoming.insert(
         header::PROXY_AUTHORIZATION,
         "Basic private".parse().unwrap(),
     );
@@ -379,15 +384,26 @@ fn alias_scope_preserves_the_native_webview_user_agent_but_not_connection_secret
     assert!(!captured.contains("saved-user"));
     assert!(!captured.contains("saved-password"));
     assert!(!captured.contains("must-not-cross-origin"));
-    assert!(!forwarded.iter().any(|(name, _)| matches!(
-        name.as_str(),
-        "cookie"
-            | "proxy-authorization"
-            | "sec-fetch-dest"
-            | "sec-fetch-mode"
-            | "sec-fetch-site"
-            | "sec-fetch-user"
-    )));
+    assert!(!forwarded
+        .iter()
+        .any(|(name, _)| matches!(name.as_str(), "cookie" | "proxy-authorization")));
+    for name in [
+        "sec-fetch-dest",
+        "sec-fetch-mode",
+        "sec-fetch-site",
+        "sec-fetch-user",
+        "sec-ch-ua",
+        "sec-ch-ua-platform",
+    ] {
+        assert_eq!(
+            forwarded
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.as_str()),
+            incoming.get(name).and_then(|value| value.to_str().ok()),
+            "native browser metadata changed: {name}",
+        );
+    }
 
     let outbound = scoped
         .upstream_auth_mode
@@ -541,6 +557,81 @@ async fn document_cookie_bridge_is_synchronous_path_scoped_and_hides_httponly_st
         .to_str()
         .unwrap()
         .contains("probe="));
+}
+
+#[test]
+fn request_origins_translate_only_from_this_google_sessions_aliases() {
+    let session = session("https://analytics.google.com/");
+    let account = session
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == "https://accounts.google.com")
+        .unwrap();
+    let mut incoming = axum::http::HeaderMap::new();
+    incoming.insert(header::ORIGIN, PRIMARY_PROXY.parse().unwrap());
+    incoming.insert(
+        header::REFERER,
+        format!("{PRIMARY_PROXY}/").parse().unwrap(),
+    );
+    let forwarded = session.request_headers(&incoming, &account.upstream_origin);
+    assert!(forwarded.contains(&("origin".into(), "https://analytics.google.com".into())));
+    assert!(forwarded.contains(&("referer".into(), "https://analytics.google.com/".into())));
+    assert!(!format!("{forwarded:?}").contains("localhost"));
+
+    for foreign in [
+        "null",
+        "https://accounts.google.com.attacker.test",
+        "http://localhost:3001",
+    ] {
+        let mut request = request_for(account, "/v3/signin/identifier");
+        request
+            .headers_mut()
+            .insert(header::ORIGIN, foreign.parse().unwrap());
+        assert!(session
+            .request_state(&state("https://analytics.google.com"), &request)
+            .is_err());
+    }
+}
+
+#[tokio::test]
+async fn document_cookie_bridge_enforces_upstream_domain_and_secure_prefix_rules() {
+    let session = session("https://analytics.google.com/");
+    let origin = "https://accounts.google.com";
+    let target = Url::parse("https://accounts.google.com/v3/signin/identifier").unwrap();
+    for value in [
+        "__Secure-invalid=no; Path=/",
+        "__Host-domain=no; Domain=.google.com; Path=/; Secure",
+        "__Host-path=no; Path=/v3; Secure",
+        "__Http-script=no; Path=/; Secure",
+        "__Host-Http-script=no; Path=/; Secure",
+        "public-suffix=no; Domain=com; Path=/; Secure",
+        "foreign=no; Domain=attacker.test; Path=/; Secure",
+        "__Secure-valid=yes; Domain=.google.com; Path=/; Secure",
+        "__Host-valid=yes; Path=/; Secure",
+    ] {
+        let request = Request::builder()
+            .method("POST")
+            .uri(google::COOKIE_BRIDGE_PATH)
+            .header("x-sorng-google-cookie-path", "/v3/signin/identifier")
+            .body(Body::from(value))
+            .unwrap();
+        assert_eq!(
+            session
+                .document_cookie_response(origin, request)
+                .await
+                .status(),
+            axum::http::StatusCode::NO_CONTENT,
+        );
+    }
+    let native = session.cookie_header(&target).unwrap();
+    let native = native.to_str().unwrap();
+    assert!(native.contains("__Secure-valid=yes"));
+    assert!(native.contains("__Host-valid=yes"));
+    assert_eq!(native.split("; ").count(), 2);
+    let service = session
+        .cookie_header(&Url::parse("https://analytics.google.com/").unwrap())
+        .unwrap();
+    assert_eq!(service.to_str().unwrap(), "__Secure-valid=yes");
 }
 
 #[test]

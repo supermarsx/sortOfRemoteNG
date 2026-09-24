@@ -29,20 +29,12 @@ export default function ApplicationSignInNotice({
         {target.label} · Sign-in &amp; 2FA help
       </h3>
       <div className="space-y-2 rounded bg-[var(--color-background)] p-3 text-[var(--color-textSecondary)]">
-        {target.requiresExternalSignIn ? (
-          <p>
-            Google does not support sign-in from this embedded, content-routed
-            browser. Open the exact Google service in the system browser to
-            sign in securely. Its cookies stay in that browser and do not sign
-            in this tab.
-          </p>
-        ) : (
-          <p>
-            The external browser uses separate cookies and its own network
-            route and TLS policy—not this app's proxy, trust settings, or saved
-            passwords. Signing in there does not sign in this tab.
-          </p>
-        )}
+        <p>
+          You can continue signing in in this tab. Opening the system browser is
+          optional; it uses separate cookies and its own network route and TLS
+          policy—not this app's proxy, trust settings, or saved passwords.
+          Signing in there does not sign in this tab.
+        </p>
         <button
           type="button"
           className="sor-btn sor-btn-secondary inline-flex items-center gap-2"

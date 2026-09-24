@@ -251,28 +251,10 @@ impl GoogleSession {
     ) -> Vec<(String, String)> {
         let mut headers =
             super::collect_upstream_headers(incoming, super::UpstreamAuthMode::None, "", target);
-        let accounts_navigation = target == "https://accounts.google.com"
-            && incoming
-                .get("sec-fetch-mode")
-                .and_then(|value| value.to_str().ok())
-                == Some("navigate")
-            && incoming
-                .get("sec-fetch-dest")
-                .and_then(|value| value.to_str().ok())
-                .is_some_and(|value| matches!(value, "document" | "iframe"));
-        headers.retain(|(name, _)| {
-            !matches!(name.as_str(), "cookie" | "origin" | "referer")
-                && !(accounts_navigation
-                    && matches!(
-                        name.as_str(),
-                        // These values describe the protected localhost alias
-                        // and iframe, not the upstream Accounts navigation.
-                        // Forwarding that contradictory topology makes Google
-                        // reject ServiceLogin as malformed. Background request
-                        // metadata remains intact for upstream CSRF policy.
-                        "sec-fetch-dest" | "sec-fetch-mode" | "sec-fetch-site" | "sec-fetch-user"
-                    ))
-        });
+        // Keep the actual WebView User-Agent, client hints and Fetch Metadata,
+        // including its iframe destination. Google decides whether this browser
+        // context is supported; proxy routing must not disguise that context.
+        headers.retain(|(name, _)| !matches!(name.as_str(), "cookie" | "origin" | "referer"));
         for (name, value) in &mut headers {
             if name == "access-control-request-headers" {
                 *value = value
@@ -383,10 +365,14 @@ impl GoogleSession {
         if value.is_empty() || value.len() > 4096 {
             return Err("Invalid Google document cookie");
         }
-        let value = std::str::from_utf8(value).map_err(|_| "Invalid Google document cookie")?;
+        let value = HeaderValue::from_bytes(value).map_err(|_| "Invalid Google document cookie")?;
         let target = Self::document_cookie_url(target_origin, headers)?;
-        let cookie = cookie_store::Cookie::parse(value.to_owned(), &target)
-            .map_err(|_| "Invalid Google document cookie")?;
+        // Apply the same upstream-domain and secure-prefix rules as Set-Cookie.
+        // cookie_store alone does not reject public suffixes or invalid __Host-
+        // and __Secure- cookies. Rejected writes stay silent like document.cookie.
+        let Some(cookie) = super::upstream::validated_response_cookie(&value, &target)? else {
+            return Ok(());
+        };
         // JavaScript cannot create or overwrite HttpOnly state. Keep the same
         // silent refusal semantics as a browser's document.cookie setter.
         if cookie.http_only() == Some(true) {

@@ -37,7 +37,6 @@ describe("safe true-origin browser handoff", () => {
       ).toEqual({
         label: profile.label,
         url: new URL(profile.hostedLoginUrl!).toString(),
-        requiresExternalSignIn: true,
       });
     },
   );
