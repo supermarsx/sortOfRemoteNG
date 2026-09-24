@@ -468,6 +468,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // during an in-flight switch.
   const activeDatabaseTargetRef = useRef<DatabaseDataTarget | null>(null);
   const loadGenerationRef = useRef(0);
+  const reloadUnlockedDatabaseRef = useRef<(databaseId: string) => void>(
+    () => {},
+  );
   const saveGenerationRef = useRef(0);
   // Stable live snapshot used by logging and persistence callbacks.
   const stateRef = useRef(state);
@@ -581,6 +584,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         // provider's recoverable dirty data. Global close/switch clears it below.
         setRecycleAccessGeneration((generation) => generation + 1);
         publishDatabaseAvailability();
+        if (access.status === "ready" && access.reason === "unlocked")
+          reloadUnlockedDatabaseRef.current(access.databaseId);
       }),
     [databaseManager, publishDatabaseAvailability],
   );
@@ -1217,6 +1222,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       clearDatabaseRows,
     ],
   );
+  reloadUnlockedDatabaseRef.current = (databaseId) => {
+    void loadData(databaseId).catch(() => {
+      // loadData already publishes the owning database's explicit error state.
+    });
+  };
 
   const captureRecycleScope = useCallback((): RecycleBinScope => {
     const target = activeDatabaseTargetRef.current;

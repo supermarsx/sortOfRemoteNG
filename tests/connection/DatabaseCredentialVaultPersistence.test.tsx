@@ -29,7 +29,12 @@ const mock = vi.hoisted(() => ({
   decrypt: vi.fn(),
   manager: {} as Record<string, unknown>,
   access: null as
-    null | ((event: { databaseId: string; status: string }) => void),
+    null
+    | ((event: {
+        databaseId: string;
+        status: string;
+        reason?: string;
+      }) => void),
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: { getInstance: () => mock.manager },
@@ -985,10 +990,11 @@ describe("managed database credential vault persistence", () => {
     later.resolve();
     await unmounted;
   });
-  it("revokes same-database receipts after lock/unlock and reload, even when IDs match", async () => {
+  it("revokes receipts and automatically reloads after the owning database unlocks", async () => {
     const hook = await mount(),
       api = hook.result.current.credentialVault!,
       snapshot = await add(hook);
+    const revision = hook.result.current.credentialVault!.changeRevision;
     act(() => {
       mock.locked = true;
       mock.access!({ databaseId: "db-a", status: "suspended" });
@@ -996,12 +1002,20 @@ describe("managed database credential vault persistence", () => {
     expect(hook.result.current.credentialVault!.scope).toBeNull();
     act(() => {
       mock.locked = false;
-      mock.access!({ databaseId: "db-a", status: "ready" });
+      mock.access!({
+        databaseId: "db-a",
+        status: "ready",
+        reason: "unlocked",
+      });
     });
     await expect(api.resolve(snapshot, id, ["password"])).rejects.toThrow(
       /review expired/,
     );
-    await act(() => hook.result.current.loadData("db-a"));
+    await waitFor(() =>
+      expect(hook.result.current.credentialVault!.changeRevision).toBeGreaterThan(
+        revision,
+      ),
+    );
     const next = hook.result.current.credentialVault!;
     expect((await next.list(next.scope!)).entries).toHaveLength(1);
   });
