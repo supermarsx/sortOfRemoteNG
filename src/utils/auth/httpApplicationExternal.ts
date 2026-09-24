@@ -1,5 +1,6 @@
 import type { Connection } from "../../types/connection/connection";
 import {
+  getFirstPartyGoogleHostedApplicationUrl,
   getHttpApplicationProfile,
   normalizeHttpApplicationSettings,
 } from "../connection/httpApplicationProfiles";
@@ -9,6 +10,7 @@ import { validateHttpApplicationTarget } from "./httpApplicationLogin";
 export interface HttpApplicationExternalTarget {
   label: string;
   url: string;
+  requiresExternalSignIn?: boolean;
 }
 
 /** No current page URLs, query parameters, fragments, credentials or proxy URLs. */
@@ -26,6 +28,18 @@ export function getHttpApplicationExternalTarget(
       ? getHttpApplicationProfile(settings.id)
       : undefined;
     if (profile?.capability === "none") return null;
+    const googleHostedUrl = getFirstPartyGoogleHostedApplicationUrl(
+      settings?.id,
+    );
+    if (googleHostedUrl) {
+      const external = new URL(googleHostedUrl);
+      validateHttpApplicationTarget(connection, external.toString());
+      return {
+        label: profile?.label ?? "Google",
+        url: external.toString(),
+        requiresExternalSignIn: true,
+      };
+    }
     const authority = parseCanonicalWebAuthority(connection.hostname ?? "");
     if (authority.sourceScheme && authority.sourceScheme !== "https")
       return null;

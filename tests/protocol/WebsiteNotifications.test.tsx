@@ -219,6 +219,31 @@ describe("website notifications popover", () => {
     fireEvent.click(launch);
     expect(mgr.handleOpenApplicationExternal).toHaveBeenCalledOnce();
   });
+  it("explains that Google sign-in must continue in the system browser", async () => {
+    render(
+      <WebsiteNotifications
+        mgr={manager({
+          applicationExternalTarget: {
+            label: "Google Analytics",
+            url: "https://analytics.google.com/analytics/web/",
+            requiresExternalSignIn: true,
+          },
+        })}
+      />,
+    );
+    const dialog = await open();
+    fireEvent.click(
+      within(dialog).getByText("Google Analytics · Sign-in & 2FA help"),
+    );
+    expect(
+      within(dialog).getByText(/Google does not support sign-in from this embedded/),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole("button", {
+        name: "Open Google Analytics in system browser",
+      }),
+    ).toBeVisible();
+  });
   it("badges actual failures without auto-dismiss and keeps reload explicit", async () => {
     const mgr = manager({
       webNetworkReports: [

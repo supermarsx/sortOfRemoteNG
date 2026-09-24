@@ -1,7 +1,7 @@
 import type { SectionProps } from "./types";
 import { ErrorPage } from "./ERROR_BASE";
 import React from "react";
-import { WifiOff, RefreshCw } from "lucide-react";
+import { ExternalLink, WifiOff, RefreshCw } from "lucide-react";
 import progressStyles from "./NavigationProgress.module.css";
 import { EMPTY_WEB_FRAME_SANDBOX } from "../../../utils/protocol/webBrowserFrame";
 import RedirectReviewPanel from "./RedirectReviewPanel";
@@ -9,6 +9,11 @@ import TrustCheckStatus from "./TrustCheckStatus";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
   const reviewing = !!(mgr.redirectReview?.review || mgr.redirectReview?.error);
+  const externalSignInTarget =
+    mgr.applicationExternalTarget?.requiresExternalSignIn === true
+      ? mgr.applicationExternalTarget
+      : null;
+  const externalSignIn = externalSignInTarget !== null;
   return (
     <div
       className="flex-1 min-h-0 relative"
@@ -73,7 +78,7 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
       {/* No browsing context exists before a validated proxy navigation is ready.
         The controller retains pending navigation for attachIframe, so retry
         mounts and targets the replacement frame without an idle blank frame. */}
-      {mgr.shouldMountIframe && (
+      {mgr.shouldMountIframe && !externalSignIn && (
         <iframe
           ref={mgr.attachIframe ?? mgr.iframeRef}
           src="about:blank"
@@ -109,6 +114,41 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           sandbox={EMPTY_WEB_FRAME_SANDBOX}
         />
       )}
+      {externalSignIn && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--color-background)] p-6">
+          <section
+            className="w-full max-w-lg rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-[var(--color-text)] shadow-xl"
+            aria-labelledby="google-external-sign-in-title"
+          >
+            <h2
+              id="google-external-sign-in-title"
+              className="text-base font-semibold"
+            >
+              Continue securely in your browser
+            </h2>
+            <p className="mt-2 text-sm text-[var(--color-textSecondary)]">
+              Google blocks account sign-in inside embedded, content-routed
+              browsers. Open {externalSignInTarget.label} in your
+              system browser to use Google&apos;s supported sign-in flow.
+            </p>
+            <p className="mt-2 text-xs text-[var(--color-textMuted)]">
+              Browser cookies remain separate and no saved password, MFA
+              secret, or proxy session is transferred.
+            </p>
+            <button
+              type="button"
+              className="sor-btn sor-btn-primary mt-4 inline-flex items-center gap-2"
+              disabled={mgr.openingApplicationExternal}
+              onClick={() => void mgr.handleOpenApplicationExternal()}
+            >
+              <ExternalLink size={14} aria-hidden="true" />
+              {mgr.openingApplicationExternal
+                ? "Opening…"
+                : `Open ${externalSignInTarget.label}`}
+            </button>
+          </section>
+        </div>
+      )}
       {mgr.redirectHandoffPending && !mgr.loadError && (
         <div
           className="absolute inset-0 z-10 bg-[var(--color-background)]"
@@ -121,7 +161,7 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           }
         />
       )}
-      {reviewing && (
+      {reviewing && !externalSignIn && (
         <div className="absolute inset-0 z-20">
           <RedirectReviewPanel
             manager={mgr.redirectReview}
@@ -129,7 +169,7 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           />
         </div>
       )}
-      {mgr.loadError && !reviewing && (
+      {mgr.loadError && !reviewing && !externalSignIn && (
         <div className="absolute inset-0 z-20">
           <ErrorPage mgr={mgr} />
         </div>

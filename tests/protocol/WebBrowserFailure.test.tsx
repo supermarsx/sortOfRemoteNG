@@ -283,6 +283,37 @@ describe("embedded web failure recovery screen", () => {
     expect(iframe).not.toHaveAttribute("inert");
     expect(screen.queryByTestId("web-navigation-progress")).toBeNull();
   });
+  it("replaces unsupported embedded Google sign-in with a system-browser handoff", () => {
+    const open = vi.fn(async () => undefined);
+    const { container } = render(
+      <ContentArea
+        mgr={
+          manager({
+            loadError: "",
+            navigationFailure: null,
+            applicationExternalTarget: {
+              label: "Google Analytics",
+              url: "https://analytics.google.com/analytics/web/",
+              requiresExternalSignIn: true,
+            },
+            openingApplicationExternal: false,
+            handleOpenApplicationExternal: open,
+          })
+        }
+      />,
+    );
+
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(
+      screen.getByRole("heading", {
+        name: "Continue securely in your browser",
+      }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Google Analytics" }),
+    );
+    expect(open).toHaveBeenCalledOnce();
+  });
   it("uses only smooth transform/opacity animation and a static visible reduced-motion line", () => {
     const css = readFileSync(
       "src/components/protocol/webBrowser/NavigationProgress.module.css",

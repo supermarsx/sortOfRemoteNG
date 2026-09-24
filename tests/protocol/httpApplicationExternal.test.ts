@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getHttpApplicationExternalTarget } from "../../src/utils/auth/httpApplicationExternal";
 import {
+  FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS,
+  getHttpApplicationProfile,
+} from "../../src/utils/connection/httpApplicationProfiles";
+import {
   resolveHttpApplicationLogin,
   validateHttpApplicationTarget,
 } from "../../src/utils/auth/httpApplicationLogin";
@@ -17,6 +21,26 @@ const connection = (
   password: "fixture-password",
 });
 describe("safe true-origin browser handoff", () => {
+  it.each(FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS)(
+    "%s exposes its built-in service without saved endpoint metadata",
+    (id) => {
+      const profile = getHttpApplicationProfile(id)!;
+      expect(
+        getHttpApplicationExternalTarget(
+          {
+            protocol: "https",
+            hostname: "",
+            httpApplication: { version: 1, id, loginMode: "form" },
+          },
+          "",
+        ),
+      ).toEqual({
+        label: profile.label,
+        url: new URL(profile.hostedLoginUrl!).toString(),
+        requiresExternalSignIn: true,
+      });
+    },
+  );
   it.each([
     ["github", "github.com", "https://github.com/login"],
     ["brevo", "login.brevo.com", "https://login.brevo.com/"],
