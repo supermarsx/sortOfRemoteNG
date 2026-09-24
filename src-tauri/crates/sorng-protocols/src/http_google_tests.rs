@@ -639,6 +639,169 @@ fn native_cookie_jar_keeps_httponly_values_and_merges_browser_visible_updates() 
 }
 
 #[test]
+fn google_cookie_state_survives_replacement_and_late_source_response() {
+    let original = Arc::new(
+        ProxyNetworkState::default()
+            .with_google_routes(Some(session("https://analytics.google.com/"))),
+    );
+    let original_google = original.google.as_ref().unwrap();
+    let target = Url::parse("https://accounts.google.com/v3/signin/identifier").unwrap();
+    let mut server = reqwest::header::HeaderMap::new();
+    server.append(
+        header::SET_COOKIE,
+        "__Host-GAPS=restart-session; Path=/; Secure; HttpOnly; SameSite=None"
+            .parse()
+            .unwrap(),
+    );
+    server.append(
+        header::SET_COOKIE,
+        "shared=restart-domain; Domain=.google.com; Path=/; Secure"
+            .parse()
+            .unwrap(),
+    );
+    original_google.observe_cookies(&server, &target).unwrap();
+
+    let state = original.take_google_cookie_state_for_replacement().unwrap();
+    original.begin_replacement();
+
+    let mut replacement = google::GoogleSession::new(
+        Some(ReviewedApplicationProfile::GoogleHosted),
+        &Url::parse("https://analytics.google.com/").unwrap(),
+        "http://p22222222222222222222222222222222.localhost:53123",
+        client(),
+        client(),
+    )
+    .unwrap()
+    .unwrap();
+    replacement.restore_cookie_state(state);
+
+    let mut late = reqwest::header::HeaderMap::new();
+    late.append(
+        header::SET_COOKIE,
+        "__Host-GAPS=rotated-after-handoff; Path=/; Secure; HttpOnly; SameSite=None"
+            .parse()
+            .unwrap(),
+    );
+    original_google.observe_cookies(&late, &target).unwrap();
+
+    // The old listener/runtime drops after graceful shutdown. Its final
+    // network revoke must not clear cookie state now owned by the successor.
+    drop(original.server_guard());
+
+    let native = replacement
+        .cookie_header(&target)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(native.contains("__Host-GAPS=rotated-after-handoff"));
+    assert!(native.contains("shared=restart-domain"));
+    let projected = replacement
+        .projected_cookies(&target)
+        .into_iter()
+        .map(|value| value.to_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(projected.iter().any(|value| {
+        value.starts_with("__Host-GAPS=rotated-after-handoff;")
+            && value.contains("Path=/")
+            && value.contains("Secure")
+            && value.contains("HttpOnly")
+            && value.contains("SameSite=None")
+    }));
+}
+
+#[test]
+fn dead_listener_retains_google_cookies_for_manager_recovery() {
+    let original = Arc::new(
+        ProxyNetworkState::default()
+            .with_google_routes(Some(session("https://analytics.google.com/"))),
+    );
+    let target = Url::parse("https://accounts.google.com/v3/signin/identifier").unwrap();
+    let mut server = reqwest::header::HeaderMap::new();
+    server.append(
+        header::SET_COOKIE,
+        "__Host-GAPS=listener-died; Path=/; Secure; HttpOnly"
+            .parse()
+            .unwrap(),
+    );
+    original
+        .google
+        .as_ref()
+        .unwrap()
+        .observe_cookies(&server, &target)
+        .unwrap();
+
+    // Natural listener/runtime teardown happens before the health monitor asks
+    // the manager to recover the session.
+    drop(original.server_guard());
+    assert!(!original.is_active());
+
+    let state = original.take_google_cookie_state_for_replacement().unwrap();
+    let mut replacement = session("https://analytics.google.com/");
+    replacement.restore_cookie_state(state);
+    assert!(replacement
+        .cookie_header(&target)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("__Host-GAPS=listener-died"));
+}
+
+#[tokio::test]
+async fn clearing_pending_recoveries_cancels_work_and_prevents_publication() {
+    let manager = ProxySessionManager::new();
+    let token = manager
+        .lock()
+        .unwrap()
+        .begin_proxy_recovery("source-session")
+        .unwrap();
+    let cancellation = {
+        let token = token.clone();
+        tokio::spawn(async move { token.cancelled().await })
+    };
+    manager.lock().unwrap().cancel_all_proxy_recoveries();
+    tokio::time::timeout(std::time::Duration::from_secs(1), cancellation)
+        .await
+        .expect("clear cancels pending work promptly")
+        .unwrap();
+    let replacement_token = manager
+        .lock()
+        .unwrap()
+        .begin_proxy_recovery("source-session")
+        .unwrap();
+    assert!(!manager
+        .lock()
+        .unwrap()
+        .finish_proxy_recovery("source-session", &token));
+    assert!(manager
+        .lock()
+        .unwrap()
+        .finish_proxy_recovery("source-session", &replacement_token));
+}
+
+#[tokio::test]
+async fn replacement_closes_admission_then_drains_an_admitted_request() {
+    let network = Arc::new(ProxyNetworkState::default());
+    let request = network.begin_request().expect("request is admitted");
+    network.begin_replacement();
+    assert!(network.begin_request().is_none());
+
+    let retiring = network.clone();
+    let retirement = tokio::spawn(async move {
+        retiring.retire_for_replacement().await;
+    });
+    tokio::task::yield_now().await;
+    assert!(!retirement.is_finished());
+
+    drop(request);
+    tokio::time::timeout(std::time::Duration::from_secs(1), retirement)
+        .await
+        .expect("retirement drains promptly")
+        .unwrap();
+    assert!(!network.is_active());
+}
+
+#[test]
 fn fetch_credential_mode_is_closed_and_never_forwarded_upstream() {
     let session = session("https://analytics.google.com/");
     let mut incoming = axum::http::HeaderMap::new();

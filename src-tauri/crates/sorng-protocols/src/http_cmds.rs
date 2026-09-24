@@ -845,13 +845,14 @@ pub fn stop_basic_auth_proxy(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<(), String> {
     let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let cancelled_recovery = mgr.cancel_proxy_recovery(&session_id);
     let attempt = mgr
         .sessions
         .get(&session_id)
         .and_then(|entry| entry.attempt.clone());
     if let Some(attempt) = attempt {
         mgr.attempts.stop(&attempt, continuation_id.as_deref())?;
-    } else if continuation_id.is_some() {
+    } else if continuation_id.is_some() && !cancelled_recovery {
         return Err("The QuickConnect continuation is no longer available".into());
     }
     if let Some(mut entry) = mgr.sessions.remove(&session_id) {
@@ -861,6 +862,8 @@ pub fn stop_basic_auth_proxy(
         if let Some(tx) = entry.shutdown_tx.take() {
             let _ = tx.send(());
         }
+        Ok(())
+    } else if cancelled_recovery {
         Ok(())
     } else {
         Err(format!("Proxy session {} not found", session_id))
@@ -970,6 +973,42 @@ impl Drop for AttemptStartGuard {
     fn drop(&mut self) {
         if let Some(attempt) = &self.0 {
             attempt.revoke();
+        }
+    }
+}
+
+struct ProxyRecoveryGuard {
+    sessions: ProxySessionManagerState,
+    source_session_id: String,
+    token: ProxyRecoveryToken,
+    active: bool,
+}
+
+impl ProxyRecoveryGuard {
+    fn new(
+        sessions: ProxySessionManagerState,
+        source_session_id: String,
+        token: ProxyRecoveryToken,
+    ) -> Self {
+        Self {
+            sessions,
+            source_session_id,
+            token,
+            active: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.active = false;
+    }
+}
+
+impl Drop for ProxyRecoveryGuard {
+    fn drop(&mut self) {
+        if self.active {
+            if let Ok(mut manager) = self.sessions.lock() {
+                manager.finish_proxy_recovery(&self.source_session_id, &self.token);
+            }
         }
     }
 }
@@ -1090,6 +1129,7 @@ pub fn stop_all_proxy_sessions(
 ) -> Result<u32, String> {
     let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     let count = mgr.sessions.len() as u32;
+    mgr.cancel_all_proxy_recoveries();
     mgr.clear_redirect_reviews();
     mgr.attempts.clear();
     for (_id, mut entry) in mgr.sessions.drain() {
@@ -1227,12 +1267,17 @@ pub async fn restart_proxy_session(
         min_tls,
         previous_attempt,
         website_dark_mode,
+        recovery_token,
     ) = {
-        let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
+        if !mgr.sessions.contains_key(&session_id) {
+            return Err(format!("Session {} not found", session_id));
+        }
+        let recovery_token = mgr.begin_proxy_recovery(&session_id)?;
         let entry = mgr
             .sessions
             .get(&session_id)
-            .ok_or_else(|| format!("Session {} not found", session_id))?;
+            .expect("recovery source was checked while holding the manager lock");
         (
             entry.target_url.clone(),
             entry.username.clone(),
@@ -1252,8 +1297,14 @@ pub async fn restart_proxy_session(
             entry.min_tls_version.clone(),
             entry.attempt.clone(),
             entry.website_dark_mode.clone(),
+            recovery_token,
         )
     };
+    let mut recovery_guard = ProxyRecoveryGuard::new(
+        (*sessions).clone(),
+        session_id.clone(),
+        recovery_token.clone(),
+    );
 
     let new_session_id = uuid::Uuid::new_v4().to_string();
     let attempt = previous_attempt
@@ -1268,15 +1319,33 @@ pub async fn restart_proxy_session(
         .transpose()?;
     let mut attempt_guard = AttemptStartGuard(attempt.clone());
 
-    // Shut down the old axum server (may already be dead).
-    {
+    // Transfer Google's shared native jar independently of the generic
+    // exact-origin attempt jar. An already-dispatched response can still
+    // rotate a login cookie while the replacement listener is being built;
+    // sharing the state makes that late update visible to the replacement.
+    let (google_cookie_state, retiring_network) = {
         let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let network = mgr
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("Session {} not found", session_id))?
+            .network
+            .clone();
+        let state = network.take_google_cookie_state_for_replacement();
+        network.begin_replacement();
         if let Some(mut entry) = mgr.sessions.remove(&session_id) {
-            entry.network.revoke();
             mgr.discard_redirect_review(&session_id);
             if let Some(tx) = entry.shutdown_tx.take() {
                 let _ = tx.send(());
             }
+        }
+        (state, network)
+    };
+    tokio::select! {
+        _ = retiring_network.retire_for_replacement() => {}
+        _ = recovery_token.cancelled() => {
+            retiring_network.revoke();
+            return Err("Proxy recovery was cancelled".into());
         }
     }
 
@@ -1323,35 +1392,39 @@ pub async fn restart_proxy_session(
         } else {
             None
         };
-    let google = if reviewed_application_profile == Some(ReviewedApplicationProfile::GoogleHosted) {
-        crate::http::google::GoogleSession::new(
-            reviewed_application_profile,
-            &validated_target,
-            &protected_endpoint.origin,
-            proxy_client_builder_with_cookies(
-                verify_ssl,
-                accepted_cert_fingerprint.as_deref(),
-                &min_tls,
-                upstream_proxy_url.as_deref(),
-                require_ca_verification,
-                validated_target.host_str(),
-                None,
-                false,
-            )?,
-            proxy_client_builder_with_cookies(
-                true,
-                None,
-                &min_tls,
-                upstream_proxy_url.as_deref(),
-                false,
-                None,
-                None,
-                false,
-            )?,
-        )?
-    } else {
-        None
-    };
+    let mut google =
+        if reviewed_application_profile == Some(ReviewedApplicationProfile::GoogleHosted) {
+            crate::http::google::GoogleSession::new(
+                reviewed_application_profile,
+                &validated_target,
+                &protected_endpoint.origin,
+                proxy_client_builder_with_cookies(
+                    verify_ssl,
+                    accepted_cert_fingerprint.as_deref(),
+                    &min_tls,
+                    upstream_proxy_url.as_deref(),
+                    require_ca_verification,
+                    validated_target.host_str(),
+                    None,
+                    false,
+                )?,
+                proxy_client_builder_with_cookies(
+                    true,
+                    None,
+                    &min_tls,
+                    upstream_proxy_url.as_deref(),
+                    false,
+                    None,
+                    None,
+                    false,
+                )?,
+            )?
+        } else {
+            None
+        };
+    if let (Some(google), Some(state)) = (&mut google, google_cookie_state) {
+        google.restore_cookie_state(state);
+    }
     let network = Arc::new(
         ProxyNetworkState::with_origin(&protected_endpoint.origin)?
             .with_reviewed_public_routes(
@@ -1431,20 +1504,15 @@ pub async fn restart_proxy_session(
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-    let server_guard = runtime.clone();
-    tokio::spawn(async move {
-        let _server_guard = server_guard;
-        axum::serve(listener, router.into_make_service())
-            .with_graceful_shutdown(async {
-                shutdown_rx.await.ok();
-            })
-            .await
-            .ok();
-    });
-
-    // Store the new session.
+    // Publish only if no explicit stop operation cancelled this recovery while
+    // its replacement listener was being constructed.
     {
         let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
+        if !mgr.finish_proxy_recovery(&session_id, &recovery_token) {
+            drop(mgr);
+            network.revoke();
+            return Err("Proxy recovery was cancelled".into());
+        }
         mgr.sessions.insert(
             new_session_id.clone(),
             ProxySessionEntry {
@@ -1476,7 +1544,19 @@ pub async fn restart_proxy_session(
                 shutdown_tx: Some(shutdown_tx),
             },
         );
+        recovery_guard.disarm();
     }
+
+    let server_guard = runtime.clone();
+    tokio::spawn(async move {
+        let _server_guard = server_guard;
+        axum::serve(listener, router.into_make_service())
+            .with_graceful_shutdown(async {
+                shutdown_rx.await.ok();
+            })
+            .await
+            .ok();
+    });
 
     let deferred_login_status = attempt_guard
         .0

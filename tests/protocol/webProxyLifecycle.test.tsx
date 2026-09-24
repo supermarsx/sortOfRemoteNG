@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionSession } from "../../src/types/connection/connection";
@@ -372,11 +373,11 @@ describe("embedded browser proxy lifecycle", () => {
     });
     const { result, unmount } = renderHook(() => useWebBrowser(session));
     await act(async () => {});
-    await act(async () => vi.advanceTimersByTimeAsync(4_000));
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
     await act(async () => result.current.handleRestartProxy());
     expect(
       invoke.mock.calls.filter(([command]) => command === "check_proxy_health"),
-    ).toHaveLength(1);
+    ).toHaveLength(3);
     expect(
       invoke.mock.calls.filter(
         ([command]) => command === "restart_proxy_session",
@@ -389,6 +390,59 @@ describe("embedded browser proxy lifecycle", () => {
     expect(invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
       sessionId: "late-restart",
     });
+  });
+
+  it("resets the automatic-recovery failure count after a healthy probe", async () => {
+    vi.useFakeTimers();
+    Object.assign(settings, {
+      proxyKeepaliveEnabled: true,
+      proxyKeepaliveIntervalSeconds: 1,
+      proxyAutoRestart: true,
+      proxyMaxAutoRestarts: 1,
+    });
+    const healthSequence = [false, false, true, false, false, false];
+    invoke.mockImplementation(
+      async (command: string, args?: { sessionIds?: string[] }) => {
+        if (command === "start_basic_auth_proxy") return response;
+        if (command === "check_proxy_health") {
+          return [
+            {
+              session_id: args?.sessionIds?.[0] ?? response.session_id,
+              alive: healthSequence.shift() ?? false,
+            },
+          ];
+        }
+        if (command === "restart_proxy_session") return response;
+      },
+    );
+    const { unmount } = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(
+      invoke.mock.calls.filter(
+        ([command]) => command === "restart_proxy_session",
+      ),
+    ).toHaveLength(0);
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(
+      invoke.mock.calls.filter(
+        ([command]) => command === "restart_proxy_session",
+      ),
+    ).toHaveLength(1);
+    unmount();
+  });
+
+  it("allocates one native proxy during the React StrictMode probe mount", async () => {
+    const { unmount } = renderHook(() => useWebBrowser(session), {
+      wrapper: ({ children }) => <StrictMode>{children}</StrictMode>,
+    });
+    await act(async () => {});
+    expect(
+      invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(1);
+    unmount();
   });
 
   it("bounds the initial TLS wait and cannot navigate after a late inspection result", async () => {

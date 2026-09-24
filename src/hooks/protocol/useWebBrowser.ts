@@ -1286,6 +1286,7 @@ export function useWebBrowser(session: ConnectionSession) {
     setLoadingIndicatorReady(false);
   }, []);
   const proxyRecoveryBusyRef = useRef(false);
+  const proxyHealthFailureCountRef = useRef(0);
   const mountedRef = useRef(true);
   const beginLoadingPresentation = useCallback(
     (generation: number) => {
@@ -2522,6 +2523,7 @@ export function useWebBrowser(session: ConnectionSession) {
           }
           proxySessionIdRef.current = response.session_id;
           proxyUrlRef.current = protectedProxyUrl;
+          proxyHealthFailureCountRef.current = 0;
           if (
             continuation &&
             runtimeNavigation?.nativeContinuation === continuation
@@ -2706,9 +2708,16 @@ export function useWebBrowser(session: ConnectionSession) {
     cancelPendingContinuation,
   ]);
 
-  // Initial load
+  // Initial load. Deferring one microtask lets React StrictMode cancel its
+  // development-only probe mount before native proxy allocation begins.
   useEffect(() => {
-    navigateToUrl(currentUrl);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void navigateToUrl(currentUrl);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: initial navigation
 
   // A reviewed same-tab handoff changes the volatile connection id without
@@ -2842,6 +2851,7 @@ export function useWebBrowser(session: ConnectionSession) {
       proxySessionIdRef.current = resp.session_id;
       proxyUrlRef.current = protectedProxyUrl;
       googleRoutesRef.current = googleRoutes;
+      proxyHealthFailureCountRef.current = 0;
       deferredLoginRef.current.receive(resp);
       setProxyAlive(true);
       clearNavigationFailure();
@@ -2892,10 +2902,16 @@ export function useWebBrowser(session: ConnectionSession) {
           return;
         const entry = results.find((r) => r.session_id === sid);
         if (entry?.alive) {
+          proxyHealthFailureCountRef.current = 0;
           setProxyAlive(true);
           return;
         }
         if (!entry) return;
+        proxyHealthFailureCountRef.current += 1;
+        // A busy local WebView/backend can miss one TCP probe, especially under
+        // system pressure. Replacing a healthy Google listener on one miss
+        // changes its browser origin and destroys page-owned login storage.
+        if (proxyHealthFailureCountRef.current < 3) return;
         setProxyAlive(false);
         const maxRestarts = settings.proxyMaxAutoRestarts ?? 5;
         if (

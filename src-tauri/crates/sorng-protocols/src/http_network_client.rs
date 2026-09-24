@@ -3,7 +3,7 @@
 //! WebView egress enforcement. Unknown origins are blocked, never fetched here.
 use super::{HttpProxyPolicy, PageScripts};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 use std::{
@@ -11,7 +11,7 @@ use std::{
     sync::Mutex,
     time::Duration,
 };
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{watch, Notify, Semaphore};
 
 #[cfg(test)]
 #[path = "http_referrer_policy_tests.rs"]
@@ -189,6 +189,7 @@ impl DocumentReferrerPolicy {
 
 pub struct ProxyNetworkState {
     active: AtomicBool,
+    requests: Arc<ProxyRequestActivity>,
     owns_origin: AtomicBool,
     document: watch::Sender<u64>,
     issued: Mutex<BTreeSet<u64>>,
@@ -203,10 +204,69 @@ pub struct ProxyNetworkState {
     pub google: Option<Arc<super::google::GoogleSession>>,
 }
 
+struct ProxyRequestActivity {
+    accepting: AtomicBool,
+    in_flight: AtomicUsize,
+    drained: Notify,
+}
+
+impl Default for ProxyRequestActivity {
+    fn default() -> Self {
+        Self {
+            accepting: AtomicBool::new(true),
+            in_flight: AtomicUsize::new(0),
+            drained: Notify::new(),
+        }
+    }
+}
+
+struct ProxyRequestGuard(Arc<ProxyRequestActivity>);
+
+impl Drop for ProxyRequestGuard {
+    fn drop(&mut self) {
+        if self.0.in_flight.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.0.drained.notify_waiters();
+        }
+    }
+}
+
+impl ProxyRequestActivity {
+    fn enter(self: &Arc<Self>) -> Option<ProxyRequestGuard> {
+        if !self.accepting.load(Ordering::Acquire) {
+            return None;
+        }
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
+        if !self.accepting.load(Ordering::Acquire) {
+            if self.in_flight.fetch_sub(1, Ordering::AcqRel) == 1 {
+                self.drained.notify_waiters();
+            }
+            return None;
+        }
+        Some(ProxyRequestGuard(self.clone()))
+    }
+
+    fn stop_accepting(&self) {
+        self.accepting.store(false, Ordering::Release);
+        if self.in_flight.load(Ordering::Acquire) == 0 {
+            self.drained.notify_waiters();
+        }
+    }
+
+    async fn wait_drained(&self) {
+        loop {
+            let notified = self.drained.notified();
+            if self.in_flight.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
 pub struct ProxyNetworkServerGuard(Arc<ProxyNetworkState>);
 impl Drop for ProxyNetworkServerGuard {
     fn drop(&mut self) {
-        self.0.revoke();
+        self.0.retire_listener();
     }
 }
 
@@ -214,6 +274,7 @@ impl Default for ProxyNetworkState {
     fn default() -> Self {
         Self {
             active: AtomicBool::new(true),
+            requests: Arc::new(ProxyRequestActivity::default()),
             owns_origin: AtomicBool::new(true),
             document: watch::channel(0).0,
             issued: Mutex::new(BTreeSet::new()),
@@ -361,6 +422,15 @@ impl ProxyNetworkState {
             .unwrap_or_default()
     }
 
+    #[doc(hidden)]
+    pub fn take_google_cookie_state_for_replacement(
+        &self,
+    ) -> Option<super::google::GoogleCookieState> {
+        self.google
+            .as_ref()
+            .map(|google| google.take_cookie_state_for_replacement())
+    }
+
     pub fn proxy_url(&self) -> Option<String> {
         self.is_active()
             .then(|| {
@@ -372,10 +442,32 @@ impl ProxyNetworkState {
     }
 
     pub fn revoke(&self) {
+        self.requests.stop_accepting();
         self.retire_activity();
         if let Some(google) = &self.google {
             google.revoke();
         }
+        self.revoke_origin();
+    }
+
+    pub fn begin_replacement(&self) {
+        self.requests.stop_accepting();
+    }
+
+    pub async fn retire_for_replacement(&self) {
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.requests.wait_drained()).await;
+        self.retire_listener();
+    }
+
+    pub fn retire_listener(&self) {
+        self.retire_activity();
+        if let Some(google) = &self.google {
+            google.retire_for_replacement();
+        }
+        self.revoke_origin();
+    }
+
+    fn revoke_origin(&self) {
         if self.owns_origin.swap(false, Ordering::AcqRel) {
             if let Some(lease) = &self.origin_lease {
                 lease.revoke();
@@ -399,6 +491,7 @@ impl ProxyNetworkState {
     }
 
     pub(super) fn retire_activity(&self) {
+        self.requests.stop_accepting();
         self.active.store(false, Ordering::Release);
         if let Ok(mut policies) = self.document_referrers.lock() {
             policies.clear();
@@ -570,6 +663,10 @@ impl ProxyNetworkState {
                 else { Err("The proxy session has ended.") }
             }
         }
+    }
+
+    pub(super) fn begin_request(&self) -> Option<impl Drop> {
+        self.is_active().then(|| self.requests.enter()).flatten()
     }
 }
 

@@ -1176,6 +1176,42 @@ pub struct ProxySessionManager {
     request_log_capacity: usize,
     next_request_log_id: u64,
     redirect_reviews: HashMap<String, redirect::PendingRedirect>,
+    pending_recoveries: HashMap<String, ProxyRecoveryToken>,
+    next_recovery_id: u64,
+}
+
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct ProxyRecoveryToken {
+    id: u64,
+    cancelled: Arc<AtomicBool>,
+    cancellation: Arc<tokio::sync::Notify>,
+}
+
+impl ProxyRecoveryToken {
+    fn new(id: u64) -> Self {
+        Self {
+            id,
+            cancelled: Arc::new(AtomicBool::new(false)),
+            cancellation: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.cancellation.notify_waiters();
+    }
+
+    #[doc(hidden)]
+    pub async fn cancelled(&self) {
+        loop {
+            let notified = self.cancellation.notified();
+            if self.cancelled.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
 }
 
 pub struct ProxySessionEntry {
@@ -1254,7 +1290,58 @@ impl ProxySessionManager {
             request_log_capacity: 10_000,
             next_request_log_id: 0,
             redirect_reviews: HashMap::new(),
+            pending_recoveries: HashMap::new(),
+            next_recovery_id: 0,
         }))
+    }
+
+    #[doc(hidden)]
+    pub fn begin_proxy_recovery(
+        &mut self,
+        source_session_id: &str,
+    ) -> Result<ProxyRecoveryToken, String> {
+        if self.pending_recoveries.contains_key(source_session_id) {
+            return Err("Proxy recovery is already in progress".into());
+        }
+        self.next_recovery_id = self.next_recovery_id.wrapping_add(1);
+        let token = ProxyRecoveryToken::new(self.next_recovery_id);
+        self.pending_recoveries
+            .insert(source_session_id.to_owned(), token.clone());
+        Ok(token)
+    }
+
+    #[doc(hidden)]
+    pub fn finish_proxy_recovery(
+        &mut self,
+        source_session_id: &str,
+        token: &ProxyRecoveryToken,
+    ) -> bool {
+        if !self
+            .pending_recoveries
+            .get(source_session_id)
+            .is_some_and(|pending| pending.id == token.id)
+        {
+            return false;
+        }
+        self.pending_recoveries.remove(source_session_id);
+        true
+    }
+
+    #[doc(hidden)]
+    pub fn cancel_proxy_recovery(&mut self, source_session_id: &str) -> bool {
+        self.pending_recoveries
+            .remove(source_session_id)
+            .is_some_and(|token| {
+                token.cancel();
+                true
+            })
+    }
+
+    #[doc(hidden)]
+    pub fn cancel_all_proxy_recoveries(&mut self) {
+        for (_, token) in self.pending_recoveries.drain() {
+            token.cancel();
+        }
     }
 
     pub fn set_request_log_capacity(&mut self, capacity: usize) -> Result<usize, String> {

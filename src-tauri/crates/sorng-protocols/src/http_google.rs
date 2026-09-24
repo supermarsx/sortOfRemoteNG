@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
+        Arc, Mutex,
+    },
 };
 
 const CATALOG: &str = include_str!("../../../../src/utils/protocol/googleHostedRoutes.json");
@@ -58,9 +61,14 @@ pub struct GoogleSession {
     source_origin: String,
     source_client: reqwest::Client,
     client: reqwest::Client,
-    cookies: Mutex<cookie_store::CookieStore>,
+    cookies: GoogleCookieState,
+    owns_cookie_state: AtomicBool,
     leases: Vec<crate::webview_origins::ProxyOriginLease>,
 }
+
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct GoogleCookieState(Arc<Mutex<cookie_store::CookieStore>>);
 
 impl GoogleSession {
     pub fn new(
@@ -116,18 +124,36 @@ impl GoogleSession {
             source_origin: origin,
             source_client,
             client,
-            cookies: Mutex::new(Default::default()),
+            cookies: GoogleCookieState(Arc::new(Mutex::new(Default::default()))),
+            owns_cookie_state: AtomicBool::new(true),
             leases,
         }))
     }
 
     pub(super) fn revoke(&self) {
+        self.retire_for_replacement();
+        if self.owns_cookie_state.swap(false, AtomicOrdering::AcqRel) {
+            if let Ok(mut jar) = self.cookies.0.lock() {
+                *jar = Default::default();
+            }
+        }
+    }
+
+    pub(super) fn retire_for_replacement(&self) {
         for lease in &self.leases {
             lease.revoke();
         }
-        if let Ok(mut jar) = self.cookies.lock() {
-            *jar = Default::default();
-        }
+    }
+
+    #[doc(hidden)]
+    pub fn take_cookie_state_for_replacement(&self) -> GoogleCookieState {
+        self.owns_cookie_state.store(false, AtomicOrdering::Release);
+        self.cookies.clone()
+    }
+
+    #[doc(hidden)]
+    pub fn restore_cookie_state(&mut self, state: GoogleCookieState) {
+        self.cookies = state;
     }
 
     pub(super) fn upstream_route(&self, url: &Url) -> Option<&GoogleProxyRoute> {
@@ -314,6 +340,7 @@ impl GoogleSession {
             .map_err(|_| "Invalid Google browser cookie header")?;
         let mut jar = self
             .cookies
+            .0
             .lock()
             .map_err(|_| "Google session cookies unavailable")?;
         let protected = jar
@@ -475,6 +502,7 @@ impl GoogleSession {
     ) -> Result<(), &'static str> {
         let mut jar = self
             .cookies
+            .0
             .lock()
             .map_err(|_| "Google session cookies unavailable")?;
         for header in headers.get_all("set-cookie").iter().take(128) {
@@ -511,7 +539,7 @@ impl GoogleSession {
     }
 
     pub(super) fn cookie_header(&self, url: &Url) -> Option<HeaderValue> {
-        let jar = self.cookies.lock().ok()?;
+        let jar = self.cookies.0.lock().ok()?;
         let mut cookies = jar.matches(url);
         cookies.sort_by_key(|cookie| std::cmp::Reverse(cookie.path.len()));
         let value = cookies
@@ -525,7 +553,7 @@ impl GoogleSession {
     }
 
     pub(super) fn projected_cookies(&self, url: &Url) -> Vec<HeaderValue> {
-        let Ok(jar) = self.cookies.lock() else {
+        let Ok(jar) = self.cookies.0.lock() else {
             return Vec::new();
         };
         let mut cookies = jar.matches(url);

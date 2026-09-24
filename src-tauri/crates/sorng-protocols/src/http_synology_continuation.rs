@@ -42,7 +42,7 @@ pub struct ProxySessionRuntime(RwLock<Snapshot>);
 impl Drop for ProxySessionRuntime {
     fn drop(&mut self) {
         if let Ok(snapshot) = self.0.read() {
-            snapshot.state.network.revoke();
+            snapshot.state.network.retire_listener();
         }
     }
 }
@@ -340,6 +340,9 @@ async fn dispatch(
         }
         (snapshot.state.clone(), snapshot.generation.clone())
     };
+    let Some(_request_guard) = state.network.begin_request() else {
+        return gone();
+    };
     if generation.is_some() {
         let path = request
             .uri()
@@ -359,8 +362,9 @@ async fn dispatch(
         state
     };
     request.extensions_mut().insert(state.clone());
-    // Cancels old in-flight work as soon as its generation's network retires;
-    // late responses cannot install cookies, documents, nonces or review UI.
+    // Explicit stops cancel in-flight work immediately. Listener replacement
+    // first closes admission and gives already-dispatched requests a bounded
+    // opportunity to apply response cookies before retiring the network.
     state
         .network
         .while_active(async {
