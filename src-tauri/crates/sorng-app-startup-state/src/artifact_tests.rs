@@ -28,6 +28,7 @@ fn invoke(
 
 #[test]
 fn lean_artifact_ipc_inspects_previews_and_applies_verified_bidirectional_policy() {
+    let _process_global_storage = crate::test_support::lock_process_global_encryption_storage();
     let root = tempfile::tempdir().unwrap();
     let state = EncryptionState::new();
     tauri::async_runtime::block_on(async {

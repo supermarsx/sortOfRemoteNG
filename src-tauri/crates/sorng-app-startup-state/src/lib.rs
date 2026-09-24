@@ -24,6 +24,23 @@ mod security_data;
 #[cfg(test)]
 mod telegram_tests;
 
+#[cfg(test)]
+mod test_support {
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    static PROCESS_GLOBAL_ENCRYPTION_STORAGE: OnceLock<Mutex<()>> = OnceLock::new();
+
+    /// Serialize tests that exercise the process-global encryption storage
+    /// coordinator. Those tests use isolated profile directories, but the
+    /// coordinator intentionally spans the process just as it does in the app.
+    pub(crate) fn lock_process_global_encryption_storage() -> MutexGuard<'static, ()> {
+        PROCESS_GLOBAL_ENCRYPTION_STORAGE
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 pub use sorng_app_api::api::ApiService;
 pub use sorng_app_domains::auth::AuthServiceState;
 pub use sorng_app_domains::ssh::SshServiceState;

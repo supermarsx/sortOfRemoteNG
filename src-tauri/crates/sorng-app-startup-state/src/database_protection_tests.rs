@@ -28,6 +28,7 @@ fn invoke(
 
 #[test]
 fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_profile() {
+    let _process_global_storage = crate::test_support::lock_process_global_encryption_storage();
     let root = tempfile::tempdir().unwrap();
     let state = EncryptionState::new();
     tauri::async_runtime::block_on(sorng_encryption::artifact_policy::initialize(

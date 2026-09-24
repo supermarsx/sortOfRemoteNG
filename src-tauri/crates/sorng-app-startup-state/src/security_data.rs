@@ -216,6 +216,7 @@ mod tests {
 
     #[test]
     fn recording_registrar_injects_the_shared_live_encryption_state() {
+        let _process_global_storage = crate::test_support::lock_process_global_encryption_storage();
         let root = tempfile::tempdir().unwrap();
         let fixture = mock_builder().build(mock_context(noop_assets())).unwrap();
         let encryption = EncryptionState::new();
