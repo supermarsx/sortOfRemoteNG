@@ -185,7 +185,7 @@ describe("dark-mode delivery across frames", () => {
     expect(styles(child.doc)).toHaveLength(0);
   });
 
-  it("unregisters a frame on pagehide and never touches it again", async () => {
+  it("unregisters a frame on pagehide while retaining its outgoing dark paint", async () => {
     const root = proxiedRoot();
     const controller = install(root);
     const child = frameIn(root.doc, "child");
@@ -197,14 +197,14 @@ describe("dark-mode delivery across frames", () => {
     expect(styles(child.doc)).toHaveLength(1);
 
     child.win.dispatchEvent(new child.win.Event("pagehide"));
-    expect(styles(child.doc)).toHaveLength(0);
+    expect(styles(child.doc)).toHaveLength(1);
     expect(registryOf(root).subscribers).toHaveLength(1);
 
     await controller.set({
       enabled: true,
       theme: theme({ mode: "customCss", customCss: "main{color:rgb(2,2,2)}" }),
     });
-    expect(styles(child.doc)).toHaveLength(0);
+    expect(text(child.doc)).toContain("main{color:rgb(1,1,1)}");
     expect(text(root.doc)).toContain("main{color:rgb(2,2,2)}");
   });
 

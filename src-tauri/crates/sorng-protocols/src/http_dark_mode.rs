@@ -61,10 +61,12 @@ impl WebsiteDarkModeBootstrap {
     pub(super) fn style(&self) -> Option<String> {
         self.validate().ok()?;
         Some(format!(
-            "<style id=\"__sorng_dark_bootstrap_v1\">html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important}}{}</style>",
+            "<style id=\"__sorng_dark_bootstrap_v1\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;transition:none!important}}{}}}</style>",
             self.background_color,
             self.text_color,
-            cpanel_coverage(&self.background_color, &self.text_color)
+            self.background_color,
+            self.text_color,
+            cpanel_coverage(&self.background_color, &self.text_color),
         ))
     }
 }

@@ -84,9 +84,14 @@ async fn dark_bootstrap_survives_redirects_gzip_and_child_documents_without_chan
             let start = body
                 .find("<style id=\"__sorng_dark_bootstrap_v1\"")
                 .unwrap();
+            let end = start + body[start..].find("</style>").unwrap();
+            let bootstrap = &body[start..end];
             assert!(start < body.find("content=\"img-src 'self'\"").unwrap());
             assert!(start < body.find("<style>body{background:white}").unwrap());
             assert!(body[start..].starts_with(&palette().style().unwrap()));
+            assert!(bootstrap.contains("data-background-color=\"#181a1b\""));
+            assert!(bootstrap.contains("@layer sorng-force-dark;"));
+            assert!(!bootstrap.contains("sorng-dark-loading"));
             assert!(body[start..].contains("[href*='/frontend/jupiter/']"));
             assert!(body[start..].contains(".panel-body"));
             if scripts == PageScripts::Block {

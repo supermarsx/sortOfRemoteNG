@@ -118,6 +118,100 @@ describe("injected dark-mode extension runtime", () => {
     await vi.waitFor(() => expect(node()).toBeInTheDocument());
     expect(node()?.getAttribute("data-mode")).toBe("filter");
   });
+  it("adopts the response palette before an app command without loading an engine", async () => {
+    controller.dispose();
+    const bootstrap = document.createElement("style");
+    bootstrap.id = "__sorng_dark_bootstrap_v1";
+    bootstrap.dataset.backgroundColor = "#101112";
+    bootstrap.dataset.textColor = "#eeeeee";
+    document.head.prepend(bootstrap);
+    controller = window.eval(
+      `(function(){${source}\nreturn createWebDarkModeController();})()`,
+    );
+    expect(bootstrap.textContent).toContain(
+      "background-color:#101112!important",
+    );
+    expect(bootstrap.textContent).not.toContain("sorng-dark-loading");
+    expect(document.querySelector("script")).toBeNull();
+    bootstrap.textContent = "body{background:white}";
+    await vi.waitFor(() =>
+      expect(bootstrap.textContent).toContain("@layer sorng-force-dark"),
+    );
+  });
+  it("retains the loading palette until conversion finishes and keeps force rules afterwards", async () => {
+    reader();
+    await controller.set({ enabled: true, theme: theme() });
+    const bootstrap = document.getElementById("__sorng_dark_bootstrap_v1")!;
+    expect(bootstrap).toBeInTheDocument();
+    expect(bootstrap.textContent).toContain(
+      "background-color:transparent!important",
+    );
+    expect(bootstrap.textContent).not.toContain(
+      "body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:#181a1b",
+    );
+    expect(document.documentElement).not.toHaveAttribute(
+      "data-sorng-dark-ready",
+    );
+    const userAgent = document.createElement("style");
+    userAgent.className = "darkreader--user-agent";
+    userAgent.textContent = "html{background:#181a1b}";
+    const fallback = document.createElement("style");
+    fallback.className = "darkreader--fallback";
+    fallback.textContent = "body{background:#181a1b}";
+    document.head.append(userAgent, fallback);
+    document.documentElement.setAttribute("data-darkreader-mode", "dynamic");
+    await Promise.resolve();
+    expect(document.documentElement).not.toHaveAttribute(
+      "data-sorng-dark-ready",
+    );
+    fallback.textContent = "";
+    await vi.waitFor(() =>
+      expect(document.documentElement).toHaveAttribute("data-sorng-dark-ready"),
+    );
+    expect(bootstrap).toBeInTheDocument();
+    bootstrap.remove();
+    await vi.waitFor(() =>
+      expect(document.getElementById(bootstrap.id)).toBeInTheDocument(),
+    );
+    userAgent.remove();
+    fallback.remove();
+    document.documentElement.removeAttribute("data-darkreader-mode");
+  });
+  it("reasserts cPanel inline important colors before paint and restores site values on disable", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div class="panel-body" style="background-color:white!important">Panel</div></main>';
+    reader();
+    await controller.set({ enabled: true, theme: theme() });
+    const panel = document.querySelector<HTMLElement>(".panel-body")!;
+    expect(panel.style.backgroundColor).toBe("rgb(41, 42, 43)");
+    panel.style.setProperty("background-color", "#fafafa", "important");
+    await vi.waitFor(() =>
+      expect(panel.style.backgroundColor).toBe("rgb(41, 42, 43)"),
+    );
+    await controller.set({ enabled: false });
+    expect(panel.style.backgroundColor).toBe("rgb(250, 250, 250)");
+    expect(panel.style.getPropertyPriority("background-color")).toBe(
+      "important",
+    );
+  });
+  it("repairs the palette when an SPA replaces the document head", async () => {
+    reader();
+    await controller.set({ enabled: true, theme: theme() });
+    const oldHead = document.head;
+    const replacement = document.createElement("head");
+    oldHead.replaceWith(replacement);
+    try {
+      await vi.waitFor(() => {
+        expect(
+          replacement.querySelector("#__sorng_dark_bootstrap_v1"),
+        ).toBeInTheDocument();
+        expect(node()).toBeInTheDocument();
+      });
+    } finally {
+      controller.dispose();
+      replacement.replaceWith(oldHead);
+    }
+  });
   it("combines dynamic conversion with non-inverting adjustments exactly once", async () => {
     const api = reader();
     await controller.set({
@@ -372,8 +466,12 @@ describe("injected dark-mode extension runtime", () => {
         "font[color],font[color] *{color:inherit!important;}",
       );
       expect(css).not.toContain("filter:");
+      expect(document.documentElement).toHaveAttribute("data-sorng-dark-ready");
       await controller.set({ enabled: false });
       expect(node()).toBeNull();
+      expect(document.documentElement).not.toHaveAttribute(
+        "data-sorng-dark-ready",
+      );
       expect(document.body.innerHTML).toContain("Readable text");
     },
   );
