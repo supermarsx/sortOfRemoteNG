@@ -583,7 +583,7 @@ mod tests {
         // LLVM coverage instrumentation distorts this CPU-bound timing check;
         // cargo-llvm-cov already exercises the functional round trips below.
         // Keep the envelope enforced by every normal test run instead.
-        if std::env::var_os("CARGO_LLVM_COV").is_some() {
+        if cfg!(coverage) {
             return;
         }
 

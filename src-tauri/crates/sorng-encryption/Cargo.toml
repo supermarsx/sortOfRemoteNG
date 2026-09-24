@@ -5,6 +5,9 @@ version.workspace = true
 edition = "2021"
 description = "Application-wide encryption-at-rest orchestration: master DEK, per-artifact sub-keys, file envelope codec, unlock state"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
 [dependencies]
 # Crypto primitives.
 aes-gcm = { workspace = true }

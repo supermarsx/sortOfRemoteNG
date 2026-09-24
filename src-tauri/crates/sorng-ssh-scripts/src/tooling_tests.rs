@@ -290,7 +290,7 @@ async fn installed_powershell_formatter_returns_only_a_draft() {
 }
 
 fn installed_tool_deadline() -> Duration {
-    if std::env::var_os("CARGO_LLVM_COV").is_some() {
+    if cfg!(coverage) {
         Duration::from_secs(15)
     } else {
         DEADLINE

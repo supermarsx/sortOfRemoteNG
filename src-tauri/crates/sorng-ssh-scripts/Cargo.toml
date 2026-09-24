@@ -5,6 +5,9 @@ version.workspace = true
 edition = "2021"
 description = "Action-based and event-based SSH script execution engine"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
