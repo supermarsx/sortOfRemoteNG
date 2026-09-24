@@ -95,6 +95,8 @@ beforeEach(() => {
   vi.stubGlobal(
     "XMLHttpRequest",
     class {
+      status = 200;
+      responseText = "native-cookie=ready";
       open(...args: unknown[]) {
         xhrOpen(...args);
       }
@@ -231,6 +233,26 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       nativeUserAgent: true,
       documentCookieBridge: true,
     });
+    xhrOpen.mockClear();
+    xhrHeader.mockClear();
+    xhrSend.mockClear();
+    expect(document.cookie).toBe("native-cookie=ready");
+    expect(xhrOpen).toHaveBeenLastCalledWith(
+      "GET",
+      `${proxy}/__sortofremoteng_google_cookie_v1`,
+      false,
+    );
+    expect(xhrHeader).toHaveBeenLastCalledWith(
+      "X-Sorng-Google-Cookie-Path",
+      "/portal/page",
+    );
+    document.cookie = "probe=accepted; Path=/";
+    expect(xhrOpen).toHaveBeenLastCalledWith(
+      "POST",
+      `${proxy}/__sortofremoteng_google_cookie_v1`,
+      false,
+    );
+    expect(xhrSend).toHaveBeenLastCalledWith("probe=accepted; Path=/");
     const account = "http://p11111111111111111111111111111111.localhost:43123";
     expect(
       controller!.mapUrl(

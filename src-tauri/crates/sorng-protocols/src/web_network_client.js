@@ -7,6 +7,12 @@ function installWebNetworkClient(configuration, reportBlocked) {
   var NativeURL = window.URL,
     NativeRequest = window.Request,
     nativeFetch = window.fetch,
+    NativeXMLHttpRequest = window.XMLHttpRequest,
+    nativeXhrPrototype = NativeXMLHttpRequest && NativeXMLHttpRequest.prototype,
+    nativeXhrOpen = nativeXhrPrototype && nativeXhrPrototype.open,
+    nativeXhrSetRequestHeader =
+      nativeXhrPrototype && nativeXhrPrototype.setRequestHeader,
+    nativeXhrSend = nativeXhrPrototype && nativeXhrPrototype.send,
     rootLocation = location.href,
     routes = new Map(),
     fontAssets = new Map(),
@@ -31,6 +37,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     restrictedContextInterception = true,
     resourceAttributeInterception = false,
     formInterception = true,
+    documentCookieBridge = false,
     active = true,
     disposed = false;
 
@@ -614,6 +621,60 @@ function installWebNetworkClient(configuration, reportBlocked) {
           url.startsWith(quickConnectDiscovered.proxyUrl + "?")))
     );
   }
+  if (
+    googleSession &&
+    typeof NativeXMLHttpRequest === "function" &&
+    typeof nativeXhrOpen === "function" &&
+    typeof nativeXhrSetRequestHeader === "function" &&
+    typeof nativeXhrSend === "function"
+  ) {
+    var cookieEndpoint = proxyOrigin + "/__sortofremoteng_google_cookie_v1",
+      ownCookieDescriptor = Object.getOwnPropertyDescriptor(document, "cookie");
+    function documentCookieRequest(method, value) {
+      var xhr = new NativeXMLHttpRequest(),
+        currentPath = new NativeURL(location.href).pathname;
+      Reflect.apply(nativeXhrOpen, xhr, [method, cookieEndpoint, false]);
+      Reflect.apply(nativeXhrSetRequestHeader, xhr, [
+        "X-Sorng-Google-Cookie-Path",
+        currentPath,
+      ]);
+      Reflect.apply(nativeXhrSend, xhr, [value]);
+      if (xhr.status < 200 || xhr.status >= 300)
+        throw new DOMException(
+          "The Google cookie bridge is unavailable",
+          "SecurityError",
+        );
+      return xhr.responseText || "";
+    }
+    try {
+      Object.defineProperty(document, "cookie", {
+        configurable: true,
+        enumerable: true,
+        get: function () {
+          try {
+            return documentCookieRequest("GET", null);
+          } catch (_) {
+            return "";
+          }
+        },
+        set: function (value) {
+          try {
+            documentCookieRequest("POST", String(value));
+          } catch (_) {
+            // Browsers silently ignore rejected document.cookie assignments.
+          }
+        },
+      });
+      documentCookieBridge = true;
+      restores.push(function () {
+        if (ownCookieDescriptor)
+          Object.defineProperty(document, "cookie", ownCookieDescriptor);
+        else delete document.cookie;
+      });
+    } catch (_) {
+      documentCookieBridge = false;
+    }
+  }
   if (typeof nativeFetch === "function") {
     function googleRequestOptions(url, options, credentials) {
       if (!googleSession) return options;
@@ -692,11 +753,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
       }
     });
   }
-  if (window.XMLHttpRequest) {
-    var xhrPrototype = window.XMLHttpRequest.prototype,
-      nativeOpen = xhrPrototype.open,
-      nativeSetRequestHeader = xhrPrototype.setRequestHeader,
-      nativeSend = xhrPrototype.send,
+  if (nativeXhrPrototype) {
+    var xhrPrototype = nativeXhrPrototype,
+      nativeOpen = nativeXhrOpen,
+      nativeSetRequestHeader = nativeXhrSetRequestHeader,
+      nativeSend = nativeXhrSend,
       googleXhr = new WeakMap();
     xhrInterception = replace(xhrPrototype, "open", function () {
       var args = Array.prototype.slice.call(arguments);
@@ -1178,7 +1239,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
               resources: resourceAttributeInterception,
               nativeCookies: true,
               nativeUserAgent: true,
-              documentCookieBridge: true,
+              documentCookieBridge: documentCookieBridge,
             }),
           }
         : {}),

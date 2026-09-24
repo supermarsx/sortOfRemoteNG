@@ -16,6 +16,8 @@ use std::{
 
 const CATALOG: &str = include_str!("../../../../src/utils/protocol/googleHostedRoutes.json");
 pub(super) const REDIRECT_MARKER: &str = "__sorng_google_hop_v1";
+pub(super) const COOKIE_BRIDGE_PATH: &str = "/__sortofremoteng_google_cookie_v1";
+const COOKIE_PATH_HEADER: &str = "x-sorng-google-cookie-path";
 
 fn cookie_domain_order(cookie: &cookie_store::Cookie<'_>, target: &Url) -> (u8, usize) {
     let host = target.host_str().unwrap_or_default();
@@ -214,9 +216,11 @@ impl GoogleSession {
         let google_login = route.upstream_origin == "https://accounts.google.com"
             && state.upstream_auth_mode == super::UpstreamAuthMode::GoogleForm;
         let local_autologin = request.uri().path() == super::AUTOLOGIN_PATH && google_login;
+        let local_cookie_bridge = request.uri().path() == COOKIE_BRIDGE_PATH && route.documents;
         if request.uri().path().starts_with("/__sortofremoteng_")
             && request.uri().path() != super::web_automation::DARKREADER_PATH
             && !local_autologin
+            && !local_cookie_bridge
         {
             return Err("Google routing does not grant credential or control endpoints");
         }
@@ -322,111 +326,129 @@ impl GoogleSession {
         }
     }
 
-    /// Merge browser-visible, non-HttpOnly cookie writes back into the native
-    /// origin jar. Server HttpOnly values always win and are never exposed.
-    pub(super) fn observe_browser_cookies(
-        &self,
-        incoming: &axum::http::HeaderMap,
-        target: &Url,
-    ) -> Result<(), &'static str> {
-        let Some(header) = incoming.get("cookie") else {
-            return Ok(());
-        };
-        if header.as_bytes().len() > 64 * 1024 {
-            return Err("Google browser cookie header is too large");
+    fn document_cookie_url(
+        target_origin: &str,
+        headers: &axum::http::HeaderMap,
+    ) -> Result<Url, &'static str> {
+        let path = headers
+            .get(COOKIE_PATH_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .ok_or("Missing Google document cookie path")?;
+        if path.is_empty()
+            || path.len() > 4096
+            || !path.starts_with('/')
+            || path.contains(['?', '#', '\\'])
+        {
+            return Err("Invalid Google document cookie path");
         }
-        let value = header
-            .to_str()
-            .map_err(|_| "Invalid Google browser cookie header")?;
+        let target = Url::parse(&format!("{target_origin}{path}"))
+            .map_err(|_| "Invalid Google document cookie path")?;
+        if !valid_url(&target) || target.origin().ascii_serialization() != target_origin {
+            return Err("Invalid Google document cookie origin");
+        }
+        Ok(target)
+    }
+
+    pub(super) fn document_cookie_string(
+        &self,
+        target_origin: &str,
+        headers: &axum::http::HeaderMap,
+    ) -> Result<String, &'static str> {
+        let target = Self::document_cookie_url(target_origin, headers)?;
+        let jar = self
+            .cookies
+            .0
+            .lock()
+            .map_err(|_| "Google session cookies unavailable")?;
+        let mut cookies = jar
+            .matches(&target)
+            .into_iter()
+            .filter(|cookie| cookie.http_only() != Some(true))
+            .collect::<Vec<_>>();
+        cookies.sort_by(|left, right| browser_cookie_order(left, right, &target));
+        Ok(cookies
+            .into_iter()
+            .take(128)
+            .map(|cookie| format!("{}={}", cookie.name(), cookie.value()))
+            .collect::<Vec<_>>()
+            .join("; "))
+    }
+
+    fn apply_document_cookie(
+        &self,
+        target_origin: &str,
+        headers: &axum::http::HeaderMap,
+        value: &[u8],
+    ) -> Result<(), &'static str> {
+        if value.is_empty() || value.len() > 4096 {
+            return Err("Invalid Google document cookie");
+        }
+        let value = std::str::from_utf8(value).map_err(|_| "Invalid Google document cookie")?;
+        let target = Self::document_cookie_url(target_origin, headers)?;
+        let cookie = cookie_store::Cookie::parse(value.to_owned(), &target)
+            .map_err(|_| "Invalid Google document cookie")?;
+        // JavaScript cannot create or overwrite HttpOnly state. Keep the same
+        // silent refusal semantics as a browser's document.cookie setter.
+        if cookie.http_only() == Some(true) {
+            return Ok(());
+        }
         let mut jar = self
             .cookies
             .0
             .lock()
             .map_err(|_| "Google session cookies unavailable")?;
-        let protected = jar
-            .matches(target)
-            .into_iter()
-            .filter(|cookie| cookie.http_only() == Some(true))
-            .map(|cookie| cookie.name().to_string())
-            .collect::<std::collections::BTreeSet<_>>();
-        let mut occurrences = std::collections::BTreeMap::<String, usize>::new();
-        for pair in value.split(';').take(128) {
-            let Some((name, value)) = pair.trim().split_once('=') else {
-                continue;
-            };
-            if name.is_empty()
-                || name.len() > 256
-                || value.len() > 4096
-                || protected.contains(name)
-                || !name
-                    .bytes()
-                    .all(|byte| byte > 0x20 && byte < 0x7f && !matches!(byte, b'=' | b';' | b','))
-                || !value
-                    .bytes()
-                    .all(|byte| (0x20..0x7f).contains(&byte) && !matches!(byte, b';' | b','))
-            {
-                continue;
-            }
-            let occurrence = occurrences.entry(name.to_owned()).or_default();
-            // The localhost alias cannot express Google's upstream Domain
-            // attribute. Match duplicate names in browser Cookie order (longest
-            // path first), then update only that native cookie. This preserves
-            // original domain/path/attribute scope through the roundtrip.
-            let mut existing = jar
-                .matches(target)
-                .into_iter()
-                .filter(|cookie| cookie.name() == name && cookie.http_only() != Some(true))
-                .cloned()
-                .collect::<Vec<_>>();
-            existing.sort_by(|left, right| browser_cookie_order(left, right, target));
-            // localhost cannot represent two upstream domains with the same
-            // name and path. Reconcile only the deterministic projected winner.
-            existing.dedup_by(|left, right| left.path.as_ref() == right.path.as_ref());
-            let selected = existing.get(*occurrence).cloned();
-            *occurrence += 1;
-            let Some(cookie) = selected else {
-                // A new browser-only name has no upstream scope to preserve.
-                // Import only its first occurrence as a host-only root cookie;
-                // later duplicates are ambiguous and therefore ignored.
-                if *occurrence != 1 {
-                    continue;
-                }
-                let raw = format!("{name}={value}; Path=/; Secure");
-                let Ok(cookie) = cookie_store::Cookie::parse(raw, target) else {
-                    continue;
-                };
-                match jar.insert(cookie.into_owned(), target) {
-                    Ok(_) | Err(cookie_store::CookieError::Expired) => {}
-                    Err(_) => return Err("Invalid Google browser cookie"),
-                }
-                continue;
-            };
-            if cookie.value() == value {
-                continue;
-            }
-            let path = cookie.path.as_ref().to_owned();
-            let secure = cookie.secure();
-            let http_only = cookie.http_only();
-            let same_site = cookie.same_site();
-            let partitioned = cookie.partitioned();
-            let mut raw: cookie_store::RawCookie<'static> = cookie.into();
-            raw.set_value(value.to_owned());
-            // cookie_store's Cookie -> RawCookie conversion intentionally omits
-            // these fields. Restore them, and make an implicit effective path
-            // explicit, before parsing the replacement into native scope.
-            raw.set_path(path);
-            raw.set_secure(secure);
-            raw.set_http_only(http_only);
-            raw.set_same_site(same_site);
-            raw.set_partitioned(partitioned);
-            let replacement = cookie_store::Cookie::try_from_raw_cookie(&raw, target)
-                .map_err(|_| "Invalid Google browser cookie")?;
-            match jar.insert(replacement.into_owned(), target) {
-                Ok(_) | Err(cookie_store::CookieError::Expired) => {}
-                Err(_) => return Err("Invalid Google browser cookie"),
-            }
+        match jar.insert(cookie.into_owned(), &target) {
+            Ok(_) | Err(cookie_store::CookieError::Expired) => Ok(()),
+            Err(_) => Err("Invalid Google document cookie"),
         }
-        Ok(())
+    }
+
+    /// Synchronous page bridge for document.cookie. Google runs cookie probes
+    /// before issuing its first request, so writes must reach the native jar
+    /// before JavaScript can read them back or navigate.
+    pub(super) async fn document_cookie_response(
+        &self,
+        target_origin: &str,
+        request: axum::extract::Request,
+    ) -> axum::response::Response {
+        use axum::{body::Body, http::StatusCode, response::Response};
+
+        let method = request.method().clone();
+        let headers = request.headers().clone();
+        let result = match method {
+            axum::http::Method::GET => self
+                .document_cookie_string(target_origin, &headers)
+                .map(|value| (StatusCode::OK, value)),
+            axum::http::Method::POST => {
+                match axum::body::to_bytes(request.into_body(), 4097).await {
+                    Ok(value) => self
+                        .apply_document_cookie(target_origin, &headers, &value)
+                        .map(|()| (StatusCode::NO_CONTENT, String::new())),
+                    Err(_) => Err("Invalid Google document cookie"),
+                }
+            }
+            _ => {
+                return Response::builder()
+                    .status(StatusCode::METHOD_NOT_ALLOWED)
+                    .header("allow", "GET, POST")
+                    .header("cache-control", "no-store")
+                    .body(Body::empty())
+                    .expect("static Google cookie method refusal")
+            }
+        };
+        match result {
+            Ok((status, value)) => Response::builder()
+                .status(status)
+                .header("cache-control", "no-store")
+                .header("content-type", "text/plain; charset=utf-8")
+                .body(Body::from(value))
+                .expect("static Google cookie bridge response"),
+            Err(detail) => Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("cache-control", "no-store")
+                .body(Body::from(detail))
+                .expect("static Google cookie bridge refusal"),
+        }
     }
 
     pub(super) async fn send(
@@ -463,24 +485,15 @@ impl GoogleSession {
             request = request.body(body.to_vec());
         }
         let mut response = request.send().await?;
-        let deletions = if include_credentials {
-            projected_cookie_deletions(response.headers(), url)
-        } else {
-            Vec::new()
-        };
         if include_credentials {
             self.observe_cookies(response.headers(), url)
                 .map_err(Error::Policy)?;
         }
-        let visible = if include_credentials {
-            self.projected_cookies(url)
-        } else {
-            Vec::new()
-        };
+        // The protected native jar is authoritative. Projecting HTTPS Google
+        // cookies onto an HTTP localhost alias is rejected inconsistently by
+        // engines and can resurrect stale browser mirrors. Page-visible state
+        // is exposed only through the document-cookie bridge above.
         response.headers_mut().remove("set-cookie");
-        for value in deletions.into_iter().chain(visible) {
-            response.headers_mut().append("set-cookie", value);
-        }
         if matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
             let next = response
                 .headers()
@@ -550,48 +563,6 @@ impl GoogleSession {
         (!value.is_empty())
             .then(|| HeaderValue::from_str(&value).ok())
             .flatten()
-    }
-
-    pub(super) fn projected_cookies(&self, url: &Url) -> Vec<HeaderValue> {
-        let Ok(jar) = self.cookies.0.lock() else {
-            return Vec::new();
-        };
-        let mut cookies = jar.matches(url);
-        cookies.sort_by(|left, right| {
-            left.name()
-                .cmp(right.name())
-                .then_with(|| left.path.as_ref().cmp(right.path.as_ref()))
-                // Never expose a visible value when an HttpOnly cookie would
-                // collapse onto the same localhost name/path.
-                .then_with(|| right.http_only().cmp(&left.http_only()))
-                .then_with(|| browser_cookie_order(left, right, url))
-        });
-        cookies.dedup_by(|left, right| {
-            left.name() == right.name() && left.path.as_ref() == right.path.as_ref()
-        });
-        cookies
-            .into_iter()
-            .take(128)
-            .filter_map(|cookie| {
-                let mut value = format!(
-                    "{}={}; Path={}",
-                    cookie.name(),
-                    cookie.value(),
-                    cookie.path.as_ref(),
-                );
-                if cookie.secure() == Some(true) {
-                    value.push_str("; Secure");
-                }
-                if cookie.http_only() == Some(true) {
-                    value.push_str("; HttpOnly");
-                }
-                if let Some(same_site) = cookie.same_site() {
-                    value.push_str("; SameSite=");
-                    value.push_str(&same_site.to_string());
-                }
-                HeaderValue::from_str(&value).ok()
-            })
-            .collect()
     }
 
     pub(super) fn manifest(&self) -> serde_json::Value {
@@ -682,12 +653,6 @@ impl GoogleSession {
                 builder = builder.header("access-control-allow-credentials", "true");
             }
         }
-        // `send` has already replaced upstream Set-Cookie values with safe
-        // localhost projections. Preserve those projections on redirects so
-        // browser-visible state advances in lockstep with the native jar.
-        for value in response.headers().get_all(reqwest::header::SET_COOKIE) {
-            builder = builder.header(axum::http::header::SET_COOKIE, value);
-        }
         builder.body(Body::empty()).unwrap()
     }
 
@@ -758,34 +723,6 @@ impl GoogleSession {
         }
         result
     }
-}
-
-/// Carry upstream deletion semantics to the current local alias without ever
-/// projecting an upstream Domain attribute onto localhost siblings.
-fn projected_cookie_deletions(headers: &reqwest::header::HeaderMap, url: &Url) -> Vec<HeaderValue> {
-    headers
-        .get_all("set-cookie")
-        .iter()
-        .filter_map(|header| header.to_str().ok())
-        .filter(|value| {
-            cookie_store::Cookie::parse((*value).to_owned(), url)
-                .is_ok_and(|cookie| cookie.is_expired())
-        })
-        .filter_map(|value| {
-            let projected = value
-                .split(';')
-                .filter(|part| {
-                    !part
-                        .trim_start()
-                        .to_ascii_lowercase()
-                        .starts_with("domain=")
-                })
-                .collect::<Vec<_>>()
-                .join(";");
-            HeaderValue::from_str(&projected).ok()
-        })
-        .take(128)
-        .collect()
 }
 
 fn valid_url(url: &Url) -> bool {

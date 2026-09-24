@@ -2038,6 +2038,13 @@ pub async fn axum_proxy_handler(
     } else {
         state
     };
+    if req.uri().path() == google::COOKIE_BRIDGE_PATH {
+        if let Some(google) = state.network.google.clone() {
+            return google
+                .document_cookie_response(&state.target_origin, req)
+                .await;
+        }
+    }
     if proxy_request_headers_are_authorized(
         req.headers(),
         &state.proxy_authority,
@@ -2262,8 +2269,8 @@ pub async fn axum_proxy_handler(
                 })
             });
     let cors_origin = if let Some(google) = &state.network.google {
-        let include_credentials = match google.includes_credentials(req.headers()) {
-            Ok(value) => value,
+        match google.includes_credentials(req.headers()) {
+            Ok(_) => {}
             Err(detail) => {
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
@@ -2271,20 +2278,6 @@ pub async fn axum_proxy_handler(
                     .body(Body::from(detail))
                     .expect("static Google credentials-mode refusal")
             }
-        };
-        let google_target = reqwest::Url::parse(&request_url).ok();
-        if include_credentials
-            && google_target.as_ref().is_none_or(|target| {
-                google
-                    .observe_browser_cookies(req.headers(), target)
-                    .is_err()
-            })
-        {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .header("Cache-Control", "no-store")
-                .body(Body::from("Invalid Google browser cookie state"))
-                .expect("static Google cookie refusal");
         }
         fwd_headers = google.request_headers(req.headers(), &state.target_origin);
         req.headers()

@@ -291,10 +291,7 @@ fn redirects_map_to_the_destination_alias_and_increment_a_bounded_counter() {
     assert!(location.contains("__sorng_google_hop_v1=8"));
     assert!(location.contains("__sorng_navigation_v1=navigation-token"));
     assert!(location.ends_with("#step"));
-    assert_eq!(
-        mapped.headers()[header::SET_COOKIE],
-        "__Host-GAPS=projected; Path=/; Secure; HttpOnly"
-    );
+    assert!(!mapped.headers().contains_key(header::SET_COOKIE));
 
     let signed_query = "https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Fanalytics.google.com%2Fanalytics%2Fweb%2F%2523%2Freport&continue=second+value&empty=&flag#challenge";
     let opaque: reqwest::Response = axum::http::Response::builder()
@@ -414,6 +411,8 @@ fn alias_scope_preserves_the_native_webview_user_agent_but_not_connection_secret
 
     let credentials = request_for(account, AUTOLOGIN_PATH);
     assert!(session.request_state(&base, &credentials).is_ok());
+    let cookies = request_for(account, google::COOKIE_BRIDGE_PATH);
+    assert!(session.request_state(&base, &cookies).is_ok());
     let resource = session
         .routes
         .iter()
@@ -421,6 +420,104 @@ fn alias_scope_preserves_the_native_webview_user_agent_but_not_connection_secret
         .unwrap();
     let credentials = request_for(resource, AUTOLOGIN_PATH);
     assert!(session.request_state(&base, &credentials).is_err());
+    let cookies = request_for(resource, google::COOKIE_BRIDGE_PATH);
+    assert!(session.request_state(&base, &cookies).is_err());
+}
+
+#[tokio::test]
+async fn document_cookie_bridge_is_synchronous_path_scoped_and_hides_httponly_state() {
+    let session = session("https://analytics.google.com/");
+    let origin = "https://accounts.google.com";
+    let target = Url::parse("https://accounts.google.com/v3/signin/identifier").unwrap();
+    let mut server = reqwest::header::HeaderMap::new();
+    server.append(
+        header::SET_COOKIE,
+        "SID=server-secret; Domain=.google.com; Path=/; Secure; HttpOnly"
+            .parse()
+            .unwrap(),
+    );
+    server.append(
+        header::SET_COOKIE,
+        "visible=one; Domain=.google.com; Path=/; Secure"
+            .parse()
+            .unwrap(),
+    );
+    session.observe_cookies(&server, &target).unwrap();
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(google::COOKIE_BRIDGE_PATH)
+        .header("x-sorng-google-cookie-path", "/v3/signin/identifier")
+        .body(Body::empty())
+        .unwrap();
+    let response = session.document_cookie_response(origin, request).await;
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    assert_eq!(body, "visible=one");
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(google::COOKIE_BRIDGE_PATH)
+        .header("x-sorng-google-cookie-path", "/v3/signin/identifier")
+        .body(Body::from(
+            "probe=accepted; Domain=.google.com; Path=/v3; Secure",
+        ))
+        .unwrap();
+    assert_eq!(
+        session
+            .document_cookie_response(origin, request)
+            .await
+            .status(),
+        axum::http::StatusCode::NO_CONTENT
+    );
+    let native = session.cookie_header(&target).unwrap();
+    let native = native.to_str().unwrap();
+    assert!(native.contains("SID=server-secret"));
+    assert!(native.contains("probe=accepted"));
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(google::COOKIE_BRIDGE_PATH)
+        .header("x-sorng-google-cookie-path", "/v3/signin/identifier")
+        .body(Body::from("probe=ignored; Path=/; HttpOnly"))
+        .unwrap();
+    assert_eq!(
+        session
+            .document_cookie_response(origin, request)
+            .await
+            .status(),
+        axum::http::StatusCode::NO_CONTENT
+    );
+    assert!(!session
+        .cookie_header(&target)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("probe=ignored"));
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(google::COOKIE_BRIDGE_PATH)
+        .header("x-sorng-google-cookie-path", "/v3/signin/identifier")
+        .body(Body::from(
+            "probe=; Domain=.google.com; Path=/v3; Max-Age=0; Secure",
+        ))
+        .unwrap();
+    assert_eq!(
+        session
+            .document_cookie_response(origin, request)
+            .await
+            .status(),
+        axum::http::StatusCode::NO_CONTENT
+    );
+    assert!(!session
+        .cookie_header(&target)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("probe="));
 }
 
 #[test]
@@ -464,7 +561,7 @@ fn cors_is_translated_only_when_google_approved_the_exact_upstream_origin() {
 }
 
 #[test]
-fn native_cookie_jar_keeps_httponly_values_and_merges_browser_visible_updates() {
+fn native_cookie_jar_keeps_httponly_values_and_upstream_scope() {
     let session = session("https://analytics.google.com/");
     let target = Url::parse("https://accounts.google.com/v3/signin/identifier").unwrap();
     let mut server = reqwest::header::HeaderMap::new();
@@ -517,25 +614,6 @@ fn native_cookie_jar_keeps_httponly_values_and_merges_browser_visible_updates() 
     server.append(header::SET_COOKIE, "scope=host; Secure".parse().unwrap());
     session.observe_cookies(&server, &target).unwrap();
 
-    let initial_scope_projection = session
-        .projected_cookies(&target)
-        .into_iter()
-        .filter(|value| value.to_str().unwrap().starts_with("scope="))
-        .map(|value| value.to_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        initial_scope_projection,
-        vec!["scope=host; Path=/v3/signin; Secure"]
-    );
-
-    let mut browser = axum::http::HeaderMap::new();
-    browser.insert(
-        header::COOKIE,
-        "SID=attacker; implicit=two; dupe=narrow-two; visible=two; dupe=wide-two; scope=host-two"
-            .parse()
-            .unwrap(),
-    );
-    session.observe_browser_cookies(&browser, &target).unwrap();
     let native = session
         .cookie_header(&target)
         .unwrap()
@@ -544,56 +622,26 @@ fn native_cookie_jar_keeps_httponly_values_and_merges_browser_visible_updates() 
         .to_owned();
     assert!(native.contains("SID=server-secret"));
     assert!(native.contains("__Host-GAPS=google-session"));
-    assert!(!native.contains("SID=attacker"));
-    assert!(native.contains("visible=two"));
-    assert!(native.contains("implicit=two"));
-    assert!(native.contains("dupe=narrow-two"));
-    assert!(native.contains("dupe=wide-two"));
-    assert!(native.contains("scope=host-two"));
+    assert!(native.contains("visible=one"));
+    assert!(native.contains("implicit=one"));
+    assert!(native.contains("dupe=narrow"));
+    assert!(native.contains("dupe=wide"));
+    assert!(native.contains("scope=host"));
     assert!(native.contains("scope=shared"));
 
-    let projected = session
-        .projected_cookies(&target)
-        .into_iter()
-        .map(|value| value.to_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
-    assert!(projected
-        .iter()
-        .any(|value| { value.starts_with("SID=server-secret;") && value.contains("HttpOnly") }));
-    assert!(projected.iter().any(|value| {
-        value.starts_with("__Host-GAPS=google-session;")
-            && value.contains("Path=/")
-            && value.contains("Secure")
-            && value.contains("HttpOnly")
-            && value.contains("SameSite=None")
-    }));
-    assert!(projected.iter().all(|value| !value.contains("Domain=")));
-    assert!(projected.iter().any(|value| {
-        value.starts_with("implicit=two;")
-            && value.contains("Path=/v3/signin")
-            && value.contains("Secure")
-            && value.contains("SameSite=Strict")
-    }));
-    assert!(projected.iter().any(|value| {
-        value.starts_with("dupe=narrow-two;")
-            && value.contains("Path=/v3")
-            && value.contains("Secure")
-            && value.contains("SameSite=Lax")
-    }));
-    assert!(projected.iter().any(|value| {
-        value.starts_with("dupe=wide-two;")
-            && value.contains("Path=/")
-            && value.contains("Secure")
-            && value.contains("SameSite=Strict")
-    }));
-    assert_eq!(
-        projected
-            .iter()
-            .filter(|value| value.starts_with("scope="))
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        vec!["scope=host-two; Path=/v3/signin; Secure"]
+    let mut bridge = axum::http::HeaderMap::new();
+    bridge.insert(
+        "x-sorng-google-cookie-path",
+        "/v3/signin/identifier".parse().unwrap(),
     );
+    let visible = session
+        .document_cookie_string("https://accounts.google.com", &bridge)
+        .unwrap();
+    assert!(!visible.contains("SID="));
+    assert!(!visible.contains("__Host-GAPS="));
+    assert!(visible.contains("visible=one"));
+    assert!(visible.contains("dupe=narrow"));
+    assert!(visible.contains("dupe=wide"));
 
     let analytics = Url::parse("https://analytics.google.com/analytics/web/").unwrap();
     let cross_origin = session
@@ -604,12 +652,12 @@ fn native_cookie_jar_keeps_httponly_values_and_merges_browser_visible_updates() 
         .to_owned();
     assert!(cross_origin.contains("SID=server-secret"));
     assert!(!cross_origin.contains("__Host-GAPS=google-session"));
-    assert!(cross_origin.contains("visible=two"));
-    assert!(cross_origin.contains("dupe=wide-two"));
-    assert!(!cross_origin.contains("dupe=narrow-two"));
-    assert!(!cross_origin.contains("implicit=two"));
+    assert!(cross_origin.contains("visible=one"));
+    assert!(cross_origin.contains("dupe=wide"));
+    assert!(!cross_origin.contains("dupe=narrow"));
+    assert!(!cross_origin.contains("implicit=one"));
     assert!(!cross_origin.contains("scope=shared"));
-    assert!(!cross_origin.contains("scope=host-two"));
+    assert!(!cross_origin.contains("scope=host"));
     assert!(!cross_origin.contains("account-only=private"));
 
     let sibling_scope = Url::parse("https://analytics.google.com/v3/signin/check").unwrap();
@@ -620,7 +668,7 @@ fn native_cookie_jar_keeps_httponly_values_and_merges_browser_visible_updates() 
         .unwrap()
         .to_owned();
     assert!(sibling_scope.contains("scope=shared"));
-    assert!(!sibling_scope.contains("scope=host-two"));
+    assert!(!sibling_scope.contains("scope=host"));
 
     let mut deletion = reqwest::header::HeaderMap::new();
     deletion.append(
@@ -696,18 +744,15 @@ fn google_cookie_state_survives_replacement_and_late_source_response() {
         .to_owned();
     assert!(native.contains("__Host-GAPS=rotated-after-handoff"));
     assert!(native.contains("shared=restart-domain"));
-    let projected = replacement
-        .projected_cookies(&target)
-        .into_iter()
-        .map(|value| value.to_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
-    assert!(projected.iter().any(|value| {
-        value.starts_with("__Host-GAPS=rotated-after-handoff;")
-            && value.contains("Path=/")
-            && value.contains("Secure")
-            && value.contains("HttpOnly")
-            && value.contains("SameSite=None")
-    }));
+    let mut bridge = axum::http::HeaderMap::new();
+    bridge.insert(
+        "x-sorng-google-cookie-path",
+        "/v3/signin/identifier".parse().unwrap(),
+    );
+    assert!(!replacement
+        .document_cookie_string("https://accounts.google.com", &bridge)
+        .unwrap()
+        .contains("__Host-GAPS="));
 }
 
 #[test]
