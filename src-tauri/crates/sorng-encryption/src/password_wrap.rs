@@ -580,6 +580,13 @@ mod tests {
 
     #[test]
     fn performance_envelope_at_owasp_under_n_seconds() {
+        // LLVM coverage instrumentation distorts this CPU-bound timing check;
+        // cargo-llvm-cov already exercises the functional round trips below.
+        // Keep the envelope enforced by every normal test run instead.
+        if std::env::var_os("CARGO_LLVM_COV").is_some() {
+            return;
+        }
+
         // Slow-build smoke test, not a benchmark. Argon2id at 64 MiB
         // / 3 / 4 typically runs ~0.5–2 s on modern dev machines, so
         // a 5 s ceiling leaves comfortable headroom while still
