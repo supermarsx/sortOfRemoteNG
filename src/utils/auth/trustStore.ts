@@ -378,6 +378,8 @@ const MAX_SAN_ENTRIES = 256;
 const MAX_CHAIN_ENTRIES = 32;
 const MAX_PENDING_MUTATIONS = 128;
 const MAX_HYDRATION_RETRY_DELAY_MS = 30_000;
+const TRUST_REFRESH_RETRY_DELAYS_MS = [1_000, 2_000] as const;
+const TRUST_REFRESH_RETRY_BUDGET_MS = 5_000;
 const NATIVE_INVOKE_DEADLINE_MS = 20_000;
 const MAX_NATIVE_IN_FLIGHT = 32;
 const VALID_RECORD_TYPES = new Set<TrustRecordType>([
@@ -423,6 +425,7 @@ let scopeResolution: Promise<TrustStoreScope> | null = null;
  */
 let scopeGeneration = 0;
 let cacheReadSequence = 0;
+let trustRefreshSequence = 0;
 /**
  * Barrier for the in-flight `trust_set_active_database`. Every read and every
  * mutation waits on it, so a connection attempted the instant a database
@@ -1647,27 +1650,61 @@ export async function retryTrustStoreHydration(): Promise<void> {
  */
 export async function refreshTrustStoreRecords(): Promise<void> {
   const generation = scopeGeneration;
+  const refreshSequence = ++trustRefreshSequence;
+  const retryDeadline = Date.now() + TRUST_REFRESH_RETRY_BUDGET_MS;
+  const assertCurrentRefresh = () => {
+    if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+    if (refreshSequence !== trustRefreshSequence)
+      throw new TrustRefreshSupersededError();
+  };
+  const waitForRetry = async (attempt: number): Promise<boolean> => {
+    const delay = TRUST_REFRESH_RETRY_DELAYS_MS[attempt];
+    if (delay === undefined || Date.now() + delay > retryDeadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    assertCurrentRefresh();
+    return true;
+  };
   await scopeActivation;
   const scope = await resolveTrustStoreScope();
-  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+  assertCurrentRefresh();
   if (scope.resolved && scope.databaseId === null)
     throw new NoActiveDatabaseError();
   // Let a bootstrap already in flight finish before issuing the fresh read.
-  if (hydrationPromise) await hydrationPromise;
-  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
-  try {
-    const applied = await refreshNativeCache(false);
-    if (generation !== scopeGeneration) throw new TrustScopeChangedError();
-    if (!applied) throw new TrustRefreshSupersededError();
-    hydrationState = "ready";
-    hydrationFailureCount = 0;
-    nextHydrationAttemptAt = 0;
-    lastHydrationError = null;
-    notifyTrustStoreChanged();
-  } catch (error) {
-    if (generation !== scopeGeneration) throw new TrustScopeChangedError();
-    if (error instanceof TrustRefreshSupersededError) throw error;
-    throw markTrustStoreUnavailable();
+  let attempt = 0;
+  if (hydrationPromise) {
+    try {
+      await hydrationPromise;
+    } catch (error) {
+      assertCurrentRefresh();
+      if (!(error instanceof TransientTrustStoreError)) throw error;
+      if (!(await waitForRetry(attempt))) throw error;
+      attempt += 1;
+    }
+  }
+  assertCurrentRefresh();
+  for (; ; attempt += 1) {
+    try {
+      const applied = await refreshNativeCache(false);
+      assertCurrentRefresh();
+      if (!applied) throw new TrustRefreshSupersededError();
+      hydrationState = "ready";
+      hydrationFailureCount = 0;
+      nextHydrationAttemptAt = 0;
+      lastHydrationError = null;
+      notifyTrustStoreChanged();
+      return;
+    } catch (error) {
+      assertCurrentRefresh();
+      if (error instanceof TrustRefreshSupersededError) throw error;
+      if (
+        !isNativeTrustTransition(error) ||
+        attempt >= TRUST_REFRESH_RETRY_DELAYS_MS.length
+      ) {
+        throw markTrustStoreUnavailable(error);
+      }
+      if (!(await waitForRetry(attempt)))
+        throw markTrustStoreUnavailable(error);
+    }
   }
 }
 
@@ -2223,6 +2260,7 @@ export function getEffectiveTrustPolicy(
 /** Test-only cache reset. Production code should never bypass hydration. */
 export function resetTrustStoreCacheForTests(): void {
   clearCache();
+  trustRefreshSequence += 1;
   hydrationPromise = null;
   mutationTail = Promise.resolve();
   pendingMutations = 0;

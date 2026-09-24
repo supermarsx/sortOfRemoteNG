@@ -35,8 +35,10 @@ import {
   ensureTrustStoreReady,
   getAllTrustRecords,
   getStoredIdentity,
+  isTransientTrustStoreError,
   refreshTrustStoreRecords,
   resetTrustStoreCacheForTests,
+  TransientTrustStoreError,
   verifyIdentity,
 } from "../../src/utils/auth/trustStore";
 
@@ -296,5 +298,190 @@ describe("fresh native Trust Center records", () => {
     fixture.records = [];
     await refreshTrustStoreRecords();
     expect(getAllTrustRecords()).toEqual([]);
+  });
+
+  it("retries recognized storage transitions after one then two seconds", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let reads = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_all_records" && ++reads < 3) {
+        return Promise.reject(
+          new Error(
+            "encryption storage transition in progress; retry after it completes",
+          ),
+        );
+      }
+      return invoke(command, ...args);
+    });
+    try {
+      const refresh = refreshTrustStoreRecords();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(reads).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(reads).toBe(2);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(reads).toBe(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(refresh).resolves.toBeUndefined();
+      expect(reads).toBe(3);
+      expect(getAllTrustRecords()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("continues a refresh after an in-flight hydration hits a storage transition", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let reads = 0;
+    let rejectHydration!: (reason: Error) => void;
+    let hydrationReadStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      hydrationReadStarted = resolve;
+    });
+    const pendingHydration = new Promise((_, reject) => {
+      rejectHydration = reject;
+    });
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_all_records" && ++reads === 1) {
+        hydrationReadStarted();
+        return pendingHydration;
+      }
+      return invoke(command, ...args);
+    });
+    try {
+      const hydrationFailure = ensureTrustStoreReady().catch((error) => error);
+      await started;
+      const refresh = refreshTrustStoreRecords();
+      rejectHydration(
+        new Error(
+          "encryption storage transition in progress; retry after it completes",
+        ),
+      );
+      await vi.advanceTimersByTimeAsync(999);
+      expect(reads).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(refresh).resolves.toBeUndefined();
+      expect(await hydrationFailure).toBeInstanceOf(TransientTrustStoreError);
+      expect(reads).toBe(2);
+      expect(getAllTrustRecords()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels a delayed retry when the owning database changes", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let reads = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_all_records" && ++reads === 1) {
+        return Promise.reject(
+          new Error(
+            "encryption storage transition in progress; retry after it completes",
+          ),
+        );
+      }
+      return invoke(command, ...args);
+    });
+    try {
+      const failure = refreshTrustStoreRecords().catch((error) => error);
+      await vi.advanceTimersByTimeAsync(0);
+      for (const changed of fixture.changed)
+        changed({
+          database: null,
+          databaseId: null,
+          previousDatabaseId: "db-a",
+          reason: "close",
+          connectionIds: [],
+          trustActivation: Promise.resolve(),
+        });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect((await failure).message).toContain("Trust database changed");
+      expect(reads).toBe(1);
+      expect(getAllTrustRecords()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry terminal refresh failures", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let reads = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_all_records") {
+        reads += 1;
+        return Promise.reject(new Error("Locked trust destination"));
+      }
+      return invoke(command, ...args);
+    });
+    try {
+      const failure = refreshTrustStoreRecords().catch((error) => error);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const error = await failure;
+      expect(reads).toBe(1);
+      expect(isTransientTrustStoreError(error)).toBe(false);
+      expect(getAllTrustRecords()).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not extend a slow transition beyond the refresh retry budget", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let reads = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_all_records") {
+        reads += 1;
+        return new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("encryption key transition in progress")),
+            5_000,
+          ),
+        );
+      }
+      return invoke(command, ...args);
+    });
+    try {
+      const failure = refreshTrustStoreRecords().catch((error) => error);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(isTransientTrustStoreError(await failure)).toBe(true);
+      expect(reads).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops after two transient refresh retries and remains fail-closed", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let reads = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_all_records") {
+        reads += 1;
+        return Promise.reject(
+          new Error("encryption key transition in progress"),
+        );
+      }
+      return invoke(command, ...args);
+    });
+    try {
+      const failure = refreshTrustStoreRecords().catch((error) => error);
+      await vi.advanceTimersByTimeAsync(3_000);
+      const error = await failure;
+      expect(reads).toBe(3);
+      expect(isTransientTrustStoreError(error)).toBe(true);
+      expect(getAllTrustRecords()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(reads).toBe(3);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
