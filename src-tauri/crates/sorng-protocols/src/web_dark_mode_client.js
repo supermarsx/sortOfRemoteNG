@@ -127,7 +127,8 @@ function createWebDarkModeController() {
       theme.backgroundColor +
       "!important;color:" +
       theme.textColor +
-      "!important}";
+      "!important}" +
+      cpanelCss(theme);
   }
   function adjustments(theme) {
     return (
@@ -165,15 +166,51 @@ function createWebDarkModeController() {
     );
   }
   function borderColor(theme) {
+    return mixColor(theme.backgroundColor, theme.textColor, 28);
+  }
+  function mixColor(background, text, textPercent) {
     var parts = [];
     for (var offset = 1; offset < 7; offset += 2)
       parts.push(
         Math.round(
-          parseInt(theme.backgroundColor.slice(offset, offset + 2), 16) * 0.72 +
-            parseInt(theme.textColor.slice(offset, offset + 2), 16) * 0.28,
+          (parseInt(background.slice(offset, offset + 2), 16) *
+            (100 - textPercent) +
+            parseInt(text.slice(offset, offset + 2), 16) * textPercent) /
+            100,
         ),
       );
     return "rgb(" + parts.join(",") + ")";
+  }
+  function cpanelCss(theme) {
+    var root =
+      "html:root:has(:is(#cpanel_body,[href*='/frontend/jupiter/'],[src*='/frontend/jupiter/'],[href*='/frontend/meridian/'],[src*='/frontend/meridian/'],[href*='/frontend/paper_lantern/'],[src*='/frontend/paper_lantern/'])) ";
+    var surface = mixColor(theme.backgroundColor, theme.textColor, 8);
+    var header = mixColor(theme.backgroundColor, theme.textColor, 12);
+    var border = mixColor(theme.backgroundColor, theme.textColor, 22);
+    return (
+      root +
+      ":is(#content,#main-content,.main-content,.page-content,[class*='cpanel-main'],[class*='cpanel-content']){background-color:" +
+      theme.backgroundColor +
+      "!important;color:" +
+      theme.textColor +
+      "!important}" +
+      root +
+      ":is(.card,.panel,.panel-body,.well,.widget,.list-group-item,.modal-content,.dropdown-menu,.popover,table,thead,tbody,tr,td,th,[class*='cpanel-card'],[class*='cpanel-panel']){background-color:" +
+      surface +
+      "!important;color:" +
+      theme.textColor +
+      "!important;border-color:" +
+      border +
+      "!important}" +
+      root +
+      ":is(.card-header,.card-footer,.panel-heading,.panel-footer,.modal-header,.modal-footer){background-color:" +
+      header +
+      "!important;color:" +
+      theme.textColor +
+      "!important;border-color:" +
+      border +
+      "!important}"
+    );
   }
   // bgcolor, text, link and font color are presentational attributes, not inline
   // styles, so the dynamic engine's inline-style pass is what normally rewrites
@@ -244,6 +281,11 @@ function createWebDarkModeController() {
         "html,frameset{background-color:" +
         theme.backgroundColor +
         "!important;}";
+    // cPanel's Jupiter, Meridian and legacy shells use opaque Bootstrap-style
+    // surfaces which can survive dynamic conversion or be replaced after it.
+    // Keep a local, selector-scoped layer for those panels for the document's
+    // lifetime. Pure filter mode is excluded because it inverts the page once.
+    if (theme.mode !== "filter") css += cpanelCss(theme);
     css += "\n" + theme.customCss;
     if (!css.trim()) return;
     style = document.createElement("style");

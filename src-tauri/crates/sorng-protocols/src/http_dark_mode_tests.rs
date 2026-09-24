@@ -87,6 +87,8 @@ async fn dark_bootstrap_survives_redirects_gzip_and_child_documents_without_chan
             assert!(start < body.find("content=\"img-src 'self'\"").unwrap());
             assert!(start < body.find("<style>body{background:white}").unwrap());
             assert!(body[start..].starts_with(&palette().style().unwrap()));
+            assert!(body[start..].contains("[href*='/frontend/jupiter/']"));
+            assert!(body[start..].contains(".panel-body"));
             if scripts == PageScripts::Block {
                 assert!(!body.contains("proxy_document_start"));
             } else {

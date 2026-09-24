@@ -26,6 +26,30 @@ fn color<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<String, D::Erro
     Ok(value)
 }
 
+fn blend(background: &str, text: &str, text_percent: u16) -> String {
+    let component = |offset: usize| {
+        let background = u16::from_str_radix(&background[offset..offset + 2], 16).unwrap();
+        let text = u16::from_str_radix(&text[offset..offset + 2], 16).unwrap();
+        (background * (100 - text_percent) + text * text_percent + 50) / 100
+    };
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        component(1),
+        component(3),
+        component(5)
+    )
+}
+
+fn cpanel_coverage(background: &str, text: &str) -> String {
+    let surface = blend(background, text, 8);
+    let header = blend(background, text, 12);
+    let border = blend(background, text, 22);
+    let root = "html:root:has(:is(#cpanel_body,[href*='/frontend/jupiter/'],[src*='/frontend/jupiter/'],[href*='/frontend/meridian/'],[src*='/frontend/meridian/'],[href*='/frontend/paper_lantern/'],[src*='/frontend/paper_lantern/'])) ";
+    format!(
+        "{root}:is(#content,#main-content,.main-content,.page-content,[class*='cpanel-main'],[class*='cpanel-content']){{background-color:{background}!important;color:{text}!important}}{root}:is(.card,.panel,.panel-body,.well,.widget,.list-group-item,.modal-content,.dropdown-menu,.popover,table,thead,tbody,tr,td,th,[class*='cpanel-card'],[class*='cpanel-panel']){{background-color:{surface}!important;color:{text}!important;border-color:{border}!important}}{root}:is(.card-header,.card-footer,.panel-heading,.panel-footer,.modal-header,.modal-footer){{background-color:{header}!important;color:{text}!important;border-color:{border}!important}}"
+    )
+}
+
 impl WebsiteDarkModeBootstrap {
     pub fn validate(&self) -> Result<(), String> {
         if !valid_color(&self.background_color) || !valid_color(&self.text_color) {
@@ -37,8 +61,10 @@ impl WebsiteDarkModeBootstrap {
     pub(super) fn style(&self) -> Option<String> {
         self.validate().ok()?;
         Some(format!(
-            "<style id=\"__sorng_dark_bootstrap_v1\">html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important}}</style>",
-            self.background_color, self.text_color
+            "<style id=\"__sorng_dark_bootstrap_v1\">html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important}}{}</style>",
+            self.background_color,
+            self.text_color,
+            cpanel_coverage(&self.background_color, &self.text_color)
         ))
     }
 }
@@ -75,5 +101,24 @@ mod tests {
             }))
             .is_err()
         );
+    }
+
+    #[test]
+    fn first_paint_style_covers_cpanel_surfaces_without_external_css() {
+        let style = WebsiteDarkModeBootstrap {
+            background_color: "#181a1b".into(),
+            text_color: "#e8e6e3".into(),
+        }
+        .style()
+        .unwrap();
+
+        assert!(style.contains("[href*='/frontend/jupiter/']"));
+        assert!(style.contains("[href*='/frontend/meridian/']"));
+        assert!(style.contains("#cpanel_body"));
+        assert!(style.contains(".panel-body"));
+        assert!(style.contains("background-color:#292a2b!important"));
+        assert!(style.contains("border-color:#464747!important"));
+        assert!(!style.contains("@import"));
+        assert!(!style.contains("url("));
     }
 }
