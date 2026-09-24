@@ -201,6 +201,15 @@ pub fn build_autologin_injection_from_slots(
     nonce_slot: &RwLock<Option<String>>,
     selectors: &Option<HttpAutoLoginSelectors>,
 ) -> Option<String> {
+    build_autologin_injection_from_slots_with_flow(armed, nonce_slot, selectors, None)
+}
+
+fn build_autologin_injection_from_slots_with_flow(
+    armed: &AtomicBool,
+    nonce_slot: &RwLock<Option<String>>,
+    selectors: &Option<HttpAutoLoginSelectors>,
+    login_flow: Option<&str>,
+) -> Option<String> {
     if !armed.load(Ordering::Relaxed) {
         return None;
     }
@@ -225,7 +234,7 @@ pub fn build_autologin_injection_from_slots(
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
 
-    Some(autologin_client_script(&nonce, &selectors_json, None))
+    Some(autologin_client_script(&nonce, &selectors_json, login_flow))
 }
 
 /// `&AxumProxyState` wrapper over [`build_autologin_injection_from_slots`] for
@@ -255,10 +264,15 @@ pub fn build_autologin_injection(
             bitwarden::bind_google_document(state, document_sequence, document_url)?;
         return Some(autologin_client_script(&nonce, "null", Some(flow)));
     }
-    let injection = build_autologin_injection_from_slots(
+    let login_flow = state
+        .network
+        .has_cpanel_login_readiness()
+        .then_some("cpanel");
+    let injection = build_autologin_injection_from_slots_with_flow(
         &state.auto_login_armed,
         &state.auto_login_nonce,
         &state.auto_login_selectors,
+        login_flow,
     )?;
     if state.upstream_auth_mode == crate::http::UpstreamAuthMode::BitwardenForm {
         bitwarden::bind_document(state, document_sequence)?;
@@ -308,6 +322,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
             Some("synology") => ", 'synology'",
             Some("google") => ", 'google'",
             Some("google-password") => ", 'google-password'",
+            Some("cpanel") => ", 'cpanel'",
             _ => "",
         },
     )
@@ -610,6 +625,21 @@ mod tests {
         assert!(!script.contains("fetchCredsAndRun(NONCE,SEL, 'synology')"));
         assert!(script.contains("autologin-client-unavailable"));
         assert!(!script.contains("fetch("));
+    }
+
+    #[test]
+    fn cpanel_injection_carries_only_the_closed_readiness_hint() {
+        let armed = AtomicBool::new(true);
+        let nonce = RwLock::new(None);
+        let script = build_autologin_injection_from_slots_with_flow(
+            &armed,
+            &nonce,
+            &Some(selectors()),
+            Some("cpanel"),
+        )
+        .expect("armed cPanel form injects");
+        assert!(script.contains("fetchCredsAndRun(NONCE,SEL, 'cpanel')"));
+        assert!(!script.contains("password\":\""));
     }
 
     #[test]

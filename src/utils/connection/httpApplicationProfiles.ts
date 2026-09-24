@@ -524,12 +524,21 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   },
   generic("netbox", "NetBox", "networking"),
   generic("vmware", "VMware vSphere", "virtualization"),
-  generic(
-    "cpanel",
-    "cPanel / WHM",
-    "management",
-    "Use the website account and the saved connection's cPanel/WHM port. API tokens are not browser credentials.",
-  ),
+  {
+    id: "cpanel",
+    label: "cPanel / WHM",
+    category: "management",
+    capability: "known-form",
+    selectors: {
+      usernameSelector: 'form#login_form input#user[name="user"]',
+      passwordSelector:
+        'form#login_form input#pass[name="pass"][type="password"]',
+      submitSelector:
+        'form#login_form button#login_submit[name="login"][type="submit"]',
+    },
+    description:
+      "Reviewed cPanel, WHM and Webmail login form. Automatic sign-in waits for the complete page and a stable enabled login form before submitting. Use the website account and the saved connection's cPanel/WHM port; API tokens are not browser credentials.",
+  },
   generic("draytek", "DrayTek", "networking"),
   generic("grafana", "Grafana", "monitoring"),
   generic("budibase", "Budibase", "business"),

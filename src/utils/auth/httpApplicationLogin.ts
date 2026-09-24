@@ -23,12 +23,13 @@ export { YEALINK_SERVLET_UPSTREAM_SUPPORTED };
  */
 export function getReviewedApplicationProfile(
   connection: Partial<Connection> | null | undefined,
-): "tacticalrmm" | "google-hosted" | undefined {
+): "tacticalrmm" | "google-hosted" | "cpanel" | undefined {
   const settings = normalizeHttpApplicationSettings(
     connection?.httpApplication,
   );
   if (!settings || settings.invalid) return undefined;
   if (settings.id === "tacticalrmm") return "tacticalrmm";
+  if (settings.id === "cpanel") return "cpanel";
   return getFirstPartyGoogleHostedApplicationUrl(settings.id)
     ? "google-hosted"
     : undefined;

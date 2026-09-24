@@ -700,7 +700,8 @@ pub async fn start_basic_auth_proxy(
                 &min_tls,
                 &proxy_policy,
             )
-            .with_google_routes(google),
+            .with_google_routes(google)
+            .with_reviewed_application_profile(config.reviewed_application_profile),
     );
     let google_routes = network.google_routes();
 
@@ -1435,7 +1436,8 @@ pub async fn restart_proxy_session(
                 &min_tls,
                 &proxy_policy,
             )
-            .with_google_routes(google),
+            .with_google_routes(google)
+            .with_reviewed_application_profile(reviewed_application_profile),
     );
     let google_routes = network.google_routes();
 

@@ -202,6 +202,7 @@ pub struct ProxyNetworkState {
         Option<super::quickconnect_control::ReviewedQuickConnectControl>,
     #[doc(hidden)]
     pub google: Option<Arc<super::google::GoogleSession>>,
+    reviewed_application_profile: Option<super::ReviewedApplicationProfile>,
 }
 
 struct ProxyRequestActivity {
@@ -285,6 +286,7 @@ impl Default for ProxyNetworkState {
             font_assets: None,
             quickconnect_control: None,
             google: None,
+            reviewed_application_profile: None,
         }
     }
 }
@@ -413,6 +415,18 @@ impl ProxyNetworkState {
     pub fn with_google_routes(mut self, google: Option<super::google::GoogleSession>) -> Self {
         self.google = google.map(Arc::new);
         self
+    }
+
+    pub fn with_reviewed_application_profile(
+        mut self,
+        profile: Option<super::ReviewedApplicationProfile>,
+    ) -> Self {
+        self.reviewed_application_profile = profile;
+        self
+    }
+
+    pub(crate) fn has_cpanel_login_readiness(&self) -> bool {
+        self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::Cpanel)
     }
 
     pub fn google_routes(&self) -> Vec<super::google::GoogleProxyRoute> {

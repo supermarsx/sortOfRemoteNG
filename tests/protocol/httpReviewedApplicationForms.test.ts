@@ -30,6 +30,8 @@ const forms = {
     '<form action="/user/login" method="post"><input id="user_name" name="user_name"><input id="password" name="password" type="password"><button class="ui primary">Login</button></form>',
   brevo:
     '<form><input id="email" name="email"><input id="password" name="password" type="password"><button id="eyeIcon" type="button">Show</button><button data-testid="submit-button" type="button">Login</button></form>',
+  cpanel:
+    '<form novalidate id="login_form" action="/login/" method="post"><input name="user" id="user" type="text"><input name="pass" id="pass" type="password"><button name="login" type="submit" id="login_submit">Log in</button></form>',
 };
 const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/autologin_client.js",
@@ -74,6 +76,17 @@ describe("reviewed HTTP application login forms", () => {
           httpApplication: { version: 1, id: "tacticalrmm", loginMode },
         }),
       ).toBe("tacticalrmm");
+    },
+  );
+
+  it.each(["manual", "form"] as const)(
+    "marks a valid cPanel %s profile for its guarded login readiness path",
+    (loginMode) => {
+      expect(
+        getReviewedApplicationProfile({
+          httpApplication: { version: 1, id: "cpanel", loginMode },
+        }),
+      ).toBe("cpanel");
     },
   );
 

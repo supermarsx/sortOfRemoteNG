@@ -670,6 +670,7 @@ pub enum ReviewedApplicationProfile {
     TacticalRmm,
     #[serde(rename = "google-hosted")]
     GoogleHosted,
+    Cpanel,
 }
 
 pub fn same_origin_redirect_limit(profile: Option<BrowserRedirectProfile>) -> usize {

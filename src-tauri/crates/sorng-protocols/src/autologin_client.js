@@ -868,7 +868,7 @@
     }
   }
 
-  function bootstrapFill(creds, ov, rawOptions) {
+  function bootstrapFill(creds, ov, rawOptions, readinessProfile) {
     // This promise OWNS the secret until detection finishes. Clearing it in
     // the fetch caller before a delayed SPA render used to submit null values.
     return new Promise(function (resolve) {
@@ -879,6 +879,7 @@
       var origin = window.location.origin;
       var options;
       var activeCapture;
+      var waitingForStability = false;
       function finish(result) {
         if (finished) return;
         finished = true;
@@ -1000,6 +1001,45 @@
           fail();
         }
       }
+      function submitControlReady(target) {
+        var submit = target.submit;
+        return (
+          !!submit &&
+          !submit.disabled &&
+          submit.getAttribute("aria-disabled") !== "true" &&
+          !(typeof submit.matches === "function" && submit.matches(":disabled"))
+        );
+      }
+      function nextVisualFrame(callback) {
+        if (typeof window.requestAnimationFrame === "function")
+          window.requestAnimationFrame(callback);
+        else retryTimer = setTimeout(callback, 0);
+      }
+      function waitForCpanelStability(captured) {
+        if (waitingForStability || finished) return;
+        waitingForStability = true;
+        nextVisualFrame(function () {
+          nextVisualFrame(function () {
+            waitingForStability = false;
+            if (finished) return;
+            try {
+              if (
+                document.readyState !== "complete" ||
+                !guarded(captured) ||
+                !submitControlReady(captured.target)
+              ) {
+                activeCapture = null;
+                tick();
+                return;
+              }
+              fill(captured);
+            } catch (_) {
+              activeCapture = null;
+              tick();
+            }
+          });
+        });
+      }
       function tick() {
         if (finished) return;
         if (stopped || window.location.origin !== origin) {
@@ -1012,6 +1052,18 @@
             // No retries after an attempted submit, including thrown handlers.
             var captured = captureTarget(target, options);
             activeCapture = captured;
+            if (readinessProfile === "cpanel") {
+              if (
+                document.readyState !== "complete" ||
+                !submitControlReady(target)
+              ) {
+                activeCapture = null;
+                retryTimer = setTimeout(tick, Math.min(100 + tries * 50, 400));
+                return;
+              }
+              waitForCpanelStability(captured);
+              return;
+            }
             if (options.fillDelayMs)
               retryTimer = setTimeout(function () {
                 fill(captured);
@@ -1118,7 +1170,8 @@
         ? google.runWhenReady(nonce, googleHelpers)
         : google.runPasswordWhenReady(nonce, googleHelpers);
     }
-    if (loginFlow != null) {
+    var readinessProfile = loginFlow === "cpanel" ? "cpanel" : null;
+    if (loginFlow != null && readinessProfile == null) {
       report({ ok: false, reason: "invalid-login-flow" });
       return;
     }
@@ -1172,7 +1225,12 @@
           }
           var ov = normSel(data.selectors) || injectedOv;
           creds = { username: data.username, password: data.password };
-          return bootstrapFill(creds, ov, data.formAutomation);
+          return bootstrapFill(
+            creds,
+            ov,
+            data.formAutomation,
+            readinessProfile,
+          );
         } finally {
           // Drop the transport object now; bootstrap owns its private copy.
           if (data && typeof data === "object") {

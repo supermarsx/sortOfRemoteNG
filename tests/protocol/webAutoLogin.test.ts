@@ -286,6 +286,30 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     },
   );
 
+  it("marks cPanel form login for native readiness gating and sends reviewed selectors", async () => {
+    connections.push({
+      id: "conn-1",
+      hostname: "device.local",
+      protocol: "http",
+      username: "cp-user",
+      password: "cp-password",
+      httpApplication: { version: 1, id: "cpanel", loginMode: "form" },
+    });
+    renderHook(() => useWebBrowser(session));
+    await waitFor(() => expect(lastProxyConfig()).toBeDefined());
+    expect(lastProxyConfig()).toMatchObject({
+      reviewed_application_profile: "cpanel",
+      http_auto_login: true,
+      http_auto_login_selectors: {
+        username_selector: 'form#login_form input#user[name="user"]',
+        password_selector:
+          'form#login_form input#pass[name="pass"][type="password"]',
+        submit_selector:
+          'form#login_form button#login_submit[name="login"][type="submit"]',
+      },
+    });
+  });
+
   it("preserves Webmin's explicit nonstandard port and sends only the reviewed form credential path", async () => {
     connections.push({
       id: "conn-1",
