@@ -251,10 +251,27 @@ impl GoogleSession {
     ) -> Vec<(String, String)> {
         let mut headers =
             super::collect_upstream_headers(incoming, super::UpstreamAuthMode::None, "", target);
-        // Keep the actual WebView User-Agent, client hints and Fetch Metadata,
-        // including its iframe destination. Google decides whether this browser
-        // context is supported; proxy routing must not disguise that context.
-        headers.retain(|(name, _)| !matches!(name.as_str(), "cookie" | "origin" | "referer"));
+        let accounts_navigation = target == "https://accounts.google.com"
+            && incoming
+                .get("sec-fetch-mode")
+                .and_then(|value| value.to_str().ok())
+                == Some("navigate")
+            && incoming
+                .get("sec-fetch-dest")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| matches!(value, "document" | "iframe"));
+        headers.retain(|(name, _)| {
+            !matches!(name.as_str(), "cookie" | "origin" | "referer")
+                && !(accounts_navigation
+                    && matches!(
+                        name.as_str(),
+                        // These describe the protected localhost alias and its
+                        // iframe, not the upstream Accounts navigation. Keep
+                        // the native WebView User-Agent/client hints, but do not
+                        // send Google a contradictory navigation topology.
+                        "sec-fetch-dest" | "sec-fetch-mode" | "sec-fetch-site" | "sec-fetch-user"
+                    ))
+        });
         for (name, value) in &mut headers {
             if name == "access-control-request-headers" {
                 *value = value

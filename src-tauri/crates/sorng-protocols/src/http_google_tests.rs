@@ -384,17 +384,16 @@ fn alias_scope_preserves_the_native_webview_user_agent_but_not_connection_secret
     assert!(!captured.contains("saved-user"));
     assert!(!captured.contains("saved-password"));
     assert!(!captured.contains("must-not-cross-origin"));
-    assert!(!forwarded
-        .iter()
-        .any(|(name, _)| matches!(name.as_str(), "cookie" | "proxy-authorization")));
-    for name in [
-        "sec-fetch-dest",
-        "sec-fetch-mode",
-        "sec-fetch-site",
-        "sec-fetch-user",
-        "sec-ch-ua",
-        "sec-ch-ua-platform",
-    ] {
+    assert!(!forwarded.iter().any(|(name, _)| matches!(
+        name.as_str(),
+        "cookie"
+            | "proxy-authorization"
+            | "sec-fetch-dest"
+            | "sec-fetch-mode"
+            | "sec-fetch-site"
+            | "sec-fetch-user"
+    )));
+    for name in ["sec-ch-ua", "sec-ch-ua-platform"] {
         assert_eq!(
             forwarded
                 .iter()
