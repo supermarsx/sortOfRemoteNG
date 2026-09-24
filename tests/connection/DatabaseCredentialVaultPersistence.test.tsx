@@ -29,7 +29,7 @@ const mock = vi.hoisted(() => ({
   decrypt: vi.fn(),
   manager: {} as Record<string, unknown>,
   access: null as
-    null
+    | null
     | ((event: {
         databaseId: string;
         status: string;
@@ -120,6 +120,7 @@ beforeEach(() => {
   mock.verify.mockReset().mockResolvedValue(undefined);
   mock.choose.mockReset().mockResolvedValue("SYNTHETIC_ENCRYPTED_ARCHIVE");
   mock.decrypt.mockReset().mockImplementation(async () => archive());
+  mock.access = null;
   mock.manager = {
     getCurrentDatabase: () =>
       mock.owner
@@ -1012,9 +1013,9 @@ describe("managed database credential vault persistence", () => {
       /review expired/,
     );
     await waitFor(() =>
-      expect(hook.result.current.credentialVault!.changeRevision).toBeGreaterThan(
-        revision,
-      ),
+      expect(
+        hook.result.current.credentialVault!.changeRevision,
+      ).toBeGreaterThan(revision),
     );
     const next = hook.result.current.credentialVault!;
     expect((await next.list(next.scope!)).entries).toHaveLength(1);

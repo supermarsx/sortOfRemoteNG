@@ -278,7 +278,7 @@ export const useAppLifecycle = ({
               setShowDatabasePanel(true);
             } else {
               await databaseManager.selectDatabase(lastCollection.id);
-              await loadData();
+              await loadData(lastCollection.id);
               console.log(
                 `Auto-opened last collection: ${lastCollection.name}`,
               );

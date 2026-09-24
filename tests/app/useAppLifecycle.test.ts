@@ -240,7 +240,7 @@ describe("useAppLifecycle", () => {
     expect(databaseManager.selectDatabase).toHaveBeenCalledWith(
       "collection-coverage",
     );
-    expect(lifecycleMocks.loadData).toHaveBeenCalled();
+    expect(lifecycleMocks.loadData).toHaveBeenCalledWith("collection-coverage");
     expect(setShowDatabasePanel).not.toHaveBeenCalledWith(true);
   });
 
