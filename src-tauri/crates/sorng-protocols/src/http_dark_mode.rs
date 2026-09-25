@@ -60,13 +60,21 @@ impl WebsiteDarkModeBootstrap {
 
     pub(super) fn style(&self) -> Option<String> {
         self.validate().ok()?;
+        // Start the temporary loading palette in the response itself, before
+        // the readiness bridge or host command can run. Important declarations
+        // reverse layer order: persistent canvas/cPanel colors must win over
+        // loading transparency, and both must precede the site's own layers.
+        // The runtime adopts this node and retires loading protection when the
+        // engine (or CSS fallback) is ready. With scripts blocked it stays a
+        // static CSS fallback. DarkReader must not convert its own preload.
         Some(format!(
-            "<style id=\"__sorng_dark_bootstrap_v1\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;transition:none!important}}{}}}</style>",
+            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;transition:none!important}}{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;transition:none!important}}}}</style>",
             self.background_color,
             self.text_color,
             self.background_color,
             self.text_color,
             cpanel_coverage(&self.background_color, &self.text_color),
+            self.text_color,
         ))
     }
 }
@@ -122,5 +130,22 @@ mod tests {
         assert!(style.contains("border-color:#464747!important"));
         assert!(!style.contains("@import"));
         assert!(!style.contains("url("));
+    }
+
+    #[test]
+    fn first_paint_loading_palette_precedes_scripts_and_yields_to_runtime_readiness() {
+        let style = WebsiteDarkModeBootstrap {
+            background_color: "#181a1b".into(),
+            text_color: "#e8e6e3".into(),
+        }
+        .style()
+        .unwrap();
+
+        assert!(style.contains("class=\"darkreader\""));
+        assert!(style.contains("@layer sorng-force-dark,sorng-dark-loading;"));
+        assert!(style.contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;transition:none!important}}"));
+        assert!(!style.contains("<script"));
+        assert!(!style.contains("visibility:"));
+        assert!(!style.contains("display:"));
     }
 }

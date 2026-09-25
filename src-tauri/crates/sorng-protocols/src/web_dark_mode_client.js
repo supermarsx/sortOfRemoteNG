@@ -26,6 +26,7 @@ function createWebDarkModeController() {
     bootstrap = document.getElementById("__sorng_dark_bootstrap_v1"),
     bootstrapText = bootstrap ? bootstrap.textContent : "",
     forcedInline = [],
+    forcedInlineByElement = new WeakMap(),
     loading = null,
     abortLoading = null,
     // Only the outermost proxied document carries the filter layer: a filter on
@@ -37,9 +38,12 @@ function createWebDarkModeController() {
     watched = [],
     observer = null,
     shadowStyles = [],
+    cpanelDetected = false,
     originalAttachShadow = null,
     attachShadowHook = null,
-    scanQueued = false;
+    scanQueued = false,
+    scanTimer = null,
+    pendingChanges = new Map();
   var defaults = {
     mode: "dynamic",
     brightness: 100,
@@ -134,6 +138,10 @@ function createWebDarkModeController() {
       var parent = document.head || document.documentElement;
       parent.insertBefore(bootstrap, parent.firstChild);
     }
+    // The palette is already converted. Exclude it from DarkReader's own
+    // stylesheet conversion and CSSOM notifications.
+    if (!bootstrap.classList.contains("darkreader"))
+      bootstrap.classList.add("darkreader");
     // Important declarations in the first layer beat later site layers and
     // unlayered !important rules, independently of their specificity/order.
     // Keep the canvas and cPanel protection for the entire forced-mode session.
@@ -168,28 +176,33 @@ function createWebDarkModeController() {
         );
     });
     forcedInline = [];
+    forcedInlineByElement = new WeakMap();
   }
   function protectInline(element, property, value) {
     // Inline !important outranks even our first cascade layer. Reapply only
-    // properties which explicitly compete with that layer, before the next
-    // paint, and restore the site's latest value when forced mode is disabled.
+    // properties which explicitly compete with that layer, and restore the
+    // site's latest value when forced mode is disabled.
     var inline = element.style;
     if (!inline || inline.getPropertyPriority(property) !== "important") return;
-    var entry = forcedInline.find(function (item) {
-      return item.element === element && item.property === property;
-    });
+    var properties = forcedInlineByElement.get(element);
+    var entry = properties && properties[property];
     var current = inline.getPropertyValue(property);
     if (entry && current === entry.owned) return;
     if (!entry) {
       entry = { element: element, property: property };
       forcedInline.push(entry);
+      if (!properties) {
+        properties = Object.create(null);
+        forcedInlineByElement.set(element, properties);
+      }
+      properties[property] = entry;
     }
     entry.value = current;
     entry.priority = "important";
     inline.setProperty(property, value, "important");
     entry.owned = inline.getPropertyValue(property);
   }
-  function protectPalette(theme) {
+  function protectPalette(theme, changes) {
     if (!bootstrap) return;
     var nodes = document.querySelectorAll("html,body,frameset");
     for (var index = 0; index < nodes.length; index++) {
@@ -197,10 +210,16 @@ function createWebDarkModeController() {
       protectInline(nodes[index], "color", theme.textColor);
       protectInline(nodes[index], "color-scheme", "dark");
     }
-    if (document.querySelector(cpanelMarker)) {
-      protectCpanelSurfaces(document, theme);
+    var isCpanel = !!document.querySelector(cpanelMarker);
+    if (isCpanel) {
+      if (changes && cpanelDetected)
+        changes.forEach(function (subtree, node) {
+          if (node.isConnected) protectCpanelSurfaces(node, theme, subtree);
+        });
+      else protectCpanelSurfaces(document, theme);
     }
-    protectShadows(theme);
+    cpanelDetected = isCpanel;
+    protectShadows(theme, changes);
     // enable() may return before the engine is active (hidden document, missing
     // head or loading CSS). Its own fallback is cleared after conversion. The
     // transparent loading palette stays until then; the force layer never goes
@@ -225,7 +244,7 @@ function createWebDarkModeController() {
     } else if (document.documentElement.hasAttribute("data-sorng-dark-ready"))
       document.documentElement.removeAttribute("data-sorng-dark-ready");
   }
-  function protectCpanelSurfaces(root, theme) {
+  function protectCpanelSurfaces(root, theme, subtree) {
     function protect(element) {
       var background = element.matches(cpanelHeaders)
         ? mixColor(theme.backgroundColor, theme.textColor, 12)
@@ -238,7 +257,8 @@ function createWebDarkModeController() {
         protectInline(element, "background-image", "none");
     }
     if (root.nodeType === 1 && root.matches(cpanelSurfaces)) protect(root);
-    root.querySelectorAll(cpanelSurfaces).forEach(protect);
+    if (subtree !== false)
+      root.querySelectorAll(cpanelSurfaces).forEach(protect);
   }
   function adjustments(theme) {
     return (
@@ -357,7 +377,7 @@ function createWebDarkModeController() {
         pendingNodes: [],
         fullRepair: false,
       };
-      entry.style.className = "sorng-cpanel-shadow-dark";
+      entry.style.className = "sorng-cpanel-shadow-dark darkreader";
       if (typeof MutationObserver === "function") {
         entry.observer = new MutationObserver(function (records) {
           // Shadow mutations are isolated from the document observer. Repair
@@ -373,8 +393,9 @@ function createWebDarkModeController() {
               entry.pendingNodes.push(node);
           }
           records.forEach(function (record) {
+            if (engineMutation(record)) return;
             if (record.target === entry.style) entry.fullRepair = true;
-            queueNode(record.target);
+            if (record.type === "attributes") queueNode(record.target);
             Array.prototype.forEach.call(
               record.addedNodes || [],
               function (node) {
@@ -390,6 +411,7 @@ function createWebDarkModeController() {
           });
           if (
             entry.repairQueued ||
+            (!entry.fullRepair && entry.pendingNodes.length === 0) ||
             disposed ||
             !desired ||
             desired.mode === "filter"
@@ -462,8 +484,10 @@ function createWebDarkModeController() {
       if (entry.style.parentNode !== root)
         root.insertBefore(entry.style, root.firstChild);
       if (entry.style.disabled) entry.style.disabled = false;
-      entry.style.removeAttribute("media");
-      entry.style.removeAttribute("disabled");
+      if (entry.style.hasAttribute("media"))
+        entry.style.removeAttribute("media");
+      if (entry.style.hasAttribute("disabled"))
+        entry.style.removeAttribute("disabled");
       protectCpanelSurfaces(root, theme);
     } finally {
       observeShadow(entry);
@@ -487,6 +511,10 @@ function createWebDarkModeController() {
     });
   }
   function scanShadows(node, theme) {
+    if (node.shadowRoot) {
+      themeShadow(node.shadowRoot, theme);
+      scanShadows(node.shadowRoot, theme);
+    }
     node.querySelectorAll("*").forEach(function (element) {
       if (element.shadowRoot) {
         themeShadow(element.shadowRoot, theme);
@@ -494,11 +522,12 @@ function createWebDarkModeController() {
       }
     });
   }
-  function protectShadows(theme) {
+  function protectShadows(theme, changes) {
     if (theme.mode === "filter" || !document.querySelector(cpanelMarker))
       return;
     // A root attached to an existing element creates no document mutation.
     // Install its first sheet before attachShadow returns to page code.
+    var firstScan = !attachShadowHook;
     if (
       !attachShadowHook &&
       typeof Element.prototype.attachShadow === "function"
@@ -526,7 +555,11 @@ function createWebDarkModeController() {
       attachShadowHook = hook;
       Element.prototype.attachShadow = attachShadowHook;
     }
-    scanShadows(document, theme);
+    if (!changes || firstScan) scanShadows(document, theme);
+    else
+      changes.forEach(function (subtree, node) {
+        if (subtree && node.isConnected) scanShadows(node, theme);
+      });
   }
   function releaseShadows(keepAppearance) {
     if (attachShadowHook && Element.prototype.attachShadow === attachShadowHook)
@@ -619,7 +652,7 @@ function createWebDarkModeController() {
     css += "\n" + theme.customCss;
     if (!css.trim()) return;
     style = document.createElement("style");
-    style.className = "sorng-website-dark-mode";
+    style.className = "sorng-website-dark-mode darkreader";
     style.setAttribute("data-mode", theme.mode);
     style.textContent = css;
     styleText = css;
@@ -706,8 +739,9 @@ function createWebDarkModeController() {
       adopted.push(node);
     }
     try {
-      node.setAttribute("data-mode", theme.mode);
-      node.textContent = css;
+      if (node.getAttribute("data-mode") !== theme.mode)
+        node.setAttribute("data-mode", theme.mode);
+      if (node.textContent !== css) node.textContent = css;
     } catch (_) {
       // The foreign document may have been replaced mid-scan.
     }
@@ -797,22 +831,99 @@ function createWebDarkModeController() {
     adopted = live;
     scanFrames(document, 1, 64);
   }
-  function queueScan() {
+  function engineMutation(record) {
+    function engineNode(node) {
+      var element = node.nodeType === 1 ? node : node.parentElement;
+      return (
+        element &&
+        element.classList.contains("darkreader") &&
+        element !== bootstrap &&
+        element !== style &&
+        !element.classList.contains("sorng-cpanel-shadow-dark") &&
+        !element.classList.contains("darkreader--fallback") &&
+        !element.classList.contains("darkreader--user-agent")
+      );
+    }
+    if (engineNode(record.target)) return true;
+    return (
+      record.type === "childList" &&
+      record.addedNodes.length + record.removedNodes.length > 0 &&
+      Array.prototype.every.call(record.addedNodes, engineNode) &&
+      Array.prototype.every.call(record.removedNodes, engineNode)
+    );
+  }
+  function queueScan(records) {
+    var relevant = false;
+    records.forEach(function (record) {
+      if (engineMutation(record)) return;
+      relevant = true;
+      function add(node, subtree) {
+        if (node.nodeType === 1)
+          pendingChanges.set(node, pendingChanges.get(node) || subtree);
+      }
+      if (record.type === "attributes") {
+        add(record.target, false);
+        if (record.attributeName === "class" || record.attributeName === "id")
+          shadowStyles.forEach(function (entry) {
+            var host = entry.root.host;
+            while (host) {
+              if (host === record.target || record.target.contains(host)) {
+                entry.fullRepair = true;
+                // Reuse the coalesced document task to update known roots,
+                // without discovering every element again for a class change.
+                break;
+              }
+              host = host.getRootNode().host;
+            }
+          });
+      }
+      Array.prototype.forEach.call(record.addedNodes || [], function (node) {
+        add(node, true);
+      });
+    });
+    if (!relevant) return;
+    scheduleScan();
+  }
+  function scheduleScan() {
     if (scanQueued || disposed || !desired) return;
     scanQueued = true;
-    Promise.resolve().then(function () {
+    // Yield to rendering and input. A microtask refresh can keep feeding the
+    // engine's observer forever without giving the browser a paint opportunity.
+    scanTimer = window.setTimeout(function () {
+      scanTimer = null;
       scanQueued = false;
+      var changes = new Map();
+      for (var entry of pendingChanges) {
+        changes.set(entry[0], entry[1]);
+        pendingChanges.delete(entry[0]);
+        if (changes.size >= 256) break;
+      }
+      // A single inserted subtree can generate records for many descendants.
+      // Visit that tree once even when its framework built it in many steps.
+      changes.forEach(function (_, node) {
+        for (
+          var parent = node.parentElement;
+          parent;
+          parent = parent.parentElement
+        ) {
+          if (changes.get(parent)) {
+            changes.delete(node);
+            break;
+          }
+        }
+      });
       try {
-        refresh();
+        refresh(changes);
       } catch (_) {
         // One malformed frame must not stop the rest of the page theming.
       }
-    });
+      if (pendingChanges.size) scheduleScan();
+    }, 16);
   }
   function observe() {
-    if (observer || typeof MutationObserver !== "function") return;
+    if (disposed || !desired || typeof MutationObserver !== "function") return;
     try {
-      observer = new MutationObserver(queueScan);
+      if (!observer) observer = new MutationObserver(queueScan);
       observer.observe(document, {
         childList: true,
         subtree: true,
@@ -835,32 +946,44 @@ function createWebDarkModeController() {
   // The document keeps growing after the readiness script runs: the frameset
   // element, the frames, and the documents those frames write themselves all
   // arrive later, so the shape-dependent work is redone as the page settles.
-  function refresh() {
+  function refresh(changes) {
     if (disposed || !desired) return;
-    var theme = desired;
-    // Observe the Document, not a replaceable root/head. Repair removal, edits
-    // and disabling of our sheets in the mutation checkpoint before paint.
-    if (!(runtimeInstalled && theme.mode === "filter")) installBootstrap(theme);
-    if (runtimeInstalled && style && !style.isConnected) {
-      style = null;
-      installStyles(theme);
+    if (observer) observer.disconnect();
+    try {
+      var theme = desired;
+      // Observe the Document, not a replaceable root/head. Repair removal,
+      // edits and disabling of our sheets in the coalesced update.
+      if (!(runtimeInstalled && theme.mode === "filter"))
+        installBootstrap(theme);
+      if (runtimeInstalled && style && !style.isConnected) {
+        style = null;
+        installStyles(theme);
+      }
+      [bootstrap, style].forEach(function (node) {
+        if (!node) return;
+        if (node.disabled) node.disabled = false;
+        if (node.hasAttribute("media")) node.removeAttribute("media");
+        if (node.hasAttribute("disabled")) node.removeAttribute("disabled");
+      });
+      if (style && style.textContent !== styleText)
+        style.textContent = styleText;
+      protectPalette(theme, changes);
+      shadowStyles.forEach(function (entry) {
+        if (entry.fullRepair) {
+          entry.fullRepair = false;
+          themeShadow(entry.root, theme);
+        }
+      });
+      if (frameset() !== framesetStyled) {
+        if (style) style.remove();
+        style = null;
+        installStyles(theme);
+      }
+      paintBorders(theme);
+      if (!changes || Array.from(changes.values()).some(Boolean)) rescan();
+    } finally {
+      observe();
     }
-    [bootstrap, style].forEach(function (node) {
-      if (!node) return;
-      if (node.disabled) node.disabled = false;
-      if (node.hasAttribute("media")) node.removeAttribute("media");
-      if (node.hasAttribute("disabled")) node.removeAttribute("disabled");
-    });
-    if (style && style.textContent !== styleText) style.textContent = styleText;
-    protectPalette(theme);
-    if (frameset() !== framesetStyled) {
-      if (style) style.remove();
-      style = null;
-      installStyles(theme);
-    }
-    paintBorders(theme);
-    observe();
-    rescan();
   }
   function settle() {
     try {
@@ -969,6 +1092,7 @@ function createWebDarkModeController() {
         backgroundColor: background,
         textColor: foreground,
       });
+      loadingPalette = true;
       refresh();
     }
   }
@@ -1033,20 +1157,24 @@ function createWebDarkModeController() {
         .then(function (engine) {
           if (disposed || ticket !== revision || desired !== theme)
             return undefined;
-          if (engine) applyDynamic(theme);
-          installStyles(theme);
-          runtimeInstalled = true;
-          paintBorders(theme);
-          observe();
-          rescan();
-          // A filter must not invert our already-dark palette. Dynamic/CSS
-          // paths retain it, including after engine conversion and SPA updates.
-          if (theme.mode === "filter") removeBootstrap();
-          else protectPalette(theme);
-          // A frameset root that skipped the engine on purpose reports nothing:
-          // its frames answer for the content the user actually sees.
-          if (engine) return "engine";
-          return wanted && cssOnly ? "cssOnly" : undefined;
+          if (observer) observer.disconnect();
+          try {
+            if (engine) applyDynamic(theme);
+            installStyles(theme);
+            runtimeInstalled = true;
+            paintBorders(theme);
+            rescan();
+            // A filter must not invert our already-dark palette. Dynamic/CSS
+            // paths retain it, including after engine conversion and SPA updates.
+            if (theme.mode === "filter") removeBootstrap();
+            else protectPalette(theme);
+            // A frameset root that skipped the engine on purpose reports nothing:
+            // its frames answer for the content the user actually sees.
+            if (engine) return "engine";
+            return wanted && cssOnly ? "cssOnly" : undefined;
+          } finally {
+            observe();
+          }
         })
         .catch(function (error) {
           if (ticket === revision) {
@@ -1060,6 +1188,9 @@ function createWebDarkModeController() {
     },
     dispose: function (keepAppearance) {
       disposed = true;
+      if (scanTimer !== null) window.clearTimeout(scanTimer);
+      scanTimer = null;
+      pendingChanges.clear();
       desired = null;
       revision++;
       if (abortLoading) abortLoading();

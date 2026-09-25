@@ -90,8 +90,11 @@ async fn dark_bootstrap_survives_redirects_gzip_and_child_documents_without_chan
             assert!(start < body.find("<style>body{background:white}").unwrap());
             assert!(body[start..].starts_with(&palette().style().unwrap()));
             assert!(bootstrap.contains("data-background-color=\"#181a1b\""));
-            assert!(bootstrap.contains("@layer sorng-force-dark;"));
-            assert!(!bootstrap.contains("sorng-dark-loading"));
+            assert!(bootstrap.contains("class=\"darkreader\""));
+            assert!(bootstrap.contains("@layer sorng-force-dark,sorng-dark-loading;"));
+            assert!(bootstrap
+                .contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready])"));
+            assert!(bootstrap.contains("background-color:transparent!important"));
             assert!(body[start..].contains("[href*='/frontend/jupiter/']"));
             assert!(body[start..].contains(".panel-body"));
             if scripts == PageScripts::Block {

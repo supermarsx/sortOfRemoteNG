@@ -131,7 +131,10 @@ describe("injected dark-mode extension runtime", () => {
     expect(bootstrap.textContent).toContain(
       "background-color:#101112!important",
     );
-    expect(bootstrap.textContent).not.toContain("sorng-dark-loading");
+    expect(bootstrap.textContent).toContain("sorng-dark-loading");
+    expect(bootstrap.textContent).toContain(
+      "background-color:transparent!important",
+    );
     expect(document.querySelector("script")).toBeNull();
     bootstrap.textContent = "body{background:white}";
     await vi.waitFor(() =>
@@ -407,6 +410,50 @@ describe("injected dark-mode extension runtime", () => {
     expect(rootScan).not.toHaveBeenCalled();
     expect(headerScan.mock.calls.length).toBeLessThanOrEqual(12);
   });
+  it("does not rescan a cPanel dashboard or its shadows for engine stylesheet churn", async () => {
+    document.body.innerHTML = `<main id="cpanel_body"><div id="host"></div>${'<section class="panel">Panel</section>'.repeat(500)}</main>`;
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML = '<div class="header">Header</div>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const documentScan = vi.spyOn(document, "querySelectorAll");
+    const shadowScan = vi.spyOn(root, "querySelectorAll");
+    const engineSheet = document.createElement("style");
+    engineSheet.className = "darkreader darkreader--sync";
+    document.head.append(engineSheet);
+    for (let round = 0; round < 8; round++) {
+      engineSheet.textContent = `.panel{border-width:${round}px}`;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    engineSheet.remove();
+    expect(documentScan).not.toHaveBeenCalled();
+    expect(shadowScan).not.toHaveBeenCalled();
+  });
+  it("repairs light-DOM inline changes without scanning unrelated shadow panels", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div class="header" style="background-color:white!important">Header</div><div id="host"></div></main>';
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML = '<section class="panel">Panel</section>'.repeat(500);
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const header = document.querySelector<HTMLElement>(".header")!;
+    const documentScan = vi.spyOn(document, "querySelectorAll");
+    const shadowScan = vi.spyOn(root, "querySelectorAll");
+    for (let round = 0; round < 8; round++) {
+      header.style.setProperty("background-color", "white", "important");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)");
+    }
+    expect(shadowScan).not.toHaveBeenCalled();
+    expect(
+      documentScan.mock.calls.every(
+        ([selector]) =>
+          selector === "html,body,frameset" || selector === "frameset",
+      ),
+    ).toBe(true);
+  });
   it("discovers shadow headers when the cPanel marker arrives later", async () => {
     document.body.innerHTML = '<div id="host"></div>';
     await controller.set({ enabled: true, cssOnly: true, theme: theme() });
@@ -426,6 +473,53 @@ describe("injected dark-mode extension runtime", () => {
     } finally {
       document.body.removeAttribute("id");
     }
+  });
+  it("protects existing inline light surfaces when a late marker identifies cPanel", async () => {
+    document.body.innerHTML =
+      '<div class="header" style="background-color:white!important">Header</div>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const header = document.querySelector<HTMLElement>(".header")!;
+    expect(header.style.backgroundColor).toBe("white");
+    document.body.id = "cpanel_body";
+    try {
+      await vi.waitFor(() =>
+        expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)"),
+      );
+    } finally {
+      document.body.removeAttribute("id");
+    }
+  });
+  it("drains more than one batch of inline header changes without dropping surfaces", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body">' +
+      '<div class="header">Header</div>'.repeat(300) +
+      "</main>";
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const headers = [...document.querySelectorAll<HTMLElement>(".header")];
+    headers.forEach((header) =>
+      header.style.setProperty("background-color", "white", "important"),
+    );
+    await vi.waitFor(() =>
+      expect(
+        headers.every(
+          (header) => header.style.backgroundColor === "rgb(49, 50, 51)",
+        ),
+      ).toBe(true),
+    );
+  });
+  it("updates existing shadow host protection when an ancestor becomes a header", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div id="ancestor"><div id="host"></div></div></main>';
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML = "<span>Title</span>";
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    expect(root.querySelector("style")!.textContent).not.toContain(":host{");
+    document.getElementById("ancestor")!.className = "header";
+    await vi.waitFor(() =>
+      expect(root.querySelector("style")!.textContent).toContain(":host{"),
+    );
   });
   it("leaves unrelated and closed shadow roots alone and removes overrides for filter mode", async () => {
     document.body.innerHTML = '<div id="host"></div><div id="closed"></div>';
