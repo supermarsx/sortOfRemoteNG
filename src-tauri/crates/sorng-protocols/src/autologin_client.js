@@ -879,13 +879,15 @@
       var origin = window.location.origin;
       var options;
       var activeCapture;
-      var waitingForStability = false;
-      var waitingForCpanelSubmit = false;
+      var cpanelFingerprint = null;
+      var cpanelCleanup = null;
+      var submitAttempted = false;
       function finish(result) {
         if (finished) return;
         finished = true;
         clearTimeout(retryTimer);
         clearTimeout(lifetimeTimer);
+        if (cpanelCleanup) cpanelCleanup();
         document.removeEventListener("DOMContentLoaded", tick);
         if (cancelActive === cancel) cancelActive = null;
         creds.username = null;
@@ -914,6 +916,26 @@
         );
       }
       function fail() {
+        // Hydration can replace/disable controls during input handlers. Only
+        // cPanel may reacquire them, and only before the one submit attempt.
+        // Retain the original action/field contract across that reacquisition.
+        if (readinessProfile === "cpanel" && !submitAttempted) {
+          try {
+            if (
+              !finished &&
+              !stopped &&
+              window.location.origin === origin &&
+              activeCapture &&
+              targetFingerprint(activeCapture.target) === cpanelFingerprint
+            ) {
+              if (cpanelCleanup) cpanelCleanup();
+              activeCapture = null;
+              clearTimeout(retryTimer);
+              retryTimer = setTimeout(tick, 0);
+              return;
+            }
+          } catch (_) {}
+        }
         finish({ ok: false, reason: "form-changed-or-unsafe" });
       }
       function fill(captured) {
@@ -939,7 +961,10 @@
             fail();
             return;
           }
-          if (target.pw.value !== creds.password)
+          if (
+            target.pw.value !== creds.password &&
+            readinessProfile !== "cpanel"
+          )
             typeField(target.pw, creds.password, validate);
           if (
             !guarded(captured) ||
@@ -983,6 +1008,7 @@
                 finish(manualJoomlaMfa(target));
                 return;
               }
+              submitAttempted = true;
               var via = guardedSubmit(target, ov);
               finish({
                 ok: true,
@@ -996,7 +1022,12 @@
             }
           };
           if (readinessProfile === "cpanel")
-            waitForCpanelSubmit(captured, submit);
+            waitForCpanelStability(
+              captured,
+              submit,
+              options.submitDelayMs,
+              true,
+            );
           else if (options.submitDelayMs)
             retryTimer = setTimeout(submit, options.submitDelayMs);
           else submit();
@@ -1013,65 +1044,160 @@
           !(typeof submit.matches === "function" && submit.matches(":disabled"))
         );
       }
-      function nextVisualFrame(callback) {
-        if (typeof window.requestAnimationFrame === "function")
-          window.requestAnimationFrame(callback);
-        else retryTimer = setTimeout(callback, 0);
-      }
-      function waitForCpanelSubmit(captured, submit) {
-        if (waitingForCpanelSubmit || finished) return;
-        waitingForCpanelSubmit = true;
-        // cPanel's login page may attach field observers after the form first
-        // becomes enabled. Let both native input/change delivery and two paint
-        // turns complete after the credential write before invoking its real
-        // submit control. The previous readiness gate only waited before fill,
-        // so the click still occurred in the same task as the writes.
-        nextVisualFrame(function () {
-          nextVisualFrame(function () {
-            waitingForCpanelSubmit = false;
-            if (finished) return;
-            try {
-              if (
-                document.readyState !== "complete" ||
-                !guarded(captured) ||
-                !submitControlReady(captured.target)
-              ) {
-                fail();
-                return;
-              }
-              if (options.submitDelayMs)
-                retryTimer = setTimeout(submit, options.submitDelayMs);
-              else submit();
-            } catch (_) {
+      function waitForCpanelStability(captured, ready, minimumDelay, filled) {
+        if (cpanelCleanup) cpanelCleanup();
+        var doc = captured.document;
+        var view = doc.defaultView;
+        var form = captured.target.form;
+        var timer = null;
+        var frame = null;
+        var disposed = false;
+        var observer = null;
+        var snapshot = null;
+        var eligibleAt = Date.now() + minimumDelay;
+        // This is an activity debounce, not a fixed page-load sleep. Every
+        // relevant mutation/event and every changed control value starts a new
+        // quiet interval. The overall detection deadline is never extended.
+        var quietMs = 250;
+        function cleanup() {
+          disposed = true;
+          clearTimeout(timer);
+          if (frame !== null && view.cancelAnimationFrame)
+            view.cancelAnimationFrame(frame);
+          if (observer) observer.disconnect();
+          doc.removeEventListener("readystatechange", changed);
+          doc.removeEventListener("load", changed, true);
+          view.removeEventListener("load", changed);
+          doc.removeEventListener("input", fieldChanged, true);
+          doc.removeEventListener("change", fieldChanged, true);
+          if (cpanelCleanup === cleanup) cpanelCleanup = null;
+          snapshot = null;
+        }
+        cpanelCleanup = cleanup;
+        function fieldChanged(event) {
+          if (form && event.target.form === form) changed();
+        }
+        function changed() {
+          if (disposed || finished) return;
+          clearTimeout(timer);
+          if (frame !== null && view.cancelAnimationFrame)
+            view.cancelAnimationFrame(frame);
+          frame = null;
+          snapshot = null;
+          timer = setTimeout(check, 0);
+        }
+        function state() {
+          var target = captured.target;
+          if (
+            doc.readyState !== "complete" ||
+            !submitControlReady(target) ||
+            [target.user, target.pw, target.submit].some(function (control) {
+              return (
+                !control ||
+                control.matches(":disabled") ||
+                !!control.closest(
+                  '[aria-busy="true"], [aria-disabled="true"], [inert]',
+                )
+              );
+            })
+          )
+            return null;
+          // Value property writes (including hidden CSRF/session fields) do
+          // not necessarily emit mutations or input events. Sample them too.
+          return JSON.stringify(
+            Array.from(form.elements).map(function (control) {
+              return [
+                control.name,
+                control.type,
+                control.value,
+                control.checked,
+                control.disabled,
+              ];
+            }),
+          );
+        }
+        function valuesMatch() {
+          var target = captured.target;
+          return (
+            target.user.value === creds.username &&
+            target.pw.value === creds.password &&
+            captured.extras.every(function (field) {
+              return field.element.value === field.value;
+            })
+          );
+        }
+        function check(afterPaint) {
+          if (disposed || finished) return;
+          try {
+            if (!guarded(captured)) {
+              cleanup();
               fail();
+              return;
             }
-          });
-        });
-      }
-      function waitForCpanelStability(captured) {
-        if (waitingForStability || finished) return;
-        waitingForStability = true;
-        nextVisualFrame(function () {
-          nextVisualFrame(function () {
-            waitingForStability = false;
-            if (finished) return;
-            try {
-              if (
-                document.readyState !== "complete" ||
-                !guarded(captured) ||
-                !submitControlReady(captured.target)
-              ) {
-                activeCapture = null;
-                tick();
-                return;
-              }
-              fill(captured);
-            } catch (_) {
-              activeCapture = null;
-              tick();
+            var current = state();
+            if (current === null || current !== snapshot) {
+              snapshot = current;
+              timer = setTimeout(check, quietMs);
+              return;
             }
-          });
+            if (Date.now() < eligibleAt) {
+              timer = setTimeout(check, eligibleAt - Date.now());
+              return;
+            }
+            if (!afterPaint) {
+              // Yield a paint AND a task so input/load handlers' queued work
+              // runs before the final validation. rAF alone runs before paint.
+              if (view.requestAnimationFrame)
+                frame = view.requestAnimationFrame(function () {
+                  frame = null;
+                  timer = setTimeout(function () {
+                    check(true);
+                  }, 0);
+                });
+              else
+                timer = setTimeout(function () {
+                  check(true);
+                }, 0);
+              return;
+            }
+            if (filled && !valuesMatch()) {
+              cleanup();
+              fail();
+              return;
+            }
+            cleanup();
+            ready();
+          } catch (_) {
+            cleanup();
+            fail();
+          }
+        }
+        observer = new MutationObserver(function (records) {
+          if (
+            records.some(function (record) {
+              // Watch the form, its replacement, and ancestor readiness. Ignore
+              // unrelated clocks/animations elsewhere on a hosting login page.
+              return (
+                record.target === form ||
+                form.contains(record.target) ||
+                (record.target.nodeType === 1 && record.target.contains(form))
+              );
+            })
+          )
+            changed();
         });
+        observer.observe(doc, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          characterData: true,
+        });
+        doc.addEventListener("readystatechange", changed);
+        doc.addEventListener("load", changed, true);
+        view.addEventListener("load", changed);
+        doc.addEventListener("input", fieldChanged, true);
+        doc.addEventListener("change", fieldChanged, true);
+        check();
       }
       function tick() {
         if (finished) return;
@@ -1086,15 +1212,25 @@
             var captured = captureTarget(target, options);
             activeCapture = captured;
             if (readinessProfile === "cpanel") {
-              if (
-                document.readyState !== "complete" ||
-                !submitControlReady(target)
-              ) {
+              if (cpanelFingerprint === null)
+                cpanelFingerprint = captured.fingerprint;
+              else if (captured.fingerprint !== cpanelFingerprint) {
+                finish({ ok: false, reason: "form-changed-or-unsafe" });
+                return;
+              }
+              if (!target.form || !target.user || !target.submit) {
                 activeCapture = null;
                 retryTimer = setTimeout(tick, Math.min(100 + tries * 50, 400));
                 return;
               }
-              waitForCpanelStability(captured);
+              waitForCpanelStability(
+                captured,
+                function () {
+                  fill(captured);
+                },
+                options.fillDelayMs,
+                false,
+              );
               return;
             }
             if (options.fillDelayMs)
