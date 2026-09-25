@@ -59,6 +59,11 @@ export interface ModalProps {
   ariaLabel?: string;
   /** Size hint (mapped to max-width). */
   size?: string;
+  /**
+   * A compact, non-obscuring placement for lightweight acknowledgement
+   * prompts. It keeps the dialog's focus management but omits the backdrop.
+   */
+  presentation?: "modal" | "toast";
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -73,6 +78,7 @@ export const Modal: React.FC<ModalProps> = ({
   dataTestId,
   ariaLabel,
   size: _size,
+  presentation = "modal",
 }) => {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -152,9 +158,15 @@ export const Modal: React.FC<ModalProps> = ({
 
   return createPortal(
     <div
-      className={cx("sor-modal-backdrop", backdropClassName)}
+      className={cx(
+        "sor-modal-backdrop",
+        presentation === "toast" && "sor-modal-toast-backdrop",
+        backdropClassName,
+      )}
       data-testid={dataTestId}
+      data-presentation={presentation}
       onClick={(e) => {
+        if (presentation === "toast") return;
         if (!closeOnBackdrop || !onClose) return;
         if (e.target === e.currentTarget) onClose();
       }}
@@ -169,7 +181,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
         role="dialog"
         aria-label={ariaLabel}
-        aria-modal="true"
+        aria-modal={presentation === "modal" ? "true" : undefined}
         tabIndex={-1}
       >
         <div className={cx("sor-modal-content", contentClassName)}>

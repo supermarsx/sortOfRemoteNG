@@ -12,6 +12,8 @@ export interface ConfirmDialogProps {
   onCancel?: () => void;
   /** Disable the global Enter shortcut when focused buttons must own keyboard activation. */
   confirmOnEnter?: boolean;
+  /** Use a compact bottom-left confirmation toast instead of a centered modal. */
+  presentation?: "modal" | "toast";
   /**
    * Optional middle button — renders between Cancel and Confirm. Used
    * by the folder-delete dialog (P9) to offer "Keep connections,
@@ -37,6 +39,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onCancel,
   confirmOnEnter = true,
   secondaryAction,
+  presentation = "modal",
 }) => {
   useEffect(() => {
     if (!isOpen || !confirmOnEnter) return;
@@ -61,6 +64,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       closeOnEscape={Boolean(onCancel)}
       panelClassName="max-w-md mx-4"
       dataTestId="confirm-dialog"
+      presentation={presentation}
     >
       <ModalHeader
         title={title}

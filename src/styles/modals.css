@@ -17,6 +17,28 @@
   background: rgb(0 0 0 / 0.5);
 }
 
+/* Session-close confirmations should stay close to the tab strip rather than
+ * masking the active workspace. No opacity transition is intentional: an
+ * action prompt must be fully legible the moment it is requested. */
+.sor-modal-toast-backdrop {
+  top: auto !important;
+  right: auto !important;
+  bottom: 1rem !important;
+  left: 1rem !important;
+  display: block;
+  background: transparent;
+  pointer-events: none;
+}
+
+.sor-modal-toast-backdrop .sor-modal-panel {
+  width: min(calc(100vw - 2rem), 28rem);
+  max-height: min(40vh, 24rem);
+  margin: 0 !important;
+  pointer-events: auto;
+  transition: none !important;
+  animation: none !important;
+}
+
 .sor-modal-panel {
   width: 100%;
   max-height: 90vh;
@@ -355,19 +377,35 @@
 }
 
 .sor-metric-card-blue:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  border-color: color-mix(
+    in srgb,
+    var(--color-primary) 30%,
+    var(--color-border)
+  );
 }
 
 .sor-metric-card-green:hover {
-  border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-border));
+  border-color: color-mix(
+    in srgb,
+    var(--color-success) 30%,
+    var(--color-border)
+  );
 }
 
 .sor-metric-card-yellow:hover {
-  border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-border));
+  border-color: color-mix(
+    in srgb,
+    var(--color-warning) 30%,
+    var(--color-border)
+  );
 }
 
 .sor-metric-card-purple:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  border-color: color-mix(
+    in srgb,
+    var(--color-accent) 30%,
+    var(--color-border)
+  );
 }
 
 .sor-metric-summary-card {

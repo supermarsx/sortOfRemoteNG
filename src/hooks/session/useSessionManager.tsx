@@ -2567,6 +2567,7 @@ export const useSessionManager = () => {
       message={dialogState.message}
       onConfirm={() => settleDialog(true)}
       onCancel={dialogState.showCancel ? () => settleDialog(false) : undefined}
+      presentation="toast"
     />
   ) : null;
 

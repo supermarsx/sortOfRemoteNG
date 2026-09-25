@@ -503,6 +503,7 @@ describe("useSessionManager settings effects", () => {
     expect(result.current.confirmDialog?.props.message).toContain(
       "First session",
     );
+    expect(result.current.confirmDialog?.props.presentation).toBe("toast");
     let firstResult = false;
     await act(async () => {
       result.current.confirmDialog?.props.onConfirm();
