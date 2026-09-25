@@ -468,7 +468,7 @@ where
 async fn run_udp_accel_inner<D>(
     config: UdpAccelConfig,
     device: D,
-    shutdown_rx: watch::Receiver<bool>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), UdpAccelError>
 where
     D: DataplaneDevice,
@@ -622,8 +622,17 @@ where
         }
     });
 
-    // Await first terminal error or shutdown.
-    let first_err = err_rx.recv().await;
+    // Only workers own senders: retaining ours would keep recv() pending
+    // forever after all workers exit cleanly.
+    drop(err_tx);
+    // Observe shutdown here as well: a worker may be parked in a device
+    // write or a full-channel send outside its own select! loop. wait_for
+    // also handles a shutdown value that was already observed before spawn.
+    let first_err = tokio::select! {
+        biased;
+        err = err_rx.recv() => err,
+        _ = shutdown_rx.wait_for(|shutdown| *shutdown) => None,
+    };
     device_task.abort();
     send_task.abort();
     recv_task.abort();
@@ -818,6 +827,24 @@ mod tests {
 
     // ── Runtime with paired UDP sockets ─────────────────────────────
 
+    const IO_TIMEOUT: Duration = Duration::from_secs(2);
+
+    async fn client_addr_from_keepalive(server: &UdpSocket) -> SocketAddr {
+        let mut buf = [0u8; UDP_ACCEL_TMP_BUF_SIZE];
+        tokio::time::timeout(IO_TIMEOUT, server.recv_from(&mut buf))
+            .await
+            .expect("client keepalive timed out")
+            .expect("receive client keepalive")
+            .1
+    }
+
+    async fn assert_clean_shutdown(handle: UdpAccelHandle) {
+        tokio::time::timeout(IO_TIMEOUT, handle.shutdown())
+            .await
+            .expect("UDP acceleration shutdown hung")
+            .expect("UDP acceleration shutdown failed");
+    }
+
     /// Two UdpAccelConfigs pointing at each other (client + "server"
     /// in the test). For the test we just reuse UDP sockets directly
     /// to emit packets — no full pump on the server side.
@@ -834,7 +861,7 @@ mod tests {
         }
     }
 
-    // NOTE: the four end-to-end tests below use real UDP loopback
+    // NOTE: the runtime tests below use real UDP loopback
     // sockets. On Windows the firewall dialog / ephemeral-port
     // reservation can make these flaky in CI, so they are `#[ignore]`-gated
     // ONLY on Windows (`cfg_attr(target_os = "windows", ignore = ...)`).
@@ -860,17 +887,8 @@ mod tests {
             .await
             .expect("spawn");
 
-        // Client just bound — give it a moment, then push a keepalive
-        // (empty payload) from the client so the server learns its
-        // source address.
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let (_n, client_addr) = {
-            let mut tmp = [0u8; UDP_ACCEL_TMP_BUF_SIZE];
-            tokio::time::timeout(Duration::from_millis(500), server.recv_from(&mut tmp))
-                .await
-                .expect("client KA")
-                .expect("recv ok")
-        };
+        // Learn the client's source address from its first keepalive.
+        let client_addr = client_addr_from_keepalive(&server).await;
 
         // Build a server→client ethernet packet. Server's
         // outbound cookie is `my_cookie` from the client's POV.
@@ -894,7 +912,7 @@ mod tests {
             .expect("channel closed");
         assert_eq!(got, b"from-server-eth");
 
-        h.shutdown().await.ok();
+        assert_clean_shutdown(h).await;
     }
 
     #[tokio::test]
@@ -938,7 +956,7 @@ mod tests {
         }
         assert_eq!(seen.as_deref(), Some(&b"from-tap-eth"[..]));
 
-        h.shutdown().await.ok();
+        assert_clean_shutdown(h).await;
     }
 
     #[tokio::test]
@@ -952,11 +970,118 @@ mod tests {
         let (dev, _handle) = MpscDevice::new_pair(4, "shutdown-test");
         let (ext_tx, ext_rx) = watch::channel(false);
         let h = run_udp_accel(cfg, dev, ext_rx).await.expect("spawn");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        let _ = ext_tx.send(true);
-        let res = tokio::time::timeout(Duration::from_millis(500), h.shutdown()).await;
-        // Ok(..) or a clean Ok(()) — either counts as not-hung.
-        assert!(res.is_ok(), "shutdown hung");
+        client_addr_from_keepalive(&server).await;
+        ext_tx.send(true).expect("external shutdown");
+        // Await only the external signal: calling h.shutdown() here
+        // would mask a broken external-to-internal shutdown bridge.
+        tokio::time::timeout(IO_TIMEOUT, h.join)
+            .await
+            .expect("external shutdown hung")
+            .expect("supervisor panicked")
+            .expect("external shutdown failed");
+    }
+
+    #[tokio::test]
+    #[cfg_attr(
+        target_os = "windows",
+        ignore = "real-UDP loopback; flaky on Windows firewall (runs unignored on linux/macos)"
+    )]
+    async fn already_observed_shutdown_exits_cleanly() {
+        let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let cfg = make_test_config(server.local_addr().unwrap()).await;
+        let (dev, handle) = MpscDevice::new_pair(1, "already-shutdown");
+        // The initial watch value is already seen: changed() alone
+        // cannot detect this shutdown request.
+        let (_shutdown_tx, shutdown_rx) = watch::channel(true);
+        tokio::time::timeout(IO_TIMEOUT, run_udp_accel_inner(cfg, dev, shutdown_rx))
+            .await
+            .expect("already-observed shutdown hung")
+            .expect("already-observed shutdown failed");
+        assert!(handle.tx.is_closed(), "device task outlived shutdown");
+    }
+
+    #[tokio::test]
+    #[cfg_attr(
+        target_os = "windows",
+        ignore = "real-UDP loopback; flaky on Windows firewall (runs unignored on linux/macos)"
+    )]
+    async fn device_error_is_propagated() {
+        let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let cfg = make_test_config(server.local_addr().unwrap()).await;
+        let (dev, handle) = MpscDevice::new_pair(1, "closed-device");
+        let (_ext_tx, ext_rx) = watch::channel(false);
+        drop(handle.tx);
+        let h = run_udp_accel(cfg, dev, ext_rx).await.expect("spawn");
+        let result = tokio::time::timeout(IO_TIMEOUT, h.join)
+            .await
+            .expect("device error hung")
+            .expect("supervisor panicked");
+        assert!(matches!(
+            result,
+            Err(UdpAccelError::DeviceError(DeviceError::Closed))
+        ));
+    }
+
+    struct ObservedWriteDevice {
+        inner: MpscDevice,
+        writes: tokio::sync::mpsc::UnboundedSender<()>,
+    }
+
+    #[async_trait::async_trait]
+    impl DataplaneDevice for ObservedWriteDevice {
+        async fn read_frame(&mut self) -> Result<Vec<u8>, DeviceError> {
+            self.inner.read_frame().await
+        }
+
+        async fn write_frame(&mut self, bytes: &[u8]) -> Result<(), DeviceError> {
+            self.writes.send(()).expect("observe device write");
+            self.inner.write_frame(bytes).await
+        }
+
+        fn name(&self) -> &str {
+            self.inner.name()
+        }
+    }
+
+    #[tokio::test]
+    #[cfg_attr(
+        target_os = "windows",
+        ignore = "real-UDP loopback; flaky on Windows firewall (runs unignored on linux/macos)"
+    )]
+    async fn shutdown_interrupts_backpressured_device_write() {
+        let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let cfg = make_test_config(server.local_addr().unwrap()).await;
+        let (dev, handle) = MpscDevice::new_pair(1, "backpressured-device");
+        let (writes, mut observed_writes) = tokio::sync::mpsc::unbounded_channel();
+        let dev = ObservedWriteDevice { inner: dev, writes };
+        let (_ext_tx, ext_rx) = watch::channel(false);
+        let h = run_udp_accel(cfg.clone(), dev, ext_rx)
+            .await
+            .expect("spawn");
+        let client_addr = client_addr_from_keepalive(&server).await;
+
+        for tick in 1..=2 {
+            let pkt = build_v1_packet(
+                &[tick as u8; 20],
+                cfg.my_cookie,
+                UdpAccelTicks::new(tick, 0),
+                b"frame",
+                0,
+                &TEST_KEY,
+                true,
+            )
+            .unwrap();
+            server.send_to(&pkt, client_addr).await.unwrap();
+            tokio::time::timeout(IO_TIMEOUT, observed_writes.recv())
+                .await
+                .expect("device write was not reached")
+                .expect("device task stopped");
+        }
+        // Do not drain handle.rx: the first frame fills it and the
+        // second write is pending outside the worker's select! loop.
+        assert_eq!(handle.rx.len(), 1);
+        assert_clean_shutdown(h).await;
+        assert!(handle.tx.is_closed(), "device task outlived shutdown");
     }
 
     #[tokio::test]
@@ -975,9 +1100,7 @@ mod tests {
             .await
             .expect("spawn");
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let mut tmp = [0u8; UDP_ACCEL_TMP_BUF_SIZE];
-        let (_n, client_addr) = server.recv_from(&mut tmp).await.unwrap();
+        let client_addr = client_addr_from_keepalive(&server).await;
 
         // Send garbage first.
         server.send_to(&[0u8; 10], client_addr).await.unwrap();
@@ -1001,7 +1124,7 @@ mod tests {
             .expect("closed");
         assert_eq!(got, b"ok");
 
-        h.shutdown().await.ok();
+        assert_clean_shutdown(h).await;
     }
 
     // ── Config helpers ──────────────────────────────────────────────
