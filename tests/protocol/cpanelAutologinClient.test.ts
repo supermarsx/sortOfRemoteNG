@@ -11,7 +11,7 @@ const selectors = {
   submit_selector:
     'form#login_form button#login_submit[name="login"][type="submit"]',
 };
-type Result = { ok: boolean; reason: string };
+type Result = { ok: boolean; reason: string; via?: string };
 type Credentials = { username: string | null; password: string | null };
 type Client = {
   fetchCredsAndRun(
@@ -114,6 +114,14 @@ describe("cPanel auto-login readiness", () => {
     window.removeEventListener("unload", client.cancel);
     Reflect.deleteProperty(window, "__sorng_autologin");
     Reflect.deleteProperty(window, "__autologin_last");
+    for (const name of [
+      "login_form",
+      "login_username_el",
+      "login_password_el",
+      "login_submit_el",
+      "login_button",
+    ])
+      Reflect.deleteProperty(window, name);
     Reflect.deleteProperty(document, "readyState");
     document.body.innerHTML = "";
     vi.clearAllTimers();
@@ -140,32 +148,51 @@ describe("cPanel auto-login readiness", () => {
     expect(submit).toHaveBeenCalledOnce();
   });
 
-  it("keeps cPanel's stock top-target login POST in the proxy frame with both credentials", async () => {
+  it("rebinds cPanel's cached controls before its stock AJAX login runs", async () => {
     installForm(false, "_top");
-    const legacyAjaxSubmit = vi.fn(() => false);
-    document.querySelector("form")!.onsubmit = legacyAjaxSubmit;
+    const staleForm = document.createElement("form");
+    const staleUser = document.createElement("input");
+    const stalePassword = document.createElement("input");
+    const staleSubmit = document.createElement("button");
+    Object.assign(window, {
+      login_form: staleForm,
+      login_username_el: staleUser,
+      login_password_el: stalePassword,
+      login_submit_el: staleSubmit,
+      login_button: { button: staleSubmit },
+    });
     let submittedTarget = "";
     let submittedBody: URLSearchParams | undefined;
-    document.querySelector("form")!.addEventListener("submit", (event) => {
-      const form = event.currentTarget as HTMLFormElement;
-      submittedTarget = form.target;
-      submittedBody = new URLSearchParams(
-        Array.from(new FormData(form).entries(), ([name, value]) => [
-          name,
-          String(value),
-        ]),
-      );
+    const stockAjaxSubmit = vi.fn((event: SubmitEvent) => {
+      event.preventDefault();
+      const cpanelWindow = window as typeof window & {
+        login_form: HTMLFormElement;
+        login_username_el: HTMLInputElement;
+        login_password_el: HTMLInputElement;
+      };
+      submittedTarget = cpanelWindow.login_form.target;
+      submittedBody = new URLSearchParams({
+        user: cpanelWindow.login_username_el.value,
+        pass: cpanelWindow.login_password_el.value,
+      });
     });
+    document.querySelector("form")!.onsubmit = stockAjaxSubmit;
 
     const pending = start();
     await settle();
 
-    await expect(pending).resolves.toMatchObject({ reason: "submitted" });
+    await expect(pending).resolves.toMatchObject({
+      reason: "submitted",
+      via: "cpanel-ajax-submit",
+    });
     expect(submittedTarget).toBe("_self");
     expect(submittedBody?.get("user")).toBe("cp-user");
     expect(submittedBody?.get("pass")).toBe("cp-secret");
-    expect(legacyAjaxSubmit).not.toHaveBeenCalled();
-    expect(document.querySelector("form")!.onsubmit).toBe(legacyAjaxSubmit);
+    expect(stockAjaxSubmit).toHaveBeenCalledOnce();
+    expect((window as any).login_form).toBe(document.querySelector("form"));
+    expect((window as any).login_username_el).toBe(field("user"));
+    expect((window as any).login_password_el).toBe(field("pass"));
+    expect((window as any).login_button.button).toBe(field("login_submit"));
     expect(submit).toHaveBeenCalledOnce();
   });
 

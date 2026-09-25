@@ -371,20 +371,36 @@
     var form = target.form;
     if (!form || typeof form.requestSubmit !== "function") return null;
     // cPanel's stock login template targets `_top` when goto_uri is `/` and
-    // installs an inline AJAX handler which manually rebuilds user/pass. In an
-    // embedded proxy the top target escapes the owned frame, while the legacy
-    // AJAX path has proven able to emit an empty username body. Use the form's
-    // native successful-control serialization in the current proxy frame.
+    // installs an AJAX handler which posts to `/login/?login_only=1`. Keep that
+    // handler: cPanel's JSON response owns security-token/session navigation,
+    // while a native document POST does not follow the same contract. The
+    // stock script caches these controls in window globals, though, so a form
+    // replaced during late login-page hydration otherwise submits values from
+    // disconnected, empty inputs (`no_username`). Rebind only the known cPanel
+    // globals to the already validated current target before requesting submit.
     if (form.getAttribute("target") === "_top")
       form.setAttribute("target", "_self");
-    var handler = form.onsubmit;
-    try {
-      if (handler) form.onsubmit = null;
-      form.requestSubmit(target.submit || undefined);
-      return "cpanel-native-submit";
-    } finally {
-      if (handler) form.onsubmit = handler;
+    var view = form.ownerDocument && form.ownerDocument.defaultView;
+    if (view) {
+      var bindings = {
+        login_form: form,
+        login_username_el: target.user,
+        login_password_el: target.pw,
+        login_submit_el: target.submit,
+      };
+      Object.keys(bindings).forEach(function (name) {
+        if (!Object.prototype.hasOwnProperty.call(view, name)) return;
+        try {
+          view[name] = bindings[name];
+        } catch (_) {}
+      });
+      try {
+        if (view.login_button && target.submit)
+          view.login_button.button = target.submit;
+      } catch (_) {}
     }
+    form.requestSubmit(target.submit || undefined);
+    return form.onsubmit ? "cpanel-ajax-submit" : "cpanel-native-submit";
   }
 
   function submitForm(target, ov, readinessProfile) {
