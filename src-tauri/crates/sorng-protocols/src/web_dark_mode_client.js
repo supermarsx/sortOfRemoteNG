@@ -156,12 +156,13 @@ function createWebDarkModeController() {
       "!important;color:" +
       theme.textColor +
       "!important;transition:none!important}" +
+      forceSurfaceCss(theme) +
       cpanelCss(theme) +
       "}" +
       (loadingPalette
         ? "@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:" +
           theme.textColor +
-          "!important;transition:none!important}}"
+          "!important;background-image:none!important;transition:none!important}}"
         : "");
     if (bootstrap.textContent !== bootstrapText)
       bootstrap.textContent = bootstrapText;
@@ -177,6 +178,19 @@ function createWebDarkModeController() {
     });
     forcedInline = [];
     forcedInlineByElement = new WeakMap();
+  }
+  function forceSurfaceCss(theme, shadow) {
+    // Persistent proxy palette: a late stylesheet or SPA panel must not paint
+    // white while the dynamic engine catches up. Media descendants retain
+    // their own colors; the engine can still refine non-surface details.
+    return (
+      (shadow ? "" : "html:root body ") +
+      ":is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']){background-color:" +
+      theme.backgroundColor +
+      "!important;color:" +
+      theme.textColor +
+      "!important;background-image:none!important;transition:none!important}"
+    );
   }
   function protectInline(element, property, value) {
     // Inline !important outranks even our first cascade layer. Reapply only
@@ -480,6 +494,7 @@ function createWebDarkModeController() {
     try {
       var css =
         "@layer sorng-force-dark;@layer sorng-force-dark{" +
+        forceSurfaceCss(theme, true) +
         cpanelCss(theme, true);
       if (headerHost(root.host))
         css +=

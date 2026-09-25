@@ -175,8 +175,8 @@ async function dynamicBrowser(t, checks) {
     </style>`;
   const fixture = (frame) => `<!doctype html><html><head>${bootstrap}
     <link rel="stylesheet" href="/frontend/jupiter/theme.css"><script src="/runtime.js"></script>
-    </head><body id="cpanel_body"><div class="surface">Opaque arbitrary upstream surface</div>
-    <script>window.firstPaint = {background: getComputedStyle(document.querySelector('.surface')).backgroundColor, text: getComputedStyle(document.querySelector('.surface')).color, canvas: getComputedStyle(document.body).backgroundColor};</script>
+    </head><body id="cpanel_body"><div class="unconverted">Opaque arbitrary upstream surface</div>
+    <script>window.firstPaint = {background: getComputedStyle(document.querySelector('.unconverted')).backgroundColor, text: getComputedStyle(document.querySelector('.unconverted')).color, canvas: getComputedStyle(document.body).backgroundColor};</script>
     <nav class="navbar">Menu</nav><main id="content"></main>
     ${frame ? "" : '<iframe src="/frame" title="cPanel child dashboard"></iframe><script src="/checks.js"></script>'}
     </body></html>`;
@@ -222,7 +222,7 @@ async function dynamicBrowser(t, checks) {
       "/frontend/jupiter/theme.css",
       [
         "text/css",
-        ".surface{background:white;color:black}.navbar,.panel-heading{background:white!important;color:black!important}.panel,.panel-body{background:#fafafa;color:#111}.metric{background:#eee;color:#222}",
+        ".unconverted{background:white;color:black}.navbar,.panel-heading{background:white!important;color:black!important}.panel,.panel-body{background:#fafafa;color:#111}.metric{background:#eee;color:#222}",
       ],
     ],
     ["/__sortofremoteng_web_darkreader_v1.js", ["text/javascript", bundle]],
@@ -394,7 +394,7 @@ test(
       await delay(150);
       for (const doc of documents) {
         const computed = doc.defaultView.getComputedStyle(
-          doc.querySelector(".surface"),
+          doc.querySelector(".unconverted"),
         );
         assert(
           computed.backgroundColor === "rgba(0, 0, 0, 0)" &&
@@ -594,6 +594,36 @@ test(
             "real DarkReader converted top document and child frame",
             5000,
           );
+          for (const root of roots) {
+            const doc = root.ownerDocument || root;
+            const lateStyle = doc.createElement("style");
+            lateStyle.textContent =
+              "@layer late-site{.surface{background:white!important;color:black!important;background-image:linear-gradient(white,white)!important}}";
+            (root.head || root).append(lateStyle);
+            const surface = doc.createElement("section");
+            surface.className = "surface";
+            surface.innerHTML =
+              '<img alt="preserved media" style="background-color:rgb(255,0,0)">Late panel';
+            (root.body || root).append(surface);
+            // Read synchronously, before the engine sees either mutation.
+            const computed = doc.defaultView.getComputedStyle(surface);
+            assert(
+              computed.backgroundColor === "rgb(24, 26, 27)",
+              "late panel dark before engine processing",
+            );
+            assert(
+              computed.backgroundImage === "none",
+              "late white gradient suppressed",
+            );
+            assert(
+              computed.color === "rgb(232, 230, 227)",
+              "late panel text remains readable",
+            );
+            assert(
+              color(surface.querySelector("img")) === "rgb(255, 0, 0)",
+              "media color preserved",
+            );
+          }
           metrics.phase = "updates";
           const beatsBefore = metrics.beats;
           for (let tick = 0; tick < 20; tick++) {
