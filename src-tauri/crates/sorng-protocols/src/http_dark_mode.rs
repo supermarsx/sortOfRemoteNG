@@ -40,6 +40,14 @@ fn blend(background: &str, text: &str, text_percent: u16) -> String {
     )
 }
 
+fn force_surface_coverage(background: &str, text: &str) -> String {
+    // Keep structural surfaces dark after the temporary loading palette retires,
+    // including panels added by an SPA with no cPanel DOM markers.
+    format!(
+        "html:root body :is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']){{background-color:{background}!important;color:{text}!important;background-image:none!important;transition:none!important}}"
+    )
+}
+
 fn cpanel_coverage(background: &str, text: &str) -> String {
     let surface = blend(background, text, 8);
     let header = blend(background, text, 12);
@@ -62,17 +70,18 @@ impl WebsiteDarkModeBootstrap {
         self.validate().ok()?;
         // Start the temporary loading palette in the response itself, before
         // the readiness bridge or host command can run. Important declarations
-        // reverse layer order: persistent canvas/cPanel colors must win over
+        // reverse layer order: persistent canvas/surface/cPanel colors win over
         // loading transparency, and both must precede the site's own layers.
         // The runtime adopts this node and retires loading protection when the
         // engine (or CSS fallback) is ready. With scripts blocked it stays a
         // static CSS fallback. DarkReader must not convert its own preload.
         Some(format!(
-            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;transition:none!important}}{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;transition:none!important}}}}</style>",
+            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;transition:none!important}}{}{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;background-image:none!important;transition:none!important}}}}</style>",
             self.background_color,
             self.text_color,
             self.background_color,
             self.text_color,
+            force_surface_coverage(&self.background_color, &self.text_color),
             cpanel_coverage(&self.background_color, &self.text_color),
             self.text_color,
         ))
@@ -143,9 +152,36 @@ mod tests {
 
         assert!(style.contains("class=\"darkreader\""));
         assert!(style.contains("@layer sorng-force-dark,sorng-dark-loading;"));
-        assert!(style.contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;transition:none!important}}"));
+        assert!(style.contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;background-image:none!important;transition:none!important}}"));
         assert!(!style.contains("<script"));
         assert!(!style.contains("visibility:"));
         assert!(!style.contains("display:"));
+    }
+
+    #[test]
+    fn structural_force_palette_survives_readiness_and_precedes_cpanel_overrides() {
+        let style = WebsiteDarkModeBootstrap {
+            background_color: "#102030".into(),
+            text_color: "#d0e0f0".into(),
+        }
+        .style()
+        .unwrap();
+        let force = style
+            .split_once("@layer sorng-force-dark{")
+            .unwrap()
+            .1
+            .split_once("}@layer sorng-dark-loading{")
+            .unwrap()
+            .0;
+        let baseline = "html:root body :is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']){background-color:#102030!important;color:#d0e0f0!important;background-image:none!important;transition:none!important}";
+        assert!(force.contains(baseline));
+        assert!(!force.contains("data-sorng-dark-ready"));
+        let baseline_end = force.find(baseline).unwrap() + baseline.len();
+        assert!(force[baseline_end..].starts_with("html:root:has(:is(#cpanel_body,"));
+        // The permanent rule must not directly target embedded/media elements.
+        let selectors = baseline.split_once('{').unwrap().0;
+        for media in ["iframe", "img", "video", "canvas", "svg"] {
+            assert!(!selectors.contains(media));
+        }
     }
 }
