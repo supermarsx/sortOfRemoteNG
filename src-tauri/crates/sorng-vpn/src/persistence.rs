@@ -305,6 +305,15 @@ pub trait Persistable: Send {
     fn deserialize_definitions(&mut self, data: &str) -> Result<(), String>;
 }
 
+// Unit tests use independent stores and encryption states, but SecureStorage
+// still takes the process-wide settings coordinator with try_lock(). Serialize
+// test I/O (including direct fixture writes) separately so unrelated profiles
+// cannot make each other look unreadable. Keep the real coordinator untouched:
+// an actual transition must still reject I/O, and both guards release on error
+// or unwind. Cover the shared boundary so other providers' tests participate too.
+#[cfg(test)]
+static STORAGE_TEST_IO: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Save a service's definitions to storage.
 ///
 /// Uses the `write_app_data` pattern (key-value on StorageData.app_data).
@@ -312,6 +321,8 @@ pub async fn save_service_data<S: Persistable>(
     service: &S,
     storage: &sorng_storage::storage::SecureStorageState,
 ) -> Result<(), String> {
+    #[cfg(test)]
+    let _test_io = STORAGE_TEST_IO.lock().await;
     let key = service.storage_key();
     let data = service
         .serialize_definitions()
@@ -330,6 +341,8 @@ pub async fn load_service_data<S: Persistable>(
     service: &mut S,
     storage: &sorng_storage::storage::SecureStorageState,
 ) -> Result<RestoreOutcome, String> {
+    #[cfg(test)]
+    let _test_io = STORAGE_TEST_IO.lock().await;
     let key = service.storage_key();
     let storage = storage.lock().await;
     match storage.read_app_data(key).await {
@@ -571,12 +584,15 @@ mod tests {
             root.join("storage.json").to_string_lossy().to_string(),
         );
         let malformed = format!("{{\"profile\":\"{secret}\"");
-        storage
-            .lock()
-            .await
-            .write_app_data("vpn_test_profiles", &malformed)
-            .await
-            .unwrap();
+        {
+            let _test_io = STORAGE_TEST_IO.lock().await;
+            storage
+                .lock()
+                .await
+                .write_app_data("vpn_test_profiles", &malformed)
+                .await
+                .unwrap();
+        }
 
         let mut service = TestService { loaded: false };
         let error = load_service_data(&mut service, &storage).await.unwrap_err();
@@ -626,12 +642,15 @@ mod tests {
         ];
 
         for (payload, expected_class) in payloads {
-            storage
-                .lock()
-                .await
-                .write_app_data("vpn_test_profiles", &payload)
-                .await
-                .unwrap();
+            {
+                let _test_io = STORAGE_TEST_IO.lock().await;
+                storage
+                    .lock()
+                    .await
+                    .write_app_data("vpn_test_profiles", &payload)
+                    .await
+                    .unwrap();
+            }
             let before = std::fs::read(&path).unwrap();
             let mut service = TestService { loaded: false };
             let error = load_service_data(&mut service, &storage).await.unwrap_err();
@@ -641,6 +660,47 @@ mod tests {
             assert_eq!(std::fs::read(&path).unwrap(), before);
         }
 
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn active_storage_transition_still_rejects_io_without_changing_data() {
+        let _test_io = STORAGE_TEST_IO.lock().await;
+        let root = std::env::temp_dir().join(format!(
+            "sorng-vpn-transition-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let path = root.join("storage.json");
+        let storage = sorng_storage::storage::SecureStorage::new(path.to_string_lossy().into());
+        let storage = storage.lock().await;
+        let payload = serialize_profile_definitions(&[profile()]).unwrap();
+        storage
+            .write_app_data("vpn_test_profiles", &payload)
+            .await
+            .unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let transition = sorng_encryption::settings_coordinator::lock().await;
+        for error in [
+            storage
+                .read_app_data("vpn_test_profiles")
+                .await
+                .unwrap_err(),
+            storage
+                .write_app_data("vpn_test_profiles", "replacement")
+                .await
+                .unwrap_err(),
+        ] {
+            assert!(error.contains("encryption storage transition in progress"));
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        drop(transition);
+
+        assert_eq!(
+            storage.read_app_data("vpn_test_profiles").await.unwrap(),
+            Some(payload)
+        );
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();
     }
