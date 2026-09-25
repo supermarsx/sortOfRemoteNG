@@ -36,6 +36,9 @@ function createWebDarkModeController() {
     adopted = [],
     watched = [],
     observer = null,
+    shadowStyles = [],
+    originalAttachShadow = null,
+    attachShadowHook = null,
     scanQueued = false;
   var defaults = {
     mode: "dynamic",
@@ -105,6 +108,7 @@ function createWebDarkModeController() {
     }
   }
   function removeStyles() {
+    releaseShadows(false);
     if (style) style.remove();
     style = null;
     framesetStyled = false;
@@ -194,16 +198,9 @@ function createWebDarkModeController() {
       protectInline(nodes[index], "color-scheme", "dark");
     }
     if (document.querySelector(cpanelMarker)) {
-      document.querySelectorAll(cpanelSurfaces).forEach(function (element) {
-        var background = element.matches(cpanelHeaders)
-          ? mixColor(theme.backgroundColor, theme.textColor, 12)
-          : element.matches(cpanelPanels)
-            ? mixColor(theme.backgroundColor, theme.textColor, 8)
-            : theme.backgroundColor;
-        protectInline(element, "background-color", background);
-        protectInline(element, "color", theme.textColor);
-      });
+      protectCpanelSurfaces(document, theme);
     }
+    protectShadows(theme);
     // enable() may return before the engine is active (hidden document, missing
     // head or loading CSS). Its own fallback is cleared after conversion. The
     // transparent loading palette stays until then; the force layer never goes
@@ -227,6 +224,19 @@ function createWebDarkModeController() {
         document.documentElement.setAttribute("data-sorng-dark-ready", "");
     } else if (document.documentElement.hasAttribute("data-sorng-dark-ready"))
       document.documentElement.removeAttribute("data-sorng-dark-ready");
+  }
+  function protectCpanelSurfaces(root, theme) {
+    root.querySelectorAll(cpanelSurfaces).forEach(function (element) {
+      var background = element.matches(cpanelHeaders)
+        ? mixColor(theme.backgroundColor, theme.textColor, 12)
+        : element.matches(cpanelPanels)
+          ? mixColor(theme.backgroundColor, theme.textColor, 8)
+          : theme.backgroundColor;
+      protectInline(element, "background-color", background);
+      protectInline(element, "color", theme.textColor);
+      if (element.matches(cpanelHeaders))
+        protectInline(element, "background-image", "none");
+    });
   }
   function adjustments(theme) {
     return (
@@ -286,10 +296,10 @@ function createWebDarkModeController() {
   var cpanelPanels =
     ".card,.panel,.panel-body,.well,.widget,.list-group-item,.modal-content,.dropdown-menu,.popover,table,thead,tbody,tr,td,th,[class*='cpanel-card'],[class*='cpanel-panel']";
   var cpanelHeaders =
-    "div.header,.card-header,.card-footer,.panel-heading,.panel-footer,.modal-header,.modal-footer";
+    "div.header,header,[role='banner'],#header,#topbar,#top-bar,.topbar,.top-bar,.navbar,.navbar-header,.navbar-default,.card-header,.card-footer,.panel-heading,.panel-footer,.modal-header,.modal-footer";
   var cpanelSurfaces = cpanelShell + "," + cpanelPanels + "," + cpanelHeaders;
-  function cpanelCss(theme) {
-    var root = "html:root:has(:is(" + cpanelMarker + ")) ";
+  function cpanelCss(theme, shadow) {
+    var root = shadow ? "" : "html:root:has(:is(" + cpanelMarker + ")) ";
     var surface = mixColor(theme.backgroundColor, theme.textColor, 8);
     var header = mixColor(theme.backgroundColor, theme.textColor, 12);
     var border = mixColor(theme.backgroundColor, theme.textColor, 22);
@@ -317,12 +327,115 @@ function createWebDarkModeController() {
       cpanelHeaders +
       "){background-color:" +
       header +
-      "!important;color:" +
+      "!important;background-image:none!important;color:" +
       theme.textColor +
       "!important;border-color:" +
       border +
       "!important;transition:none!important}"
     );
+  }
+  function headerHost(host) {
+    while (host) {
+      if (host.closest(cpanelHeaders)) return true;
+      host = host.getRootNode().host;
+    }
+    return false;
+  }
+  function themeShadow(root, theme) {
+    var entry = shadowStyles.find(function (item) {
+      return item.root === root;
+    });
+    if (!entry) {
+      entry = {
+        root: root,
+        style: document.createElement("style"),
+        observer: null,
+      };
+      entry.style.className = "sorng-cpanel-shadow-dark";
+      if (typeof MutationObserver === "function") {
+        entry.observer = new MutationObserver(queueScan);
+        entry.observer.observe(root, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+          attributeFilter: ["style", "class", "id", "media", "disabled"],
+        });
+      }
+      shadowStyles.push(entry);
+    }
+    var css =
+      "@layer sorng-force-dark;@layer sorng-force-dark{" +
+      cpanelCss(theme, true);
+    if (headerHost(root.host))
+      css +=
+        ":host{color-scheme:dark!important;background-color:" +
+        mixColor(theme.backgroundColor, theme.textColor, 12) +
+        "!important;color:" +
+        theme.textColor +
+        "!important;transition:none!important}";
+    css += "}";
+    if (entry.style.textContent !== css) entry.style.textContent = css;
+    if (entry.style.parentNode !== root)
+      root.insertBefore(entry.style, root.firstChild);
+    if (entry.style.disabled) entry.style.disabled = false;
+    entry.style.removeAttribute("media");
+    entry.style.removeAttribute("disabled");
+    protectCpanelSurfaces(root, theme);
+  }
+  function scanShadows(node, theme) {
+    node.querySelectorAll("*").forEach(function (element) {
+      if (element.shadowRoot) {
+        themeShadow(element.shadowRoot, theme);
+        scanShadows(element.shadowRoot, theme);
+      }
+    });
+  }
+  function protectShadows(theme) {
+    if (theme.mode === "filter" || !document.querySelector(cpanelMarker))
+      return;
+    // A root attached to an existing element creates no document mutation.
+    // Install its first sheet before attachShadow returns to page code.
+    if (
+      !attachShadowHook &&
+      typeof Element.prototype.attachShadow === "function"
+    ) {
+      originalAttachShadow = Element.prototype.attachShadow;
+      var delegate = originalAttachShadow;
+      var hook = function (options) {
+        var root = delegate.call(this, options);
+        if (
+          attachShadowHook === hook &&
+          !disposed &&
+          desired &&
+          desired.mode !== "filter" &&
+          root.mode === "open" &&
+          document.querySelector(cpanelMarker)
+        ) {
+          try {
+            themeShadow(root, desired);
+          } catch (_) {
+            // A page-owned root must still be returned if it refuses styling.
+          }
+        }
+        return root;
+      };
+      attachShadowHook = hook;
+      Element.prototype.attachShadow = attachShadowHook;
+    }
+    scanShadows(document, theme);
+  }
+  function releaseShadows(keepAppearance) {
+    if (attachShadowHook && Element.prototype.attachShadow === attachShadowHook)
+      Element.prototype.attachShadow = originalAttachShadow;
+    // A page or engine may retain our wrapper underneath its own. Keep its
+    // original delegate usable, but make the wrapper inert after disable.
+    attachShadowHook = null;
+    shadowStyles.forEach(function (entry) {
+      if (entry.observer) entry.observer.disconnect();
+      if (!keepAppearance) entry.style.remove();
+    });
+    shadowStyles = [];
   }
   // bgcolor, text, link and font color are presentational attributes, not inline
   // styles, so the dynamic engine's inline-style pass is what normally rewrites
@@ -853,6 +966,7 @@ function createWebDarkModeController() {
           // Stop our work but retain its final appearance until it is replaced.
           if (observer) observer.disconnect();
           observer = null;
+          releaseShadows(true);
         } else {
           removeBootstrap();
           removeStyles();

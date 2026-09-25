@@ -273,6 +273,134 @@ describe("injected dark-mode extension runtime", () => {
       replacement.replaceWith(oldHead);
     }
   });
+  it("covers top bars in both the first-paint and runtime cPanel styles", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body"></main><nav class="navbar"></nav><header role="banner"></header>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const nativeSource = readFileSync(
+      "src-tauri/crates/sorng-protocols/src/http_dark_mode.rs",
+      "utf8",
+    );
+    const headerRule = Array.from(node()!.sheet!.cssRules).find(
+      (rule) =>
+        rule instanceof CSSStyleRule &&
+        rule.selectorText.includes("div.header"),
+    ) as CSSStyleRule;
+    // The native palette must cover the same header selectors before JS runs.
+    const selectors = headerRule.selectorText.split(" ").slice(-1).join(" ");
+    expect(nativeSource).toContain(selectors);
+    for (const element of document.querySelectorAll("nav,header"))
+      expect(element.matches(headerRule.selectorText)).toBe(true);
+    expect(headerRule.style.getPropertyValue("background-image")).toBe("none");
+  });
+  it("themes existing nested open shadow headers before the engine loads", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div id="host"></div></main>';
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML =
+      '<div class="header" style="background-color:white!important;color:black!important"><div id="nested"></div></div>';
+    const nested = root
+      .querySelector("#nested")!
+      .attachShadow({ mode: "open" });
+    nested.innerHTML =
+      '<nav class="navbar" style="background-color:white!important">Menu</nav>';
+    const pending = controller.set({ enabled: true, theme: theme() });
+    expect(
+      root.querySelector<HTMLElement>(".header")!.style.backgroundColor,
+    ).toBe("rgb(49, 50, 51)");
+    expect(
+      nested.querySelector<HTMLElement>("nav")!.style.backgroundColor,
+    ).toBe("rgb(49, 50, 51)");
+    expect(nested.querySelector("style")!.textContent).toContain(
+      ":host{color-scheme:dark",
+    );
+    reader();
+    document.querySelector("script")!.dispatchEvent(new Event("load"));
+    await pending;
+    await controller.set({ enabled: false });
+    expect(root.querySelector("style")).toBeNull();
+    expect(nested.querySelector("style")).toBeNull();
+    expect(
+      root.querySelector<HTMLElement>(".header")!.style.backgroundColor,
+    ).toBe("white");
+  });
+  it("installs a shadow palette synchronously and repairs header mutations before paint", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div id="host"></div></main>';
+    const originalAttach = Element.prototype.attachShadow;
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    expect(root.firstChild).toBeInstanceOf(HTMLStyleElement);
+    // Components commonly replace everything that was in the new root.
+    root.innerHTML =
+      '<div class="header" style="background-color:white!important;color:black!important">Header</div>';
+    const header = root.querySelector<HTMLElement>(".header")!;
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".sorng-cpanel-shadow-dark")).toHaveLength(
+        1,
+      );
+      expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)");
+    });
+    header.style.setProperty("background-color", "#fafafa", "important");
+    await vi.waitFor(() =>
+      expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)"),
+    );
+    await controller.set({ enabled: false });
+    expect(header.style.backgroundColor).toBe("rgb(250, 250, 250)");
+    expect(root.querySelector("style")).toBeNull();
+    expect(Element.prototype.attachShadow).toBe(originalAttach);
+  });
+  it("discovers shadow headers when the cPanel marker arrives later", async () => {
+    document.body.innerHTML = '<div id="host"></div>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML =
+      '<div class="header" style="background-color:white!important">Header</div>';
+    expect(root.querySelector("style")).toBeNull();
+    document.body.id = "cpanel_body";
+    try {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector<HTMLElement>(".header")!.style.backgroundColor,
+        ).toBe("rgb(49, 50, 51)"),
+      );
+    } finally {
+      document.body.removeAttribute("id");
+    }
+  });
+  it("leaves unrelated and closed shadow roots alone and removes overrides for filter mode", async () => {
+    document.body.innerHTML = '<div id="host"></div><div id="closed"></div>';
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML =
+      '<header style="background-color:white!important">Header</header>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    expect(root.querySelector("style")).toBeNull();
+    document.body.id = "cpanel_body";
+    try {
+      const closed = document
+        .getElementById("closed")!
+        .attachShadow({ mode: "closed" });
+      expect(closed.querySelector("style")).toBeNull();
+      await vi.waitFor(() =>
+        expect(root.querySelector("style")).not.toBeNull(),
+      );
+      await controller.set({ enabled: true, theme: theme({ mode: "filter" }) });
+      expect(root.querySelector("style")).toBeNull();
+      expect(
+        root.querySelector<HTMLElement>("header")!.style.backgroundColor,
+      ).toBe("white");
+    } finally {
+      document.body.removeAttribute("id");
+    }
+  });
   it("combines dynamic conversion with non-inverting adjustments exactly once", async () => {
     const api = reader();
     await controller.set({
