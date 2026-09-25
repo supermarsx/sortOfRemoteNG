@@ -377,10 +377,12 @@
     // stock script caches these controls in window globals, though, so a form
     // replaced during late login-page hydration otherwise submits values from
     // disconnected, empty inputs (`no_username`). Rebind only the known cPanel
-    // globals to the already validated current target before activating the
-    // real button. A capture-phase guard cancels the submit event before the
-    // stock handler sees it, so the handler can run exactly as it does for a
-    // manual click but can never fall through to a native document POST.
+    // globals to the already validated current target before calling the stock
+    // AJAX handler. Do not dispatch a browser submit event here: the routing
+    // module's document-capture hook rewrites form.action before cPanel's
+    // handler runs, while cPanel naively appends `?login_only=1` to that value.
+    // Calling the installed handler directly preserves the original `/login/`
+    // action and makes native form submission impossible.
     if (form.getAttribute("target") === "_top")
       form.setAttribute("target", "_self");
     var view = form.ownerDocument && form.ownerDocument.defaultView;
@@ -408,22 +410,18 @@
     }
     if (typeof form.onsubmit !== "function")
       throw new Error("cpanel-submit-handler-not-ready");
-    if (!target.submit || typeof target.submit.click !== "function")
-      throw new Error("cpanel-submit-button-not-ready");
-    var submitObserved = false;
-    function preventNativeSubmit(event) {
-      if (event.target !== form) return;
-      submitObserved = true;
-      event.preventDefault();
-    }
-    form.addEventListener("submit", preventNativeSubmit, true);
-    try {
-      target.submit.click();
-    } finally {
-      form.removeEventListener("submit", preventNativeSubmit, true);
-    }
-    if (!submitObserved) throw new Error("cpanel-submit-event-not-observed");
-    return "cpanel-ajax-button-click";
+    var SubmitEventCtor = view && view.SubmitEvent;
+    var EventCtor = view && view.Event ? view.Event : Event;
+    var event = SubmitEventCtor
+      ? new SubmitEventCtor("submit", {
+          bubbles: true,
+          cancelable: true,
+          submitter: target.submit || undefined,
+        })
+      : new EventCtor("submit", { bubbles: true, cancelable: true });
+    event.preventDefault();
+    form.onsubmit.call(form, event);
+    return "cpanel-ajax-handler";
   }
 
   function submitForm(target, ov, readinessProfile) {

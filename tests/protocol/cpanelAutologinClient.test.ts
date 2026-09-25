@@ -50,10 +50,9 @@ function installForm(disabled = false, target = "") {
     });
   submit = createSubmitSpy();
   const form = document.querySelector("form")!;
-  form.addEventListener("submit", submit);
   // cPanel attaches do_login through the form's onsubmit property once its
   // AJAX login module is ready. Auto-login must wait for that exact boundary.
-  form.onsubmit = () => false;
+  form.onsubmit = submit;
   return submit;
 }
 
@@ -169,6 +168,26 @@ describe("cPanel auto-login readiness", () => {
     });
     let submittedTarget = "";
     let submittedBody: URLSearchParams | undefined;
+    let submittedUrl = "";
+    let submittedContentType = "";
+    let submittedMethod = "";
+    let sentBody = "";
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      class {
+        open(method: string, url: string) {
+          submittedMethod = method;
+          submittedUrl = url;
+        }
+        setRequestHeader(name: string, value: string) {
+          if (name.toLowerCase() === "content-type")
+            submittedContentType = value;
+        }
+        send(body: string) {
+          sentBody = body;
+        }
+      },
+    );
     const stockButtonClick = vi.fn();
     field("login_submit").addEventListener("click", stockButtonClick);
     const stockAjaxSubmit = vi.fn((event: SubmitEvent) => {
@@ -186,10 +205,11 @@ describe("cPanel auto-login readiness", () => {
         user: cpanelWindow.login_username_el.value,
         pass: cpanelWindow.login_password_el.value,
       });
-      void fetch("/login/?login_only=1", {
-        method: "POST",
-        body: submittedBody,
-      });
+      submittedUrl = cpanelWindow.login_form.action + "?login_only=1";
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", submittedUrl, true);
+      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+      xhr.send(submittedBody.toString());
     });
     document.querySelector("form")!.onsubmit = stockAjaxSubmit;
 
@@ -198,24 +218,25 @@ describe("cPanel auto-login readiness", () => {
 
     await expect(pending).resolves.toMatchObject({
       reason: "submitted",
-      via: "cpanel-ajax-button-click",
+      via: "cpanel-ajax-handler",
     });
     expect(submittedTarget).toBe("_self");
     expect(submittedBody?.get("user")).toBe("cp-user");
     expect(submittedBody?.get("pass")).toBe("cp-secret");
     expect(stockAjaxSubmit).toHaveBeenCalledOnce();
-    expect(stockButtonClick).toHaveBeenCalledOnce();
-    expect(fetch).toHaveBeenNthCalledWith(
-      2,
-      "/login/?login_only=1",
-      expect.objectContaining({ method: "POST", body: submittedBody }),
-    );
+    expect(stockButtonClick).not.toHaveBeenCalled();
+    expect(new URL(submittedUrl).pathname).toBe("/login/");
+    expect(new URL(submittedUrl).search).toBe("?login_only=1");
+    expect(submittedMethod).toBe("POST");
+    expect(submittedContentType).toBe("application/x-www-form-urlencoded");
+    expect(new URLSearchParams(sentBody).get("user")).toBe("cp-user");
+    expect(new URLSearchParams(sentBody).get("pass")).toBe("cp-secret");
     expect((window as any).login_form).toBe(document.querySelector("form"));
     expect((window as any).login_username_el).toBe(field("user"));
     expect((window as any).login_password_el).toBe(field("pass"));
     expect((window as any).login_button.button).toBe(field("login_submit"));
     expect((window as any).LOGIN_SUBMIT_OK).toBe(false);
-    expect(submit).toHaveBeenCalledOnce();
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it("waits for cPanel's AJAX handler instead of falling through to native login", async () => {
@@ -241,12 +262,12 @@ describe("cPanel auto-login readiness", () => {
 
     await expect(pending).resolves.toMatchObject({
       reason: "submitted",
-      via: "cpanel-ajax-button-click",
+      via: "cpanel-ajax-handler",
     });
     expect(wasCancelledBeforeHandler).toBe(true);
     expect(stockAjaxSubmit).toHaveBeenCalledOnce();
-    expect(submit).toHaveBeenCalledOnce();
-    expect(buttonClick).toHaveBeenCalledOnce();
+    expect(submit).not.toHaveBeenCalled();
+    expect(buttonClick).not.toHaveBeenCalled();
   });
 
   it("does not fill or submit while cPanel disables its login control", async () => {
@@ -375,10 +396,11 @@ describe("cPanel auto-login readiness", () => {
     });
     let submittedState: typeof observed | undefined;
     let session: string | undefined;
-    document.querySelector("form")!.addEventListener("submit", () => {
+    document.querySelector("form")!.onsubmit = (event) => {
       submittedState = { ...observed };
       session = field("session").value;
-    });
+      return submit(event);
+    };
     const pending = start();
     await settle();
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
@@ -458,9 +480,11 @@ describe("cPanel auto-login readiness", () => {
 
   it("does not resubmit a rejected login even when cPanel shows the form again", async () => {
     const attempted = installForm();
-    document
-      .querySelector("form")!
-      .addEventListener("submit", () => installForm());
+    document.querySelector("form")!.onsubmit = (event) => {
+      attempted(event);
+      installForm();
+      return false;
+    };
     const pending = start();
     await settle();
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
