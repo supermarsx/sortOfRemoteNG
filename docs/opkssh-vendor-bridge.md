@@ -60,7 +60,13 @@ The ARM64 helper uses the active Rust toolchain (including CI's pinned version),
 `aarch64-w64-mingw32-clang` for CGO and the Rust linker, and a separate
 `target-opkssh-gnu/aarch64-pc-windows-gnullvm` cache. Normal staging with
 `--target aarch64-pc-windows-msvc` selects this builder automatically. The
-helper checks the Rust host architecture before checkout/build and refuses an
+ARM64 library is built with `cargo rustc --lib ... -- -C target-feature=+crt-static`
+in both release and debug profiles, so Rust selects the static LLVM unwinder.
+This flag applies only to the vendor library; the host build script, caller's
+`RUSTFLAGS` and separately built MSVC application retain their own settings.
+Windows UCRT/system DLL imports remain supported; no compiler-runtime DLL
+needs to be installed or added to the package.
+The helper checks the Rust host architecture before checkout/build and refuses an
 x64 host; it does not install tools. LLVM-MinGW's GCC-unwinder shim is not used.
 The [Rust target guide](https://doc.rust-lang.org/rustc/platform-support/windows-gnullvm.html)
 documents the required LLVM-MinGW environment.
@@ -113,9 +119,23 @@ carrying that dependency fails to load on any machine without MinGW installed.
 `ensure_static_unwinder()` in `build.rs` stages a copy of `libgcc_eh.a` (the same
 `_Unwind_*` symbols, statically) named `libgcc_s.a` into a directory searched
 first, so `-lgcc_s` resolves statically. A correct build depends only on Windows
-system DLLs. ARM64 gnullvm uses LLVM's unwind implementation and skips this GCC
-shim. Artifact verification rejects external GCC, pthread and LLVM unwind DLL
-dependencies rather than silently requiring them on user machines.
+system DLLs.
+
+ARM64 gnullvm uses LLVM's unwind implementation and skips this GCC shim, but
+LLVM-MinGW provides both `libunwind.a` and the import library `libunwind.dll.a`.
+Rust's default `-lunwind` selects the latter: with Rust 1.95.0 and LLVM-MinGW
+20260616 the resulting DLL imports `libunwind.dll` (`_Unwind_Resume`,
+`_Unwind_RaiseException`, etc.). Compilation succeeds, then staging rejects the
+unstaged dependency. Merely passing `-static-libgcc` to Clang does not change
+Rust's explicit unwind linkage. The ARM64 builder's `+crt-static` flag makes
+Rust request the static archive instead. See the
+[Rust unwind linkage declarations](https://github.com/rust-lang/rust/blob/1.95.0/library/unwind/src/lib.rs#L198-L201).
+
+Artifact verification reads normal and delay-load PE import directories and
+rejects external GCC, pthread, LLVM unwind and C++ runtime DLLs, naming each
+dependency in the error. Incidental DLL names in debug data do not count as
+imports. Invalid import tables fail validation. The same checks apply to
+staged, cached and explicitly supplied prebuilt DLLs before replacement.
 
 **The checkout location.** The upstream sources live in `.cache/opkssh-upstream`
 (gitignored). This used to default to a path under `%TEMP%`, which Windows
@@ -129,8 +149,8 @@ the legacy `%TEMP%` path (with a warning). CI sets the env var explicitly.
 
 Never trust a zero exit code — a metadata-only build can link successfully.
 Both build/staging commands reject it. Windows verification parses the PE
-export directory and checks the machine type, not merely symbol text in debug
-data. For additional manual inspection:
+export/import directories and checks the machine type, not merely symbol text
+in debug data. For additional manual inspection:
 
 ```bash
 D=src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/windows-amd64/sorng_opkssh_vendor.dll
@@ -144,8 +164,16 @@ strings -a "$D" | grep -cE "runtime.goexit|golang.org|go1\."
 # Must list the eight C ABI symbols above.
 objdump -p "$D" | grep -o "sorng_opkssh_vendor_[a-z_]*" | sort -u
 
-# Must NOT mention libgcc_s_seh-1.dll.
+# Must list only Windows system DLLs, with no libgcc_s_*.dll or libunwind.dll.
 objdump -p "$D" | grep -i "DLL Name"
+```
+
+For LLVM-MinGW ARM64, use its `llvm-readobj` to inspect the machine, exports,
+normal imports and delayed imports without executing the DLL:
+
+```powershell
+llvm-readobj --file-headers --coff-exports --coff-imports src-tauri/target-opkssh-gnu/aarch64-pc-windows-gnullvm/release/sorng_opkssh_vendor.dll
+node --test tests/tooling/opksshVendorStaging.node-test.mjs tests/release/opkssh-toolchains.test.mjs
 ```
 
 End to end, the app's own probe should report `activeBackend: "library"` with

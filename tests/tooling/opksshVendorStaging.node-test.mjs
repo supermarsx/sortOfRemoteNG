@@ -13,6 +13,7 @@ import path from "node:path";
 import {
   OPKSSH_ABI_EXPORTS,
   OPKSSH_STUB_MARKER,
+  opksshWindowsBridgeBuildArgs,
   opksshWindowsBridgePlan,
   verifyOpksshVendorBytes,
 } from "../../scripts/opkssh-vendor-artifact.mjs";
@@ -23,7 +24,11 @@ import {
 } from "../../scripts/stage-opkssh-vendor.mjs";
 import { prepareTauriDevOpkssh } from "../../scripts/tauri-dev.mjs";
 
-function fixtureDll(machine = 0x8664, symbols = OPKSSH_ABI_EXPORTS) {
+function fixtureDll(
+  machine = 0x8664,
+  symbols = OPKSSH_ABI_EXPORTS,
+  { imports = [], delayImports = [] } = {},
+) {
   const bytes = Buffer.alloc(4096);
   bytes.write("MZ");
   bytes.writeUInt32LE(64, 60);
@@ -33,7 +38,9 @@ function fixtureDll(machine = 0x8664, symbols = OPKSSH_ABI_EXPORTS) {
   bytes.writeUInt16LE(240, 84);
   bytes.writeUInt16LE(0x2000, 86);
   bytes.writeUInt16LE(0x20b, 88);
+  bytes.writeUInt32LE(16, 196);
   bytes.writeUInt32LE(0x1000, 200);
+  bytes.writeUInt32LE(40, 204);
   bytes.writeUInt32LE(0x1000, 340);
   bytes.writeUInt32LE(3584, 344);
   bytes.writeUInt32LE(512, 348);
@@ -45,6 +52,22 @@ function fixtureDll(machine = 0x8664, symbols = OPKSSH_ABI_EXPORTS) {
     bytes.write(symbol, cursor);
     cursor += Buffer.byteLength(symbol) + 1;
   });
+  let nameCursor = 2560;
+  for (const [names, directory, table, descriptorSize, nameOffset] of [
+    [imports, 208, 2048, 20, 12],
+    [delayImports, 304, 2304, 32, 4],
+  ]) {
+    if (!names.length) continue;
+    bytes.writeUInt32LE(table - 512 + 0x1000, directory);
+    bytes.writeUInt32LE((names.length + 1) * descriptorSize, directory + 4);
+    names.forEach((name, index) => {
+      const descriptor = table + index * descriptorSize;
+      if (descriptorSize === 32) bytes.writeUInt32LE(1, descriptor);
+      bytes.writeUInt32LE(nameCursor - 512 + 0x1000, descriptor + nameOffset);
+      bytes.write(name, nameCursor);
+      nameCursor += Buffer.byteLength(name) + 1;
+    });
+  }
   bytes.write("runtime.goexit golang.org go1.26.2", 3072);
   return bytes;
 }
@@ -132,8 +155,9 @@ test("verifies actual export table, runtime presence and exact x64/ARM64 machine
   const stub = fixtureDll();
   stub.write(OPKSSH_STUB_MARKER, 3500);
   assert.throws(() => verifyOpksshVendorBytes(stub, target), /metadata-only/);
-  const external = fixtureDll();
-  external.write("libgcc_s_seh-1.dll", 3500);
+  const external = fixtureDll(0x8664, OPKSSH_ABI_EXPORTS, {
+    imports: ["libgcc_s_seh-1.dll"],
+  });
   assert.throws(() => verifyOpksshVendorBytes(external, target), /MinGW/);
   assert.throws(
     () =>
@@ -143,6 +167,130 @@ test("verifies actual export table, runtime presence and exact x64/ARM64 machine
       ),
     /PE/,
   );
+});
+test("checks actual normal and delayed runtime imports on both Windows architectures", () => {
+  for (const [machine, archKey] of [
+    [0x8664, "amd64"],
+    [0xaa64, "arm64"],
+  ]) {
+    for (const kind of ["imports", "delayImports"]) {
+      for (const name of [
+        "libgcc_s_seh-1.dll",
+        "libgcc_s_sjlj-1.dll",
+        "libgcc_s_dw2-1.dll",
+        "libwinpthread-1.dll",
+        "LiBuNwInD.DlL",
+        "libc++.dll",
+        "libc++abi.dll",
+        "libstdc++-6.dll",
+      ]) {
+        assert.throws(
+          () =>
+            verifyOpksshVendorBytes(
+              fixtureDll(machine, OPKSSH_ABI_EXPORTS, { [kind]: [name] }),
+              { osKey: "windows", archKey },
+            ),
+          (error) =>
+            error.message.endsWith(
+              `unstaged MinGW runtime DLL: ${name.toLowerCase()}`,
+            ),
+        );
+      }
+    }
+    const systemOnly = fixtureDll(machine, OPKSSH_ABI_EXPORTS, {
+      imports: ["KERNEL32.dll", "api-ms-win-crt-runtime-l1-1-0.dll"],
+      delayImports: ["USERENV.dll"],
+    });
+    systemOnly.write("debug path: libunwind.dll libgcc_s_seh-1.dll", 3500);
+    assert.doesNotThrow(() =>
+      verifyOpksshVendorBytes(systemOnly, { osKey: "windows", archKey }),
+    );
+  }
+});
+test("malformed PE import tables cannot bypass runtime validation", () => {
+  for (const mutate of [
+    (bytes) => bytes.writeUInt32LE(17, 196), // beyond optional header
+    (bytes) => bytes.writeUInt32LE(0xffffffff, 208), // unmapped directory
+    (bytes) => bytes.writeUInt32LE(0, 212), // missing directory size
+    (bytes) => bytes.writeUInt32LE(20, 212), // no terminating descriptor
+    (bytes) => bytes.writeUInt32LE(0xffffffff, 2060), // unmapped DLL name
+    (bytes) => bytes.fill(65, 2560), // unterminated DLL name
+    (bytes) => bytes.writeUInt32LE(0, 2304), // VA-based delay import
+  ]) {
+    const bytes = fixtureDll(0xaa64, OPKSSH_ABI_EXPORTS, {
+      imports: ["libunwind.dll"],
+      delayImports: ["USERENV.dll"],
+    });
+    mutate(bytes);
+    // Restore Go markers after the unterminated-name mutation; still no NUL.
+    bytes.write("runtime.goexit golang.org go1.26.2", 3072);
+    assert.throws(
+      () =>
+        verifyOpksshVendorBytes(bytes, { osKey: "windows", archKey: "arm64" }),
+      /invalid or truncated OPKSSH PE/,
+    );
+  }
+});
+test("non-Windows verification does not interpret strings as PE imports", () => {
+  const bytes = Buffer.from(
+    [
+      ...OPKSSH_ABI_EXPORTS,
+      "runtime.goexit golang.org go1.26.2",
+      "libunwind.dll",
+    ].join("\0"),
+  );
+  for (const osKey of ["linux", "macos"]) {
+    for (const archKey of ["amd64", "arm64"]) {
+      assert.equal(
+        verifyOpksshVendorBytes(bytes, { osKey, archKey }).goVersion,
+        "go1.26.2",
+      );
+    }
+  }
+});
+test("Linux and macOS still stage their Cargo artifacts without Windows linker flags", (t) => {
+  const f = sandbox(t);
+  const bytes = Buffer.from(
+    [...OPKSSH_ABI_EXPORTS, "runtime.goexit golang.org go1.26.2"].join("\0"),
+  );
+  for (const [osKey, suffix, artifact] of [
+    ["linux", "unknown-linux-gnu", "libsorng_opkssh_vendor.so"],
+    ["macos", "apple-darwin", "libsorng_opkssh_vendor.dylib"],
+  ]) {
+    for (const [archKey, arch] of [
+      ["amd64", "x86_64"],
+      ["arm64", "aarch64"],
+    ]) {
+      const triple = `${arch}-${suffix}`;
+      const source = path.join(f.root, "build", triple, artifact);
+      f.write(source, bytes);
+      const result = stageVendorArtifact({
+        ...f.options,
+        argv: ["--release", "--target", triple],
+        run(command, args) {
+          assert.equal(command, "cargo");
+          assert.equal(args[0], "build");
+          assert.equal(args[args.indexOf("--target") + 1], triple);
+          assert.ok(
+            !args.some((arg) => /crt-static|windows|gnullvm/.test(arg)),
+          );
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              reason: "compiler-artifact",
+              target: { name: "sorng_opkssh_vendor" },
+              filenames: [source],
+            }),
+          };
+        },
+      });
+      assert.equal(
+        result.destination,
+        path.join(f.bundle, `${osKey}-${archKey}`, artifact),
+      );
+      assert.deepEqual(readFileSync(result.destination), bytes);
+    }
+  }
 });
 test("preserves healthy staged bridge without rebuilding or touching other platforms", (t) => {
   const f = sandbox(t);
@@ -270,6 +418,73 @@ test("ARM64 staging uses native gnullvm builder and its separate artifact", (t) 
   assert.deepEqual(readFileSync(result.destination), fixtureDll(0xaa64));
   assert.deepEqual(readFileSync(f.cached), fixtureDll());
 });
+test("ARM64 prebuilt with a real unwind import preserves the staged artifact", (t) => {
+  const f = sandbox(t);
+  const destination = path.join(
+    f.bundle,
+    "windows-arm64/sorng_opkssh_vendor.dll",
+  );
+  const healthy = fixtureDll(0xaa64);
+  f.write(destination, healthy);
+  const prebuilt = path.join(f.root, "prebuilt.dll");
+  f.write(
+    prebuilt,
+    fixtureDll(0xaa64, OPKSSH_ABI_EXPORTS, { imports: ["libunwind.dll"] }),
+  );
+  assert.throws(
+    () =>
+      stageVendorArtifact({
+        ...f.options,
+        argv: ["--target", "aarch64-pc-windows-msvc"],
+        env: { SORNG_OPKSSH_VENDOR_ARTIFACT: prebuilt },
+      }),
+    /unstaged MinGW runtime DLL: libunwind\.dll/,
+  );
+  assert.deepEqual(readFileSync(destination), healthy);
+});
+test("only the ARM64 final library gets static CRT linkage in release and debug builds", () => {
+  const inputs = {
+    manifestPath: "vendor/Cargo.toml",
+    targetDir: "bridge-target",
+  };
+  const arm = opksshWindowsBridgePlan(
+    "aarch64-pc-windows-gnullvm",
+    "aarch64-pc-windows-msvc",
+  );
+  const x64 = opksshWindowsBridgePlan(
+    "x86_64-pc-windows-gnu",
+    "x86_64-pc-windows-msvc",
+  );
+  for (const release of [true, false]) {
+    const armArgs = opksshWindowsBridgeBuildArgs(arm, { ...inputs, release });
+    assert.deepEqual(armArgs, [
+      "rustc",
+      "--lib",
+      "--manifest-path",
+      inputs.manifestPath,
+      "--target",
+      arm.triple,
+      "--target-dir",
+      inputs.targetDir,
+      ...(release ? ["--release"] : []),
+      "--",
+      "-C",
+      "target-feature=+crt-static",
+    ]);
+    const x64Args = opksshWindowsBridgeBuildArgs(x64, { ...inputs, release });
+    assert.deepEqual(x64Args, [
+      "+stable-x86_64-pc-windows-gnu",
+      "build",
+      "--manifest-path",
+      inputs.manifestPath,
+      "--target",
+      x64.triple,
+      "--target-dir",
+      inputs.targetDir,
+      ...(release ? ["--release"] : []),
+    ]);
+  }
+});
 test("native build plans require exact host architecture and select fixed compiler/toolchain", () => {
   const arm = opksshWindowsBridgePlan(
     "aarch64-pc-windows-gnullvm",
@@ -313,8 +528,9 @@ test("native build plans require exact host architecture and select fixed compil
       ),
     /Unsupported/,
   );
-  const external = fixtureDll(0xaa64);
-  external.write("libunwind.dll", 3500);
+  const external = fixtureDll(0xaa64, OPKSSH_ABI_EXPORTS, {
+    imports: ["libunwind.dll"],
+  });
   assert.throws(
     () =>
       verifyOpksshVendorBytes(external, { osKey: "windows", archKey: "arm64" }),

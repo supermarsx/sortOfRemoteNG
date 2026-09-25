@@ -29,6 +29,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  opksshWindowsBridgeBuildArgs,
   opksshWindowsBridgePlan,
   verifyOpksshVendorArtifact,
 } from "./opkssh-vendor-artifact.mjs";
@@ -176,19 +177,11 @@ function requireToolchain(plan) {
 }
 
 function buildBridge(plan) {
-  const cargoArgs = [
-    ...(plan.toolchain ? [`+${plan.toolchain}`] : []),
-    "build",
-    "--manifest-path",
+  const cargoArgs = opksshWindowsBridgeBuildArgs(plan, {
     manifestPath,
-    "--target",
-    plan.triple,
-    "--target-dir",
     targetDir,
-  ];
-  if (isRelease) {
-    cargoArgs.push("--release");
-  }
+    release: isRelease,
+  });
 
   log(`cargo ${cargoArgs.join(" ")}`);
   run("cargo", cargoArgs, {
