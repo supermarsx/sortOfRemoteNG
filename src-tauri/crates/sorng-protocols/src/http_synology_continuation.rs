@@ -343,7 +343,15 @@ async fn dispatch(
     let Some(_request_guard) = state.network.begin_request() else {
         return gone();
     };
-    if generation.is_some() {
+    // This is a loopback admission capability, never an application query
+    // parameter. Initial (non-continuation) documents use the same page router,
+    // so strip a valid marker there as well instead of leaking it into strict
+    // endpoints such as cPanel's `/login/?login_only=1` handler.
+    let has_generation_marker = match generation_query(request.uri().query()) {
+        Ok(value) => value.is_some(),
+        Err(()) => return gone(),
+    };
+    if has_generation_marker {
         let path = request
             .uri()
             .path_and_query()

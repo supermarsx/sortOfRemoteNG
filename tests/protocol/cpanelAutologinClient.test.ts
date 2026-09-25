@@ -68,14 +68,21 @@ async function paint() {
 }
 
 async function settle() {
-  for (let i = 0; i < 6; ++i) {
+  for (let i = 0; i < 20; ++i) {
+    await vi.advanceTimersByTimeAsync(250);
+    await paint();
+  }
+}
+
+async function settleAfterReplacement() {
+  for (let i = 0; i < 28; ++i) {
     await vi.advanceTimersByTimeAsync(250);
     await paint();
   }
 }
 
 async function fill() {
-  for (let i = 0; i < 8 && !field("pass").value; ++i) {
+  for (let i = 0; i < 16 && !field("pass").value; ++i) {
     await vi.advanceTimersByTimeAsync(250);
     await paint();
   }
@@ -149,6 +156,27 @@ describe("cPanel auto-login readiness", () => {
     await settle();
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(initial).not.toHaveBeenCalled();
+    expect(submit).toHaveBeenCalledOnce();
+  });
+
+  it("lets a stable cPanel page sit for three seconds before filling", async () => {
+    installForm();
+    const pending = start();
+
+    await vi.advanceTimersByTimeAsync(2999);
+    await paint();
+    expect(field("user").value).toBe("");
+    expect(field("pass").value).toBe("");
+    expect(submit).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await paint();
+    expect(field("user").value).toBe("cp-user");
+    expect(field("pass").value).toBe("cp-secret");
+    expect(submit).not.toHaveBeenCalled();
+
+    await settle();
+    await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(submit).toHaveBeenCalledOnce();
   });
 
@@ -246,12 +274,74 @@ describe("cPanel auto-login readiness", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
+  it("continues a successful cPanel AJAX login in the same proxied tab", async () => {
+    installForm(false, "_top");
+    let requestUrl = "";
+    let navigationUrl = "";
+    let navigationTarget = "";
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      class extends EventTarget {
+        readyState = 0;
+        status = 0;
+        responseText = "";
+        open(_method: string, url: string) {
+          requestUrl = url;
+        }
+        setRequestHeader() {}
+        send() {
+          this.readyState = 4;
+          this.status = 200;
+          this.responseText = JSON.stringify({
+            status: 1,
+            security_token: "/cpsess1234567890",
+            redirect: "/cpsess1234567890/frontend/jupiter/index.html",
+          });
+          this.dispatchEvent(new Event("readystatechange"));
+        }
+      },
+    );
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+      function () {
+        navigationUrl = this.href;
+        navigationTarget = this.target;
+      },
+    );
+    document.querySelector("form")!.onsubmit = (event) => {
+      event.preventDefault();
+      const xhr = new XMLHttpRequest();
+      xhr.open(
+        "POST",
+        `${(event.currentTarget as HTMLFormElement).action}?login_only=1`,
+      );
+      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+      xhr.send("user=cp-user&pass=cp-secret");
+      return false;
+    };
+
+    const pending = start();
+    await settle();
+    await vi.advanceTimersByTimeAsync(1000);
+    await paint();
+
+    await expect(pending).resolves.toMatchObject({
+      reason: "submitted",
+      via: "cpanel-ajax-button-click",
+    });
+    expect(new URL(requestUrl).search).toBe("?login_only=1");
+    expect(new URL(navigationUrl).pathname).toBe(
+      "/cpsess1234567890/frontend/jupiter/index.html",
+    );
+    expect(navigationTarget).toBe("_self");
+    expect(document.querySelector("a[href*='cpsess']")).toBeNull();
+  });
+
   it("waits for cPanel's AJAX handler instead of falling through to native login", async () => {
     installForm();
     const form = document.querySelector("form")!;
     form.onsubmit = null;
     const buttonClick = vi.spyOn(field("login_submit"), "click");
-    let wasCancelledBeforeHandler = false;
+    let wasCancelledBeforeHandler = true;
 
     const pending = start();
     await settle();
@@ -271,7 +361,7 @@ describe("cPanel auto-login readiness", () => {
       reason: "submitted",
       via: "cpanel-ajax-button-click",
     });
-    expect(wasCancelledBeforeHandler).toBe(true);
+    expect(wasCancelledBeforeHandler).toBe(false);
     expect(stockAjaxSubmit).toHaveBeenCalledOnce();
     expect(submit).not.toHaveBeenCalled();
     expect(buttonClick).toHaveBeenCalledOnce();
@@ -341,7 +431,7 @@ describe("cPanel auto-login readiness", () => {
       once: true,
     });
     const pending = start();
-    await settle();
+    await settleAfterReplacement();
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(oldSubmit).not.toHaveBeenCalled();
     expect(submit).toHaveBeenCalledOnce();
@@ -355,7 +445,7 @@ describe("cPanel auto-login readiness", () => {
       field("user").value = "";
       field("pass").value = "";
     }, 150);
-    await settle();
+    await settleAfterReplacement();
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(field("user").value).toBe("cp-user");
     expect(field("pass").value).toBe("cp-secret");
@@ -380,7 +470,9 @@ describe("cPanel auto-login readiness", () => {
     await vi.advanceTimersByTimeAsync(400);
     await paint();
     expect(submit).not.toHaveBeenCalled();
-    await settle();
+    await settleAfterReplacement();
+    await vi.advanceTimersByTimeAsync(1000);
+    await paint();
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(submit).toHaveBeenCalledOnce();
   });
@@ -409,7 +501,7 @@ describe("cPanel auto-login readiness", () => {
       return submit(event);
     };
     const pending = start();
-    await settle();
+    await settleAfterReplacement();
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(submittedState).toEqual({
       username: "cp-user",
@@ -422,7 +514,7 @@ describe("cPanel auto-login readiness", () => {
     installForm();
     const pending = start();
     await fill();
-    await vi.advanceTimersByTimeAsync(250);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(frames.size).toBe(1);
     const [id, callback] = [...frames.entries()][0];
     frames.delete(id);
@@ -435,7 +527,7 @@ describe("cPanel auto-login readiness", () => {
     expect(submit).toHaveBeenCalledOnce();
   });
 
-  it("honors configured fill and submit delays as well as readiness", async () => {
+  it("enforces the cPanel settling floor and honors the configured submit delay", async () => {
     installForm();
     const pending = client.bootstrap(
       { username: "cp-user", password: "cp-secret" },
@@ -443,25 +535,15 @@ describe("cPanel auto-login readiness", () => {
       {
         version: 1,
         fillDelayMs: 700,
-        submitDelayMs: 900,
+        submitDelayMs: 1200,
         detectionTimeoutMs: 8000,
         fields: [],
         submit: true,
       },
       "cpanel",
     );
-    for (let i = 0; i < 6; ++i) {
-      await vi.advanceTimersByTimeAsync(100);
-      await paint();
-      expect(field("pass").value).toBe("");
-    }
-    await vi.advanceTimersByTimeAsync(93);
-    await paint();
-    expect(field("pass").value).toBe("");
-    await vi.advanceTimersByTimeAsync(1);
-    await paint();
-    expect(field("pass").value).toBe("cp-secret");
-    await vi.advanceTimersByTimeAsync(898);
+    await fill();
+    await vi.advanceTimersByTimeAsync(1198);
     await paint();
     expect(submit).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
@@ -513,7 +595,7 @@ describe("cPanel auto-login readiness", () => {
         "cpanel",
       );
       await vi.advanceTimersByTimeAsync(250);
-      expect(frames.size).toBe(1);
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
       if (event === "cancel") client.cancel();
       else window.dispatchEvent(new Event(event));
       await expect(pending).resolves.toMatchObject({ reason: "cancelled" });
@@ -536,7 +618,7 @@ describe("cPanel auto-login readiness", () => {
       () => field("session").setAttribute("value", String(Date.now())),
       100,
     );
-    await vi.advanceTimersByTimeAsync(8000);
+    await vi.advanceTimersByTimeAsync(12000);
     await expect(pending).resolves.toMatchObject({
       reason: "form-not-found-timeout",
     });
@@ -555,7 +637,7 @@ describe("cPanel auto-login readiness", () => {
     await vi.advanceTimersByTimeAsync(200);
     expect(field("pass").value).toBe("");
     expect(submit).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(600);
+    await vi.advanceTimersByTimeAsync(4000);
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(submit).toHaveBeenCalledOnce();
   });

@@ -203,6 +203,23 @@ fn path_query_and_fragment_survive_navigation_without_forwarding_private_marker(
     assert_eq!(destination.as_str(), "https://example.fr3.quickconnect.to/webman/index.cgi?launchApp=SYNO.SDS.FileStation&name=a%2Fb+z&flag#tab=files");
 }
 
+#[test]
+fn private_generation_marker_is_removed_from_initial_cpanel_login_request() {
+    let token = "0123456789abcdef0123456789abcdef";
+    let routed = format!("/login/?login_only=1&__sorng_generation_v1={token}");
+    assert_eq!(
+        generation_query(routed.split_once('?').map(|(_, query)| query)),
+        Ok(Some(token))
+    );
+    assert_eq!(without_generation(&routed), "/login/?login_only=1");
+    assert_eq!(
+        without_generation(&format!(
+            "/login/?__sorng_generation_v1={token}&login_only=1"
+        )),
+        "/login/?login_only=1"
+    );
+}
+
 #[tokio::test]
 async fn same_listener_session_origin_and_form_intent_survive_http_https_hops() {
     let fixture = fixture().await;

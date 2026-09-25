@@ -367,6 +367,108 @@
     return node || pw.ownerDocument;
   }
 
+  function cpanelSessionDestination(payload, view) {
+    if (!payload || (payload.status !== 1 && payload.status !== "1"))
+      return null;
+    var token =
+      typeof payload.security_token === "string" ? payload.security_token : "";
+    var redirect = typeof payload.redirect === "string" ? payload.redirect : "";
+    if (token && !/^\/cpsess[0-9]+$/.test(token)) return null;
+    var candidate = redirect || token + "/";
+    if (!candidate) return null;
+    if (token && candidate.charAt(0) === "/" && candidate.indexOf(token) !== 0)
+      candidate = token + candidate;
+    try {
+      var destination = new URL(candidate, view.location.href);
+      if (
+        destination.origin !== view.location.origin ||
+        destination.username ||
+        destination.password ||
+        !/^\/cpsess[0-9]+(?:\/|$)/.test(destination.pathname)
+      )
+        return null;
+      return destination.pathname + destination.search + destination.hash;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function navigateCpanelSession(view, path) {
+    var doc = view.document;
+    var anchor = doc.createElement("a");
+    anchor.href = path;
+    anchor.target = "_self";
+    anchor.hidden = true;
+    (doc.body || doc.documentElement).appendChild(anchor);
+    try {
+      // The page-routing capture hook converts this reviewed same-frame
+      // navigation into a generation-bearing proxy request. This deliberately
+      // does not grant cPanel top-navigation access to the desktop shell.
+      anchor.click();
+    } finally {
+      anchor.remove();
+    }
+  }
+
+  function observeCpanelLoginResponse(form) {
+    var view = form.ownerDocument && form.ownerDocument.defaultView;
+    var NativeXHR = view && view.XMLHttpRequest;
+    var proto = NativeXHR && NativeXHR.prototype;
+    if (
+      !proto ||
+      typeof proto.open !== "function" ||
+      typeof proto.send !== "function"
+    )
+      return function () {};
+    var nativeOpen = proto.open;
+    var nativeSend = proto.send;
+    var loginRequests = new WeakSet();
+    var navigated = false;
+    var observedOpen = function (_method, url) {
+      try {
+        var parsed = new URL(String(url), form.ownerDocument.baseURI);
+        if (
+          parsed.origin === view.location.origin &&
+          parsed.pathname === "/login/" &&
+          parsed.searchParams.get("login_only") === "1"
+        )
+          loginRequests.add(this);
+      } catch (_) {}
+      return nativeOpen.apply(this, arguments);
+    };
+    var observedSend = function () {
+      var request = this;
+      if (
+        loginRequests.has(request) &&
+        typeof request.addEventListener === "function"
+      ) {
+        var completed = function () {
+          if (navigated || request.readyState !== 4) return;
+          try {
+            if (request.status < 200 || request.status >= 300) return;
+            var text =
+              typeof request.responseText === "string"
+                ? request.responseText
+                : "";
+            if (!text || text.length > 64 * 1024) return;
+            var path = cpanelSessionDestination(JSON.parse(text), view);
+            if (!path) return;
+            navigated = true;
+            navigateCpanelSession(view, path);
+          } catch (_) {}
+        };
+        request.addEventListener("readystatechange", completed);
+      }
+      return nativeSend.apply(this, arguments);
+    };
+    proto.open = observedOpen;
+    proto.send = observedSend;
+    return function () {
+      if (proto.open === observedOpen) proto.open = nativeOpen;
+      if (proto.send === observedSend) proto.send = nativeSend;
+    };
+  }
+
   function submitCpanelForm(target) {
     var form = target.form;
     if (!form) return null;
@@ -442,18 +544,27 @@
     function preserveCpanelAjaxAction(event) {
       if (event.target !== form) return;
       submitObserved = true;
-      event.preventDefault();
       var action = form.getAttributeNode("action");
       if (!action) throw new Error("cpanel-form-action-not-ready");
       // Attr.value bypasses the routing module's patched setAttribute/action
       // setters. The action was fingerprinted as same-origin before filling.
       action.value = originalAction;
     }
+    function preventNativeCpanelSubmit(event) {
+      if (event.target === form) event.preventDefault();
+    }
     form.addEventListener("submit", preserveCpanelAjaxAction, true);
+    // Register after cPanel's installed onsubmit handler. The stock handler
+    // must receive the same uncancelled event as a manual click, while this
+    // final guard still prevents a native document POST if it falls through.
+    form.addEventListener("submit", preventNativeCpanelSubmit);
+    var restoreCpanelResponseObserver = observeCpanelLoginResponse(form);
     try {
       target.submit.click();
     } finally {
+      restoreCpanelResponseObserver();
       form.removeEventListener("submit", preserveCpanelAjaxAction, true);
+      form.removeEventListener("submit", preventNativeCpanelSubmit);
     }
     if (!submitObserved) throw new Error("cpanel-submit-event-not-observed");
     return "cpanel-ajax-button-click";
@@ -979,6 +1090,19 @@
       var cpanelFingerprint = null;
       var cpanelCleanup = null;
       var submitAttempted = false;
+      // cPanel exposes its form and onsubmit handler before the surrounding
+      // login module has finished wiring the cached controls and AJAX state.
+      // A structural quiet interval alone is therefore not sufficient: let a
+      // stable, fully loaded cPanel page sit before touching either field.
+      var cpanelPageSettleMs = 3000;
+      // Let cPanel consume the input/change events and settle its cached form
+      // state before invoking the stock AJAX handler. A manual login naturally
+      // has this pause; an immediate synthetic click can submit stale values.
+      var cpanelSubmitSettleMs = 1000;
+      // The cPanel profile has two mandatory settle phases and may expose a
+      // disabled form while its login bundle hydrates. Keep the overall bound,
+      // but leave enough room for one late readiness transition.
+      var cpanelDetectionFloorMs = 12000;
       function finish(result) {
         if (finished) return;
         finished = true;
@@ -1122,7 +1246,7 @@
             waitForCpanelStability(
               captured,
               submit,
-              options.submitDelayMs,
+              Math.max(options.submitDelayMs, cpanelSubmitSettleMs),
               true,
             );
           else if (options.submitDelayMs)
@@ -1329,7 +1453,7 @@
                 function () {
                   fill(captured);
                 },
-                options.fillDelayMs,
+                Math.max(options.fillDelayMs, cpanelPageSettleMs),
                 false,
               );
               return;
@@ -1368,9 +1492,14 @@
         return;
       }
       // Bounds even a document which never reaches DOMContentLoaded.
-      lifetimeTimer = setTimeout(function () {
-        finish({ ok: false, reason: "form-not-found-timeout" });
-      }, options.detectionTimeoutMs);
+      lifetimeTimer = setTimeout(
+        function () {
+          finish({ ok: false, reason: "form-not-found-timeout" });
+        },
+        readinessProfile === "cpanel"
+          ? Math.max(options.detectionTimeoutMs, cpanelDetectionFloorMs)
+          : options.detectionTimeoutMs,
+      );
       if (stopped) {
         cancel();
         return;
