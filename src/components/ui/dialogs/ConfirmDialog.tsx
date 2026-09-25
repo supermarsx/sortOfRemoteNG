@@ -12,7 +12,7 @@ export interface ConfirmDialogProps {
   onCancel?: () => void;
   /** Disable the global Enter shortcut when focused buttons must own keyboard activation. */
   confirmOnEnter?: boolean;
-  /** Use a compact bottom-left confirmation toast instead of a centered modal. */
+  /** Use a compact bottom-right confirmation toast instead of a centered modal. */
   presentation?: "modal" | "toast";
   /**
    * Optional middle button — renders between Cancel and Confirm. Used

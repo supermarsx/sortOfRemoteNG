@@ -22,21 +22,39 @@
  * action prompt must be fully legible the moment it is requested. */
 .sor-modal-toast-backdrop {
   top: auto !important;
-  right: auto !important;
-  bottom: 1rem !important;
-  left: 1rem !important;
+  right: 0.75rem !important;
+  bottom: 0.75rem !important;
+  left: auto !important;
   display: block;
   background: transparent;
   pointer-events: none;
 }
 
 .sor-modal-toast-backdrop .sor-modal-panel {
-  width: min(calc(100vw - 2rem), 28rem);
-  max-height: min(40vh, 24rem);
+  width: min(calc(100vw - 1.5rem), 22rem);
+  max-height: min(35vh, 18rem);
   margin: 0 !important;
+  border-radius: 0.625rem;
   pointer-events: auto;
   transition: none !important;
   animation: none !important;
+}
+
+.sor-modal-toast-backdrop .sor-modal-header {
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.sor-modal-toast-backdrop .sor-modal-body {
+  padding: 0.75rem !important;
+}
+
+.sor-modal-toast-backdrop .sor-modal-body p {
+  margin-bottom: 0.75rem;
+}
+
+.sor-modal-toast-backdrop .sor-modal-body button {
+  padding: 0.375rem 0.75rem;
 }
 
 .sor-modal-panel {
