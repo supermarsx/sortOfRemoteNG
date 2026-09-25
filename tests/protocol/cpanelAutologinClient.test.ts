@@ -42,14 +42,18 @@ function installForm(disabled = false, target = "") {
     <input id="user" name="user">
     <input id="pass" name="pass" type="password">
     <input id="session" name="session" type="hidden" value="initial-session">
-    <button id="login_submit" name="login" type="submit" ${disabled ? "disabled" : ""}>Log in</button>
+    <button id="login_submit" name="login" type="submit" data-testid="login_submit" ${disabled ? "disabled" : ""}>Log in</button>
   </form>`;
   for (const element of document.querySelectorAll("input,button"))
     Object.defineProperty(element, "offsetParent", {
       get: () => document.body,
     });
   submit = createSubmitSpy();
-  document.querySelector("form")!.addEventListener("submit", submit);
+  const form = document.querySelector("form")!;
+  form.addEventListener("submit", submit);
+  // cPanel attaches do_login through the form's onsubmit property once its
+  // AJAX login module is ready. Auto-login must wait for that exact boundary.
+  form.onsubmit = () => false;
   return submit;
 }
 
@@ -182,6 +186,10 @@ describe("cPanel auto-login readiness", () => {
         user: cpanelWindow.login_username_el.value,
         pass: cpanelWindow.login_password_el.value,
       });
+      void fetch("/login/?login_only=1", {
+        method: "POST",
+        body: submittedBody,
+      });
     });
     document.querySelector("form")!.onsubmit = stockAjaxSubmit;
 
@@ -197,12 +205,48 @@ describe("cPanel auto-login readiness", () => {
     expect(submittedBody?.get("pass")).toBe("cp-secret");
     expect(stockAjaxSubmit).toHaveBeenCalledOnce();
     expect(stockButtonClick).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "/login/?login_only=1",
+      expect.objectContaining({ method: "POST", body: submittedBody }),
+    );
     expect((window as any).login_form).toBe(document.querySelector("form"));
     expect((window as any).login_username_el).toBe(field("user"));
     expect((window as any).login_password_el).toBe(field("pass"));
     expect((window as any).login_button.button).toBe(field("login_submit"));
     expect((window as any).LOGIN_SUBMIT_OK).toBe(false);
     expect(submit).toHaveBeenCalledOnce();
+  });
+
+  it("waits for cPanel's AJAX handler instead of falling through to native login", async () => {
+    installForm();
+    const form = document.querySelector("form")!;
+    form.onsubmit = null;
+    const buttonClick = vi.spyOn(field("login_submit"), "click");
+    let wasCancelledBeforeHandler = false;
+
+    const pending = start();
+    await settle();
+    expect(field("user").value).toBe("");
+    expect(field("pass").value).toBe("");
+    expect(submit).not.toHaveBeenCalled();
+    expect(buttonClick).not.toHaveBeenCalled();
+
+    const stockAjaxSubmit = vi.fn((event: SubmitEvent) => {
+      wasCancelledBeforeHandler = event.defaultPrevented;
+      return true;
+    });
+    form.onsubmit = stockAjaxSubmit;
+    await settle();
+
+    await expect(pending).resolves.toMatchObject({
+      reason: "submitted",
+      via: "cpanel-ajax-button-click",
+    });
+    expect(wasCancelledBeforeHandler).toBe(true);
+    expect(stockAjaxSubmit).toHaveBeenCalledOnce();
+    expect(submit).toHaveBeenCalledOnce();
+    expect(buttonClick).toHaveBeenCalledOnce();
   });
 
   it("does not fill or submit while cPanel disables its login control", async () => {

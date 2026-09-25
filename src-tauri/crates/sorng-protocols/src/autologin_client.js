@@ -369,7 +369,7 @@
 
   function submitCpanelForm(target) {
     var form = target.form;
-    if (!form || typeof form.requestSubmit !== "function") return null;
+    if (!form) return null;
     // cPanel's stock login template targets `_top` when goto_uri is `/` and
     // installs an AJAX handler which posts to `/login/?login_only=1`. Keep that
     // handler: cPanel's JSON response owns security-token/session navigation,
@@ -377,7 +377,10 @@
     // stock script caches these controls in window globals, though, so a form
     // replaced during late login-page hydration otherwise submits values from
     // disconnected, empty inputs (`no_username`). Rebind only the known cPanel
-    // globals to the already validated current target before requesting submit.
+    // globals to the already validated current target before activating the
+    // real button. A capture-phase guard cancels the submit event before the
+    // stock handler sees it, so the handler can run exactly as it does for a
+    // manual click but can never fall through to a native document POST.
     if (form.getAttribute("target") === "_top")
       form.setAttribute("target", "_self");
     var view = form.ownerDocument && form.ownerDocument.defaultView;
@@ -403,12 +406,24 @@
           view.login_button.button = target.submit;
       } catch (_) {}
     }
-    if (target.submit && typeof target.submit.click === "function") {
-      target.submit.click();
-      return form.onsubmit ? "cpanel-ajax-button-click" : "cpanel-button-click";
+    if (typeof form.onsubmit !== "function")
+      throw new Error("cpanel-submit-handler-not-ready");
+    if (!target.submit || typeof target.submit.click !== "function")
+      throw new Error("cpanel-submit-button-not-ready");
+    var submitObserved = false;
+    function preventNativeSubmit(event) {
+      if (event.target !== form) return;
+      submitObserved = true;
+      event.preventDefault();
     }
-    form.requestSubmit(target.submit || undefined);
-    return form.onsubmit ? "cpanel-ajax-submit" : "cpanel-native-submit";
+    form.addEventListener("submit", preventNativeSubmit, true);
+    try {
+      target.submit.click();
+    } finally {
+      form.removeEventListener("submit", preventNativeSubmit, true);
+    }
+    if (!submitObserved) throw new Error("cpanel-submit-event-not-observed");
+    return "cpanel-ajax-button-click";
   }
 
   function submitForm(target, ov, readinessProfile) {
@@ -1090,7 +1105,11 @@
           !!submit &&
           !submit.disabled &&
           submit.getAttribute("aria-disabled") !== "true" &&
-          !(typeof submit.matches === "function" && submit.matches(":disabled"))
+          !(
+            typeof submit.matches === "function" && submit.matches(":disabled")
+          ) &&
+          (readinessProfile !== "cpanel" ||
+            (!!target.form && typeof target.form.onsubmit === "function"))
         );
       }
       function waitForCpanelStability(captured, ready, minimumDelay, filled) {
