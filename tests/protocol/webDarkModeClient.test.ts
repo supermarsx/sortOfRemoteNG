@@ -194,6 +194,67 @@ describe("injected dark-mode extension runtime", () => {
       "important",
     );
   });
+  it.each([
+    '<main id="cpanel_body"></main>',
+    '<link href="/frontend/jupiter/style.css">',
+    '<link href="/frontend/meridian/style.css">',
+    '<link href="/frontend/paper_lantern/style.css">',
+  ])("protects div.header on detected cPanel pages: %s", async (marker) => {
+    document.body.innerHTML = `${marker}<div class="header">Header</div>`;
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const header = document.querySelector<HTMLElement>("div.header")!;
+    const rule = Array.from(node()!.sheet!.cssRules).find(
+      (entry) =>
+        entry instanceof CSSStyleRule &&
+        entry.selectorText.includes("div.header"),
+    ) as CSSStyleRule | undefined;
+    expect(rule).toBeDefined();
+    expect(header.matches(rule!.selectorText)).toBe(true);
+    expect(rule!.style.getPropertyValue("background-color")).toBe(
+      "rgb(49, 50, 51)",
+    );
+    expect(rule!.style.getPropertyPriority("background-color")).toBe(
+      "important",
+    );
+    expect(
+      document.getElementById("__sorng_dark_bootstrap_v1")!.textContent,
+    ).toContain(rule!.selectorText);
+  });
+  it("protects late cPanel headers and restores their latest inline colors on disable", async () => {
+    document.body.innerHTML = '<main id="cpanel_body"></main>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const header = document.createElement("div");
+    header.className = "header";
+    header.style.cssText =
+      "background-color:white!important;color:black!important";
+    document.body.append(header);
+    await vi.waitFor(() => {
+      expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)");
+      expect(header.style.color).toBe("rgb(232, 230, 227)");
+    });
+    header.style.setProperty("background-color", "#fafafa", "important");
+    await vi.waitFor(() =>
+      expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)"),
+    );
+    await controller.set({ enabled: false });
+    expect(header.style.backgroundColor).toBe("rgb(250, 250, 250)");
+    expect(header.style.color).toBe("black");
+    expect(header.style.getPropertyPriority("background-color")).toBe(
+      "important",
+    );
+  });
+  it("does not force generic site div.header colors without a cPanel marker", async () => {
+    document.body.innerHTML =
+      '<div class="header" style="background-color:white!important;color:black!important">Header</div>';
+    const header = document.querySelector<HTMLElement>("div.header")!;
+    const original = header.getAttribute("style");
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const rules = Array.from(node()!.sheet!.cssRules).filter(
+      (entry): entry is CSSStyleRule => entry instanceof CSSStyleRule,
+    );
+    expect(rules.some((rule) => header.matches(rule.selectorText))).toBe(false);
+    expect(header.getAttribute("style")).toBe(original);
+  });
   it("repairs the palette when an SPA replaces the document head", async () => {
     reader();
     await controller.set({ enabled: true, theme: theme() });

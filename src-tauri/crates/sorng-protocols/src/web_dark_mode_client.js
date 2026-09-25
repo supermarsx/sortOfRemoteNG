@@ -286,7 +286,7 @@ function createWebDarkModeController() {
   var cpanelPanels =
     ".card,.panel,.panel-body,.well,.widget,.list-group-item,.modal-content,.dropdown-menu,.popover,table,thead,tbody,tr,td,th,[class*='cpanel-card'],[class*='cpanel-panel']";
   var cpanelHeaders =
-    ".card-header,.card-footer,.panel-heading,.panel-footer,.modal-header,.modal-footer";
+    "div.header,.card-header,.card-footer,.panel-heading,.panel-footer,.modal-header,.modal-footer";
   var cpanelSurfaces = cpanelShell + "," + cpanelPanels + "," + cpanelHeaders;
   function cpanelCss(theme) {
     var root = "html:root:has(:is(" + cpanelMarker + ")) ";
