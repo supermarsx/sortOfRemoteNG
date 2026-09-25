@@ -497,6 +497,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
         network_client = super::network::bootstrap(
             session_id,
             sequence,
+            token,
             network.source_origin,
             network.proxy_origin,
             network.policy,

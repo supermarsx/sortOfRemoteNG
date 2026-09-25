@@ -66,6 +66,10 @@ function installWebNetworkClient(configuration, reportBlocked) {
     configuration.sessionId.length > 256 ||
     !Number.isSafeInteger(configuration.documentSequence) ||
     configuration.documentSequence < 1 ||
+    (configuration.requestGeneration !== null &&
+      configuration.requestGeneration !== undefined &&
+      (typeof configuration.requestGeneration !== "string" ||
+        !/^[0-9a-f]{32}$/.test(configuration.requestGeneration))) ||
     !Array.isArray(configuration.mappings) ||
     configuration.mappings.length > 32
   )
@@ -349,9 +353,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
   // Immutable per-document capability supplied by the native continuation
   // response. Native admission rejects missing/stale tokens independently.
   var generationKey = "__sorng_generation_v1",
-    requestGeneration = new NativeURL(rootLocation).searchParams.get(
-      "__sorng_navigation_v1",
-    );
+    requestGeneration = configuration.requestGeneration;
   function mapUrl(value, kind, localData, method, navigationReference) {
     var mapped = routeUrl(value, kind, localData, method, navigationReference);
     if (!requestGeneration) return mapped;

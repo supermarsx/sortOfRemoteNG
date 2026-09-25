@@ -279,12 +279,16 @@ describe("cPanel auto-login readiness", () => {
     let requestUrl = "";
     let navigationUrl = "";
     let navigationTarget = "";
+    let stockSuccessHandlerRan = false;
     vi.stubGlobal(
       "XMLHttpRequest",
       class extends EventTarget {
         readyState = 0;
         status = 0;
         responseText = "";
+        responseType = "";
+        response = null;
+        onreadystatechange: ((event: Event) => unknown) | null = null;
         open(_method: string, url: string) {
           requestUrl = url;
         }
@@ -295,27 +299,46 @@ describe("cPanel auto-login readiness", () => {
           this.responseText = JSON.stringify({
             status: 1,
             security_token: "/cpsess1234567890",
-            redirect: "/cpsess1234567890/frontend/jupiter/index.html",
+            redirect:
+              "/cpsess1234567890/frontend/jupiter/index.html?login=1&post_login=42",
           });
-          this.dispatchEvent(new Event("readystatechange"));
+          this.onreadystatechange?.(new Event("readystatechange"));
         }
       },
     );
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+    vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(
       function () {
-        navigationUrl = this.href;
+        const query = new URLSearchParams(
+          Array.from(new FormData(this).entries()).map(([name, value]) => [
+            name,
+            String(value),
+          ]),
+        );
+        const encoded = query.toString();
+        navigationUrl = `${this.action}${encoded ? `?${encoded}` : ""}`;
         navigationTarget = this.target;
       },
     );
     document.querySelector("form")!.onsubmit = (event) => {
       event.preventDefault();
-      const xhr = new XMLHttpRequest();
-      xhr.open(
-        "POST",
-        `${(event.currentTarget as HTMLFormElement).action}?login_only=1`,
-      );
-      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-      xhr.send("user=cp-user&pass=cp-secret");
+      const action = (event.currentTarget as HTMLFormElement).action;
+      // Custom cPanel themes may queue their login request after submit returns.
+      setTimeout(() => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${action}?login_only=1`);
+        xhr.onreadystatechange = () => {
+          stockSuccessHandlerRan = true;
+          throw new DOMException(
+            "Blocked cross-origin top navigation",
+            "SecurityError",
+          );
+        };
+        xhr.setRequestHeader(
+          "Content-Type",
+          "application/x-www-form-urlencoded",
+        );
+        xhr.send("user=cp-user&pass=cp-secret");
+      }, 100);
       return false;
     };
 
@@ -332,8 +355,10 @@ describe("cPanel auto-login readiness", () => {
     expect(new URL(navigationUrl).pathname).toBe(
       "/cpsess1234567890/frontend/jupiter/index.html",
     );
+    expect(new URL(navigationUrl).search).toBe("?login=1&post_login=42");
     expect(navigationTarget).toBe("_self");
-    expect(document.querySelector("a[href*='cpsess']")).toBeNull();
+    expect(stockSuccessHandlerRan).toBe(false);
+    expect(document.querySelector("form[action*='cpsess']")).toBeNull();
   });
 
   it("waits for cPanel's AJAX handler instead of falling through to native login", async () => {

@@ -7,14 +7,18 @@ fn bootstrap_reports_installed_network_capabilities_on_existing_readiness_payloa
     let script = network::bootstrap(
         "fixture-session",
         1,
+        Some("0123456789abcdef0123456789abcdef"),
         "https://synthetic.invalid",
         "http://fixture.localhost:1234",
         &HttpProxyPolicy::default(),
         None,
         None,
     );
-    assert!(script.contains("p.networkRouting = installWebNetworkClient("));
-    assert!(script.ends_with(").capabilities;"));
+    assert!(script.contains("var sorngNetworkClient=installWebNetworkClient("));
+    assert!(script.contains(r#""requestGeneration":"0123456789abcdef0123456789abcdef""#));
+    assert!(script.contains("Object.defineProperty(window,'__sorng_map_navigation'"));
+    assert!(script.contains("p.networkRouting=sorngNetworkClient.capabilities"));
+    assert!(script.ends_with("p.networkRouting=sorngNetworkClient.capabilities;"));
 }
 
 #[tokio::test]

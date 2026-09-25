@@ -12,6 +12,7 @@ const config = () => ({
   version: 1,
   sessionId: "session-one",
   documentSequence: 3,
+  requestGeneration: null as string | null,
   sourceOrigin: upstream,
   proxyOrigin: proxy,
   mappings: [] as Array<{ upstreamOrigin: string; proxyOrigin: string }>,
@@ -219,6 +220,19 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
         },
       ],
     },
+  });
+  it("carries the native-issued document generation onto same-proxy navigation", () => {
+    const generation = "0123456789abcdef0123456789abcdef";
+    start({ ...config(), requestGeneration: generation });
+
+    expect(
+      controller!.mapUrl(
+        "/cpsess1234567890/frontend/jupiter/index.html?login=1",
+        "navigation",
+      ),
+    ).toBe(
+      `${proxy}/cpsess1234567890/frontend/jupiter/index.html?login=1&__sorng_generation_v1=${generation}`,
+    );
   });
   it("routes exact Google origins with credential mode markers and no direct fallback", async () => {
     start(googleConfig());

@@ -368,26 +368,35 @@
   }
 
   function cpanelSessionDestination(payload, view) {
-    if (!payload || (payload.status !== 1 && payload.status !== "1"))
+    if (
+      !payload ||
+      (payload.status !== 1 &&
+        payload.status !== "1" &&
+        payload.status !== true)
+    )
       return null;
     var token =
       typeof payload.security_token === "string" ? payload.security_token : "";
     var redirect = typeof payload.redirect === "string" ? payload.redirect : "";
+    if (token && token.charAt(0) !== "/") token = "/" + token;
+    token = token.replace(/\/$/, "");
     if (token && !/^\/cpsess[0-9]+$/.test(token)) return null;
-    var candidate = redirect || token + "/";
-    if (!candidate) return null;
-    if (token && candidate.charAt(0) === "/" && candidate.indexOf(token) !== 0)
-      candidate = token + candidate;
     try {
-      var destination = new URL(candidate, view.location.href);
+      var destination = redirect
+        ? new URL(redirect, view.location.href)
+        : new URL(token + "/", view.location.href);
       if (
-        destination.origin !== view.location.origin ||
+        !/^https?:$/.test(destination.protocol) ||
         destination.username ||
-        destination.password ||
-        !/^\/cpsess[0-9]+(?:\/|$)/.test(destination.pathname)
+        destination.password
       )
         return null;
-      return destination.pathname + destination.search + destination.hash;
+      var path = destination.pathname + destination.search + destination.hash;
+      if (token && !/^\/cpsess[0-9]+(?:\/|$)/.test(destination.pathname))
+        path =
+          token + (destination.pathname.charAt(0) === "/" ? "" : "/") + path;
+      if (!/^\/cpsess[0-9]+(?:\/|$)/.test(path)) return null;
+      return path;
     } catch (_) {
       return null;
     }
@@ -395,18 +404,40 @@
 
   function navigateCpanelSession(view, path) {
     var doc = view.document;
-    var anchor = doc.createElement("a");
-    anchor.href = path;
-    anchor.target = "_self";
-    anchor.hidden = true;
-    (doc.body || doc.documentElement).appendChild(anchor);
+    var destination = new URL(path, view.location.href);
+    if (typeof view.__sorng_map_navigation === "function") {
+      var mapped = view.__sorng_map_navigation(destination.href);
+      if (new URL(mapped).origin !== view.location.origin)
+        throw new Error("unsafe-cpanel-session-destination");
+      // This is a direct same-frame navigation to an explicitly mapped proxy
+      // URL. It cannot be cancelled by cPanel's document click handlers and it
+      // preserves the exact query plus any per-document generation proof.
+      view.location.assign(mapped);
+      return;
+    }
+    var transition = doc.createElement("form");
+    // A GET form replaces rather than appends the action query. Preserve every
+    // cPanel post-login field explicitly while keeping the navigation itself
+    // event-free and scoped to this iframe.
+    transition.action = destination.pathname + destination.hash;
+    transition.method = "get";
+    transition.target = "_self";
+    transition.hidden = true;
+    destination.searchParams.forEach(function (value, name) {
+      var field = doc.createElement("input");
+      field.type = "hidden";
+      field.name = name;
+      field.value = value;
+      transition.appendChild(field);
+    });
+    (doc.body || doc.documentElement).appendChild(transition);
     try {
-      // The page-routing capture hook converts this reviewed same-frame
-      // navigation into a generation-bearing proxy request. This deliberately
-      // does not grant cPanel top-navigation access to the desktop shell.
-      anchor.click();
+      // form.submit() bypasses page submit/click listeners while the routing
+      // prototype still maps the request through the local proxy. This
+      // deliberately does not grant cPanel top-navigation access to the shell.
+      transition.submit();
     } finally {
-      anchor.remove();
+      transition.remove();
     }
   }
 
@@ -424,10 +455,12 @@
     var nativeSend = proto.send;
     var loginRequests = new WeakSet();
     var navigated = false;
-    var observedOpen = function (_method, url) {
+    var timer = null;
+    var observedOpen = function (method, url) {
       try {
         var parsed = new URL(String(url), form.ownerDocument.baseURI);
         if (
+          String(method).toUpperCase() === "POST" &&
           parsed.origin === view.location.origin &&
           parsed.pathname === "/login/" &&
           parsed.searchParams.get("login_only") === "1"
@@ -438,35 +471,55 @@
     };
     var observedSend = function () {
       var request = this;
-      if (
-        loginRequests.has(request) &&
-        typeof request.addEventListener === "function"
-      ) {
-        var completed = function () {
+      if (loginRequests.has(request)) {
+        var pageReadyState = request.onreadystatechange;
+        request.onreadystatechange = function () {
           if (navigated || request.readyState !== 4) return;
           try {
-            if (request.status < 200 || request.status >= 300) return;
-            var text =
-              typeof request.responseText === "string"
-                ? request.responseText
-                : "";
-            if (!text || text.length > 64 * 1024) return;
-            var path = cpanelSessionDestination(JSON.parse(text), view);
-            if (!path) return;
-            navigated = true;
-            navigateCpanelSession(view, path);
+            if (request.status >= 200 && request.status < 300) {
+              var payload = null;
+              if (
+                request.responseType === "json" &&
+                request.response &&
+                typeof request.response === "object"
+              )
+                payload = request.response;
+              else {
+                var text =
+                  typeof request.responseText === "string"
+                    ? request.responseText
+                    : "";
+                if (text && text.length <= 64 * 1024)
+                  payload = JSON.parse(text);
+              }
+              var path = cpanelSessionDestination(payload, view);
+              if (path) {
+                navigated = true;
+                navigateCpanelSession(view, path);
+                return;
+              }
+            }
           } catch (_) {}
+          if (typeof pageReadyState === "function")
+            return pageReadyState.apply(this, arguments);
         };
-        request.addEventListener("readystatechange", completed);
+        restore();
       }
       return nativeSend.apply(this, arguments);
     };
     proto.open = observedOpen;
     proto.send = observedSend;
-    return function () {
+    function restore() {
+      if (timer !== null) view.clearTimeout(timer);
+      timer = null;
       if (proto.open === observedOpen) proto.open = nativeOpen;
       if (proto.send === observedSend) proto.send = nativeSend;
-    };
+    }
+    // Newer/custom login themes can queue the XHR after their submit handler
+    // returns. Keep this exact-endpoint observer alive briefly, then restore
+    // the shared prototype even if no request was created.
+    timer = view.setTimeout(restore, 5000);
+    return restore;
   }
 
   function submitCpanelForm(target) {
@@ -559,14 +612,19 @@
     // final guard still prevents a native document POST if it falls through.
     form.addEventListener("submit", preventNativeCpanelSubmit);
     var restoreCpanelResponseObserver = observeCpanelLoginResponse(form);
+    var clickCompleted = false;
     try {
       target.submit.click();
+      clickCompleted = true;
     } finally {
-      restoreCpanelResponseObserver();
+      if (!clickCompleted) restoreCpanelResponseObserver();
       form.removeEventListener("submit", preserveCpanelAjaxAction, true);
       form.removeEventListener("submit", preventNativeCpanelSubmit);
     }
-    if (!submitObserved) throw new Error("cpanel-submit-event-not-observed");
+    if (!submitObserved) {
+      restoreCpanelResponseObserver();
+      throw new Error("cpanel-submit-event-not-observed");
+    }
     return "cpanel-ajax-button-click";
   }
 
