@@ -226,7 +226,7 @@ function createWebDarkModeController() {
       document.documentElement.removeAttribute("data-sorng-dark-ready");
   }
   function protectCpanelSurfaces(root, theme) {
-    root.querySelectorAll(cpanelSurfaces).forEach(function (element) {
+    function protect(element) {
       var background = element.matches(cpanelHeaders)
         ? mixColor(theme.backgroundColor, theme.textColor, 12)
         : element.matches(cpanelPanels)
@@ -236,7 +236,9 @@ function createWebDarkModeController() {
       protectInline(element, "color", theme.textColor);
       if (element.matches(cpanelHeaders))
         protectInline(element, "background-image", "none");
-    });
+    }
+    if (root.nodeType === 1 && root.matches(cpanelSurfaces)) protect(root);
+    root.querySelectorAll(cpanelSurfaces).forEach(protect);
   }
   function adjustments(theme) {
     return (
@@ -351,14 +353,41 @@ function createWebDarkModeController() {
         style: document.createElement("style"),
         observer: null,
         repairQueued: false,
+        repairTimer: null,
+        pendingNodes: [],
+        fullRepair: false,
       };
       entry.style.className = "sorng-cpanel-shadow-dark";
       if (typeof MutationObserver === "function") {
-        entry.observer = new MutationObserver(function () {
+        entry.observer = new MutationObserver(function (records) {
           // Shadow mutations are isolated from the document observer. Repair
-          // only this root instead of rescanning the full document, every
-          // frame and every other shadow tree. This also bounds pages whose
-          // components animate or continuously update inline styles.
+          // only changed subtrees instead of rescanning the root, document,
+          // frames and every other shadow tree. One timer bounds continuously
+          // animated dashboards without delaying the first synchronous theme.
+          function queueNode(node) {
+            if (
+              node.nodeType === 1 &&
+              node !== entry.style &&
+              entry.pendingNodes.length < 256
+            )
+              entry.pendingNodes.push(node);
+          }
+          records.forEach(function (record) {
+            if (record.target === entry.style) entry.fullRepair = true;
+            queueNode(record.target);
+            Array.prototype.forEach.call(
+              record.addedNodes || [],
+              function (node) {
+                queueNode(node);
+              },
+            );
+            Array.prototype.forEach.call(
+              record.removedNodes || [],
+              function (node) {
+                if (node === entry.style) entry.fullRepair = true;
+              },
+            );
+          });
           if (
             entry.repairQueued ||
             disposed ||
@@ -367,21 +396,48 @@ function createWebDarkModeController() {
           )
             return;
           entry.repairQueued = true;
-          Promise.resolve().then(function () {
-            entry.repairQueued = false;
-            if (
-              disposed ||
-              !desired ||
-              desired.mode === "filter" ||
-              shadowStyles.indexOf(entry) < 0
-            )
-              return;
-            try {
-              themeShadow(root, desired);
-            } catch (_) {
-              // A page-owned root may disappear while its repair is queued.
-            }
-          });
+          entry.repairTimer = root.ownerDocument.defaultView.setTimeout(
+            function () {
+              entry.repairTimer = null;
+              entry.repairQueued = false;
+              if (
+                disposed ||
+                !desired ||
+                desired.mode === "filter" ||
+                shadowStyles.indexOf(entry) < 0
+              )
+                return;
+              var nodes = entry.pendingNodes.splice(0);
+              var fullRepair = entry.fullRepair;
+              entry.fullRepair = false;
+              try {
+                if (fullRepair || entry.style.parentNode !== root)
+                  themeShadow(root, desired);
+                else {
+                  entry.observer.disconnect();
+                  nodes
+                    .filter(function (node, index, all) {
+                      return (
+                        node.isConnected &&
+                        root.contains(node) &&
+                        all.indexOf(node) === index &&
+                        !all.some(function (ancestor) {
+                          return ancestor !== node && ancestor.contains?.(node);
+                        })
+                      );
+                    })
+                    .forEach(function (node) {
+                      protectCpanelSurfaces(node, desired);
+                    });
+                  observeShadow(entry);
+                }
+              } catch (_) {
+                // A page-owned root may disappear while its repair is queued.
+                observeShadow(entry);
+              }
+            },
+            16,
+          );
         });
       }
       shadowStyles.push(entry);
@@ -410,21 +466,25 @@ function createWebDarkModeController() {
       entry.style.removeAttribute("disabled");
       protectCpanelSurfaces(root, theme);
     } finally {
-      if (
-        entry.observer &&
-        !disposed &&
-        desired &&
-        desired.mode !== "filter" &&
-        shadowStyles.indexOf(entry) >= 0
-      )
-        entry.observer.observe(root, {
-          childList: true,
-          subtree: true,
-          characterData: true,
-          attributes: true,
-          attributeFilter: ["style", "class", "id", "media", "disabled"],
-        });
+      observeShadow(entry);
     }
+  }
+  function observeShadow(entry) {
+    if (
+      !entry.observer ||
+      disposed ||
+      !desired ||
+      desired.mode === "filter" ||
+      shadowStyles.indexOf(entry) < 0
+    )
+      return;
+    entry.observer.observe(entry.root, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["style", "class", "id", "media", "disabled"],
+    });
   }
   function scanShadows(node, theme) {
     node.querySelectorAll("*").forEach(function (element) {
@@ -476,6 +536,8 @@ function createWebDarkModeController() {
     attachShadowHook = null;
     shadowStyles.forEach(function (entry) {
       if (entry.observer) entry.observer.disconnect();
+      if (entry.repairTimer !== null)
+        entry.root.ownerDocument.defaultView.clearTimeout(entry.repairTimer);
       if (!keepAppearance) entry.style.remove();
     });
     shadowStyles = [];

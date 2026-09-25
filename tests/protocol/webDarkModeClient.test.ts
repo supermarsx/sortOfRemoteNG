@@ -364,8 +364,8 @@ describe("injected dark-mode extension runtime", () => {
       '<div class="header" style="background-color:white!important">Header</div>';
     await controller.set({ enabled: true, cssOnly: true, theme: theme() });
     const documentScan = vi.spyOn(document, "querySelectorAll");
-    const shadowScan = vi.spyOn(root, "querySelectorAll");
     const header = root.querySelector<HTMLElement>(".header")!;
+    const shadowScan = vi.spyOn(header, "querySelectorAll");
 
     for (let index = 0; index < 20; index += 1)
       header.style.setProperty(
@@ -379,6 +379,33 @@ describe("injected dark-mode extension runtime", () => {
     );
     expect(documentScan).not.toHaveBeenCalled();
     expect(shadowScan).toHaveBeenCalledTimes(1);
+  });
+  it("bounds continuous cPanel shadow activity to changed subtrees", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div id="host"></div></main>';
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML = `<div class="header" style="background-color:white!important">Header</div>${'<section class="panel">Panel</section>'.repeat(500)}`;
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const documentScan = vi.spyOn(document, "querySelectorAll");
+    const rootScan = vi.spyOn(root, "querySelectorAll");
+    const header = root.querySelector<HTMLElement>(".header")!;
+    const headerScan = vi.spyOn(header, "querySelectorAll");
+
+    for (let round = 0; round < 12; round += 1) {
+      header.style.setProperty(
+        "background-color",
+        round % 2 ? "#fafafa" : "#f0f0f0",
+        "important",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)");
+    expect(documentScan).not.toHaveBeenCalled();
+    expect(rootScan).not.toHaveBeenCalled();
+    expect(headerScan.mock.calls.length).toBeLessThanOrEqual(12);
   });
   it("discovers shadow headers when the cPanel marker arrives later", async () => {
     document.body.innerHTML = '<div id="host"></div>';
