@@ -49,10 +49,11 @@ enabled by default; `SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE=0` disables it unless
 always wins, including production pre-build's `--enable`.
 
 For Windows ARM64, use a **native ARM64 Windows Rust host**, Go compatible with
-the pinned upstream `go.mod`, and LLVM-MinGW's ARM64 binaries on `PATH`:
+the pinned upstream `go.mod`, and the verified LLVM-MinGW ARM64 distribution:
 
-```sh
+```powershell
 rustup target add aarch64-pc-windows-gnullvm
+$env:SORNG_OPKSSH_LLVM_MINGW_BIN = 'C:\toolchains\llvm-mingw-20260616-ucrt-aarch64\bin'
 npm run vendor:opkssh:build -- --target aarch64-pc-windows-gnullvm
 ```
 
@@ -76,7 +77,15 @@ The pinned native ARM64 LLVM-MinGW distribution is
 Verify SHA-256
 `312593669435bd0bfc1a43ac3fba23c8b27e0610bade88b2738e5a01702a99ba`
 before extraction; this matches the publisher's GitHub release asset digest.
-Add the extracted `bin` directory to `PATH`. No x64 bridge is accepted for ARM64.
+Set `SORNG_OPKSSH_LLVM_MINGW_BIN` to the absolute extracted `bin` directory.
+The helper adds it to `PATH` only for its compiler probe and bridge Cargo child,
+and selects that directory's compiler for CGO and the gnullvm linker. CI exports
+this dedicated variable through `GITHUB_ENV`, never the directory through
+`GITHUB_PATH`: LLVM-MinGW's plain `clang` would otherwise shadow the MSVC-aware
+LLVM compiler used by `ring` in the subsequent Tauri build, causing missing
+Windows SDK/UCRT headers such as `assert.h`. Existing standalone setups with
+LLVM-MinGW already on `PATH` remain supported when the variable is unset.
+No x64 bridge is accepted for ARM64.
 ARM64 runtime validation must run on a native ARM64 runner; x64 build/tests do
 not establish that result.
 

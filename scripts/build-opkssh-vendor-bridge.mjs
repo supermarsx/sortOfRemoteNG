@@ -30,6 +30,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   opksshWindowsBridgeBuildArgs,
+  opksshWindowsBridgeEnvironment,
   opksshWindowsBridgePlan,
   verifyOpksshVendorArtifact,
 } from "./opkssh-vendor-artifact.mjs";
@@ -131,7 +132,7 @@ function ensureCheckout() {
   }
 }
 
-function requireToolchain(plan) {
+function requireToolchain(plan, env) {
   const go = capture(process.env.SORNG_OPKSSH_VENDOR_GO || "go", ["version"]);
   if (go.status !== 0) {
     fail(
@@ -163,11 +164,11 @@ function requireToolchain(plan) {
       );
   }
 
-  const compiler = capture(plan.compiler, ["--version"]);
+  const compiler = capture(env[plan.linkerEnv], ["--version"], { env });
   if (compiler.status !== 0) {
     fail(
       plan.archKey === "arm64"
-        ? "LLVM-MinGW aarch64-w64-mingw32-clang not found on PATH. Install the verified native ARM64 LLVM-MinGW toolchain documented in docs/opkssh-vendor-bridge.md."
+        ? "LLVM-MinGW aarch64-w64-mingw32-clang not found. Set SORNG_OPKSSH_LLVM_MINGW_BIN to the verified native ARM64 LLVM-MinGW bin directory documented in docs/opkssh-vendor-bridge.md."
         : "MinGW gcc not found on PATH. CGO needs a C compiler for the windows-gnu " +
             "target (e.g. MSYS2: pacman -S mingw-w64-x86_64-gcc, then add " +
             "C:/msys64/mingw64/bin to PATH).",
@@ -176,7 +177,7 @@ function requireToolchain(plan) {
   log(compiler.stdout.split(/\r?\n/)[0]);
 }
 
-function buildBridge(plan) {
+function buildBridge(plan, env) {
   const cargoArgs = opksshWindowsBridgeBuildArgs(plan, {
     manifestPath,
     targetDir,
@@ -186,10 +187,7 @@ function buildBridge(plan) {
   log(`cargo ${cargoArgs.join(" ")}`);
   run("cargo", cargoArgs, {
     env: {
-      ...process.env,
-      CGO_ENABLED: "1",
-      CC: plan.compiler,
-      [plan.linkerEnv]: plan.compiler,
+      ...env,
       // Let build.rs discover the durable checkout itself; setting it here
       // keeps the build honest even if the default ever moves.
       SORNG_OPKSSH_VENDOR_CHECKOUT: checkoutDir,
@@ -269,6 +267,7 @@ function main() {
   )
     fail("--target requires a value");
   let plan;
+  let bridgeEnv;
   try {
     plan = opksshWindowsBridgePlan(
       requested ||
@@ -277,12 +276,13 @@ function main() {
           : "x86_64-pc-windows-gnu"),
       host,
     );
+    bridgeEnv = opksshWindowsBridgeEnvironment(plan);
   } catch (error) {
     fail(error.message);
   }
-  requireToolchain(plan);
+  requireToolchain(plan, bridgeEnv);
   ensureCheckout();
-  const dllPath = buildBridge(plan);
+  const dllPath = buildBridge(plan, bridgeEnv);
   verifyArtifact(dllPath, plan);
 
   if (hasFlag("--skip-stage")) {

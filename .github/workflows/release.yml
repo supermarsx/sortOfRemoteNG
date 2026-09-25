@@ -563,7 +563,9 @@ jobs:
           if (-not (Test-Path -LiteralPath (Join-Path $compilerBin 'aarch64-w64-mingw32-clang.exe'))) {
             throw "Verified LLVM-MinGW archive is missing its native ARM64 compiler."
           }
-          $compilerBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # Only the OPKSSH child build may put LLVM-MinGW on PATH. Its plain
+          # clang cannot discover MSVC headers when ring builds the Tauri app.
+          "SORNG_OPKSSH_LLVM_MINGW_BIN=$compilerBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Cache Cargo build
         if: matrix.platform != 'linux'

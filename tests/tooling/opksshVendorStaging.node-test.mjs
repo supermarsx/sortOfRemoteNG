@@ -14,6 +14,7 @@ import {
   OPKSSH_ABI_EXPORTS,
   OPKSSH_STUB_MARKER,
   opksshWindowsBridgeBuildArgs,
+  opksshWindowsBridgeEnvironment,
   opksshWindowsBridgePlan,
   verifyOpksshVendorBytes,
 } from "../../scripts/opkssh-vendor-artifact.mjs";
@@ -485,6 +486,80 @@ test("only the ARM64 final library gets static CRT linkage in release and debug 
     ]);
   }
 });
+test("ARM64 bridge compiler environment preserves the caller's MSVC environment", () => {
+  const plan = opksshWindowsBridgePlan(
+    "aarch64-pc-windows-gnullvm",
+    "aarch64-pc-windows-msvc",
+  );
+  const compilerBin = "C:\\Toolchains with spaces\\llvm-mingw\\bin";
+  const appPath = "C:\\Program Files\\LLVM\\bin;C:\\Windows\\System32";
+  for (const paths of [
+    { PATH: appPath },
+    { Path: appPath },
+    { PATH: appPath, Path: "C:\\ignored-alias" },
+    {},
+  ]) {
+    const parent = Object.freeze({
+      ...paths,
+      CC: "cl.exe",
+      CXX: "cl.exe",
+      CGO_ENABLED: "0",
+      CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: "link.exe",
+      RUSTFLAGS: "-C debuginfo=1",
+      SORNG_OPKSSH_LLVM_MINGW_BIN: compilerBin,
+    });
+    const original = { ...parent };
+    const child = opksshWindowsBridgeEnvironment(plan, parent);
+    const compiler = path.win32.join(
+      compilerBin,
+      "aarch64-w64-mingw32-clang.exe",
+    );
+    assert.equal(child.CC, plan.compiler);
+    assert.equal(child[plan.linkerEnv], compiler);
+    assert.equal(child.CGO_ENABLED, "1");
+    assert.equal(
+      child.PATH,
+      compilerBin + (Object.keys(paths).length ? `;${appPath}` : ""),
+    );
+    assert.equal(child.Path, undefined);
+    assert.equal(child.CXX, parent.CXX);
+    assert.equal(
+      child.CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER,
+      parent.CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER,
+    );
+    assert.equal(child.RUSTFLAGS, parent.RUSTFLAGS);
+    assert.deepEqual(parent, original);
+  }
+  assert.throws(
+    () =>
+      opksshWindowsBridgeEnvironment(plan, {
+        SORNG_OPKSSH_LLVM_MINGW_BIN: "relative/bin",
+      }),
+    /must be an absolute path/,
+  );
+});
+
+test("x64 and existing ARM64 PATH toolchains keep their compiler selection", () => {
+  for (const target of [
+    "x86_64-pc-windows-gnu",
+    "aarch64-pc-windows-gnullvm",
+  ]) {
+    const plan = opksshWindowsBridgePlan(target, target);
+    const parent = Object.freeze({
+      Path: "C:\\existing-toolchain\\bin",
+      ...(plan.archKey === "amd64"
+        ? { SORNG_OPKSSH_LLVM_MINGW_BIN: "C:\\arm64-only\\bin" }
+        : {}),
+    });
+    assert.deepEqual(opksshWindowsBridgeEnvironment(plan, parent), {
+      ...parent,
+      CC: plan.compiler,
+      CGO_ENABLED: "1",
+      [plan.linkerEnv]: plan.compiler,
+    });
+  }
+});
+
 test("native build plans require exact host architecture and select fixed compiler/toolchain", () => {
   const arm = opksshWindowsBridgePlan(
     "aarch64-pc-windows-gnullvm",

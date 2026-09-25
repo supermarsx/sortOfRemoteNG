@@ -44,7 +44,14 @@ test("ARM64 release compiler is native and hash verified before extraction", () 
     /312593669435bd0bfc1a43ac3fba23c8b27e0610bade88b2738e5a01702a99ba/,
   );
   assert.ok(step.indexOf("Get-FileHash") < step.indexOf("Expand-Archive"));
-  assert.ok(step.indexOf("Expand-Archive") < step.indexOf("GITHUB_PATH"));
+  assert.ok(step.indexOf("Expand-Archive") < step.indexOf("GITHUB_ENV"));
   assert.match(step, /aarch64-w64-mingw32-clang.exe/);
-  assert.doesNotMatch(step, /rustup default|Invoke-Expression/);
+  assert.match(
+    step,
+    /"SORNG_OPKSSH_LLVM_MINGW_BIN=\$compilerBin" \| Out-File -FilePath \$env:GITHUB_ENV/,
+  );
+  assert.doesNotMatch(
+    step,
+    /GITHUB_PATH|\$env:(?:PATH|CC|CXX)\s*=|rustup default|Invoke-Expression/i,
+  );
 });

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import path from "node:path";
 
 /** The bridge is built natively; never silently cross-build a metadata wrapper. */
 export function opksshWindowsBridgePlan(target, host) {
@@ -25,6 +26,33 @@ export function opksshWindowsBridgePlan(target, host) {
         ? "CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER"
         : "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER",
   };
+}
+
+/** Scope the bridge compiler and its companion tools to child processes. */
+export function opksshWindowsBridgeEnvironment(plan, baseEnv = process.env) {
+  const env = { ...baseEnv };
+  const compilerBin =
+    plan.archKey === "arm64" ? env.SORNG_OPKSSH_LLVM_MINGW_BIN : undefined;
+  let compiler = plan.compiler;
+  if (compilerBin) {
+    if (!path.win32.isAbsolute(compilerBin))
+      throw new Error("SORNG_OPKSSH_LLVM_MINGW_BIN must be an absolute path");
+    compiler = path.win32.join(compilerBin, `${plan.compiler}.exe`);
+    // Node uses the first sorted spelling on Windows. Collapse aliases so a
+    // caller providing both PATH and Path cannot mask the child-only prefix.
+    const pathKeys = Object.keys(env)
+      .filter((key) => key.toUpperCase() === "PATH")
+      .sort();
+    const inheritedPath = env[pathKeys[0]];
+    for (const key of pathKeys) delete env[key];
+    env.PATH = compilerBin + (inheritedPath ? `;${inheritedPath}` : "");
+  }
+  env.CGO_ENABLED = "1";
+  // CGO parses CC as a command line; resolve the fixed compiler name via the
+  // child PATH so toolchain directories containing spaces need no quoting.
+  env.CC = plan.compiler;
+  env[plan.linkerEnv] = compiler;
+  return env;
 }
 
 /** Keep static LLVM unwind linkage local to the ARM64 vendor library. */
