@@ -2,6 +2,8 @@
 //! are synthetic. No Tauri profile or desktop runtime is initialized.
 #[path = "http_attempt_response_tests.rs"]
 mod attempt_response_tests;
+#[path = "http_cpanel_post_tests.rs"]
+mod cpanel_post_tests;
 #[path = "http_dark_mode_tests.rs"]
 mod dark_mode_tests;
 #[path = "http_font_asset_tests.rs"]

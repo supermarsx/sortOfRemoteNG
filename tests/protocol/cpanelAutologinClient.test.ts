@@ -37,8 +37,8 @@ let submit: ReturnType<typeof createSubmitSpy>;
 const field = (id: string) => document.getElementById(id) as HTMLInputElement;
 const start = () => client.fetchCredsAndRun("nonce", selectors, "cpanel");
 
-function installForm(disabled = false) {
-  document.body.innerHTML = `<form id="login_form" action="/login/" method="post">
+function installForm(disabled = false, target = "") {
+  document.body.innerHTML = `<form id="login_form" action="/login/" method="post" ${target ? `target="${target}"` : ""}>
     <input id="user" name="user">
     <input id="pass" name="pass" type="password">
     <input id="session" name="session" type="hidden" value="initial-session">
@@ -137,6 +137,35 @@ describe("cPanel auto-login readiness", () => {
     await settle();
     await expect(pending).resolves.toMatchObject({ reason: "submitted" });
     expect(initial).not.toHaveBeenCalled();
+    expect(submit).toHaveBeenCalledOnce();
+  });
+
+  it("keeps cPanel's stock top-target login POST in the proxy frame with both credentials", async () => {
+    installForm(false, "_top");
+    const legacyAjaxSubmit = vi.fn(() => false);
+    document.querySelector("form")!.onsubmit = legacyAjaxSubmit;
+    let submittedTarget = "";
+    let submittedBody: URLSearchParams | undefined;
+    document.querySelector("form")!.addEventListener("submit", (event) => {
+      const form = event.currentTarget as HTMLFormElement;
+      submittedTarget = form.target;
+      submittedBody = new URLSearchParams(
+        Array.from(new FormData(form).entries(), ([name, value]) => [
+          name,
+          String(value),
+        ]),
+      );
+    });
+
+    const pending = start();
+    await settle();
+
+    await expect(pending).resolves.toMatchObject({ reason: "submitted" });
+    expect(submittedTarget).toBe("_self");
+    expect(submittedBody?.get("user")).toBe("cp-user");
+    expect(submittedBody?.get("pass")).toBe("cp-secret");
+    expect(legacyAjaxSubmit).not.toHaveBeenCalled();
+    expect(document.querySelector("form")!.onsubmit).toBe(legacyAjaxSubmit);
     expect(submit).toHaveBeenCalledOnce();
   });
 

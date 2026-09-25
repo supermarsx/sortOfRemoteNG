@@ -367,10 +367,35 @@
     return node || pw.ownerDocument;
   }
 
-  function submitForm(target, ov) {
+  function submitCpanelForm(target) {
+    var form = target.form;
+    if (!form || typeof form.requestSubmit !== "function") return null;
+    // cPanel's stock login template targets `_top` when goto_uri is `/` and
+    // installs an inline AJAX handler which manually rebuilds user/pass. In an
+    // embedded proxy the top target escapes the owned frame, while the legacy
+    // AJAX path has proven able to emit an empty username body. Use the form's
+    // native successful-control serialization in the current proxy frame.
+    if (form.getAttribute("target") === "_top")
+      form.setAttribute("target", "_self");
+    var handler = form.onsubmit;
+    try {
+      if (handler) form.onsubmit = null;
+      form.requestSubmit(target.submit || undefined);
+      return "cpanel-native-submit";
+    } finally {
+      if (handler) form.onsubmit = handler;
+    }
+  }
+
+  function submitForm(target, ov, readinessProfile) {
     var form = target.form;
     var pw = target.pw;
     var user = target.user;
+
+    if (readinessProfile === "cpanel") {
+      var cpanelSubmit = submitCpanelForm(target);
+      if (cpanelSubmit) return cpanelSubmit;
+    }
 
     // Explicit selectors were validated together before any field was filled.
     if (ov && ov.submit) {
@@ -841,7 +866,7 @@
     });
   }
 
-  function guardedSubmit(target, ov) {
+  function guardedSubmit(target, ov, readinessProfile) {
     // Reviewed SPA forms omit method/action. Keep their JS handlers, but never
     // permit a missing handler to fall through to a native credential-bearing GET.
     var preventGet = function (event) {
@@ -862,7 +887,7 @@
       throw new Error("unsafe-form-method");
     if (form && !method) form.addEventListener("submit", preventGet, true);
     try {
-      return submitForm(target, ov);
+      return submitForm(target, ov, readinessProfile);
     } finally {
       if (form && !method) form.removeEventListener("submit", preventGet, true);
     }
@@ -1009,7 +1034,7 @@
                 return;
               }
               submitAttempted = true;
-              var via = guardedSubmit(target, ov);
+              var via = guardedSubmit(target, ov, readinessProfile);
               finish({
                 ok: true,
                 reason: "submitted",
