@@ -350,10 +350,73 @@ function createWebDarkModeController() {
         root: root,
         style: document.createElement("style"),
         observer: null,
+        repairQueued: false,
       };
       entry.style.className = "sorng-cpanel-shadow-dark";
       if (typeof MutationObserver === "function") {
-        entry.observer = new MutationObserver(queueScan);
+        entry.observer = new MutationObserver(function () {
+          // Shadow mutations are isolated from the document observer. Repair
+          // only this root instead of rescanning the full document, every
+          // frame and every other shadow tree. This also bounds pages whose
+          // components animate or continuously update inline styles.
+          if (
+            entry.repairQueued ||
+            disposed ||
+            !desired ||
+            desired.mode === "filter"
+          )
+            return;
+          entry.repairQueued = true;
+          Promise.resolve().then(function () {
+            entry.repairQueued = false;
+            if (
+              disposed ||
+              !desired ||
+              desired.mode === "filter" ||
+              shadowStyles.indexOf(entry) < 0
+            )
+              return;
+            try {
+              themeShadow(root, desired);
+            } catch (_) {
+              // A page-owned root may disappear while its repair is queued.
+            }
+          });
+        });
+      }
+      shadowStyles.push(entry);
+    }
+    // Do not observe our own style/attribute repairs. cPanel's components can
+    // react to those records and write again; observing both sides creates a
+    // feedback loop that starves the tab and eventually the desktop process.
+    if (entry.observer) entry.observer.disconnect();
+    try {
+      var css =
+        "@layer sorng-force-dark;@layer sorng-force-dark{" +
+        cpanelCss(theme, true);
+      if (headerHost(root.host))
+        css +=
+          ":host{color-scheme:dark!important;background-color:" +
+          mixColor(theme.backgroundColor, theme.textColor, 12) +
+          "!important;color:" +
+          theme.textColor +
+          "!important;transition:none!important}";
+      css += "}";
+      if (entry.style.textContent !== css) entry.style.textContent = css;
+      if (entry.style.parentNode !== root)
+        root.insertBefore(entry.style, root.firstChild);
+      if (entry.style.disabled) entry.style.disabled = false;
+      entry.style.removeAttribute("media");
+      entry.style.removeAttribute("disabled");
+      protectCpanelSurfaces(root, theme);
+    } finally {
+      if (
+        entry.observer &&
+        !disposed &&
+        desired &&
+        desired.mode !== "filter" &&
+        shadowStyles.indexOf(entry) >= 0
+      )
         entry.observer.observe(root, {
           childList: true,
           subtree: true,
@@ -361,27 +424,7 @@ function createWebDarkModeController() {
           attributes: true,
           attributeFilter: ["style", "class", "id", "media", "disabled"],
         });
-      }
-      shadowStyles.push(entry);
     }
-    var css =
-      "@layer sorng-force-dark;@layer sorng-force-dark{" +
-      cpanelCss(theme, true);
-    if (headerHost(root.host))
-      css +=
-        ":host{color-scheme:dark!important;background-color:" +
-        mixColor(theme.backgroundColor, theme.textColor, 12) +
-        "!important;color:" +
-        theme.textColor +
-        "!important;transition:none!important}";
-    css += "}";
-    if (entry.style.textContent !== css) entry.style.textContent = css;
-    if (entry.style.parentNode !== root)
-      root.insertBefore(entry.style, root.firstChild);
-    if (entry.style.disabled) entry.style.disabled = false;
-    entry.style.removeAttribute("media");
-    entry.style.removeAttribute("disabled");
-    protectCpanelSurfaces(root, theme);
   }
   function scanShadows(node, theme) {
     node.querySelectorAll("*").forEach(function (element) {

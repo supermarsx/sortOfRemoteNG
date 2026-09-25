@@ -354,6 +354,32 @@ describe("injected dark-mode extension runtime", () => {
     expect(root.querySelector("style")).toBeNull();
     expect(Element.prototype.attachShadow).toBe(originalAttach);
   });
+  it("repairs a busy cPanel shadow root without rescanning the document", async () => {
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div id="host"></div></main>';
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML =
+      '<div class="header" style="background-color:white!important">Header</div>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    const documentScan = vi.spyOn(document, "querySelectorAll");
+    const shadowScan = vi.spyOn(root, "querySelectorAll");
+    const header = root.querySelector<HTMLElement>(".header")!;
+
+    for (let index = 0; index < 20; index += 1)
+      header.style.setProperty(
+        "background-color",
+        index % 2 ? "#fafafa" : "#f0f0f0",
+        "important",
+      );
+
+    await vi.waitFor(() =>
+      expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)"),
+    );
+    expect(documentScan).not.toHaveBeenCalled();
+    expect(shadowScan).toHaveBeenCalledTimes(1);
+  });
   it("discovers shadow headers when the cPanel marker arrives later", async () => {
     document.body.innerHTML = '<div id="host"></div>';
     await controller.set({ enabled: true, cssOnly: true, theme: theme() });
