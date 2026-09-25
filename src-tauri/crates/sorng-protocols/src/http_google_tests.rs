@@ -12,6 +12,7 @@ fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(15))
         .build()
         .unwrap()
 }
@@ -437,6 +438,195 @@ fn alias_scope_preserves_the_native_webview_user_agent_but_not_connection_secret
     assert!(session.request_state(&base, &credentials).is_err());
     let cookies = request_for(resource, google::COOKIE_BRIDGE_PATH);
     assert!(session.request_state(&base, &cookies).is_err());
+}
+
+#[test]
+fn accounts_navigation_sanitizes_partial_metadata_without_changing_native_identity_or_cookies() {
+    let session = session("https://analytics.google.com/");
+    let target = Url::parse("https://accounts.google.com/ServiceLogin").unwrap();
+    let mut cookies = reqwest::header::HeaderMap::new();
+    cookies.insert(
+        header::SET_COOKIE,
+        "__Host-GAPS=native-session; Path=/; Secure; HttpOnly"
+            .parse()
+            .unwrap(),
+    );
+    session.observe_cookies(&cookies, &target).unwrap();
+
+    let cases: &[(&str, &[(&str, &str)])] = &[
+        ("iframe without mode", &[("sec-fetch-dest", "iframe")]),
+        ("document without mode", &[("sec-fetch-dest", "document")]),
+        ("frame without mode", &[("sec-fetch-dest", "frame")]),
+        (
+            "mode without destination",
+            &[("sec-fetch-mode", "navigate")],
+        ),
+        (
+            "legacy frame navigation",
+            &[("sec-fetch-dest", "frame"), ("sec-fetch-mode", "navigate")],
+        ),
+        (
+            "older WebView HTML navigation",
+            &[("upgrade-insecure-requests", "1"), ("accept", "text/html")],
+        ),
+    ];
+    for (label, metadata) in cases {
+        let mut incoming = axum::http::HeaderMap::new();
+        for (name, value) in [
+            ("user-agent", "Mozilla/5.0 Native-WebView2 Fixture/126.0"),
+            ("sec-ch-ua", "\"WebView fixture\";v=\"126\""),
+            ("sec-ch-ua-platform", "\"Windows\""),
+            ("sec-ch-ua-mobile", "?0"),
+            ("cookie", "__Host-GAPS=stale-localhost-mirror"),
+            ("sec-fetch-site", "same-site"),
+            ("sec-fetch-user", "?1"),
+        ] {
+            incoming.insert(name, value.parse().unwrap());
+        }
+        for &(name, value) in *metadata {
+            incoming.insert(name, value.parse().unwrap());
+        }
+        let forwarded = session.request_headers(&incoming, "https://accounts.google.com");
+        assert!(
+            !forwarded
+                .iter()
+                .any(|(name, _)| name.starts_with("sec-fetch-")),
+            "localhost navigation metadata escaped: {label}",
+        );
+        for name in [
+            "user-agent",
+            "sec-ch-ua",
+            "sec-ch-ua-platform",
+            "sec-ch-ua-mobile",
+        ] {
+            assert_eq!(
+                forwarded
+                    .iter()
+                    .find(|(key, _)| key == name)
+                    .map(|(_, value)| value.as_str()),
+                incoming.get(name).and_then(|value| value.to_str().ok()),
+                "native browser identity changed: {label}, {name}",
+            );
+        }
+        assert!(!forwarded.iter().any(|(name, _)| name == "cookie"));
+        assert_eq!(
+            session.cookie_header(&target).unwrap(),
+            "__Host-GAPS=native-session"
+        );
+    }
+}
+
+#[test]
+fn accounts_metadata_sanitizing_does_not_relax_background_or_other_origin_requests() {
+    let session = session("https://analytics.google.com/");
+    for (target, metadata) in [
+        (
+            "https://accounts.google.com",
+            vec![("sec-fetch-mode", "cors"), ("sec-fetch-dest", "empty")],
+        ),
+        (
+            "https://accounts.google.com",
+            vec![("sec-fetch-mode", "cors"), ("sec-fetch-dest", "iframe")],
+        ),
+        (
+            "https://accounts.google.com",
+            vec![
+                ("x-requested-with", "XMLHttpRequest"),
+                ("sec-fetch-mode", "navigate"),
+            ],
+        ),
+        // Negotiating HTML alone does not make an XHR into a navigation.
+        ("https://accounts.google.com", vec![]),
+        (
+            "https://analytics.google.com",
+            vec![("sec-fetch-mode", "navigate"), ("sec-fetch-dest", "iframe")],
+        ),
+    ] {
+        let mut incoming = axum::http::HeaderMap::new();
+        incoming.insert("accept", "text/html".parse().unwrap());
+        incoming.insert("sec-fetch-site", "same-origin".parse().unwrap());
+        for (name, value) in metadata {
+            incoming.insert(name, value.parse().unwrap());
+        }
+        let forwarded = session.request_headers(&incoming, target);
+        for (name, value) in &incoming {
+            assert!(forwarded.contains(&(name.to_string(), value.to_str().unwrap().into())));
+        }
+    }
+}
+
+// Anonymous GETs only. This exercises the real mediator and native cookie jar,
+// not a signed-in browser or Google's post-identifier acceptance checks.
+#[tokio::test]
+#[ignore = "contacts public Google Accounts; opt-in anonymous navigation diagnostic"]
+async fn live_accounts_navigation_distinguishes_malformed_metadata_from_native_identity_and_cookies(
+) {
+    // Previously captured WebView identity, also used by the QuickConnect
+    // diagnostics. It is input to this test, never a production UA override.
+    let native_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0";
+    let session = session("https://analytics.google.com/");
+    let target = Url::parse("https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fanalytics.google.com%2Fanalytics%2Fweb%2F").unwrap();
+    let mut incoming = axum::http::HeaderMap::new();
+    for (name, value) in [
+        ("user-agent", native_user_agent),
+        (
+            "sec-ch-ua",
+            "\"Chromium\";v=\"146\", \"Microsoft Edge\";v=\"146\", \"Not_A Brand\";v=\"99\"",
+        ),
+        ("sec-ch-ua-platform", "\"Windows\""),
+        ("sec-ch-ua-mobile", "?0"),
+        ("accept", "text/html"),
+        ("sec-fetch-dest", "iframe"),
+        ("sec-fetch-site", "same-site"),
+    ] {
+        incoming.insert(name, value.parse().unwrap());
+    }
+    let raw = collect_upstream_headers(
+        &incoming,
+        UpstreamAuthMode::None,
+        "",
+        "https://accounts.google.com",
+    );
+    let malformed = session
+        .send(&reqwest::Method::GET, &target, &raw, &[], true)
+        .await
+        .unwrap_or_else(|_| panic!("anonymous raw Google navigation failed"));
+    assert_eq!(malformed.status(), reqwest::StatusCode::UNAUTHORIZED);
+    let response_headers = malformed.headers().clone();
+    let body = proxy_response::read_body(malformed, &response_headers, true)
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("malformed"));
+
+    let forwarded = session.request_headers(&incoming, "https://accounts.google.com");
+    let redirect = session
+        .send(&reqwest::Method::GET, &target, &forwarded, &[], true)
+        .await
+        .unwrap_or_else(|_| panic!("anonymous normalized Google navigation failed"));
+    assert_eq!(redirect.status(), reqwest::StatusCode::FOUND);
+    assert!(session.cookie_header(&target).is_some());
+    assert!(!redirect.headers().contains_key(header::SET_COOKIE));
+    let next = target
+        .join(
+            redirect
+                .headers()
+                .get(header::LOCATION)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(next.origin(), target.origin());
+    let page = session
+        .send(&reqwest::Method::GET, &next, &forwarded, &[], true)
+        .await
+        .unwrap_or_else(|_| panic!("anonymous Google identifier navigation failed"));
+    assert_eq!(page.status(), reqwest::StatusCode::OK);
+    let response_headers = page.headers().clone();
+    let body = proxy_response::read_body(page, &response_headers, true)
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("identifierId"));
 }
 
 #[tokio::test]

@@ -251,15 +251,12 @@ impl GoogleSession {
     ) -> Vec<(String, String)> {
         let mut headers =
             super::collect_upstream_headers(incoming, super::UpstreamAuthMode::None, "", target);
+        // Use the same document classification as the proxy handler. WebViews
+        // can send partial Fetch Metadata (or the legacy `frame` destination);
+        // requiring both mode and destination leaks localhost topology to
+        // Accounts, which can reject ServiceLogin before issuing its form.
         let accounts_navigation = target == "https://accounts.google.com"
-            && incoming
-                .get("sec-fetch-mode")
-                .and_then(|value| value.to_str().ok())
-                == Some("navigate")
-            && incoming
-                .get("sec-fetch-dest")
-                .and_then(|value| value.to_str().ok())
-                .is_some_and(|value| matches!(value, "document" | "iframe"));
+            && super::proxy_response::is_document_request(incoming, None);
         headers.retain(|(name, _)| {
             !matches!(name.as_str(), "cookie" | "origin" | "referer")
                 && !(accounts_navigation
