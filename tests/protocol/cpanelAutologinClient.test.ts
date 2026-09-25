@@ -172,6 +172,12 @@ describe("cPanel auto-login readiness", () => {
     let submittedContentType = "";
     let submittedMethod = "";
     let sentBody = "";
+    const routedAction = `${window.location.origin}/login/?__sorng_generation_v1=document-token`;
+    const routeForm = (event: Event) => {
+      (event.target as HTMLFormElement).setAttribute("action", routedAction);
+    };
+    document.addEventListener("submit", routeForm, true);
+    document.querySelector("form")!.setAttribute("action", routedAction);
     vi.stubGlobal(
       "XMLHttpRequest",
       class {
@@ -215,16 +221,17 @@ describe("cPanel auto-login readiness", () => {
 
     const pending = start();
     await settle();
+    document.removeEventListener("submit", routeForm, true);
 
     await expect(pending).resolves.toMatchObject({
       reason: "submitted",
-      via: "cpanel-ajax-handler",
+      via: "cpanel-ajax-button-click",
     });
     expect(submittedTarget).toBe("_self");
     expect(submittedBody?.get("user")).toBe("cp-user");
     expect(submittedBody?.get("pass")).toBe("cp-secret");
     expect(stockAjaxSubmit).toHaveBeenCalledOnce();
-    expect(stockButtonClick).not.toHaveBeenCalled();
+    expect(stockButtonClick).toHaveBeenCalledOnce();
     expect(new URL(submittedUrl).pathname).toBe("/login/");
     expect(new URL(submittedUrl).search).toBe("?login_only=1");
     expect(submittedMethod).toBe("POST");
@@ -262,12 +269,12 @@ describe("cPanel auto-login readiness", () => {
 
     await expect(pending).resolves.toMatchObject({
       reason: "submitted",
-      via: "cpanel-ajax-handler",
+      via: "cpanel-ajax-button-click",
     });
     expect(wasCancelledBeforeHandler).toBe(true);
     expect(stockAjaxSubmit).toHaveBeenCalledOnce();
     expect(submit).not.toHaveBeenCalled();
-    expect(buttonClick).not.toHaveBeenCalled();
+    expect(buttonClick).toHaveBeenCalledOnce();
   });
 
   it("does not fill or submit while cPanel disables its login control", async () => {

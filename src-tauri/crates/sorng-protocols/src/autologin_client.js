@@ -377,12 +377,14 @@
     // stock script caches these controls in window globals, though, so a form
     // replaced during late login-page hydration otherwise submits values from
     // disconnected, empty inputs (`no_username`). Rebind only the known cPanel
-    // globals to the already validated current target before calling the stock
-    // AJAX handler. Do not dispatch a browser submit event here: the routing
-    // module's document-capture hook rewrites form.action before cPanel's
-    // handler runs, while cPanel naively appends `?login_only=1` to that value.
-    // Calling the installed handler directly preserves the original `/login/`
-    // action and makes native form submission impossible.
+    // globals to the already validated current target before activating the
+    // real button. cPanel's click path also owns its loading state and other
+    // stock pre-submit behavior, so calling form.onsubmit directly is not an
+    // equivalent login attempt. The routing module's document-capture hook
+    // rewrites form.action before cPanel's handler runs, though, while cPanel
+    // naively appends `?login_only=1` to that value. Restore the validated raw
+    // action at the form capture boundary (after the document hook and before
+    // cPanel's handler) and prevent only the native document POST.
     if (form.getAttribute("target") === "_top")
       form.setAttribute("target", "_self");
     var view = form.ownerDocument && form.ownerDocument.defaultView;
@@ -410,18 +412,51 @@
     }
     if (typeof form.onsubmit !== "function")
       throw new Error("cpanel-submit-handler-not-ready");
-    var SubmitEventCtor = view && view.SubmitEvent;
-    var EventCtor = view && view.Event ? view.Event : Event;
-    var event = SubmitEventCtor
-      ? new SubmitEventCtor("submit", {
-          bubbles: true,
-          cancelable: true,
-          submitter: target.submit || undefined,
-        })
-      : new EventCtor("submit", { bubbles: true, cancelable: true });
-    event.preventDefault();
-    form.onsubmit.call(form, event);
-    return "cpanel-ajax-handler";
+    if (!target.submit || typeof target.submit.click !== "function")
+      throw new Error("cpanel-submit-button-not-ready");
+    var originalActionAttribute = form.getAttribute("action");
+    if (originalActionAttribute === null)
+      throw new Error("cpanel-form-action-not-ready");
+    var originalActionUrl = new URL(
+      originalActionAttribute,
+      form.ownerDocument.baseURI,
+    );
+    if (originalActionUrl.origin !== window.location.origin)
+      throw new Error("unsafe-form-action");
+    // A late form.action assignment has already passed through the routing
+    // setter and can carry this local proof. cPanel concatenates its AJAX flag
+    // with `?`, so leaving the proof in place turns login_only into part of the
+    // proof value and the router then removes that entire malformed pair.
+    // Return the action to its application-owned path/query before the stock
+    // handler appends it.
+    var originalQuery = originalActionUrl.search
+      .slice(1)
+      .split("&")
+      .filter(function (pair) {
+        return pair && pair.split("=")[0] !== "__sorng_generation_v1";
+      })
+      .join("&");
+    var originalAction =
+      originalActionUrl.pathname + (originalQuery ? "?" + originalQuery : "");
+    var submitObserved = false;
+    function preserveCpanelAjaxAction(event) {
+      if (event.target !== form) return;
+      submitObserved = true;
+      event.preventDefault();
+      var action = form.getAttributeNode("action");
+      if (!action) throw new Error("cpanel-form-action-not-ready");
+      // Attr.value bypasses the routing module's patched setAttribute/action
+      // setters. The action was fingerprinted as same-origin before filling.
+      action.value = originalAction;
+    }
+    form.addEventListener("submit", preserveCpanelAjaxAction, true);
+    try {
+      target.submit.click();
+    } finally {
+      form.removeEventListener("submit", preserveCpanelAjaxAction, true);
+    }
+    if (!submitObserved) throw new Error("cpanel-submit-event-not-observed");
+    return "cpanel-ajax-button-click";
   }
 
   function submitForm(target, ov, readinessProfile) {
