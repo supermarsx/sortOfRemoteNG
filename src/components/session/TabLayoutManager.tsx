@@ -964,7 +964,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         {/* Empty-state guidance for tabs mode + 0 sessions handled by App.tsx welcome panel. */}
         {/* When tabs mode but multiple sessions, the single visible session fills the container. */}
         {isTabsMode && sessions.length === 0 && (
-          <div className="h-full flex items-center justify-center text-[var(--color-textMuted)] text-sm">
+          <div className="h-full flex items-center justify-center text-[var(--color-textMuted)] text-sm select-none">
             {t("session.tabLayout.noSessionSelected", "No session selected")}
           </div>
         )}

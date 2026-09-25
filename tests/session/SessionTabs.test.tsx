@@ -282,6 +282,7 @@ describe("SessionTabs accessibility", () => {
     renderTabs({ activeSessionId: undefined });
 
     expect(screen.getByText("No session selected")).toBeInTheDocument();
+    expect(screen.getByText("No session selected")).toHaveClass("select-none");
     expect(screen.queryByText("No active sessions")).not.toBeInTheDocument();
   });
 

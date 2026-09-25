@@ -1279,7 +1279,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         role="tablist"
         aria-label="Session tabs"
       >
-        <span className="text-[var(--color-textMuted)] text-sm">
+        <span className="text-[var(--color-textMuted)] text-sm select-none">
           No session selected
         </span>
       </div>
