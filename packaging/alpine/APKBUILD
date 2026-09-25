@@ -2,7 +2,7 @@
 # Maintainer: Mariana <17675589+supermarsx@users.noreply.github.com>
 
 pkgname=sortofremoteng
-pkgver=26.47.0
+pkgver=26.48.0
 pkgrel=0
 pkgdesc="Cross-platform remote connection manager"
 url="https://github.com/supermarsx/sortOfRemoteNG"
@@ -46,7 +46,7 @@ makedepends="
 	webkit2gtk-4.1-dev
 	"
 
-_commit=61ae8dedee50ff43b7d2462dce5862a94efa88d6
+_commit=4e24405ce4c389f5c40221462834ecc9bed7756d
 _opkssh_commit=193d79871f3bad3cd27cfb94734c265773a99c9b
 _release="${pkgver%.0}"
 builddir="$srcdir/$pkgname"
