@@ -356,10 +356,19 @@ function createWebDarkModeController() {
       "!important;transition:none!important}"
     );
   }
+  function enclosingShadowHost(element) {
+    var root = element.getRootNode();
+    // HTMLDocument exposes named forms as properties. document.host can be a
+    // form whose root is that same document, so following .host blindly loops
+    // forever. Only a shadow root (a DocumentFragment) has an enclosing host.
+    return root && root.nodeType === 11 && root.host !== element
+      ? root.host
+      : null;
+  }
   function headerHost(host) {
-    while (host) {
+    for (var depth = 0; host && depth < 64; depth++) {
       if (host.closest(cpanelHeaders)) return true;
-      host = host.getRootNode().host;
+      host = enclosingShadowHost(host);
     }
     return false;
   }
@@ -866,14 +875,14 @@ function createWebDarkModeController() {
         if (record.attributeName === "class" || record.attributeName === "id")
           shadowStyles.forEach(function (entry) {
             var host = entry.root.host;
-            while (host) {
+            for (var depth = 0; host && depth < 64; depth++) {
               if (host === record.target || record.target.contains(host)) {
                 entry.fullRepair = true;
                 // Reuse the coalesced document task to update known roots,
                 // without discovering every element again for a class change.
                 break;
               }
-              host = host.getRootNode().host;
+              host = enclosingShadowHost(host);
             }
           });
       }

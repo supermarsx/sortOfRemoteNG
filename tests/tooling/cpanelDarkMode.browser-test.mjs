@@ -341,6 +341,36 @@ const dynamicOptions = {
 };
 
 test(
+  "shadow ancestor traversal stops at a document with a named host form",
+  dynamicOptions,
+  async (t) => {
+    await dynamicBrowser(t, async ({ assert, delay }) => {
+      const named = document.createElement("form");
+      named.name = "host";
+      document.body.append(named);
+      assert(
+        document.host === named,
+        "browser exposes named form as document.host",
+      );
+      const host = document.createElement("div");
+      document.body.append(host);
+      // Both initial theming and later class updates must terminate. A Document
+      // named property is not the ShadowRoot.host relationship.
+      const root = host.attachShadow({ mode: "open" });
+      root.innerHTML = "<header>Header</header>";
+      document.body.classList.add("dashboard-ready");
+      await delay(100);
+      assert(
+        root.querySelector(".sorng-cpanel-shadow-dark"),
+        "shadow palette installed",
+      );
+      window.__sorngWebDarkModeDocument_v1.dispose(false);
+      return { namedHostTraversalCompleted: true };
+    });
+  },
+);
+
+test(
   "cPanel bootstrap preserves arbitrary light surfaces before the host command, including frames",
   dynamicOptions,
   async (t) => {
