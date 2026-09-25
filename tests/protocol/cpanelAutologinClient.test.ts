@@ -120,6 +120,7 @@ describe("cPanel auto-login readiness", () => {
       "login_password_el",
       "login_submit_el",
       "login_button",
+      "LOGIN_SUBMIT_OK",
     ])
       Reflect.deleteProperty(window, name);
     Reflect.deleteProperty(document, "readyState");
@@ -160,16 +161,22 @@ describe("cPanel auto-login readiness", () => {
       login_password_el: stalePassword,
       login_submit_el: staleSubmit,
       login_button: { button: staleSubmit },
+      LOGIN_SUBMIT_OK: false,
     });
     let submittedTarget = "";
     let submittedBody: URLSearchParams | undefined;
+    const stockButtonClick = vi.fn();
+    field("login_submit").addEventListener("click", stockButtonClick);
     const stockAjaxSubmit = vi.fn((event: SubmitEvent) => {
       event.preventDefault();
       const cpanelWindow = window as typeof window & {
         login_form: HTMLFormElement;
         login_username_el: HTMLInputElement;
         login_password_el: HTMLInputElement;
+        LOGIN_SUBMIT_OK: boolean;
       };
+      if (!cpanelWindow.LOGIN_SUBMIT_OK) return;
+      cpanelWindow.LOGIN_SUBMIT_OK = false;
       submittedTarget = cpanelWindow.login_form.target;
       submittedBody = new URLSearchParams({
         user: cpanelWindow.login_username_el.value,
@@ -183,16 +190,18 @@ describe("cPanel auto-login readiness", () => {
 
     await expect(pending).resolves.toMatchObject({
       reason: "submitted",
-      via: "cpanel-ajax-submit",
+      via: "cpanel-ajax-button-click",
     });
     expect(submittedTarget).toBe("_self");
     expect(submittedBody?.get("user")).toBe("cp-user");
     expect(submittedBody?.get("pass")).toBe("cp-secret");
     expect(stockAjaxSubmit).toHaveBeenCalledOnce();
+    expect(stockButtonClick).toHaveBeenCalledOnce();
     expect((window as any).login_form).toBe(document.querySelector("form"));
     expect((window as any).login_username_el).toBe(field("user"));
     expect((window as any).login_password_el).toBe(field("pass"));
     expect((window as any).login_button.button).toBe(field("login_submit"));
+    expect((window as any).LOGIN_SUBMIT_OK).toBe(false);
     expect(submit).toHaveBeenCalledOnce();
   });
 

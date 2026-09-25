@@ -387,6 +387,10 @@
         login_username_el: target.user,
         login_password_el: target.pw,
         login_submit_el: target.submit,
+        // A real pointer press re-arms cPanel's duplicate-submit guard through
+        // document.body.onmousedown. Programmatic click does not synthesize
+        // that event, while this client has its own structural one-shot guard.
+        LOGIN_SUBMIT_OK: true,
       };
       Object.keys(bindings).forEach(function (name) {
         if (!Object.prototype.hasOwnProperty.call(view, name)) return;
@@ -398,6 +402,10 @@
         if (view.login_button && target.submit)
           view.login_button.button = target.submit;
       } catch (_) {}
+    }
+    if (target.submit && typeof target.submit.click === "function") {
+      target.submit.click();
+      return form.onsubmit ? "cpanel-ajax-button-click" : "cpanel-button-click";
     }
     form.requestSubmit(target.submit || undefined);
     return form.onsubmit ? "cpanel-ajax-submit" : "cpanel-native-submit";
