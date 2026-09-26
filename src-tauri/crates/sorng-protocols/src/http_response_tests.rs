@@ -181,6 +181,236 @@ fn client() -> reqwest::Client {
         .unwrap()
 }
 
+#[test]
+fn referrer_dev_origin_matches_the_configured_app_shell() {
+    let config: serde_json::Value =
+        serde_json::from_str(include_str!("../../../tauri.conf.json")).unwrap();
+    let dev_url = reqwest::Url::parse(config["build"]["devUrl"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        dev_url.origin().ascii_serialization(),
+        APP_DEV_REFERRER_ORIGIN
+    );
+}
+
+#[test]
+fn referrer_shell_is_omitted_for_generic_and_pfsense_requests() {
+    let proxy = "http://p0123456789abcdef0123456789abcdef.localhost:9000";
+    for mode in [UpstreamAuthMode::None, UpstreamAuthMode::PfSenseV1] {
+        for dest in [None, Some("document"), Some("iframe"), Some("empty")] {
+            for source in [
+                "http://tauri.localhost/",
+                "http://tauri.localhost/settings?private=1",
+                "https://tauri.localhost/",
+                "tauri://localhost/index.html",
+                "http://localhost:3001/",
+                "http://localhost:3001/connections?private=1",
+            ] {
+                let mut incoming = HeaderMap::new();
+                incoming.insert("referer", source.parse().unwrap());
+                incoming.insert("user-agent", "unchanged-browser-agent".parse().unwrap());
+                if let Some(dest) = dest {
+                    incoming.insert("sec-fetch-dest", dest.parse().unwrap());
+                }
+                let forwarded = collect_upstream_headers(&incoming, mode, proxy, "https://fw.test");
+                assert!(
+                    !forwarded.iter().any(|(name, _)| name == "referer"),
+                    "{source}"
+                );
+                assert!(forwarded.iter().any(
+                    |(name, value)| name == "user-agent" && value == "unchanged-browser-agent"
+                ));
+            }
+        }
+        assert!(
+            !collect_upstream_headers(&HeaderMap::new(), mode, proxy, "https://fw.test")
+                .iter()
+                .any(|(name, _)| name == "referer")
+        );
+    }
+}
+
+#[test]
+fn referrer_proxy_projection_preserves_source_path_and_raw_query() {
+    let proxy = "http://p0123456789abcdef0123456789abcdef.localhost:9000";
+    for target in [
+        "https://fw.test",
+        "https://fw.test:8443",
+        "http://[::1]:8080",
+    ] {
+        for (suffix, expected) in [
+            ("", "/"),
+            ("/", "/"),
+            ("/login.php?return=%2Fstatus+page&a=1&a=2", "/login.php?return=%2Fstatus+page&a=1&a=2"),
+            ("/login.php?", "/login.php?"),
+            ("/login.php#private", "/login.php"),
+            ("/login.php?__sorng_navigation_v1=local&return=%2F&a=1&__sorng_generation_v1=local&a=2", "/login.php?return=%2F&a=1&a=2"),
+            ("/login.php?__sorng_navigation_v1=local", "/login.php"),
+            // A path beginning // stays a path on the target, not a URL join.
+            ("//evil.test/path", "//evil.test/path"),
+        ] {
+            assert_eq!(upstream_referer(&format!("{proxy}{suffix}"), proxy, target),
+                Some(format!("{target}{expected}")));
+        }
+    }
+    assert_eq!(
+        upstream_referer(
+            &format!("{proxy}/__sortofremoteng_auth"),
+            proxy,
+            "https://fw.test"
+        ),
+        None
+    );
+}
+
+#[test]
+fn referrer_foreign_sources_and_lookalikes_are_never_promoted_to_trusted() {
+    let proxy = "http://p0123456789abcdef0123456789abcdef.localhost:9000";
+    for source in [
+        "https://fw.test/source.php?csrf=source",
+        "https://other.test/path?source=external",
+        "http://tauri.localhost.evil.test/",
+        "http://tauri.localhost:3001/",
+        "http://tauri.localhost@evil.test/",
+        "http://user@tauri.localhost/",
+        "tauri://localhost.evil.test/",
+        "tauri://localhost:3001/",
+        "http://localhost:3002/",
+        "https://localhost:3001/",
+        "http://127.0.0.1:3001/",
+        "http://[::1]:3001/",
+        "http://localhost:3001.evil.test/",
+        "http://p0123456789abcdef0123456789abcdef.localhost:9001/path",
+        "https://p0123456789abcdef0123456789abcdef.localhost:9000/path",
+        "http://p1123456789abcdef0123456789abcdef.localhost:9000/path",
+        "http://p0123456789abcdef0123456789abcdef.localhost.evil.test:9000/path",
+        "http://p0123456789abcdef0123456789abcdef.localhost:9000@evil.test/path",
+        "http://user@p0123456789abcdef0123456789abcdef.localhost:9000/path",
+        "null",
+        "/relative/path",
+        "http://[invalid",
+    ] {
+        assert_eq!(
+            upstream_referer(source, proxy, "https://fw.test"),
+            Some(source.into()),
+            "{source}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn referrer_transport_preserves_sources_across_document_redirects_and_csrf_posts() {
+    // Synthetic loopback upstream: record the wire headers on both sides of a
+    // same-origin redirect and enforce a path-sensitive CSRF check on POST.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = format!("http://{}", listener.local_addr().unwrap());
+    let seen = Arc::new(std::sync::Mutex::new(Vec::<HeaderMap>::new()));
+    let recorded = seen.clone();
+    let trusted_source = format!("{target}/login.php?return=%2Fstatus");
+    let expected_post_source = trusted_source.clone();
+    let router = axum::Router::new().fallback(move |req: axum::extract::Request| {
+        let recorded = recorded.clone();
+        let expected_post_source = expected_post_source.clone();
+        async move {
+            recorded.lock().unwrap().push(req.headers().clone());
+            if req.uri().path() == "/start" {
+                let mut response = Response::builder()
+                    .status(StatusCode::FOUND)
+                    .header("Location", "/done");
+                if req.uri().query() == Some("suppress=1") {
+                    response = response.header("Referrer-Policy", "no-referrer");
+                }
+                response.body(Body::empty()).unwrap()
+            } else if req.method() == axum::http::Method::POST
+                && req.headers().get("referer").and_then(|v| v.to_str().ok())
+                    != Some(expected_post_source.as_str())
+            {
+                Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .body(Body::empty())
+                    .unwrap()
+            } else {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .body(Body::empty())
+                    .unwrap()
+            }
+        }
+    });
+    let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    for mode in [UpstreamAuthMode::None, UpstreamAuthMode::PfSenseV1] {
+        let fixture = proxy_with_mode(target.clone(), client(), mode).await;
+        let proxy_source = format!("{}/login.php?return=%2Fstatus", fixture.state.proxy_origin);
+        for (source, expected) in [
+            (None, None),
+            (Some("http://tauri.localhost/"), None),
+            (Some("https://tauri.localhost/"), None),
+            (Some("tauri://localhost/"), None),
+            (Some("http://localhost:3001/"), None),
+            (Some(proxy_source.as_str()), Some(trusted_source.as_str())),
+            (
+                Some("https://foreign.test/source?x=1"),
+                Some("https://foreign.test/source?x=1"),
+            ),
+        ] {
+            for suppress in [false, true] {
+                seen.lock().unwrap().clear();
+                let mut request = client()
+                    .get(format!(
+                        "{}/start{}",
+                        fixture.base,
+                        if suppress { "?suppress=1" } else { "" }
+                    ))
+                    .header("Host", &fixture.state.proxy_authority)
+                    .header("Sec-Fetch-Dest", "iframe");
+                if let Some(source) = source {
+                    request = request.header("Referer", source);
+                }
+                assert_eq!(request.send().await.unwrap().status(), StatusCode::OK);
+                let headers = seen.lock().unwrap();
+                assert_eq!(headers.len(), 2);
+                assert_eq!(
+                    headers[0].get("referer").and_then(|v| v.to_str().ok()),
+                    expected
+                );
+                assert_eq!(
+                    headers[1].get("referer").and_then(|v| v.to_str().ok()),
+                    if suppress { None } else { expected }
+                );
+            }
+        }
+        for (source, status) in [
+            (proxy_source.as_str(), StatusCode::OK),
+            (trusted_source.as_str(), StatusCode::OK),
+            ("https://foreign.test/login.php", StatusCode::FORBIDDEN),
+        ] {
+            let response = client()
+                .post(format!("{}/login.php", fixture.base))
+                .header("Host", &fixture.state.proxy_authority)
+                .header("Origin", &fixture.state.proxy_origin)
+                .header("Referer", source)
+                .header("Sec-Fetch-Dest", "document")
+                .body("synthetic-form=1")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            let headers = seen.lock().unwrap();
+            assert_eq!(headers.last().unwrap()["origin"], target);
+        }
+        // Shell referrer handling does not authorize a shell/foreign Origin.
+        let response = client()
+            .post(format!("{}/login.php", fixture.base))
+            .header("Host", &fixture.state.proxy_authority)
+            .header("Origin", "http://tauri.localhost")
+            .header("Referer", "http://tauri.localhost/")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+    task.abort();
+}
+
 fn gzip(bytes: &[u8]) -> Vec<u8> {
     let mut writer = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     writer.write_all(bytes).unwrap();

@@ -943,7 +943,7 @@ mod upstream_auth_mode_tests {
             .into_iter()
             .collect();
             assert_eq!(forwarded["origin"], target_origin);
-            assert_eq!(forwarded["referer"], format!("{target_origin}/"));
+            assert_eq!(forwarded["referer"], format!("{target_origin}/login"));
         }
         for invalid in [
             format!("{proxy_origin}/"),
@@ -1618,6 +1618,62 @@ fn proxy_request_headers_are_authorized(
         .unwrap_or(true)
 }
 
+// Keep this exact origin aligned with build.devUrl in tauri.conf.json. Other
+// localhost ports/aliases can be real remote sources and must not be trusted.
+const APP_DEV_REFERRER_ORIGIN: &str = "http://localhost:3001";
+
+/// Remove shell provenance; only this session's proxy represents the upstream.
+/// Foreign (including malformed) referrers remain unchanged for upstream CSRF
+/// checks. In particular, neither a localhost suffix nor URL userinfo grants a
+/// source the target's origin.
+fn upstream_referer(value: &str, proxy_origin: &str, target_origin: &str) -> Option<String> {
+    let Ok(source) = reqwest::Url::parse(value) else {
+        return Some(value.into());
+    };
+    if !source.username().is_empty() || source.password().is_some() {
+        return Some(value.into());
+    }
+    let origin = source.origin().ascii_serialization();
+    if matches!(source.scheme(), "http" | "https") && origin == proxy_origin {
+        // These are local control/resource routes, not upstream documents.
+        if source.path().starts_with("/__sortofremoteng_") {
+            return None;
+        }
+        let mut projected = format!("{target_origin}{}", source.path());
+        if let Some(query) = source.query() {
+            // Preserve raw encoding, ordering and duplicate application keys.
+            // Only the proxy's navigation capabilities must stay local.
+            let kept: Vec<_> = query
+                .split('&')
+                .filter(|pair| {
+                    !matches!(
+                        pair.split('=').next(),
+                        Some("__sorng_navigation_v1" | "__sorng_generation_v1")
+                    )
+                })
+                .collect();
+            if !kept.is_empty() {
+                projected.push('?');
+                projected.push_str(&kept.join("&"));
+            }
+        }
+        // Fragments never belong in an HTTP Referer.
+        return Some(projected);
+    }
+    if matches!(origin.as_str(), "http://tauri.localhost" | "https://tauri.localhost")
+        || origin == APP_DEV_REFERRER_ORIGIN
+        // Custom schemes have opaque URL origins; compare their authority.
+        || (source.scheme() == "tauri"
+            && source.host_str() == Some("localhost")
+            && source.port().is_none())
+    {
+        // Initial shell navigation has no upstream source document. Omitting
+        // it avoids leaking the app URL or inventing a trusted remote source.
+        return None;
+    }
+    Some(value.into())
+}
+
 /// Retain a web application's own bearer/session Authorization only when the
 /// proxy is explicitly not supplying credentials. Proxy credentials and the
 /// private loopback authority must never be forwarded as request headers.
@@ -1662,10 +1718,10 @@ fn collect_upstream_headers(
             // RFC 6454 Origin is a serialized origin, not a URL with a path.
             if name == "origin" && value == proxy_origin {
                 forwarded.push((name.to_string(), target_origin.to_string()));
-            } else if name == "referer"
-                && (value == proxy_origin || value.starts_with(&format!("{proxy_origin}/")))
-            {
-                forwarded.push((name.to_string(), format!("{target_origin}/")));
+            } else if name == "referer" {
+                if let Some(value) = upstream_referer(value, proxy_origin, target_origin) {
+                    forwarded.push((name.to_string(), value));
+                }
             } else {
                 forwarded.push((name.to_string(), value.to_string()));
             }
