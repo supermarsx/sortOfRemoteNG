@@ -1,4 +1,5 @@
 use crate::network::NetworkService;
+use tokio::time::{timeout, Duration};
 
 /// Test network service creation
 #[tokio::test]
@@ -13,11 +14,15 @@ async fn test_new_network_service() {
 async fn test_ping_localhost() {
     let service = NetworkService::new();
 
-    let result = service
-        .lock()
-        .await
-        .ping_host("127.0.0.1".to_string())
-        .await;
+    let result = timeout(Duration::from_secs(5), async {
+        service
+            .lock()
+            .await
+            .ping_host("127.0.0.1".to_string())
+            .await
+    })
+    .await
+    .expect("localhost ping exceeded the five-second deadline");
     // Ping might succeed or fail depending on system, but should not panic
     assert!(result.is_ok());
 }
@@ -27,11 +32,15 @@ async fn test_ping_localhost() {
 async fn test_ping_invalid_host() {
     let service = NetworkService::new();
 
-    let result = service
-        .lock()
-        .await
-        .ping_host("invalid.host.name.that.does.not.exist".to_string())
-        .await;
+    let result = timeout(Duration::from_secs(5), async {
+        service
+            .lock()
+            .await
+            .ping_host("invalid.host.name.that.does.not.exist".to_string())
+            .await
+    })
+    .await
+    .expect("invalid hostname ping exceeded the five-second deadline");
     // Should handle invalid hosts gracefully
     assert!(result.is_ok() || result.is_err());
 }
@@ -90,11 +99,15 @@ async fn test_ping_host_detailed_via_service() {
     let service = NetworkService::new();
 
     // Test pinging localhost using NetworkService directly
-    let result = service
-        .lock()
-        .await
-        .ping_host("127.0.0.1".to_string())
-        .await;
+    let result = timeout(Duration::from_secs(5), async {
+        service
+            .lock()
+            .await
+            .ping_host("127.0.0.1".to_string())
+            .await
+    })
+    .await
+    .expect("detailed localhost ping exceeded the five-second deadline");
 
     // Should complete without panicking
     match result {
@@ -123,11 +136,15 @@ async fn test_ping_host_detailed_via_service() {
 async fn test_ping_invalid_via_service() {
     let service = NetworkService::new();
 
-    let result = service
-        .lock()
-        .await
-        .ping_host("192.0.2.1".to_string())
-        .await;
+    let result = timeout(Duration::from_secs(5), async {
+        service
+            .lock()
+            .await
+            .ping_host("192.0.2.1".to_string())
+            .await
+    })
+    .await
+    .expect("TEST-NET-1 ping exceeded the five-second deadline");
 
     // Either an error or a clean `success=false` is acceptable; the
     // contract is "doesn't panic and doesn't return success=true".

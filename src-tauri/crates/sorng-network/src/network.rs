@@ -48,6 +48,70 @@ const MAX_VNC_PROBE_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_DISCOVERY_PING_CONCURRENCY: usize = 16;
 const MAX_DISCOVERY_PING_CONCURRENCY: usize = 32;
 const DISCOVERY_PING_TIMEOUT: Duration = Duration::from_millis(1_500);
+// One second for a response and at most one more for process cleanup.
+const HOST_PING_TIMEOUT: Duration = Duration::from_secs(1);
+const HOST_PING_REAP_TIMEOUT: Duration = Duration::from_secs(1);
+
+fn host_ping_command(host: &str) -> Command {
+    // BSD/macOS ship a separate executable for IPv6 literals. Keep hostnames
+    // intact so the system utility can still resolve them.
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))]
+    let program = if host.parse::<std::net::Ipv6Addr>().is_ok() {
+        "ping6"
+    } else {
+        "ping"
+    };
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    )))]
+    let program = "ping";
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        command.args(["-n", "1", "-w", "1000"]);
+        // CREATE_NO_WINDOW: background reachability checks must stay invisible.
+        command.creation_flags(0x0800_0000);
+    }
+    #[cfg(not(windows))]
+    {
+        // -n is numeric output on Unix, not the Windows packet count. Unix
+        // timeout flags differ in units, so use the async deadline below.
+        command.args(["-n", "-c", "1"]);
+    }
+    command
+        .arg(host)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    command
+}
+
+async fn wait_for_host_ping(
+    child: &mut tokio::process::Child,
+    deadline: Duration,
+) -> Result<bool, String> {
+    let result = match timeout(deadline, child.wait()).await {
+        Ok(Ok(status)) => return Ok(status.success()),
+        Ok(Err(error)) => Err(format!("Failed to wait for ping: {error}")),
+        Err(_) => Ok(false),
+    };
+    // Kill AND reap on a deadline, including a stalled DNS lookup. Bound the
+    // cleanup as well; kill_on_drop also protects caller cancellation.
+    match timeout(HOST_PING_REAP_TIMEOUT, child.kill()).await {
+        Ok(Ok(())) => result,
+        Ok(Err(error)) => Err(format!("Failed to terminate ping: {error}")),
+        Err(_) => Err("Timed out terminating ping".to_string()),
+    }
+}
 
 fn is_rfb_banner(banner: &[u8; 12]) -> bool {
     banner.starts_with(b"RFB ")
@@ -160,22 +224,10 @@ impl NetworkService {
     }
 
     pub async fn ping_host(&self, host: String) -> Result<bool, String> {
-        // Use system ping command
-        let mut cmd = Command::new("ping");
-        cmd.arg("-n")
-            .arg("1") // Windows: -n 1 (1 packet)
-            .arg("-w")
-            .arg("1000") // Windows: -w 1000 (1 second timeout)
-            .arg(&host)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-
-        let output = cmd
-            .status()
-            .await
+        let mut child = host_ping_command(&host)
+            .spawn()
             .map_err(|e| format!("Failed to execute ping: {}", e))?;
-
-        Ok(output.success())
+        wait_for_host_ping(&mut child, HOST_PING_TIMEOUT).await
     }
 
     pub async fn ping_host_with_timing(&self, host: String) -> Result<(bool, Option<u64>), String> {
@@ -1006,6 +1058,104 @@ pub async fn reverse_dns_lookup(ip: &str) -> Option<String> {
             }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod ping_host_tests {
+    use super::*;
+
+    #[test]
+    fn uses_platform_packet_count_and_preserves_hostnames() {
+        assert_eq!(
+            HOST_PING_TIMEOUT + HOST_PING_REAP_TIMEOUT,
+            Duration::from_secs(2)
+        );
+        for host in ["127.0.0.1", "::1", "server.example.test"] {
+            let command = host_ping_command(host);
+            let args: Vec<_> = command.as_std().get_args().collect();
+            #[cfg(windows)]
+            assert_eq!(args, ["-n", "1", "-w", "1000", host]);
+            #[cfg(not(windows))]
+            assert_eq!(args, ["-n", "-c", "1", host]);
+
+            #[cfg(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd"
+            ))]
+            let expected_program = if host == "::1" { "ping6" } else { "ping" };
+            #[cfg(not(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd"
+            )))]
+            let expected_program = "ping";
+            assert_eq!(command.as_std().get_program(), expected_program);
+        }
+    }
+
+    // Reuse the test executable as a deterministic subprocess, without a
+    // shell, ICMP permissions, network access, or global environment mutation.
+    const CHILD_MODE: &str = "SORNG_HOST_PING_TEST_CHILD";
+
+    #[test]
+    fn ping_child_process_fixture() {
+        match std::env::var(CHILD_MODE).as_deref() {
+            Ok("sleep") => std::thread::sleep(Duration::from_secs(60)),
+            Ok("failure") => std::process::exit(1),
+            _ => {}
+        }
+    }
+
+    fn test_child(mode: &str) -> tokio::process::Child {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "network::ping_host_tests::ping_child_process_fixture",
+            ])
+            .env(CHILD_MODE, mode)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000);
+        command.spawn().unwrap()
+    }
+
+    #[tokio::test]
+    async fn times_out_kills_and_reaps_a_stalled_ping() {
+        let mut child = test_child("sleep");
+        let result = timeout(
+            Duration::from_secs(5),
+            wait_for_host_ping(&mut child, Duration::from_millis(100)),
+        )
+        .await
+        .expect("ping timeout and cleanup must be bounded")
+        .unwrap();
+        assert!(!result);
+        assert!(child.id().is_none(), "timed-out child must be reaped");
+        assert!(!child.try_wait().unwrap().unwrap().success());
+    }
+
+    #[tokio::test]
+    async fn preserves_success_and_unreachable_exit_statuses() {
+        for (mode, expected) in [("success", true), ("failure", false)] {
+            let mut child = test_child(mode);
+            let result = timeout(
+                Duration::from_secs(5),
+                wait_for_host_ping(&mut child, HOST_PING_TIMEOUT),
+            )
+            .await
+            .expect("ping completion must be bounded")
+            .unwrap();
+            assert_eq!(result, expected);
+            assert!(child.id().is_none());
+        }
     }
 }
 
