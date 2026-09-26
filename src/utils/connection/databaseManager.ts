@@ -40,6 +40,16 @@ import { normalizeDatabaseAutomationLibrary } from "../recording/automationLibra
 import { normalizeDatabaseDocuments } from "../documents/validation";
 import { normalizeDatabaseSettings } from "../documents/documentTypePolicy";
 import { verifyDocumentAttachments } from "../documents/documentAttachments";
+import {
+  buildFullDatabaseArchive,
+  encryptFullDatabaseArchive,
+  fullDatabaseArchiveData,
+  isFullDatabaseArchive,
+  normalizeFullDatabaseArchive,
+  FullDatabaseArchiveError,
+  FullDatabaseRestoreIncompleteError,
+  type FullDatabaseArchive,
+} from "./fullDatabaseArchive";
 import { containsLikelySecretText } from "../storage/appDataJsonStore";
 import type {
   DatabaseAccessState,
@@ -366,7 +376,22 @@ export interface DatabaseDataTarget {
   save: (data: StorageData) => Promise<void>;
 }
 
+/** Operation-scoped source lease; contains no data or passwords. */
+export interface DatabaseOperationGuard {
+  readonly databaseIds: readonly string[];
+  /** Check after every await and immediately before writing the selected file. */
+  assertCurrent(): void;
+  /** Verify exportability and pin/check persisted security revisions before source reads and disclosure, without loading payloads or advancing CAS baselines. */
+  verifyCurrent(): Promise<void>;
+}
+
 export interface DatabaseExportSnapshot {
+  /** Present only on the explicit fullDatabase path; encrypt before disclosure. */
+  format?: "sorng-full-database";
+  version?: 1;
+  timestamp?: number;
+  documents?: StorageData["documents"];
+  credentialVault?: StorageData["credentialVault"];
   collection: {
     id: string;
     name: string;
@@ -459,7 +484,11 @@ export class DatabaseManager {
   private currentDatabase: ConnectionDatabase | null = null;
   private currentPassword: string | null = null;
   private selectionGeneration = 0;
+  private operationSelectionRevision = 0;
   private readonly unlockedDatabasePasswords = new Map<string, string>();
+  // Only successful selections count as previously opened. Merely listing,
+  // creating, or inspecting an on-disk database must not grant this scope.
+  private readonly openedDatabaseIds = new Set<string>();
   // Bound to the credential that actually decrypted this generation, never to
   // metadata refreshed by a different window or an ordinary metadata edit.
   private readonly credentialSecurityRevisions = new Map<string, string>();
@@ -939,6 +968,7 @@ export class DatabaseManager {
     this.selectionGeneration += 1;
     this.securityEpoch += 1;
     this.unlockedDatabasePasswords.clear();
+    this.openedDatabaseIds.clear();
     this.credentialSecurityRevisions.clear();
     this.latestLoadedRepresentations.clear();
     this.currentPassword = null;
@@ -1408,8 +1438,10 @@ export class DatabaseManager {
     this.assertDatabaseEpoch(id, epoch);
     assertSelectionCurrent();
     // Publish selection only after every asynchronous validation succeeds.
+    this.operationSelectionRevision += 1;
     this.currentDatabase = collection;
     this.currentPassword = resolvedPassword || null;
+    this.openedDatabaseIds.add(id);
 
     // Log collection selection/opening
     SettingsManager.getInstance().logAction(
@@ -1738,6 +1770,143 @@ export class DatabaseManager {
     });
   }
 
+  /** Previously opened sources whose content baseline and access still live here. */
+  async getMemoryResidentDatabases(): Promise<ExportableDatabaseInfo[]> {
+    const databases = await this.getExportableDatabases();
+    return databases.filter((database) => {
+      try {
+        this.assertMemoryResidentDatabase(database.id);
+        this.assertSecurityRevision(
+          database.id,
+          this.credentialSecurityRevisions.get(database.id) ?? "",
+          database,
+        );
+        return database.isExportable && database.isUnlocked;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  private assertMemoryResidentDatabase(id: string): void {
+    const access = this.getDatabaseAccessState(id);
+    if (
+      this.disposed ||
+      !this.openedDatabaseIds.has(id) ||
+      !this.latestLoadedRepresentations.has(id) ||
+      !this.credentialSecurityRevisions.has(id) ||
+      (access && access.status !== "ready")
+    ) {
+      throw new Error(
+        "Database is no longer available in memory. Open and unlock it explicitly before importing or exporting.",
+      );
+    }
+  }
+
+  captureDatabaseOperationGuard(
+    databaseIds: readonly string[],
+  ): DatabaseOperationGuard {
+    const ids = Object.freeze([...new Set(databaseIds)]);
+    const securityEpoch = this.securityEpoch;
+    const currentId = this.currentDatabase?.id;
+    const currentEpoch = currentId
+      ? this.captureDatabaseEpoch(currentId)
+      : undefined;
+    const selectionGeneration = this.selectionGeneration;
+    const selectionRevision = this.operationSelectionRevision;
+    const requireResidency = currentId === undefined;
+    const captured = ids.map((id) => {
+      if (requireResidency) this.assertMemoryResidentDatabase(id);
+      return {
+        id,
+        epoch: this.captureDatabaseEpoch(id),
+        revision: this.credentialSecurityRevisions.get(id),
+        isEncrypted: undefined as boolean | undefined,
+      };
+    });
+    const assertCurrent = () => {
+      if (
+        this.disposed ||
+        this.securityEpoch !== securityEpoch ||
+        this.selectionGeneration !== selectionGeneration ||
+        this.operationSelectionRevision !== selectionRevision ||
+        this.currentDatabase?.id !== currentId
+      )
+        throw new Error(
+          "Database operation expired. Review the sources and retry.",
+        );
+      if (currentId && currentEpoch)
+        this.assertDatabaseEpoch(currentId, currentEpoch);
+      for (const source of captured) {
+        this.assertDatabaseEpoch(source.id, source.epoch);
+        if (requireResidency) this.assertMemoryResidentDatabase(source.id);
+        const access = this.getDatabaseAccessState(source.id);
+        if (
+          (access && access.status !== "ready") ||
+          (source.isEncrypted && !this.isDatabaseUnlocked(source.id))
+        )
+          throw new Error(
+            "Database source is locked. Unlock it before exporting.",
+          );
+        const cachedRevision = this.credentialSecurityRevisions.get(source.id);
+        // A source read can establish the first verified revision for an
+        // unopened plaintext source. Metadata-only checks never install a
+        // credential or a writer's payload/CAS baseline.
+        source.revision ??= cachedRevision;
+        if (cachedRevision !== undefined && cachedRevision !== source.revision)
+          throw new Error(
+            "Database access changed. Review the sources and retry.",
+          );
+      }
+    };
+    return Object.freeze({
+      databaseIds: ids,
+      assertCurrent,
+      verifyCurrent: async () => {
+        assertCurrent();
+        for (const source of captured) {
+          const latest = await this.getDatabase(source.id);
+          assertCurrent();
+          if (
+            !latest ||
+            (latest.isEncrypted && !this.isDatabaseUnlocked(source.id))
+          )
+            throw new Error(
+              "Database source is unavailable or locked. Review the sources and retry.",
+            );
+          source.isEncrypted = latest.isEncrypted;
+          source.revision ??= latest.securityRevision ?? "";
+          this.assertSecurityRevision(source.id, source.revision, latest);
+        }
+        assertCurrent();
+      },
+    });
+  }
+
+  async readMemoryResidentDatabaseSnapshot(
+    ...args: Parameters<DatabaseManager["readExportableDatabaseSnapshot"]>
+  ): Promise<DatabaseExportSnapshot> {
+    const id = args[0];
+    const epoch = this.captureDatabaseEpoch(id);
+    this.assertMemoryResidentDatabase(id);
+    // Do not accept a new credential to turn an evicted source into an open one.
+    if (args[2]?.collectionPassword !== undefined)
+      throw new Error(
+        "Memory-only export uses existing unlocked access, not a new password.",
+      );
+    const snapshot = await this.readExportableDatabaseSnapshot(...args);
+    this.assertDatabaseEpoch(id, epoch);
+    this.assertMemoryResidentDatabase(id);
+    return snapshot;
+  }
+
+  async appendConnectionsToMemoryResidentDatabase(
+    ...args: Parameters<DatabaseManager["appendConnectionsToDatabase"]>
+  ): Promise<void> {
+    this.assertMemoryResidentDatabase(args[0]);
+    await this.appendConnectionsToDatabase(...args);
+  }
+
   private rememberUnlockedDatabase(
     collection: ConnectionDatabase | null,
     password?: string,
@@ -1766,6 +1935,7 @@ export class DatabaseManager {
   }
 
   private forgetUnlockedDatabase(databaseId: string): void {
+    this.openedDatabaseIds.delete(databaseId);
     this.latestLoadedRepresentations.delete(databaseId);
     clearTimeout(this.managedTimers.get(databaseId));
     this.managedTimers.delete(databaseId);
@@ -2592,7 +2762,16 @@ export class DatabaseManager {
     exportPassword?: string,
     collectionPassword?: string,
     exportEncryptionOptions?: PasswordEncryptionOptions,
+    options?: { fullDatabase?: boolean },
   ): Promise<string> {
+    if (options?.fullDatabase) {
+      if (!includePasswords || !exportPassword)
+        throw new FullDatabaseArchiveError("password");
+      return this.exportFullDatabaseArchive(collectionId, exportPassword, {
+        collectionPassword,
+        encryptionOptions: exportEncryptionOptions,
+      });
+    }
     const exportData = await this.readExportableDatabaseSnapshot(
       collectionId,
       includePasswords,
@@ -2613,11 +2792,50 @@ export class DatabaseManager {
     return jsonData;
   }
 
+  /** In-memory only. The full archive owns all references and private sections. */
+  async readFullDatabaseArchive(
+    collectionId: string,
+    options?: { collectionPassword?: string },
+  ): Promise<FullDatabaseArchive> {
+    return this.readExportableDatabaseSnapshot(collectionId, true, {
+      ...options,
+      fullDatabase: true,
+    }) as Promise<FullDatabaseArchive>;
+  }
+
+  async exportFullDatabaseArchive(
+    collectionId: string,
+    exportPassword: string,
+    options?: {
+      collectionPassword?: string;
+      encryptionOptions?: PasswordEncryptionOptions;
+    },
+  ): Promise<string> {
+    if (
+      typeof exportPassword !== "string" ||
+      exportPassword.length < 12 ||
+      exportPassword.length > 1024
+    )
+      throw new FullDatabaseArchiveError("password");
+    const epoch = this.captureDatabaseEpoch(collectionId);
+    const archive = await this.readFullDatabaseArchive(collectionId, options);
+    this.assertDatabaseEpoch(collectionId, epoch);
+    const encrypted = await encryptFullDatabaseArchive(
+      archive,
+      exportPassword,
+      options?.encryptionOptions,
+    );
+    this.assertDatabaseEpoch(collectionId, epoch);
+    return encrypted;
+  }
+
   async readExportableDatabaseSnapshot(
     collectionId: string,
     includePasswords: boolean = false,
     options?: {
       collectionPassword?: string;
+      /** Explicit private whole-database archive; passwords and trust must be included. */
+      fullDatabase?: boolean;
       /**
        * Carry the database's Trust Center records in the snapshot (t62 / D6).
        * Defaults to `true`; the Export / Clone tabs expose it as the
@@ -2626,8 +2844,14 @@ export class DatabaseManager {
       includeTrust?: boolean;
     },
   ): Promise<DatabaseExportSnapshot> {
+    if (
+      options?.fullDatabase &&
+      (!includePasswords || options.includeTrust === false)
+    )
+      throw new FullDatabaseArchiveError("protection");
     const epoch = this.captureDatabaseEpoch(collectionId);
     const collection = await this.getDatabase(collectionId);
+    this.assertDatabaseEpoch(collectionId, epoch);
     if (!collection) {
       throw new Error("Collection not found");
     }
@@ -2642,6 +2866,32 @@ export class DatabaseManager {
     }
 
     this.assertDatabaseEpoch(collectionId, epoch);
+    if (options?.fullDatabase) {
+      // Unlike legacy exports, a full backup must never silently omit trust or
+      // log a backend error that could contain private archive values.
+      const invoke = await getInvoke();
+      this.assertDatabaseEpoch(collectionId, epoch);
+      if (!invoke) throw new FullDatabaseArchiveError("trust");
+      let trustRecords: TrustExportDocument;
+      try {
+        trustRecords = await invoke<TrustExportDocument>(
+          "trust_export_database",
+          { databaseId: collectionId },
+        );
+      } catch {
+        throw new FullDatabaseArchiveError("trust");
+      }
+      this.assertDatabaseEpoch(collectionId, epoch);
+      const archive = await buildFullDatabaseArchive(
+        collection,
+        data,
+        trustRecords,
+      );
+      this.assertDatabaseEpoch(collectionId, epoch);
+      await this.assertSnapshotCurrent(collectionId, data);
+      this.assertDatabaseEpoch(collectionId, epoch);
+      return archive;
+    }
     const trustRecords = await this.readTrustRecords(
       collectionId,
       options?.includeTrust !== false,
@@ -2667,14 +2917,17 @@ export class DatabaseManager {
       includeTrust?: boolean;
     },
   ): Promise<void> {
+    const epoch = this.captureDatabaseEpoch(collectionId);
     assertPortableCredentialSources(connections);
     const collection = await this.getDatabase(collectionId);
+    this.assertDatabaseEpoch(collectionId, epoch);
     if (!collection) {
       throw new DatabaseNotFoundError();
     }
 
     const password = this.resolveExportPasswordForDatabase(collection);
     const data = await this.loadDatabaseData(collectionId, password);
+    this.assertDatabaseEpoch(collectionId, epoch);
     if (!data) {
       throw new DatabaseNotFoundError();
     }
@@ -2699,6 +2952,7 @@ export class DatabaseManager {
     // Appending connections into an existing database also merges whatever
     // trust the source carried. Merge never downgrades: an unrevoked import
     // cannot overwrite a revoked record (enforced Rust-side).
+    this.assertDatabaseEpoch(collectionId, epoch);
     await this.applyTrustRecords(
       collectionId,
       options?.trustRecords,
@@ -2926,6 +3180,7 @@ export class DatabaseManager {
     },
   ): Promise<ConnectionDatabase> {
     let parsed: any;
+    let authenticatedCurrentEnvelope = false;
     try {
       if (isWebCryptoPayload(content)) {
         if (!options?.importPassword) {
@@ -2936,6 +3191,13 @@ export class DatabaseManager {
         parsed = JSON.parse(
           await decryptExportWithPassword(content, options.importPassword),
         );
+        // isWebCryptoPayload also recognizes legacy dotted data. Full archives
+        // require the current authenticated, versioned password envelope.
+        if (content.trimStart().startsWith("{")) {
+          const envelope = JSON.parse(content);
+          authenticatedCurrentEnvelope =
+            envelope.version === 2 && envelope.algorithm === "AES-256-GCM";
+        }
       } else {
         parsed = JSON.parse(content);
       }
@@ -2974,6 +3236,53 @@ export class DatabaseManager {
       parsed = JSON.parse(decrypted);
     }
 
+    if (isFullDatabaseArchive(parsed)) {
+      if (
+        !authenticatedCurrentEnvelope ||
+        !options?.protectionTarget ||
+        options.encryptPassword ||
+        options.includeTrust === false
+      )
+        throw new FullDatabaseArchiveError("protection");
+      const archive = await normalizeFullDatabaseArchive(parsed);
+      const invoke = await getInvoke();
+      if (!invoke) throw new FullDatabaseArchiveError("protection");
+      const created = await this.createManagedDatabase(
+        options.collectionName || archive.collection.name,
+        options.protectionTarget,
+        {
+          description: archive.collection.description,
+          data: fullDatabaseArchiveData(archive),
+          sourceDatabaseId: archive.collection.id,
+          confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
+        },
+      );
+      const epoch = this.captureDatabaseEpoch(created.id);
+      try {
+        // New database: replace also restores the archive's global trust policy.
+        // Native validation/persistence owns identities; do not use best-effort merge.
+        const outcome = await invoke<TrustImportOutcome>(
+          "trust_import_database",
+          {
+            databaseId: created.id,
+            document: archive.trustRecords,
+            mode: "replace",
+          },
+        );
+        this.assertDatabaseEpoch(created.id, epoch);
+        if (
+          !outcome ||
+          outcome.skipped !== 0 ||
+          outcome.imported !== archive.trustRecords.records.length
+        )
+          throw new FullDatabaseArchiveError("trust");
+      } catch {
+        // The managed data transaction may already have committed. Do not
+        // claim success, delete it, or publish backend error/secret contents.
+        throw new FullDatabaseRestoreIncompleteError(created.id);
+      }
+      return created;
+    }
     assertNoVaultImport(parsed);
     const collectionName = options?.collectionName || parsed?.collection?.name;
     if (!collectionName) {
