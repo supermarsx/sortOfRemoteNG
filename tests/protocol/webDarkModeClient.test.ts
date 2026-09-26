@@ -50,101 +50,6 @@ afterEach(() => {
 });
 
 describe("injected dark-mode extension runtime", () => {
-  it.each([true, false])(
-    "keeps DSM login and desktop surfaces enforced after readiness (CSS only=%s)",
-    async (cssOnly) => {
-      document.body.innerHTML =
-        '<div id="sds-login-vue-inst"><div class="login-wrapper"><div class="login-body-section" style="background:white!important;color:black!important">Login</div></div></div>';
-      reader();
-      await controller.set({ enabled: true, cssOnly, theme: theme() });
-      const login = document.querySelector<HTMLElement>(".login-body-section")!;
-      expect(login.style.backgroundColor).toBe("rgb(24, 26, 27)");
-      expect(login.style.color).toBe("rgb(232, 230, 227)");
-      const bootstrap = document.getElementById("__sorng_dark_bootstrap_v1")!;
-      expect(bootstrap.textContent).toContain(
-        "html:root:has(:is(#sds-login-vue,#sds-login-vue-inst,",
-      );
-      expect(bootstrap.textContent).toContain(".x-grid3-scroller");
-      document.body.innerHTML =
-        '<div id="sds-desktop"></div><div class="x-window-body" style="background:white!important;color:black!important">Window</div><div class="x-toolbar" style="background:white!important">Toolbar</div>';
-      await vi.waitFor(() => {
-        expect(
-          document.querySelector<HTMLElement>(".x-window-body")!.style
-            .backgroundColor,
-        ).toBe("rgb(24, 26, 27)");
-        expect(
-          document.querySelector<HTMLElement>(".x-toolbar")!.style
-            .backgroundColor,
-        ).toBe("rgb(49, 50, 51)");
-      });
-      expect(bootstrap.isConnected).toBe(true);
-      await controller.set({ enabled: false });
-      expect(
-        document.querySelector<HTMLElement>(".x-window-body")!.style
-          .backgroundColor,
-      ).toBe("white");
-      expect(
-        document.querySelector<HTMLElement>(".x-toolbar")!.style
-          .backgroundColor,
-      ).toBe("white");
-    },
-  );
-  it("detects a late DSM marker and repairs existing surfaces without touching media", async () => {
-    document.body.innerHTML =
-      '<div class="login-wrapper" style="background:white!important">Login</div><img alt="Icon" style="background:white!important"><canvas style="background:white!important"></canvas>';
-    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
-    const wrapper = document.querySelector<HTMLElement>(".login-wrapper")!;
-    expect(wrapper.style.backgroundColor).toBe("white");
-    const marker = document.createElement("div");
-    marker.id = "sds-login-vue-inst";
-    document.body.append(marker);
-    await vi.waitFor(() =>
-      expect(wrapper.style.backgroundColor).toBe("rgb(24, 26, 27)"),
-    );
-    expect(document.querySelector("img")!.style.backgroundColor).toBe("white");
-    expect(document.querySelector("canvas")!.style.backgroundColor).toBe(
-      "white",
-    );
-  });
-  it("repairs DSM inline colors and restores latest site values across selection changes", async () => {
-    document.body.innerHTML =
-      '<div id="sds-desktop"></div><div class="x-grid3-row"><div class="x-grid3-cell" style="background-color:white!important">Cell</div></div>';
-    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
-    const row = document.querySelector<HTMLElement>(".x-grid3-row")!;
-    const cell = document.querySelector<HTMLElement>(".x-grid3-cell")!;
-    cell.style.setProperty("background-color", "#fafafa", "important");
-    // Actual next-paint ordering is exercised by the real-browser fixture;
-    // jsdom has no renderer. Here check restoration and selection state.
-    await vi.waitFor(() =>
-      expect(cell.style.backgroundColor).toBe("rgb(24, 26, 27)"),
-    );
-    row.classList.add("x-grid3-row-selected");
-    await vi.waitFor(() =>
-      expect(cell.style.backgroundColor).toBe("rgb(70, 71, 71)"),
-    );
-    row.classList.remove("x-grid3-row-selected");
-    await vi.waitFor(() =>
-      expect(cell.style.backgroundColor).toBe("rgb(24, 26, 27)"),
-    );
-    await controller.set({ enabled: false });
-    expect(cell.style.backgroundColor).toBe("rgb(250, 250, 250)");
-  });
-  it("keeps native DSM selector coverage in parity with the extension", async () => {
-    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
-    const native = readFileSync(
-      "src-tauri/crates/sorng-protocols/src/http_dark_mode.rs",
-      "utf8",
-    );
-    for (const field of ["marker", "surfaces", "headers", "selected"]) {
-      const selectors = native.match(
-        new RegExp(`let ${field}\\s*=\\s*"([^"]+)";`),
-      )?.[1];
-      expect(selectors).toBeTruthy();
-      expect(
-        document.getElementById("__sorng_dark_bootstrap_v1")!.textContent,
-      ).toContain(selectors);
-    }
-  });
   it("prepares inline-important structural surfaces before reporting paint readiness", async () => {
     document.body.innerHTML =
       '<section class="surface" style="background-color:white!important;background-image:linear-gradient(white,white)!important;color:black!important">Content</section>';
@@ -739,7 +644,7 @@ describe("injected dark-mode extension runtime", () => {
       enabled: true,
       theme: theme({ customCss: "p{color:rgb(220,220,220)!important}" }),
     });
-    expect(node()?.sheet?.cssRules.length).toBe(7);
+    expect(node()?.sheet?.cssRules.length).toBe(4);
     expect(node()?.textContent).toContain("#cpanel_body");
     await controller.set({
       enabled: true,

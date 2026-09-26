@@ -58,24 +58,6 @@ fn cpanel_coverage(background: &str, text: &str) -> String {
     )
 }
 
-fn synology_coverage(background: &str, text: &str) -> String {
-    // Kept in parity with synologyCss in the injected extension: these rules
-    // must already exist when DSM replaces its login root or loads a package.
-    let marker =
-        "#sds-login-vue,#sds-login-vue-inst,#sds-desktop,#sds-taskbar,.sds-desktop,.sds-taskbar";
-    let surfaces = "#sds-login-vue,#sds-login-vue-inst,#sds-desktop,.sds-desktop,.login-wrapper,.login-body-section,.login-tab-panel,.tab-content-ct,.login-tabs-content-wrapper,.x-panel-body,.x-panel-bwrap,.x-window-body,.x-window-mc,.x-tab-panel-body,.x-layout-split,.x-grid3,.x-grid3-viewport,.x-grid3-scroller,.x-grid3-row,.x-grid3-cell,.x-tree-panel,.x-tree-root-ct,.x-menu,.x-menu-list,.x-combo-list,.x-combo-list-inner,.x-form-text,.x-form-textarea";
-    let headers = "#sds-taskbar,.sds-taskbar,.x-panel-header,.x-window-header,.x-window-tc,.x-toolbar,.x-grid3-header,.x-tab-panel-header,.x-panel-footer,.x-window-footer";
-    let selected = ".x-grid3-row-selected,.x-grid3-row-selected .x-grid3-cell,.x-grid3-row-over,.x-grid3-row-over .x-grid3-cell,.x-tree-selected,.x-menu-item-active,.x-combo-selected";
-    let header = blend(background, text, 12);
-    let border = blend(background, text, 22);
-    let rule = |selectors: &str, color: &str| {
-        format!(
-        "html:root:has(:is({marker})) :is({selectors}){{background-color:{color}!important;background-image:none!important;color:{text}!important;border-color:{border}!important;transition:none!important}}"
-    )
-    };
-    rule(surfaces, background) + &rule(headers, &header) + &rule(selected, &border)
-}
-
 impl WebsiteDarkModeBootstrap {
     pub fn validate(&self) -> Result<(), String> {
         if !valid_color(&self.background_color) || !valid_color(&self.text_color) {
@@ -94,14 +76,13 @@ impl WebsiteDarkModeBootstrap {
         // engine (or CSS fallback) is ready. With scripts blocked it stays a
         // static CSS fallback. DarkReader must not convert its own preload.
         Some(format!(
-            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;transition:none!important}}{}{}{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;background-image:none!important;transition:none!important}}}}</style>",
+            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;transition:none!important}}{}{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;background-image:none!important;transition:none!important}}}}</style>",
             self.background_color,
             self.text_color,
             self.background_color,
             self.text_color,
             force_surface_coverage(&self.background_color, &self.text_color),
             cpanel_coverage(&self.background_color, &self.text_color),
-            synology_coverage(&self.background_color, &self.text_color),
             self.text_color,
         ))
     }
