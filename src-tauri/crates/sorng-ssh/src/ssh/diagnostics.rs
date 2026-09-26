@@ -7,6 +7,11 @@ use std::time::Duration;
 
 use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 
+#[path = "diagnostics_helpers.rs"]
+mod helpers;
+pub use helpers::observed_host_key_bits;
+use helpers::*;
+
 /// Run a deep SSH diagnostic probe.
 ///
 /// The probe password is taken as a [`secrecy::SecretString`] (not a bare
@@ -24,9 +29,23 @@ pub fn run_ssh_diagnostics(
     timeout_secs: u64,
 ) -> DiagnosticReport {
     let run_start = std::time::Instant::now();
-    let mut steps: Vec<DiagnosticStep> = Vec::new();
+    let mut steps = vec![scope_step(timeout_secs)];
     let mut resolved_ip: Option<String> = None;
-    let timeout = Duration::from_secs(timeout_secs);
+    let timeout = effective_timeout(timeout_secs);
+    let mut sess = match Session::new() {
+        Ok(session) => session,
+        Err(error) => {
+            steps.push(DiagnosticStep {
+                name: "Client Algorithms".into(),
+                status: "fail".into(),
+                duration_ms: 0,
+                message: "Could not initialize libssh2".into(),
+                detail: Some(error_identity(&error)),
+            });
+            return diagnostics::finish_report(host, port, "ssh", resolved_ip, steps, run_start);
+        }
+    };
+    steps.push(capabilities_step(&sess));
 
     // Step 1: DNS Resolution
     let (socket_addr, ip_str, _all_ips) = diagnostics::probe_dns(host, port, &mut steps);
@@ -40,6 +59,12 @@ pub fn run_ssh_diagnostics(
         }
     };
 
+    steps.push(DiagnosticStep {
+        name: "Selected Endpoint".into(), status: "info".into(), duration_ms: 0,
+        message: format!("Direct TCP target: {socket_addr}"),
+        detail: Some("First DNS result selected; no alternate-address retries. Both TCP probes target this address.".into()),
+    });
+
     // Step 2: TCP Connect
     let tcp_stream = match diagnostics::probe_tcp(socket_addr, timeout, true, &mut steps) {
         Some(s) => s,
@@ -50,84 +75,34 @@ pub fn run_ssh_diagnostics(
 
     // Step 3: SSH Banner / Protocol Version
     let t = std::time::Instant::now();
-    let _ = tcp_stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let mut banner_buf = [0u8; 512];
-    let banner = match Read::read(&mut &tcp_stream, &mut banner_buf) {
-        Ok(0) => {
+    let banner_timeout = timeout.min(Duration::from_secs(5));
+    match read_identification(
+        |buffer, remaining| {
+            tcp_stream.set_read_timeout(Some(remaining))?;
+            Read::read(&mut &tcp_stream, buffer)
+        },
+        banner_timeout,
+    ) {
+        Ok((banner, preamble_lines)) => {
+            steps.push(DiagnosticStep {
+                name: "SSH Banner".into(),
+                status: "pass".into(),
+                message: format!("Server version: {banner}"),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: Some(format!("Banner-only connection; skipped {preamble_lines} preamble lines (contents omitted). Identification is not proof of server identity.")),
+            });
+        }
+        Err(e) => {
             steps.push(DiagnosticStep {
                 name: "SSH Banner".into(),
                 status: "warn".into(),
-                message: "Server closed connection without sending banner".into(),
+                message: format!("Banner observation incomplete: {}", safe_text(&e.to_string(), 256)),
                 duration_ms: t.elapsed().as_millis() as u64,
-                detail: Some("The service on this port may not be SSH".into()),
+                detail: Some(format!("I/O category={:?}; OS code={:?}. Limit: 4096 bytes, 32 preamble lines, 255 bytes per line, {}ms deadline. Continuing with an independent handshake: some servers wait for client identification.", e.kind(), e.raw_os_error(), banner_timeout.as_millis())),
             });
-            None
         }
-        Ok(n) => {
-            let raw = String::from_utf8_lossy(&banner_buf[..n]).trim().to_string();
-            let is_ssh = raw.starts_with("SSH-");
-            steps.push(DiagnosticStep {
-                name: "SSH Banner".into(),
-                status: if is_ssh { "pass" } else { "warn" }.into(),
-                message: if is_ssh {
-                    format!("Server version: {}", raw.lines().next().unwrap_or(&raw))
-                } else {
-                    format!("Unexpected banner (not SSH): {}", raw.chars().take(80).collect::<String>())
-                },
-                duration_ms: t.elapsed().as_millis() as u64,
-                detail: if !is_ssh {
-                    Some("Expected a banner starting with 'SSH-'. This port may not be running an SSH server.".into())
-                } else {
-                    let parts: Vec<&str> = raw.split('-').collect();
-                    if parts.len() >= 3 {
-                        Some(format!(
-                            "Protocol: {}, Software: {}",
-                            parts.get(1).unwrap_or(&"?"),
-                            parts[2..].join("-")
-                        ))
-                    } else {
-                        None
-                    }
-                },
-            });
-            if is_ssh {
-                Some(raw)
-            } else {
-                None
-            }
-        }
-        Err(e) => {
-            let status = if e.kind() == std::io::ErrorKind::WouldBlock
-                || e.kind() == std::io::ErrorKind::TimedOut
-            {
-                "warn"
-            } else {
-                "fail"
-            };
-            steps.push(DiagnosticStep {
-                name: "SSH Banner".into(),
-                status: status.into(),
-                message: format!("Failed to read SSH banner: {e}"),
-                duration_ms: t.elapsed().as_millis() as u64,
-                detail: Some("The server did not send a version string within the timeout".into()),
-            });
-            None
-        }
-    };
-
-    if banner.is_none() {
-        steps.push(DiagnosticStep {
-            name: "Root Cause Analysis".into(),
-            status: "warn".into(),
-            message: "Could not identify an SSH service on this port".into(),
-            duration_ms: 0,
-            detail: Some(format!(
-                "The service on {host}:{port} did not respond with an SSH banner. \
-                 Verify the SSH server is running and the port number is correct."
-            )),
-        });
-        return diagnostics::finish_report(host, port, "ssh", resolved_ip, steps, run_start);
     }
+    drop(tcp_stream);
 
     // Step 4: Key Exchange (Handshake)
     let t = std::time::Instant::now();
@@ -142,57 +117,36 @@ pub fn run_ssh_diagnostics(
                 status: "fail".into(),
                 message: format!("Could not reconnect for handshake: {e}"),
                 duration_ms: t.elapsed().as_millis() as u64,
-                detail: None,
+                detail: Some(format!("Selected endpoint: {socket_addr}; timeout: {}ms; I/O category={:?}; OS code={:?}", timeout.as_millis(), e.kind(), e.raw_os_error())),
             });
             return diagnostics::finish_report(host, port, "ssh", resolved_ip, steps, run_start);
         }
     };
 
-    let mut sess = match Session::new() {
-        Ok(s) => s,
-        Err(e) => {
-            steps.push(DiagnosticStep {
-                name: "Key Exchange".into(),
-                status: "fail".into(),
-                message: format!("Failed to create SSH session object: {e}"),
-                duration_ms: t.elapsed().as_millis() as u64,
-                detail: None,
-            });
-            return diagnostics::finish_report(host, port, "ssh", resolved_ip, steps, run_start);
-        }
-    };
+    if let Err(e) = fresh_tcp
+        .set_read_timeout(Some(timeout))
+        .and_then(|()| fresh_tcp.set_write_timeout(Some(timeout)))
+    {
+        steps.push(DiagnosticStep {
+            name: "Key Exchange".into(),
+            status: "fail".into(),
+            message: format!("Could not configure bounded handshake I/O: {e}"),
+            duration_ms: t.elapsed().as_millis() as u64,
+            detail: None,
+        });
+        return diagnostics::finish_report(host, port, "ssh", resolved_ip, steps, run_start);
+    }
     sess.set_tcp_stream(fresh_tcp);
-    sess.set_timeout(timeout_secs as u32 * 1000);
+    sess.set_timeout(timeout.as_millis() as u32);
 
-    match sess.handshake() {
-        Ok(()) => {
-            steps.push(DiagnosticStep {
-                name: "Key Exchange".into(),
-                status: "pass".into(),
-                message: "SSH handshake completed successfully".into(),
-                duration_ms: t.elapsed().as_millis() as u64,
-                detail: Some(
-                    "Encryption established. Session is ready for authentication.".to_string(),
-                ),
-            });
-        }
-        Err(e) => {
-            steps.push(DiagnosticStep {
-                name: "Key Exchange".into(),
-                status: "fail".into(),
-                message: format!("SSH handshake failed: {e}"),
-                duration_ms: t.elapsed().as_millis() as u64,
-                detail: Some(
-                    "Key exchange, encryption algorithm negotiation, or protocol version mismatch. \
-                     Check that the server supports modern key exchange algorithms."
-                    .into(),
-                ),
-            });
-            return diagnostics::finish_report(host, port, "ssh", resolved_ip, steps, run_start);
-        }
+    let handshake = sess.handshake();
+    steps.push(handshake_step(&handshake, t.elapsed()));
+    steps.push(negotiated_step(&sess, handshake.is_ok()));
+    if handshake.is_err() {
+        return diagnostics::finish_report(host, port, "ssh", resolved_ip, steps, run_start);
     }
 
-    // Step 5: Host Key Verification
+    // Step 5: Host Key Observation (no trust verification)
     let t = std::time::Instant::now();
     match sess.host_key() {
         Some((raw_key, key_type)) => {
@@ -215,21 +169,15 @@ pub fn run_ssh_diagnostics(
                 _ => "unknown",
             };
 
-            let key_bits = match key_type {
-                ssh2::HostKeyType::Rsa => Some((raw_key.len() as u32).saturating_mul(8)),
-                ssh2::HostKeyType::Ed25519 => Some(256),
-                ssh2::HostKeyType::Ecdsa256 => Some(256),
-                ssh2::HostKeyType::Ecdsa384 => Some(384),
-                ssh2::HostKeyType::Ecdsa521 => Some(521),
-                _ => None,
-            };
+            let key_bits = observed_host_key_bits(raw_key, key_type);
 
             let weak_key = matches!(key_type, ssh2::HostKeyType::Dss)
-                || (matches!(key_type, ssh2::HostKeyType::Rsa) && key_bits.unwrap_or(0) < 2048);
+                || (matches!(key_type, ssh2::HostKeyType::Rsa)
+                    && key_bits.is_some_and(|bits| bits < 2048));
 
             steps.push(DiagnosticStep {
                 name: "Host Key".into(),
-                status: if weak_key { "warn" } else { "pass" }.into(),
+                status: "warn".into(),
                 message: format!(
                     "Type: {} ({} bits). Fingerprint: SHA256:{}",
                     key_type_str,
@@ -237,14 +185,7 @@ pub fn run_ssh_diagnostics(
                     fingerprint_hex
                 ),
                 duration_ms: t.elapsed().as_millis() as u64,
-                detail: if weak_key {
-                    Some(format!(
-                        "WARNING: {} is considered weak. Upgrade to Ed25519 or ECDSA on the server.",
-                        key_type_str
-                    ))
-                } else {
-                    None
-                },
+                detail: Some(format!("Host key observed only; no Trust Center/known_hosts verification was performed. Verify this fingerprint through a trusted channel. Key parameter bits are not security-strength bits.{}", if weak_key { " This key is considered weak; replace it with a modern server key supported by the client." } else { "" })),
             });
         }
         None => {
@@ -260,13 +201,25 @@ pub fn run_ssh_diagnostics(
 
     // Step 6: Authentication Methods
     let t = std::time::Instant::now();
-    let auth_methods_str = sess.auth_methods(username).unwrap_or("");
+    let auth_methods_result = sess
+        .auth_methods(username)
+        .map(|methods| safe_text(methods, 512));
+    if let Err(error) = &auth_methods_result {
+        steps.push(DiagnosticStep {
+            name: "Auth Methods".into(),
+            status: "warn".into(),
+            duration_ms: t.elapsed().as_millis() as u64,
+            message: "Could not discover server authentication methods".into(),
+            detail: Some(error_identity(error)),
+        });
+    }
+    let auth_methods_str = auth_methods_result.as_deref().unwrap_or("");
     let auth_methods: Vec<&str> = auth_methods_str
         .split(',')
         .filter(|s| !s.is_empty())
         .collect();
 
-    if auth_methods.is_empty() {
+    if auth_methods.is_empty() && auth_methods_result.is_ok() {
         steps.push(DiagnosticStep {
             name: "Auth Methods".into(),
             status: "info".into(),
@@ -274,7 +227,7 @@ pub fn run_ssh_diagnostics(
             duration_ms: t.elapsed().as_millis() as u64,
             detail: None,
         });
-    } else {
+    } else if !auth_methods.is_empty() {
         let has_password = auth_methods.contains(&"password");
         let has_publickey = auth_methods.contains(&"publickey");
         let has_keyboard = auth_methods
@@ -315,13 +268,24 @@ pub fn run_ssh_diagnostics(
     // Step 7: Authentication Test
     let t = std::time::Instant::now();
 
-    let mut auth_ok = false;
-    let mut auth_detail = String::new();
+    let mut auth_ok = sess.authenticated();
+    let mut auth_detail = if auth_ok {
+        "Server accepted 'none' authentication".into()
+    } else {
+        String::new()
+    };
 
-    if let Some(key_path) = private_key_path {
+    if let Some(key_path) = private_key_path.filter(|_| !auth_ok) {
         // Check if this is an SK (security-key) type
-        let is_sk = std::fs::read_to_string(key_path)
-            .map(|c| super::fido2::is_sk_private_key(&c))
+        let is_sk = std::fs::File::open(key_path)
+            .ok()
+            .and_then(|file| {
+                let mut contents = String::new();
+                let read = file.take(65537).read_to_string(&mut contents);
+                let contents = SecretString::from(contents);
+                (read.is_ok() && contents.expose_secret().len() <= 65536)
+                    .then(|| super::fido2::is_sk_private_key(contents.expose_secret()))
+            })
             .unwrap_or(false);
 
         if is_sk {
@@ -334,8 +298,7 @@ pub fn run_ssh_diagnostics(
             Ok(()) => {
                 auth_ok = true;
                 let sk_note = if is_sk { " (security key)" } else { "" };
-                auth_detail =
-                    format!("Public key{sk_note} authentication succeeded (key: {key_path})");
+                auth_detail = format!("Public key{sk_note} authentication succeeded");
             }
             Err(e) => {
                 let sk_hint = if is_sk {
@@ -343,7 +306,7 @@ pub fn run_ssh_diagnostics(
                 } else {
                     ""
                 };
-                auth_detail = format!("Public key auth failed: {e}.{sk_hint}");
+                auth_detail = format!("Public key auth failed: {}.{sk_hint}", error_identity(&e));
             }
         }
     }
@@ -357,9 +320,12 @@ pub fn run_ssh_diagnostics(
                 }
                 Err(e) => {
                     if auth_detail.is_empty() {
-                        auth_detail = format!("Password auth failed: {e}");
+                        auth_detail = format!("Password auth failed: {}", error_identity(&e));
                     } else {
-                        auth_detail.push_str(&format!(". Password auth also failed: {e}"));
+                        auth_detail.push_str(&format!(
+                            ". Password auth also failed: {}",
+                            error_identity(&e)
+                        ));
                     }
                 }
             }
@@ -373,7 +339,10 @@ pub fn run_ssh_diagnostics(
                 auth_detail = "SSH agent authentication succeeded".into();
             }
             Err(e) => {
-                auth_detail = format!("Agent auth failed: {e}. No password or key provided.");
+                auth_detail = format!(
+                    "Agent auth failed: {}. No password or key provided.",
+                    error_identity(&e)
+                );
             }
         }
     }
@@ -382,9 +351,9 @@ pub fn run_ssh_diagnostics(
         name: "Authentication".into(),
         status: if auth_ok { "pass" } else { "fail" }.into(),
         message: if auth_ok {
-            format!("Authenticated as '{username}'")
+            "Authentication succeeded for the supplied account".into()
         } else {
-            format!("Authentication failed for '{username}'")
+            "Authentication failed for the supplied account".into()
         },
         duration_ms: t.elapsed().as_millis() as u64,
         detail: Some(auth_detail),
@@ -394,11 +363,29 @@ pub fn run_ssh_diagnostics(
         let t = std::time::Instant::now();
         let env_info = match sess.channel_session() {
             Ok(mut channel) => {
-                let _ = channel.exec("uname -a 2>/dev/null || ver 2>nul || echo unknown");
-                let mut output = String::new();
-                let _ = Read::read_to_string(&mut channel, &mut output);
-                let _ = channel.wait_close();
-                output.trim().to_string()
+                if channel
+                    .exec("uname -a 2>/dev/null || ver 2>nul || echo unknown")
+                    .is_err()
+                {
+                    String::new()
+                } else {
+                    // Bound both bytes and wall time even if a peer trickles output forever.
+                    let start = std::time::Instant::now();
+                    let mut output = Vec::new();
+                    while output.len() < 4096 {
+                        let Some(remaining) = timeout.checked_sub(start.elapsed()) else {
+                            break;
+                        };
+                        sess.set_timeout(remaining.as_millis().clamp(1, 300_000) as u32);
+                        let mut buffer = [0; 512];
+                        match channel.read(&mut buffer) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => output.extend_from_slice(&buffer[..n]),
+                        }
+                    }
+                    sess.set_timeout(timeout.as_millis() as u32);
+                    safe_text(String::from_utf8_lossy(&output).trim(), 120)
+                }
             }
             Err(_) => String::new(),
         };
@@ -409,14 +396,88 @@ pub fn run_ssh_diagnostics(
                 status: "info".into(),
                 message: env_info.chars().take(120).collect::<String>().to_string(),
                 duration_ms: t.elapsed().as_millis() as u64,
-                detail: if env_info.len() > 120 {
-                    Some(env_info)
-                } else {
-                    None
-                },
+                detail: Some("Best-effort environment sample only; read capped at 4096 bytes and displayed at 120 characters. Output may be incomplete.".into()),
             });
         }
     }
 
     diagnostics::finish_report(host, port, "ssh", resolved_ip, steps, run_start)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::net::TcpListener;
+
+    #[test]
+    fn ssh_diagnostics_loopback_report_retains_capabilities_endpoint_and_failure() {
+        // Only our ephemeral loopback listener is contacted; no credentials or agent access.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            for attempt in 0..2 {
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                start.elapsed() < Duration::from_secs(10),
+                                "fixture accept deadline"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("fixture accept: {error}"),
+                    }
+                };
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                if attempt == 0 {
+                    stream
+                        .write_all(b"private preamble omitted\r\nSSH-2.0-banner_fixture\r\n")
+                        .unwrap();
+                } else {
+                    stream.write_all(b"SSH-2.0-handshake_fixture\r\n").unwrap();
+                    let mut buffer = [0; 1024];
+                    let _ = stream.read(&mut buffer);
+                    // Close during KEX. No protocol or authentication success is simulated.
+                }
+            }
+        });
+        let report =
+            run_ssh_diagnostics("127.0.0.1", endpoint.port(), "unused", None, None, None, 1);
+        server.join().unwrap();
+        let step = |name: &str| report.steps.iter().find(|step| step.name == name).unwrap();
+        assert_eq!(step("Client Algorithms").status, "info");
+        assert!(step("Selected Endpoint")
+            .message
+            .contains(&endpoint.to_string()));
+        assert_eq!(step("SSH Banner").status, "pass");
+        assert!(step("SSH Banner").message.contains("banner_fixture"));
+        assert_eq!(step("Key Exchange").status, "fail");
+        assert!(step("Key Exchange")
+            .detail
+            .as_ref()
+            .unwrap()
+            .contains("category="));
+        assert!(step("Negotiated Algorithms")
+            .detail
+            .as_ref()
+            .unwrap()
+            .contains("Partial selections only"));
+        assert!(!report
+            .steps
+            .iter()
+            .any(|step| step.name == "Authentication"));
+        assert!(!serde_json::to_string(&report)
+            .unwrap()
+            .contains("private preamble omitted"));
+        assert!(!report.summary.contains("All diagnostic probes passed"));
+    }
 }

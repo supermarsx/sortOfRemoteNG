@@ -51,13 +51,19 @@ describe("SSH connection overview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Deep Diagnostics" }));
     await screen.findByText("Probe obtained a host key");
-    expect(screen.getAllByText("Host Key")).toHaveLength(2);
+    expect(screen.getByText("Host Key")).toBeInTheDocument();
+    expect(
+      screen.getByText("Original connection attempt — Host Key"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Not timed")).toBeInTheDocument();
     expect(container.querySelectorAll("details > summary")).toHaveLength(3);
     expect(errors).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Deep Diagnostics" }));
     await waitFor(() =>
-      expect(screen.getAllByText("Host Key")).toHaveLength(2),
+      expect(
+        screen.getByText("Original connection attempt — Host Key"),
+      ).toBeInTheDocument(),
     );
     expect(errors).not.toHaveBeenCalled();
   });

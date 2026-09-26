@@ -421,7 +421,9 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
                       {STEP_ICON[step.status]}
                       <span className="flex-1">{step.name}</span>
                       <span className="text-[10px] text-[var(--color-textMuted)]">
-                        {step.durationMs}ms
+                        {step.name.startsWith("Original connection attempt — ")
+                          ? "Not timed"
+                          : `${step.durationMs}ms`}
                       </span>
                     </summary>
                     <div className="space-y-2 px-4 pb-3 pl-10 text-xs text-[var(--color-textSecondary)]">

@@ -1,6 +1,6 @@
 use super::diagnostics::*;
 
-/// Retrieve the host key information for an active SSH session.
+/// Observe host key parameters for an active session. This command does not verify trust.
 #[tauri::command]
 pub async fn get_ssh_host_key_info(
     state: tauri::State<'_, SshServiceState>,
@@ -33,14 +33,7 @@ pub async fn get_ssh_host_key_info(
         _ => "unknown",
     };
 
-    let key_bits: Option<u32> = match host_key_type {
-        ssh2::HostKeyType::Rsa => Some((raw_key.len() as u32).saturating_mul(8)),
-        ssh2::HostKeyType::Ed25519 => Some(256),
-        ssh2::HostKeyType::Ecdsa256 => Some(256),
-        ssh2::HostKeyType::Ecdsa384 => Some(384),
-        ssh2::HostKeyType::Ecdsa521 => Some(521),
-        _ => None,
-    };
+    let key_bits = observed_host_key_bits(raw_key, host_key_type);
 
     let public_key = Some(base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
@@ -62,7 +55,7 @@ pub async fn get_ssh_host_key_info(
 ///   2. TCP Connect
 ///   3. SSH Banner / Protocol Version
 ///   4. Key Exchange (handshake)
-///   5. Host Key Verification
+///   5. Host Key Observation (no trust verification)
 ///   6. Authentication Methods Discovery
 ///   7. Authentication Test
 #[tauri::command]
@@ -82,14 +75,18 @@ pub async fn diagnose_ssh_connection(
     // accepts a plain `Option<String>` so the IPC contract is unchanged.
     let h = host.clone();
     let password: Option<secrecy::SecretString> = password.map(secrecy::SecretString::from);
+    let private_key_passphrase = private_key_passphrase.map(secrecy::SecretString::from);
     tokio::task::spawn_blocking(move || {
+        use secrecy::ExposeSecret;
         run_ssh_diagnostics(
             &h,
             port,
             &username,
             password.as_ref(),
             private_key_path.as_deref(),
-            private_key_passphrase.as_deref(),
+            private_key_passphrase
+                .as_ref()
+                .map(|value| value.expose_secret()),
             connect_timeout_secs.unwrap_or(10),
         )
     })

@@ -697,7 +697,7 @@ describe("useWebTerminal input lifecycle", () => {
       expect.objectContaining({
         kind: "key_exchange",
         summary:
-          "SSH key exchange failed - client and server could not agree on encryption algorithms",
+          "SSH handshake/key exchange failed - the cause is undetermined; run diagnostics and check server SSH logs",
         technicalDetails:
           "SSH handshake failed: [Session(-5)] Unable to exchange encryption keys",
         recoverable: false,

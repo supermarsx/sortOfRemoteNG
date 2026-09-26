@@ -139,17 +139,19 @@ export function classifySshFailure(message: string): SshFailureClassification {
     };
   const lower = message.toLowerCase();
   if (
-    lower.includes("unable to exchange encryption keys") ||
-    lower.includes("ssh handshake failed") ||
-    lower.includes("session(-5)") ||
-    lower.includes("key exchange failed") ||
     lower.includes("no matching key exchange") ||
-    lower.includes("no matching cipher")
+    lower.includes("no matching kex") ||
+    lower.includes("no matching cipher") ||
+    lower.includes("no matching mac") ||
+    lower.includes("no matching host key") ||
+    lower.includes("no matching hostkey") ||
+    lower.includes("no matching compression") ||
+    lower.includes("no match for method")
   ) {
     return {
       kind: "key_exchange",
       friendly:
-        "SSH key exchange failed - client and server could not agree on encryption algorithms",
+        "SSH negotiation reported no matching algorithm - compare the named algorithm family with client and server settings",
       recoverable: false,
     };
   }
@@ -176,6 +178,7 @@ export function classifySshFailure(message: string): SshFailureClassification {
   if (
     lower.includes("timeout") ||
     lower.includes("timed out") ||
+    /session\(\s*-(9|30)\s*\)/.test(lower) ||
     lower.includes("os error 10060") ||
     lower.includes("connection attempt failed")
   ) {
@@ -254,12 +257,28 @@ export function classifySshFailure(message: string): SshFailureClassification {
     lower.includes("connection reset") ||
     lower.includes("broken pipe") ||
     lower.includes("unexpected eof") ||
-    lower.includes("end of file")
+    lower.includes("end of file") ||
+    /session\(\s*-(7|13|43)\s*\)/.test(lower)
   ) {
     return {
       kind: "transport",
       friendly: "SSH transport was interrupted",
       recoverable: true,
+    };
+  }
+  if (
+    lower.includes("unable to exchange encryption keys") ||
+    lower.includes("ssh handshake failed") ||
+    /session\(\s*-(5|8)\s*\)/.test(lower) ||
+    lower.includes("key exchange failed") ||
+    lower.includes("key exchange failure") ||
+    lower.includes("kex failure")
+  ) {
+    return {
+      kind: "key_exchange",
+      friendly:
+        "SSH handshake/key exchange failed - the cause is undetermined; run diagnostics and check server SSH logs",
+      recoverable: false,
     };
   }
   return {
@@ -329,16 +348,17 @@ export function reconcileSshDiagnosticReport(
     const alreadyRepresented = steps.some(
       (step) =>
         step.status === "fail" &&
+        step.name === `Original connection attempt — ${stage}` &&
         (step.message.includes(failure.technicalDetails) ||
           step.detail?.includes(failure.technicalDetails)),
     );
     if (!alreadyRepresented) {
       steps.push({
-        name: stage,
+        name: `Original connection attempt — ${stage}`,
         status: "fail",
         message: failure.summary,
         durationMs: 0,
-        detail: failure.technicalDetails,
+        detail: `Duration unavailable: the diagnostic probe did not time the original connection attempt; 0ms is a placeholder.\n${failure.technicalDetails}`,
       });
     }
   }
@@ -346,6 +366,25 @@ export function reconcileSshDiagnosticReport(
     ...report,
     steps,
     summary: deriveSshDiagnosticSummary(steps),
-    rootCauseHint: failure?.technicalDetails ?? report.rootCauseHint ?? null,
+    rootCauseHint: failure
+      ? [
+          report.rootCauseHint,
+          ...report.steps
+            .filter(
+              (step) =>
+                step.status === "fail" &&
+                step.detail &&
+                !step.name.startsWith("Original connection attempt — "),
+            )
+            .map((step) => `${step.name}: ${step.detail}`),
+          `Original connection attempt: ${failure.technicalDetails}`,
+        ]
+          .filter(
+            (value, index, values) =>
+              value &&
+              !values.slice(0, index).some((prior) => prior?.includes(value)),
+          )
+          .join("\n\n")
+      : (report.rootCauseHint ?? null),
   };
 }

@@ -56,13 +56,54 @@ describe("SSH failure staging", () => {
     expect(JSON.stringify(recovery)).not.toContain("private/path");
     expect(JSON.stringify(recovery)).not.toContain("not-for-ui");
   });
-  it("classifies Session(-5) at key exchange and retains its exact cause", () => {
+  it("classifies Session(-5) at key exchange without claiming a mismatch", () => {
     expect(classifySshFailure(sessionMinusFive)).toEqual({
       kind: "key_exchange",
       friendly:
-        "SSH key exchange failed - client and server could not agree on encryption algorithms",
+        "SSH handshake/key exchange failed - the cause is undetermined; run diagnostics and check server SSH logs",
       recoverable: false,
     });
+  });
+
+  it.each([
+    "SSH handshake failed: [Session(-8)] Unable to exchange encryption keys",
+    "SSH handshake failed",
+    "key exchange failed",
+    "Session( -5 )",
+  ])("does not infer a mismatch from %s", (message) => {
+    expect(classifySshFailure(message).kind).toBe("key_exchange");
+    expect(classifySshFailure(message).friendly).toContain(
+      "cause is undetermined",
+    );
+  });
+
+  it.each([
+    "key exchange method",
+    "cipher",
+    "MAC",
+    "host key type",
+    "hostkey",
+    "compression",
+  ])("recognizes an explicit no matching %s report", (family) => {
+    expect(
+      classifySshFailure(`SSH handshake failed: no matching ${family} found`)
+        .friendly,
+    ).toContain("reported no matching algorithm");
+  });
+
+  it.each([
+    [
+      "SSH handshake failed: [Session(-9)] Unable to exchange encryption keys",
+      "timeout",
+    ],
+    ["SSH handshake failed: [Session(-30)] socket timeout", "timeout"],
+    [
+      "SSH handshake failed: [Session(-13)] Unable to exchange encryption keys",
+      "transport",
+    ],
+    ["SSH handshake failed: connection reset", "transport"],
+  ])("keeps the specific cause in %s", (message, kind) => {
+    expect(classifySshFailure(message).kind).toBe(kind);
   });
 
   it("never reports all-passed when the live attempt failed key exchange", () => {
@@ -98,15 +139,17 @@ describe("SSH failure staging", () => {
       technicalDetails: sessionMinusFive,
     });
     expect(report.steps[report.steps.length - 1]).toEqual({
-      name: "Key Exchange",
+      name: "Original connection attempt — Key Exchange",
       status: "fail",
       message: "SSH key exchange failed",
       durationMs: 0,
-      detail: sessionMinusFive,
+      detail: `Duration unavailable: the diagnostic probe did not time the original connection attempt; 0ms is a placeholder.\n${sessionMinusFive}`,
     });
-    expect(report.summary).toContain("failed at Key Exchange");
+    expect(report.summary).toContain(
+      "failed at Original connection attempt — Key Exchange",
+    );
     expect(report.summary).not.toContain("All diagnostic probes passed");
-    expect(report.rootCauseHint).toBe(sessionMinusFive);
+    expect(report.rootCauseHint).toContain(sessionMinusFive);
   });
 
   it("does not treat an empty or unknown-status report as success", () => {
@@ -137,7 +180,8 @@ describe("SSH failure staging", () => {
             status: "fail",
             message: "SSH negotiation failed",
             durationMs: 2,
-            detail: null,
+            detail:
+              "Session(-5); category=key exchange; partial KEX unavailable",
           },
         ],
         summary: "Diagnostics stopped at Key Exchange",
@@ -152,8 +196,44 @@ describe("SSH failure staging", () => {
     );
 
     expect(report.steps).toHaveLength(2);
-    expect(report.steps[1]?.detail).toBe(sessionMinusFive);
-    expect(report.rootCauseHint).toBe(sessionMinusFive);
+    expect(report.steps[1]?.detail).toContain(sessionMinusFive);
+    expect(report.steps[1]?.detail).toContain("Duration unavailable");
+    expect(report.rootCauseHint).toContain(sessionMinusFive);
+    expect(report.rootCauseHint).toContain("Generic probe failure");
+    expect(report.rootCauseHint).toContain("partial KEX unavailable");
     expect(report.summary).not.toContain("All diagnostic probes passed");
+  });
+
+  it("keeps identical probe and original errors separate, without duplicating reconciliation", () => {
+    const probe: ProtocolDiagnosticReport = {
+      host: "fixture.invalid",
+      port: 22,
+      protocol: "ssh",
+      resolvedIp: null,
+      summary: "failed",
+      rootCauseHint: null,
+      totalDurationMs: 2,
+      steps: [
+        {
+          name: "Key Exchange",
+          status: "fail",
+          message: sessionMinusFive,
+          durationMs: 2,
+          detail: "Probe evidence",
+        },
+      ],
+    };
+    const failure = {
+      kind: "key_exchange" as const,
+      summary: "Original failed",
+      technicalDetails: sessionMinusFive,
+    };
+    const result = reconcileSshDiagnosticReport(probe, failure);
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[1].name).toBe(
+      "Original connection attempt — Key Exchange",
+    );
+    expect(result.rootCauseHint).toContain("Probe evidence");
+    expect(reconcileSshDiagnosticReport(result, failure)).toEqual(result);
   });
 });
