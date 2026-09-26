@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  X,
   Search,
   Wifi,
   Monitor,
@@ -8,7 +7,6 @@ import {
   HardDrive,
   Globe,
   Plus,
-  Settings,
   Download,
   Radar,
 } from "lucide-react";
@@ -20,7 +18,10 @@ import { useNetworkDiscovery } from "../../hooks/network/useNetworkDiscovery";
 import { getDiscoveredServiceLabel } from "../../utils/network/networkScanner";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
-import { Checkbox, NumberInput, TextInput } from "../ui/forms";
+import { Checkbox, TextInput } from "../ui/forms";
+import { DiscoveryConfigSidebar } from "./DiscoveryConfigSidebar";
+import { DiscoveryScanProgress } from "./DiscoveryScanProgress";
+import { configuredDiscoveryPorts } from "../../utils/discovery/discoveryPresets";
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
@@ -56,7 +57,7 @@ const getServiceIcon = (service: DiscoveredService) => {
 
 /* ── Sub-components ──────────────────────────────────────────────── */
 
-const DiscoveryHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
+const DiscoveryHeader: React.FC<{ mgr: Mgr; onClose?: () => void }> = ({
   mgr,
   onClose,
 }) => (
@@ -65,140 +66,21 @@ const DiscoveryHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
     iconColor="text-primary"
     iconBg="bg-primary/20"
     title={mgr.t("networkDiscovery.title")}
+    subtitle="Discover hosts, ports and identifiable services"
     onClose={onClose}
-    actions={
-      <button
-        onClick={() => mgr.setShowAdvanced(!mgr.showAdvanced)}
-        className="px-3 py-1.5 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 text-sm"
-      >
-        <Settings size={14} />
-        <span>{mgr.t("networkDiscovery.advanced")}</span>
-      </button>
-    }
   />
 );
 
-const ScanConfig: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-    <div>
-      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        {mgr.t("networkDiscovery.ipRange")}
-      </label>
-      <TextInput
-        aria-label={mgr.t("networkDiscovery.ipRange")}
-        value={mgr.config.ipRange}
-        onChange={(v) => mgr.setConfig({ ...mgr.config, ipRange: v })}
-        variant="form"
-        placeholder={mgr.t("networkDiscovery.ipRangePlaceholder")}
-      />
-    </div>
-    <div>
-      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        {mgr.t("networkDiscovery.timeout")}
-      </label>
-      <NumberInput
-        value={mgr.config.timeout}
-        onChange={(v: number) => mgr.setConfig({ ...mgr.config, timeout: v })}
-        className="sor-form-input"
-        min={1000}
-        max={30000}
-      />
-    </div>
-    <div>
-      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        {mgr.t("networkDiscovery.maxConcurrent")}
-      </label>
-      <NumberInput
-        value={mgr.config.maxConcurrent}
-        onChange={(v: number) =>
-          mgr.setConfig({ ...mgr.config, maxConcurrent: v })
-        }
-        className="sor-form-input"
-        min={1}
-        max={100}
-      />
-    </div>
-  </div>
-);
-
-const AdvancedConfig: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  if (!mgr.showAdvanced) return null;
-  return (
-    <div className="bg-[var(--color-border)] rounded-lg p-4 mb-4">
-      <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-        {mgr.t("networkDiscovery.advancedConfig")}
-      </h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-            {mgr.t("networkDiscovery.portRanges")}
-          </label>
-          <TextInput
-            value={mgr.config.portRanges.join(", ")}
-            onChange={(v) =>
-              mgr.setConfig({
-                ...mgr.config,
-                portRanges: v.split(",").map((p) => p.trim()),
-              })
-            }
-            variant="form"
-            className="w-full"
-            placeholder={mgr.t("networkDiscovery.portRangesPlaceholder")}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-            {mgr.t("networkDiscovery.protocols")}
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {[
-              "ssh",
-              "http",
-              "https",
-              "rdp",
-              "vnc",
-              "mysql",
-              "ftp",
-              "telnet",
-            ].map((protocol) => (
-              <label key={protocol} className="flex items-center space-x-2">
-                <Checkbox
-                  checked={mgr.config.protocols.includes(protocol)}
-                  onChange={(v: boolean) => {
-                    if (v) {
-                      mgr.setConfig({
-                        ...mgr.config,
-                        protocols: [...mgr.config.protocols, protocol],
-                      });
-                    } else {
-                      mgr.setConfig({
-                        ...mgr.config,
-                        protocols: mgr.config.protocols.filter(
-                          (p) => p !== protocol,
-                        ),
-                      });
-                    }
-                  }}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                />
-                <span className="text-[var(--color-textSecondary)] text-sm">
-                  {protocol.toUpperCase()}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const ScanControls: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <>
-    <div className="flex items-center space-x-4">
+    <div className="flex flex-wrap items-center gap-3">
       <button
         onClick={mgr.handleScan}
-        disabled={mgr.isScanning || !mgr.config.ipRange.trim()}
+        disabled={
+          mgr.isScanning ||
+          !mgr.config.ipRange.trim() ||
+          configuredDiscoveryPorts(mgr.config).length === 0
+        }
         className="px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
       >
         <Search size={16} />
@@ -207,9 +89,10 @@ const ScanControls: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       {mgr.isScanning && (
         <button
           onClick={mgr.handleStop}
+          disabled={mgr.isStopping}
           className="px-4 py-2 bg-danger hover:bg-danger/90 text-[var(--color-text)] rounded-md transition-colors"
         >
-          {mgr.t("networkDiscovery.stop")}
+          {mgr.isStopping ? "Stopping…" : mgr.t("networkDiscovery.stop")}
         </button>
       )}
       {mgr.allowCreateConnections && mgr.selectedHosts.size > 0 && (
@@ -226,16 +109,6 @@ const ScanControls: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </button>
       )}
     </div>
-    {mgr.isScanning && (
-      <div className="mt-4">
-        <div className="w-full bg-[var(--color-border)] rounded-full h-2">
-          <div
-            className="bg-primary h-2 rounded-full transition-all duration-300"
-            style={{ width: `${mgr.scanProgress}%` }}
-          />
-        </div>
-      </div>
-    )}
   </>
 );
 
@@ -257,11 +130,17 @@ const HostCard: React.FC<{ mgr: Mgr; host: DiscoveredHost }> = ({
   >
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center space-x-3">
-        <Checkbox
-          checked={mgr.selectedHosts.has(host.ip)}
-          onChange={() => mgr.toggleHostSelection(host.ip)}
-          className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-        />
+        <span
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <Checkbox
+            aria-label={`Select ${host.hostname || host.ip}`}
+            checked={mgr.selectedHosts.has(host.ip)}
+            onChange={() => mgr.toggleHostSelection(host.ip)}
+            className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+          />
+        </span>
         <div>
           <h4 className="text-[var(--color-text)] font-medium">
             {host.hostname || host.ip}
@@ -269,6 +148,15 @@ const HostCard: React.FC<{ mgr: Mgr; host: DiscoveredHost }> = ({
           {host.hostname && (
             <p className="text-[var(--color-textSecondary)] text-sm">
               {host.ip}
+            </p>
+          )}
+          {host.reachability && (
+            <p className="text-xs text-[var(--color-textMuted)]">
+              {host.reachability === "responsive"
+                ? "Reachability probe replied"
+                : host.reachability === "unresponsive"
+                  ? "No ping reply · service scan continued"
+                  : "Ping not required"}
             </p>
           )}
         </div>
@@ -295,8 +183,22 @@ const HostCard: React.FC<{ mgr: Mgr; host: DiscoveredHost }> = ({
             <ServiceIcon size={20} className="text-primary" />
             <div className="flex-1 min-w-0">
               <p className="text-[var(--color-text)] font-medium">
-                {getDiscoveredServiceLabel(service)}
+                {service.product || getDiscoveredServiceLabel(service)}
               </p>
+              {service.product && (
+                <p className="text-xs text-[var(--color-textSecondary)]">
+                  {getDiscoveredServiceLabel(service)}
+                </p>
+              )}
+              <span
+                className={`my-1 inline-block rounded px-1.5 py-0.5 text-[10px] ${service.detection === "identified" ? "bg-success/10 text-success" : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"}`}
+              >
+                {service.detection === "identified"
+                  ? "Identified from response"
+                  : service.detection === "port-hint"
+                    ? "Port-based hint"
+                    : "Type unconfirmed"}
+              </span>
               <p className="text-[var(--color-textSecondary)] text-sm">
                 {mgr.t("networkDiscovery.port", { port: service.port })}
               </p>
@@ -308,6 +210,17 @@ const HostCard: React.FC<{ mgr: Mgr; host: DiscoveredHost }> = ({
               {service.banner && (
                 <p className="text-[var(--color-textSecondary)] text-xs break-all font-mono">
                   {service.banner}
+                </p>
+              )}
+              {service.evidence && (
+                <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                  {service.evidence}
+                </p>
+              )}
+              {service.identificationError && (
+                <p className="mt-1 text-xs text-warning">
+                  Identification unavailable: {service.identificationError}. The
+                  TCP port is open.
                 </p>
               )}
             </div>
@@ -389,37 +302,35 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
       className={
         embedded
           ? "h-full min-h-0 flex flex-col bg-[var(--color-surface)]"
-          : "overflow-hidden"
+          : "flex min-h-0 flex-col overflow-hidden"
       }
     >
-      <DiscoveryHeader mgr={mgr} onClose={onClose} />
+      <DiscoveryHeader mgr={mgr} onClose={embedded ? undefined : onClose} />
       <div
         className={
           embedded
-            ? "p-6 flex-1 min-h-0 overflow-y-auto"
-            : "p-6 overflow-y-auto max-h-[calc(90vh-200px)]"
+            ? "flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden"
+            : "flex min-h-0 max-h-[calc(90vh-100px)] flex-col overflow-y-auto lg:flex-row lg:overflow-hidden"
         }
       >
-        {embedded && (
-          <p className="mb-4 text-sm text-[var(--color-textSecondary)]">
-            Enter an IP address or CIDR range, then start a TCP scan. Up to 256
-            addresses and 1024 ports per scan. Stop cancels queued probes;
-            active probes finish after their connect timeout and up to 2 seconds
-            of banner reading.
-          </p>
-        )}
-        <div className="mb-6">
-          <ScanConfig mgr={mgr} />
-          <AdvancedConfig mgr={mgr} />
+        <main
+          aria-label="Discovery results"
+          className="min-w-0 flex-1 space-y-5 p-4 lg:overflow-y-auto lg:p-6"
+        >
           <ScanControls mgr={mgr} />
-        </div>
-        {mgr.scanError && (
-          <p role="alert" className="mb-4 text-error">
-            {mgr.scanError}
-          </p>
-        )}
-        <HostsList mgr={mgr} />
-        <EmptyState mgr={mgr} />
+          <DiscoveryScanProgress mgr={mgr} />
+          {mgr.scanError && (
+            <p
+              role="alert"
+              className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error"
+            >
+              {mgr.scanError}
+            </p>
+          )}
+          <HostsList mgr={mgr} />
+          <EmptyState mgr={mgr} />
+        </main>
+        <DiscoveryConfigSidebar mgr={mgr} />
       </div>
     </div>
   );

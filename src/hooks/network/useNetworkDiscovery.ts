@@ -5,7 +5,14 @@ import { NetworkDiscoveryConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
 import { generateId } from "../../utils/core/id";
 import { discoveredHostsToCsv } from "../../utils/discovery/discoveredHostsCsv";
-import { NetworkScanner } from "../../utils/network/networkScanner";
+import {
+  NetworkScanner,
+  type DiscoveryScanStatus,
+} from "../../utils/network/networkScanner";
+import {
+  DEFAULT_DISCOVERY_PROTOCOLS,
+  defaultDiscoveryPorts,
+} from "../../utils/discovery/discoveryPresets";
 import { normalizeImportedProtocol } from "../../utils/connection/normalizeImportedProtocol";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -78,21 +85,17 @@ export function useNetworkDiscovery({
   const [config, setConfig] = useState<NetworkDiscoveryConfig>({
     enabled: true,
     ipRange: native ? "" : "192.168.1.0/24",
-    portRanges: ["22", "80", "443", "3389", "5900"],
-    protocols: ["ssh", "http", "https", "rdp", "vnc"],
+    portRanges: [],
+    protocols: [...DEFAULT_DISCOVERY_PROTOCOLS],
     timeout: 5000,
     maxConcurrent: 50,
     maxPortConcurrent: 100,
-    customPorts: {
-      ssh: [22],
-      http: [80, 8080, 8000],
-      https: [443, 8443],
-      rdp: [3389],
-      vnc: [5900, 5901, 5902],
-      mysql: [3306],
-      ftp: [21],
-      telnet: [23],
-    },
+    customPorts: defaultDiscoveryPorts(),
+    identifyServices: true,
+    pingMethod: "none",
+    pingTimeout: 1000,
+    pingPort: 443,
+    scanUnresponsiveHosts: true,
     probeStrategies: {
       default: ["websocket"],
       http: ["websocket", "http"],
@@ -107,44 +110,92 @@ export function useNetworkDiscovery({
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
+  const [scanStatus, setScanStatus] = useState<DiscoveryScanStatus | null>(
+    null,
+  );
+  const [isStopping, setIsStopping] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [scanOutcome, setScanOutcome] = useState<
+    "idle" | "running" | "complete" | "stopped" | "failed"
+  >("idle");
   const [selectedHosts, setSelectedHosts] = useState<Set<string>>(new Set());
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [filterText, setFilterText] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const scannerRef = useRef<NetworkScanner | null>(null);
+  const latestStatusRef = useRef<DiscoveryScanStatus | null>(null);
   const scanner = scannerRef.current ?? new NetworkScanner(native);
   scannerRef.current = scanner;
 
   useEffect(
     () => () => {
-      abortControllerRef.current?.abort();
+      const active = abortControllerRef.current;
+      abortControllerRef.current = null;
+      active?.abort();
     },
     [],
   );
+
+  useEffect(() => {
+    if (!isScanning || startedAt === null) return;
+    // Coalesce concurrent native progress events instead of rerendering the
+    // complete results/configuration tree once for every socket callback.
+    const timer = setInterval(() => {
+      setElapsedMs(Date.now() - startedAt);
+      const status = latestStatusRef.current;
+      if (status) {
+        setScanStatus(status);
+        setScanProgress(
+          status.totalProbes
+            ? (status.completedProbes / status.totalProbes) * 100
+            : 0,
+        );
+      }
+    }, 250);
+    return () => clearInterval(timer);
+  }, [isScanning, startedAt]);
 
   const handleScan = async () => {
     if (abortControllerRef.current) return;
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setIsScanning(true);
+    setScanOutcome("running");
+    const scanStartedAt = Date.now();
+    setStartedAt(scanStartedAt);
+    setElapsedMs(0);
+    setIsStopping(false);
+    setScanStatus(null);
+    latestStatusRef.current = null;
     setScanProgress(0);
     setScanError(null);
     setSelectedHosts(new Set());
     setDiscoveredHosts([]);
     try {
+      const reportProgress = (progress: number) => {
+        if (
+          abortControllerRef.current === controller &&
+          !controller.signal.aborted
+        ) {
+          if (!native) setScanProgress(progress);
+        }
+      };
+      const reportStatus = (status: DiscoveryScanStatus) => {
+        if (abortControllerRef.current === controller) {
+          latestStatusRef.current = status;
+          if (status.phase === "preparing" || status.phase === "complete")
+            setScanStatus(status);
+        }
+      };
       const [serviceHosts, pingHosts] = await Promise.all([
-        scanner.scanNetwork(
-          config,
-          (progress) => {
-            if (
-              abortControllerRef.current === controller &&
-              !controller.signal.aborted
-            ) {
-              setScanProgress(progress);
-            }
-          },
-          controller.signal,
-        ),
+        native
+          ? scanner.scanNetwork(
+              config,
+              reportProgress,
+              controller.signal,
+              reportStatus,
+            )
+          : scanner.scanNetwork(config, reportProgress, controller.signal),
         native
           ? Promise.resolve([])
           : scanPingHosts(
@@ -159,9 +210,11 @@ export function useNetworkDiscovery({
       ) {
         setDiscoveredHosts(mergeDiscoveredHosts(serviceHosts, pingHosts));
         setScanProgress(100);
+        setScanOutcome("complete");
       }
     } catch (error) {
       if (!controller.signal.aborted) {
+        setScanOutcome("failed");
         setScanError(error instanceof Error ? error.message : String(error));
         controller.abort();
         console.error("Network scan failed:", error);
@@ -169,12 +222,26 @@ export function useNetworkDiscovery({
     } finally {
       if (abortControllerRef.current === controller) {
         setIsScanning(false);
+        if (latestStatusRef.current) {
+          setScanStatus(latestStatusRef.current);
+          const { completedProbes, totalProbes } = latestStatusRef.current;
+          setScanProgress(
+            totalProbes ? (completedProbes / totalProbes) * 100 : 0,
+          );
+        }
+        setElapsedMs(Date.now() - scanStartedAt);
+        setIsStopping(false);
+        if (controller.signal.aborted)
+          setScanOutcome((outcome) =>
+            outcome === "failed" ? outcome : "stopped",
+          );
         abortControllerRef.current = null;
       }
     }
   };
 
   const handleStop = () => {
+    if (abortControllerRef.current) setIsStopping(true);
     abortControllerRef.current?.abort();
   };
 
@@ -192,14 +259,14 @@ export function useNetworkDiscovery({
         });
         const connection = {
           id: generateId(),
-          name: `${host.hostname || host.ip} (${service.service})`,
+          name: `${host.hostname || host.ip} (${service.product || service.service})`,
           protocol: normalized.protocol,
           hostname: host.ip,
           port: service.port,
           isGroup: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          description: `Auto-discovered ${service.service} service${service.version ? ` (${service.version})` : ""}`,
+          description: `Auto-discovered ${service.service} service${service.product ? ` — ${service.product}` : ""}${service.version ? ` (${service.version})` : ""}${service.detection === "port-hint" ? "; port-based hint, type not confirmed" : ""}`,
           tags: ["auto-discovered"],
         };
         dispatch({ type: "ADD_CONNECTION", payload: connection });
@@ -223,7 +290,16 @@ export function useNetworkDiscovery({
     const query = filterText.toLowerCase();
     return (
       host.ip.toLowerCase().includes(query) ||
-      (host.hostname?.toLowerCase()?.includes(query) ?? false)
+      (host.hostname?.toLowerCase()?.includes(query) ?? false) ||
+      host.services.some((service) =>
+        [
+          service.service,
+          service.protocol,
+          service.product,
+          service.version,
+          service.port.toString(),
+        ].some((value) => value?.toLowerCase().includes(query)),
+      )
     );
   });
 
@@ -249,9 +325,13 @@ export function useNetworkDiscovery({
     scanError,
     allowCreateConnections,
     scanProgress,
+    scanStatus,
+    isStopping,
+    elapsedMs,
+    scanOutcome,
+    hasScanned: startedAt !== null,
+    native,
     selectedHosts,
-    showAdvanced,
-    setShowAdvanced,
     filterText,
     setFilterText,
     handleScan,
