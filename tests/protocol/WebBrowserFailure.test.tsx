@@ -593,10 +593,51 @@ describe("embedded web failure recovery screen", () => {
     expect(container.firstElementChild).toHaveStyle({
       backgroundColor: "#181a1b",
       color: "#e8e6e3",
+      colorScheme: "dark",
     });
     expect(container.querySelector("iframe")).toHaveStyle({
       backgroundColor: "#181a1b",
+      colorScheme: "dark",
     });
+  });
+
+  it("keeps the frame mounted beneath the paint shield and removes the shield for errors or review", () => {
+    const mgr = manager({
+      loadError: "",
+      waitingForDarkPaint: true,
+      websiteDarkBootstrap: {
+        backgroundColor: "#181a1b",
+        textColor: "#e8e6e3",
+      },
+    });
+    const { container, rerender } = render(<ContentArea mgr={mgr} />);
+    const frame = container.querySelector("iframe");
+    expect(screen.getByTestId("web-dark-paint-shield")).toHaveStyle({
+      backgroundColor: "#181a1b",
+    });
+    expect(frame).not.toHaveClass("invisible");
+    rerender(<ContentArea mgr={{ ...mgr, loadError: "Timeout" }} />);
+    expect(screen.queryByTestId("web-dark-paint-shield")).toBeNull();
+    expect(container.querySelector("iframe")).toBe(frame);
+    rerender(
+      <ContentArea
+        mgr={{
+          ...mgr,
+          redirectReview: {
+            review: null,
+            error: "Review unavailable",
+            busy: false,
+          } as WebBrowserMgr["redirectReview"],
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("web-dark-paint-shield")).toBeNull();
+    expect(
+      screen.getByRole("region", { name: "Redirect review" }),
+    ).toBeVisible();
+    rerender(<ContentArea mgr={{ ...mgr, waitingForDarkPaint: false }} />);
+    expect(screen.queryByTestId("web-dark-paint-shield")).toBeNull();
+    expect(container.querySelector("iframe")).toBe(frame);
   });
 
   it("shows structured context and exposes retry, back, external, and diagnostic actions", () => {

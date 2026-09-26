@@ -99,8 +99,14 @@ async fn dark_bootstrap_survives_redirects_gzip_and_child_documents_without_chan
             assert!(body[start..].contains(".panel-body"));
             if scripts == PageScripts::Block {
                 assert!(!body.contains("proxy_document_start"));
+                assert!(!body.contains("__sorng_dark_paint_shield_v1"));
             } else {
                 assert!(start < body.find("<script>(function()").unwrap());
+                assert!(
+                    body.find("__sorng_dark_paint_shield_v1").unwrap()
+                        < body.find("<script>(function()").unwrap()
+                );
+                assert!(body.contains("html:root:not([data-sorng-dark-presented])::after"));
             }
         }
         // Native appearance updates affect future documents without replacing

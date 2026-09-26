@@ -18,6 +18,7 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           ? {
               backgroundColor: mgr.websiteDarkBootstrap.backgroundColor,
               color: mgr.websiteDarkBootstrap.textColor,
+              colorScheme: "dark",
             }
           : undefined
       }
@@ -98,7 +99,10 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           title={mgr.session.name}
           style={
             mgr.websiteDarkBootstrap
-              ? { backgroundColor: mgr.websiteDarkBootstrap.backgroundColor }
+              ? {
+                  backgroundColor: mgr.websiteDarkBootstrap.backgroundColor,
+                  colorScheme: "dark",
+                }
               : undefined
           }
           onLoad={mgr.handleIframeLoad}
@@ -107,6 +111,14 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           // website flags for a validated, isolated proxy origin. React leaves
           // this unchanged initial prop alone on ordinary component rerenders.
           sandbox={EMPTY_WEB_FRAME_SANDBOX}
+        />
+      )}
+      {mgr.waitingForDarkPaint && !mgr.loadError && !reviewing && (
+        <div
+          className="absolute inset-0 z-10 bg-[var(--color-background)]"
+          data-testid="web-dark-paint-shield"
+          aria-label="Preparing dark website"
+          style={{ backgroundColor: mgr.websiteDarkBootstrap?.backgroundColor }}
         />
       )}
       {mgr.redirectHandoffPending && !mgr.loadError && (

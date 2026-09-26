@@ -2930,6 +2930,7 @@ pub async fn axum_proxy_handler(
                     final_body = proxy_response::inject_dark_mode_bootstrap(
                         &String::from_utf8_lossy(&final_body),
                         &palette,
+                        state.proxy_policy.page_scripts != PageScripts::Block,
                     )
                     .into_bytes();
                 }

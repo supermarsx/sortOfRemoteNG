@@ -20,12 +20,18 @@ pub(super) fn inject_page_scripts(html: &str, scripts: &str) -> String {
 pub(super) fn inject_dark_mode_bootstrap(
     html: &str,
     palette: &super::WebsiteDarkModeBootstrap,
+    paint_shield: bool,
 ) -> String {
     let Some(style) = palette.style() else {
         return html.to_string();
     };
     let index = early_script_insertion(html);
-    format!("{}{}{}", &html[..index], style, &html[index..])
+    let shield = if paint_shield {
+        palette.paint_shield().unwrap_or_default()
+    } else {
+        String::new()
+    };
+    format!("{}{}{}{}", &html[..index], style, shield, &html[index..])
 }
 
 /// Keep absolute URLs absolute: app scripts commonly pass these strings to

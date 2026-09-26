@@ -24,6 +24,7 @@ function createWebDarkModeController() {
     style = null,
     styleText = "",
     bootstrap = document.getElementById("__sorng_dark_bootstrap_v1"),
+    paintShield = document.getElementById("__sorng_dark_paint_shield_v1"),
     bootstrapText = bootstrap ? bootstrap.textContent : "",
     forcedInline = [],
     forcedInlineByElement = new WeakMap(),
@@ -43,6 +44,10 @@ function createWebDarkModeController() {
     attachShadowHook = null,
     scanQueued = false,
     scanTimer = null,
+    startupFallbackTimer = null,
+    paintFrame = null,
+    paintTimer = null,
+    paintRevision = -1,
     pendingChanges = new Map();
   var defaults = {
     mode: "dynamic",
@@ -128,6 +133,9 @@ function createWebDarkModeController() {
     bootstrap = null;
     bootstrapText = "";
     loadingPalette = false;
+    if (paintShield) paintShield.remove();
+    paintShield = null;
+    document.documentElement.removeAttribute("data-sorng-dark-presented");
     document.documentElement.removeAttribute("data-sorng-dark-ready");
     restoreInline();
   }
@@ -179,18 +187,32 @@ function createWebDarkModeController() {
     forcedInline = [];
     forcedInlineByElement = new WeakMap();
   }
+  var forceSurfaces =
+    "main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']";
   function forceSurfaceCss(theme, shadow) {
     // Persistent proxy palette: a late stylesheet or SPA panel must not paint
     // white while the dynamic engine catches up. Media descendants retain
     // their own colors; the engine can still refine non-surface details.
     return (
       (shadow ? "" : "html:root body ") +
-      ":is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']){background-color:" +
+      ":is(" +
+      forceSurfaces +
+      "){background-color:" +
       theme.backgroundColor +
       "!important;color:" +
       theme.textColor +
       "!important;background-image:none!important;transition:none!important}"
     );
+  }
+  function protectForceSurfaces(root, theme, subtree) {
+    function protect(element) {
+      protectInline(element, "background-color", theme.backgroundColor);
+      protectInline(element, "background-image", "none");
+      protectInline(element, "color", theme.textColor);
+    }
+    if (root.nodeType === 1 && root.matches(forceSurfaces)) protect(root);
+    if (subtree !== false)
+      root.querySelectorAll(forceSurfaces).forEach(protect);
   }
   function protectInline(element, property, value) {
     // Inline !important outranks even our first cascade layer. Reapply only
@@ -225,6 +247,13 @@ function createWebDarkModeController() {
       protectInline(nodes[index], "color-scheme", "dark");
     }
     var isCpanel = !!document.querySelector(cpanelMarker);
+    if (!isCpanel) {
+      if (changes)
+        changes.forEach(function (subtree, node) {
+          if (node.isConnected) protectForceSurfaces(node, theme, subtree);
+        });
+      else protectForceSurfaces(document, theme, true);
+    }
     if (isCpanel) {
       if (changes && cpanelDetected)
         changes.forEach(function (subtree, node) {
@@ -255,8 +284,53 @@ function createWebDarkModeController() {
     if (ready) {
       if (!document.documentElement.hasAttribute("data-sorng-dark-ready"))
         document.documentElement.setAttribute("data-sorng-dark-ready", "");
+      reportDarkPaint();
     } else if (document.documentElement.hasAttribute("data-sorng-dark-ready"))
       document.documentElement.removeAttribute("data-sorng-dark-ready");
+  }
+  function cancelDarkPaint() {
+    if (paintFrame !== null) window.cancelAnimationFrame(paintFrame);
+    if (paintTimer !== null) window.clearTimeout(paintTimer);
+    paintFrame = null;
+    paintTimer = null;
+  }
+  function reportDarkPaint() {
+    if (
+      disposed ||
+      !desired ||
+      !runtimeInstalled ||
+      document.readyState === "loading" ||
+      paintRevision === revision ||
+      paintFrame !== null ||
+      paintTimer !== null
+    )
+      return;
+    var ticket = revision;
+    function complete() {
+      cancelDarkPaint();
+      if (
+        disposed ||
+        !desired ||
+        ticket !== revision ||
+        !runtimeInstalled ||
+        (desired.mode !== "filter" &&
+          !document.documentElement.hasAttribute("data-sorng-dark-ready"))
+      )
+        return;
+      // Flush the applied sheet before telling the outer frame to uncover it.
+      window.getComputedStyle(document.documentElement).backgroundColor;
+      document.documentElement.setAttribute("data-sorng-dark-presented", "");
+      paintRevision = ticket;
+      if (typeof emit === "function") emit("proxy_dark_ready");
+    }
+    // The engine can return before its queued CSSOM updates. Keep the host's
+    // opaque canvas for two rendering opportunities, scoped to this revision.
+    if (typeof window.requestAnimationFrame === "function")
+      paintFrame = window.requestAnimationFrame(function () {
+        paintFrame = window.requestAnimationFrame(complete);
+      });
+    // Hidden tabs can suspend rAF; they still need a bounded readiness result.
+    paintTimer = window.setTimeout(complete, 100);
   }
   function protectCpanelSurfaces(root, theme, subtree) {
     function protect(element) {
@@ -267,12 +341,12 @@ function createWebDarkModeController() {
           : theme.backgroundColor;
       protectInline(element, "background-color", background);
       protectInline(element, "color", theme.textColor);
-      if (element.matches(cpanelHeaders))
+      if (element.matches(cpanelHeaders) || !element.matches(cpanelSurfaces))
         protectInline(element, "background-image", "none");
     }
-    if (root.nodeType === 1 && root.matches(cpanelSurfaces)) protect(root);
-    if (subtree !== false)
-      root.querySelectorAll(cpanelSurfaces).forEach(protect);
+    var surfaces = cpanelSurfaces + "," + forceSurfaces;
+    if (root.nodeType === 1 && root.matches(surfaces)) protect(root);
+    if (subtree !== false) root.querySelectorAll(surfaces).forEach(protect);
   }
   function adjustments(theme) {
     return (
@@ -1012,6 +1086,7 @@ function createWebDarkModeController() {
   function settle() {
     try {
       refresh();
+      reportDarkPaint();
     } catch (_) {
       // Late theming is best effort; the document itself is already themed.
     }
@@ -1118,12 +1193,25 @@ function createWebDarkModeController() {
       });
       loadingPalette = true;
       refresh();
+      // A verified native palette must remain usable when the host command is
+      // delayed or unavailable. Fall back to local CSS without fetching code.
+      startupFallbackTimer = window.setTimeout(function () {
+        startupFallbackTimer = null;
+        if (!disposed && desired && revision === 0 && !runtimeInstalled)
+          controller
+            .set({ enabled: true, cssOnly: true, theme: desired })
+            .catch(function () {});
+      }, 4000);
     }
   }
-  return {
+  var controller = {
     set: function (payload) {
       if (disposed) return Promise.reject(new Error("The document was closed"));
       var ticket = ++revision;
+      cancelDarkPaint();
+      if (startupFallbackTimer !== null)
+        window.clearTimeout(startupFallbackTimer);
+      startupFallbackTimer = null;
       desired = null;
       cssOnly = false;
       loadingPalette = false;
@@ -1192,6 +1280,7 @@ function createWebDarkModeController() {
             // paths retain it, including after engine conversion and SPA updates.
             if (theme.mode === "filter") removeBootstrap();
             else protectPalette(theme);
+            reportDarkPaint();
             // A frameset root that skipped the engine on purpose reports nothing:
             // its frames answer for the content the user actually sees.
             if (engine) return "engine";
@@ -1203,6 +1292,10 @@ function createWebDarkModeController() {
         .catch(function (error) {
           if (ticket === revision) {
             removeStyles();
+            cssOnly = true;
+            installStyles(theme);
+            runtimeInstalled = true;
+            protectPalette(theme);
             observe();
             // Keep the explicit dark palette if the engine throws. A later
             // disable/dispose still restores the upstream appearance.
@@ -1212,6 +1305,10 @@ function createWebDarkModeController() {
     },
     dispose: function (keepAppearance) {
       disposed = true;
+      cancelDarkPaint();
+      if (startupFallbackTimer !== null)
+        window.clearTimeout(startupFallbackTimer);
+      startupFallbackTimer = null;
       if (scanTimer !== null) window.clearTimeout(scanTimer);
       scanTimer = null;
       pendingChanges.clear();
@@ -1237,6 +1334,7 @@ function createWebDarkModeController() {
       }
     },
   };
+  return controller;
 }
 
 /* Per-document delivery. The app posts the `dark` command to the outermost

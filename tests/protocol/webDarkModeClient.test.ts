@@ -50,6 +50,70 @@ afterEach(() => {
 });
 
 describe("injected dark-mode extension runtime", () => {
+  it("prepares inline-important structural surfaces before reporting paint readiness", async () => {
+    document.body.innerHTML =
+      '<section class="surface" style="background-color:white!important;background-image:linear-gradient(white,white)!important;color:black!important">Content</section>';
+    const surface = document.querySelector<HTMLElement>("section")!;
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    expect(surface.style.backgroundColor).toBe("rgb(24, 26, 27)");
+    expect(surface.style.backgroundImage).toBe("none");
+    expect(surface.style.color).toBe("rgb(232, 230, 227)");
+    await controller.set({ enabled: false });
+    expect(surface.style.backgroundColor).toBe("white");
+    expect(surface.style.backgroundImage).toContain("linear-gradient");
+    expect(surface.style.color).toBe("black");
+  });
+  it("reports dark paint only after rendering opportunities and cancels stale reveals", async () => {
+    controller.dispose();
+    const runtime = window.eval(
+      `(function(){var signals=[];function emit(type){signals.push(type);}${source.replace(/sorngWebDarkMode\(\);\s*$/, "")}return {controller:createWebDarkModeController(),signals:signals};})()`,
+    );
+    controller = runtime.controller;
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    expect(runtime.signals).toEqual([]);
+    await vi.waitFor(() =>
+      expect(runtime.signals).toEqual(["proxy_dark_ready"]),
+    );
+    expect(document.documentElement).toHaveAttribute(
+      "data-sorng-dark-presented",
+    );
+    await controller.set({
+      enabled: true,
+      cssOnly: true,
+      theme: theme({ backgroundColor: "#101112" }),
+    });
+    await controller.set({ enabled: false });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(runtime.signals).toEqual(["proxy_dark_ready"]);
+    expect(document.documentElement).not.toHaveAttribute(
+      "data-sorng-dark-presented",
+    );
+  });
+  it("releases a native paint shield through bounded CSS fallback without a host command", async () => {
+    controller.dispose();
+    vi.useFakeTimers();
+    const bootstrap = document.createElement("style");
+    bootstrap.id = "__sorng_dark_bootstrap_v1";
+    bootstrap.dataset.backgroundColor = "#181a1b";
+    bootstrap.dataset.textColor = "#e8e6e3";
+    const shield = document.createElement("style");
+    shield.id = "__sorng_dark_paint_shield_v1";
+    document.head.append(bootstrap, shield);
+    const runtime = window.eval(
+      `(function(){var signals=[];function emit(type){signals.push(type);}${source.replace(/sorngWebDarkMode\(\);\s*$/, "")}return {controller:createWebDarkModeController(),signals:signals};})()`,
+    );
+    controller = runtime.controller;
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(runtime.signals).toEqual([]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(runtime.signals).toEqual(["proxy_dark_ready"]);
+    expect(document.documentElement).toHaveAttribute(
+      "data-sorng-dark-presented",
+    );
+    expect(document.querySelector("script")).toBeNull();
+    await controller.set({ enabled: false });
+    expect(shield.isConnected).toBe(false);
+  });
   it("does nothing before opt-in and disabling an unused extension loads nothing", async () => {
     await controller.set({ enabled: false });
     expect(node()).toBeNull();

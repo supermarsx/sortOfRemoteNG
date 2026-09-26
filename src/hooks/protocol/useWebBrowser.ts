@@ -1104,14 +1104,35 @@ export function useWebBrowser(session: ConnectionSession) {
     url: string;
     ownerScope: string;
   } | null>(null);
+  // Paint acknowledgement belongs to this exact accepted document, independent
+  // of DOM/load completion and authentication state.
+  const [darkPaintDocument, setDarkPaintDocument] =
+    useState<typeof currentDocumentRef.current>(null);
+  const [nonInjectedLoad, setNonInjectedLoad] = useState<{
+    generation: number;
+    sessionId: string;
+    ownerScope: string;
+  } | null>(null);
+  const nonInjectedLoadTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const resetDarkPaint = useCallback(() => {
+    setDarkPaintDocument(null);
+    setNonInjectedLoad(null);
+    if (nonInjectedLoadTimer.current !== null) {
+      clearTimeout(nonInjectedLoadTimer.current);
+      nonInjectedLoadTimer.current = null;
+    }
+  }, []);
   const [automationDocumentRevision, setAutomationDocumentRevision] =
     useState(0);
   const publishAutomationDocument = useCallback(
     (document: typeof currentDocumentRef.current) => {
+      resetDarkPaint();
       currentDocumentRef.current = document;
       setAutomationDocumentRevision((revision) => revision + 1);
     },
-    [],
+    [resetDarkPaint],
   );
   const acceptAutomationDocument = useCallback(
     () => setAutomationDocumentRevision((revision) => revision + 1),
@@ -1223,11 +1244,12 @@ export function useWebBrowser(session: ConnectionSession) {
   } | null>(null);
   const [shouldMountIframe, setShouldMountIframe] = useState(false);
   const clearFrame = useCallback(() => {
+    resetDarkPaint();
     // Restrict and abort a live document before React removes its browsing
     // context. No inactive iframe is retained behind trust/recovery screens.
     clearWebBrowserFrame(iframeRef.current);
     setShouldMountIframe(false);
-  }, []);
+  }, [resetDarkPaint]);
   const attachIframe = useCallback((iframe: HTMLIFrameElement | null) => {
     iframeRef.current = iframe;
     const pending = pendingFrameRef.current;
@@ -1250,6 +1272,7 @@ export function useWebBrowser(session: ConnectionSession) {
   }, []);
   const navigateFrame = useCallback(
     (url: string, generation: number, sessionId: string) => {
+      resetDarkPaint();
       const documentAliases = googleRoutesRef.current
         .filter((route) => route.documents)
         .map((route) => route.proxyOrigin);
@@ -1276,7 +1299,7 @@ export function useWebBrowser(session: ConnectionSession) {
       setShouldMountIframe(true);
       if (iframeRef.current) attachIframe(iframeRef.current);
     },
-    [attachIframe],
+    [attachIframe, resetDarkPaint],
   );
   const clearLoadingIndicator = useCallback(() => {
     if (loadingIndicatorTimerRef.current !== null) {
@@ -1290,6 +1313,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const mountedRef = useRef(true);
   const beginLoadingPresentation = useCallback(
     (generation: number) => {
+      resetDarkPaint();
       clearLoadingIndicator();
       setIsLoading(true);
       loadingIndicatorTimerRef.current = setTimeout(() => {
@@ -1303,7 +1327,7 @@ export function useWebBrowser(session: ConnectionSession) {
         setLoadingIndicatorReady(true);
       }, 200);
     },
-    [clearLoadingIndicator],
+    [clearLoadingIndicator, resetDarkPaint],
   );
   const activeNavigationUrlRef = useRef(currentUrl);
   const previousCertificateScope = useRef(certificateScope);
@@ -2742,6 +2766,8 @@ export function useWebBrowser(session: ConnectionSession) {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (nonInjectedLoadTimer.current !== null)
+        clearTimeout(nonInjectedLoadTimer.current);
       navGenRef.current += 1;
       cancelTrustRead();
       trustResolveRef.current?.(false);
@@ -3088,6 +3114,7 @@ export function useWebBrowser(session: ConnectionSession) {
           "proxy_document_start",
           "proxy_navigation_start",
           "proxy_dom_ready",
+          "proxy_dark_ready",
         ].includes(event.data?.type)
       ) {
         const report = event.data;
@@ -3131,6 +3158,17 @@ export function useWebBrowser(session: ConnectionSession) {
           current.sequence === report.documentSequence &&
           current.navigationToken === report.navigationToken &&
           current.url === url;
+        if (report.type === "proxy_dark_ready") {
+          if (
+            !sameDocument ||
+            !current ||
+            current.generation !== navGenRef.current ||
+            current.ownerScope !== trustOwnerScopeRef.current
+          )
+            return;
+          setDarkPaintDocument(current);
+          return;
+        }
         const startInternalNavigation = () => {
           // A document unloading before its app navigation became ready
           // continues that load: a new no-document window, the same cap.
@@ -3441,6 +3479,34 @@ export function useWebBrowser(session: ConnectionSession) {
       // Cross-origin
     }
     setLoadError("");
+    // PDF/text and CSP-suppressed bridges completed on load before the paint
+    // gate existed. Give queued document-start messages a task to arrive; an
+    // accepted HTML document must still acknowledge its own dark paint.
+    const loaded = {
+      generation: navGenRef.current,
+      sessionId: proxySessionIdRef.current,
+      ownerScope: trustOwnerScopeRef.current,
+    };
+    const src = iframe.src;
+    if (nonInjectedLoadTimer.current !== null)
+      clearTimeout(nonInjectedLoadTimer.current);
+    nonInjectedLoadTimer.current = setTimeout(() => {
+      nonInjectedLoadTimer.current = null;
+      const document = currentDocumentRef.current;
+      if (
+        !mountedRef.current ||
+        navigationFailureRef.current ||
+        iframeRef.current !== iframe ||
+        iframe.src !== src ||
+        loaded.generation !== navGenRef.current ||
+        loaded.sessionId !== proxySessionIdRef.current ||
+        loaded.ownerScope !== trustOwnerScopeRef.current ||
+        (document?.generation === loaded.generation &&
+          document.sessionId === loaded.sessionId)
+      )
+        return;
+      setNonInjectedLoad(loaded);
+    }, 0);
   }, [applyNavigationFailure, clearLoadingIndicator, currentUrl]);
 
   const handleRefresh = useCallback(() => {
@@ -3830,10 +3896,63 @@ export function useWebBrowser(session: ConnectionSession) {
     [connection, dispatch],
   );
 
+  const paintDocument = currentDocumentRef.current;
+  const paintGeneration = navGenRef.current;
+  const waitingForDarkPaint =
+    shouldMountIframe &&
+    !!websiteDarkBootstrap &&
+    !!websiteDarkBootstrapCandidate &&
+    proxyOptions.policy?.pageScripts !== "block" &&
+    !loadError &&
+    !redirectReview.review &&
+    !redirectReview.error &&
+    !(
+      nonInjectedLoad?.generation === paintGeneration &&
+      nonInjectedLoad.sessionId === proxySessionIdRef.current &&
+      nonInjectedLoad.ownerScope === trustOwnerScope
+    ) &&
+    (!paintDocument ||
+      darkPaintDocument !== paintDocument ||
+      paintDocument.generation !== paintGeneration ||
+      paintDocument.ownerScope !== trustOwnerScope);
+
+  // Accepted HTML must acknowledge paint even after DOM-ready/load. Missing
+  // paint acknowledgement ends in the normal recoverable error UI.
+  useEffect(() => {
+    if (!waitingForDarkPaint) return;
+    const timeout = setTimeout(() => {
+      if (
+        !mountedRef.current ||
+        navGenRef.current !== paintGeneration ||
+        currentDocumentRef.current !== paintDocument
+      )
+        return;
+      applyNavigationFailure(
+        localNavigationFailure(
+          "page_load_timeout",
+          "Dark theme could not be prepared",
+          activeNavigationUrlRef.current,
+          "The website took too long to prepare its dark theme.",
+          "Retry the page to try again.",
+        ),
+      );
+    }, DOCUMENT_READY_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, [
+    waitingForDarkPaint,
+    paintGeneration,
+    paintDocument,
+    applyNavigationFailure,
+  ]);
+
   // ── Page actions ───────────────────────────────────────────
   const pageActionBlockedRef = useRef(false);
   pageActionBlockedRef.current =
-    waitingForTrust || redirectHandoffPending || !!trustPrompt || !!loadError;
+    waitingForDarkPaint ||
+    waitingForTrust ||
+    redirectHandoffPending ||
+    !!trustPrompt ||
+    !!loadError;
   const pageActionBridgeRef = useRef<WebAutomationBridge | null>(null);
   if (!pageActionBridgeRef.current)
     pageActionBridgeRef.current = new WebAutomationBridge(() => {
@@ -4210,10 +4329,15 @@ export function useWebBrowser(session: ConnectionSession) {
     iframeRef,
     attachIframe,
     shouldMountIframe,
+    waitingForDarkPaint,
     redirectHandoffPending,
-    websiteDarkBootstrap: websiteDarkBootstrapCandidate ?? websiteDarkBootstrap,
+    websiteDarkBootstrap: websiteDarkBootstrapCandidate,
     pageInteractionBlocked:
-      redirectHandoffPending || waitingForTrust || !!trustPrompt || !!loadError,
+      waitingForDarkPaint ||
+      redirectHandoffPending ||
+      waitingForTrust ||
+      !!trustPrompt ||
+      !!loadError,
     handleUrlSubmit,
     handleIframeLoad,
     handleRefresh,

@@ -286,7 +286,7 @@ mod tests {
             let html = format!("{prefix}{rest}");
             assert_eq!(early_insertion_position(&html), prefix.len(), "{html}");
             let palette = crate::http::WebsiteDarkModeBootstrap { background_color: "#181a1b".into(), text_color: "#e8e6e3".into() };
-            let injected = super::super::inject_dark_mode_bootstrap(&html, &palette);
+            let injected = super::super::inject_dark_mode_bootstrap(&html, &palette, false);
             assert_eq!(injected, format!("{prefix}{}{rest}", palette.style().unwrap()));
         }
     }

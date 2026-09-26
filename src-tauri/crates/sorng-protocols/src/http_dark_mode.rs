@@ -86,6 +86,17 @@ impl WebsiteDarkModeBootstrap {
             self.text_color,
         ))
     }
+
+    pub(super) fn paint_shield(&self) -> Option<String> {
+        self.validate().ok()?;
+        // Installed only when the readiness runtime is permitted. The root
+        // pseudo-element covers even inline-important light content while the
+        // engine prepares its sheets; the runtime explicitly releases it.
+        Some(format!(
+            "<style id=\"__sorng_dark_paint_shield_v1\" class=\"darkreader\">@layer sorng-force-dark{{html:root:not([data-sorng-dark-presented])::after{{content:\"\"!important;display:block!important;position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;background:{}!important;opacity:1!important;visibility:visible!important;z-index:2147483647!important;pointer-events:none!important;transition:none!important;animation:none!important;filter:none!important;transform:none!important}}}}</style>",
+            self.background_color,
+        ))
+    }
 }
 
 #[cfg(test)]

@@ -993,7 +993,7 @@ const scriptJson = (value) =>
     .replace(/\u2028/gu, "\\u2028")
     .replace(/\u2029/gu, "\\u2029");
 
-class DevTools {
+export class DevTools {
   #socket;
   #next = 0;
   #pending = new Map();

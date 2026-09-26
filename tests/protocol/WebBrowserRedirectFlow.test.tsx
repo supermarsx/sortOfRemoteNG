@@ -37,6 +37,7 @@ import type {
 } from "../../src/types/security/databaseCredentialVault";
 import { PROXY_WEB_FRAME_SANDBOX } from "../../src/utils/protocol/webBrowserFrame";
 import { expectedGoogleOrigins } from "../../src/utils/protocol/googleProxySession";
+import { normalizeHttpAutomation } from "../../src/utils/connection/sessionQuickActions";
 
 const h = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -2879,6 +2880,179 @@ describe("page readiness deadline after the document starts", () => {
     return { view, iframe, identity, send, advance };
   }
   const errorScreen = () => screen.queryByTestId("web-navigation-error-screen");
+
+  const darkShield = () => screen.queryByTestId("web-dark-paint-shield");
+  function forceDark() {
+    h.connections[0].httpAutomation = normalizeHttpAutomation({
+      ...normalizeHttpAutomation(undefined),
+      forceDark: true,
+    });
+  }
+
+  it("keeps the dark shield through DOM/load completion until an exact document paint acknowledgement", async () => {
+    forceDark();
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    expect(darkShield()).not.toBeNull();
+    expect(iframe).toHaveStyle({ colorScheme: "dark" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(darkShield()).not.toBeNull();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "false");
+    document.removeEventListener("load", holdFrameLoad, true);
+    fireEvent.load(iframe);
+    await advance(4_100);
+    expect(darkShield()).not.toBeNull();
+    for (const changed of [
+      { sessionId: "stale" },
+      { documentToken: "e".repeat(32) },
+      { documentSequence: 2 },
+      { navigationToken: null },
+      { url: `${new URL(identity.url).origin}/other` },
+      { version: 2 },
+    ]) {
+      send({ ...identity, ...changed, type: "proxy_dark_ready" });
+      expect(darkShield()).not.toBeNull();
+    }
+    for (const changed of [
+      { source: window },
+      { origin: "http://untrusted.invalid" },
+    ]) {
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: new URL(identity.url).origin,
+            data: { ...identity, type: "proxy_dark_ready" },
+            ...changed,
+          }),
+        ),
+      );
+      expect(darkShield()).not.toBeNull();
+    }
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(darkShield()).toBeNull();
+    expect(iframe).not.toHaveAttribute("inert");
+    await advance(120_000);
+    expect(errorScreen()).toBeNull();
+  });
+
+  it("does not let dark paint complete loading and rearms for internal documents", async () => {
+    forceDark();
+    const { iframe, identity, send } = await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(darkShield()).toBeNull();
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "true");
+    send({ ...identity, type: "proxy_dom_ready" });
+    send({ ...identity, type: "proxy_navigation_start" });
+    expect(darkShield()).not.toBeNull();
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(darkShield()).not.toBeNull();
+    const next = {
+      ...identity,
+      documentToken: "e".repeat(32),
+      documentSequence: 2,
+      navigationToken: null,
+    };
+    send({ ...next, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(darkShield()).not.toBeNull();
+    send({ ...next, type: "proxy_dark_ready" });
+    expect(darkShield()).toBeNull();
+    // A new document can arrive without an unload signal.
+    send({ ...next, type: "proxy_dom_ready" });
+    send({
+      ...next,
+      documentToken: "f".repeat(32),
+      documentSequence: 3,
+      type: "proxy_document_start",
+    });
+    expect(darkShield()).not.toBeNull();
+  });
+
+  it("fails closed when accepted HTML never acknowledges paint, even after load", async () => {
+    forceDark();
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    document.removeEventListener("load", holdFrameLoad, true);
+    fireEvent.load(iframe);
+    await advance(119_000);
+    expect(darkShield()).not.toBeNull();
+    await advance(1_000);
+    expect(darkShield()).toBeNull();
+    expect(errorScreen()).toHaveTextContent("Dark theme could not be prepared");
+    expect(iframe).toHaveClass("invisible");
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(errorScreen()).not.toBeNull();
+  });
+
+  it("preserves noninjected PDF/text/CSP load completion and clears its exemption on navigation", async () => {
+    forceDark();
+    const { iframe, advance } = await mountedOnFakeClock();
+    document.removeEventListener("load", holdFrameLoad, true);
+    fireEvent.load(iframe);
+    expect(darkShield()).not.toBeNull();
+    await advance(0);
+    expect(darkShield()).toBeNull();
+    expect(iframe).not.toHaveAttribute("inert");
+    await advance(120_000);
+    expect(errorScreen()).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(darkShield()).not.toBeNull();
+  });
+
+  it("does not let deferred load bypass a document-start message or a newer navigation", async () => {
+    forceDark();
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    document.removeEventListener("load", holdFrameLoad, true);
+    fireEvent.load(iframe);
+    send({ ...identity, type: "proxy_document_start" });
+    await advance(0);
+    expect(darkShield()).not.toBeNull();
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(darkShield()).toBeNull();
+    fireEvent.load(iframe);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await advance(0);
+    expect(darkShield()).not.toBeNull();
+  });
+
+  it.each([false, true])(
+    "does not wait for runtime when dark is off or page scripts are blocked (blocked=%s)",
+    async (blocked) => {
+      if (blocked) {
+        forceDark();
+        h.connections[0].httpProxyPolicy = {
+          ...DEFAULT_HTTP_PROXY_POLICY,
+          pageScripts: "block",
+        };
+      }
+      const { iframe, advance } = await mountedOnFakeClock();
+      expect(darkShield()).toBeNull();
+      document.removeEventListener("load", holdFrameLoad, true);
+      fireEvent.load(iframe);
+      await advance(120_000);
+      expect(errorScreen()).toBeNull();
+    },
+  );
+
+  it("rearms the shield before a refreshed frame navigates and cancels it on unmount", async () => {
+    forceDark();
+    const { view, iframe, identity, send, advance } =
+      await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(darkShield()).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(darkShield()).not.toBeNull();
+    expect(view.container.querySelector("iframe")).toBe(iframe);
+    view.unmount();
+    await advance(120_000);
+    expect(errorScreen()).toBeNull();
+  });
 
   it("lets a slow document reach DOM-ready 45 seconds after it started", async () => {
     const { iframe, identity, send, advance } = await mountedOnFakeClock();
