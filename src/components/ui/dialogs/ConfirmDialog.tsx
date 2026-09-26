@@ -45,7 +45,21 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     if (!isOpen || !confirmOnEnter) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Enter") {
+      if (
+        e.key === "Enter" &&
+        !e.defaultPrevented &&
+        !e.repeat &&
+        !e.isComposing &&
+        !(
+          e.target instanceof Element &&
+          e.target.closest(
+            "button, a, input, textarea, select, [contenteditable], [role='button']",
+          )
+        )
+      ) {
+        // Focused controls own Enter. In particular, Cancel must never also
+        // trigger the destructive action through this document shortcut.
+        e.preventDefault();
         onConfirm();
       }
     };

@@ -26,6 +26,8 @@ export interface DatabaseActionContext {
   onCurrentClosed?: () => Promise<void> | void;
   /** Stop sensitive sessions/views before dropping the current unlock key. */
   beforeCurrentLock?: () => Promise<void>;
+  /** Non-secret phase reporting; never changes the mutation or cancellation boundary. */
+  onProgress?: (phase: string) => void;
 }
 
 export type DatabaseAction =
@@ -110,13 +112,22 @@ export function performDatabaseAction(
   action: DatabaseAction,
   context: DatabaseActionContext,
 ): Promise<DatabaseActionOutcome> {
+  const report = (phase: string) => {
+    try {
+      context.onProgress?.(phase);
+    } catch {
+      // Presentation cannot abort a database mutation.
+    }
+  };
   return withDatabaseMutation(context.manager, async () => {
     const { manager } = context;
+    report("Checking the database…");
     const collection = await manager.getDatabase(id);
     if (!collection) throw new Error("This database no longer exists.");
 
     switch (action.type) {
       case "clone": {
+        report("Copying the database…");
         await flushDatabaseIfCurrent(id, context);
         const created = await manager.duplicateDatabase(id, {
           password: action.password,
@@ -128,16 +139,24 @@ export function performDatabaseAction(
         };
       }
       case "delete": {
+        report("Saving pending changes…");
         const wasCurrent = await flushDatabaseIfCurrent(id, context);
         if (wasCurrent && context.beforeCurrentLock) {
+          report("Closing active sessions and sensitive views…");
           await context.beforeCurrentLock();
+          report("Finishing pending writes…");
           await flushDatabaseIfCurrent(id, context);
         }
+        report("Deleting the database and its stored data…");
         await manager.deleteDatabase(id);
-        if (wasCurrent) await context.onCurrentClosed?.();
+        if (wasCurrent) {
+          report("Clearing the closed database from the workspace…");
+          await context.onCurrentClosed?.();
+        }
         return { status: "success", message: "Deleted" };
       }
       case "lock": {
+        report("Saving and closing the database…");
         const wasCurrent = await flushDatabaseIfCurrent(id, context);
         if (wasCurrent && context.beforeCurrentLock) {
           await context.beforeCurrentLock();
@@ -165,6 +184,7 @@ export function performDatabaseAction(
         };
       }
       case "unlock": {
+        report("Unlocking the database…");
         if (!collection.isEncrypted || manager.isDatabaseUnlocked(id)) {
           return {
             status: "skipped",
@@ -179,6 +199,7 @@ export function performDatabaseAction(
         return { status: "success", message: "Unlocked without opening" };
       }
       case "metadata": {
+        report("Updating database metadata…");
         const updated = metadataUpdate(collection, action);
         if (updated.name !== collection.name) {
           const all = await manager.getAllDatabases();

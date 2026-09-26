@@ -180,6 +180,77 @@ describe("Toast", () => {
     act(() => vi.advanceTimersByTime(500));
     expect(onRemove).not.toHaveBeenCalled();
   });
+  it("shows elapsed time and honest ETA states without restarting on phase updates", () => {
+    const startedAt = Date.now();
+    const base: ToastMessage = {
+      id: "timed",
+      type: "loading",
+      message: "Deleting Alpha",
+      startedAt,
+    };
+    const { rerender, unmount } = render(
+      <Toast toast={base} onRemove={vi.fn()} />,
+    );
+    expect(screen.getByText("Elapsed 0s")).toBeTruthy();
+    expect(screen.getByText("ETA estimating…")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(65000));
+    expect(screen.getByText("Elapsed 1m 5s")).toBeTruthy();
+    rerender(
+      <Toast
+        toast={{
+          ...base,
+          revision: 1,
+          etaAt: Date.now() + 5000,
+          description: "Deleting stored data…",
+        }}
+        onRemove={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Elapsed 1m 5s")).toBeTruthy();
+    expect(screen.getByText("ETA ~5s")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(6000));
+    expect(screen.getByText("ETA recalculating…")).toBeTruthy();
+    rerender(
+      <Toast
+        toast={{ ...base, revision: 2, etaAt: null }}
+        onRemove={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("ETA unavailable")).toBeTruthy();
+    expect(screen.getByText("Elapsed 1m 11s")).toBeTruthy();
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("freezes final elapsed time and exposes indeterminate progress without a fake percentage", () => {
+    const startedAt = Date.now();
+    const base: ToastMessage = {
+      id: "job-clock",
+      type: "loading",
+      message: "Deleting",
+      startedAt,
+    };
+    const { rerender } = render(<Toast toast={base} onRemove={vi.fn()} />);
+    expect(screen.getByRole("progressbar").hasAttribute("aria-valuenow")).toBe(
+      false,
+    );
+    act(() => vi.advanceTimersByTime(3000));
+    rerender(
+      <Toast
+        toast={{
+          ...base,
+          type: "success",
+          duration: 0,
+          finishedAt: Date.now(),
+          revision: 1,
+        }}
+        onRemove={vi.fn()}
+      />,
+    );
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => vi.advanceTimersByTime(60000));
+    expect(screen.getByText("Elapsed 3s")).toBeTruthy();
+    expect(screen.queryByText(/ETA/)).toBeNull();
+  });
 });
 
 describe("ToastContainer", () => {

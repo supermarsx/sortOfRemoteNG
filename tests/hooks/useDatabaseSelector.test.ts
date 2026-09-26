@@ -43,6 +43,8 @@ const mockProtectionStatus = vi.fn(async () => ({
 const mockSaveData = vi.fn(async () => {});
 const mockFlushPendingSave = vi.fn(async () => {});
 const mockCloseCurrentDatabase = vi.fn(() => "plain");
+const mockDeleteDatabase = vi.fn(async () => undefined);
+const mockGetDatabase = vi.fn(async (id: string) => makeCollection({ id }));
 
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
@@ -54,6 +56,8 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       isDatabaseUnlocked: mockIsDatabaseUnlocked,
       getDatabaseProtectionStatus: mockProtectionStatus,
       closeCurrentDatabase: mockCloseCurrentDatabase,
+      deleteDatabase: mockDeleteDatabase,
+      getDatabase: mockGetDatabase,
     }),
   },
 }));
@@ -139,6 +143,29 @@ beforeEach(() => {
 });
 
 describe("database opening toast integration", () => {
+  it("uses guarded progress and workspace cleanup for a confirmed single deletion", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "plain" });
+    const close = vi.fn();
+    const { result } = renderSelector(vi.fn(), close);
+    await act(async () => result.current.handleDeleteCollection(plain));
+    expect(mockSaveData).toHaveBeenCalledOnce();
+    expect(mockFlushPendingSave).toHaveBeenCalledOnce();
+    expect(mockDeleteDatabase).toHaveBeenCalledExactlyOnceWith("plain");
+    expect(close).toHaveBeenCalledOnce();
+    expect(toast.loading).toHaveBeenCalledOnce();
+    expect(toast.update).toHaveBeenCalledWith(
+      "opening-toast",
+      expect.objectContaining({
+        description: "Deleting the database and its stored data…",
+        progressLabel: "0 of 1 databases processed",
+        etaAt: null,
+      }),
+    );
+    expect(toast.update).toHaveBeenLastCalledWith(
+      "opening-toast",
+      expect.objectContaining({ type: "success" }),
+    );
+  });
   it.each(["dirty", "busy"] as const)(
     "keeps %s credential vault work on manual database switch or close",
     async (kind) => {

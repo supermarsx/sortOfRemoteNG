@@ -87,6 +87,7 @@ export function useDatabaseBulkActions({
       const active = activeNotification.current;
       active?.toast.update(active.id, {
         message: "Stopping database operations after the current operation…",
+        etaAt: null,
       });
     };
   }, []);
@@ -168,12 +169,18 @@ export function useDatabaseBulkActions({
     );
     if (notificationId && notifications)
       activeNotification.current = { id: notificationId, toast: notifications };
-    const notifyProgress = (message: string) => {
+    let measuredWorkMs = 0;
+    let measuredOperations = 0;
+    let etaAt: number | null | undefined;
+    const notifyProgress = (message: string, description?: string) => {
       if (notificationId)
         notifications?.update(notificationId, {
           message,
           // Reserve the final unit for package save, refresh and cleanup.
           progress: { completed: outcomes.length, total: targets.length + 1 },
+          progressLabel: `${outcomes.length} of ${targets.length} databases processed`,
+          description,
+          etaAt: cancelled.current ? null : etaAt,
         });
     };
     let finalError = "";
@@ -187,15 +194,32 @@ export function useDatabaseBulkActions({
           });
           continue;
         }
+        const operationMessage = `${label}: ${target.name} — ${index + 1} of ${targets.length}`;
+        // An estimate is possible only after a completed operation in THIS batch.
+        // Include a rough finalization allowance, but never show 0s while busy.
+        etaAt =
+          measuredOperations > 0
+            ? Date.now() +
+              (measuredWorkMs / measuredOperations) *
+                (targets.length - index + 1)
+            : targets.length > 1
+              ? undefined
+              : null;
         notifyProgress(
-          `${label}: ${target.name} — ${index + 1} of ${targets.length}`,
+          operationMessage,
+          "Waiting for pending database operations…",
         );
+        const operationStartedAt = Date.now();
         try {
           if (action === "export") {
             const ctx = latestContext.current;
             const snapshot = await withDatabaseMutation(
               ctx.manager,
               async () => {
+                notifyProgress(
+                  operationMessage,
+                  "Reading the database for export…",
+                );
                 await flushDatabaseIfCurrent(target.id, ctx);
                 return ctx.manager.readExportableDatabaseSnapshot(
                   target.id,
@@ -220,11 +244,10 @@ export function useDatabaseBulkActions({
                     index: index + 1,
                   } as const)
                 : ({ type: action, password: passwords[target.id] } as const);
-            const outcome = await performDatabaseAction(
-              target.id,
-              request,
-              latestContext.current,
-            );
+            const outcome = await performDatabaseAction(target.id, request, {
+              ...latestContext.current,
+              onProgress: (phase) => notifyProgress(operationMessage, phase),
+            });
             outcomes.push({
               ...target,
               status: outcome.status,
@@ -238,9 +261,18 @@ export function useDatabaseBulkActions({
             message: actionError(cause, sensitive),
           });
         }
+        if (
+          ["success", "prepared"].includes(
+            outcomes[outcomes.length - 1]?.status,
+          )
+        ) {
+          measuredWorkMs += Math.max(1, Date.now() - operationStartedAt);
+          measuredOperations++;
+        }
         if (mounted.current) setResults([...outcomes]);
       }
       if (action === "export" && snapshots.length > 0 && options.export) {
+        etaAt = null;
         notifyProgress(
           `Export — saving the database package (${snapshots.length} prepared; not saved yet)…`,
         );
@@ -267,6 +299,7 @@ export function useDatabaseBulkActions({
         }
       }
       if (mounted.current) {
+        etaAt = null;
         setResults([...outcomes]);
         notifyProgress(`${label} — refreshing the database list…`);
         await refresh();
@@ -295,6 +328,8 @@ export function useDatabaseBulkActions({
                 : "success",
           message: `${label} finished — ${count("success")} succeeded, ${count("failed")} failed, ${count("skipped")} skipped, ${count("cancelled")} cancelled${finalError ? "; finalization needs attention" : ""}.`,
           details,
+          description: undefined,
+          progressLabel: `${targets.length} of ${targets.length} databases processed`,
           duration: details.length ? 0 : 6000,
           progress: {
             completed: targets.length + 1,
@@ -320,6 +355,9 @@ export function useDatabaseBulkActions({
       const active = activeNotification.current;
       active?.toast.update(active.id, {
         message: "Stopping after the current database operation…",
+        description:
+          "The current database operation will finish safely; remaining databases will not be started.",
+        etaAt: null,
       });
     },
   };

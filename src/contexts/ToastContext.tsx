@@ -47,8 +47,18 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   const addToast = useCallback(
     (type: ToastType, message: string, duration?: number) => {
       const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const startedAt = type === "loading" ? Date.now() : undefined;
       setToasts((prev) => {
-        const next = [...prev, { id, type, message, duration }];
+        const next = [
+          ...prev,
+          {
+            id,
+            type,
+            message,
+            duration,
+            ...(startedAt !== undefined ? { startedAt } : {}),
+          },
+        ];
         if (next.length <= MAX_TOASTS) return next;
         // Ordinary notifications never evict an operation that is still active.
         const disposable = next.findIndex((item) => item.type !== "loading");
@@ -69,10 +79,26 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   }, []);
 
   const updateToast = useCallback((id: string, patch: ToastUpdate) => {
+    const updatedAt = Date.now();
     setToasts((prev) =>
       prev.map((item) =>
         item.id === id
-          ? { ...item, ...patch, revision: (item.revision ?? 0) + 1 }
+          ? {
+              ...item,
+              ...patch,
+              ...(patch.type === "loading" && item.type !== "loading"
+                ? {
+                    startedAt: updatedAt,
+                    finishedAt: undefined,
+                    etaAt: patch.etaAt,
+                  }
+                : item.type === "loading" &&
+                    patch.type &&
+                    patch.type !== "loading"
+                  ? { finishedAt: updatedAt, etaAt: undefined }
+                  : {}),
+              revision: (item.revision ?? 0) + 1,
+            }
           : item,
       ),
     );

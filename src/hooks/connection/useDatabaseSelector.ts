@@ -368,25 +368,11 @@ export function useDatabaseSelector(
   };
 
   const handleDeleteCollection = async (collection: ConnectionDatabase) => {
-    if (
-      confirm(
-        t("databaseCenter.collections.deleteConfirm", {
-          name: collection.name,
-        }),
-      )
-    ) {
-      try {
-        closeCollectionMenu();
-        await databaseManager.deleteDatabase(collection.id);
-        setCollections(collections.filter((c) => c.id !== collection.id));
-      } catch (error) {
-        setError(
-          error instanceof Error
-            ? error.message
-            : t("databaseCenter.collections.errors.deleteFailed"),
-        );
-      }
-    }
+    // The list's confirmation dialog already approved this exact database.
+    // Share the guarded mutation, phase progress and workspace cleanup used by
+    // multi-delete instead of a second native confirmation and a silent delete.
+    closeCollectionMenu();
+    await bulk.run("delete", {}, [collection.id]);
   };
 
   const handleEditCollection = (collection: ConnectionDatabase) => {

@@ -45,7 +45,7 @@ function fixture(current: ConnectionDatabase | null = null) {
       id: `copy-${id}`,
       name: `Copy ${id}`,
     })),
-    deleteDatabase: vi.fn(async () => undefined),
+    deleteDatabase: vi.fn(async (): Promise<void> => undefined),
     lockDatabase: vi.fn(),
     closeCurrentDatabase: vi.fn(() => current?.id ?? null),
     unlockDatabase: vi.fn(async () => undefined),
@@ -330,6 +330,63 @@ describe("bulk database selection and outcomes", () => {
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
       "100",
     );
+  });
+  it("reports deletion phases, elapsed time and a measured ETA, then clears ETA during finalization", async () => {
+    vi.useFakeTimers();
+    const { result, manager, refresh, unmount } = mount(true);
+    let finishFirst!: () => void;
+    let finishSecond!: () => void;
+    let finishRefresh!: () => void;
+    manager.deleteDatabase.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    manager.deleteDatabase.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSecond = resolve;
+        }),
+    );
+    refresh.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve;
+        }),
+    );
+    let operation!: Promise<void>;
+    try {
+      await act(async () => {
+        operation = result.current.run("delete", {}, ["a", "b"]);
+      });
+      expect(manager.deleteDatabase).toHaveBeenCalledOnce();
+      expect(
+        screen.getByText("Deleting the database and its stored data…"),
+      ).toBeTruthy();
+      expect(screen.getByText("0 of 2 databases processed")).toBeTruthy();
+      expect(screen.getByText("ETA estimating…")).toBeTruthy();
+      act(() => vi.advanceTimersByTime(10000));
+      expect(screen.getByText("Elapsed 10s")).toBeTruthy();
+      await act(async () => finishFirst());
+      expect(manager.deleteDatabase).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("1 of 2 databases processed")).toBeTruthy();
+      expect(screen.getByText("ETA ~20s")).toBeTruthy();
+      act(() => vi.advanceTimersByTime(2000));
+      await act(async () => finishSecond());
+      expect(screen.getByText("ETA unavailable")).toBeTruthy();
+      expect(screen.getByText("Elapsed 12s")).toBeTruthy();
+      await act(async () => {
+        finishRefresh();
+        await operation;
+      });
+      expect(screen.queryByText(/ETA/)).toBeNull();
+      expect(screen.getByText("Elapsed 12s")).toBeTruthy();
+    } finally {
+      unmount();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("does not report prepared exports as saved and retains redacted failure details in the final toast", async () => {

@@ -17,14 +17,40 @@ export interface ToastMessage {
   message: string;
   duration?: number;
   progress?: { completed: number; total: number };
+  progressLabel?: string;
+  description?: string;
+  /** Operation clock is independent of the notification's dismissal timer. */
+  startedAt?: number;
+  finishedAt?: number;
+  /** Approximate deadline from measured work; null means no estimate is available. */
+  etaAt?: number | null;
   details?: string[];
   /** Provider-owned update counter: refreshes the completion expiry once. */
   revision?: number;
 }
 
 export type ToastUpdate = Partial<
-  Pick<ToastMessage, "type" | "message" | "duration" | "progress" | "details">
+  Pick<
+    ToastMessage,
+    | "type"
+    | "message"
+    | "duration"
+    | "progress"
+    | "details"
+    | "progressLabel"
+    | "description"
+    | "etaAt"
+  >
 >;
+
+function operationDuration(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours) return `${hours}h ${minutes}m ${seconds % 60}s`;
+  if (minutes) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
 
 interface ToastProps {
   toast: ToastMessage;
@@ -86,6 +112,24 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
   const revision = toast.revision ?? 0;
   const isExiting = exitingRevision === revision;
   const isLoading = toast.type === "loading";
+  const [operationNow, setOperationNow] = useState(Date.now);
+  const hasOperationClock = Number.isFinite(toast.startedAt);
+  useEffect(() => {
+    if (!isLoading || !hasOperationClock) return;
+    // One low-frequency timer per visible operation, never a render/expiry loop.
+    const timer = setInterval(() => setOperationNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [isLoading, hasOperationClock, toast.id]);
+  const clockNow =
+    toast.finishedAt ?? Math.max(operationNow, toast.startedAt ?? 0);
+  const eta =
+    toast.etaAt == null
+      ? toast.etaAt === null
+        ? "ETA unavailable"
+        : "ETA estimating…"
+      : toast.etaAt > clockNow
+        ? `ETA ~${operationDuration(Math.ceil((toast.etaAt - clockNow) / 1000) * 1000)}`
+        : "ETA recalculating…";
   const progress = toast.progress;
   const progressPercent =
     progress && progress.total > 0
@@ -197,6 +241,33 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
         )}
       </div>
 
+      {(toast.description || toast.progressLabel || hasOperationClock) && (
+        <div className="px-3 pb-2 space-y-1 text-xs text-[var(--color-textSecondary)]">
+          {toast.description && (
+            <p className="break-words [overflow-wrap:anywhere]">
+              {toast.description}
+            </p>
+          )}
+          {toast.progressLabel && <p>{toast.progressLabel}</p>}
+          {hasOperationClock && (
+            <div
+              className="flex flex-wrap justify-between gap-x-3 gap-y-1 tabular-nums"
+              aria-live="off"
+              data-testid="operation-timing"
+            >
+              <span>
+                Elapsed {operationDuration(clockNow - toast.startedAt!)}
+              </span>
+              {isLoading && (
+                <span title="Approximate remaining time based on completed operations; database sizes and cleanup can vary.">
+                  {eta}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {toast.details && toast.details.length > 0 && (
         <details className="px-3 pb-2 text-xs text-[var(--color-text)]">
           <summary className="cursor-pointer py-1">
@@ -212,19 +283,20 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
 
       {/* Operation progress never shares the timer/expiry animation. */}
       <div
-        className="h-[2px] w-full bg-[var(--color-border)]/40"
-        role={progress ? "progressbar" : undefined}
-        aria-label={progress ? "Operation progress" : undefined}
+        className={`${isLoading || progress ? "h-1" : "h-[2px]"} w-full bg-[var(--color-border)]/40`}
+        role={progress || isLoading ? "progressbar" : undefined}
+        aria-label={progress || isLoading ? "Operation progress" : undefined}
         aria-valuemin={progress ? 0 : undefined}
         aria-valuemax={progress ? 100 : undefined}
         aria-valuenow={progress ? progressPercent : undefined}
+        aria-valuetext={progress ? toast.progressLabel : undefined}
       >
         <div
           ref={progress || isLoading ? undefined : barRef}
-          className="h-full origin-left"
+          className={`h-full origin-left ${isLoading && progressPercent === undefined ? "motion-safe:animate-pulse" : ""}`}
           style={{
             background: config.barColor,
-            transform: `scaleX(${progressPercent === undefined ? 1 : progressPercent / 100})`,
+            transform: `scaleX(${progressPercent === undefined ? (isLoading ? 0.35 : 1) : progressPercent / 100})`,
             willChange: "transform",
           }}
         />

@@ -1,5 +1,5 @@
 import { renderHook, act, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   ToastProvider,
   useToastContext,
@@ -11,6 +11,37 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 );
 
 describe("ToastContext", () => {
+  it("owns a stable operation clock through updates and freezes it on completion", () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => useToastContext(), {
+      wrapper,
+    });
+    try {
+      let id = "";
+      act(() => {
+        id = result.current.toast.loading("Deleting database");
+      });
+      act(() => vi.advanceTimersByTime(2000));
+      act(() =>
+        result.current.toast.update(id, {
+          message: "Clearing workspace",
+          etaAt: null,
+        }),
+      );
+      act(() => vi.advanceTimersByTime(2000));
+      expect(screen.getByText("Elapsed 4s")).toBeTruthy();
+      act(() =>
+        result.current.toast.update(id, { type: "success", duration: 0 }),
+      );
+      act(() => vi.advanceTimersByTime(10000));
+      expect(screen.getByText("Elapsed 4s")).toBeTruthy();
+      expect(screen.queryByText(/ETA/)).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
   it("exposes success, error, warning, info toast methods", () => {
     const { result } = renderHook(() => useToastContext(), { wrapper });
     expect(typeof result.current.toast.success).toBe("function");

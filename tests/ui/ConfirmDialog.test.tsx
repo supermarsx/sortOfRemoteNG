@@ -159,6 +159,44 @@ describe("ConfirmDialog", () => {
     expect(onConfirm).toHaveBeenCalled();
   });
 
+  it.each(["confirm-no", "confirm-secondary", "confirm-yes"])(
+    "lets focused %s own Enter without a second confirmation",
+    (testId) => {
+      const onConfirm = vi.fn(),
+        onCancel = vi.fn(),
+        onSecondary = vi.fn();
+      render(
+        <ConfirmDialog
+          isOpen
+          message="Delete?"
+          variant="danger"
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+          secondaryAction={{ label: "Keep connections", onClick: onSecondary }}
+        />,
+      );
+      const button = screen.getByTestId(testId);
+      button.focus();
+      fireEvent.keyDown(button, { key: "Enter" });
+      expect(onConfirm).not.toHaveBeenCalled();
+      // JSDOM does not synthesize the browser's native keyboard click.
+      fireEvent.click(button);
+      expect(onConfirm).toHaveBeenCalledTimes(testId === "confirm-yes" ? 1 : 0);
+      expect(onCancel).toHaveBeenCalledTimes(testId === "confirm-no" ? 1 : 0);
+      expect(onSecondary).toHaveBeenCalledTimes(
+        testId === "confirm-secondary" ? 1 : 0,
+      );
+    },
+  );
+
+  it("ignores repeated and composing Enter presses", () => {
+    const onConfirm = vi.fn();
+    render(<ConfirmDialog isOpen message="Delete?" onConfirm={onConfirm} />);
+    fireEvent.keyDown(document, { key: "Enter", repeat: true });
+    fireEvent.keyDown(document, { key: "Enter", isComposing: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it("handles Escape key press to cancel", () => {
     const onCancel = vi.fn();
     render(
