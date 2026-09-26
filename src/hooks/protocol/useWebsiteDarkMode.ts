@@ -93,9 +93,9 @@ const ENGINE_REFUSED =
   `This page is themed with CSS only: ${SCRIPTS_SETTING} is set to “Block external script files” for this connection, so the dark-mode engine cannot load. ` +
   "Choose “Allow website scripts” there for full conversion.";
 const SCRIPTS_BLOCKED = `The extension cannot theme this page: ${SCRIPTS_SETTING} is set to “Block website scripts and automation” for this connection.`;
-/** The page refused the engine itself. Name no setting: the user has none. */
+/** CSS recovery covers both a refused engine and stalled dynamic conversion. */
 const PAGE_REFUSED =
-  "This page is themed with CSS only: the website's own content security policy refused the dark-mode engine. That restriction belongs to the site, not to your settings.";
+  "This page is using simplified dark styles because the dark-mode engine could not finish. The site may have blocked it or kept loading styles. The page remains available.";
 const NOT_APPLIED_YET =
   "The extension is not applied while this page is loading or waiting for a security decision.";
 const ENGINE_APPLIED = "This page is themed by the dark-mode engine.";

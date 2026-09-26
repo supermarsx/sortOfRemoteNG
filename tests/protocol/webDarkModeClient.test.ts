@@ -25,8 +25,29 @@ const expectCpanelSupplement = () => {
   expect(node()?.getAttribute("data-mode")).toBe("dynamic");
   expect(node()?.textContent).toContain("#cpanel_body");
 };
-function reader() {
-  const api = { enable: vi.fn(), disable: vi.fn(), setFetchMethod: vi.fn() };
+function reader(ready = true) {
+  const nodes: HTMLStyleElement[] = [];
+  const api = {
+    enable: vi.fn(() => {
+      if (!ready) return;
+      for (const [name, css] of [
+        ["user-agent", "html{background:#181a1b}"],
+        ["fallback", ""],
+      ]) {
+        const style = document.createElement("style");
+        style.className = `darkreader darkreader--${name}`;
+        style.textContent = css;
+        document.head.append(style);
+        nodes.push(style);
+      }
+      document.documentElement.setAttribute("data-darkreader-mode", "dynamic");
+    }),
+    disable: vi.fn(() => {
+      nodes.splice(0).forEach((style) => style.remove());
+      document.documentElement.removeAttribute("data-darkreader-mode");
+    }),
+    setFetchMethod: vi.fn(),
+  };
   vi.stubGlobal("DarkReader", api);
   return api;
 }
@@ -41,9 +62,12 @@ beforeEach(() => {
 afterEach(() => {
   controller.dispose();
   document
-    .querySelectorAll(".sorng-website-dark-mode,script")
+    .querySelectorAll(
+      ".sorng-website-dark-mode,.darkreader--user-agent,.darkreader--fallback,script",
+    )
     .forEach((element) => element.remove());
   document.body.innerHTML = "";
+  document.documentElement.removeAttribute("data-darkreader-mode");
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -206,8 +230,8 @@ describe("injected dark-mode extension runtime", () => {
     );
   });
   it("retains the loading palette until conversion finishes and keeps force rules afterwards", async () => {
-    reader();
-    await controller.set({ enabled: true, theme: theme() });
+    reader(false);
+    const pending = controller.set({ enabled: true, theme: theme() });
     const bootstrap = document.getElementById("__sorng_dark_bootstrap_v1")!;
     expect(bootstrap).toBeInTheDocument();
     expect(bootstrap.textContent).toContain(
@@ -232,6 +256,7 @@ describe("injected dark-mode extension runtime", () => {
       "data-sorng-dark-ready",
     );
     fallback.textContent = "";
+    expect(await pending).toBe("engine");
     await vi.waitFor(() =>
       expect(document.documentElement).toHaveAttribute("data-sorng-dark-ready"),
     );

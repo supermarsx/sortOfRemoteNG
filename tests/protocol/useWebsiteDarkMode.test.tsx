@@ -627,7 +627,7 @@ describe("what the open page actually got", () => {
     expect(hook.result.current.status.message).toContain("“Filter”");
   });
 
-  it("blames the website, not a setting, when the page itself refuses the engine", async () => {
+  it("reports CSS recovery without assuming a policy refusal or blaming a setting", async () => {
     consent();
     request.mockResolvedValue("cssOnly");
     const hook = mount();
@@ -635,7 +635,8 @@ describe("what the open page actually got", () => {
       expect(hook.result.current.status.kind).toBe("cssOnly"),
     );
     const message = hook.result.current.status.message;
-    expect(message).toContain("the website's own content security policy");
+    expect(message).toContain("simplified dark styles");
+    expect(message).toContain("engine could not finish");
     // There is nothing for the user to change here, so name no setting.
     expect(message).not.toContain("Website scripts");
     expect(hook.result.current.error).toBeNull();

@@ -537,7 +537,30 @@ describe("actual injected page-only automation client", () => {
     expect(dark.disable).toHaveBeenCalledOnce();
   });
   it("acknowledges dark mode with which path themed the page, and nothing else", async () => {
-    const dark = { enable: vi.fn(), disable: vi.fn(), setFetchMethod: vi.fn() };
+    const sheets: HTMLStyleElement[] = [];
+    const dark = {
+      enable: vi.fn(() => {
+        for (const [kind, css] of [
+          ["user-agent", "html{color:white}"],
+          ["fallback", ""],
+        ]) {
+          const style = document.createElement("style");
+          style.className = `darkreader darkreader--${kind}`;
+          style.textContent = css;
+          document.head.append(style);
+          sheets.push(style);
+        }
+        document.documentElement.setAttribute(
+          "data-darkreader-mode",
+          "dynamic",
+        );
+      }),
+      disable: vi.fn(() => {
+        sheets.splice(0).forEach((style) => style.remove());
+        document.documentElement.removeAttribute("data-darkreader-mode");
+      }),
+      setFetchMethod: vi.fn(),
+    };
     Object.defineProperty(window, "DarkReader", {
       configurable: true,
       value: dark,

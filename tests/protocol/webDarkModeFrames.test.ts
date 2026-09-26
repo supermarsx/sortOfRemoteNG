@@ -87,8 +87,28 @@ function proxiedRoot(): Realm {
  * nothing here calls into it, so a controller exists only because the file
  * installs itself eagerly as its own last statement.
  */
-function install(realm: Realm, reader?: unknown): Controller {
-  if (reader) realm.win.DarkReader = reader;
+function install(realm: Realm, reader?: ReturnType<typeof engine>): Controller {
+  if (reader) {
+    const nodes: HTMLStyleElement[] = [];
+    reader.enable.mockImplementation(() => {
+      for (const [kind, css] of [
+        ["user-agent", "html{color:white}"],
+        ["fallback", ""],
+      ]) {
+        const node = realm.doc.createElement("style");
+        node.className = `darkreader darkreader--${kind}`;
+        node.textContent = css;
+        realm.doc.head.append(node);
+        nodes.push(node);
+      }
+      realm.doc.documentElement.setAttribute("data-darkreader-mode", "dynamic");
+    });
+    reader.disable.mockImplementation(() => {
+      nodes.splice(0).forEach((node) => node.remove());
+      realm.doc.documentElement.removeAttribute("data-darkreader-mode");
+    });
+    realm.win.DarkReader = reader;
+  }
   realm.win.eval(`(function(){${source}})()`);
   realm.controller = realm.win[MARKER] as Controller;
   return realm.controller;
@@ -473,7 +493,9 @@ describe("dark-mode delivery into documents the proxy never served", () => {
     const late = unproxiedFrame(root, "<html><body><p>Late</p></body></html>");
     await Promise.resolve();
     await Promise.resolve();
-    expect(styles(late.contentDocument as Document)).toHaveLength(1);
+    await vi.waitFor(() =>
+      expect(styles(late.contentDocument as Document)).toHaveLength(1),
+    );
 
     await controller.set({ enabled: false });
     const after = unproxiedFrame(

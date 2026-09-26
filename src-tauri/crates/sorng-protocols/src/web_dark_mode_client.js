@@ -45,6 +45,8 @@ function createWebDarkModeController() {
     scanQueued = false,
     scanTimer = null,
     startupFallbackTimer = null,
+    readinessFallbackTimer = null,
+    readinessCompletion = null,
     paintFrame = null,
     paintTimer = null,
     paintRevision = -1,
@@ -285,8 +287,46 @@ function createWebDarkModeController() {
       if (!document.documentElement.hasAttribute("data-sorng-dark-ready"))
         document.documentElement.setAttribute("data-sorng-dark-ready", "");
       reportDarkPaint();
+      completeReadiness("engine");
     } else if (document.documentElement.hasAttribute("data-sorng-dark-ready"))
       document.documentElement.removeAttribute("data-sorng-dark-ready");
+  }
+  function completeReadiness(outcome) {
+    if (readinessFallbackTimer !== null)
+      window.clearTimeout(readinessFallbackTimer);
+    readinessFallbackTimer = null;
+    var completion = readinessCompletion;
+    readinessCompletion = null;
+    if (completion) completion(outcome);
+  }
+  function waitForReadiness(theme, ticket) {
+    if (document.documentElement.hasAttribute("data-sorng-dark-ready"))
+      return Promise.resolve("engine");
+    return new Promise(function (resolve, reject) {
+      readinessCompletion = resolve;
+      // Loading the engine is not the same as finishing its conversion. DSM
+      // can keep adding styles indefinitely; never leave the host frame inert
+      // behind a paint shield while waiting for the engine's fallback to clear.
+      readinessFallbackTimer = window.setTimeout(function () {
+        readinessFallbackTimer = null;
+        readinessCompletion = null;
+        if (disposed || ticket !== revision || desired !== theme) {
+          resolve(undefined);
+          return;
+        }
+        try {
+          removeStyles();
+          cssOnly = true;
+          installStyles(theme);
+          runtimeInstalled = true;
+          protectPalette(theme);
+          observe();
+          resolve("cssOnly");
+        } catch (error) {
+          reject(error);
+        }
+      }, 3000);
+    });
   }
   function cancelDarkPaint() {
     if (paintFrame !== null) window.cancelAnimationFrame(paintFrame);
@@ -1208,6 +1248,7 @@ function createWebDarkModeController() {
     set: function (payload) {
       if (disposed) return Promise.reject(new Error("The document was closed"));
       var ticket = ++revision;
+      completeReadiness(undefined);
       cancelDarkPaint();
       if (startupFallbackTimer !== null)
         window.clearTimeout(startupFallbackTimer);
@@ -1283,7 +1324,7 @@ function createWebDarkModeController() {
             reportDarkPaint();
             // A frameset root that skipped the engine on purpose reports nothing:
             // its frames answer for the content the user actually sees.
-            if (engine) return "engine";
+            if (engine) return waitForReadiness(theme, ticket);
             return wanted && cssOnly ? "cssOnly" : undefined;
           } finally {
             observe();
@@ -1305,6 +1346,7 @@ function createWebDarkModeController() {
     },
     dispose: function (keepAppearance) {
       disposed = true;
+      completeReadiness(undefined);
       cancelDarkPaint();
       if (startupFallbackTimer !== null)
         window.clearTimeout(startupFallbackTimer);
