@@ -40,10 +40,12 @@ function createWebDarkModeController() {
     observer = null,
     shadowStyles = [],
     cpanelDetected = false,
+    synologyDetected = false,
     originalAttachShadow = null,
     attachShadowHook = null,
     scanQueued = false,
     scanTimer = null,
+    scanFrame = null,
     startupFallbackTimer = null,
     paintFrame = null,
     paintTimer = null,
@@ -166,6 +168,7 @@ function createWebDarkModeController() {
       "!important;transition:none!important}" +
       forceSurfaceCss(theme) +
       cpanelCss(theme) +
+      synologyCss(theme) +
       "}" +
       (loadingPalette
         ? "@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:" +
@@ -189,6 +192,66 @@ function createWebDarkModeController() {
   }
   var forceSurfaces =
     "main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']";
+  // DSM replaces its Vue login root and loads desktop/package styles later.
+  // Keep these rules in the first important layer, independent of the dynamic
+  // engine's one-time readiness/fallback signal. Do not recolor media or icons.
+  var synologyMarker =
+    "#sds-login-vue,#sds-login-vue-inst,#sds-desktop,#sds-taskbar,.sds-desktop,.sds-taskbar";
+  var synologySurfaces =
+    "#sds-login-vue,#sds-login-vue-inst,#sds-desktop,.sds-desktop,.login-wrapper,.login-body-section,.login-tab-panel,.tab-content-ct,.login-tabs-content-wrapper,.x-panel-body,.x-panel-bwrap,.x-window-body,.x-window-mc,.x-tab-panel-body,.x-layout-split,.x-grid3,.x-grid3-viewport,.x-grid3-scroller,.x-grid3-row,.x-grid3-cell,.x-tree-panel,.x-tree-root-ct,.x-menu,.x-menu-list,.x-combo-list,.x-combo-list-inner,.x-form-text,.x-form-textarea";
+  var synologyHeaders =
+    "#sds-taskbar,.sds-taskbar,.x-panel-header,.x-window-header,.x-window-tc,.x-toolbar,.x-grid3-header,.x-tab-panel-header,.x-panel-footer,.x-window-footer";
+  var synologySelected =
+    ".x-grid3-row-selected,.x-grid3-row-selected .x-grid3-cell,.x-grid3-row-over,.x-grid3-row-over .x-grid3-cell,.x-tree-selected,.x-menu-item-active,.x-combo-selected";
+  function synologyCss(theme) {
+    var scope = "html:root:has(:is(" + synologyMarker + ")) ";
+    function rule(selectors, background) {
+      return (
+        scope +
+        ":is(" +
+        selectors +
+        "){background-color:" +
+        background +
+        "!important;background-image:none!important;color:" +
+        theme.textColor +
+        "!important;border-color:" +
+        mixColor(theme.backgroundColor, theme.textColor, 22) +
+        "!important;transition:none!important}"
+      );
+    }
+    return (
+      rule(synologySurfaces, theme.backgroundColor) +
+      rule(
+        synologyHeaders,
+        mixColor(theme.backgroundColor, theme.textColor, 12),
+      ) +
+      rule(
+        synologySelected,
+        mixColor(theme.backgroundColor, theme.textColor, 22),
+      )
+    );
+  }
+  function protectSynologySurfaces(root, theme, subtree) {
+    function protect(element) {
+      var background = element.matches(synologySelected)
+        ? mixColor(theme.backgroundColor, theme.textColor, 22)
+        : element.matches(synologyHeaders)
+          ? mixColor(theme.backgroundColor, theme.textColor, 12)
+          : theme.backgroundColor;
+      protectInline(element, "background-color", background);
+      protectInline(element, "background-image", "none");
+      protectInline(element, "color", theme.textColor);
+      protectInline(
+        element,
+        "border-color",
+        mixColor(theme.backgroundColor, theme.textColor, 22),
+      );
+    }
+    var surfaces =
+      synologySurfaces + "," + synologyHeaders + "," + synologySelected;
+    if (root.nodeType === 1 && root.matches(surfaces)) protect(root);
+    if (subtree !== false) root.querySelectorAll(surfaces).forEach(protect);
+  }
   function forceSurfaceCss(theme, shadow) {
     // Persistent proxy palette: a late stylesheet or SPA panel must not paint
     // white while the dynamic engine catches up. Media descendants retain
@@ -223,7 +286,16 @@ function createWebDarkModeController() {
     var properties = forcedInlineByElement.get(element);
     var entry = properties && properties[property];
     var current = inline.getPropertyValue(property);
-    if (entry && current === entry.owned) return;
+    if (entry && current === entry.owned) {
+      // State changes (for example DSM selecting a grid row) can legitimately
+      // change our shade without replacing the site's restorable original.
+      if (entry.requested !== value) {
+        inline.setProperty(property, value, "important");
+        entry.owned = inline.getPropertyValue(property);
+        entry.requested = value;
+      }
+      return;
+    }
     if (!entry) {
       entry = { element: element, property: property };
       forcedInline.push(entry);
@@ -237,6 +309,7 @@ function createWebDarkModeController() {
     entry.priority = "important";
     inline.setProperty(property, value, "important");
     entry.owned = inline.getPropertyValue(property);
+    entry.requested = value;
   }
   function protectPalette(theme, changes) {
     if (!bootstrap) return;
@@ -262,6 +335,15 @@ function createWebDarkModeController() {
       else protectCpanelSurfaces(document, theme);
     }
     cpanelDetected = isCpanel;
+    var isSynology = !!document.querySelector(synologyMarker);
+    if (isSynology) {
+      if (changes && synologyDetected)
+        changes.forEach(function (subtree, node) {
+          if (node.isConnected) protectSynologySurfaces(node, theme, subtree);
+        });
+      else protectSynologySurfaces(document, theme, true);
+    }
+    synologyDetected = isSynology;
     protectShadows(theme, changes);
     // enable() may return before the engine is active (hidden document, missing
     // head or loading CSS). Its own fallback is cleared after conversion. The
@@ -746,7 +828,7 @@ function createWebDarkModeController() {
     // surfaces which can survive dynamic conversion or be replaced after it.
     // Keep a local, selector-scoped layer for those panels for the document's
     // lifetime. Pure filter mode is excluded because it inverts the page once.
-    if (theme.mode !== "filter") css += cpanelCss(theme);
+    if (theme.mode !== "filter") css += cpanelCss(theme) + synologyCss(theme);
     css += "\n" + theme.customCss;
     if (!css.trim()) return;
     style = document.createElement("style");
@@ -960,7 +1042,11 @@ function createWebDarkModeController() {
           pendingChanges.set(node, pendingChanges.get(node) || subtree);
       }
       if (record.type === "attributes") {
-        add(record.target, false);
+        // Selection/class changes affect descendant DSM grid cells too.
+        add(
+          record.target,
+          synologyDetected && record.attributeName === "class",
+        );
         if (record.attributeName === "class" || record.attributeName === "id")
           shadowStyles.forEach(function (entry) {
             var host = entry.root.host;
@@ -985,10 +1071,14 @@ function createWebDarkModeController() {
   function scheduleScan() {
     if (scanQueued || disposed || !desired) return;
     scanQueued = true;
-    // Yield to rendering and input. A microtask refresh can keep feeding the
-    // engine's observer forever without giving the browser a paint opportunity.
-    scanTimer = window.setTimeout(function () {
+    // Coalesce at the next rendering opportunity, BEFORE the page paints its
+    // late inline colors. Never recurse in observer microtasks; that can starve
+    // input when an appliance and the dynamic engine both react to mutations.
+    function run() {
+      if (scanTimer !== null) window.clearTimeout(scanTimer);
+      if (scanFrame !== null) window.cancelAnimationFrame(scanFrame);
       scanTimer = null;
+      scanFrame = null;
       scanQueued = false;
       var changes = new Map();
       for (var entry of pendingChanges) {
@@ -1016,7 +1106,11 @@ function createWebDarkModeController() {
         // One malformed frame must not stop the rest of the page theming.
       }
       if (pendingChanges.size) scheduleScan();
-    }, 16);
+    }
+    if (typeof window.requestAnimationFrame === "function")
+      scanFrame = window.requestAnimationFrame(run);
+    // Hidden tabs can suspend animation frames, but still need eventual repair.
+    scanTimer = window.setTimeout(run, scanFrame === null ? 16 : 100);
   }
   function observe() {
     if (disposed || !desired || typeof MutationObserver !== "function") return;
@@ -1311,6 +1405,8 @@ function createWebDarkModeController() {
       startupFallbackTimer = null;
       if (scanTimer !== null) window.clearTimeout(scanTimer);
       scanTimer = null;
+      if (scanFrame !== null) window.cancelAnimationFrame(scanFrame);
+      scanFrame = null;
       pendingChanges.clear();
       desired = null;
       revision++;

@@ -97,6 +97,12 @@ async fn dark_bootstrap_survives_redirects_gzip_and_child_documents_without_chan
             assert!(bootstrap.contains("background-color:transparent!important"));
             assert!(body[start..].contains("[href*='/frontend/jupiter/']"));
             assert!(body[start..].contains(".panel-body"));
+            // DSM's persistent coverage is in the response before any runtime,
+            // including when scripts are blocked. It survives readiness.
+            assert!(bootstrap.contains("html:root:has(:is(#sds-login-vue,#sds-login-vue-inst,"));
+            assert!(bootstrap.contains(".login-body-section"));
+            assert!(bootstrap.contains(".x-grid3-scroller"));
+            assert!(bootstrap.contains(".x-grid3-row-selected .x-grid3-cell"));
             if scripts == PageScripts::Block {
                 assert!(!body.contains("proxy_document_start"));
                 assert!(!body.contains("__sorng_dark_paint_shield_v1"));
