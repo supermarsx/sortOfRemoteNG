@@ -134,16 +134,13 @@
       finish(false, "cancelled");
     };
 
-    function submitPassword(target) {
+    function fetchPassword() {
       phase = "password-fetch";
       read(continuation, true, controller)
         .then(function (reply) {
           try {
-            var current = passwordTarget(helpers);
+            if (finished || stopped) return;
             if (
-              !current ||
-              current.field !== target.field ||
-              current.button !== target.button ||
               !reply ||
               reply.loginFlow !== "google" ||
               typeof reply.password !== "string" ||
@@ -151,34 +148,47 @@
             )
               throw new Error("changed");
             password = reply.password;
-            helpers.fillField(
-              target.field,
-              password,
-              function () {
-                var checked = passwordTarget(helpers);
-                if (!checked || checked.field !== target.field)
-                  throw new Error("changed");
-                return true;
-              },
-              function () {
-                var checked = passwordTarget(helpers, password);
-                if (!checked || checked.field !== target.field)
-                  throw new Error("changed");
-                return true;
-              },
-            );
-            if (target.field.value !== password) throw new Error("changed");
-            phase = "submitted";
-            target.button.click();
-            finish(true, "submitted");
+            // Rendering can replace the panel while the single-use grant is
+            // in flight. Observe the new controls without requesting it again.
+            phase = "password-fill";
+            progress();
           } finally {
             if (reply && typeof reply === "object") reply.password = null;
-            password = null;
           }
         })
         .catch(function () {
           finish(false, stopped ? "cancelled" : "reviewed-login-stopped");
         });
+    }
+
+    function submitPassword(target) {
+      function checkedTarget(expectedValue) {
+        var checked = passwordTarget(helpers, expectedValue);
+        if (
+          finished ||
+          stopped ||
+          Date.now() >= deadline ||
+          !checked ||
+          checked.field !== target.field ||
+          checked.button !== target.button
+        )
+          throw new Error("changed");
+        return true;
+      }
+      helpers.fillField(
+        target.field,
+        password,
+        function () {
+          return checkedTarget();
+        },
+        function () {
+          return checkedTarget(password);
+        },
+      );
+      checkedTarget(password);
+      phase = "submitted";
+      target.button.click();
+      finish(true, "submitted");
     }
 
     function progress() {
@@ -241,9 +251,12 @@
             });
           return;
         }
-        if (phase === "password") {
+        if (phase === "password" || phase === "password-fill") {
           var passwordStage = passwordTarget(helpers);
-          if (passwordStage) submitPassword(passwordStage);
+          if (passwordStage) {
+            if (phase === "password") fetchPassword();
+            else submitPassword(passwordStage);
+          }
         }
       } catch (_) {
         finish(false, stopped ? "cancelled" : "reviewed-login-stopped");
