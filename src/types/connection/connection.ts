@@ -1829,6 +1829,7 @@ export interface DiscoveredHost {
   services: DiscoveredService[];
   responseTime: number;
   macAddress?: string;
+  reachability?: "responsive" | "unresponsive" | "not-checked";
 }
 
 export interface DiscoveredService {
@@ -1837,6 +1838,10 @@ export interface DiscoveredService {
   service: string;
   version?: string;
   banner?: string;
+  product?: string;
+  detection?: "identified" | "port-hint" | "unknown";
+  evidence?: string;
+  identificationError?: string;
 }
 
 export interface FileTransferSession {

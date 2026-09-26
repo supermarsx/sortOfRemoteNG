@@ -6,16 +6,45 @@ import {
 import { NetworkDiscoveryConfig } from "../../types/settings/settings";
 import { Semaphore } from "../core/semaphore";
 import serviceMap from "../discovery/serviceMap";
+import { DISCOVERY_SERVICE_PRESETS } from "../discovery/discoveryPresets";
 import {
-  FALLBACK_PROTOCOL,
-  normalizeImportedProtocol,
-  protocolFromPort,
-} from "../connection/normalizeImportedProtocol";
+  fingerprintService,
+  type ServiceFingerprintEvidence,
+} from "../discovery/serviceFingerprint";
+import { protocolFromPort } from "../connection/normalizeImportedProtocol";
 import * as ipaddr from "ipaddr.js";
 
 interface CacheEntry<T> {
   value: T | null;
   timestamp: number;
+}
+
+export interface DiscoveryScanStatus {
+  phase: "preparing" | "discovering" | "scanning" | "identifying" | "complete";
+  totalHosts: number;
+  completedHosts: number;
+  totalProbes: number;
+  completedProbes: number;
+  skippedHosts: number;
+  activeProbes: number;
+  currentHost?: string;
+  currentPort?: number;
+}
+
+interface NativeScanObserver {
+  start: (
+    phase: "discovering" | "scanning" | "identifying",
+    host: string,
+    port?: number,
+  ) => void;
+  finish: () => void;
+  skip: (ports: number) => void;
+}
+
+interface ScanPortResult extends ServiceFingerprintEvidence {
+  isOpen: boolean;
+  banner?: string;
+  elapsed: number;
 }
 
 interface NativeVncRfbProbeResult {
@@ -91,61 +120,15 @@ const extractVersion = (banner?: string): string | undefined => {
 };
 
 /**
- * Classify an open port into a discovered service using, in order: the
- * caller's VNC hint, the static service map, banner evidence, and the
- * port-evidence table of the protocol normaliser. A port with no evidence is
- * reported as `raw` (generic TCP) — never RDP.
+ * Compatibility entry point for evidence-first service fingerprinting.
  */
 export const classifyDiscoveredService = (
   port: number,
   banner?: string,
   protocolHint?: string,
+  evidence?: ServiceFingerprintEvidence,
 ): DiscoveredService => {
-  if (protocolHint === "vnc") {
-    return {
-      port,
-      protocol: "vnc",
-      service: "vnc",
-      version: extractVersion(banner),
-      banner,
-    };
-  }
-  const serviceInfo = serviceMap[port];
-  if (serviceInfo) {
-    return {
-      port,
-      protocol: serviceInfo.protocol,
-      service: serviceInfo.service,
-      version: extractVersion(banner),
-      banner,
-    };
-  }
-  const sniffed = sniffBannerProtocol(banner, port);
-  if (sniffed) {
-    return {
-      port,
-      protocol: sniffed,
-      service: sniffed,
-      version: extractVersion(banner),
-      banner,
-    };
-  }
-  const normalized = normalizeImportedProtocol({ port });
-  if (normalized.source === "port") {
-    return {
-      port,
-      protocol: normalized.protocol,
-      service: normalized.protocol,
-      version: extractVersion(banner),
-      banner,
-    };
-  }
-  return {
-    port,
-    protocol: FALLBACK_PROTOCOL,
-    service: "unknown",
-    banner,
-  };
+  return fingerprintService(port, banner, protocolHint, evidence);
 };
 
 const isConfirmedRfbBanner = (banner?: string): boolean =>
@@ -187,6 +170,7 @@ export class NetworkScanner {
     config: NetworkDiscoveryConfig,
     onProgress?: (progress: number) => void,
     signal?: AbortSignal,
+    onStatus?: (status: DiscoveryScanStatus) => void,
   ): Promise<DiscoveredHost[]> {
     if (this.native) {
       if (!config.ipRange.trim())
@@ -219,6 +203,20 @@ export class NetworkScanner {
         )
       )
         throw new Error("Concurrency must be between 1 and 100.");
+      if (!["none", "icmp", "tcp"].includes(config.pingMethod ?? "none"))
+        throw new Error("Choose none, ICMP, or TCP host discovery.");
+      const pingTimeout = config.pingTimeout ?? 1000;
+      if (
+        !Number.isInteger(pingTimeout) ||
+        pingTimeout < 100 ||
+        pingTimeout > 30000
+      )
+        throw new Error(
+          "Host discovery timeout must be between 100 and 30000 ms.",
+        );
+      const pingPort = config.pingPort ?? 443;
+      if (!Number.isInteger(pingPort) || pingPort < 1 || pingPort > 65535)
+        throw new Error("Host discovery port must be between 1 and 65535.");
       const ports = this.getPortsToScan(config);
       if (
         !ports.length ||
@@ -242,7 +240,55 @@ export class NetworkScanner {
     if (this.native && totalHosts > 256)
       throw new Error("Choose a range of at most 256 addresses.");
     const discoveredHosts: DiscoveredHost[] = [];
+    const startedHosts = new Set<string>();
     let completed = 0;
+    const hasHostProbe =
+      this.native && (config.pingMethod ?? "none") !== "none";
+    const status: DiscoveryScanStatus = {
+      phase: "preparing",
+      totalHosts,
+      completedHosts: 0,
+      totalProbes:
+        totalHosts *
+        (this.getPortsToScan(config).length + (hasHostProbe ? 1 : 0)),
+      completedProbes: 0,
+      skippedHosts: 0,
+      activeProbes: 0,
+    };
+    const emitStatus = () => {
+      if (this.native) onStatus?.({ ...status });
+    };
+    const emitProbeProgress = () => {
+      onProgress?.(
+        status.totalProbes
+          ? (status.completedProbes / status.totalProbes) * 100
+          : 100,
+      );
+      emitStatus();
+    };
+    const observer: NativeScanObserver | undefined = this.native
+      ? {
+          start: (phase, host, port) => {
+            startedHosts.add(host);
+            status.phase = phase;
+            status.currentHost = host;
+            status.currentPort = port;
+            status.activeProbes++;
+            emitStatus();
+          },
+          finish: () => {
+            status.activeProbes--;
+            status.completedProbes++;
+            emitProbeProgress();
+          },
+          skip: (ports) => {
+            status.skippedHosts++;
+            status.completedProbes += ports;
+            emitProbeProgress();
+          },
+        }
+      : undefined;
+    emitStatus();
 
     const semaphore = new Semaphore(config.maxConcurrent);
     const portSemaphore = new Semaphore(config.maxPortConcurrent);
@@ -275,6 +321,7 @@ export class NetworkScanner {
               signal,
               portSemaphore,
               abortNative,
+              observer,
             );
             if (host && !signal?.aborted) {
               discoveredHosts.push(host);
@@ -286,8 +333,12 @@ export class NetworkScanner {
             }
             console.error(`Failed to scan ${ip}:`, error);
           } finally {
-            completed++;
-            onProgress?.((completed / totalHosts) * 100);
+            // Cancelled semaphore waiters never performed a host/port check.
+            if (!this.native || startedHosts.has(ip)) completed++;
+            if (this.native) {
+              status.completedHosts = completed;
+              emitStatus();
+            } else onProgress?.((completed / totalHosts) * 100);
             semaphore.release();
           }
         })();
@@ -309,6 +360,10 @@ export class NetworkScanner {
       }
     } finally {
       externalSignal?.removeEventListener("abort", abortNative);
+      status.phase = "complete";
+      status.currentHost = undefined;
+      status.currentPort = undefined;
+      emitStatus();
     }
 
     return discoveredHosts.sort((a, b) => this.compareIPs(a.ip, b.ip));
@@ -445,6 +500,7 @@ export class NetworkScanner {
     signal?: AbortSignal,
     portSemaphore = new Semaphore(config.maxPortConcurrent),
     onProbeError?: () => void,
+    observer?: NativeScanObserver,
   ): Promise<DiscoveredHost | null> {
     const startTime = Date.now();
     const openPorts: number[] = [];
@@ -452,6 +508,48 @@ export class NetworkScanner {
 
     // Get ports to scan
     const portsToScan = this.getPortsToScan(config);
+
+    let reachability: DiscoveredHost["reachability"] = "not-checked";
+    const method = config.pingMethod ?? "none";
+    if (this.native && method !== "none") {
+      await portSemaphore.acquire();
+      try {
+        if (signal?.aborted) return null;
+        observer?.start(
+          "discovering",
+          ip,
+          method === "tcp" ? (config.pingPort ?? 443) : undefined,
+        );
+        try {
+          const result = await invoke<{
+            reachable: boolean;
+            elapsed_ms: number;
+            error?: string;
+          }>("probe_discovery_host", {
+            host: ip,
+            method,
+            timeoutMs: config.pingTimeout ?? 1000,
+            port: config.pingPort ?? 443,
+          });
+          reachability = result.reachable ? "responsive" : "unresponsive";
+        } finally {
+          observer?.finish();
+        }
+      } catch (error) {
+        onProbeError?.();
+        throw error;
+      } finally {
+        portSemaphore.release();
+      }
+      if (signal?.aborted) return null;
+      if (
+        reachability === "unresponsive" &&
+        config.scanUnresponsiveHosts === false
+      ) {
+        observer?.skip(portsToScan.length);
+        return null;
+      }
+    }
 
     // Scan ports with a concurrency limit
     const portPromises = portsToScan.map(async (port) => {
@@ -466,6 +564,7 @@ export class NetworkScanner {
           config,
           signal,
           this.getProtocolForPort(port, config),
+          observer,
         );
       } catch (error) {
         onProbeError?.();
@@ -500,29 +599,28 @@ export class NetworkScanner {
         }
         openPorts.push(port);
 
-        const service =
-          this.native &&
-          protocol === "vnc" &&
-          !isConfirmedRfbBanner(result.banner)
-            ? {
-                port,
-                protocol: "raw",
-                service: "unknown",
-                banner: result.banner,
-              }
-            : this.identifyService(port, result.banner, protocol);
+        const service = this.identifyService(
+          port,
+          result.banner,
+          protocol,
+          result,
+        );
         if (service) {
           services.push(service);
         }
       }
     });
 
-    if (openPorts.length === 0) {
+    if (
+      openPorts.length === 0 &&
+      !(this.native && reachability === "responsive")
+    ) {
       return null;
     }
 
     const responseTime = Date.now() - startTime;
-    if (this.native) return { ip, openPorts, services, responseTime };
+    if (this.native)
+      return { ip, openPorts, services, responseTime, reachability };
     const hostname = await this.resolveHostname(ip, config.hostnameTtl, signal);
     if (signal?.aborted) {
       return null;
@@ -574,11 +672,33 @@ export class NetworkScanner {
       config.customPorts[protocol]?.includes(port),
     );
     return (
+      DISCOVERY_SERVICE_PRESETS.find(
+        (preset) => preset.id === configuredProtocol,
+      )?.protocol ||
       configuredProtocol ||
       serviceMap[port]?.protocol ||
       protocolFromPort(port) ||
       "default"
     );
+  }
+
+  private getHttpScheme(
+    port: number,
+    config: NetworkDiscoveryConfig,
+  ): "http" | "https" | undefined {
+    if (config.identifyServices !== true) return undefined;
+    const selected = config.protocols.find((id) =>
+      config.customPorts[id]?.includes(port),
+    );
+    if (selected) {
+      const preset = DISCOVERY_SERVICE_PRESETS.find(
+        (item) => item.id === selected,
+      );
+      const scheme = preset?.httpScheme ?? preset?.protocol ?? selected;
+      return scheme === "http" || scheme === "https" ? scheme : undefined;
+    }
+    const protocol = protocolFromPort(port);
+    return protocol === "http" || protocol === "https" ? protocol : undefined;
   }
 
   private async scanPort(
@@ -587,25 +707,40 @@ export class NetworkScanner {
     config: NetworkDiscoveryConfig,
     signal?: AbortSignal,
     protocolHint?: string,
-  ): Promise<{ isOpen: boolean; banner?: string; elapsed: number }> {
+    observer?: NativeScanObserver,
+  ): Promise<ScanPortResult> {
     if (this.native) {
       if (signal?.aborted) return { isOpen: false, elapsed: 0 };
       // Existing cross-platform Tokio TCP probe. Keep the semaphore occupied
       // until this bounded call settles; cancellation prevents queued probes.
-      const result = await invoke<{
-        open: boolean;
-        banner?: string;
-        time_ms?: number;
-      }>("check_port", {
-        host: ip.includes(":") ? `[${ip}]` : ip,
-        port,
-        timeoutSecs: Math.ceil(config.timeout / 1000),
-      });
-      return {
-        isOpen: !signal?.aborted && result.open,
-        banner: result.banner?.trim(),
-        elapsed: result.time_ms ?? 0,
-      };
+      const httpScheme = this.getHttpScheme(port, config);
+      observer?.start(httpScheme ? "identifying" : "scanning", ip, port);
+      try {
+        const result = await invoke<
+          ServiceFingerprintEvidence & {
+            open: boolean;
+            banner?: string;
+            time_ms?: number;
+          }
+        >("check_port", {
+          host: !httpScheme && ip.includes(":") ? `[${ip}]` : ip,
+          port,
+          timeoutSecs: Math.ceil(config.timeout / 1000),
+          ...(httpScheme ? { identifyHttp: httpScheme } : {}),
+        });
+        return {
+          isOpen: !signal?.aborted && result.open,
+          banner: result.banner?.trim(),
+          elapsed: result.time_ms ?? 0,
+          http_server: result.http_server,
+          http_title: result.http_title,
+          http_status: result.http_status,
+          identification_error: result.identification_error,
+          httpScheme,
+        };
+      } finally {
+        observer?.finish();
+      }
     }
     const protocol = protocolHint || serviceMap[port]?.protocol || "default";
     if (HOST_ONLY_RAW_PROTOCOLS.has(protocol)) {
@@ -864,8 +999,9 @@ export class NetworkScanner {
     port: number,
     banner?: string,
     protocolHint?: string,
+    evidence?: ServiceFingerprintEvidence,
   ): DiscoveredService | null {
-    return classifyDiscoveredService(port, banner, protocolHint);
+    return classifyDiscoveredService(port, banner, protocolHint, evidence);
   }
 
   private extractVersion(banner?: string): string | undefined {

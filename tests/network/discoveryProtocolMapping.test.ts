@@ -130,6 +130,7 @@ describe("classifyDiscoveredService", () => {
       protocol: "raw",
       service: "unknown",
       banner: undefined,
+      detection: "unknown",
     });
   });
 
@@ -141,17 +142,17 @@ describe("classifyDiscoveredService", () => {
       service: "http",
     });
     expect(classifyDiscoveredService(9999, "\x16\x03\x01")).toMatchObject({
-      protocol: "https",
-      service: "https",
+      protocol: "raw",
+      service: "unknown",
     });
     const nginx = classifyDiscoveredService(7777, "nginx/1.24.0");
     expect(nginx.protocol).toBe("http");
     expect(nginx.version).toBe("1.24.0");
   });
 
-  it("a static service-map hit outranks the banner", () => {
+  it("HTTP evidence outranks a static service-map hit", () => {
     expect(classifyDiscoveredService(22, "HTTP/1.1 200 OK").protocol).toBe(
-      "ssh",
+      "http",
     );
   });
 

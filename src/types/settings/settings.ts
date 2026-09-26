@@ -1192,6 +1192,13 @@ export interface CustomScript {
 
 export interface NetworkDiscoveryConfig {
   enabled: boolean;
+  /** Opt in to bounded HTTP identification on selected web ports. */
+  identifyServices?: boolean;
+  pingMethod?: "none" | "icmp" | "tcp";
+  /** Host-discovery timeout in milliseconds. */
+  pingTimeout?: number;
+  pingPort?: number;
+  scanUnresponsiveHosts?: boolean;
   ipRange: string;
   portRanges: string[];
   protocols: string[];
