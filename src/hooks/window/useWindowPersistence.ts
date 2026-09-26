@@ -1,10 +1,23 @@
 import { useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "@tauri-apps/api/core";
-import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
+import {
+  LogicalPosition,
+  LogicalSize,
+  PhysicalPosition,
+} from "@tauri-apps/api/dpi";
 import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { validateSavedPosition } from "../../utils/window/windowRepatriation";
+
+async function hasNormalBounds(window: ReturnType<typeof getCurrentWindow>) {
+  const states = await Promise.all([
+    window.isMaximized(),
+    window.isFullscreen(),
+    window.isMinimized(),
+  ]);
+  return states.every((state) => !state);
+}
 
 /**
  * Persists and restores window size, position, and sidebar layout settings.
@@ -31,6 +44,10 @@ export function useWindowPersistence(
   // re-run persistence effects after each save.
   const latestSettingsRef = useRef<GlobalSettings>(appSettings);
   latestSettingsRef.current = appSettings;
+  const permissionErrorRef = useRef(isWindowPermissionError);
+  permissionErrorRef.current = isWindowPermissionError;
+  const restoringRef = useRef<object | null>(null);
+  const geometryRevision = useRef(0);
 
   const persistSidebarWidth = appSettings?.persistSidebarWidth ?? false;
   const persistSidebarPosition = appSettings?.persistSidebarPosition ?? false;
@@ -67,90 +84,88 @@ export function useWindowPersistence(
     setSidebarPosition,
   ]);
 
-  // Restore window size and position
+  // Saved geometry is persistence output, not a live resize command. Restore
+  // on initialization / preference changes only, never on save broadcasts.
   useEffect(() => {
     if (!isInitialized || typeof isTauri !== "function" || !isTauri()) return;
 
     const window = getCurrentWindow();
+    const settings = latestSettingsRef.current;
+    const restore = {};
+    restoringRef.current = restore;
+    geometryRevision.current += 1;
+    let cancelled = false;
+    const canRestore = async () => {
+      const normal = await hasNormalBounds(window);
+      return !cancelled && normal;
+    };
+    const reportError = (error: unknown) => {
+      if (!permissionErrorRef.current(error)) console.error(error);
+    };
 
-    // Minimum window size constraints
-    const MIN_WIDTH = 800;
-    const MIN_HEIGHT = 600;
+    const restoreWindow = async () => {
+      if (!(await canRestore())) return;
+      const validDimension = (value: number | undefined, minimum: number) =>
+        Number.isFinite(value) ? Math.max(value!, minimum) : minimum;
+      const size = new LogicalSize(
+        validDimension(settings.windowSize?.width, 800),
+        validDimension(settings.windowSize?.height, 600),
+      );
 
-    const savedWidth = appSettings.windowSize?.width || MIN_WIDTH;
-    const savedHeight = appSettings.windowSize?.height || MIN_HEIGHT;
-
-    if (appSettings.persistWindowSize && appSettings.windowSize) {
-      const { width, height } = appSettings.windowSize;
-      // Validate and enforce minimum size
-      const validWidth = Math.max(width || MIN_WIDTH, MIN_WIDTH);
-      const validHeight = Math.max(height || MIN_HEIGHT, MIN_HEIGHT);
-      window
-        .setSize(new LogicalSize(validWidth, validHeight))
-        .catch((error) => {
-          if (!isWindowPermissionError(error)) {
-            console.error(error);
+      // Move first so a logical inner size is applied at the destination DPI.
+      if (settings.persistWindowPosition && settings.windowPosition) {
+        const { x, y } = settings.windowPosition;
+        let position: LogicalPosition | PhysicalPosition | null =
+          new LogicalPosition(
+            Number.isFinite(x) ? x : 0,
+            Number.isFinite(y) ? y : 0,
+          );
+        try {
+          if (settings.autoRepatriateWindow) {
+            const scale = await window.scaleFactor();
+            if (!Number.isFinite(scale) || scale <= 0) return;
+            // Monitor work areas and validation results are physical pixels.
+            const result = await validateSavedPosition(
+              position.toPhysical(scale),
+              size.toPhysical(scale),
+            );
+            position = result
+              ? new PhysicalPosition(result.position.x, result.position.y)
+              : null;
           }
-        });
-    }
-
-    if (appSettings.persistWindowPosition && appSettings.windowPosition) {
-      const { x, y } = appSettings.windowPosition;
-      // Validate position is on a visible screen if auto-repatriate is enabled
-      if (appSettings.autoRepatriateWindow) {
-        validateSavedPosition(
-          { x: x ?? 0, y: y ?? 0 },
-          { width: savedWidth, height: savedHeight },
-        )
-          .then((result) => {
-            if (result) {
-              window
-                .setPosition(
-                  new LogicalPosition(result.position.x, result.position.y),
-                )
-                .catch((error) => {
-                  if (!isWindowPermissionError(error)) {
-                    console.error(error);
-                  }
-                });
-              if (result.adjusted) {
-                console.log(
-                  "Window position adjusted: saved position was off-screen",
-                );
-              }
-            } else {
-              // Fallback: center the window
-              window.center().catch(console.error);
-            }
-          })
-          .catch((error) => {
-            console.error("Failed to validate window position:", error);
-            // Fallback to saved position
-            window
-              .setPosition(new LogicalPosition(x ?? 0, y ?? 0))
-              .catch(console.error);
-          });
-      } else {
-        // Allow negative coordinates for multi-monitor setups without validation
-        const validX = x ?? 0;
-        const validY = y ?? 0;
-        window
-          .setPosition(new LogicalPosition(validX, validY))
-          .catch((error) => {
-            if (!isWindowPermissionError(error)) {
-              console.error(error);
-            }
-          });
+        } catch (error) {
+          reportError(error);
+        }
+        if (!(await canRestore())) return;
+        try {
+          if (position) await window.setPosition(position);
+          else await window.center();
+        } catch (error) {
+          reportError(error);
+        }
       }
-    }
+      if (settings.persistWindowSize && settings.windowSize) {
+        if (!(await canRestore())) return;
+        await window.setSize(size);
+      }
+    };
+    void restoreWindow()
+      .catch(reportError)
+      .finally(() => {
+        if (restoringRef.current === restore) restoringRef.current = null;
+      });
+
+    return () => {
+      cancelled = true;
+      // Invalidate outstanding reads using the live shared counter.
+      geometryRevision.current += 1;
+      if (restoringRef.current === restore) restoringRef.current = null;
+    };
   }, [
     appSettings.persistWindowSize,
     appSettings.persistWindowPosition,
     appSettings.autoRepatriateWindow,
-    appSettings.windowSize,
-    appSettings.windowPosition,
     isInitialized,
-    isWindowPermissionError,
   ]);
 
   // Listen for window resize/move events and persist
@@ -160,33 +175,67 @@ export function useWindowPersistence(
     const window = getCurrentWindow();
     let unlistenResize: (() => void) | undefined;
     let unlistenMove: (() => void) | undefined;
+    let disposed = false;
 
     const saveWindowState = async () => {
+      const revision = geometryRevision.current;
+      const isStale = () =>
+        disposed ||
+        restoringRef.current !== null ||
+        revision !== geometryRevision.current;
       try {
+        if (isStale() || !(await hasNormalBounds(window))) return;
         const [size, position, scaleFactor] = await Promise.all([
           window.innerSize(),
           window.outerPosition(),
           window.scaleFactor(),
         ]);
 
-        const updates: Partial<GlobalSettings> = {};
-        const isMaximized = await window.isMaximized();
-        if (isMaximized) {
+        // IPC reads can straddle a state change, monitor change, or teardown.
+        const [normal, currentScale] = await Promise.all([
+          hasNormalBounds(window),
+          window.scaleFactor(),
+        ]);
+        if (
+          isStale() ||
+          !normal ||
+          currentScale !== scaleFactor ||
+          !Number.isFinite(scaleFactor) ||
+          scaleFactor <= 0 ||
+          !Number.isFinite(size.width) ||
+          !Number.isFinite(size.height) ||
+          size.width <= 0 ||
+          size.height <= 0 ||
+          !Number.isFinite(position.x) ||
+          !Number.isFinite(position.y)
+        )
           return;
-        }
+
+        const updates: Partial<GlobalSettings> = {};
+        const current = latestSettingsRef.current;
         if (appSettings.persistWindowSize) {
           const logicalSize = size.toLogical(scaleFactor);
-          updates.windowSize = {
-            width: logicalSize.width,
-            height: logicalSize.height,
-          };
+          if (
+            current.windowSize?.width !== logicalSize.width ||
+            current.windowSize?.height !== logicalSize.height
+          ) {
+            updates.windowSize = {
+              width: logicalSize.width,
+              height: logicalSize.height,
+            };
+          }
         }
         if (appSettings.persistWindowPosition) {
           const logicalPosition = position.toLogical(scaleFactor);
-          updates.windowPosition = {
-            x: logicalPosition.x,
-            y: logicalPosition.y,
-          };
+          if (
+            current.windowPosition?.x !== logicalPosition.x ||
+            current.windowPosition?.y !== logicalPosition.y
+          ) {
+            updates.windowPosition = {
+              x: logicalPosition.x,
+              y: logicalPosition.y,
+            };
+          }
         }
 
         if (Object.keys(updates).length > 0) {
@@ -198,10 +247,15 @@ export function useWindowPersistence(
     };
 
     const queueSave = () => {
+      if (disposed) return;
+      geometryRevision.current += 1;
       if (windowSaveTimeout.current) {
         clearTimeout(windowSaveTimeout.current);
+        windowSaveTimeout.current = null;
       }
+      if (restoringRef.current) return;
       windowSaveTimeout.current = setTimeout(() => {
+        windowSaveTimeout.current = null;
         saveWindowState().catch(console.error);
       }, 500);
     };
@@ -212,7 +266,8 @@ export function useWindowPersistence(
           queueSave();
         })
         .then((unlisten) => {
-          unlistenResize = unlisten;
+          if (disposed) unlisten();
+          else unlistenResize = unlisten;
         })
         .catch(console.error);
     }
@@ -223,14 +278,18 @@ export function useWindowPersistence(
           queueSave();
         })
         .then((unlisten) => {
-          unlistenMove = unlisten;
+          if (disposed) unlisten();
+          else unlistenMove = unlisten;
         })
         .catch(console.error);
     }
 
     return () => {
+      disposed = true;
+      geometryRevision.current += 1;
       if (windowSaveTimeout.current) {
         clearTimeout(windowSaveTimeout.current);
+        windowSaveTimeout.current = null;
       }
       if (unlistenResize) {
         unlistenResize();

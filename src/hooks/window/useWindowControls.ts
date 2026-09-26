@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { LogicalSize } from "@tauri-apps/api/dpi";
 import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { repatriateWindow } from "../../utils/window/windowRepatriation";
@@ -26,6 +25,7 @@ export function useWindowControls(
   settingsManager: SettingsManager,
 ): WindowControlsReturn {
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const maximizePending = useRef(false);
 
   useEffect(() => {
     if (!hasTauriRuntime()) return;
@@ -105,18 +105,23 @@ export function useWindowControls(
   };
 
   const handleMaximize = async () => {
-    if (!hasTauriRuntime()) return;
-    const window = getCurrentWindow();
-    const isMaximized = await window.isMaximized();
-    if (isMaximized) {
-      await window.unmaximize();
-      if (appSettings.persistWindowSize && appSettings.windowSize) {
-        const { width, height } = appSettings.windowSize;
-        await window.setSize(new LogicalSize(width, height));
+    if (!hasTauriRuntime() || maximizePending.current) return;
+    maximizePending.current = true;
+    try {
+      const window = getCurrentWindow();
+      if (await window.isMinimized()) return;
+      if (await window.isFullscreen()) {
+        await window.setFullscreen(false);
+      } else if (await window.isMaximized()) {
+        // The native window owns its restore bounds, including monitor DPI.
+        // Persisted startup geometry can lag behind the last manual resize.
+        await window.unmaximize();
+      } else {
+        await window.maximize();
       }
-      return;
+    } finally {
+      maximizePending.current = false;
     }
-    await window.maximize();
   };
 
   const handleOpenDevtools = async () => {
