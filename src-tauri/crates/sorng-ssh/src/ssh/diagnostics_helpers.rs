@@ -538,8 +538,8 @@ mod tests {
 
     #[test]
     fn ssh_diagnostics_rsa_bits_measure_modulus_not_serialized_blob() {
-        for bits in [1024, 2048, 2049, 3072, 4096] {
-            let mut modulus = vec![0; (bits + 7) / 8];
+        for bits in [1024usize, 2048, 2049, 3072, 4096] {
+            let mut modulus = vec![0; bits.div_ceil(8)];
             modulus[0] = 1 << ((bits - 1) % 8);
             if modulus[0] & 0x80 != 0 {
                 modulus.insert(0, 0);

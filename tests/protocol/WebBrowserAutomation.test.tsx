@@ -669,6 +669,11 @@ describe("real WebBrowser iframe and website automation integration", () => {
         screen.getByRole("button", { name: "Demo page action" }),
       ).toBeEnabled(),
     );
+    // DOM readiness enables automation; interaction waits for authenticated paint.
+    expect(iframe).toHaveAttribute("inert");
+    emit("proxy_dark_ready", {}, window);
+    expect(iframe).toHaveAttribute("inert");
+    emit("proxy_dark_ready");
     expect(iframe).not.toHaveAttribute("inert");
     await waitFor(() =>
       expect(

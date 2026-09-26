@@ -701,6 +701,8 @@ pub(super) fn content_security_policy(policy: &HttpProxyPolicy, authority: &str)
 /// Only non-secret immutable routing identity enters page code. Foreign
 /// mappings are intentionally absent until separately reviewed native grants
 /// exist; the client cannot turn arbitrary URLs into native proxy requests.
+// Keep the page-code generator's explicit routing inputs and caller contract.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn bootstrap(
     session_id: &str,
     sequence: u64,
