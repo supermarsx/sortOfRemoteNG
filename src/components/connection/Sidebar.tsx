@@ -20,6 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { ConnectionTree } from "./ConnectionTree";
+import RenameModal from "./connectionTree/RenameModal";
 import { Connection } from "../../types/connection/connection";
 import { useSidebar } from "../../hooks/connection/useSidebar";
 import { Checkbox, Select } from "../ui/forms";
@@ -514,6 +515,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </>
         )}
       </div>
+      <RenameModal mgr={mgr} />
     </>
   );
 };

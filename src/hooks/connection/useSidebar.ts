@@ -23,6 +23,8 @@ export function useSidebar() {
   const colorTags = settingsContext?.settings.colorTags;
   const [showFilters, setShowFilters] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [savingReorder, setSavingReorder] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
   const savingReorderRef = useRef(false);
@@ -137,7 +139,19 @@ export function useSidebar() {
       updatedAt: new Date().toISOString(),
     };
     dispatch({ type: "ADD_CONNECTION", payload: groupConnection });
+    setRenameValue(groupConnection.name);
+    setRenameTarget(groupConnection);
   }, [dispatch, t]);
+
+  const handleRenameSubmit = useCallback(() => {
+    const name = renameValue.trim();
+    if (!renameTarget || !name) return;
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: { ...renameTarget, name, updatedAt: new Date().toISOString() },
+    });
+    setRenameTarget(null);
+  }, [dispatch, renameTarget, renameValue]);
 
   const toggleSidebar = useCallback(() => {
     dispatch({ type: "TOGGLE_SIDEBAR" });
@@ -200,6 +214,11 @@ export function useSidebar() {
     handleTagFilter,
     handleColorTagFilter,
     handleNewGroup,
+    renameTarget,
+    setRenameTarget,
+    renameValue,
+    setRenameValue,
+    handleRenameSubmit,
     toggleSidebar,
     clearFilters,
     expandAllFolders,

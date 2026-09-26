@@ -1,10 +1,35 @@
 import type { ConnectionTreeMgr } from "../../../hooks/connection/useConnectionTree";
 import Modal, { ModalHeader } from "../../ui/overlays/Modal";
 import { useTranslation } from "react-i18next";
+import { useEffect, useRef } from "react";
 
-function RenameModal({ mgr }: { mgr: ConnectionTreeMgr }) {
-  const { t } = useTranslation();
+type RenameManager = Pick<
+  ConnectionTreeMgr,
+  | "renameTarget"
+  | "setRenameTarget"
+  | "renameValue"
+  | "setRenameValue"
+  | "handleRenameSubmit"
+>;
+
+function RenameModal({ mgr }: { mgr: RenameManager }) {
   if (!mgr.renameTarget) return null;
+  return <RenameDialog key={mgr.renameTarget.id} mgr={mgr} />;
+}
+
+function RenameDialog({ mgr }: { mgr: RenameManager }) {
+  const { t } = useTranslation();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const targetId = mgr.renameTarget?.id;
+  useEffect(() => {
+    if (!targetId) return;
+    // Run after Modal's initial focus, once per opening, not on name edits.
+    const frame = requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true });
+      inputRef.current?.select();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [targetId]);
   const title = t("connections.renameConnection", "Rename Connection");
   return (
     <Modal
@@ -22,7 +47,7 @@ function RenameModal({ mgr }: { mgr: ConnectionTreeMgr }) {
           </label>
           <input
             type="text"
-            autoFocus
+            ref={inputRef}
             value={mgr.renameValue}
             onChange={(e) => mgr.setRenameValue(e.target.value)}
             onKeyDown={(e) => {
