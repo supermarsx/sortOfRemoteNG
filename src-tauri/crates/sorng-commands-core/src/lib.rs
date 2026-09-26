@@ -18,6 +18,7 @@ pub use sorng_opkssh as opkssh;
 
 // t5-e7: connection clone command (in-crate module, not an `include!` shim)
 pub mod connection_clone_cmds;
+mod discovery_commands;
 
 #[path = "../../../src/agent_commands.rs"]
 mod agent_commands;

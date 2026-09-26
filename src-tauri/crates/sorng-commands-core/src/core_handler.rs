@@ -464,6 +464,7 @@ define_command_group!(
         network_commands::ping_gateway,
         network_commands::ping_host,
         network_commands::ping_host_detailed,
+        discovery_commands::probe_discovery_host,
         network_commands::probe_udp_port,
         network_commands::probe_vnc_rfb,
         wol_commands::remove_wol_schedule,
@@ -1838,6 +1839,14 @@ mod tests {
         assert!(is_command(command));
         let registration = format!("http_commands::{command},");
         assert!(include_str!("core_handler.rs").contains(&registration));
+    }
+
+    #[test]
+    fn discovery_probe_is_recognized_and_registered() {
+        assert!(is_command("probe_discovery_host"));
+        assert!(
+            include_str!("core_handler.rs").contains("discovery_commands::probe_discovery_host,")
+        );
     }
 
     #[test]

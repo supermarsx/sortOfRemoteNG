@@ -6,6 +6,7 @@ edition = "2021"
 description = "Core command handlers — split from app crate to reduce coherence checking time"
 
 [dependencies]
+sorng-network = { path = "../sorng-network" }
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
 sorng-app-shell = { path = "../sorng-app-shell" }
 sorng-core = { path = "../sorng-core" }

@@ -87,59 +87,9 @@ pub async fn check_port(
     host: String,
     port: u16,
     timeout_secs: Option<u64>,
+    identify_http: Option<String>,
 ) -> Result<PortCheckResult, String> {
-    let start = std::time::Instant::now();
-    let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(5));
-    let addr = format!("{}:{}", host, port);
-
-    let service = NetworkService::get_common_ports()
-        .iter()
-        .find(|(p, _)| *p == port)
-        .map(|(_, s)| s.clone());
-
-    match timeout(timeout_duration, TcpStream::connect(&addr)).await {
-        Ok(Ok(mut stream)) => {
-            let elapsed = start.elapsed().as_millis() as u64;
-
-            // Try to grab a banner (first ~128 bytes within 2 seconds)
-            let banner = {
-                let mut buf = vec![0u8; 128];
-                let banner_timeout = Duration::from_secs(2);
-                match timeout(banner_timeout, stream.read(&mut buf)).await {
-                    Ok(Ok(n)) if n > 0 => {
-                        // Convert to string, filter non-printable chars, take first 64 chars
-                        let raw = String::from_utf8_lossy(&buf[..n]);
-                        let cleaned: String = raw
-                            .chars()
-                            .filter(|c| c.is_ascii_graphic() || *c == ' ')
-                            .take(64)
-                            .collect();
-                        if !cleaned.is_empty() {
-                            Some(cleaned)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                }
-            };
-
-            Ok(PortCheckResult {
-                port,
-                open: true,
-                service,
-                time_ms: Some(elapsed),
-                banner,
-            })
-        }
-        _ => Ok(PortCheckResult {
-            port,
-            open: false,
-            service,
-            time_ms: None,
-            banner: None,
-        }),
-    }
+    service_probe::check_port(host, port, timeout_secs, identify_http).await
 }
 
 #[tauri::command]

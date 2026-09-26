@@ -484,6 +484,9 @@ pub fn get_default_gateway() -> Result<String, String> {
     }
 }
 
+#[path = "service_probe.rs"]
+pub mod service_probe;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortCheckResult {
     pub port: u16,
@@ -491,6 +494,14 @@ pub struct PortCheckResult {
     pub service: Option<String>,
     pub time_ms: Option<u64>,
     pub banner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_server: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identification_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

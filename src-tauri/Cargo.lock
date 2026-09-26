@@ -10109,6 +10109,7 @@ dependencies = [
  "sorng-core",
  "sorng-encryption",
  "sorng-llm",
+ "sorng-network",
  "sorng-opkssh",
  "sorng-probes",
  "sorng-recording",
