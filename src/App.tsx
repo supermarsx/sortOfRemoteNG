@@ -406,6 +406,7 @@ const AppContent: React.FC = () => {
       "proxyChain",
       "internalProxy",
       "wol",
+      "networkScanner",
       "bulkSsh",
       "serverStats",
       "opkssh",
@@ -1801,6 +1802,7 @@ const AppContent: React.FC = () => {
             setShowProxyMenu={toolShowSetters.current.proxyChain}
             setShowShortcutManager={toolShowSetters.current.shortcutManager}
             setShowWol={toolShowSetters.current.wol}
+            setShowNetworkScanner={toolShowSetters.current.networkScanner}
             setShowBulkSSH={toolShowSetters.current.bulkSsh}
             setShowServerStats={toolShowSetters.current.serverStats}
             setShowOpkssh={toolShowSetters.current.opkssh}

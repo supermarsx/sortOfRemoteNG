@@ -13,6 +13,7 @@ const TOOL_ENTRY_LABELS = [
   { key: "rdpSessions", label: "Session Manager" },
   { key: "proxyChain", label: "Proxy Chain Menu" },
   { key: "wol", label: "Wake-on-LAN" },
+  { key: "networkScanner", label: "Network Scanner" },
   { key: "windowsBackup", label: "Windows Backup" },
 ] as const satisfies readonly { key: ToolEntryKey; label: string }[];
 

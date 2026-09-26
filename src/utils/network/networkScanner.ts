@@ -171,6 +171,8 @@ export const getDiscoveredServiceLabel = (
  * minimise repeated HTTP calls. Results are sorted for deterministic output.
  */
 export class NetworkScanner {
+  constructor(private readonly native = false) {}
+
   private hostnameCache = new Map<string, CacheEntry<string>>();
   private macCache = new Map<string, CacheEntry<string>>();
   /**
@@ -186,45 +188,128 @@ export class NetworkScanner {
     onProgress?: (progress: number) => void,
     signal?: AbortSignal,
   ): Promise<DiscoveredHost[]> {
+    if (this.native) {
+      if (!config.ipRange.trim())
+        throw new Error("Enter an IP address or CIDR range.");
+      // Address generation does not retain IPv6 zone identifiers. Reject them
+      // before parsing rather than probing a different, unscoped destination.
+      if (config.ipRange.includes("%"))
+        throw new Error(
+          "Scoped IPv6 addresses are not supported by Network Scanner.",
+        );
+      // Validate before expanding ranges or scheduling any native requests.
+      for (const range of config.portRanges) {
+        if (!/^\d+(?:-\d+)?$/.test(range))
+          throw new Error(`Invalid port range: ${range}`);
+        const [start, end = start] = range.split("-").map(Number);
+        if (start < 1 || end > 65535 || end < start || end - start >= 1024)
+          throw new Error(
+            "Use ports 1–65535 and ranges of at most 1024 ports.",
+          );
+      }
+      if (
+        !Number.isFinite(config.timeout) ||
+        config.timeout < 1000 ||
+        config.timeout > 30000
+      )
+        throw new Error("Timeout must be between 1000 and 30000 ms.");
+      if (
+        ![config.maxConcurrent, config.maxPortConcurrent].every(
+          (n) => Number.isInteger(n) && n >= 1 && n <= 100,
+        )
+      )
+        throw new Error("Concurrency must be between 1 and 100.");
+      const ports = this.getPortsToScan(config);
+      if (
+        !ports.length ||
+        ports.length > 1024 ||
+        ports.some((p) => !Number.isInteger(p) || p < 1 || p > 65535)
+      )
+        throw new Error("Choose between 1 and 1024 valid TCP ports.");
+      const target = config.ipRange.trim();
+      config = {
+        ...config,
+        ipRange: target.includes("/")
+          ? target
+          : `${target}/${target.includes(":") ? 128 : 32}`,
+        maxPortConcurrent: Math.min(
+          config.maxConcurrent,
+          config.maxPortConcurrent,
+        ),
+      };
+    }
     const totalHosts = this.getHostCount(config.ipRange);
+    if (this.native && totalHosts > 256)
+      throw new Error("Choose a range of at most 256 addresses.");
     const discoveredHosts: DiscoveredHost[] = [];
     let completed = 0;
 
     const semaphore = new Semaphore(config.maxConcurrent);
     const portSemaphore = new Semaphore(config.maxPortConcurrent);
     const tasks: Promise<void>[] = [];
-
-    for await (const ip of this.generateIPRange(config.ipRange)) {
-      if (signal?.aborted) {
-        break;
-      }
-
-      const task = (async () => {
-        await semaphore.acquire();
-        try {
-          if (signal?.aborted) {
-            return;
-          }
-          const host = await this.scanHost(ip, config, signal, portSemaphore);
-          if (host && !signal?.aborted) {
-            discoveredHosts.push(host);
-          }
-        } catch (error) {
-          console.error(`Failed to scan ${ip}:`, error);
-        } finally {
-          completed++;
-          onProgress?.((completed / totalHosts) * 100);
-          semaphore.release();
-        }
-      })();
-
-      tasks.push(task);
+    const externalSignal = signal;
+    const nativeController = this.native ? new AbortController() : undefined;
+    const abortNative = () => nativeController?.abort();
+    if (nativeController) {
+      if (externalSignal?.aborted) abortNative();
+      else
+        externalSignal?.addEventListener("abort", abortNative, { once: true });
+      signal = nativeController.signal;
     }
 
-    // Every in-flight probe observes the same signal. Waiting for the bounded
-    // task set to drain ensures semaphore waiters are released before the scan
-    // resolves, while native RFB invokes are fenced promptly by `probeVncRfb`.
-    await Promise.all(tasks);
+    try {
+      for await (const ip of this.generateIPRange(config.ipRange)) {
+        if (signal?.aborted) {
+          break;
+        }
+
+        const task = (async () => {
+          await semaphore.acquire();
+          try {
+            if (signal?.aborted) {
+              return;
+            }
+            const host = await this.scanHost(
+              ip,
+              config,
+              signal,
+              portSemaphore,
+              abortNative,
+            );
+            if (host && !signal?.aborted) {
+              discoveredHosts.push(host);
+            }
+          } catch (error) {
+            if (nativeController) {
+              nativeController.abort();
+              throw error;
+            }
+            console.error(`Failed to scan ${ip}:`, error);
+          } finally {
+            completed++;
+            onProgress?.((completed / totalHosts) * 100);
+            semaphore.release();
+          }
+        })();
+
+        tasks.push(task);
+      }
+
+      // Every in-flight probe observes the same signal. Waiting for the bounded
+      // task set to drain ensures semaphore waiters are released before the scan
+      // resolves, while native RFB invokes are fenced promptly by `probeVncRfb`.
+      if (nativeController) {
+        // Do not enable another scan while native probes from this run still own
+        // permits. Rejections stop the queue immediately, then drain the run.
+        const settled = await Promise.allSettled(tasks);
+        const failure = settled.find((result) => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
+      } else {
+        await Promise.all(tasks);
+      }
+    } finally {
+      externalSignal?.removeEventListener("abort", abortNative);
+    }
 
     return discoveredHosts.sort((a, b) => this.compareIPs(a.ip, b.ip));
   }
@@ -255,9 +340,9 @@ export class NetworkScanner {
     }
 
     if (addr.kind() === "ipv4") {
-      if (prefix < 24 || prefix > 30) {
+      if (prefix < 24 || prefix > (this.native ? 32 : 30)) {
         throw new Error(
-          `Unsupported prefix length /${prefix}. Only /24 to /30 are supported`,
+          `Unsupported prefix length /${prefix}. Only /24 to /${this.native ? 32 : 30} are supported`,
         );
       }
       const octets = (addr as ipaddr.IPv4).octets;
@@ -270,8 +355,13 @@ export class NetworkScanner {
           octets[3]) >>>
         0;
       const networkNum = ipNum & mask;
-      const hostCount = Math.pow(2, hostBits) - 2;
-      for (let i = 1; i <= hostCount; i++) {
+      const includeAll = this.native && prefix >= 31;
+      const hostCount = Math.pow(2, hostBits) - (includeAll ? 0 : 2);
+      for (
+        let i = includeAll ? 0 : 1;
+        i < hostCount + (includeAll ? 0 : 1);
+        i++
+      ) {
         const ipInt = (networkNum + i) >>> 0;
         yield `${(ipInt >>> 24) & 0xff}.${(ipInt >>> 16) & 0xff}.${
           (ipInt >>> 8) & 0xff
@@ -327,13 +417,13 @@ export class NetworkScanner {
     }
 
     if (addr.kind() === "ipv4") {
-      if (prefix < 24 || prefix > 30) {
+      if (prefix < 24 || prefix > (this.native ? 32 : 30)) {
         throw new Error(
-          `Unsupported prefix length /${prefix}. Only /24 to /30 are supported`,
+          `Unsupported prefix length /${prefix}. Only /24 to /${this.native ? 32 : 30} are supported`,
         );
       }
       const hostBits = 32 - prefix;
-      return Math.pow(2, hostBits) - 2;
+      return Math.pow(2, hostBits) - (this.native && prefix >= 31 ? 0 : 2);
     }
 
     if (addr.kind() === "ipv6") {
@@ -354,6 +444,7 @@ export class NetworkScanner {
     config: NetworkDiscoveryConfig,
     signal?: AbortSignal,
     portSemaphore = new Semaphore(config.maxPortConcurrent),
+    onProbeError?: () => void,
   ): Promise<DiscoveredHost | null> {
     const startTime = Date.now();
     const openPorts: number[] = [];
@@ -376,11 +467,21 @@ export class NetworkScanner {
           signal,
           this.getProtocolForPort(port, config),
         );
+      } catch (error) {
+        onProbeError?.();
+        throw error;
       } finally {
         portSemaphore.release();
       }
     });
-    const portResults = await Promise.all(portPromises);
+    // Drain each host's port tasks too: a rejected port must not let its host
+    // release the run while sibling native probes are still in flight.
+    const portResults = this.native
+      ? (await Promise.allSettled(portPromises)).map((result) => {
+          if (result.status === "rejected") throw result.reason;
+          return result.value;
+        })
+      : await Promise.all(portPromises);
 
     if (signal?.aborted) {
       return null;
@@ -390,12 +491,26 @@ export class NetworkScanner {
       if (result.isOpen) {
         const port = portsToScan[index];
         const protocol = this.getProtocolForPort(port, config);
-        if (protocol === "vnc" && !isConfirmedRfbBanner(result.banner)) {
+        if (
+          !this.native &&
+          protocol === "vnc" &&
+          !isConfirmedRfbBanner(result.banner)
+        ) {
           return;
         }
         openPorts.push(port);
 
-        const service = this.identifyService(port, result.banner, protocol);
+        const service =
+          this.native &&
+          protocol === "vnc" &&
+          !isConfirmedRfbBanner(result.banner)
+            ? {
+                port,
+                protocol: "raw",
+                service: "unknown",
+                banner: result.banner,
+              }
+            : this.identifyService(port, result.banner, protocol);
         if (service) {
           services.push(service);
         }
@@ -407,6 +522,7 @@ export class NetworkScanner {
     }
 
     const responseTime = Date.now() - startTime;
+    if (this.native) return { ip, openPorts, services, responseTime };
     const hostname = await this.resolveHostname(ip, config.hostnameTtl, signal);
     if (signal?.aborted) {
       return null;
@@ -472,6 +588,25 @@ export class NetworkScanner {
     signal?: AbortSignal,
     protocolHint?: string,
   ): Promise<{ isOpen: boolean; banner?: string; elapsed: number }> {
+    if (this.native) {
+      if (signal?.aborted) return { isOpen: false, elapsed: 0 };
+      // Existing cross-platform Tokio TCP probe. Keep the semaphore occupied
+      // until this bounded call settles; cancellation prevents queued probes.
+      const result = await invoke<{
+        open: boolean;
+        banner?: string;
+        time_ms?: number;
+      }>("check_port", {
+        host: ip.includes(":") ? `[${ip}]` : ip,
+        port,
+        timeoutSecs: Math.ceil(config.timeout / 1000),
+      });
+      return {
+        isOpen: !signal?.aborted && result.open,
+        banner: result.banner?.trim(),
+        elapsed: result.time_ms ?? 0,
+      };
+    }
     const protocol = protocolHint || serviceMap[port]?.protocol || "default";
     if (HOST_ONLY_RAW_PROTOCOLS.has(protocol)) {
       // The prior native scan established host reachability only. A browser

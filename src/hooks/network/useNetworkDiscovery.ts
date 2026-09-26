@@ -11,6 +11,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 interface UseNetworkDiscoveryParams {
   onClose: () => void;
+  native?: boolean;
+  allowCreateConnections?: boolean;
 }
 
 const cloneDiscoveredHost = (host: DiscoveredHost): DiscoveredHost => ({
@@ -66,12 +68,16 @@ const scanPingHosts = async (
   return result === abortedToken || signal.aborted ? [] : result;
 };
 
-export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
+export function useNetworkDiscovery({
+  onClose,
+  native = false,
+  allowCreateConnections = true,
+}: UseNetworkDiscoveryParams) {
   const { t } = useTranslation();
   const { dispatch } = useConnections();
   const [config, setConfig] = useState<NetworkDiscoveryConfig>({
     enabled: true,
-    ipRange: "192.168.1.0/24",
+    ipRange: native ? "" : "192.168.1.0/24",
     portRanges: ["22", "80", "443", "3389", "5900"],
     protocols: ["ssh", "http", "https", "rdp", "vnc"],
     timeout: 5000,
@@ -99,13 +105,14 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
   });
   const [discoveredHosts, setDiscoveredHosts] = useState<DiscoveredHost[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
   const [selectedHosts, setSelectedHosts] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [filterText, setFilterText] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const scannerRef = useRef<NetworkScanner | null>(null);
-  const scanner = scannerRef.current ?? new NetworkScanner();
+  const scanner = scannerRef.current ?? new NetworkScanner(native);
   scannerRef.current = scanner;
 
   useEffect(
@@ -116,11 +123,13 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
   );
 
   const handleScan = async () => {
-    abortControllerRef.current?.abort();
+    if (abortControllerRef.current) return;
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setIsScanning(true);
     setScanProgress(0);
+    setScanError(null);
+    setSelectedHosts(new Set());
     setDiscoveredHosts([]);
     try {
       const [serviceHosts, pingHosts] = await Promise.all([
@@ -136,7 +145,13 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
           },
           controller.signal,
         ),
-        scanPingHosts(config.ipRange, config.maxConcurrent, controller.signal),
+        native
+          ? Promise.resolve([])
+          : scanPingHosts(
+              config.ipRange,
+              config.maxConcurrent,
+              controller.signal,
+            ),
       ]);
       if (
         abortControllerRef.current === controller &&
@@ -147,6 +162,8 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
       }
     } catch (error) {
       if (!controller.signal.aborted) {
+        setScanError(error instanceof Error ? error.message : String(error));
+        controller.abort();
         console.error("Network scan failed:", error);
       }
     } finally {
@@ -162,6 +179,7 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
   };
 
   const handleCreateConnections = () => {
+    if (!allowCreateConnections) return;
     selectedHosts.forEach((hostIp) => {
       const host = discoveredHosts.find((h) => h.ip === hostIp);
       if (!host) return;
@@ -228,6 +246,8 @@ export function useNetworkDiscovery({ onClose }: UseNetworkDiscoveryParams) {
     setConfig,
     discoveredHosts,
     isScanning,
+    scanError,
+    allowCreateConnections,
     scanProgress,
     selectedHosts,
     showAdvanced,

@@ -123,6 +123,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   proxyChain: "Proxy & VPN",
   internalProxy: "Session Manager",
   wol: "Wake-on-LAN",
+  networkScanner: "Network Scanner",
   bulkSsh: "Bulk SSH",
   serverStats: "Server Stats",
   opkssh: "opkssh",

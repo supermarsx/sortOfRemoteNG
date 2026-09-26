@@ -375,6 +375,7 @@ export interface GlobalSettings {
   showInternalProxyIcon: boolean;
   showShortcutManagerIcon: boolean;
   showWolIcon: boolean;
+  showNetworkScannerIcon: boolean;
   showBulkSSHIcon: boolean;
   showServerStatsIcon: boolean;
   showOpksshIcon: boolean;
@@ -1396,6 +1397,7 @@ export interface ToolDisplayModes {
   internalProxy: "tab";
   proxyChain: "tab";
   wol: "tab";
+  networkScanner: "tab";
   windowsBackup: "tab";
   diagnostics: "tab";
   settings: "tab";

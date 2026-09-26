@@ -382,6 +382,24 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Layout",
   },
   {
+    key: "showNetworkScannerIcon",
+    label: "Network Scanner",
+    description:
+      "Show the network scanner tool for discovering hosts and open TCP ports",
+    tags: [
+      "toolbar",
+      "icon",
+      "network",
+      "scanner",
+      "discovery",
+      "tcp",
+      "ports",
+    ],
+    synonyms: ["network scanning", "port scan", "subnet"],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
     key: "showBulkSSHIcon",
     label: "Bulk SSH Commander",
     labelKey: "settingsLayout.bulkSshCommander",

@@ -27,6 +27,7 @@ import {
   FileCode,
   FileText,
   Power,
+  Radar,
   ScreenShare,
   Bug,
   HardDrive,
@@ -626,6 +627,14 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
               "settingsLayout.wakeOnLanTooltip",
               "Show the Wake-on-LAN icon for sending wake packets to remote machines",
             )}
+          />
+          <Toggle
+            checked={settings.showNetworkScannerIcon ?? true}
+            onChange={(v) => updateSettings({ showNetworkScannerIcon: v })}
+            icon={<Radar size={16} />}
+            label="Network Scanner"
+            settingKey="showNetworkScannerIcon"
+            infoTooltip="Show the network scanner tool for discovering hosts and open TCP ports"
           />
           <Toggle
             checked={settings.showBulkSSHIcon}

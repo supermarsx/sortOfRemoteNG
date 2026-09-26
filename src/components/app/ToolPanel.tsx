@@ -84,6 +84,13 @@ const WOLQuickTool = dynamic(
   () => import("../network/WOLQuickTool").then((module) => module.WOLQuickTool),
   { ssr: false },
 );
+const NetworkDiscovery = dynamic(
+  () =>
+    import("../network/NetworkDiscovery").then(
+      (module) => module.NetworkDiscovery,
+    ),
+  { ssr: false },
+);
 const BulkSSHCommander = dynamic(
   () =>
     import("../ssh/BulkSSHCommander").then((module) => module.BulkSSHCommander),
@@ -534,6 +541,14 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         />
       )}
       {toolKey === "wol" && <WOLQuickTool isOpen onClose={onClose} />}
+      {toolKey === "networkScanner" && (
+        <NetworkDiscovery
+          isOpen
+          embedded
+          onClose={onClose}
+          allowCreateConnections={databaseAvailability?.status === "ready"}
+        />
+      )}
       {toolKey === "bulkSsh" && <BulkSSHCommander isOpen onClose={onClose} />}
       {toolKey === "serverStats" && (
         <ServerStatsPanel isOpen onClose={onClose} />
