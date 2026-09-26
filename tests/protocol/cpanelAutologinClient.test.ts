@@ -307,7 +307,7 @@ describe("cPanel auto-login readiness", () => {
       },
     );
     vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(
-      function () {
+      function (this: HTMLFormElement) {
         const query = new URLSearchParams(
           Array.from(new FormData(this).entries()).map(([name, value]) => [
             name,
