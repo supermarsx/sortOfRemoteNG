@@ -354,10 +354,38 @@ function installWebNetworkClient(configuration, reportBlocked) {
   // response. Native admission rejects missing/stale tokens independently.
   var generationKey = "__sorng_generation_v1",
     requestGeneration = configuration.requestGeneration;
-  function mapUrl(value, kind, localData, method, navigationReference) {
+  function mapUrl(
+    value,
+    kind,
+    localData,
+    method,
+    navigationReference,
+    sameDocumentNavigation,
+  ) {
     var mapped = routeUrl(value, kind, localData, method, navigationReference);
-    if (!requestGeneration) return mapped;
+    // Angular and other routers use detached anchors as URL parsers. An href
+    // assignment sends no request: adding a proof here changes their application
+    // query and can make a hash route look like a different document. Actual
+    // Link activation is prepared separately below, including detached clicks
+    // and browser-menu/auxiliary activation.
+    if (!requestGeneration || navigationReference) return mapped;
     var url = new NativeURL(mapped);
+    if (
+      sameDocumentNavigation &&
+      kind === "navigation" &&
+      mapped.indexOf("#") !== -1
+    ) {
+      var current = new NativeURL(location.href);
+      if (
+        url.origin === current.origin &&
+        url.pathname === current.pathname &&
+        url.search === current.search
+      )
+        // Fragment-only navigation makes no network request. Preserve the
+        // current query (including any existing navigation proof) byte-for-byte
+        // so the browser keeps the document, its SPA state, and login session.
+        return mapped;
+    }
     var comparable = new NativeURL(url.href);
     if (comparable.protocol === "ws:") comparable.protocol = "http:";
     if (comparable.origin === proxyOrigin) {
@@ -1154,20 +1182,63 @@ function installWebNetworkClient(configuration, reportBlocked) {
       event.preventDefault();
     }
   }
+  var preparedAnchors = new WeakMap();
+  function prepareAnchor(anchor, event) {
+    var target = (
+      anchor.getAttribute("target") ||
+      document.querySelector("base[target]")?.getAttribute("target") ||
+      "_self"
+    ).toLowerCase();
+    var sameContext =
+      target === "_self" &&
+      !anchor.hasAttribute("download") &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.button &&
+      event.type !== "contextmenu";
+    var href = anchor.getAttribute("href");
+    var previous = preparedAnchors.get(anchor);
+    // A cancelled context menu must not turn the next normal hash click into
+    // a reload. Reuse the pre-activation URL only while our own write remains;
+    // any application-owned href change takes precedence.
+    var original =
+      previous && href === previous.mapped ? previous.original : href;
+    var mapped = mapUrl(
+      original,
+      "navigation",
+      false,
+      undefined,
+      false,
+      sameContext,
+    );
+    Reflect.apply(nativeSetAttribute, anchor, ["href", mapped]);
+    preparedAnchors.set(anchor, { original: original, mapped: mapped });
+  }
   function click(event) {
     var anchor = event.target?.closest?.("a[href],area[href]");
     if (!anchor) return;
     try {
-      Reflect.apply(nativeSetAttribute, anchor, [
-        "href",
-        mapUrl(anchor.getAttribute("href"), "navigation"),
-      ]);
+      prepareAnchor(anchor, event);
     } catch (_) {
       event.preventDefault();
     }
   }
   document.addEventListener("submit", submit, true);
   document.addEventListener("click", click, true);
+  document.addEventListener("auxclick", click, true);
+  document.addEventListener("contextmenu", click, true);
+  [window.HTMLAnchorElement, window.HTMLAreaElement].forEach(function (Native) {
+    var nativeClick = Native && Native.prototype.click;
+    if (typeof nativeClick !== "function") return;
+    replace(Native.prototype, "click", function () {
+      // Detached anchors never reach document capture listeners.
+      if (!this.isConnected && this.hasAttribute("href"))
+        prepareAnchor(this, { type: "click", button: 0 });
+      return Reflect.apply(nativeClick, this, arguments);
+    });
+  });
   function policyViolation(event) {
     var destination = null;
     try {
@@ -1212,6 +1283,8 @@ function installWebNetworkClient(configuration, reportBlocked) {
     revoke();
     document.removeEventListener("submit", submit, true);
     document.removeEventListener("click", click, true);
+    document.removeEventListener("auxclick", click, true);
+    document.removeEventListener("contextmenu", click, true);
     document.removeEventListener("securitypolicyviolation", policyViolation);
     window.removeEventListener("pagehide", revoke);
     window.removeEventListener("pageshow", restored);

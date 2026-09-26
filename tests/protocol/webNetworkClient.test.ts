@@ -234,6 +234,156 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       `${proxy}/cpsess1234567890/frontend/jupiter/index.html?login=1&__sorng_generation_v1=${generation}`,
     );
   });
+  it.each(["property", "attribute"] as const)(
+    "does not stamp request proofs onto inert anchor %s parsing",
+    (assignment) => {
+      start({
+        ...config(),
+        requestGeneration: "0123456789abcdef0123456789abcdef",
+      });
+      const anchor = document.createElement("a");
+      const destination = `${proxy}/portal/page?return=%2Fhome+page#!/auth`;
+      if (assignment === "property") anchor.href = destination;
+      else anchor.setAttribute("href", destination);
+      expect(anchor.href).toBe(destination);
+      expect(anchor.search).toBe("?return=%2Fhome+page");
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["", "?__sorng_navigation_v1=fixture-navigation"])(
+    "keeps same-document hash navigation local with existing query %s",
+    (query) => {
+      const current = `${proxy}/portal/page${query}#!/auth`;
+      vi.stubGlobal("location", new URL(current));
+      vi.spyOn(document, "baseURI", "get").mockReturnValue(current);
+      start({
+        ...config(),
+        requestGeneration: "0123456789abcdef0123456789abcdef",
+      });
+      const anchor = document.createElement("a");
+      anchor.href = "#!/home";
+      document.body.append(anchor);
+      anchor.addEventListener("click", (event) => event.preventDefault());
+      anchor.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      expect(anchor.href).toBe(`${proxy}/portal/page${query}#!/home`);
+      expect(controller!.mapUrl(current.split("#")[0], "navigation")).toContain(
+        "__sorng_generation_v1=0123456789abcdef0123456789abcdef",
+      );
+      expect(controller!.mapUrl("#!/home", "fetch")).toContain(
+        "__sorng_generation_v1=0123456789abcdef0123456789abcdef",
+      );
+    },
+  );
+  it("still stamps a real link navigation at click time", () => {
+    start({
+      ...config(),
+      requestGeneration: "0123456789abcdef0123456789abcdef",
+    });
+    const anchor = document.createElement("a");
+    anchor.href = "/other-page?return=%2Fhome+page";
+    expect(anchor.search).toBe("?return=%2Fhome+page");
+    document.body.append(anchor);
+    anchor.addEventListener("click", (event) => event.preventDefault());
+    anchor.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    expect(anchor.href).toBe(
+      `${proxy}/other-page?return=%2Fhome+page&__sorng_generation_v1=0123456789abcdef0123456789abcdef`,
+    );
+  });
+  it("stamps a different query even when the path and fragment stay local", () => {
+    start({
+      ...config(),
+      requestGeneration: "0123456789abcdef0123456789abcdef",
+    });
+    const anchor = document.createElement("a");
+    anchor.href = "/portal/page?changed=1#!/home";
+    document.body.append(anchor);
+    anchor.addEventListener("click", (event) => event.preventDefault());
+    anchor.click();
+    expect(anchor.search).toBe(
+      "?changed=1&__sorng_generation_v1=0123456789abcdef0123456789abcdef",
+    );
+  });
+  it.each(["a", "area"])(
+    "routes a detached %s script click without relying on referrers",
+    (tag) => {
+      start({
+        ...config(),
+        requestGeneration: "0123456789abcdef0123456789abcdef",
+      });
+      const anchor = document.createElement(tag) as HTMLAnchorElement;
+      anchor.href = "/other-page";
+      anchor.setAttribute("referrerpolicy", "no-referrer");
+      anchor.addEventListener("click", (event) => event.preventDefault());
+      anchor.click();
+      expect(anchor.search).toBe(
+        "?__sorng_generation_v1=0123456789abcdef0123456789abcdef",
+      );
+    },
+  );
+  it.each(["contextmenu", "auxclick"])(
+    "prepares %s but preserves the next ordinary hash click",
+    (type) => {
+      start({
+        ...config(),
+        requestGeneration: "0123456789abcdef0123456789abcdef",
+      });
+      const anchor = document.createElement("a");
+      anchor.href = "#!/home";
+      document.body.append(anchor);
+      anchor.addEventListener(type, (event) => event.preventDefault());
+      anchor.addEventListener("click", (event) => event.preventDefault());
+      anchor.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, cancelable: true, button: 2 }),
+      );
+      expect(anchor.search).toBe(
+        "?__sorng_generation_v1=0123456789abcdef0123456789abcdef",
+      );
+      anchor.click();
+      expect(anchor.href).toBe(`${proxy}/portal/page#!/home`);
+      anchor.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, cancelable: true, button: 2 }),
+      );
+      anchor.href = "/changed-by-app#!/home";
+      anchor.click();
+      expect(anchor.pathname).toBe("/changed-by-app");
+      expect(anchor.search).toBe(
+        "?__sorng_generation_v1=0123456789abcdef0123456789abcdef",
+      );
+    },
+  );
+  it.each(["_blank", "_parent", "modifier", "download", "base-target"])(
+    "keeps the generation proof for fragment links opening another context: %s",
+    (mode) => {
+      start({
+        ...config(),
+        requestGeneration: "0123456789abcdef0123456789abcdef",
+      });
+      const anchor = document.createElement("a");
+      if (mode === "base-target") {
+        const base = document.createElement("base");
+        base.target = "_blank";
+        document.body.append(base);
+      } else if (mode === "download") anchor.setAttribute("download", "file");
+      else if (mode !== "modifier") anchor.target = mode;
+      anchor.href = "#!/home";
+      document.body.append(anchor);
+      anchor.addEventListener("click", (event) => event.preventDefault());
+      anchor.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: mode === "modifier",
+        }),
+      );
+      expect(
+        new URL(anchor.href).searchParams.get("__sorng_generation_v1"),
+      ).toBe("0123456789abcdef0123456789abcdef");
+    },
+  );
   it("routes exact Google origins with credential mode markers and no direct fallback", async () => {
     start(googleConfig());
     expect(controller!.capabilities.googleSession).toMatchObject({
