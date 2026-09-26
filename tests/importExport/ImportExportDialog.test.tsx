@@ -2,6 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ImportExport } from "../../src/components/ImportExport";
 
+function renderConnectionFormats(ui: Parameters<typeof render>[0]) {
+  const view = render(ui);
+  const choice = screen.queryByRole("button", {
+    name: "Connection-only formats",
+  });
+  if (choice) fireEvent.click(choice);
+  return view;
+}
+
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   toastSuccess: vi.fn(),
@@ -174,21 +183,44 @@ describe("ImportExport dialog", () => {
     vi.clearAllMocks();
   });
 
+  it("defaults the current database to a full encrypted archive with linked tab semantics", async () => {
+    render(<ImportExport isOpen onClose={() => {}} />);
+    expect(
+      screen.getByRole("button", { name: "Full database archives" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByText(/Includes documents and attachments, password vault/),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("checkbox", { name: "Archive Default" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Export 1 full database archive(s)" }),
+    ).toBeDisabled();
+    expect(screen.queryByTestId("export-tab-content")).not.toBeInTheDocument();
+    expect(screen.getByRole("tabpanel")).toHaveAttribute(
+      "id",
+      screen.getByRole("tab", { name: "Export" }).getAttribute("aria-controls"),
+    );
+  });
+
   it("does not render when closed and not embedded", () => {
-    render(<ImportExport isOpen={false} onClose={() => {}} />);
+    renderConnectionFormats(<ImportExport isOpen={false} onClose={() => {}} />);
     expect(
       screen.queryByText("Import / Export Connections"),
     ).not.toBeInTheDocument();
   });
 
   it("renders modal content when open", () => {
-    render(<ImportExport isOpen onClose={() => {}} />);
+    renderConnectionFormats(<ImportExport isOpen onClose={() => {}} />);
     expect(screen.getByText("Import / Export")).toBeInTheDocument();
     expect(screen.getByTestId("export-tab-content")).toBeInTheDocument();
   });
 
   it("uses the requested initial tab and wires confirmImport into the import tab", () => {
-    render(<ImportExport isOpen initialTab="import" onClose={() => {}} />);
+    renderConnectionFormats(
+      <ImportExport isOpen initialTab="import" onClose={() => {}} />,
+    );
 
     expect(screen.getByTestId("import-tab-content")).toBeInTheDocument();
 
@@ -198,7 +230,7 @@ describe("ImportExport dialog", () => {
   });
 
   it("switches tabs between export and import", () => {
-    render(<ImportExport isOpen onClose={() => {}} />);
+    renderConnectionFormats(<ImportExport isOpen onClose={() => {}} />);
 
     fireEvent.click(screen.getByRole("tab", { name: "Import" }));
     expect(screen.getByTestId("import-tab-content")).toBeInTheDocument();
@@ -208,7 +240,7 @@ describe("ImportExport dialog", () => {
   });
 
   it("renders the Clone tab panel and disables the action with the only available database picked as source", async () => {
-    render(<ImportExport isOpen onClose={() => {}} />);
+    renderConnectionFormats(<ImportExport isOpen onClose={() => {}} />);
 
     fireEvent.click(screen.getByRole("tab", { name: "Clone" }));
 
@@ -224,7 +256,7 @@ describe("ImportExport dialog", () => {
   });
 
   it("supports keyboard navigation between tabs", () => {
-    render(<ImportExport isOpen onClose={() => {}} />);
+    renderConnectionFormats(<ImportExport isOpen onClose={() => {}} />);
 
     const exportTab = screen.getByRole("tab", { name: "Export" });
     const importTab = screen.getByRole("tab", { name: "Import" });
@@ -241,7 +273,7 @@ describe("ImportExport dialog", () => {
   });
 
   it("supports Home, End, ArrowLeft, and ArrowUp tab navigation", () => {
-    render(<ImportExport isOpen onClose={() => {}} />);
+    renderConnectionFormats(<ImportExport isOpen onClose={() => {}} />);
 
     const exportTab = screen.getByRole("tab", { name: "Export" });
     const importTab = screen.getByRole("tab", { name: "Import" });
@@ -265,10 +297,10 @@ describe("ImportExport dialog", () => {
   });
 
   it("updates export config through ExportTab callbacks", () => {
-    render(<ImportExport isOpen onClose={() => {}} />);
+    renderConnectionFormats(<ImportExport isOpen onClose={() => {}} />);
 
     expect(screen.getByTestId("export-tab-config")).toHaveTextContent(
-      "json|current||true|true|true|true|false|false|",
+      "json|current|collection-1|true|true|true|true|false|false|",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "set-format" }));
@@ -288,7 +320,9 @@ describe("ImportExport dialog", () => {
 
   it("closes on Escape and backdrop click", () => {
     const onClose = vi.fn();
-    const { container } = render(<ImportExport isOpen onClose={onClose} />);
+    const { container } = renderConnectionFormats(
+      <ImportExport isOpen onClose={onClose} />,
+    );
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -300,7 +334,7 @@ describe("ImportExport dialog", () => {
   });
 
   it("renders inline when embedded and skips overlay", () => {
-    const { container } = render(
+    const { container } = renderConnectionFormats(
       <ImportExport isOpen={false} embedded onClose={() => {}} />,
     );
 

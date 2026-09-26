@@ -259,7 +259,7 @@ describe("AppToolbar", () => {
     );
   });
 
-  it("allows app-wide script and macro libraries without a database while preserving other database guards", () => {
+  it("allows app-wide libraries and scoped import/export without a database while preserving other database guards", () => {
     const props = makeProps();
     Object.assign(props.appSettings, {
       showScriptManagerIcon: true,
@@ -267,15 +267,15 @@ describe("AppToolbar", () => {
       showWolIcon: true,
     });
     render(<AppToolbar {...props} />);
-    for (const name of ["Script Manager", "Macro Manager"]) {
+    for (const name of ["Script Manager", "Macro Manager", "Import / Export"]) {
       expect(screen.getByTitle(name)).toBeEnabled();
       fireEvent.click(screen.getByTitle(name));
     }
     expect(props.setShowScriptManager).toHaveBeenCalledWith(true);
     expect(props.setShowMacroManager).toHaveBeenCalledWith(true);
+    expect(props.openImportExport).toHaveBeenCalled();
     for (const name of [
       "Wake-on-LAN",
-      "Import / Export",
       "Session Manager",
       "Tag Manager",
       "Tab Group Manager",

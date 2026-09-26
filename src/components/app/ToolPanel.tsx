@@ -21,7 +21,10 @@ import {
   ICON_EXPLORER_PROTOCOL,
   CONNECTION_RECYCLE_BIN_PROTOCOL,
   createToolSession,
+  createImportExportSession,
+  type ImportExportToolSession,
 } from "./toolSession";
+import { ImportExportNavigationContext } from "../ImportExport/navigation";
 import { useTrustCenterSession } from "../../hooks/security/useTrustCenterSession";
 import { useSecurityToolSession } from "../../hooks/security/useSecurityToolSession";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
@@ -597,7 +600,18 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       )}
       {toolKey === "importExport" && (
         <div className="h-full overflow-y-auto bg-[var(--color-surface)] p-6">
-          <ImportExport isOpen embedded onClose={onClose} />
+          <ImportExport
+            key={
+              (session as ImportExportToolSession).importExportNavigation
+                ?.requestId
+            }
+            isOpen
+            embedded
+            onClose={onClose}
+            navigation={
+              (session as ImportExportToolSession).importExportNavigation
+            }
+          />
         </div>
       )}
       {toolKey === "tagManager" && (
@@ -607,12 +621,40 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         <TabGroupManager isOpen onClose={onClose} />
       )}
       {toolKey === "database" && (
-        <DatabasePanel
-          onClose={onClose}
-          onDatabaseSelect={onDatabaseSelect}
-          onDatabaseClose={onDatabaseClose}
-          onBeforeCurrentLock={onBeforeCurrentLock}
-        />
+        <ImportExportNavigationContext.Provider
+          value={
+            onActivateSession
+              ? (request) => {
+                  const existing = state.sessions.find(
+                    (candidate) =>
+                      candidate.protocol === "tool:importExport" &&
+                      !!candidate.layout?.isDetached ===
+                        !!session.layout?.isDetached &&
+                      candidate.layout?.windowId === session.layout?.windowId &&
+                      candidate.ownerDatabaseId ===
+                        databaseAvailability?.databaseId,
+                  );
+                  const target = createImportExportSession(
+                    request,
+                    session,
+                    existing,
+                  );
+                  dispatch({
+                    type: existing ? "UPDATE_SESSION" : "ADD_SESSION",
+                    payload: target,
+                  });
+                  onActivateSession(target.id);
+                }
+              : undefined
+          }
+        >
+          <DatabasePanel
+            onClose={onClose}
+            onDatabaseSelect={onDatabaseSelect}
+            onDatabaseClose={onDatabaseClose}
+            onBeforeCurrentLock={onBeforeCurrentLock}
+          />
+        </ImportExportNavigationContext.Provider>
       )}
       {toolKey === "bulkEditor" && (
         <BulkConnectionEditor

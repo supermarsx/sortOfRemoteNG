@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import DatabaseList from "../../src/components/database/list/DatabaseList";
+import { ImportExportNavigationContext } from "../../src/components/ImportExport/navigation";
 import { useDatabaseSelector } from "../../src/hooks/connection/useDatabaseSelector";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
 
@@ -20,6 +21,7 @@ const mock = vi.hoisted(() => ({
   flush: vi.fn(async () => undefined),
   save: vi.fn(async () => undefined),
   select: vi.fn(),
+  navigate: vi.fn(),
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: { getInstance: () => mock },
@@ -58,10 +60,12 @@ const alpha: ConnectionDatabase = {
 const beta: ConnectionDatabase = { ...alpha, id: "b", name: "Beta" };
 function Harness() {
   return (
-    <DatabaseList
-      mgr={useDatabaseSelector(true, mock.select)}
-      onClose={vi.fn()}
-    />
+    <ImportExportNavigationContext.Provider value={mock.navigate}>
+      <DatabaseList
+        mgr={useDatabaseSelector(true, mock.select)}
+        onClose={vi.fn()}
+      />
+    </ImportExportNavigationContext.Provider>
   );
 }
 beforeEach(() => {
@@ -76,6 +80,64 @@ beforeEach(() => {
 });
 
 describe("actual database bulk controls", () => {
+  it("navigates import and row export to the full tool without inline cards or unlocking", async () => {
+    mock.getAllDatabases.mockResolvedValue([
+      alpha,
+      { ...beta, isEncrypted: true },
+    ]);
+    render(<Harness />);
+    await screen.findByRole("checkbox", { name: "Select database Beta" });
+    fireEvent.click(screen.getByTestId("database-import"));
+    expect(mock.navigate).toHaveBeenLastCalledWith({
+      tab: "import",
+      format: "json",
+    });
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "databaseCenter.actions.export",
+      })[1],
+    );
+    expect(mock.navigate).toHaveBeenLastCalledWith({
+      tab: "export",
+      format: "json",
+      databaseIds: ["b"],
+      encrypted: true,
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByText("databaseCenter.collections.exportTitle"),
+    ).toBeNull();
+    expect(
+      screen.queryByText("databaseCenter.collections.importTitle"),
+    ).toBeNull();
+    expect(mock.select).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("checkbox", { name: "Select database Alpha" }),
+    ).toBeInTheDocument();
+  });
+
+  it("passes all bulk-selected IDs including locked and filtered-out rows", async () => {
+    mock.getAllDatabases.mockResolvedValue([
+      alpha,
+      { ...beta, isEncrypted: true },
+    ]);
+    render(<Harness />);
+    await screen.findByRole("checkbox", { name: "Select database Beta" });
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    fireEvent.change(screen.getByPlaceholderText("Search databases..."), {
+      target: { value: "Alpha" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export selected" }));
+    expect(mock.navigate).toHaveBeenCalledWith({
+      tab: "export",
+      format: "json",
+      databaseIds: ["a", "b"],
+      encrypted: true,
+    });
+    expect(screen.queryByText("Encrypt export package")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mock.select).not.toHaveBeenCalled();
+  });
   it("collects bulk unlock passwords in a popup and cancellation clears them without executing", async () => {
     mock.getAllDatabases.mockResolvedValue([
       { ...alpha, isEncrypted: true },

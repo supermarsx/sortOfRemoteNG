@@ -2,6 +2,28 @@ import { ConnectionSession } from "../../types/connection/connection";
 import { ToolDisplayModes } from "../../types/settings/settings";
 import { generateId } from "../../utils/core/id";
 import type { WindowRegistry } from "../../types/windowManager";
+import type { ImportExportNavigation } from "../ImportExport/navigation";
+
+export type ImportExportToolSession = ConnectionSession & {
+  importExportNavigation?: ImportExportNavigation & { requestId: string };
+};
+
+export const createImportExportSession = (
+  request: ImportExportNavigation,
+  source: ConnectionSession,
+  existing?: ConnectionSession,
+): ImportExportToolSession => ({
+  ...(existing ?? createToolSession("importExport")),
+  tabGroupId: existing?.tabGroupId ?? source.tabGroupId,
+  ...(source.layout?.isDetached ? { layout: { ...source.layout } } : {}),
+  importExportNavigation: {
+    ...request,
+    ...(request.tab === "export"
+      ? { databaseIds: [...new Set(request.databaseIds)] }
+      : {}),
+    requestId: generateId(),
+  },
+});
 
 export type ToolKey = keyof ToolDisplayModes;
 

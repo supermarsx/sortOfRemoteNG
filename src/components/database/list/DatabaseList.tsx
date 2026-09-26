@@ -25,6 +25,7 @@ import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { DatabaseBulkControls } from "./DatabaseBulkControls";
 import { DatabaseUnlockDialog } from "../../encryption/DatabaseUnlockDialog";
+import { useImportExportNavigation } from "../../ImportExport/navigation";
 
 interface DatabaseListProps {
   mgr: Mgr;
@@ -39,7 +40,7 @@ interface DatabaseListProps {
  *  - Heading row with title and a primary "+ New Database" action.
  *  - Two-paragraph description.
  *  - Search filter input.
- *  - Inline create / import / edit / export cards and explicit auth popups
+ *  - Inline create / edit cards and explicit auth popups
  *    just below the search row when the corresponding manager state is
  *    active. No more modal-stacking.
  *  - A list of database rows; each row shows the icon, encryption badge,
@@ -50,6 +51,7 @@ interface DatabaseListProps {
  */
 function DatabaseList({ mgr }: DatabaseListProps) {
   const { t } = useTranslation();
+  const navigateImportExport = useImportExportNavigation();
   const [searchFilter, setSearchFilter] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<ConnectionDatabase | null>(
     null,
@@ -83,9 +85,7 @@ function DatabaseList({ mgr }: DatabaseListProps) {
 
   const anyFormOpen =
     mgr.showCreateForm ||
-    mgr.showImportForm ||
     Boolean(mgr.editingCollection) ||
-    Boolean(mgr.exportingCollection) ||
     mgr.showPasswordDialog;
 
   return (
@@ -109,10 +109,10 @@ function DatabaseList({ mgr }: DatabaseListProps) {
           {!anyFormOpen && (
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={() => {
-                  mgr.setShowImportForm(true);
-                  mgr.setError("");
-                }}
+                onClick={() =>
+                  navigateImportExport?.({ tab: "import", format: "json" })
+                }
+                disabled={!navigateImportExport || mgr.bulk?.running}
                 className="sor-btn-secondary-sm"
                 data-testid="database-import"
               >
@@ -182,29 +182,11 @@ function DatabaseList({ mgr }: DatabaseListProps) {
           }}
         />
       )}
-      {mgr.showImportForm && (
-        <ImportDatabaseCard
-          mgr={mgr}
-          onClose={() => {
-            mgr.setShowImportForm(false);
-            mgr.setError("");
-          }}
-        />
-      )}
       {mgr.editingCollection && (
         <EditDatabaseCard
           mgr={mgr}
           onClose={() => {
             mgr.setEditingCollection(null);
-            mgr.setError("");
-          }}
-        />
-      )}
-      {mgr.exportingCollection && (
-        <ExportDatabaseCard
-          mgr={mgr}
-          onClose={() => {
-            mgr.setExportingCollection(null);
             mgr.setError("");
           }}
         />
@@ -304,6 +286,7 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
 }) => {
   const { t } = useTranslation();
   const { settings } = useSettings();
+  const navigateImportExport = useImportExportNavigation();
   // Gates motion only. The mode copy, aria-busy, the announcement and the
   // disabled siblings must survive with animations off.
   const animEnabled = settings.animationsEnabled;
@@ -483,7 +466,15 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => mgr.handleExportCollection(collection)}
+            onClick={() =>
+              navigateImportExport?.({
+                tab: "export",
+                format: "json",
+                databaseIds: [collection.id],
+                encrypted: collection.isEncrypted || undefined,
+              })
+            }
+            disabled={!navigateImportExport || loading !== null}
             className="sor-icon-btn-sm"
             title={t("databaseCenter.actions.export") as string}
             aria-label={t("databaseCenter.actions.export") as string}
@@ -808,203 +799,6 @@ const EditDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
           </div>
         </div>
       )}
-    </CardShell>
-  );
-};
-
-// ── Import ───────────────────────────────────────────────────────────
-
-const ImportDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
-  mgr,
-  onClose,
-}) => {
-  const { t } = useTranslation();
-  return (
-    <CardShell
-      title={t("databaseCenter.collections.importTitle")}
-      icon={Upload}
-      error={mgr.error}
-      onClose={onClose}
-      footer={
-        <>
-          <button onClick={onClose} className="sor-btn sor-btn-secondary">
-            {t("settings.cancel", "Cancel")}
-          </button>
-          <button
-            onClick={mgr.handleImportCollection}
-            className="sor-btn-primary-sm"
-            disabled={!mgr.importFile}
-          >
-            <Upload size={14} />
-            <span>{t("databaseCenter.actions.import")}</span>
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-1">
-        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-          {t("databaseCenter.collections.fileLabel")}
-        </label>
-        <input
-          type="file"
-          accept=".json"
-          onChange={(e) => mgr.setImportFile(e.target.files?.[0] ?? null)}
-          className="sor-form-input-xs w-full"
-        />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-            {t("databaseCenter.collections.optionalNameLabel")}
-          </label>
-          <input
-            type="text"
-            value={mgr.importCollectionName}
-            onChange={(e) => mgr.setImportCollectionName(e.target.value)}
-            className="sor-form-input-xs w-full"
-            placeholder={
-              t("databaseCenter.collections.optionalNamePlaceholder") as string
-            }
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-            {t("databaseCenter.collections.importPasswordLabel")}
-          </label>
-          <PasswordInput
-            value={mgr.importPassword}
-            onChange={(e) => mgr.setImportPassword(e.target.value)}
-            className="sor-form-input-xs w-full"
-            placeholder={
-              t("databaseCenter.collections.passwordPlaceholder") as string
-            }
-          />
-        </div>
-      </div>
-      <label className="flex items-center gap-2 cursor-pointer">
-        <Checkbox
-          checked={mgr.encryptImport}
-          onChange={(v: boolean) => mgr.setEncryptImport(v)}
-        />
-        <span className="text-xs text-[var(--color-textSecondary)]">
-          {t("databaseCenter.collections.encryptImportToggle")}
-        </span>
-      </label>
-      {mgr.encryptImport && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-              {t("databaseCenter.collections.newPasswordLabel")}
-            </label>
-            <PasswordInput
-              value={mgr.importEncryptPassword}
-              onChange={(e) => mgr.setImportEncryptPassword(e.target.value)}
-              className="sor-form-input-xs w-full"
-              placeholder={
-                t("databaseCenter.collections.newPasswordPlaceholder") as string
-              }
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-              {t("databaseCenter.collections.confirmPasswordShortLabel")}
-            </label>
-            <PasswordInput
-              value={mgr.importEncryptConfirmPassword}
-              onChange={(e) =>
-                mgr.setImportEncryptConfirmPassword(e.target.value)
-              }
-              className="sor-form-input-xs w-full"
-              placeholder={
-                t(
-                  "databaseCenter.collections.confirmPasswordPlaceholder",
-                ) as string
-              }
-              revealable={false}
-            />
-          </div>
-        </div>
-      )}
-    </CardShell>
-  );
-};
-
-// ── Export ───────────────────────────────────────────────────────────
-
-const ExportDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
-  mgr,
-  onClose,
-}) => {
-  const { t } = useTranslation();
-  if (!mgr.exportingCollection) return null;
-  const target = mgr.exportingCollection;
-
-  return (
-    <CardShell
-      title={t("databaseCenter.collections.exportTitle", { name: target.name })}
-      icon={Download}
-      error={mgr.error}
-      onClose={onClose}
-      footer={
-        <>
-          <button onClick={onClose} className="sor-btn sor-btn-secondary">
-            {t("settings.cancel", "Cancel")}
-          </button>
-          <button
-            onClick={mgr.handleExportDownload}
-            className="sor-btn-primary-sm"
-          >
-            <Download size={14} />
-            <span>{t("databaseCenter.actions.export")}</span>
-          </button>
-        </>
-      }
-    >
-      {target.protectionFormat === "sorng-db" && (
-        <p className="text-xs text-[var(--color-textMuted)]">
-          Unlock this managed database explicitly before exporting. The portable
-          export uses the separate export password below; native session handles
-          and device-bound vault slots are never included. Without an export
-          password, the exported file is plaintext.
-        </p>
-      )}
-      {target.isEncrypted && target.protectionFormat !== "sorng-db" && (
-        <div className="space-y-1">
-          <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-            {t("databaseCenter.collections.collectionPasswordLabel")}
-          </label>
-          <PasswordInput
-            value={mgr.collectionPassword}
-            onChange={(e) => mgr.setCollectionPassword(e.target.value)}
-            className="sor-form-input-xs w-full"
-            placeholder={
-              t("databaseCenter.collections.passwordPlaceholder") as string
-            }
-          />
-        </div>
-      )}
-      <label className="flex items-center gap-2 cursor-pointer">
-        <Checkbox
-          checked={mgr.includePasswords}
-          onChange={(v: boolean) => mgr.setIncludePasswords(v)}
-        />
-        <span className="text-xs text-[var(--color-textSecondary)]">
-          {t("databaseCenter.collections.includePasswords")}
-        </span>
-      </label>
-      <div className="space-y-1">
-        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-          {t("databaseCenter.collections.exportPasswordLabel")}
-        </label>
-        <PasswordInput
-          value={mgr.exportPassword}
-          onChange={(e) => mgr.setExportPassword(e.target.value)}
-          className="sor-form-input-xs w-full"
-          placeholder={
-            t("databaseCenter.collections.exportPasswordPlaceholder") as string
-          }
-        />
-      </div>
     </CardShell>
   );
 };

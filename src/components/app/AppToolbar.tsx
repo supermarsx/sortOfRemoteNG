@@ -295,7 +295,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showImportExportIcon && (
               <button
                 onClick={openImportExport}
-                disabled={noCollection}
                 className="app-bar-button p-2"
                 title={t("toolbar.importExport", "Import / Export")}
                 data-testid="toolbar-import-export"

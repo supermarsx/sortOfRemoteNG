@@ -728,7 +728,15 @@ const ExportTab: React.FC<ExportTabProps> = ({
     strength.score < config.strengthSettings.minimumPasswordScore;
   const disableExport =
     isProcessing ||
-    effectiveDatabaseCount === 0 ||
+    (config.scopeMode === "selected" &&
+      config.selectedDatabaseIds.some(
+        (id) =>
+          !config.databaseOptions.some(
+            (option) => option.id === id && option.isExportable,
+          ),
+      )) ||
+    (config.scopeMode !== "global" && effectiveDatabaseCount === 0) ||
+    (config.scopeMode === "global" && config.format !== "json") ||
     singleDatabaseFormatBlocked ||
     credentialExportUnprotected ||
     (config.encrypted && !config.password) ||
@@ -758,6 +766,12 @@ const ExportTab: React.FC<ExportTabProps> = ({
     label: string;
     description: string;
   }> = [
+    {
+      value: "global",
+      label: "Global VPN profiles and tunnel chains",
+      description:
+        "Export app-wide definitions as JSON without reading a database.",
+    },
     {
       value: "current",
       label: t("exportTab.scopeCurrent"),
@@ -1322,6 +1336,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
       if (
         stepId === "scope" &&
         config.scopeMode !== "selected" &&
+        config.scopeMode !== "global" &&
         effectiveDatabaseCount === 0
       ) {
         return "Choose an unlocked database scope before continuing.";
@@ -1331,6 +1346,13 @@ const ExportTab: React.FC<ExportTabProps> = ({
       }
       if (stepId === "format" && singleDatabaseFormatBlocked) {
         return "The selected format supports only one database. Change the format or scope.";
+      }
+      if (
+        stepId === "format" &&
+        config.scopeMode === "global" &&
+        config.format !== "json"
+      ) {
+        return "Global VPN profiles and tunnel chains use JSON export.";
       }
       if (stepId === "content" && !hasExportContent) {
         return "Choose at least one content category before continuing.";
@@ -1350,6 +1372,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
       config.encrypted,
       config.password,
       config.scopeMode,
+      config.format,
       effectiveDatabaseCount,
       hasExportContent,
       passwordTooWeak,
@@ -1566,11 +1589,11 @@ const ExportTab: React.FC<ExportTabProps> = ({
                         control={
                           config.scopeMode === "selected" ? (
                             <Checkbox
-                              checked={
-                                database.isExportable &&
-                                selectedDatabaseIdSet.has(database.id)
+                              checked={selectedDatabaseIdSet.has(database.id)}
+                              disabled={
+                                !database.isExportable &&
+                                !selectedDatabaseIdSet.has(database.id)
                               }
-                              disabled={!database.isExportable}
                               onChange={(checked: boolean) =>
                                 toggleDatabaseSelection(database.id, checked)
                               }

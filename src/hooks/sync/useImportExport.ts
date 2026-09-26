@@ -19,6 +19,22 @@ import {
   VaultPortabilityError,
 } from "../../utils/security/vaultPortability";
 import { getInvoke } from "../../utils/tauri/invoke";
+import type { ImportExportNavigation } from "../../components/ImportExport/navigation";
+import {
+  captureImportExportOperation,
+  type ImportExportOperation,
+} from "../../components/ImportExport/operationGuard";
+import {
+  listImportExportDatabases,
+  readImportExportDatabase,
+  appendImportExportDatabase,
+  subscribeImportExportAccess,
+} from "../../components/ImportExport/databaseAccess";
+import {
+  saveExportFile,
+  openExportFolder,
+  type ExportFileResult,
+} from "../../components/ImportExport/exportFile";
 import {
   applyTrustDocument,
   isTrustExportDocument,
@@ -144,17 +160,11 @@ const chooseImportTargetDatabaseId = (
   );
 
   if (mode === "current") {
-    return currentOption?.id ?? exportableOptions[0]?.id ?? "";
+    return currentOption?.id ?? "";
   }
 
   if (mode === "selected") {
-    return (
-      selectedOption?.id ??
-      exportableOptions.find((option) => !option.isCurrent)?.id ??
-      currentOption?.id ??
-      exportableOptions[0]?.id ??
-      ""
-    );
+    return currentSelection;
   }
 
   return (
@@ -1337,14 +1347,18 @@ interface UseImportExportParams {
   isOpen: boolean;
   onClose: () => void;
   initialTab?: ImportExportTab;
+  navigation?: ImportExportNavigation;
 }
 
 export function useImportExport({
   isOpen,
   onClose,
   initialTab = "export",
+  navigation,
 }: UseImportExportParams) {
-  const { state, dispatch, loadData } = useConnections();
+  const { state, dispatch, loadData, databaseAvailability } = useConnections();
+  const accessGenerationRef = useRef(databaseAvailability?.generation);
+  accessGenerationRef.current = databaseAvailability?.generation;
   const { toast } = useToastContext();
   const { t } = useTranslation();
   const databaseManager = useMemo(() => DatabaseManager.getInstance(), []);
@@ -1352,24 +1366,60 @@ export function useImportExport({
   const [exportSecuritySettings] = useState(() =>
     getExportSecuritySettings(settingsManager),
   );
-  const [activeTab, setActiveTab] = useState<ImportExportTab>(initialTab);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>(
-    exportSecuritySettings.defaultFormat,
+  const [activeTab, setActiveTab] = useState<ImportExportTab>(
+    navigation?.tab ?? initialTab,
   );
-  const [exportScopeMode, setExportScopeMode] =
-    useState<ExportScopeMode>("current");
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(
+    navigation?.tab === "export"
+      ? navigation.format
+      : exportSecuritySettings.defaultFormat,
+  );
+  const [exportScopeMode, setExportScopeMode] = useState<ExportScopeMode>(
+    navigation?.tab === "export"
+      ? "selected"
+      : databaseManager.getCurrentDatabase()
+        ? "current"
+        : "global",
+  );
   const [selectedExportDatabaseIds, setSelectedExportDatabaseIds] = useState<
     string[]
-  >([]);
+  >(
+    navigation?.tab === "export"
+      ? [...navigation.databaseIds]
+      : databaseManager.getCurrentDatabase()
+        ? [databaseManager.getCurrentDatabase()!.id]
+        : [],
+  );
   const [exportDatabaseOptions, setExportDatabaseOptions] = useState<
     ExportDatabaseOption[]
   >([]);
   const [exportEncrypted, setExportEncrypted] = useState(
-    exportSecuritySettings.encryptByDefault,
+    navigation?.tab === "export" && navigation.encrypted !== undefined
+      ? navigation.encrypted
+      : exportSecuritySettings.encryptByDefault,
   );
   const [exportPassword, setExportPassword] = useState("");
-  const [exportInclusion, setExportInclusion] = useState<ExportInclusionConfig>(
-    () => createDefaultExportInclusion(exportSecuritySettings),
+  const [exportInclusionState, setExportInclusion] =
+    useState<ExportInclusionConfig>(() =>
+      createDefaultExportInclusion(exportSecuritySettings),
+    );
+  const exportInclusion = useMemo(
+    () =>
+      exportScopeMode === "global"
+        ? {
+            ...exportInclusionState,
+            includeConnections: false,
+            includeSettings: false,
+            includeFolderItems: false,
+            includeEmptyFolders: false,
+            includeTabGroups: false,
+            includeColorTags: false,
+            includeDatabaseMetadata: false,
+            includeExportMetadata: false,
+            includeTrust: false,
+          }
+        : exportInclusionState,
+    [exportInclusionState, exportScopeMode],
   );
   const [exportKeyDerivationIterations, setExportKeyDerivationIterations] =
     useState(exportSecuritySettings.keyDerivationIterations);
@@ -1441,14 +1491,16 @@ export function useImportExport({
     [],
   );
   const [importTargetMode, setImportTargetModeState] =
-    useState<ImportTargetMode>("current");
+    useState<ImportTargetMode>(
+      databaseManager.getCurrentDatabase() ? "current" : "global",
+    );
   const [selectedImportDatabaseId, setSelectedImportDatabaseId] =
     useState<string>("");
-  const importTargetModeRef = useRef<ImportTargetMode>("current");
+  const importTargetModeRef = useRef<ImportTargetMode>(importTargetMode);
   const selectedImportDatabaseIdRef = useRef<string>("");
   const [importFormatSelection, setImportFormatSelectionState] = useState<
     "auto" | ImportFormat
-  >("auto");
+  >(navigation?.tab === "import" ? navigation.format : "auto");
   const [importSourceFile, setImportSourceFile] = useState<{
     filename: string;
     content: string;
@@ -1458,6 +1510,14 @@ export function useImportExport({
     () => new Set(),
   );
   const [isProcessing, setIsProcessing] = useState(false);
+  const [exportResult, setExportResult] = useState<Exclude<
+    ExportFileResult,
+    { status: "cancelled" }
+  > | null>(null);
+  const [exportFolderError, setExportFolderError] = useState<string | null>(
+    null,
+  );
+  const [isOpeningExportFolder, setIsOpeningExportFolder] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentConnectionsRef = useRef<Connection[]>(state.connections);
 
@@ -1549,24 +1609,9 @@ export function useImportExport({
   };
 
   const refreshExportDatabaseOptions = useCallback(async () => {
-    const managerWithExportability = databaseManager as DatabaseManager & {
-      getExportableDatabases?: () => ReturnType<
-        DatabaseManager["getExportableDatabases"]
-      >;
-    };
     const currentDatabase = databaseManager.getCurrentDatabase();
-    const exportableDatabases = managerWithExportability.getExportableDatabases
-      ? await managerWithExportability.getExportableDatabases()
-      : currentDatabase
-        ? [
-            {
-              ...currentDatabase,
-              isCurrent: true,
-              isUnlocked: true,
-              isExportable: true,
-            },
-          ]
-        : [];
+    const exportableDatabases =
+      await listImportExportDatabases(databaseManager);
     const options: ExportDatabaseOption[] = exportableDatabases.map(
       (database) => ({
         id: database.id,
@@ -1586,45 +1631,11 @@ export function useImportExport({
     );
 
     setExportDatabaseOptions(options);
-    setSelectedExportDatabaseIds((currentSelection) => {
-      const exportableIds = new Set(
-        options
-          .filter((option) => option.isExportable)
-          .map((option) => option.id),
-      );
-      const retainedSelection = currentSelection.filter((id) =>
-        exportableIds.has(id),
-      );
-      if (retainedSelection.length > 0) {
-        return retainedSelection;
-      }
-
-      const currentOption = options.find(
-        (option) => option.isCurrent && option.isExportable,
-      );
-      return currentOption ? [currentOption.id] : [];
-    });
   }, [databaseManager, state.connections.length]);
 
   const refreshImportDatabaseOptions = useCallback(async () => {
-    const managerWithExportability = databaseManager as DatabaseManager & {
-      getExportableDatabases?: () => ReturnType<
-        DatabaseManager["getExportableDatabases"]
-      >;
-    };
     const currentDatabase = databaseManager.getCurrentDatabase();
-    const databases = managerWithExportability.getExportableDatabases
-      ? await managerWithExportability.getExportableDatabases()
-      : currentDatabase
-        ? [
-            {
-              ...currentDatabase,
-              isCurrent: true,
-              isUnlocked: true,
-              isExportable: true,
-            },
-          ]
-        : [];
+    const databases = await listImportExportDatabases(databaseManager);
 
     const options: ExportDatabaseOption[] = databases.map((database) => ({
       id: database.id,
@@ -1658,9 +1669,9 @@ export function useImportExport({
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      setActiveTab(navigation?.tab ?? initialTab);
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, navigation?.tab]);
 
   const refreshCloneDatabaseOptions = useCallback(async () => {
     // Clone consumes the same per-database option shape as Import /
@@ -1668,24 +1679,8 @@ export function useImportExport({
     // list. Encryption-locked databases land in the list as
     // non-exportable so the UI can still show them with an "unlock
     // to use" affordance.
-    const managerWithExportability = databaseManager as DatabaseManager & {
-      getExportableDatabases?: () => ReturnType<
-        DatabaseManager["getExportableDatabases"]
-      >;
-    };
     const currentDatabase = databaseManager.getCurrentDatabase();
-    const databases = managerWithExportability.getExportableDatabases
-      ? await managerWithExportability.getExportableDatabases()
-      : currentDatabase
-        ? [
-            {
-              ...currentDatabase,
-              isCurrent: true,
-              isUnlocked: true,
-              isExportable: true,
-            },
-          ]
-        : [];
+    const databases = await listImportExportDatabases(databaseManager);
 
     const options: ExportDatabaseOption[] = databases.map((database) => ({
       id: database.id,
@@ -1751,13 +1746,13 @@ export function useImportExport({
           sourceConnections = currentConnectionsRef.current;
         } else {
           try {
-            const snapshot =
-              await databaseManager.readExportableDatabaseSnapshot(
-                databaseId,
-                false,
-                // Catalog rows only need names and protocols.
-                { includeTrust: false },
-              );
+            const snapshot = await readImportExportDatabase(
+              databaseManager,
+              databaseId,
+              false,
+              // Catalog rows only need names and protocols.
+              { includeTrust: false },
+            );
             sourceConnections = snapshot?.connections ?? [];
           } catch (e) {
             console.warn(
@@ -1828,6 +1823,7 @@ export function useImportExport({
    */
   const handleUnlockDatabase = useCallback(
     async (databaseId: string): Promise<boolean> => {
+      if (!databaseManager.getCurrentDatabase()) return false;
       // All three pickers draw from the same `getExportableDatabases()`
       // output so any list works for the name/encryption lookup.
       const option = [
@@ -1916,6 +1912,25 @@ export function useImportExport({
     if (!isOpen) return;
     void refreshCloneSourceCatalog();
   }, [isOpen, refreshCloneSourceCatalog]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const refresh = () => {
+      setExportDatabaseOptions([]);
+      setImportDatabaseOptions([]);
+      setCloneDatabaseOptions([]);
+      setCloneSourceCatalog([]);
+      void refreshExportDatabaseOptions();
+      void refreshImportDatabaseOptions();
+      void refreshCloneDatabaseOptions();
+    };
+    return subscribeImportExportAccess(refresh);
+  }, [
+    isOpen,
+    refreshExportDatabaseOptions,
+    refreshImportDatabaseOptions,
+    refreshCloneDatabaseOptions,
+  ]);
 
   // ── Helpers ──────────────────────────────────────────────────
 
@@ -2040,22 +2055,6 @@ export function useImportExport({
     const datetime = now.toISOString().replace(/[:.]/g, "-").slice(0, -5);
     const randomHex = Math.random().toString(16).substring(2, 8);
     return `sortofremoteng-exports-${datetime}-${randomHex}.${format}`;
-  };
-
-  const downloadFile = (
-    content: string,
-    filename: string,
-    mimeType: string,
-  ) => {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const readFileContent = (file: File): Promise<string> => {
@@ -2190,7 +2189,9 @@ export function useImportExport({
 
   const buildCurrentDatabaseDataset = async (
     currentDatabase: ConnectionDatabase,
+    operation: ImportExportOperation,
   ): Promise<ExportDatabaseDataset> => {
+    operation.assertCurrent();
     const rawSettings = settingsManager.getSettings?.();
     const settings = (rawSettings ?? {}) as unknown as Record<string, unknown>;
     const colorTags = (
@@ -2249,23 +2250,28 @@ export function useImportExport({
       : {}),
   });
 
-  const buildExportDatasets = async (): Promise<ExportBuildResult> => {
+  const buildExportDatasets = async (
+    operation: ImportExportOperation,
+  ): Promise<ExportBuildResult> => {
+    if (exportScopeMode === "global")
+      return { datasets: [], options: [], effectiveDatabaseIds: [] };
     const currentDatabase = databaseManager.getCurrentDatabase();
-    if (!currentDatabase) throw new Error("No collection selected");
 
-    const exportableDatabases = await databaseManager.getExportableDatabases();
+    const exportableDatabases =
+      await listImportExportDatabases(databaseManager);
+    operation.assertCurrent();
     const options: ExportDatabaseOption[] = exportableDatabases.map(
       (database) => ({
         id: database.id,
         name: database.name,
         description: database.description,
-        isCurrent: database.id === currentDatabase.id || database.isCurrent,
+        isCurrent: database.id === currentDatabase?.id || database.isCurrent,
         isEncrypted: database.isEncrypted,
         isUnlocked: database.isUnlocked,
         isExportable: database.isExportable,
         lockedReason: database.lockedReason,
         connectionCount:
-          database.id === currentDatabase.id
+          database.id === currentDatabase?.id
             ? state.connections.length
             : undefined,
         lastAccessed: database.lastAccessed,
@@ -2273,25 +2279,45 @@ export function useImportExport({
     );
     setExportDatabaseOptions(options);
 
+    if (
+      exportScopeMode === "selected" &&
+      selectedExportDatabaseIds.some(
+        (id) =>
+          !options.some((option) => option.id === id && option.isExportable),
+      )
+    ) {
+      throw new Error(
+        "Unlock every selected database or remove unavailable databases from the selection before exporting.",
+      );
+    }
+
     const selectedIds = getEffectiveExportDatabaseIds(options);
+    operation.addDatabases(selectedIds);
     if (selectedIds.length === 0) {
       return { datasets: [], options, effectiveDatabaseIds: [] };
     }
 
     const datasets: ExportDatabaseDataset[] = [];
     for (const databaseId of selectedIds) {
-      if (databaseId === currentDatabase.id) {
-        datasets.push(await buildCurrentDatabaseDataset(currentDatabase));
+      // Pin security metadata before reading an unopened plaintext source.
+      await operation.verifyCurrent();
+      if (currentDatabase && databaseId === currentDatabase.id) {
+        datasets.push(
+          await buildCurrentDatabaseDataset(currentDatabase, operation),
+        );
+        operation.assertCurrent();
         continue;
       }
 
-      const snapshot = await databaseManager.readExportableDatabaseSnapshot(
+      const snapshot = await readImportExportDatabase(
+        databaseManager,
         databaseId,
         exportInclusion.includeConnections &&
           exportInclusion.includeCredentials,
         { includeTrust: exportInclusion.includeTrust },
       );
       datasets.push(snapshotToDataset(snapshot));
+      operation.assertCurrent();
     }
 
     return { datasets, options, effectiveDatabaseIds: selectedIds };
@@ -3205,12 +3231,36 @@ ${tableRows}
 
   const handleExport = async () => {
     setIsProcessing(true);
+    setExportResult(null);
+    setExportFolderError(null);
     try {
+      const currentId = databaseManager.getCurrentDatabase()?.id;
+      const sourceIds =
+        exportScopeMode === "global"
+          ? []
+          : exportScopeMode === "current"
+            ? currentId
+              ? [currentId]
+              : []
+            : exportScopeMode === "selected"
+              ? selectedExportDatabaseIds
+              : exportDatabaseOptions
+                  .filter((option) => option.isExportable)
+                  .map((option) => option.id);
+      const operation = captureImportExportOperation(
+        databaseManager,
+        sourceIds,
+        () => accessGenerationRef.current,
+      );
       let content: string;
       let filename: string;
       let mimeType: string;
       const shouldUsePasswordEncryption =
         exportEncrypted && Boolean(exportPassword);
+      if (exportEncrypted && !exportPassword) {
+        toast.error("Enter a password for the encrypted export.");
+        return;
+      }
       const normalizedExportIterations = normalizePbkdf2Iterations(
         exportKeyDerivationIterations,
       );
@@ -3243,12 +3293,17 @@ ${tableRows}
         }
       }
 
-      const exportBuild = await buildExportDatasets();
+      const exportBuild = await buildExportDatasets(operation);
       const { datasets, options } = exportBuild;
-      if (datasets.length === 0) {
+      if (datasets.length === 0 && exportScopeMode !== "global") {
         toast.error(
           "No exportable databases are selected. Unlock encrypted databases or choose a different scope.",
         );
+        return;
+      }
+
+      if (exportScopeMode === "global" && exportFormat !== "json") {
+        toast.error("Global VPN profiles and tunnel chains use JSON export.");
         return;
       }
 
@@ -3264,7 +3319,15 @@ ${tableRows}
 
       switch (exportFormat) {
         case "json": {
-          const sidecars = await loadExportSidecars();
+          const sidecars =
+            exportScopeMode === "global"
+              ? await loadSidecarsForInclusion({
+                  ...exportInclusion,
+                  includeConnections: false,
+                  includeSettings: false,
+                  includeTrust: false,
+                })
+              : await loadExportSidecars();
           const warnings = buildExportWarnings(datasets, options, sidecars);
           const exportMetadata = exportInclusion.includeExportMetadata
             ? buildExportMetadata({
@@ -3277,17 +3340,24 @@ ${tableRows}
               })
             : undefined;
           const payload =
-            datasets.length === 1
-              ? buildSingleDatabaseJsonPayload(
-                  datasets[0],
-                  sidecars,
-                  exportMetadata,
-                )
-              : buildMultiDatabaseJsonPackage(
-                  datasets,
-                  sidecars,
-                  exportMetadata,
-                );
+            exportScopeMode === "global"
+              ? {
+                  schema: "sortOfRemoteNG.global-export",
+                  version: 1,
+                  connections: [],
+                  ...sidecars,
+                }
+              : datasets.length === 1
+                ? buildSingleDatabaseJsonPayload(
+                    datasets[0],
+                    sidecars,
+                    exportMetadata,
+                  )
+                : buildMultiDatabaseJsonPackage(
+                    datasets,
+                    sidecars,
+                    exportMetadata,
+                  );
           const protectedPayload = exportInclusion.includeCredentials
             ? payload
             : stripExportSecrets(payload);
@@ -3387,18 +3457,20 @@ ${tableRows}
             : (result.warning as string);
           if (translated) toast.warning(translated);
         }
-        const encryptedBlob = new Blob([result.bytes as unknown as BlobPart], {
-          type: mimeType,
-        });
-        const url = URL.createObjectURL(encryptedBlob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        toast.success(`Exported successfully: ${filename}`);
+        operation.assertCurrent();
+        const saved = await saveExportFile(
+          result.bytes,
+          filename,
+          mimeType,
+          operation.verifyCurrent,
+        );
+        if (saved.status === "cancelled") return;
+        setExportResult(saved);
+        toast.success(
+          saved.status === "saved"
+            ? `Exported successfully: ${saved.path}`
+            : `Download started: ${filename}`,
+        );
         settingsManager.logAction(
           "info",
           "Data exported",
@@ -3409,8 +3481,20 @@ ${tableRows}
         return;
       }
 
-      downloadFile(content, filename, mimeType);
-      toast.success(`Exported successfully: ${filename}`);
+      operation.assertCurrent();
+      const saved = await saveExportFile(
+        content,
+        filename,
+        mimeType,
+        operation.verifyCurrent,
+      );
+      if (saved.status === "cancelled") return;
+      setExportResult(saved);
+      toast.success(
+        saved.status === "saved"
+          ? `Exported successfully: ${saved.path}`
+          : `Download started: ${filename}`,
+      );
       settingsManager.logAction(
         "info",
         "Data exported",
@@ -3427,10 +3511,26 @@ ${tableRows}
 
   // ── Import ───────────────────────────────────────────────────
 
+  const handleOpenExportFolder = async () => {
+    if (exportResult?.status !== "saved" || isOpeningExportFolder) return;
+    setIsOpeningExportFolder(true);
+    setExportFolderError(null);
+    try {
+      await openExportFolder(exportResult.path);
+    } catch {
+      setExportFolderError(
+        "The export was saved, but its folder could not be opened. Use the saved path to locate it or try again.",
+      );
+    } finally {
+      setIsOpeningExportFolder(false);
+    }
+  };
+
   const getImportTargetDatabases = (
     mode: ImportTargetMode = importTargetModeRef.current,
     selectedDatabaseId: string = selectedImportDatabaseIdRef.current,
   ): ExportDatabaseOption[] => {
+    if (mode === "global") return [];
     const exportableOptions = importDatabaseOptions.filter(
       (option) => option.isExportable,
     );
@@ -3439,10 +3539,7 @@ ${tableRows}
       (option) => option.id === selectedDatabaseId,
     );
     if (mode === "current") {
-      if (selectedOption && !selectedOption.isCurrent) {
-        return [selectedOption];
-      }
-      return currentOption ? [currentOption] : exportableOptions.slice(0, 1);
+      return currentOption ? [currentOption] : [];
     }
     if (mode === "all") {
       return exportableOptions;
@@ -3457,7 +3554,7 @@ ${tableRows}
     const currentDatabase = databaseManager.getCurrentDatabase();
     const targets = getImportTargetDatabases(mode, targetDatabaseId);
     if (targets.length === 0) {
-      return mode === "current" ? state.connections : [];
+      return [];
     }
 
     const targetConnections = await Promise.all(
@@ -3465,7 +3562,8 @@ ${tableRows}
         if (target.id === currentDatabase?.id) {
           return state.connections;
         }
-        const snapshot = await databaseManager.readExportableDatabaseSnapshot(
+        const snapshot = await readImportExportDatabase(
+          databaseManager,
           target.id,
           true,
           // Only used to detect conflicts against existing connections.
@@ -4021,325 +4119,366 @@ ${tableRows}
   };
 
   const confirmImport = async (filename?: string) => {
-    if (importResult && importResult.success) {
-      const selectedPreviewItems = importResult.previewItems
-        ? importResult.previewItems.filter(
-            (item) => selectedPreviewIds.has(item.id) && item.importable,
-          )
-        : null;
-      const selectedItems = selectedPreviewItems
-        ? selectedPreviewItems.filter(
-            (item) =>
-              (item.kind === "connection" || item.kind === "folder") &&
-              item.connection,
-          )
-        : importResult.connections.map((connection, index) => ({
-            id: `legacy:${connection.id}:${index}`,
-            connection,
-            conflictStatus: "none" as const,
-          }));
-      try {
-        assertPortableCredentialSources(
-          selectedItems.map((item) => item.connection),
+    try {
+      if (importResult && importResult.success) {
+        const operation = captureImportExportOperation(
+          databaseManager,
+          getImportTargetDatabases().map((target) => target.id),
+          () => accessGenerationRef.current,
         );
-      } catch (error) {
-        if (!(error instanceof VaultPortabilityError)) throw error;
-        toast.error(error.message);
-        return;
-      }
-      const hasSshTunnelPreviewRows = Boolean(
-        importResult.previewItems?.some((item) => item.kind === "sshTunnel"),
-      );
-      const selectedSshTunnelConnectionIds = new Set<string>(
-        selectedPreviewItems
-          ?.filter((item) => item.kind === "sshTunnel")
-          .map((item) => item.sshTunnelConnectionId || item.connection?.id)
-          .filter((id): id is string => Boolean(id)) ?? [],
-      );
-
-      const addTags = splitTags(importOptions.addTags);
-
-      // Strip credentials *before* the shared remap so the helper
-      // stays free of secret-handling concerns. Both Import and
-      // Clone funnel through the same `remapConnectionsForApply`
-      // helper; clone keeps credentials by default, import strips
-      // unless the user opts in.
-      // Upstream already filtered `selectedItems` to importable
-      // entries with a non-null `connection` — don't double-filter
-      // here because the legacy fallback shape omits `importable`.
-      const preparedItems: ApplyConnectionsItem[] = selectedItems
-        .filter((item) => Boolean(item.connection))
-        .map((item) => {
-          const connection = normalizeImportedAdvancedProtocolConnection(
-            item.connection as Connection,
+        const selectedPreviewItems = importResult.previewItems
+          ? importResult.previewItems.filter(
+              (item) => selectedPreviewIds.has(item.id) && item.importable,
+            )
+          : null;
+        const selectedItems = selectedPreviewItems
+          ? selectedPreviewItems.filter(
+              (item) =>
+                (item.kind === "connection" || item.kind === "folder") &&
+                item.connection,
+            )
+          : importResult.connections.map((connection, index) => ({
+              id: `legacy:${connection.id}:${index}`,
+              connection,
+              conflictStatus: "none" as const,
+            }));
+        try {
+          assertPortableCredentialSources(
+            selectedItems.map((item) => item.connection),
           );
-          const keepSshTunnels =
-            !hasConnectionSshTunnel(connection) ||
-            (importOptions.includeSshTunnels &&
-              (!hasSshTunnelPreviewRows ||
-                selectedSshTunnelConnectionIds.has(connection.id)));
-          const connectionWithSelectedSshTunnels = keepSshTunnels
-            ? connection
-            : stripConnectionSshTunnels(connection);
-          return {
-            connection: importOptions.includeCredentials
-              ? connectionWithSelectedSshTunnels
-              : stripConnectionCredentials(connectionWithSelectedSshTunnels),
-            conflictStatus: item.conflictStatus,
-          };
-        });
+        } catch (error) {
+          if (!(error instanceof VaultPortabilityError)) throw error;
+          toast.error(error.message);
+          return;
+        }
+        const hasSshTunnelPreviewRows = Boolean(
+          importResult.previewItems?.some((item) => item.kind === "sshTunnel"),
+        );
+        const selectedSshTunnelConnectionIds = new Set<string>(
+          selectedPreviewItems
+            ?.filter((item) => item.kind === "sshTunnel")
+            .map((item) => item.sshTunnelConnectionId || item.connection?.id)
+            .filter((id): id is string => Boolean(id)) ?? [],
+        );
 
-      const applied = remapConnectionsForApply(preparedItems, {
-        conflictPolicy: importOptions.conflictPolicy,
-        addTags,
-        preserveFolders: importOptions.preserveFolders,
-      });
-      const baseConnectionsToImport = applied.remapped;
+        const addTags = splitTags(importOptions.addTags);
 
-      const selectedVpnItems =
-        selectedPreviewItems?.filter(
-          (item) => item.kind === "vpn" && item.vpnType && item.vpnConnection,
-        ) ?? [];
-      const selectedTunnelChainItems =
-        selectedPreviewItems?.filter(
-          (item) => item.kind === "tunnelChain" && item.tunnelChainTemplate,
-        ) ?? [];
-
-      const currentDatabase = databaseManager.getCurrentDatabase();
-      const targetDatabases = getImportTargetDatabases();
-      const lockedSelectedTarget = importDatabaseOptions.find(
-        (option) =>
-          option.id === selectedImportDatabaseIdRef.current &&
-          !option.isExportable,
-      );
-      if (importTargetModeRef.current === "selected" && lockedSelectedTarget) {
-        toast.error("Unlock the selected database before importing.");
-        return;
-      }
-      if (targetDatabases.length === 0) {
-        toast.error("Choose a database before importing.");
-        return;
-      }
-
-      // Restore selected VPN connections
-      let vpnImportedCount = 0;
-      const importedVpnIds = new Map<string, string>();
-      const vpnImportWarnings: string[] = [];
-      if (importOptions.includeVpnData && selectedVpnItems.length > 0) {
-        const proxyMgr = ProxyOpenVPNManager.getInstance();
-
-        for (const item of selectedVpnItems) {
-          const conn = item.vpnConnection;
-          if (!conn || !item.vpnType) continue;
-          try {
-            const prepared = prepareVpnConnectionForTransfer(
-              item.vpnType,
-              conn,
-              importOptions.includeCredentials,
+        // Strip credentials *before* the shared remap so the helper
+        // stays free of secret-handling concerns. Both Import and
+        // Clone funnel through the same `remapConnectionsForApply`
+        // helper; clone keeps credentials by default, import strips
+        // unless the user opts in.
+        // Upstream already filtered `selectedItems` to importable
+        // entries with a non-null `connection` — don't double-filter
+        // here because the legacy fallback shape omits `importable`.
+        const preparedItems: ApplyConnectionsItem[] = selectedItems
+          .filter((item) => Boolean(item.connection))
+          .map((item) => {
+            const connection = normalizeImportedAdvancedProtocolConnection(
+              item.connection as Connection,
             );
-            vpnImportWarnings.push(...prepared.warnings);
-            const portableConnection = prepared.connection as typeof conn;
-            if (!isVpnProfileExecutable(item.vpnType, portableConnection)) {
-              vpnImportWarnings.push(
-                `VPN profile "${portableConnection.name}" was omitted because its credentials are unavailable. Recreate it with credentials before restoring associations.`,
+            const keepSshTunnels =
+              !hasConnectionSshTunnel(connection) ||
+              (importOptions.includeSshTunnels &&
+                (!hasSshTunnelPreviewRows ||
+                  selectedSshTunnelConnectionIds.has(connection.id)));
+            const connectionWithSelectedSshTunnels = keepSshTunnels
+              ? connection
+              : stripConnectionSshTunnels(connection);
+            return {
+              connection: importOptions.includeCredentials
+                ? connectionWithSelectedSshTunnels
+                : stripConnectionCredentials(connectionWithSelectedSshTunnels),
+              conflictStatus: item.conflictStatus,
+            };
+          });
+
+        const applied = remapConnectionsForApply(preparedItems, {
+          conflictPolicy: importOptions.conflictPolicy,
+          addTags,
+          preserveFolders: importOptions.preserveFolders,
+        });
+        const baseConnectionsToImport = applied.remapped;
+
+        const selectedVpnItems =
+          selectedPreviewItems?.filter(
+            (item) => item.kind === "vpn" && item.vpnType && item.vpnConnection,
+          ) ?? [];
+        const selectedTunnelChainItems =
+          selectedPreviewItems?.filter(
+            (item) => item.kind === "tunnelChain" && item.tunnelChainTemplate,
+          ) ?? [];
+
+        const currentDatabase = databaseManager.getCurrentDatabase();
+        const eligibleIds = new Set(
+          (await listImportExportDatabases(databaseManager))
+            .filter((item) => item.isExportable)
+            .map((item) => item.id),
+        );
+        const targetDatabases = getImportTargetDatabases().filter((item) =>
+          eligibleIds.has(item.id),
+        );
+        operation.assertCurrent();
+        const lockedSelectedTarget = importDatabaseOptions.find(
+          (option) =>
+            option.id === selectedImportDatabaseIdRef.current &&
+            !option.isExportable,
+        );
+        if (
+          importTargetModeRef.current === "selected" &&
+          lockedSelectedTarget
+        ) {
+          toast.error("Unlock the selected database before importing.");
+          return;
+        }
+        if (
+          importTargetModeRef.current === "global" &&
+          baseConnectionsToImport.length > 0
+        ) {
+          toast.error(
+            "Global import accepts VPN profiles and tunnel chains only. Deselect connections and folders or choose an eligible database.",
+          );
+          return;
+        }
+        if (
+          targetDatabases.length === 0 &&
+          importTargetModeRef.current !== "global"
+        ) {
+          toast.error("Choose a database before importing.");
+          return;
+        }
+
+        // Restore selected VPN connections
+        let vpnImportedCount = 0;
+        const importedVpnIds = new Map<string, string>();
+        const vpnImportWarnings: string[] = [];
+        if (importOptions.includeVpnData && selectedVpnItems.length > 0) {
+          const proxyMgr = ProxyOpenVPNManager.getInstance();
+
+          for (const item of selectedVpnItems) {
+            operation.assertCurrent();
+            const conn = item.vpnConnection;
+            if (!conn || !item.vpnType) continue;
+            try {
+              const prepared = prepareVpnConnectionForTransfer(
+                item.vpnType,
+                conn,
+                importOptions.includeCredentials,
               );
-              continue;
+              vpnImportWarnings.push(...prepared.warnings);
+              const portableConnection = prepared.connection as typeof conn;
+              if (!isVpnProfileExecutable(item.vpnType, portableConnection)) {
+                vpnImportWarnings.push(
+                  `VPN profile "${portableConnection.name}" was omitted because its credentials are unavailable. Recreate it with credentials before restoring associations.`,
+                );
+                continue;
+              }
+              let createdId: string;
+              if (item.vpnType === "openvpn") {
+                const openvpn =
+                  portableConnection as ImportVpnData["openvpn"][number];
+                createdId = await proxyMgr.createOpenVPNConnection(
+                  openvpn.name,
+                  openvpn.config,
+                );
+              } else if (item.vpnType === "wireguard") {
+                const wireguard =
+                  portableConnection as ImportVpnData["wireguard"][number];
+                createdId = await proxyMgr.createWireGuardConnection(
+                  wireguard.name,
+                  wireguard.config,
+                );
+              } else if (item.vpnType === "tailscale") {
+                const tailscale =
+                  portableConnection as ImportVpnData["tailscale"][number];
+                createdId = await proxyMgr.createTailscaleConnection(
+                  tailscale.name,
+                  tailscale.config,
+                );
+              } else if (item.vpnType === "zerotier") {
+                const zerotier =
+                  portableConnection as ImportVpnData["zerotier"][number];
+                createdId = await proxyMgr.createZeroTierConnection(
+                  zerotier.name,
+                  zerotier.config,
+                );
+              } else {
+                continue;
+              }
+              if (conn.id) importedVpnIds.set(conn.id, createdId);
+              vpnImportedCount++;
+            } catch (e) {
+              console.warn(`VPN import skip (${item.vpnType}):`, e);
             }
-            let createdId: string;
-            if (item.vpnType === "openvpn") {
-              const openvpn =
-                portableConnection as ImportVpnData["openvpn"][number];
-              createdId = await proxyMgr.createOpenVPNConnection(
-                openvpn.name,
-                openvpn.config,
-              );
-            } else if (item.vpnType === "wireguard") {
-              const wireguard =
-                portableConnection as ImportVpnData["wireguard"][number];
-              createdId = await proxyMgr.createWireGuardConnection(
-                wireguard.name,
-                wireguard.config,
-              );
-            } else if (item.vpnType === "tailscale") {
-              const tailscale =
-                portableConnection as ImportVpnData["tailscale"][number];
-              createdId = await proxyMgr.createTailscaleConnection(
-                tailscale.name,
-                tailscale.config,
-              );
-            } else if (item.vpnType === "zerotier") {
-              const zerotier =
-                portableConnection as ImportVpnData["zerotier"][number];
-              createdId = await proxyMgr.createZeroTierConnection(
-                zerotier.name,
-                zerotier.config,
-              );
-            } else {
-              continue;
-            }
-            if (conn.id) importedVpnIds.set(conn.id, createdId);
-            vpnImportedCount++;
-          } catch (e) {
-            console.warn(`VPN import skip (${item.vpnType}):`, e);
           }
         }
-      }
 
-      // Restore selected tunnel chain templates
-      let tunnelChainsImportedCount = 0;
-      const importedTunnelChainIds = new Map<string, string>();
-      if (
-        importOptions.includeTunnelChains &&
-        selectedTunnelChainItems.length > 0
-      ) {
-        for (const item of selectedTunnelChainItems) {
-          const chain = item.tunnelChainTemplate;
-          if (!chain) continue;
-          try {
-            const unresolvedVpnIds = Array.from(
-              new Set(
-                chain.layers
-                  .map(resolveTunnelLayerVpnProfileId)
-                  .filter(
-                    (id): id is string =>
-                      Boolean(id) && !importedVpnIds.has(id as string),
-                  ),
-              ),
-            );
-            if (unresolvedVpnIds.length > 0) {
-              vpnImportWarnings.push(
-                `Tunnel chain "${chain.name}" was omitted because VPN profile(s) ${unresolvedVpnIds.join(", ")} were not imported.`,
+        // Restore selected tunnel chain templates
+        let tunnelChainsImportedCount = 0;
+        const importedTunnelChainIds = new Map<string, string>();
+        if (
+          importOptions.includeTunnelChains &&
+          selectedTunnelChainItems.length > 0
+        ) {
+          for (const item of selectedTunnelChainItems) {
+            operation.assertCurrent();
+            const chain = item.tunnelChainTemplate;
+            if (!chain) continue;
+            try {
+              const unresolvedVpnIds = Array.from(
+                new Set(
+                  chain.layers
+                    .map(resolveTunnelLayerVpnProfileId)
+                    .filter(
+                      (id): id is string =>
+                        Boolean(id) && !importedVpnIds.has(id as string),
+                    ),
+                ),
               );
-              continue;
+              if (unresolvedVpnIds.length > 0) {
+                vpnImportWarnings.push(
+                  `Tunnel chain "${chain.name}" was omitted because VPN profile(s) ${unresolvedVpnIds.join(", ")} were not imported.`,
+                );
+                continue;
+              }
+              const remappedChain = remapTunnelChain(chain, importedVpnIds);
+              const created = await proxyCollectionManager.createTunnelChain(
+                remappedChain.name,
+                remappedChain.layers,
+                {
+                  description: remappedChain.description,
+                  tags: remappedChain.tags,
+                },
+              );
+              if (chain.id) importedTunnelChainIds.set(chain.id, created.id);
+              tunnelChainsImportedCount++;
+            } catch (e) {
+              console.warn("Tunnel chain import skip:", e);
             }
-            const remappedChain = remapTunnelChain(chain, importedVpnIds);
-            const created = await proxyCollectionManager.createTunnelChain(
-              remappedChain.name,
-              remappedChain.layers,
-              {
-                description: remappedChain.description,
-                tags: remappedChain.tags,
+          }
+        }
+
+        // Sidecars receive fresh app-local IDs. Rewrite every imported
+        // connection only after the selected VPN profiles and saved chains have
+        // been created, while preserving stable layer IDs inside inline chains.
+        const connectionsToImport = baseConnectionsToImport.map(
+          (connection) => {
+            const remapped = remapConnectionVpnReferencesStrict(
+              connection,
+              importedVpnIds,
+              (profileId) => {
+                vpnImportWarnings.push(
+                  `Connection "${connection.name}" had unresolved VPN profile ${profileId}; that association was removed.`,
+                );
               },
             );
-            if (chain.id) importedTunnelChainIds.set(chain.id, created.id);
-            tunnelChainsImportedCount++;
-          } catch (e) {
-            console.warn("Tunnel chain import skip:", e);
-          }
-        }
-      }
-
-      // Sidecars receive fresh app-local IDs. Rewrite every imported
-      // connection only after the selected VPN profiles and saved chains have
-      // been created, while preserving stable layer IDs inside inline chains.
-      const connectionsToImport = baseConnectionsToImport.map((connection) => {
-        const remapped = remapConnectionVpnReferencesStrict(
-          connection,
-          importedVpnIds,
-          (profileId) => {
-            vpnImportWarnings.push(
-              `Connection "${connection.name}" had unresolved VPN profile ${profileId}; that association was removed.`,
+            if (!remapped.tunnelChainId) return remapped;
+            const tunnelChainId = importedTunnelChainIds.get(
+              remapped.tunnelChainId,
             );
+            if (tunnelChainId) return { ...remapped, tunnelChainId };
+            vpnImportWarnings.push(
+              `Connection "${connection.name}" had unresolved tunnel chain ${remapped.tunnelChainId}; that association was removed.`,
+            );
+            const { tunnelChainId: _unresolvedTunnelChainId, ...withoutChain } =
+              remapped;
+            return withoutChain as Connection;
           },
         );
-        if (!remapped.tunnelChainId) return remapped;
-        const tunnelChainId = importedTunnelChainIds.get(
-          remapped.tunnelChainId,
-        );
-        if (tunnelChainId) return { ...remapped, tunnelChainId };
-        vpnImportWarnings.push(
-          `Connection "${connection.name}" had unresolved tunnel chain ${remapped.tunnelChainId}; that association was removed.`,
-        );
-        const { tunnelChainId: _unresolvedTunnelChainId, ...withoutChain } =
-          remapped;
-        return withoutChain as Connection;
-      });
-      const sshTunnelsImportedCount = importOptions.includeSshTunnels
-        ? connectionsToImport.filter(hasConnectionSshTunnel).length
-        : 0;
+        const sshTunnelsImportedCount = importOptions.includeSshTunnels
+          ? connectionsToImport.filter(hasConnectionSshTunnel).length
+          : 0;
 
-      // t62 / D6 — trust records travel with the file when the user leaves
-      // the "Trusted hosts & certificates" toggle on. Absent in pre-t62
-      // exports, in which case this is a no-op.
-      const importTrustDocument = importResult?.trustRecords ?? null;
-      const importIncludeTrust = importOptions.includeTrust;
+        // t62 / D6 — trust records travel with the file when the user leaves
+        // the "Trusted hosts & certificates" toggle on. Absent in pre-t62
+        // exports, in which case this is a no-op.
+        const importTrustDocument = importResult?.trustRecords ?? null;
+        const importIncludeTrust = importOptions.includeTrust;
 
-      for (const targetDatabase of targetDatabases) {
-        if (targetDatabase.id === currentDatabase?.id) {
-          connectionsToImport.forEach((conn) => {
-            dispatch({ type: "ADD_CONNECTION", payload: conn });
-          });
-          // The open database is written through the reducer, so its trust
-          // records have to be merged explicitly.
-          await applyTrustDocument(importTrustDocument, {
-            databaseId: targetDatabase.id,
-            includeTrust: importIncludeTrust,
-          });
-        } else {
-          await databaseManager.appendConnectionsToDatabase(
-            targetDatabase.id,
-            connectionsToImport,
-            {
-              trustRecords: importTrustDocument,
+        for (const targetDatabase of targetDatabases) {
+          await operation.verifyCurrent();
+          operation.assertCurrent();
+          if (targetDatabase.id === currentDatabase?.id) {
+            connectionsToImport.forEach((conn) => {
+              dispatch({ type: "ADD_CONNECTION", payload: conn });
+            });
+            // The open database is written through the reducer, so its trust
+            // records have to be merged explicitly.
+            await applyTrustDocument(importTrustDocument, {
+              databaseId: targetDatabase.id,
               includeTrust: importIncludeTrust,
-            },
-          );
+            });
+          } else {
+            await appendImportExportDatabase(
+              databaseManager,
+              targetDatabase.id,
+              connectionsToImport,
+              {
+                trustRecords: importTrustDocument,
+                includeTrust: importIncludeTrust,
+              },
+            );
+          }
         }
-      }
 
-      const connectionCount = connectionsToImport.length;
-      const parts: string[] = [];
-      if (connectionCount > 0) {
-        parts.push(`${connectionCount} connection(s)`);
-      }
-      if (vpnImportedCount > 0) {
-        parts.push(`${vpnImportedCount} VPN connection(s)`);
-      }
-      if (tunnelChainsImportedCount > 0) {
-        parts.push(`${tunnelChainsImportedCount} tunnel chain(s)`);
-      }
-      if (sshTunnelsImportedCount > 0) {
-        parts.push(`${sshTunnelsImportedCount} SSH tunnel(s)`);
-      }
+        const connectionCount = connectionsToImport.length;
+        const parts: string[] = [];
+        if (connectionCount > 0) {
+          parts.push(`${connectionCount} connection(s)`);
+        }
+        if (vpnImportedCount > 0) {
+          parts.push(`${vpnImportedCount} VPN connection(s)`);
+        }
+        if (tunnelChainsImportedCount > 0) {
+          parts.push(`${tunnelChainsImportedCount} tunnel chain(s)`);
+        }
+        if (sshTunnelsImportedCount > 0) {
+          parts.push(`${sshTunnelsImportedCount} SSH tunnel(s)`);
+        }
 
-      if (vpnImportWarnings.length > 0) {
-        toast.warning(Array.from(new Set(vpnImportWarnings)).join(" "));
-      }
-      const summary = parts.join(", ") || "0 items";
-      const singleTarget =
-        targetDatabases.length === 1 ? targetDatabases[0] : null;
-      const targetSuffix = singleTarget
-        ? singleTarget.isCurrent
-          ? ""
-          : ` into ${singleTarget.name}`
-        : ` into ${targetDatabases.length} databases`;
+        if (vpnImportWarnings.length > 0) {
+          toast.warning(Array.from(new Set(vpnImportWarnings)).join(" "));
+        }
+        const summary = parts.join(", ") || "0 items";
+        const singleTarget =
+          targetDatabases.length === 1 ? targetDatabases[0] : null;
+        const targetSuffix = singleTarget
+          ? singleTarget.isCurrent
+            ? ""
+            : ` into ${singleTarget.name}`
+          : ` into ${targetDatabases.length} databases`;
 
-      toast.success(
-        filename
-          ? `Imported ${summary}${targetSuffix} from ${filename}`
-          : `Imported ${summary}${targetSuffix} successfully`,
+        toast.success(
+          filename
+            ? `Imported ${summary}${targetSuffix} from ${filename}`
+            : `Imported ${summary}${targetSuffix} successfully`,
+        );
+        settingsManager.logAction(
+          "info",
+          "Data imported",
+          undefined,
+          `Imported ${summary}${targetSuffix}${filename ? ` from ${filename}` : ""}`,
+        );
+
+        if (
+          singleTarget &&
+          !singleTarget.isCurrent &&
+          importOptions.switchToTargetDatabaseAfterImport
+        ) {
+          await databaseManager.selectDatabase(singleTarget.id);
+          await loadData();
+        }
+        setImportResult(null);
+        setImportAnalysis(null);
+        setImportSourceFile(null);
+        setSelectedPreviewIds(new Set());
+        setImportFilters(DEFAULT_IMPORT_FILTERS);
+        onClose();
+      }
+    } catch {
+      toast.error(
+        "Import stopped because database access changed or the operation failed. Review the target before retrying; any global definitions already restored remain available.",
       );
-      settingsManager.logAction(
-        "info",
-        "Data imported",
-        undefined,
-        `Imported ${summary}${targetSuffix}${filename ? ` from ${filename}` : ""}`,
-      );
-
-      if (
-        singleTarget &&
-        !singleTarget.isCurrent &&
-        importOptions.switchToTargetDatabaseAfterImport
-      ) {
-        await databaseManager.selectDatabase(singleTarget.id);
-        await loadData();
-      }
-      setImportResult(null);
-      setImportAnalysis(null);
-      setImportSourceFile(null);
-      setSelectedPreviewIds(new Set());
-      setImportFilters(DEFAULT_IMPORT_FILTERS);
-      onClose();
     }
   };
 
@@ -4362,46 +4501,62 @@ ${tableRows}
   // one of the targets — same pattern as multi-target import).
   const handleClone = useCallback(async (): Promise<CloneResult | null> => {
     if (isCloning) return null;
-
-    // ── Resolve sources ─────────────────────────────────────────
-    const sourceIds = getEffectiveCloneSourceIds();
-    if (sourceIds.length === 0) {
-      toast.error("Pick at least one source database before cloning.");
-      return null;
-    }
-
-    // ── Resolve targets ─────────────────────────────────────────
-    const sourceIdSet = new Set(sourceIds);
-    const targetIds = cloneTargetDatabaseIds.filter(
-      (id) => !sourceIdSet.has(id),
-    );
-    if (targetIds.length === 0) {
-      toast.error(
-        cloneTargetDatabaseIds.length === 0
-          ? "Pick at least one target database before cloning."
-          : "Targets cannot overlap with sources — pick a different database.",
-      );
-      return null;
-    }
-    const targetOptionsById = new Map(
-      cloneDatabaseOptions.map((option) => [option.id, option]),
-    );
-    const lockedTargets = targetIds.filter(
-      (id) => !targetOptionsById.get(id)?.isExportable,
-    );
-    if (lockedTargets.length > 0) {
-      toast.error(
-        "Unlock the target database(s) before cloning: " +
-          lockedTargets
-            .map((id) => targetOptionsById.get(id)?.name ?? id)
-            .join(", "),
-      );
-      return null;
-    }
-
     setIsCloning(true);
-    setCloneResult(null);
     try {
+      // ── Resolve sources ─────────────────────────────────────────
+      const sourceIds = getEffectiveCloneSourceIds();
+      if (sourceIds.length === 0) {
+        toast.error("Pick at least one source database before cloning.");
+        return null;
+      }
+
+      // ── Resolve targets ─────────────────────────────────────────
+      const sourceIdSet = new Set(sourceIds);
+      const targetIds = cloneTargetDatabaseIds.filter(
+        (id) => !sourceIdSet.has(id),
+      );
+      const operation = captureImportExportOperation(
+        databaseManager,
+        [...sourceIds, ...targetIds],
+        () => accessGenerationRef.current,
+      );
+      const eligibleIds = new Set(
+        (await listImportExportDatabases(databaseManager))
+          .filter((item) => item.isExportable)
+          .map((item) => item.id),
+      );
+      operation.assertCurrent();
+      if ([...sourceIds, ...targetIds].some((id) => !eligibleIds.has(id))) {
+        toast.error(
+          "A selected clone database is no longer available. Refresh the selection before cloning.",
+        );
+        return null;
+      }
+      if (targetIds.length === 0) {
+        toast.error(
+          cloneTargetDatabaseIds.length === 0
+            ? "Pick at least one target database before cloning."
+            : "Targets cannot overlap with sources — pick a different database.",
+        );
+        return null;
+      }
+      const targetOptionsById = new Map(
+        cloneDatabaseOptions.map((option) => [option.id, option]),
+      );
+      const lockedTargets = targetIds.filter(
+        (id) => !targetOptionsById.get(id)?.isExportable,
+      );
+      if (lockedTargets.length > 0) {
+        toast.error(
+          "Unlock the target database(s) before cloning: " +
+            lockedTargets
+              .map((id) => targetOptionsById.get(id)?.name ?? id)
+              .join(", "),
+        );
+        return null;
+      }
+
+      setCloneResult(null);
       // ── Collect + filter source connections ──────────────────
       const currentDatabase = databaseManager.getCurrentDatabase();
       const cloneIncludeTrust = cloneInclusion.includeTrust;
@@ -4411,6 +4566,7 @@ ${tableRows}
         connections: Connection[];
       }> = [];
       for (const id of sourceIds) {
+        await operation.verifyCurrent();
         if (id === currentDatabase?.id) {
           sourceDatasets.push({
             databaseId: id,
@@ -4421,10 +4577,14 @@ ${tableRows}
           }
         } else {
           try {
-            const snapshot =
-              await databaseManager.readExportableDatabaseSnapshot(id, false, {
+            const snapshot = await readImportExportDatabase(
+              databaseManager,
+              id,
+              false,
+              {
                 includeTrust: cloneIncludeTrust,
-              });
+              },
+            );
             sourceDatasets.push({
               databaseId: id,
               connections: snapshot?.connections ?? [],
@@ -4504,6 +4664,7 @@ ${tableRows}
         filtered,
         cloneInclusion,
       );
+      operation.assertCurrent();
       const filteredForApply = sidecarClone.connections;
       if (filteredForApply.length === 0 && sidecarClone.counts.total === 0) {
         toast.error("Nothing to clone with the current filter.");
@@ -4520,6 +4681,8 @@ ${tableRows}
       const warnings: string[] = [...sidecarClone.warnings];
 
       for (const targetId of targetIds) {
+        await operation.verifyCurrent();
+        operation.assertCurrent();
         const targetOption = targetOptionsById.get(targetId);
         const targetName = targetOption?.name ?? targetId;
         try {
@@ -4536,15 +4699,16 @@ ${tableRows}
           // contents so id collisions are caught per-target.
           let existing: Connection[] = [];
           if (targetId === currentDatabase?.id) {
+            operation.assertCurrent();
             existing = state.connections;
           } else {
-            const snapshot =
-              await databaseManager.readExportableDatabaseSnapshot(
-                targetId,
-                false,
-                // Only used to detect conflicts against existing connections.
-                { includeTrust: false },
-              );
+            const snapshot = await readImportExportDatabase(
+              databaseManager,
+              targetId,
+              false,
+              // Only used to detect conflicts against existing connections.
+              { includeTrust: false },
+            );
             existing = snapshot?.connections ?? [];
           }
           const items = buildApplyItems(
@@ -4559,7 +4723,9 @@ ${tableRows}
             preserveFolders: clonePreserveFolders,
           });
 
+          operation.assertCurrent();
           if (targetId === currentDatabase?.id) {
+            operation.assertCurrent();
             applied.remapped.forEach((conn) => {
               dispatch({ type: "ADD_CONNECTION", payload: conn });
             });
@@ -4570,7 +4736,8 @@ ${tableRows}
               includeTrust: cloneIncludeTrust,
             });
           } else {
-            await databaseManager.appendConnectionsToDatabase(
+            await appendImportExportDatabase(
+              databaseManager,
               targetId,
               applied.remapped,
               {
@@ -4656,8 +4823,11 @@ ${tableRows}
       }
       return result;
     } catch (error) {
-      if (!(error instanceof VaultPortabilityError)) throw error;
-      toast.error(error.message);
+      toast.error(
+        error instanceof VaultPortabilityError
+          ? error.message
+          : "Clone stopped because database access changed or the operation failed. Review the source and targets before retrying.",
+      );
       return null;
     } finally {
       setIsCloning(false);
@@ -4687,7 +4857,7 @@ ${tableRows}
   const clearCloneResult = useCallback(() => setCloneResult(null), []);
 
   return {
-    connections: state.connections,
+    connections: databaseManager.getCurrentDatabase() ? state.connections : [],
     activeTab,
     setActiveTab,
     exportFormat,
@@ -4744,6 +4914,10 @@ ${tableRows}
     isProcessing,
     fileInputRef,
     handleExport,
+    exportResult,
+    exportFolderError,
+    isOpeningExportFolder,
+    handleOpenExportFolder,
     handleImport,
     handleFileSelect,
     handleFileDrop,

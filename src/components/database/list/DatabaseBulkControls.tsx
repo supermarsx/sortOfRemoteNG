@@ -4,12 +4,11 @@ import type {
   DatabaseBulkAction,
   DatabaseBulkOptions,
 } from "../../../hooks/connection/useDatabaseBulkActions";
-import { defaultExportSecuritySettings } from "../../../types/settings/settings";
-import { SettingsManager } from "../../../utils/settings/settingsManager";
 import { Checkbox, PasswordInput, Textarea } from "../../ui/forms";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import { DatabaseUnlockDialog } from "../../encryption/DatabaseUnlockDialog";
 import type { Mgr } from "./types";
+import { useImportExportNavigation } from "../../ImportExport/navigation";
 
 const ACTION_LABELS: Record<DatabaseBulkAction, string> = {
   clone: "Clone selected",
@@ -30,37 +29,37 @@ export function DatabaseBulkControls({
   disabled: boolean;
 }) {
   const bulk = mgr.bulk;
+  const navigateImportExport = useImportExportNavigation();
   const [action, setAction] = useState<DatabaseBulkAction | null>(null);
   const [targets, setTargets] = useState<ConnectionDatabase[]>([]);
   const [passwords, setPasswords] = useState<Record<string, string>>({});
   const [pattern, setPattern] = useState("");
   const [editDescription, setEditDescription] = useState(false);
   const [description, setDescription] = useState("");
-  const [exportPassword, setExportPassword] = useState("");
-  const [exportEncrypted, setExportEncrypted] = useState(false);
-  const [exportSecurity, setExportSecurity] = useState(
-    defaultExportSecuritySettings,
-  );
 
   const begin = (next: DatabaseBulkAction) => {
+    if (next === "export") {
+      const selected = mgr.collections.filter(({ id }) =>
+        bulk.selectedIds.has(id),
+      );
+      navigateImportExport?.({
+        tab: "export",
+        format: "json",
+        databaseIds: selected.map(({ id }) => id),
+        encrypted: selected.some(({ isEncrypted }) => isEncrypted) || undefined,
+      });
+      return;
+    }
     setTargets(mgr.collections.filter(({ id }) => bulk.selectedIds.has(id)));
     setPasswords({});
     setPattern("");
     setDescription("");
     setEditDescription(false);
-    setExportPassword("");
-    const security = {
-      ...defaultExportSecuritySettings,
-      ...SettingsManager.getInstance().getSettings().exportSecurity,
-    };
-    setExportSecurity(security);
-    setExportEncrypted(security.encryptByDefault);
     setAction(next);
   };
   const clear = () => {
     setAction(null);
     setPasswords({});
-    setExportPassword("");
   };
   const execute = async () => {
     if (!action) return;
@@ -68,11 +67,6 @@ export function DatabaseBulkControls({
       passwords,
       namePattern: pattern || undefined,
       description: editDescription ? description : undefined,
-      export: {
-        encrypted: exportEncrypted,
-        password: exportPassword,
-        security: exportSecurity,
-      },
     };
     const selectedAction = action;
     const targetIds = targets.map(({ id }) => id);
@@ -83,8 +77,7 @@ export function DatabaseBulkControls({
   const lockedTargets = targets.filter(
     (item) => item.isEncrypted && !mgr.isDatabaseUnlocked(item.id),
   );
-  const needsCredentials =
-    action === "clone" || action === "export" || action === "unlock";
+  const needsCredentials = action === "clone" || action === "unlock";
   const busy = disabled || bulk.running;
   const showAuthModal =
     action === "unlock" || (needsCredentials && lockedTargets.length > 0);
@@ -164,30 +157,6 @@ export function DatabaseBulkControls({
           </p>
         </>
       )}
-      {action === "export" && (
-        <>
-          <p className="text-xs">
-            Save one importable JSON database package using the native Save
-            dialog. Credentials and secrets are excluded from all selected
-            databases, including settings.
-          </p>
-          <label className="flex items-center gap-2 text-xs">
-            <Checkbox checked={exportEncrypted} onChange={setExportEncrypted} />
-            Encrypt export package
-          </label>
-          {exportEncrypted && (
-            <label className="block space-y-1 text-xs">
-              <span>Export package password</span>
-              <PasswordInput
-                value={exportPassword}
-                onChange={(event) => setExportPassword(event.target.value)}
-                className="sor-form-input-xs w-full"
-                autoComplete="new-password"
-              />
-            </label>
-          )}
-        </>
-      )}
     </div>
   );
 
@@ -256,7 +225,12 @@ export function DatabaseBulkControls({
               key={key}
               type="button"
               className="sor-btn-secondary-sm"
-              disabled={busy || bulk.selectedIds.size === 0 || action !== null}
+              disabled={
+                busy ||
+                bulk.selectedIds.size === 0 ||
+                action !== null ||
+                (key === "export" && !navigateImportExport)
+              }
               onClick={() => begin(key)}
             >
               {label}

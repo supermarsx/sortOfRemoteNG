@@ -15,8 +15,8 @@ import {
 import { SavedTunnelChain } from "../../types/settings/settings";
 import type { TrustExportDocument } from "../../utils/services/trustPortability";
 
-export type ExportScopeMode = "current" | "selected" | "all";
-export type ImportTargetMode = "current" | "selected" | "all";
+export type ExportScopeMode = "current" | "selected" | "all" | "global";
+export type ImportTargetMode = "current" | "selected" | "all" | "global";
 
 export interface ExportInclusionConfig {
   includeConnections: boolean;
@@ -134,17 +134,10 @@ export interface ImportIssue {
 }
 
 export type ImportPreviewItemKind =
-  | "connection"
-  | "folder"
-  | "vpn"
-  | "tunnelChain"
-  | "sshTunnel";
+  "connection" | "folder" | "vpn" | "tunnelChain" | "sshTunnel";
 
 export type ImportConflictStatus =
-  | "none"
-  | "sameId"
-  | "sameName"
-  | "sameEndpoint";
+  "none" | "sameId" | "sameName" | "sameEndpoint";
 
 export interface ImportPreviewItem {
   id: string;

@@ -745,6 +745,12 @@ const TargetDatabaseSection: React.FC<{
     disabled?: boolean;
   }> = [
     {
+      value: "global",
+      label: "Global VPN profiles and tunnel chains",
+      description:
+        "Import selected app-wide definitions without a database. Deselect connections and folders in the preview.",
+    },
+    {
       value: "current",
       label: t("importTab.target.current.label", {
         defaultValue: "Current database",

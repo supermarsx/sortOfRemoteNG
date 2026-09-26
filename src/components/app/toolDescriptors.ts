@@ -58,7 +58,7 @@ const defineTool = <Key extends ToolKey>(
 export const TOOL_DESCRIPTORS = Object.freeze({
   performanceMonitor: defineTool("performanceMonitor", BarChart3, "app"),
   actionLog: defineTool("actionLog", ScrollText),
-  importExport: defineTool("importExport", ArrowUpDown),
+  importExport: defineTool("importExport", ArrowUpDown, "app"),
   shortcutManager: defineTool("shortcutManager", Keyboard),
   proxyChain: defineTool("proxyChain", Network),
   internalProxy: defineTool("internalProxy", Server),

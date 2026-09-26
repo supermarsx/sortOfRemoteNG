@@ -2,6 +2,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import type { Connection } from "../../src/types/connection/connection";
 
+const fileMocks = vi.hoisted(() => ({ save: vi.fn(), open: vi.fn() }));
+vi.mock(
+  "../../src/components/ImportExport/exportFile",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../src/components/ImportExport/exportFile")
+      >();
+    return {
+      ...actual,
+      saveExportFile: fileMocks.save,
+      openExportFolder: fileMocks.open,
+    };
+  },
+);
+import { downloadExportFile } from "../../src/components/ImportExport/exportFile";
+
 // ── Mocks ──────────────────────────────────────────────────────────
 
 vi.mock("react-i18next", () => ({
@@ -33,6 +50,8 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 
 const mockDispatch = vi.fn();
 const mockLoadData = vi.fn().mockResolvedValue(undefined);
+let mockAccessGeneration = 1;
+let mockAccessEpoch = 1;
 const mockConnections: Connection[] = [
   {
     id: "conn-1",
@@ -72,6 +91,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
     state: { connections: mockConnections },
     dispatch: mockDispatch,
     loadData: mockLoadData,
+    databaseAvailability: { status: "ready", generation: mockAccessGeneration },
   }),
 }));
 
@@ -106,6 +126,10 @@ const mockAddConnection = vi.fn().mockResolvedValue(undefined);
 const mockAppendConnectionsToDatabase = vi.fn().mockResolvedValue(undefined);
 const mockSelectDatabase = vi.fn().mockResolvedValue(undefined);
 const mockUnlockDatabase = vi.fn().mockResolvedValue(undefined);
+const mockGetMemoryResidentDatabases = vi.fn().mockResolvedValue([]);
+const mockReadMemoryResidentSnapshot = vi.fn();
+const mockAppendMemoryResident = vi.fn();
+const mockVerifyAccess = vi.fn();
 
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
@@ -118,6 +142,23 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       appendConnectionsToDatabase: mockAppendConnectionsToDatabase,
       selectDatabase: mockSelectDatabase,
       unlockDatabase: mockUnlockDatabase,
+      getMemoryResidentDatabases: mockGetMemoryResidentDatabases,
+      readMemoryResidentDatabaseSnapshot: mockReadMemoryResidentSnapshot,
+      appendConnectionsToMemoryResidentDatabase: mockAppendMemoryResident,
+      captureDatabaseOperationGuard: (databaseIds: string[]) => {
+        const epoch = mockAccessEpoch;
+        const assertCurrent = () => {
+          if (epoch !== mockAccessEpoch) throw new Error("Access revoked");
+        };
+        return {
+          databaseIds,
+          assertCurrent,
+          verifyCurrent: async () => {
+            await mockVerifyAccess();
+            assertCurrent();
+          },
+        };
+      },
       exportDatabase: mockExportCollection,
     }),
     resetInstance: vi.fn(),
@@ -279,7 +320,11 @@ function stubReadableBlob() {
       private readonly parts: string[];
 
       constructor(parts: BlobPart[], options?: BlobPropertyBag) {
-        this.parts = parts.map((part) => String(part));
+        this.parts = parts.map((part) =>
+          part instanceof Uint8Array
+            ? new TextDecoder().decode(part)
+            : String(part),
+        );
         this.type = options?.type ?? "";
       }
 
@@ -303,6 +348,13 @@ async function getLastDownloadedText() {
 
 // Stub downloadFile's DOM interactions
 beforeEach(() => {
+  mockAccessGeneration = 1;
+  mockAccessEpoch = 1;
+  mockGetMemoryResidentDatabases.mockReset().mockResolvedValue([]);
+  mockReadMemoryResidentSnapshot.mockReset();
+  mockAppendMemoryResident.mockReset().mockResolvedValue(undefined);
+  fileMocks.save.mockReset().mockImplementation(downloadExportFile);
+  fileMocks.open.mockReset().mockResolvedValue(undefined);
   vi.clearAllMocks();
   mockEncryptWithPassword.mockReset();
   mockEncryptWithPassword.mockResolvedValue("encrypted-payload");
@@ -408,6 +460,345 @@ beforeEach(() => {
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe("useImportExport", () => {
+  it("verifies source security metadata before reading export snapshots", async () => {
+    const databases = ["col-1", "col-2"].map((id) => ({
+      id,
+      name: id,
+      isCurrent: id === "col-1",
+      isExportable: true,
+      isUnlocked: true,
+      isEncrypted: false,
+    }));
+    mockGetExportableDatabases.mockResolvedValue(databases);
+    const { result } = renderImportExport();
+    await waitFor(() =>
+      expect(result.current.exportDatabaseOptions).toHaveLength(2),
+    );
+    act(() => {
+      result.current.setExportScopeMode("selected");
+      result.current.setSelectedExportDatabaseIds(["col-2"]);
+    });
+    mockVerifyAccess.mockClear();
+    mockReadExportableSnapshot.mockClear();
+    await act(async () => {
+      await result.current.handleExport();
+    });
+    expect(mockReadExportableSnapshot).toHaveBeenCalled();
+    expect(mockVerifyAccess.mock.invocationCallOrder[0]).toBeLessThan(
+      mockReadExportableSnapshot.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each(["switch", "epoch", "generation"])(
+    "blocks export after a %s during asynchronous eligibility",
+    async (change) => {
+      const view = renderImportExport();
+      await waitFor(() =>
+        expect(view.result.current.exportDatabaseOptions).toHaveLength(1),
+      );
+      let release!: (value: unknown[]) => void;
+      mockGetExportableDatabases.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      let task!: Promise<void>;
+      act(() => {
+        task = view.result.current.handleExport();
+      });
+      await waitFor(() => expect(release).toBeDefined());
+      act(() => {
+        if (change === "switch")
+          mockGetCurrentCollection.mockReturnValue({
+            id: "other",
+            name: "Other",
+          });
+        if (change === "epoch") mockAccessEpoch++;
+        if (change === "generation") {
+          mockAccessGeneration++;
+          view.rerender();
+        }
+      });
+      await act(async () => {
+        release([
+          {
+            id: "col-1",
+            name: "Default",
+            isCurrent: true,
+            isExportable: true,
+            isUnlocked: true,
+          },
+        ]);
+        await task;
+      });
+      expect(fileMocks.save).not.toHaveBeenCalled();
+      expect(mockReadExportableSnapshot).not.toHaveBeenCalled();
+      expect(mockToast.error).toHaveBeenCalled();
+    },
+  );
+
+  it("does not dispatch imported connections into a workspace switched while restoring global definitions", async () => {
+    mockImportConnections.mockResolvedValue([
+      { ...mockConnections[1], id: "incoming" },
+    ]);
+    const { result } = renderImportExport();
+    const file = new File(
+      [
+        JSON.stringify({
+          connections: [mockConnections[1]],
+          tunnelChainTemplates: [
+            { name: "Incoming chain", layers: [], tags: [] },
+          ],
+        }),
+      ],
+      "connections.json",
+      { type: "application/json" },
+    );
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    mockCreateTunnelChain.mockImplementationOnce(async () => {
+      mockGetCurrentCollection.mockReturnValue({ id: "other", name: "Other" });
+      return { id: "created-chain" };
+    });
+    await act(async () => {
+      await result.current.confirmImport("connections.json");
+    });
+    expect(mockCreateTunnelChain).toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockAppendConnectionsToDatabase).not.toHaveBeenCalled();
+    expect(mockToast.error).toHaveBeenCalledWith(
+      expect.stringContaining("Import stopped"),
+    );
+  });
+
+  it("passes a revocable source guard through to the save dialog boundary", async () => {
+    const { result } = renderImportExport();
+    fileMocks.save.mockImplementationOnce(
+      async (_content, _filename, _mime, assertAccess) => {
+        mockAccessEpoch++;
+        await assertAccess();
+        throw new Error("Must not reach the write");
+      },
+    );
+    await act(async () => {
+      await result.current.handleExport();
+    });
+    expect(fileMocks.save).toHaveBeenCalled();
+    expect(result.current.exportResult).toBeNull();
+    expect(mockToast.success).not.toHaveBeenCalled();
+  });
+
+  it("stops cloning before reading current state when the workspace switches during eligibility", async () => {
+    const databases = ["col-1", "col-2"].map((id) => ({
+      id,
+      name: id,
+      isCurrent: id === "col-1",
+      isExportable: true,
+      isUnlocked: true,
+      isEncrypted: false,
+    }));
+    mockGetExportableDatabases.mockResolvedValue(databases);
+    const { result } = renderImportExport({ initialTab: "clone" });
+    await waitFor(() =>
+      expect(result.current.cloneDatabaseOptions).toHaveLength(2),
+    );
+    act(() => result.current.setCloneTargetDatabaseIds(["col-2"]));
+    mockGetExportableDatabases.mockImplementationOnce(async () => {
+      mockGetCurrentCollection.mockReturnValue({ id: "other", name: "Other" });
+      return databases;
+    });
+    await act(async () => {
+      await result.current.handleClone();
+    });
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockAppendConnectionsToDatabase).not.toHaveBeenCalled();
+    expect(result.current.cloneResult).toBeNull();
+    expect(result.current.isCloning).toBe(false);
+    expect(mockToast.error).toHaveBeenCalled();
+  });
+  it("exports a previously opened resident with no active database and rejects it after eviction", async () => {
+    mockGetCurrentCollection.mockReturnValue(null);
+    mockGetMemoryResidentDatabases.mockResolvedValue([
+      {
+        id: "col-2",
+        name: "Resident",
+        isCurrent: false,
+        isEncrypted: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ]);
+    mockReadMemoryResidentSnapshot.mockResolvedValue({
+      collection: { id: "col-2", name: "Resident", isEncrypted: false },
+      connections: [{ ...mockConnections[1], id: "resident-connection" }],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+    });
+    const { result } = renderHook(() =>
+      useImportExport({
+        isOpen: true,
+        onClose: vi.fn(),
+        navigation: { tab: "export", format: "json", databaseIds: ["col-2"] },
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.exportDatabaseOptions).toHaveLength(1),
+    );
+    await act(async () => {
+      await result.current.handleExport();
+    });
+    expect(JSON.parse(fileMocks.save.mock.calls[0][0]).connections[0].id).toBe(
+      "resident-connection",
+    );
+    expect(mockReadMemoryResidentSnapshot).toHaveBeenCalledWith(
+      "col-2",
+      false,
+      { includeTrust: true },
+    );
+    expect(mockReadExportableSnapshot).not.toHaveBeenCalled();
+    expect(mockGetExportableDatabases).not.toHaveBeenCalled();
+    fileMocks.save.mockClear();
+    mockGetMemoryResidentDatabases.mockResolvedValue([]);
+    await act(async () => {
+      await result.current.refreshExportDatabaseOptions();
+      await result.current.handleExport();
+    });
+    expect(result.current.exportDatabaseOptions).toEqual([]);
+    expect(fileMocks.save).not.toHaveBeenCalled();
+    expect(mockSelectDatabase).not.toHaveBeenCalled();
+  });
+
+  it("imports global tunnel definitions with no active database or connection writes", async () => {
+    mockGetCurrentCollection.mockReturnValue(null);
+    mockImportConnections.mockResolvedValue([]);
+    const { result } = renderImportExport();
+    const file = new File(
+      [
+        JSON.stringify({
+          connections: [],
+          tunnelChainTemplates: [
+            { name: "Global chain", layers: [], tags: [] },
+          ],
+        }),
+      ],
+      "global.json",
+      { type: "application/json" },
+    );
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    await act(async () => {
+      await result.current.confirmImport("global.json");
+    });
+    expect(mockCreateTunnelChain).toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockAppendConnectionsToDatabase).not.toHaveBeenCalled();
+    expect(mockReadExportableSnapshot).not.toHaveBeenCalled();
+    expect(mockSelectDatabase).not.toHaveBeenCalled();
+  });
+  it("preserves a locked database preselection across refresh and blocks partial exports", async () => {
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "col-1",
+        name: "Default",
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+        isEncrypted: false,
+      },
+      {
+        id: "locked",
+        name: "Locked",
+        isCurrent: false,
+        isUnlocked: false,
+        isExportable: false,
+        isEncrypted: true,
+      },
+    ]);
+    const { result } = renderHook(() =>
+      useImportExport({
+        isOpen: true,
+        onClose: vi.fn(),
+        navigation: {
+          tab: "export",
+          format: "json",
+          databaseIds: ["col-1", "locked"],
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.exportDatabaseOptions).toHaveLength(2),
+    );
+    expect(result.current.selectedExportDatabaseIds).toEqual([
+      "col-1",
+      "locked",
+    ]);
+    expect(result.current.exportScopeMode).toBe("selected");
+    await act(async () => {
+      await result.current.handleExport();
+    });
+    expect(fileMocks.save).not.toHaveBeenCalled();
+    expect(mockReadExportableSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("opens only a successfully saved export destination and clears it on cancellation", async () => {
+    const { result } = renderImportExport();
+    fileMocks.save.mockResolvedValueOnce({
+      status: "saved",
+      path: "F:\\Chosen\\renamed.json",
+    });
+    await act(async () => {
+      await result.current.handleExport();
+    });
+    expect(result.current.exportResult).toEqual({
+      status: "saved",
+      path: "F:\\Chosen\\renamed.json",
+    });
+    await act(async () => {
+      await result.current.handleOpenExportFolder();
+    });
+    expect(fileMocks.open).toHaveBeenCalledWith("F:\\Chosen\\renamed.json");
+    fileMocks.open.mockRejectedValueOnce(new Error("Explorer unavailable"));
+    await act(async () => {
+      await result.current.handleOpenExportFolder();
+    });
+    expect(result.current.exportFolderError).toContain("export was saved");
+    expect(result.current.exportResult?.status).toBe("saved");
+    fileMocks.save.mockResolvedValueOnce({ status: "cancelled" });
+    mockToast.success.mockClear();
+    await act(async () => {
+      await result.current.handleExport();
+    });
+    expect(result.current.exportResult).toBeNull();
+    expect(mockToast.success).not.toHaveBeenCalled();
+  });
+
+  it("preselects native JSON import without selecting or unlocking a database", async () => {
+    mockGetCurrentCollection.mockReturnValue(null);
+    const { result } = renderHook(() =>
+      useImportExport({
+        isOpen: true,
+        onClose: vi.fn(),
+        navigation: { tab: "import", format: "json" },
+      }),
+    );
+    await act(async () => {});
+    expect(result.current.activeTab).toBe("import");
+    expect(result.current.importFormatSelection).toBe("json");
+    expect(result.current.importTargetMode).toBe("global");
+    expect(mockSelectDatabase).not.toHaveBeenCalled();
+    await act(async () => {
+      expect(await result.current.handleUnlockDatabase("col-1")).toBe(false);
+    });
+    expect(mockUnlockDatabase).not.toHaveBeenCalled();
+  });
   it.each([false, true])(
     "vault portability blocks import before stripping credentials or writing sidecars (include=%s)",
     async (includeCredentials) => {
@@ -685,7 +1076,7 @@ describe("useImportExport", () => {
     expect(parsed).not.toHaveProperty("databases");
     expect(parsed.connections).toHaveLength(2);
     expect(mockToast.success).toHaveBeenCalledWith(
-      expect.stringContaining("Exported successfully"),
+      expect.stringContaining("Download started"),
     );
     expect(mockLogAction).toHaveBeenCalledWith(
       "info",
@@ -1559,7 +1950,7 @@ describe("useImportExport", () => {
     });
 
     expect(mockToast.success).toHaveBeenCalledWith(
-      expect.stringContaining("Exported successfully"),
+      expect.stringContaining("Download started"),
     );
   });
 
@@ -1766,7 +2157,7 @@ describe("useImportExport", () => {
     });
 
     expect(mockToast.success).toHaveBeenCalledWith(
-      expect.stringContaining("Exported successfully"),
+      expect.stringContaining("Download started"),
     );
   });
 
@@ -1951,7 +2342,7 @@ describe("useImportExport", () => {
     );
   });
 
-  it("handleExport skips password-based encryption when the password is empty", async () => {
+  it("handleExport never silently downgrades an encrypted export when the password is empty", async () => {
     const { result } = renderImportExport();
 
     act(() => {
@@ -1966,11 +2357,10 @@ describe("useImportExport", () => {
 
     expect(mockExportCollection).not.toHaveBeenCalled();
     expect(mockEncryptWithPassword).not.toHaveBeenCalled();
-    expect(mockLogAction).toHaveBeenCalledWith(
-      "info",
-      "Data exported",
-      undefined,
-      "Exported 2 connections from 1 database(s) to JSON",
+    expect(mockLogAction).not.toHaveBeenCalled();
+    expect(fileMocks.save).not.toHaveBeenCalled();
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "Enter a password for the encrypted export.",
     );
   });
 
@@ -1990,7 +2380,7 @@ describe("useImportExport", () => {
     );
   });
 
-  it("handleExport shows error toast when no collection is selected", async () => {
+  it("exports only global definitions when no database is open without reading known disk databases", async () => {
     mockGetCurrentCollection.mockReturnValue(null);
     const { result } = renderImportExport();
 
@@ -1998,9 +2388,15 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    expect(mockToast.error).toHaveBeenCalledWith(
-      expect.stringContaining("Export failed"),
-    );
+    expect(mockToast.error).not.toHaveBeenCalled();
+    expect(result.current.exportScopeMode).toBe("global");
+    expect(mockGetExportableDatabases).not.toHaveBeenCalled();
+    expect(mockReadExportableSnapshot).not.toHaveBeenCalled();
+    const content = JSON.parse(fileMocks.save.mock.calls[0][0]);
+    expect(content.schema).toBe("sortOfRemoteNG.global-export");
+    expect(content.connections).toEqual([]);
+    expect(content).not.toHaveProperty("settings");
+    expect(content).not.toHaveProperty("databases");
   });
 
   // ── Import file processing ──────────────────────────────────
@@ -2974,9 +3370,7 @@ describe("useImportExport", () => {
         isExportable: true,
       },
     ];
-    mockGetExportableDatabases
-      .mockResolvedValueOnce(databases)
-      .mockResolvedValueOnce(databases);
+    mockGetExportableDatabases.mockResolvedValue(databases);
     const importedConns = [{ id: "archive-1", name: "Archive Host" }];
     mockImportConnections.mockResolvedValueOnce(importedConns);
     const { result } = renderImportExport();
@@ -4717,9 +5111,7 @@ describe("useImportExport", () => {
         isExportable: true,
       },
     ];
-    mockGetExportableDatabases
-      .mockResolvedValueOnce(databases)
-      .mockResolvedValueOnce(databases);
+    mockGetExportableDatabases.mockResolvedValue(databases);
     const importedConns = [{ id: "archive-1", name: "Archive Host" }];
     mockImportConnections.mockResolvedValue(importedConns);
 
@@ -4789,9 +5181,7 @@ describe("useImportExport", () => {
         isExportable: true,
       },
     ];
-    mockGetExportableDatabases
-      .mockResolvedValueOnce(databases)
-      .mockResolvedValueOnce(databases);
+    mockGetExportableDatabases.mockResolvedValue(databases);
     const importedConns = [{ id: "archive-1", name: "Archive Host" }];
     mockImportConnections.mockResolvedValue(importedConns);
     const fileBody = JSON.stringify({
@@ -4850,9 +5240,7 @@ describe("useImportExport", () => {
         isExportable: true,
       },
     ];
-    mockGetExportableDatabases
-      .mockResolvedValueOnce(databases)
-      .mockResolvedValueOnce(databases);
+    mockGetExportableDatabases.mockResolvedValue(databases);
     const importedConns = [{ id: "archive-1", name: "Archive Host" }];
     mockImportConnections.mockResolvedValue(importedConns);
     const fileBody = JSON.stringify({

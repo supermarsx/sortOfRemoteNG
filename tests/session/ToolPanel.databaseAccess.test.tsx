@@ -70,6 +70,9 @@ vi.mock("../../src/components/SettingsDialog/index", () => ({
 vi.mock("../../src/components/database/DatabasePanel", () => ({
   DatabasePanel: () => <div>App databases</div>,
 }));
+vi.mock("../../src/components/ImportExport", () => ({
+  ImportExport: () => <div>Scoped import and export</div>,
+}));
 vi.mock("../../src/components/recording/ScriptManager", () => ({
   ScriptManager: () => <div>App scripts</div>,
 }));
@@ -291,27 +294,29 @@ describe("database-owned tool tab access", () => {
       expect(screen.getByTestId("tool-database-gate")).toBeInTheDocument();
     }
   });
-  it.each(["settings", "database", "scriptManager", "macroManager"] as const)(
-    "keeps %s available without any database",
-    async (key) => {
-      render(
-        <ToolTabViewer session={createToolSession(key)} onClose={vi.fn()} />,
-      );
-      expect(
-        await screen.findByText(
-          {
-            settings: "App settings",
-            database: "App databases",
-            scriptManager: "App scripts",
-            macroManager: "App macros",
-          }[key],
-        ),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByTestId("tool-database-gate"),
-      ).not.toBeInTheDocument();
-    },
-  );
+  it.each([
+    "settings",
+    "database",
+    "scriptManager",
+    "macroManager",
+    "importExport",
+  ] as const)("keeps %s available without any database", async (key) => {
+    render(
+      <ToolTabViewer session={createToolSession(key)} onClose={vi.fn()} />,
+    );
+    expect(
+      await screen.findByText(
+        {
+          settings: "App settings",
+          database: "App databases",
+          scriptManager: "App scripts",
+          macroManager: "App macros",
+          importExport: "Scoped import and export",
+        }[key],
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("tool-database-gate")).not.toBeInTheDocument();
+  });
   it("keeps the app icon explorer available and explicitly classifies protected app artifacts", async () => {
     render(
       <ToolTabViewer session={createIconExplorerSession()} onClose={vi.fn()} />,
@@ -320,6 +325,6 @@ describe("database-owned tool tab access", () => {
     expect(TOOL_DESCRIPTORS.recordingManager.access).toBe("app");
     expect(TOOL_DESCRIPTORS.windowsBackup.access).toBe("app");
     expect(TOOL_DESCRIPTORS.connectionEditor.access).toBe("database");
-    expect(TOOL_DESCRIPTORS.importExport.access).toBe("database");
+    expect(TOOL_DESCRIPTORS.importExport.access).toBe("app");
   });
 });
