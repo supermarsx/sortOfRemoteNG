@@ -114,6 +114,23 @@ export const DISCOVERY_SERVICE_PRESETS: readonly DiscoveryServicePreset[] = [
     httpScheme: "https",
   },
   {
+    id: "tomcat",
+    label: "Apache Tomcat (HTTP)",
+    group: "Web services",
+    protocol: "http",
+    ports: [8080],
+    httpScheme: "http",
+    note: "Tomcat branding or connector response is evidence; an open port alone is only a hint.",
+  },
+  {
+    id: "tomcat-tls",
+    label: "Apache Tomcat (HTTPS)",
+    group: "Web services",
+    protocol: "https",
+    ports: [8443],
+    httpScheme: "https",
+  },
+  {
     id: "cpanel",
     label: "cPanel / WHM (HTTPS)",
     group: "Web services",

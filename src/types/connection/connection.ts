@@ -1829,7 +1829,13 @@ export interface DiscoveredHost {
   services: DiscoveredService[];
   responseTime: number;
   macAddress?: string;
-  reachability?: "responsive" | "unresponsive" | "not-checked";
+  reachability?: "responsive" | "unresponsive" | "unavailable" | "not-checked";
+  discoveryProbes?: Array<{
+    method: string;
+    status: "responsive" | "unresponsive" | "unavailable";
+    elapsedMs: number;
+    error?: string;
+  }>;
 }
 
 export interface DiscoveredService {

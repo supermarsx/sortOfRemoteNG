@@ -27,9 +27,62 @@ import { useNetworkDiscovery } from "../../src/hooks/network/useNetworkDiscovery
 import { NetworkDiscovery } from "../../src/components/network/NetworkDiscovery";
 import { DISCOVERY_SERVICE_PRESETS } from "../../src/utils/discovery/discoveryPresets";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  probeCapabilities: vi.fn(),
+  dispatch: vi.fn(),
+}));
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: mocks.invoke,
+  invoke: (command: string, args?: unknown) => {
+    if (command === "probe_discovery_batch") {
+      const batch = args as {
+        host: string;
+        timeoutSecs: number;
+        probes: Array<{
+          port: number;
+          identifyHttp?: string;
+          identifyProtocol?: string;
+        }>;
+      };
+      return Promise.allSettled(
+        batch.probes.map(async (probe) => ({
+          ...(await mocks.invoke("check_port", {
+            host: batch.host,
+            port: probe.port,
+            timeoutSecs: batch.timeoutSecs,
+            ...(probe.identifyHttp ? { identifyHttp: probe.identifyHttp } : {}),
+            ...(probe.identifyProtocol
+              ? { identifyProtocol: probe.identifyProtocol }
+              : {}),
+          })),
+          port: probe.port,
+        })),
+      ).then((results) => {
+        const failure = results.find((item) => item.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
+        return results.map((item) =>
+          item.status === "fulfilled" ? item.value : undefined,
+        );
+      });
+    }
+    // These tests assert probe traffic; local metadata and bounded PTR lookups
+    // have dedicated workflow tests and must not consume pending probe mocks.
+    if (command === "get_discovery_probe_capabilities")
+      return mocks.probeCapabilities();
+    if (command === "detect_interface_subnets") return Promise.resolve([]);
+    if (command === "get_discovery_capacity")
+      return Promise.resolve({
+        logicalCpus: 8,
+        systemLogicalCpus: 80,
+        physicalCores: 40,
+        cpuPercent: 15,
+        cpuSampleIntervalMs: 1000,
+        cpuSampleAgeMs: 0,
+        interfaces: [],
+      });
+    if (command === "discovery_reverse_dns") return Promise.resolve(null);
+    return mocks.invoke(command, args);
+  },
   isTauri: () => false,
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
@@ -47,7 +100,12 @@ vi.mock("react-i18next", () => ({
 }));
 
 beforeEach(() => {
+  localStorage.clear();
   mocks.invoke.mockReset();
+  mocks.probeCapabilities.mockReset().mockResolvedValue({
+    platform: "windows",
+    methods: [],
+  });
   mocks.dispatch.mockClear();
 });
 afterEach(() => {
@@ -182,6 +240,81 @@ describe("Network Scanner tool", () => {
     }
   });
 
+  it("selects or clears a whole category while preserving other services and custom ports", () => {
+    render(<NetworkDiscovery isOpen embedded onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText("Remote access"));
+    fireEvent.change(screen.getByLabelText("SSH / SFTP / SCP ports"), {
+      target: { value: "2222" },
+    });
+    const filter = screen.getByLabelText("Filter service presets");
+    fireEvent.change(filter, { target: { value: "SSH" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select all Remote access services" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select all Remote access services" }),
+    );
+    fireEvent.change(filter, { target: { value: "" } });
+    expandServiceGroups();
+    for (const preset of DISCOVERY_SERVICE_PRESETS.filter(
+      (item) => item.group === "Remote access",
+    )) {
+      expect(
+        within(screen.getByText(preset.label).closest("label")!).getByRole(
+          "checkbox",
+        ),
+      ).toBeChecked();
+    }
+    expect(screen.getByLabelText("SSH / SFTP / SCP ports")).toHaveValue("2222");
+    expect(
+      screen.getByRole("checkbox", { name: /HTTPS websites/ }),
+    ).toBeChecked();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select no Remote access services" }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: /SSH \/ SFTP \/ SCP/ }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: /HTTPS websites/ }),
+    ).toBeChecked();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("applies a subnet preset without scanning or changing targets and workload limits", () => {
+    render(<NetworkDiscovery isOpen embedded onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("networkDiscovery.ipRange"), {
+      target: { value: "192.0.2.0/24, 198.51.100.1" },
+    });
+    fireEvent.click(screen.getByText("Remote access"));
+    fireEvent.change(screen.getByLabelText("SSH / SFTP / SCP ports"), {
+      target: { value: "2222" },
+    });
+    fireEvent.click(screen.getByText("Advanced"));
+    fireEvent.change(screen.getByLabelText("Concurrent probes"), {
+      target: { value: "12" },
+    });
+    fireEvent.change(screen.getByLabelText("Additional TCP ports / ranges"), {
+      target: { value: "9000-9003" },
+    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Scan preset" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "iLO / management" }),
+    );
+    expect(screen.getByLabelText("SSH / SFTP / SCP ports")).toHaveValue("2222");
+    fireEvent.click(screen.getByRole("button", { name: "Apply preset" }));
+    expect(screen.getByLabelText("SSH / SFTP / SCP ports")).toHaveValue("22");
+    expect(screen.getByLabelText("Concurrent probes")).toHaveValue(12);
+    expect(screen.getByLabelText("Additional TCP ports / ranges")).toHaveValue(
+      "",
+    );
+    expect(screen.getByLabelText("networkDiscovery.ipRange")).toHaveValue(
+      "192.0.2.0/24, 198.51.100.1",
+    );
+    expect(screen.getByText(/Applied iLO \/ management/)).toBeVisible();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
   it("uses selected presets and edited ports, and identifies the product from the HTTP response", async () => {
     mocks.invoke.mockResolvedValue({
       open: true,
@@ -225,12 +358,144 @@ describe("Network Scanner tool", () => {
       timeoutSecs: 5,
       identifyHttp: "https",
     });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show services for 192.0.2.10" }),
+    );
     expect(screen.getByText("Identified from response")).toBeInTheDocument();
     expect(screen.getByText("Scan complete")).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
       "100",
     );
+  });
+
+  it("runs only service ports after toggling host discovery off, retaining the method and service selections", async () => {
+    mocks.invoke.mockResolvedValue({ open: false, time_ms: 2 });
+    render(<NetworkDiscovery isOpen embedded onClose={vi.fn()} />);
+    await screen.findByText("Probe capabilities: windows");
+    fireEvent.change(screen.getByLabelText("networkDiscovery.ipRange"), {
+      target: { value: "192.0.2.10" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clear services" }));
+    fireEvent.click(screen.getByText("Remote access"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /^SSH \/ SFTP \/ SCP/ }),
+    );
+    fireEvent.change(screen.getByLabelText("SSH / SFTP / SCP ports"), {
+      target: { value: "2222" },
+    });
+    fireEvent.click(screen.getByText("Advanced"));
+    fireEvent.change(screen.getByLabelText("Additional TCP ports / ranges"), {
+      target: { value: "9000" },
+    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Ping method" }));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "ICMP echo" }));
+    const hostToggle = screen.getByRole("checkbox", {
+      name: "Discover hosts with ping / ARP",
+    });
+    expect(hostToggle).toBeChecked();
+    fireEvent.click(hostToggle);
+    const serviceToggle = screen.getByRole("checkbox", {
+      name: "Scan services / ports",
+    });
+    fireEvent.click(serviceToggle);
+    expect(
+      screen.getByRole("button", { name: "networkDiscovery.startScan" }),
+    ).toBeDisabled();
+    fireEvent.click(serviceToggle);
+    expect(hostToggle).not.toBeChecked();
+    expect(
+      screen.getByRole("combobox", { name: "Ping method" }),
+    ).toHaveTextContent("ICMP echo");
+    expect(screen.getByLabelText("SSH / SFTP / SCP ports")).toHaveValue("2222");
+    expect(screen.getByLabelText("Additional TCP ports / ranges")).toHaveValue(
+      "9000",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "networkDiscovery.startScan" }),
+    );
+    await screen.findByText("Scan complete");
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    for (const port of [2222, 9000]) {
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "check_port",
+        expect.objectContaining({ host: "192.0.2.10", port, timeoutSecs: 5 }),
+      );
+    }
+    expect(
+      mocks.invoke.mock.calls.every(([command]) => command === "check_port"),
+    ).toBe(true);
+  });
+
+  it("starts an ARP-only sweep retaining service selections without probing their ports", async () => {
+    mocks.invoke.mockResolvedValue({
+      reachable: true,
+      status: "responsive",
+      elapsed_ms: 2,
+      mac_address: "00:11:22:33:44:55",
+      attempts: [
+        {
+          method: "arp",
+          status: "responsive",
+          elapsed_ms: 2,
+          error: "Windows may use cached neighbor information",
+        },
+      ],
+    });
+    render(<NetworkDiscovery isOpen embedded onClose={vi.fn()} />);
+    await screen.findByText("Probe capabilities: windows");
+    fireEvent.change(screen.getByLabelText("networkDiscovery.ipRange"), {
+      target: { value: "192.0.2.10" },
+    });
+    fireEvent.click(screen.getByText("Advanced"));
+    fireEvent.change(screen.getByLabelText("Additional TCP ports / ranges"), {
+      target: { value: "9000" },
+    });
+    const selectedServices = screen.getByText(/^\d+ selected$/).textContent!;
+    const selectedPorts = screen.getByText(
+      /unique TCP ports selected/,
+    ).textContent!;
+    fireEvent.click(screen.getByRole("button", { name: "ARP sweep only" }));
+    expect(screen.getByText(selectedServices)).toBeVisible();
+    expect(screen.getByText(/unique TCP ports selected/)).toHaveTextContent(
+      selectedPorts,
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Discover hosts with ping / ARP" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Scan services / ports" }),
+    ).not.toBeChecked();
+    expect(screen.getByLabelText("Additional TCP ports / ranges")).toHaveValue(
+      "9000",
+    );
+    const start = screen.getByRole("button", {
+      name: "networkDiscovery.startScan",
+    });
+    expect(start).toBeEnabled();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    fireEvent.click(start);
+    await screen.findByText("Scan complete");
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "probe_discovery_host",
+      {
+        host: "192.0.2.10",
+        method: "arp",
+        timeoutMs: 1000,
+        port: 443,
+      },
+    );
+    const row = screen
+      .getByRole("heading", { name: "192.0.2.10" })
+      .closest("tr")!;
+    expect(within(row).getByText("0 open ports")).toBeVisible();
+    expect(within(row).getByText("No service found")).toBeVisible();
+    expect(within(row).getByText("Reachability evidence found")).toBeVisible();
+    expect(within(row).getByText("00:11:22:33:44:55")).toBeVisible();
+    fireEvent.click(within(row).getByLabelText("Probe details for 192.0.2.10"));
+    expect(
+      within(row).getByText("Windows may use cached neighbor information"),
+    ).toBeVisible();
   });
 
   it.each([false, true])(
@@ -250,9 +515,8 @@ describe("Network Scanner tool", () => {
       fireEvent.click(
         screen.getByRole("checkbox", { name: /^SSH \/ SFTP \/ SCP/ }),
       );
-      fireEvent.change(screen.getByLabelText("Ping method"), {
-        target: { value: "icmp" },
-      });
+      fireEvent.click(screen.getByRole("combobox", { name: "Ping method" }));
+      fireEvent.mouseDown(screen.getByRole("option", { name: "ICMP echo" }));
       if (!scanUnresponsive)
         fireEvent.click(
           screen.getByRole("checkbox", {
@@ -274,7 +538,7 @@ describe("Network Scanner tool", () => {
       ).toHaveLength(scanUnresponsive ? 1 : 0);
       if (scanUnresponsive)
         expect(
-          screen.getByText("No ping reply · service scan continued"),
+          screen.getByText("No ping reply · TCP scanned"),
         ).toBeInTheDocument();
       else expect(screen.getByText("1 skipped hosts")).toBeInTheDocument();
     },
@@ -306,6 +570,12 @@ describe("Network Scanner tool", () => {
     });
     expect(screen.getByText("Checking TCP ports")).toBeInTheDocument();
     expect(screen.getByText("Elapsed 0:01")).toBeInTheDocument();
+    expect(screen.getByText("System CPU busy time 15%")).toBeVisible();
+    expect(
+      screen.getByText("Logical CPUs: 8 available to process / 80 total"),
+    ).toBeVisible();
+    expect(screen.getByText("Physical cores: 40")).toBeVisible();
+    expect(screen.getByText("CPU sample: 1000 ms · age 0 ms")).toBeVisible();
     expect(
       screen.getByText("Current: 192.0.2.10 · TCP 22"),
     ).toBeInTheDocument();
@@ -358,6 +628,7 @@ describe("Network Scanner tool", () => {
         portRanges: ["22", "443"],
         protocols: [],
         maxConcurrent: 2,
+        maxPortConcurrent: 2,
       }),
     );
     let run!: Promise<void>;
@@ -402,6 +673,8 @@ describe("Network Scanner tool", () => {
     expect(TOOL_DESCRIPTORS.networkScanner.access).toBe("app");
     const view = render(<ToolTabViewer session={session} onClose={vi.fn()} />);
     await screen.findByTestId("network-scanner-tab");
+    await screen.findByText("Probe capabilities: windows");
+    expect(mocks.probeCapabilities).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(mocks.invoke).not.toHaveBeenCalled();
     const scan = screen.getByRole("button", {
@@ -409,12 +682,12 @@ describe("Network Scanner tool", () => {
     });
     expect(scan).toBeDisabled();
     fireEvent.change(
-      screen.getByRole("textbox", { name: "networkDiscovery.ipRange" }),
+      screen.getByRole("combobox", { name: "networkDiscovery.ipRange" }),
       { target: { value: "192.0.2.1" } },
     );
     expect(mocks.invoke).not.toHaveBeenCalled();
     fireEvent.click(scan);
-    await screen.findByText("192.0.2.1");
+    await screen.findByRole("heading", { name: "192.0.2.1" });
     expect(mocks.invoke).toHaveBeenCalledWith("check_port", {
       host: "192.0.2.1",
       port: 22,
@@ -423,25 +696,32 @@ describe("Network Scanner tool", () => {
     expect(
       mocks.invoke.mock.calls.every(([command]) => command === "check_port"),
     ).toBe(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show services for 192.0.2.1" }),
+    );
     expect(screen.getAllByText("SSH").length).toBeGreaterThan(0);
     expect(screen.getAllByText("OpenSSH").length).toBeGreaterThan(0);
     expect(screen.getAllByText("SSH-2.0-OpenSSH_9.6").length).toBeGreaterThan(
       0,
     );
-    fireEvent.click(screen.getByText("192.0.2.1"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Hide services for 192.0.2.1" }),
+    );
     expect(
       screen.queryByRole("button", {
         name: "networkDiscovery.createConnections",
       }),
     ).toBeNull();
     view.rerender(<ToolTabViewer session={session} onClose={vi.fn()} />);
-    expect(screen.getByText("192.0.2.1")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "192.0.2.1" }),
+    ).toBeInTheDocument();
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "ADD_CONNECTION" }),
     );
   });
 
-  it("reports invalid targets before making any native request", async () => {
+  it("reports invalid targets before making any native scan request", async () => {
     render(
       <ToolTabViewer
         session={createToolSession("networkScanner")}
@@ -450,7 +730,7 @@ describe("Network Scanner tool", () => {
     );
     await screen.findByTestId("network-scanner-tab");
     fireEvent.change(
-      screen.getByRole("textbox", { name: "networkDiscovery.ipRange" }),
+      screen.getByRole("combobox", { name: "networkDiscovery.ipRange" }),
       { target: { value: "invalid" } },
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -474,18 +754,19 @@ describe("Network Scanner tool", () => {
     );
     await screen.findByTestId("network-scanner-tab");
     fireEvent.change(
-      screen.getByRole("textbox", { name: "networkDiscovery.ipRange" }),
+      screen.getByRole("combobox", { name: "networkDiscovery.ipRange" }),
       { target: { value: "192.0.2.0/24" } },
     );
     fireEvent.click(
       screen.getByRole("button", { name: "networkDiscovery.startScan" }),
     );
-    await waitFor(() => expect(pending).toHaveLength(50));
+    // Initial adaptive admission is conservative while interface metrics warm up.
+    await waitFor(() => expect(pending).toHaveLength(8));
     view.unmount();
     await act(async () => {
       pending.forEach((resolve) => resolve({ open: true }));
     });
-    expect(mocks.invoke).toHaveBeenCalledTimes(50);
+    expect(mocks.invoke).toHaveBeenCalledTimes(8);
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 

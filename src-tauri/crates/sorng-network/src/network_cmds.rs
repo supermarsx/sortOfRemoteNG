@@ -88,8 +88,9 @@ pub async fn check_port(
     port: u16,
     timeout_secs: Option<u64>,
     identify_http: Option<String>,
+    identify_protocol: Option<String>,
 ) -> Result<PortCheckResult, String> {
-    service_probe::check_port(host, port, timeout_secs, identify_http).await
+    service_probe::check_port(host, port, timeout_secs, identify_http, identify_protocol).await
 }
 
 #[tauri::command]

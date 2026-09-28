@@ -14,9 +14,17 @@ tokio = { workspace = true }
 dns-lookup = "4"
 mac_address = "1.1"
 futures = { workspace = true }
+getifaddrs = "0.6.2"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system", "network"] }
 qrcode = "0.14"
 base64 = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Foundation", "Win32_System_Performance", "Win32_System_Threading"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"

@@ -1190,20 +1190,46 @@ export interface CustomScript {
   updatedAt: string;
 }
 
+export type DiscoveryProbeMethod =
+  "icmp" | "icmp4" | "icmp6" | "icmp-native" | "arp" | "tcp" | "udp";
+export type DiscoveryPingMethod =
+  "none" | DiscoveryProbeMethod | "adaptive" | "combined";
+
 export interface NetworkDiscoveryConfig {
   enabled: boolean;
   /** Opt in to bounded HTTP identification on selected web ports. */
   identifyServices?: boolean;
-  pingMethod?: "none" | "icmp" | "tcp";
-  /** Host-discovery timeout in milliseconds. */
+  pingMethod?: DiscoveryPingMethod;
+  /** Enable reachability probes independently of service scanning. */
+  hostDiscoveryEnabled?: boolean;
+  /** Probe selected service ports; false allows a host-only sweep. */
+  serviceScanEnabled?: boolean;
+  /** Opt in to stopping admission at utilization targets; otherwise back off and progress. */
+  pauseOnHighLoad?: boolean;
+  /** Selected methods for adaptive/combined discovery; defaults to ARP, ICMP, TCP. */
+  pingMethods?: DiscoveryProbeMethod[];
+  /** Shared host-discovery time budget in milliseconds. */
   pingTimeout?: number;
   pingPort?: number;
+  pingUdpPort?: number;
   scanUnresponsiveHosts?: boolean;
+  adaptiveConcurrency?: boolean;
+  /** Run bounded probe batches in Rust to reduce per-port IPC overhead. */
+  nativeBatchProbes?: boolean;
+  /** Global hard ceiling, 1..1024; also bounded by maxPortConcurrent. */
+  absoluteMaxProbes?: number;
+  maxCpuPercent?: number;
+  maxNetworkUtilizationPercent?: number;
+  workerLaunchIntervalMs?: number;
+  probeLaunchIntervalMs?: number;
+  resolveHostnames?: boolean;
   ipRange: string;
   portRanges: string[];
   protocols: string[];
   timeout: number;
+  /** Maximum concurrent host workers, 1..512 in native mode. */
   maxConcurrent: number;
+  /** Global probe ceiling across all hosts, 1..1024 in native mode. */
   maxPortConcurrent: number;
   customPorts: Record<string, number[]>;
   probeStrategies: Record<string, ("websocket" | "http" | "rfb")[]>;

@@ -20,6 +20,9 @@ import {
   type DiscoveryServicePreset,
 } from "../../utils/discovery/discoveryPresets";
 import type { useNetworkDiscovery } from "../../hooks/network/useNetworkDiscovery";
+import { DiscoveryTargetInput } from "./DiscoveryTargetInput";
+import { DiscoveryPresetPanel } from "./DiscoveryPresetPanel";
+import { DiscoveryPingSettings } from "./DiscoveryPingSettings";
 
 type Manager = ReturnType<typeof useNetworkDiscovery>;
 
@@ -88,6 +91,7 @@ function ServicePorts({
 
 export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
   const [filter, setFilter] = useState("");
+  const [serviceEditorVersion, setServiceEditorVersion] = useState(0);
   const presets = DISCOVERY_SERVICE_PRESETS.filter((preset) =>
     `${preset.label} ${preset.group} ${preset.ports.join(" ")}`
       .toLowerCase()
@@ -95,7 +99,6 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
   );
   const groups = [...new Set(presets.map((preset) => preset.group))];
   const ports = configuredDiscoveryPorts(mgr.config);
-  const pingMethod = mgr.config.pingMethod ?? "none";
   return (
     <aside
       aria-label="Discovery configuration"
@@ -110,110 +113,16 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
         disabled={mgr.isScanning}
         className="space-y-5 p-4 disabled:opacity-70"
       >
-        <section className="space-y-2">
-          <label
-            className="block text-sm font-medium"
-            htmlFor="discovery-subnet"
-          >
-            {mgr.t("networkDiscovery.ipRange")}
-          </label>
-          <TextInput
-            id="discovery-subnet"
-            aria-label={mgr.t("networkDiscovery.ipRange")}
-            value={mgr.config.ipRange}
-            onChange={(ipRange) =>
-              mgr.setConfig((current) => ({ ...current, ipRange }))
-            }
-            variant="form"
-            placeholder="192.168.1.0/24"
-          />
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            One IP or subnet; up to 256 addresses. Only scans when you press
-            Start Scan.
-          </p>
-        </section>
+        <DiscoveryTargetInput mgr={mgr} />
 
-        <section
-          aria-label="Host discovery"
-          className="space-y-3 border-t border-[var(--color-border)] pt-4"
-        >
-          <h4 className="text-sm font-semibold">Host discovery</h4>
-          <label className="block text-xs text-[var(--color-textSecondary)]">
-            Ping method
-            <select
-              aria-label="Ping method"
-              className="sor-form-select mt-1 w-full"
-              value={pingMethod}
-              disabled={!mgr.native}
-              onChange={(event) =>
-                mgr.setConfig((current) => ({
-                  ...current,
-                  pingMethod: event.target.value as "none" | "icmp" | "tcp",
-                }))
-              }
-            >
-              <option value="none">Ignore ping — probe every address</option>
-              <option value="icmp">ICMP echo</option>
-              <option value="tcp">TCP connection</option>
-            </select>
-          </label>
-          {!mgr.native && (
-            <p className="text-xs text-[var(--color-textSecondary)]">
-              These host-discovery controls require the native Network Scanner
-              tab.
-            </p>
-          )}
-          {pingMethod !== "none" && (
-            <>
-              <label className="block text-xs">
-                Ping timeout (ms)
-                <NumberInput
-                  aria-label="Ping timeout (ms)"
-                  variant="form"
-                  className="mt-1 w-full"
-                  min={100}
-                  max={30000}
-                  value={mgr.config.pingTimeout ?? 1000}
-                  onChange={(pingTimeout) =>
-                    mgr.setConfig((current) => ({ ...current, pingTimeout }))
-                  }
-                />
-              </label>
-              {pingMethod === "tcp" && (
-                <label className="block text-xs">
-                  TCP ping port
-                  <NumberInput
-                    aria-label="TCP ping port"
-                    variant="form"
-                    className="mt-1 w-full"
-                    min={1}
-                    max={65535}
-                    value={mgr.config.pingPort ?? 443}
-                    onChange={(pingPort) =>
-                      mgr.setConfig((current) => ({ ...current, pingPort }))
-                    }
-                  />
-                </label>
-              )}
-              <label className="flex items-start gap-2 text-sm">
-                <Checkbox
-                  checked={mgr.config.scanUnresponsiveHosts !== false}
-                  onChange={(scanUnresponsiveHosts) =>
-                    mgr.setConfig((current) => ({
-                      ...current,
-                      scanUnresponsiveHosts,
-                    }))
-                  }
-                />
-                <span>Scan hosts that do not reply to ping</span>
-              </label>
-            </>
-          )}
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            No ping reply does not prove a host is down. Firewalls may block
-            ICMP or the selected TCP port.
-          </p>
-        </section>
+        <DiscoveryPresetPanel
+          config={mgr.config}
+          setConfig={mgr.setConfig}
+          disabled={mgr.isScanning}
+          onApplied={() => setServiceEditorVersion((version) => version + 1)}
+        />
+
+        <DiscoveryPingSettings mgr={mgr} />
 
         <section
           aria-label="Service discovery"
@@ -225,6 +134,25 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
               {mgr.config.protocols.length} selected
             </span>
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              checked={mgr.config.serviceScanEnabled !== false}
+              disabled={!mgr.native || mgr.isScanning}
+              onChange={(serviceScanEnabled) => {
+                if (!mgr.native || mgr.isScanning) return;
+                mgr.setConfig((current) => ({
+                  ...current,
+                  serviceScanEnabled,
+                }));
+              }}
+            />
+            <span>Scan services / ports</span>
+          </label>
+          {mgr.config.serviceScanEnabled === false && (
+            <p className="text-xs text-[var(--color-textSecondary)]">
+              Service scanning is off. Selected services and ports are retained.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -288,11 +216,11 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
                 mgr.setConfig((current) => ({ ...current, identifyServices }))
               }
             />
-            <span>HTTP product identification</span>
+            <span>Service and web product identification</span>
           </label>
           <p className="text-xs text-[var(--color-textSecondary)]">
             {mgr.native
-              ? "Banners identify services automatically. For selected web ports, this adds a bounded public-page request: no login, scripts, redirects or certificate bypass. Product names require response evidence."
+              ? "Banners and bounded SMB, RDP and PostgreSQL negotiations identify services without credentials. Web probes follow up to five HTTP(S) redirects verified to stay on the scanned host. Invalid HTTPS certificates are allowed for identification only and flagged with a warning. No login or scripts; connection trust is unchanged. Product names require response evidence."
               : "Banners may identify services. Additional HTTP product identification is available in the native Network Scanner tab; browser-mode requests follow browser routing behavior."}
           </p>
           {groups.map((group) => (
@@ -301,9 +229,70 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
               className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]"
             >
               <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold">
-                {group}
+                <span>{group}</span>
+                <span className="ml-2 text-[var(--color-textMuted)]">
+                  {
+                    DISCOVERY_SERVICE_PRESETS.filter(
+                      (preset) =>
+                        preset.group === group &&
+                        mgr.config.protocols.includes(preset.id),
+                    ).length
+                  }
+                  /
+                  {
+                    DISCOVERY_SERVICE_PRESETS.filter(
+                      (preset) => preset.group === group,
+                    ).length
+                  }
+                </span>
               </summary>
               <div className="space-y-3 px-3 pb-3">
+                <div
+                  className="flex flex-wrap gap-2"
+                  aria-label={`${group} selection`}
+                >
+                  <button
+                    type="button"
+                    aria-label={`Select all ${group} services`}
+                    title="Select every service in this category, including filtered services"
+                    className="sor-btn-secondary-sm"
+                    onClick={() =>
+                      mgr.setConfig((current) => ({
+                        ...current,
+                        protocols: [
+                          ...new Set([
+                            ...current.protocols,
+                            ...DISCOVERY_SERVICE_PRESETS.filter(
+                              (preset) => preset.group === group,
+                            ).map((preset) => preset.id),
+                          ]),
+                        ],
+                      }))
+                    }
+                  >
+                    <CheckCheck size={12} aria-hidden="true" /> Select all
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Select no ${group} services`}
+                    title="Clear every service in this category, including filtered services"
+                    className="sor-btn-secondary-sm"
+                    onClick={() =>
+                      mgr.setConfig((current) => ({
+                        ...current,
+                        protocols: current.protocols.filter(
+                          (id) =>
+                            !DISCOVERY_SERVICE_PRESETS.some(
+                              (preset) =>
+                                preset.group === group && preset.id === id,
+                            ),
+                        ),
+                      }))
+                    }
+                  >
+                    <ListX size={12} aria-hidden="true" /> Select none
+                  </button>
+                </div>
                 {presets
                   .filter((preset) => preset.group === group)
                   .map((preset) => {
@@ -318,7 +307,12 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
                               mgr.setConfig((current) => ({
                                 ...current,
                                 protocols: checked
-                                  ? [...current.protocols, preset.id]
+                                  ? [
+                                      ...new Set([
+                                        ...current.protocols,
+                                        preset.id,
+                                      ]),
+                                    ]
                                   : current.protocols.filter(
                                       (id) => id !== preset.id,
                                     ),
@@ -337,7 +331,13 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
                             </span>
                           </span>
                         </label>
-                        {selected && <ServicePorts preset={preset} mgr={mgr} />}
+                        {selected && (
+                          <ServicePorts
+                            key={serviceEditorVersion}
+                            preset={preset}
+                            mgr={mgr}
+                          />
+                        )}
                         {selected && preset.note && (
                           <p className="mt-1 pl-6 text-[11px] text-[var(--color-textSecondary)]">
                             {preset.note}
@@ -365,6 +365,174 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
             {mgr.t("networkDiscovery.advanced", "Advanced")}
           </summary>
           <div className="mt-3 space-y-3">
+            <fieldset
+              disabled={!mgr.native}
+              className="space-y-3 disabled:opacity-60"
+            >
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={mgr.config.nativeBatchProbes === true}
+                  disabled={!mgr.native}
+                  onChange={(nativeBatchProbes) =>
+                    mgr.setConfig((current) => ({
+                      ...current,
+                      nativeBatchProbes,
+                    }))
+                  }
+                />
+                <span>Fast Rust probe batches</span>
+              </label>
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                Batches up to 32 probes per native call, sharing the same global
+                limits. A nonzero probe launch interval spaces individual probes
+                instead.
+              </p>
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={mgr.config.resolveHostnames === true}
+                  disabled={!mgr.native}
+                  onChange={(resolveHostnames) =>
+                    mgr.setConfig((current) => ({
+                      ...current,
+                      resolveHostnames,
+                    }))
+                  }
+                />
+                <span>Resolve hostnames during scanning</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={mgr.config.adaptiveConcurrency === true}
+                  disabled={!mgr.native}
+                  onChange={(adaptiveConcurrency) =>
+                    mgr.setConfig((current) => ({
+                      ...current,
+                      adaptiveConcurrency,
+                    }))
+                  }
+                />
+                <span>Adapt workers and probes to computer / network load</span>
+              </label>
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                Hard limits always apply. Adaptive mode adjusts new work using
+                measured system CPU and available interface capacity. System CPU
+                busy time uses a 0–100% scale across all logical processors.
+                Utilization targets reduce concurrency while scanning continues
+                by default; they do not cap system load. Unavailable
+                measurements remain unknown.
+              </p>
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={mgr.config.pauseOnHighLoad === true}
+                  disabled={!mgr.native || mgr.isScanning}
+                  onChange={(pauseOnHighLoad) => {
+                    if (!mgr.native || mgr.isScanning) return;
+                    mgr.setConfig((current) => ({
+                      ...current,
+                      pauseOnHighLoad,
+                    }));
+                  }}
+                />
+                <span>Pause new probes at utilization thresholds</span>
+              </label>
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                This option pauses new launches at the thresholds until load
+                falls. Active probes can finish.
+              </p>
+              <label className="block text-xs">
+                Absolute maximum active probes
+                <NumberInput
+                  aria-label="Absolute maximum active probes"
+                  variant="form"
+                  className="mt-1 w-full"
+                  min={1}
+                  max={1024}
+                  value={mgr.config.absoluteMaxProbes ?? 256}
+                  onChange={(absoluteMaxProbes) =>
+                    mgr.setConfig((current) => ({
+                      ...current,
+                      absoluteMaxProbes,
+                    }))
+                  }
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-xs">
+                  System CPU target (%)
+                  <NumberInput
+                    aria-label="System CPU target (%)"
+                    title="Requested system CPU busy-time target: 0–100% across all logical processors; not a hard cap"
+                    variant="form"
+                    className="mt-1 w-full"
+                    min={1}
+                    max={100}
+                    value={mgr.config.maxCpuPercent ?? 80}
+                    onChange={(maxCpuPercent) =>
+                      mgr.setConfig((current) => ({
+                        ...current,
+                        maxCpuPercent,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block text-xs">
+                  Interface load target (%)
+                  <NumberInput
+                    aria-label="Interface load target (%)"
+                    variant="form"
+                    className="mt-1 w-full"
+                    min={1}
+                    max={100}
+                    value={mgr.config.maxNetworkUtilizationPercent ?? 75}
+                    onChange={(maxNetworkUtilizationPercent) =>
+                      mgr.setConfig((current) => ({
+                        ...current,
+                        maxNetworkUtilizationPercent,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block text-xs">
+                  Worker launch interval (ms)
+                  <NumberInput
+                    aria-label="Worker launch interval (ms)"
+                    variant="form"
+                    className="mt-1 w-full"
+                    min={0}
+                    max={5000}
+                    value={mgr.config.workerLaunchIntervalMs ?? 25}
+                    onChange={(workerLaunchIntervalMs) =>
+                      mgr.setConfig((current) => ({
+                        ...current,
+                        workerLaunchIntervalMs,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block text-xs">
+                  Probe launch interval (ms)
+                  <NumberInput
+                    aria-label="Probe launch interval (ms)"
+                    variant="form"
+                    className="mt-1 w-full"
+                    min={0}
+                    max={5000}
+                    value={mgr.config.probeLaunchIntervalMs ?? 0}
+                    onChange={(probeLaunchIntervalMs) =>
+                      mgr.setConfig((current) => ({
+                        ...current,
+                        probeLaunchIntervalMs,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+            </fieldset>
+            {!mgr.native && (
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                Adaptive controls require the native Network Scanner tab.
+              </p>
+            )}
             <label className="block text-xs">
               Additional TCP ports / ranges
               <TextInput
@@ -406,7 +574,7 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
                   className="mt-1 w-full"
                   value={mgr.config.maxConcurrent}
                   min={1}
-                  max={100}
+                  max={mgr.native ? 512 : 100}
                   onChange={(maxConcurrent) =>
                     mgr.setConfig((current) => ({ ...current, maxConcurrent }))
                   }
@@ -420,7 +588,7 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
                   className="mt-1 w-full"
                   value={mgr.config.maxPortConcurrent}
                   min={1}
-                  max={100}
+                  max={mgr.native ? 1024 : 100}
                   onChange={(maxPortConcurrent) =>
                     mgr.setConfig((current) => ({
                       ...current,

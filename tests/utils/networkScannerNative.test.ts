@@ -115,7 +115,14 @@ describe("native network scanner", () => {
     { portRanges: ["443-22"] },
     { portRanges: ["Infinity"] },
     { maxConcurrent: 0 },
-    { maxConcurrent: 101 },
+    { maxConcurrent: 513 },
+    { maxPortConcurrent: 1025 },
+    { absoluteMaxProbes: 0 },
+    { absoluteMaxProbes: 1025 },
+    { maxCpuPercent: 0 },
+    { maxNetworkUtilizationPercent: 101 },
+    { workerLaunchIntervalMs: -1 },
+    { probeLaunchIntervalMs: 5001 },
     { timeout: 0 },
   ])(
     "rejects unbounded or invalid input %j before native calls",
@@ -138,11 +145,11 @@ describe("native network scanner", () => {
       undefined,
       controller.signal,
     );
-    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    await vi.waitFor(() => expect(pending).toHaveLength(4));
     controller.abort();
     pending.forEach((resolve) => resolve({ open: true }));
     expect(await scanning).toEqual([]);
-    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenCalledTimes(4);
   });
 
   it("reports native API failure and does not silently use a browser fallback", async () => {

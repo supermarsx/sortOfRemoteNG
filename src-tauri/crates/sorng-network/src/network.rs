@@ -552,6 +552,18 @@ pub struct PortCheckResult {
     pub http_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http_status: Option<u16>,
+    /// Last HTTP identification response origin; never includes path/query/fragment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_final_origin: Option<String>,
+    /// Completed redirect hops; the original scanned port/service stay unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_redirects: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_confirmed: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_evidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identification_error: Option<String>,
 }

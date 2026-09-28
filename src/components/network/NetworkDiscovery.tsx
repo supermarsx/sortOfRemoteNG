@@ -1,27 +1,26 @@
-import React from "react";
+import React, { useEffect, useId, useState } from "react";
 import {
   Search,
-  Wifi,
-  Monitor,
-  Database,
-  HardDrive,
-  Globe,
   Plus,
-  Download,
   Radar,
+  Pause,
+  Play,
+  History,
+  X,
+  Trash2,
+  Save,
 } from "lucide-react";
-import {
-  DiscoveredHost,
-  DiscoveredService,
-} from "../../types/connection/connection";
 import { useNetworkDiscovery } from "../../hooks/network/useNetworkDiscovery";
-import { getDiscoveredServiceLabel } from "../../utils/network/networkScanner";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
-import { Checkbox, TextInput } from "../ui/forms";
+import { DiscoveryHostsTable } from "./DiscoveryHostsTable";
 import { DiscoveryConfigSidebar } from "./DiscoveryConfigSidebar";
 import { DiscoveryScanProgress } from "./DiscoveryScanProgress";
 import { configuredDiscoveryPorts } from "../../utils/discovery/discoveryPresets";
+import { effectiveDiscoveryPingMethod } from "../../utils/discovery/discoveryPing";
+import type { SavedDiscoveryScan } from "../../utils/discovery/scanHistory";
+import { exportDiscoveryScanCsv } from "../../utils/discovery/exportDiscoveryScan";
+import { DiscoveryScanHistory } from "./DiscoveryScanHistory";
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
@@ -31,29 +30,6 @@ interface NetworkDiscoveryProps {
 }
 
 type Mgr = ReturnType<typeof useNetworkDiscovery>;
-
-/* ── Helpers ─────────────────────────────────────────────────────── */
-
-const getServiceIcon = (service: DiscoveredService) => {
-  switch ((service.protocol || service.service).toLowerCase()) {
-    case "ssh":
-      return Monitor;
-    case "http":
-    case "https":
-      return Globe;
-    case "rdp":
-      return Monitor;
-    case "vnc":
-      return Monitor;
-    case "mysql":
-      return Database;
-    case "ftp":
-    case "sftp":
-      return HardDrive;
-    default:
-      return Wifi;
-  }
-};
 
 /* ── Sub-components ──────────────────────────────────────────────── */
 
@@ -78,14 +54,29 @@ const ScanControls: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         onClick={mgr.handleScan}
         disabled={
           mgr.isScanning ||
+          mgr.saveStatus === "saving" ||
           !mgr.config.ipRange.trim() ||
-          configuredDiscoveryPorts(mgr.config).length === 0
+          ((mgr.config.serviceScanEnabled === false ||
+            configuredDiscoveryPorts(mgr.config).length === 0) &&
+            (!mgr.native ||
+              effectiveDiscoveryPingMethod(mgr.config) === "none"))
         }
         className="px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
       >
         <Search size={16} />
         <span>{mgr.t("networkDiscovery.startScan")}</span>
       </button>
+      {mgr.isScanning && (
+        <button
+          type="button"
+          disabled={mgr.isStopping || !mgr.native}
+          onClick={mgr.handlePauseResume}
+          className="sor-btn-secondary-sm disabled:opacity-50"
+        >
+          {mgr.isPaused ? <Play size={15} /> : <Pause size={15} />}
+          {mgr.isPaused ? "Resume scan" : "Pause scan"}
+        </button>
+      )}
       {mgr.isScanning && (
         <button
           onClick={mgr.handleStop}
@@ -95,7 +86,25 @@ const ScanControls: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           {mgr.isStopping ? "Stopping…" : mgr.t("networkDiscovery.stop")}
         </button>
       )}
-      {mgr.allowCreateConnections && mgr.selectedHosts.size > 0 && (
+      <button
+        type="button"
+        onClick={mgr.handleSaveToHistory}
+        disabled={!mgr.canSaveToHistory}
+        className="sor-btn-secondary-sm disabled:opacity-50"
+      >
+        <Save size={15} />
+        {mgr.saveStatus === "saving" ? "Saving…" : "Save to history"}
+      </button>
+      <button
+        type="button"
+        onClick={mgr.handleDiscardResults}
+        disabled={!mgr.canDiscardResults}
+        className="sor-btn-secondary-sm disabled:opacity-50"
+      >
+        <Trash2 size={15} />
+        Discard results
+      </button>
+      {mgr.allowCreateConnections && mgr.selectedServices.size > 0 && (
         <button
           onClick={mgr.handleCreateConnections}
           className="px-4 py-2 bg-success hover:bg-success/90 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
@@ -103,168 +112,111 @@ const ScanControls: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <Plus size={16} />
           <span>
             {mgr.t("networkDiscovery.createConnections", {
-              count: mgr.selectedHosts.size,
+              count: mgr.selectedServices.size,
             })}
           </span>
         </button>
       )}
     </div>
+    <p className="text-xs text-[var(--color-textSecondary)]">
+      Results are not saved automatically. Save to history before starting
+      another scan. Completed, stopped and failed scans can be saved. Discard
+      results clears the current results and selection; saved history is kept.
+      {mgr.isScanning && " Stop the scan before saving or discarding results."}
+      {mgr.saveStatus === "saving" &&
+        " Wait for saving to finish before starting another scan or discarding results."}
+    </p>
+    {mgr.saveStatus === "saved" && (
+      <p role="status" className="text-xs text-success">
+        Saved to history.
+      </p>
+    )}
+    {mgr.saveStatus === "error" && (
+      <p role="alert" className="text-xs text-error">
+        Could not persist this scan to history: {mgr.saveError}. Results are
+        still available. Choose Save to history to retry.
+      </p>
+    )}
   </>
 );
 
-const HostCard: React.FC<{ mgr: Mgr; host: DiscoveredHost }> = ({
+function SavedScanView({
+  scan,
   mgr,
-  host,
-}) => (
-  <div
-    role="button"
-    tabIndex={0}
-    className={`bg-[var(--color-border)] rounded-lg p-4 border-2 transition-colors cursor-pointer ${mgr.selectedHosts.has(host.ip) ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"}`}
-    onClick={() => mgr.toggleHostSelection(host.ip)}
-    onKeyDown={(e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        mgr.toggleHostSelection(host.ip);
-      }
-    }}
-  >
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center space-x-3">
-        <span
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <Checkbox
-            aria-label={`Select ${host.hostname || host.ip}`}
-            checked={mgr.selectedHosts.has(host.ip)}
-            onChange={() => mgr.toggleHostSelection(host.ip)}
-            className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-          />
-        </span>
-        <div>
-          <h4 className="text-[var(--color-text)] font-medium">
-            {host.hostname || host.ip}
-          </h4>
-          {host.hostname && (
-            <p className="text-[var(--color-textSecondary)] text-sm">
-              {host.ip}
-            </p>
-          )}
-          {host.reachability && (
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {host.reachability === "responsive"
-                ? "Reachability probe replied"
-                : host.reachability === "unresponsive"
-                  ? "No ping reply · service scan continued"
-                  : "Ping not required"}
-            </p>
-          )}
-        </div>
-      </div>
-      <div className="text-right">
-        <p className="text-[var(--color-textSecondary)] text-sm">
-          {mgr.t("networkDiscovery.responseTime", { ms: host.responseTime })}
-        </p>
-        {host.macAddress && (
-          <p className="text-[var(--color-textMuted)] text-xs">
-            {mgr.t("networkDiscovery.macAddress", { mac: host.macAddress })}
-          </p>
-        )}
-      </div>
-    </div>
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-      {host.services.map((service, index) => {
-        const ServiceIcon = getServiceIcon(service);
-        return (
-          <div
-            key={index}
-            className="bg-[var(--color-surfaceHover)] rounded-lg p-3 flex items-center space-x-3"
-          >
-            <ServiceIcon size={20} className="text-primary" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[var(--color-text)] font-medium">
-                {service.product || getDiscoveredServiceLabel(service)}
-              </p>
-              {service.product && (
-                <p className="text-xs text-[var(--color-textSecondary)]">
-                  {getDiscoveredServiceLabel(service)}
-                </p>
-              )}
-              <span
-                className={`my-1 inline-block rounded px-1.5 py-0.5 text-[10px] ${service.detection === "identified" ? "bg-success/10 text-success" : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"}`}
-              >
-                {service.detection === "identified"
-                  ? "Identified from response"
-                  : service.detection === "port-hint"
-                    ? "Port-based hint"
-                    : "Type unconfirmed"}
-              </span>
-              <p className="text-[var(--color-textSecondary)] text-sm">
-                {mgr.t("networkDiscovery.port", { port: service.port })}
-              </p>
-              {service.version && (
-                <p className="text-[var(--color-textMuted)] text-xs truncate">
-                  {service.version}
-                </p>
-              )}
-              {service.banner && (
-                <p className="text-[var(--color-textSecondary)] text-xs break-all font-mono">
-                  {service.banner}
-                </p>
-              )}
-              {service.evidence && (
-                <p className="mt-1 text-xs text-[var(--color-textMuted)]">
-                  {service.evidence}
-                </p>
-              )}
-              {service.identificationError && (
-                <p className="mt-1 text-xs text-warning">
-                  Identification unavailable: {service.identificationError}. The
-                  TCP port is open.
-                </p>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-);
-
-const HostsList: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  if (mgr.discoveredHosts.length === 0) return null;
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium text-[var(--color-text)]">
-          {mgr.t("networkDiscovery.discoveredHosts", {
-            count: mgr.filteredHosts.length,
-          })}
-        </h3>
-        <div className="flex items-center space-x-2">
-          <TextInput
-            value={mgr.filterText}
-            onChange={(v) => mgr.setFilterText(v)}
-            placeholder={mgr.t("networkDiscovery.filterPlaceholder")}
-            variant="form"
-          />
-          <button
-            onClick={mgr.handleExportCSV}
-            className="px-3 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
-          >
-            <Download size={14} />
-            <span>{mgr.t("networkDiscovery.exportCsv")}</span>
-          </button>
-        </div>
-      </div>
-      <div className="space-y-4">
-        {mgr.filteredHosts.map((host) => (
-          <HostCard key={host.ip} mgr={mgr} host={host} />
-        ))}
-      </div>
-    </div>
+  onUseTargets,
+}: {
+  scan: SavedDiscoveryScan;
+  mgr: Mgr;
+  onUseTargets: () => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const filteredHosts = scan.hosts.filter((host) =>
+    `${host.ip} ${host.hostname ?? ""} ${host.services.map((service) => `${service.port} ${service.product ?? ""} ${service.service}`).join(" ")}`
+      .toLowerCase()
+      .includes(filter.toLowerCase()),
   );
-};
+  const viewManager: Mgr = {
+    ...mgr,
+    config: scan.config,
+    discoveredHosts: scan.hosts,
+    filteredHosts,
+    filterText: filter,
+    setFilterText: setFilter,
+    selectedHosts: new Set(),
+    toggleHostSelection: () => {},
+    allowCreateConnections: false,
+    handleExportCSV: () => exportDiscoveryScanCsv(scan, filteredHosts),
+  };
+  return (
+    <section aria-label="Saved scan results" className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-semibold">
+            {scan.name?.trim() || new Date(scan.startedAt).toLocaleString()}
+          </h3>
+          {scan.name?.trim() && (
+            <time
+              dateTime={new Date(scan.startedAt).toISOString()}
+              className="block text-xs text-[var(--color-textSecondary)]"
+            >
+              {new Date(scan.startedAt).toLocaleString()}
+            </time>
+          )}
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            {scan.outcome} · {scan.hosts.length} live hosts ·{" "}
+            {scan.hosts.reduce(
+              (total, host) => total + host.openPorts.length,
+              0,
+            )}{" "}
+            open ports · {Math.round(scan.elapsedMs / 1000)}s elapsed
+          </p>
+        </div>
+        <button
+          type="button"
+          className="sor-btn-secondary-sm"
+          disabled={mgr.isScanning}
+          onClick={() => {
+            mgr.setConfig(structuredClone(scan.config));
+            onUseTargets();
+          }}
+        >
+          Use scan configuration
+        </button>
+      </div>
+      <p className="whitespace-pre-wrap break-words font-mono text-xs">
+        {scan.config.ipRange}
+      </p>
+      <p className="text-xs text-[var(--color-textSecondary)]">
+        Saved snapshot, not a current reachability check. Loading its
+        configuration does not start a scan.
+      </p>
+      <DiscoveryHostsTable mgr={viewManager} readOnly />
+      {scan.hosts.length === 0 && (
+        <p className="text-sm">No live hosts were recorded.</p>
+      )}
+    </section>
+  );
+}
 
 const EmptyState: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.isScanning || mgr.discoveredHosts.length > 0) return null;
@@ -294,6 +246,19 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
     native: embedded,
     allowCreateConnections,
   });
+  const [tab, setTab] = useState<"current" | "history" | "saved">("current");
+  const tabId = useId();
+  const [savedScanId, setSavedScanId] = useState<string | null>(null);
+  const savedScan = mgr.scanHistory.scans.find(
+    (scan) => scan.id === savedScanId,
+  );
+
+  useEffect(() => {
+    if (!savedScan && !mgr.scanHistory.loading) {
+      setSavedScanId(null);
+      setTab((current) => (current === "saved" ? "history" : current));
+    }
+  }, [savedScanId, savedScan, tab, mgr.scanHistory.loading]);
 
   if (!isOpen) return null;
 
@@ -307,6 +272,85 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
     >
       <DiscoveryHeader mgr={mgr} onClose={embedded ? undefined : onClose} />
       <div
+        role="tablist"
+        aria-label="Scanner views"
+        className="flex shrink-0 items-center gap-1 border-b border-[var(--color-border)] px-4"
+      >
+        {(["current", "history", ...(savedScan ? ["saved"] : [])] as const).map(
+          (key) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              id={`${tabId}-${key}-tab`}
+              aria-controls={`${tabId}-${key}-panel`}
+              aria-selected={tab === key}
+              tabIndex={tab === key ? 0 : -1}
+              className={`flex items-center gap-2 border-b-2 px-3 py-3 text-xs ${tab === key ? "border-primary text-primary" : "border-transparent text-[var(--color-textSecondary)]"}`}
+              onClick={() => setTab(key as typeof tab)}
+              onKeyDown={(event) => {
+                if (
+                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                    event.key,
+                  )
+                )
+                  return;
+                event.preventDefault();
+                const siblings = Array.from(
+                  event.currentTarget.parentElement!.querySelectorAll<HTMLButtonElement>(
+                    '[role="tab"]',
+                  ),
+                );
+                const index = siblings.indexOf(event.currentTarget);
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? siblings.length - 1
+                      : (index +
+                          (event.key === "ArrowRight" ? 1 : -1) +
+                          siblings.length) %
+                        siblings.length;
+                siblings[next].click();
+                siblings[next].focus();
+              }}
+            >
+              {key === "current" ? (
+                <>
+                  <Radar size={14} />
+                  Current scan
+                  {mgr.isScanning
+                    ? mgr.isPaused
+                      ? " · paused"
+                      : " · running"
+                    : ""}
+                </>
+              ) : key === "history" ? (
+                <>
+                  <History size={14} />
+                  History ({mgr.scanHistory.scans.length})
+                </>
+              ) : (
+                "Saved scan"
+              )}
+            </button>
+          ),
+        )}
+        {savedScan && (
+          <button
+            type="button"
+            aria-label="Close saved scan"
+            className="rounded p-1 hover:bg-[var(--color-surfaceHover)]"
+            onClick={() => {
+              setSavedScanId(null);
+              if (tab === "saved") setTab("history");
+            }}
+          >
+            <X size={13} />
+          </button>
+        )}
+      </div>
+      <div
         className={
           embedded
             ? "flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden"
@@ -317,20 +361,72 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
           aria-label="Discovery results"
           className="min-w-0 flex-1 space-y-5 p-4 lg:overflow-y-auto lg:p-6"
         >
-          <ScanControls mgr={mgr} />
-          <DiscoveryScanProgress mgr={mgr} />
-          {mgr.scanError && (
+          {mgr.scanHistory.error && (
             <p
               role="alert"
-              className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error"
+              className="rounded-lg border border-warning/30 p-3 text-xs text-warning"
             >
-              {mgr.scanError}
+              {mgr.scanHistory.error}
             </p>
           )}
-          <HostsList mgr={mgr} />
-          <EmptyState mgr={mgr} />
+          {tab === "history" && (
+            <div
+              role="tabpanel"
+              id={`${tabId}-history-panel`}
+              aria-labelledby={`${tabId}-history-tab`}
+            >
+              <DiscoveryScanHistory
+                scanHistory={mgr.scanHistory}
+                onOpen={(scan) => {
+                  setSavedScanId(scan.id);
+                  setTab("saved");
+                }}
+                onDelete={(id) => {
+                  setSavedScanId((selected) =>
+                    selected === id ? null : selected,
+                  );
+                }}
+                onClear={() => setSavedScanId(null)}
+              />
+            </div>
+          )}
+          {tab === "saved" && savedScan && (
+            <div
+              role="tabpanel"
+              id={`${tabId}-saved-panel`}
+              aria-labelledby={`${tabId}-saved-tab`}
+            >
+              <SavedScanView
+                key={savedScan.id}
+                scan={savedScan}
+                mgr={mgr}
+                onUseTargets={() => setTab("current")}
+              />
+            </div>
+          )}
+          {tab === "current" && (
+            <div
+              role="tabpanel"
+              id={`${tabId}-current-panel`}
+              aria-labelledby={`${tabId}-current-tab`}
+              className="space-y-5"
+            >
+              <ScanControls mgr={mgr} />
+              <DiscoveryScanProgress mgr={mgr} />
+              {mgr.scanError && (
+                <p
+                  role="alert"
+                  className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error"
+                >
+                  {mgr.scanError}
+                </p>
+              )}
+              <DiscoveryHostsTable mgr={mgr} />
+              <EmptyState mgr={mgr} />
+            </div>
+          )}
         </main>
-        <DiscoveryConfigSidebar mgr={mgr} />
+        {tab === "current" && <DiscoveryConfigSidebar mgr={mgr} />}
       </div>
     </div>
   );

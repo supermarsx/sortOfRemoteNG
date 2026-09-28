@@ -10,6 +10,11 @@ export interface ServiceFingerprintEvidence {
   http_server?: string;
   http_title?: string;
   http_status?: number;
+  http_final_origin?: string;
+  http_redirects?: number;
+  protocol_confirmed?: string;
+  protocol_evidence?: string;
+  protocol_version?: string;
   identification_error?: string;
   httpScheme?: "http" | "https";
 }
@@ -19,6 +24,10 @@ const WEB_SERVER = /^(nginx|Apache|Microsoft-IIS)(?:\/([\d.]+))?(?=$|[\s(])/i;
 const FTP_SOFTWARE =
   /\b(vsftpd|ProFTPD|Pure-FTPd|FileZilla Server)(?=$|[\s/()])/i;
 const WEB_PRODUCTS: ReadonlyArray<readonly [string, RegExp]> = [
+  [
+    "Apache Tomcat",
+    /^(?:Apache\s+)?Tomcat(?:\s*\/\s*\d[\w.-]*)?(?:\s*[-–|:]\s*(?:Welcome|Manager|Host Manager))?$/i,
+  ],
   [
     "Synology DSM",
     /^(?:[\w.-]+\s*[-–|]\s*)?(?:Synology\s+(?:DSM|DiskStation(?:\s+Manager)?)|DiskStation Manager)(?:\s+\d[\w.-]*)?(?:\s*[-–|:]\s*(?:Login|Sign In))?$/i,
@@ -69,6 +78,19 @@ const WEB_PRODUCTS: ReadonlyArray<readonly [string, RegExp]> = [
 const display = (value: string): string =>
   value.replace(/\s+/g, " ").trim().slice(0, 240);
 
+/** Kept in the existing persisted error field, optionally before a later error. */
+export function discoveryCertificateWarning(error?: string): boolean {
+  return error?.split(";")[0] === "certificate_validation_bypassed";
+}
+
+export function discoveryIdentificationFailure(
+  error?: string,
+): string | undefined {
+  return discoveryCertificateWarning(error)
+    ? error?.split(";").slice(1).join(";") || undefined
+    : error;
+}
+
 /** Passive protocol evidence wins over every preset and port hint. */
 export function fingerprintService(
   port: number,
@@ -114,6 +136,19 @@ export function fingerprintService(
   }
   const rfb = text.match(/^RFB (\d{3}\.\d{3})$/);
   if (rfb) return identified("vnc", `RFB banner: ${text}`, undefined, rfb[1]);
+
+  if (
+    http.protocol_confirmed &&
+    ["smb", "rdp", "postgresql"].includes(http.protocol_confirmed) &&
+    http.protocol_evidence?.trim()
+  ) {
+    return identified(
+      http.protocol_confirmed,
+      display(http.protocol_evidence),
+      undefined,
+      http.protocol_version ? display(http.protocol_version) : undefined,
+    );
+  }
 
   // SMTP also uses 220: the response code alone cannot identify FTP.
   const ftp = text.match(/^220[ -]([^\r\n]*)/);
@@ -172,6 +207,14 @@ export function fingerprintService(
           : undefined,
       server ? `Server: ${display(server)}` : undefined,
       title ? `Title: ${display(title)}` : undefined,
+      Number.isInteger(http.http_redirects) &&
+      http.http_redirects! > 0 &&
+      http.http_redirects! <= 5
+        ? `Followed ${http.http_redirects} redirect${http.http_redirects === 1 ? "" : "s"}${http.http_final_origin ? ` to ${display(http.http_final_origin)}` : ""}; original TCP endpoint retained`
+        : undefined,
+      discoveryCertificateWarning(http.identification_error)
+        ? "TLS warning: certificate validation failed; discovery retried without certificate verification"
+        : undefined,
     ].filter(Boolean);
     // Prefer application branding over the generic server hosting it.
     const branded = title
@@ -184,6 +227,9 @@ export function fingerprintService(
     const product =
       branded ??
       serverBrand ??
+      (/^Apache-Coyote(?:\/|$)/i.test(server ?? "")
+        ? "Apache Tomcat / Coyote"
+        : undefined) ??
       (software
         ? (
             {
@@ -197,7 +243,11 @@ export function fingerprintService(
       scheme,
       parts.join("; ") || "HTTP HTML banner",
       product,
-      branded || serverBrand ? undefined : software?.[2],
+      branded === "Apache Tomcat"
+        ? title?.match(/\/(\d[\w.-]*)/)?.[1]
+        : branded || serverBrand
+          ? undefined
+          : software?.[2],
     );
   }
 

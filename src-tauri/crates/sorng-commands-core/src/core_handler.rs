@@ -399,10 +399,12 @@ define_command_group!(
         db_commands::delete_row,
         network_commands::detect_asymmetric_routing,
         network_commands::detect_icmp_blockade,
+        discovery_commands::detect_interface_subnets,
         network_commands::detect_proxy_leakage,
         anydesk_commands::disconnect_anydesk,
         db_commands::disconnect_db,
         wol_commands::discover_wol_devices,
+        discovery_commands::discovery_reverse_dns,
         network_commands::dns_lookup,
         db_commands::drop_database,
         db_commands::drop_table,
@@ -451,6 +453,8 @@ define_command_group!(
         security_commands::generate_totp_secret,
         anydesk_commands::get_anydesk_session,
         db_commands::get_databases,
+        discovery_commands::get_discovery_capacity,
+        discovery_commands::get_discovery_probe_capabilities,
         db_commands::get_table_data,
         db_commands::get_table_structure,
         db_commands::get_tables,
@@ -464,6 +468,7 @@ define_command_group!(
         network_commands::ping_gateway,
         network_commands::ping_host,
         network_commands::ping_host_detailed,
+        discovery_commands::probe_discovery_batch,
         discovery_commands::probe_discovery_host,
         network_commands::probe_udp_port,
         network_commands::probe_vnc_rfb,
@@ -1847,6 +1852,21 @@ mod tests {
         assert!(
             include_str!("core_handler.rs").contains("discovery_commands::probe_discovery_host,")
         );
+    }
+
+    #[test]
+    fn discovery_metadata_commands_are_recognized_and_registered() {
+        for command in [
+            "detect_interface_subnets",
+            "discovery_reverse_dns",
+            "get_discovery_capacity",
+            "get_discovery_probe_capabilities",
+            "probe_discovery_batch",
+        ] {
+            assert!(is_command(command));
+            assert!(include_str!("core_handler.rs")
+                .contains(&format!("discovery_commands::{command},")));
+        }
     }
 
     #[test]

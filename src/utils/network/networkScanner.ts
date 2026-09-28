@@ -13,6 +13,17 @@ import {
 } from "../discovery/serviceFingerprint";
 import { protocolFromPort } from "../connection/normalizeImportedProtocol";
 import * as ipaddr from "ipaddr.js";
+import { createDiscoveryTargetPlan } from "../discovery/discoveryTargetPlan";
+import {
+  isDiscoveryPingMethod,
+  isDiscoveryProbeMethods,
+  effectiveDiscoveryPingMethod,
+  type DiscoveryProbeResult,
+} from "../discovery/discoveryPing";
+import {
+  AdaptiveDiscoveryScheduler,
+  type DiscoveryCapacity,
+} from "../discovery/adaptiveDiscoveryScheduler";
 
 interface CacheEntry<T> {
   value: T | null;
@@ -20,7 +31,13 @@ interface CacheEntry<T> {
 }
 
 export interface DiscoveryScanStatus {
-  phase: "preparing" | "discovering" | "scanning" | "identifying" | "complete";
+  phase:
+    | "preparing"
+    | "discovering"
+    | "scanning"
+    | "identifying"
+    | "resolving"
+    | "complete";
   totalHosts: number;
   completedHosts: number;
   totalProbes: number;
@@ -29,6 +46,22 @@ export interface DiscoveryScanStatus {
   activeProbes: number;
   currentHost?: string;
   currentPort?: number;
+  activeWorkers?: number;
+  workerLimit?: number;
+  probeLimit?: number;
+  cpuPercent?: number | null;
+  logicalCpus?: number | null;
+  systemLogicalCpus?: number | null;
+  physicalCores?: number | null;
+  cpuSampleIntervalMs?: number | null;
+  cpuSampleAgeMs?: number | null;
+  networkUtilizationPercent?: number | null;
+  throttleReason?: string;
+  discoveryWarning?: string;
+  etaMs?: number | null;
+  paused?: boolean;
+  liveHosts?: number;
+  livePorts?: number;
 }
 
 interface NativeScanObserver {
@@ -45,6 +78,13 @@ interface ScanPortResult extends ServiceFingerprintEvidence {
   isOpen: boolean;
   banner?: string;
   elapsed: number;
+}
+
+interface NativePortResult extends ServiceFingerprintEvidence {
+  port: number;
+  open: boolean;
+  banner?: string;
+  time_ms?: number;
 }
 
 interface NativeVncRfbProbeResult {
@@ -149,30 +189,41 @@ export const getDiscoveredServiceLabel = (
 /**
  * Utility for scanning networks to discover hosts and open services.
  *
- * The scanner limits concurrency with semaphores to avoid overwhelming the
- * browser or target network. Hostname and MAC lookups are cached with TTLs to
- * minimise repeated HTTP calls. Results are sorted for deterministic output.
+ * Native discovery uses a bounded, adaptive admission scheduler. Browser
+ * strategies retain their legacy semaphores and metadata lookups. Results are
+ * sorted for deterministic output; live callbacks receive detached snapshots.
  */
 export class NetworkScanner {
   constructor(private readonly native = false) {}
+
+  private scheduler?: AdaptiveDiscoveryScheduler;
+  pause(): void {
+    this.scheduler?.pause();
+  }
+  resume(): void {
+    this.scheduler?.resume();
+  }
 
   private hostnameCache = new Map<string, CacheEntry<string>>();
   private macCache = new Map<string, CacheEntry<string>>();
   /**
    * Scan an IP range and return metadata about responsive hosts.
    *
-   * Hosts are generated from the CIDR range and probed in parallel. A
-   * semaphore throttles concurrency to `config.maxConcurrent`. Each host
-   * scan is abortable via an `AbortSignal`, and progress callbacks receive a
-   * percentage of completed tasks. Results are sorted by IP for stability.
+   * Native targets may combine IP literals and CIDRs; their union is checked
+   * before any network work. Pause gates new native work, while cancellation
+   * drains active bounded calls. onHost can update the same IP as ports and
+   * hostnames arrive; consumers should upsert by IP.
    */
   async scanNetwork(
     config: NetworkDiscoveryConfig,
     onProgress?: (progress: number) => void,
     signal?: AbortSignal,
     onStatus?: (status: DiscoveryScanStatus) => void,
+    onHost?: (host: DiscoveredHost) => void,
   ): Promise<DiscoveredHost[]> {
     if (this.native) {
+      // Retain UI selections in the saved config, but run only enabled stages.
+      config = { ...config, pingMethod: effectiveDiscoveryPingMethod(config) };
       if (!config.ipRange.trim())
         throw new Error("Enter an IP address or CIDR range.");
       // Address generation does not retain IPv6 zone identifiers. Reject them
@@ -182,7 +233,9 @@ export class NetworkScanner {
           "Scoped IPv6 addresses are not supported by Network Scanner.",
         );
       // Validate before expanding ranges or scheduling any native requests.
-      for (const range of config.portRanges) {
+      for (const range of config.serviceScanEnabled === false
+        ? []
+        : config.portRanges) {
         if (!/^\d+(?:-\d+)?$/.test(range))
           throw new Error(`Invalid port range: ${range}`);
         const [start, end = start] = range.split("-").map(Number);
@@ -197,14 +250,33 @@ export class NetworkScanner {
         config.timeout > 30000
       )
         throw new Error("Timeout must be between 1000 and 30000 ms.");
+      for (const [name, value, min, max] of [
+        ["Host concurrency", config.maxConcurrent, 1, 512],
+        ["Probe concurrency", config.maxPortConcurrent, 1, 1024],
+        ["Absolute probe cap", config.absoluteMaxProbes ?? 1024, 1, 1024],
+        ["CPU threshold", config.maxCpuPercent ?? 80, 1, 100],
+        [
+          "Network threshold",
+          config.maxNetworkUtilizationPercent ?? 80,
+          1,
+          100,
+        ],
+        ["Worker launch interval", config.workerLaunchIntervalMs ?? 0, 0, 5000],
+        ["Probe launch interval", config.probeLaunchIntervalMs ?? 0, 0, 5000],
+      ] as const) {
+        if (!Number.isInteger(value) || value < min || value > max)
+          throw new Error(`${name} must be between ${min} and ${max}.`);
+      }
+      if (!isDiscoveryPingMethod(config.pingMethod ?? "none"))
+        throw new Error("Choose a supported host discovery method.");
       if (
-        ![config.maxConcurrent, config.maxPortConcurrent].every(
-          (n) => Number.isInteger(n) && n >= 1 && n <= 100,
-        )
+        config.pingMethod !== "none" &&
+        config.pingMethods !== undefined &&
+        !isDiscoveryProbeMethods(config.pingMethods)
       )
-        throw new Error("Concurrency must be between 1 and 100.");
-      if (!["none", "icmp", "tcp"].includes(config.pingMethod ?? "none"))
-        throw new Error("Choose none, ICMP, or TCP host discovery.");
+        throw new Error(
+          "Choose between 1 and 7 distinct host discovery methods.",
+        );
       const pingTimeout = config.pingTimeout ?? 1000;
       if (
         !Number.isInteger(pingTimeout) ||
@@ -217,156 +289,510 @@ export class NetworkScanner {
       const pingPort = config.pingPort ?? 443;
       if (!Number.isInteger(pingPort) || pingPort < 1 || pingPort > 65535)
         throw new Error("Host discovery port must be between 1 and 65535.");
+      const udpPort = config.pingUdpPort ?? 53;
+      if (!Number.isInteger(udpPort) || udpPort < 1 || udpPort > 65535)
+        throw new Error("UDP discovery port must be between 1 and 65535.");
       const ports = this.getPortsToScan(config);
       if (
-        !ports.length ||
+        (!ports.length && config.pingMethod === "none") ||
         ports.length > 1024 ||
         ports.some((p) => !Number.isInteger(p) || p < 1 || p > 65535)
       )
-        throw new Error("Choose between 1 and 1024 valid TCP ports.");
-      const target = config.ipRange.trim();
-      config = {
-        ...config,
-        ipRange: target.includes("/")
-          ? target
-          : `${target}/${target.includes(":") ? 128 : 32}`,
-        maxPortConcurrent: Math.min(
-          config.maxConcurrent,
-          config.maxPortConcurrent,
-        ),
-      };
+        throw new Error(
+          "Choose between 1 and 1024 valid TCP ports, or enable a host discovery sweep.",
+        );
+      return this.scanNativeNetwork(
+        config,
+        onProgress,
+        signal,
+        onStatus,
+        onHost,
+      );
     }
+    // Preserve browser strategies, metadata lookup, and legacy CIDR validation.
     const totalHosts = this.getHostCount(config.ipRange);
-    if (this.native && totalHosts > 256)
-      throw new Error("Choose a range of at most 256 addresses.");
     const discoveredHosts: DiscoveredHost[] = [];
-    const startedHosts = new Set<string>();
+    const semaphore = new Semaphore(config.maxConcurrent);
+    const portSemaphore = new Semaphore(config.maxPortConcurrent);
+    const tasks: Promise<void>[] = [];
     let completed = 0;
-    const hasHostProbe =
-      this.native && (config.pingMethod ?? "none") !== "none";
+    for await (const ip of this.generateIPRange(config.ipRange)) {
+      if (signal?.aborted) break;
+      tasks.push(
+        (async () => {
+          await semaphore.acquire();
+          try {
+            if (signal?.aborted) return;
+            const host = await this.scanHost(ip, config, signal, portSemaphore);
+            if (host && !signal?.aborted) {
+              discoveredHosts.push(host);
+              onHost?.(structuredClone(host));
+            }
+          } catch (error) {
+            console.error(`Failed to scan ${ip}:`, error);
+          } finally {
+            completed++;
+            onProgress?.((completed / totalHosts) * 100);
+            semaphore.release();
+          }
+        })(),
+      );
+    }
+    await Promise.all(tasks);
+    return discoveredHosts.sort((a, b) => this.compareIPs(a.ip, b.ip));
+  }
+
+  private async scanNativeNetwork(
+    config: NetworkDiscoveryConfig,
+    onProgress?: (progress: number) => void,
+    externalSignal?: AbortSignal,
+    onStatus?: (status: DiscoveryScanStatus) => void,
+    onHost?: (host: DiscoveredHost) => void,
+  ): Promise<DiscoveredHost[]> {
+    if (this.scheduler) throw new Error("A discovery scan is already running.");
+    const plan = createDiscoveryTargetPlan(config.ipRange);
+    const ports = this.getPortsToScan(config);
+    const hasPing = effectiveDiscoveryPingMethod(config) !== "none";
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (externalSignal?.aborted) abort();
+    else externalSignal?.addEventListener("abort", abort, { once: true });
+    const signal = controller.signal;
+    const hosts = new Map<string, DiscoveredHost>();
+    const startedHosts = new Set<string>();
     const status: DiscoveryScanStatus = {
       phase: "preparing",
-      totalHosts,
+      totalHosts: plan.totalHosts,
       completedHosts: 0,
       totalProbes:
-        totalHosts *
-        (this.getPortsToScan(config).length + (hasHostProbe ? 1 : 0)),
+        plan.totalHosts *
+        (ports.length + (hasPing ? 1 : 0) + (config.resolveHostnames ? 1 : 0)),
       completedProbes: 0,
       skippedHosts: 0,
       activeProbes: 0,
+      activeWorkers: 0,
+      liveHosts: 0,
+      livePorts: 0,
+      paused: false,
+      etaMs: null,
     };
-    const emitStatus = () => {
-      if (this.native) onStatus?.({ ...status });
+    let rateStart = Date.now();
+    let rateStartCompleted = 0;
+    let wasPaused = false;
+    const emit = () => {
+      const paused =
+        !!status.paused || signal.aborted || status.phase === "complete";
+      if (paused || wasPaused) {
+        rateStart = Date.now();
+        rateStartCompleted = status.completedProbes;
+      }
+      wasPaused = paused;
+      const elapsed = Date.now() - rateStart;
+      const done = status.completedProbes - rateStartCompleted;
+      const eta =
+        elapsed >= 1000 && done >= 2 && !paused
+          ? ((status.totalProbes - status.completedProbes) * elapsed) / done
+          : null;
+      status.etaMs =
+        eta !== null && Number.isFinite(eta)
+          ? Math.max(0, Math.round(eta))
+          : null;
+      onStatus?.({ ...status });
     };
-    const emitProbeProgress = () => {
+    const scheduler = new AdaptiveDiscoveryScheduler(
+      config,
+      signal,
+      (snapshot) => {
+        Object.assign(status, snapshot);
+        emit();
+      },
+    );
+    this.scheduler = scheduler;
+    const publications = new Map<
+      string,
+      {
+        countedPorts: number;
+        lastPublished: number;
+        dirty: boolean;
+        timer?: ReturnType<typeof setTimeout>;
+      }
+    >();
+    const flushHost = (ip: string) => {
+      const publication = publications.get(ip);
+      const host = hosts.get(ip);
+      if (!publication || !host) return;
+      clearTimeout(publication.timer);
+      publication.timer = undefined;
+      if (!publication.dirty) return;
+      publication.dirty = false;
+      publication.lastPublished = Date.now();
+      if (onHost) {
+        const snapshot = structuredClone(host);
+        snapshot.openPorts.sort((a, b) => a - b);
+        snapshot.services.sort((a, b) => a.port - b.port);
+        onHost(snapshot);
+      }
+    };
+    const flushPendingHosts = () => {
+      // Internal hosts contain only metadata accepted before cancellation.
+      // Deliver that metadata even on abort/error; late probes never enter it.
+      for (const ip of publications.keys()) flushHost(ip);
+    };
+    signal.addEventListener("abort", flushPendingHosts, { once: true });
+    const publishHost = (host: DiscoveredHost, final = false) => {
+      if (signal.aborted) return;
+      const initial = !hosts.has(host.ip);
+      const publication = publications.get(host.ip) ?? {
+        countedPorts: 0,
+        lastPublished: -Infinity,
+        dirty: false,
+      };
+      status.livePorts! += host.openPorts.length - publication.countedPorts;
+      publication.countedPorts = host.openPorts.length;
+      hosts.set(host.ip, host);
+      publications.set(host.ip, publication);
+      status.liveHosts = hosts.size;
+      if (onHost) {
+        publication.dirty = true;
+        const remaining = 100 - (Date.now() - publication.lastPublished);
+        if (initial || final || remaining <= 0) flushHost(host.ip);
+        else if (publication.timer === undefined)
+          publication.timer = setTimeout(() => flushHost(host.ip), remaining);
+      }
+      emit();
+    };
+    const progress = () => {
       onProgress?.(
         status.totalProbes
           ? (status.completedProbes / status.totalProbes) * 100
           : 100,
       );
-      emitStatus();
+      emit();
     };
-    const observer: NativeScanObserver | undefined = this.native
-      ? {
-          start: (phase, host, port) => {
-            startedHosts.add(host);
-            status.phase = phase;
-            status.currentHost = host;
-            status.currentPort = port;
-            status.activeProbes++;
-            emitStatus();
-          },
-          finish: () => {
-            status.activeProbes--;
-            status.completedProbes++;
-            emitProbeProgress();
-          },
-          skip: (ports) => {
-            status.skippedHosts++;
-            status.completedProbes += ports;
-            emitProbeProgress();
-          },
-        }
-      : undefined;
-    emitStatus();
-
-    const semaphore = new Semaphore(config.maxConcurrent);
-    const portSemaphore = new Semaphore(config.maxPortConcurrent);
-    const tasks: Promise<void>[] = [];
-    const externalSignal = signal;
-    const nativeController = this.native ? new AbortController() : undefined;
-    const abortNative = () => nativeController?.abort();
-    if (nativeController) {
-      if (externalSignal?.aborted) abortNative();
-      else
-        externalSignal?.addEventListener("abort", abortNative, { once: true });
-      signal = nativeController.signal;
-    }
-
-    try {
-      for await (const ip of this.generateIPRange(config.ipRange)) {
-        if (signal?.aborted) {
-          break;
-        }
-
-        const task = (async () => {
-          await semaphore.acquire();
+    const observer: NativeScanObserver = {
+      start: (phase, host, port) => {
+        startedHosts.add(host);
+        status.phase = phase;
+        status.currentHost = host;
+        status.currentPort = port;
+        status.activeProbes++;
+        emit();
+      },
+      finish: () => {
+        status.activeProbes--;
+        status.completedProbes++;
+        progress();
+      },
+      skip: (count) => {
+        status.skippedHosts++;
+        status.completedProbes += count;
+        progress();
+      },
+    };
+    const iterator = plan.hosts();
+    let claimedHosts = 0;
+    let unavailableHosts = 0;
+    let failure: unknown;
+    let failed = false;
+    const scanHost = async (ip: string) => {
+      const started = Date.now();
+      const host: DiscoveredHost = {
+        ip,
+        openPorts: [],
+        services: [],
+        responseTime: 0,
+        reachability: "not-checked",
+      };
+      if (hasPing) {
+        if (!(await scheduler.acquire("probe"))) return;
+        try {
+          if (signal.aborted) return;
+          observer.start(
+            "discovering",
+            ip,
+            config.pingMethod === "tcp" ? (config.pingPort ?? 443) : undefined,
+          );
           try {
-            if (signal?.aborted) {
-              return;
+            const result = await invoke<DiscoveryProbeResult>(
+              "probe_discovery_host",
+              {
+                host: ip,
+                method: config.pingMethod,
+                timeoutMs: config.pingTimeout ?? 1000,
+                port: config.pingPort ?? 443,
+                ...(config.pingMethods &&
+                (config.pingMethod === "adaptive" ||
+                  config.pingMethod === "combined")
+                  ? { methods: config.pingMethods }
+                  : {}),
+                ...(config.pingMethod === "udp" ||
+                config.pingMethod === "adaptive" ||
+                config.pingMethod === "combined"
+                  ? { udpPort: config.pingUdpPort ?? 53 }
+                  : {}),
+              },
+            );
+            host.reachability = result.reachable
+              ? "responsive"
+              : result.status === "unavailable"
+                ? "unavailable"
+                : "unresponsive";
+            host.responseTime = result.elapsed_ms ?? Date.now() - started;
+            if (result.mac_address) host.macAddress = result.mac_address;
+            if (result.attempts)
+              host.discoveryProbes = result.attempts.map((attempt) => ({
+                method: attempt.method,
+                status: attempt.status,
+                elapsedMs: attempt.elapsed_ms,
+                ...(attempt.error ? { error: attempt.error } : {}),
+              }));
+            if (host.reachability === "unavailable") {
+              unavailableHosts++;
+              status.discoveryWarning =
+                result.error ||
+                "Host discovery unavailable on this platform or target; service probes can still run.";
             }
-            const host = await this.scanHost(
+          } finally {
+            observer.finish();
+          }
+        } finally {
+          scheduler.release("probe");
+        }
+        if (signal.aborted) return;
+        if (host.reachability === "responsive") publishHost(host);
+        else if (
+          host.reachability === "unresponsive" &&
+          config.scanUnresponsiveHosts === false
+        ) {
+          observer.skip(ports.length + (config.resolveHostnames ? 1 : 0));
+          return;
+        }
+      }
+      let nextPort = 0;
+      const acceptResult = (port: number, result: ScanPortResult) => {
+        if (signal.aborted || !result.isOpen) return;
+        host.openPorts.push(port);
+        host.services.push(
+          classifyDiscoveredService(
+            port,
+            result.banner,
+            this.getProtocolForPort(port, config),
+            result,
+          ),
+        );
+        host.responseTime = Date.now() - started;
+        publishHost(host);
+      };
+      const batchSize = config.nativeBatchProbes === true ? 32 : 1;
+      // Bound the complete run's port lanes to <= probeCap + workerCap.
+      // A single host can still use the entire global probe allowance.
+      const laneCount = Math.min(
+        ports.length,
+        Math.ceil(
+          scheduler.probeCap /
+            (Math.min(plan.totalHosts, scheduler.workerCap) * batchSize),
+        ),
+      );
+      const lanes = Array.from({ length: laneCount }, async () => {
+        while (!signal.aborted && nextPort < ports.length) {
+          if (config.nativeBatchProbes === true) {
+            // Claim real work before awaiting permits, then reserve the whole
+            // granted batch atomically. No partial permits can deadlock peers.
+            const chunk = ports.slice(nextPort, nextPort + batchSize);
+            nextPort += chunk.length;
+            let offset = 0;
+            while (!signal.aborted && offset < chunk.length) {
+              const count = await scheduler.acquireProbes(
+                chunk.length - offset,
+              );
+              if (!count) return;
+              const batch = chunk.slice(offset, offset + count);
+              offset += count;
+              try {
+                if (signal.aborted) return;
+                const results = await this.scanPortBatch(
+                  ip,
+                  batch,
+                  config,
+                  signal,
+                  observer,
+                );
+                for (let index = 0; index < batch.length; index++)
+                  acceptResult(batch[index], results[index]);
+              } catch (error) {
+                abort();
+                throw error;
+              } finally {
+                scheduler.release("probe", count);
+              }
+            }
+            continue;
+          }
+          // Reserve before admission: a paused waiter always owns real work.
+          const port = ports[nextPort++];
+          if (!(await scheduler.acquire("probe"))) return;
+          try {
+            if (signal.aborted) return;
+            const result = await this.scanPort(
               ip,
+              port,
               config,
               signal,
-              portSemaphore,
-              abortNative,
+              this.getProtocolForPort(port, config),
               observer,
             );
-            if (host && !signal?.aborted) {
-              discoveredHosts.push(host);
-            }
+            if (signal.aborted) return;
+            // Closed/filtered ports normally time out; they are not evidence
+            // of local resource pressure. Only measured capacity throttles.
+            acceptResult(port, result);
           } catch (error) {
-            if (nativeController) {
-              nativeController.abort();
-              throw error;
-            }
-            console.error(`Failed to scan ${ip}:`, error);
+            abort();
+            throw error;
           } finally {
-            // Cancelled semaphore waiters never performed a host/port check.
-            if (!this.native || startedHosts.has(ip)) completed++;
-            if (this.native) {
-              status.completedHosts = completed;
-              emitStatus();
-            } else onProgress?.((completed / totalHosts) * 100);
-            semaphore.release();
+            scheduler.release("probe");
           }
-        })();
-
-        tasks.push(task);
+        }
+      });
+      const results = await Promise.allSettled(lanes);
+      const rejected = results.find((result) => result.status === "rejected");
+      if (rejected?.status === "rejected") throw rejected.reason;
+      if (signal.aborted) return;
+      if (!hosts.has(ip)) {
+        if (config.resolveHostnames) {
+          status.completedProbes++;
+          progress();
+        }
+        return;
       }
-
-      // Every in-flight probe observes the same signal. Waiting for the bounded
-      // task set to drain ensures semaphore waiters are released before the scan
-      // resolves, while native RFB invokes are fenced promptly by `probeVncRfb`.
-      if (nativeController) {
-        // Do not enable another scan while native probes from this run still own
-        // permits. Rejections stop the queue immediately, then drain the run.
-        const settled = await Promise.allSettled(tasks);
-        const failure = settled.find((result) => result.status === "rejected");
-        if (failure?.status === "rejected") throw failure.reason;
-      } else {
-        await Promise.all(tasks);
+      host.responseTime = Date.now() - started;
+      if (
+        config.resolveHostnames === true &&
+        (await scheduler.acquire("probe"))
+      ) {
+        try {
+          if (signal.aborted) return;
+          status.phase = "resolving";
+          status.currentHost = ip;
+          status.currentPort = undefined;
+          status.activeProbes++;
+          emit();
+          try {
+            // Targets are validated literals; IPC applies this bounded timeout.
+            const hostname = await this.resolveNativeHostname(
+              ip,
+              config.hostnameTtl,
+              Math.min(config.timeout, 5000),
+              signal,
+            );
+            if (!signal.aborted) {
+              host.hostname = hostname;
+              const publication = publications.get(ip);
+              if (publication && onHost) publication.dirty = true;
+            }
+          } finally {
+            status.activeProbes--;
+            status.completedProbes++;
+            progress();
+          }
+        } finally {
+          scheduler.release("probe");
+        }
       }
+      publishHost(host, true);
+    };
+    try {
+      Object.assign(status, scheduler.snapshot());
+      emit();
+      await scheduler.startSampling(() =>
+        invoke<DiscoveryCapacity>("get_discovery_capacity"),
+      );
+      await Promise.all(
+        Array.from(
+          { length: Math.min(plan.totalHosts, scheduler.workerCap) },
+          async () => {
+            while (!signal.aborted && claimedHosts < plan.totalHosts) {
+              if (!(await scheduler.acquire("worker"))) return;
+              let ip: string | undefined;
+              try {
+                if (signal.aborted) return;
+                const next = iterator.next();
+                if (next.done) return;
+                ip = next.value;
+                claimedHosts++;
+                if (claimedHosts === plan.totalHosts) scheduler.closeWorkers();
+                await scanHost(ip);
+              } catch (error) {
+                if (!failed) {
+                  failed = true;
+                  failure = error;
+                }
+                abort();
+              } finally {
+                if (ip !== undefined && startedHosts.has(ip))
+                  status.completedHosts++;
+                scheduler.release("worker");
+              }
+            }
+          },
+        ),
+      );
+      if (failed) throw failure;
+      if (
+        !signal.aborted &&
+        !ports.length &&
+        unavailableHosts === plan.totalHosts
+      )
+        throw new Error(
+          status.discoveryWarning ||
+            "Host discovery unavailable for these targets.",
+        );
+      for (const host of hosts.values()) {
+        host.openPorts.sort((a, b) => a - b);
+        host.services.sort((a, b) => a.port - b.port);
+      }
+      return Array.from(hosts.values()).sort((a, b) =>
+        this.compareIPs(a.ip, b.ip),
+      );
     } finally {
-      externalSignal?.removeEventListener("abort", abortNative);
+      scheduler.stop();
+      this.scheduler = undefined;
+      externalSignal?.removeEventListener("abort", abort);
+      signal.removeEventListener("abort", flushPendingHosts);
+      flushPendingHosts();
       status.phase = "complete";
       status.currentHost = undefined;
       status.currentPort = undefined;
-      emitStatus();
+      status.paused = false;
+      status.throttleReason = undefined;
+      status.etaMs = null;
+      emit();
     }
+  }
 
-    return discoveredHosts.sort((a, b) => this.compareIPs(a.ip, b.ip));
+  private async resolveNativeHostname(
+    ip: string,
+    ttl: number,
+    timeoutMs: number,
+    signal: AbortSignal,
+  ): Promise<string | undefined> {
+    this.purgeCache(this.hostnameCache, ttl);
+    const cached = this.hostnameCache.get(ip);
+    if (cached) return cached.value ?? undefined;
+    try {
+      const hostname = await invoke<string | null>("discovery_reverse_dns", {
+        host: ip,
+        timeoutMs,
+      });
+      if (signal.aborted) return undefined;
+      const value =
+        typeof hostname === "string" && hostname.trim()
+          ? hostname.trim()
+          : null;
+      this.hostnameCache.set(ip, { value, timestamp: Date.now() });
+      return value ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   clearCaches(): void {
@@ -510,7 +936,7 @@ export class NetworkScanner {
     const portsToScan = this.getPortsToScan(config);
 
     let reachability: DiscoveredHost["reachability"] = "not-checked";
-    const method = config.pingMethod ?? "none";
+    const method = effectiveDiscoveryPingMethod(config);
     if (this.native && method !== "none") {
       await portSemaphore.acquire();
       try {
@@ -641,6 +1067,7 @@ export class NetworkScanner {
   }
 
   private getPortsToScan(config: NetworkDiscoveryConfig): number[] {
+    if (config.serviceScanEnabled === false) return [];
     const ports = new Set<number>();
 
     // Add ports from ranges
@@ -701,6 +1128,84 @@ export class NetworkScanner {
     return protocol === "http" || protocol === "https" ? protocol : undefined;
   }
 
+  private getIdentificationProtocol(
+    port: number,
+    config: NetworkDiscoveryConfig,
+  ): string | undefined {
+    if (config.identifyServices !== true) return undefined;
+    const protocol = this.getProtocolForPort(port, config);
+    return ["smb", "rdp", "postgresql"].includes(protocol)
+      ? protocol
+      : undefined;
+  }
+
+  private nativeResult(
+    result: NativePortResult,
+    httpScheme: "http" | "https" | undefined,
+    signal?: AbortSignal,
+  ): ScanPortResult {
+    return {
+      ...result,
+      isOpen: !signal?.aborted && result.open,
+      banner: result.banner?.trim(),
+      elapsed: result.time_ms ?? 0,
+      httpScheme,
+    };
+  }
+
+  private async scanPortBatch(
+    ip: string,
+    ports: number[],
+    config: NetworkDiscoveryConfig,
+    signal: AbortSignal,
+    observer: NativeScanObserver,
+  ): Promise<ScanPortResult[]> {
+    const probes = ports.map((port) => ({
+      port,
+      ...(this.getHttpScheme(port, config)
+        ? { identifyHttp: this.getHttpScheme(port, config) }
+        : {}),
+      ...(this.getIdentificationProtocol(port, config)
+        ? { identifyProtocol: this.getIdentificationProtocol(port, config) }
+        : {}),
+    }));
+    for (const probe of probes)
+      observer.start(
+        probe.identifyHttp || probe.identifyProtocol
+          ? "identifying"
+          : "scanning",
+        ip,
+        probe.port,
+      );
+    try {
+      const results = await invoke<NativePortResult[]>(
+        "probe_discovery_batch",
+        {
+          host: ip,
+          probes,
+          timeoutSecs: Math.ceil(config.timeout / 1000),
+          parallelism: probes.length,
+        },
+      );
+      if (
+        !Array.isArray(results) ||
+        results.length !== ports.length ||
+        results.some(
+          (result, index) =>
+            result.port !== ports[index] || typeof result.open !== "boolean",
+        )
+      )
+        throw new Error(
+          "Native discovery batch returned malformed results. Restart the app after updating the scanner.",
+        );
+      return results.map((result, index) =>
+        this.nativeResult(result, probes[index].identifyHttp, signal),
+      );
+    } finally {
+      for (const _port of ports) observer.finish();
+    }
+  }
+
   private async scanPort(
     ip: string,
     port: number,
@@ -714,30 +1219,24 @@ export class NetworkScanner {
       // Existing cross-platform Tokio TCP probe. Keep the semaphore occupied
       // until this bounded call settles; cancellation prevents queued probes.
       const httpScheme = this.getHttpScheme(port, config);
-      observer?.start(httpScheme ? "identifying" : "scanning", ip, port);
+      const identifyProtocol = this.getIdentificationProtocol(port, config);
+      observer?.start(
+        httpScheme || identifyProtocol ? "identifying" : "scanning",
+        ip,
+        port,
+      );
       try {
-        const result = await invoke<
-          ServiceFingerprintEvidence & {
-            open: boolean;
-            banner?: string;
-            time_ms?: number;
-          }
-        >("check_port", {
-          host: !httpScheme && ip.includes(":") ? `[${ip}]` : ip,
+        const result = await invoke<NativePortResult>("check_port", {
+          host:
+            !httpScheme && !identifyProtocol && ip.includes(":")
+              ? `[${ip}]`
+              : ip,
           port,
           timeoutSecs: Math.ceil(config.timeout / 1000),
           ...(httpScheme ? { identifyHttp: httpScheme } : {}),
+          ...(identifyProtocol ? { identifyProtocol } : {}),
         });
-        return {
-          isOpen: !signal?.aborted && result.open,
-          banner: result.banner?.trim(),
-          elapsed: result.time_ms ?? 0,
-          http_server: result.http_server,
-          http_title: result.http_title,
-          http_status: result.http_status,
-          identification_error: result.identification_error,
-          httpScheme,
-        };
+        return this.nativeResult(result, httpScheme, signal);
       } finally {
         observer?.finish();
       }
@@ -1089,7 +1588,7 @@ export class NetworkScanner {
       const addr = ipaddr.parse(ip);
       if (addr.kind() === "ipv4") {
         const o = (addr as ipaddr.IPv4).octets;
-        return BigInt((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]);
+        return BigInt(((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]) >>> 0);
       }
       const parts = (addr as ipaddr.IPv6).parts;
       return parts.reduce((acc, part) => (acc << 16n) + BigInt(part), 0n);

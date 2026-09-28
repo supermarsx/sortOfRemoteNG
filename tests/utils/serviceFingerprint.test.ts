@@ -1,7 +1,157 @@
 import { describe, expect, it } from "vitest";
-import { fingerprintService } from "../../src/utils/discovery/serviceFingerprint";
+import {
+  discoveryCertificateWarning,
+  discoveryIdentificationFailure,
+  fingerprintService,
+} from "../../src/utils/discovery/serviceFingerprint";
+import { normalizeDiscoveryScan } from "../../src/utils/discovery/scanHistory";
 
 describe("evidence-based service fingerprinting", () => {
+  it("identifies the final page and preserves its certificate warning through history serialization", () => {
+    const service = fingerprintService(80, undefined, "http", {
+      httpScheme: "http",
+      http_status: 200,
+      http_server: "nginx",
+      http_title: "Proxmox Virtual Environment",
+      http_redirects: 2,
+      http_final_origin: "https://192.0.2.25:8006",
+      identification_error: "certificate_validation_bypassed",
+    });
+    expect(service).toMatchObject({
+      port: 80,
+      protocol: "http",
+      detection: "identified",
+      product: "Proxmox VE",
+      identificationError: "certificate_validation_bypassed",
+    });
+    expect(service.evidence).toContain("Title: Proxmox Virtual Environment");
+    expect(service.evidence).toContain(
+      "TLS warning: certificate validation failed",
+    );
+    const saved = normalizeDiscoveryScan(
+      JSON.parse(
+        JSON.stringify({
+          id: "tls-warning",
+          startedAt: 1,
+          elapsedMs: 100,
+          outcome: "complete",
+          config: {
+            enabled: true,
+            ipRange: "192.0.2.25",
+            portRanges: [],
+            protocols: ["http"],
+            timeout: 1000,
+            maxConcurrent: 1,
+            maxPortConcurrent: 1,
+            customPorts: {},
+            probeStrategies: {},
+            cacheTTL: 0,
+            hostnameTtl: 0,
+            macTtl: 0,
+          },
+          hosts: [
+            {
+              ip: "192.0.2.25",
+              openPorts: [80],
+              services: [service],
+              responseTime: 1,
+            },
+          ],
+        }),
+      ),
+    );
+    expect(saved.hosts[0].services[0]).toEqual(service);
+    expect(
+      discoveryCertificateWarning(
+        saved.hosts[0].services[0].identificationError,
+      ),
+    ).toBe(true);
+    expect(
+      discoveryIdentificationFailure(service.identificationError),
+    ).toBeUndefined();
+  });
+
+  it("retains later failures separately from the certificate warning", () => {
+    const error = "certificate_validation_bypassed;redirect_loop";
+    expect(discoveryCertificateWarning(error)).toBe(true);
+    expect(discoveryIdentificationFailure(error)).toBe("redirect_loop");
+    for (const failure of [
+      "certificate_or_tls_failure",
+      "tls_or_connection_failure",
+      "timeout",
+    ]) {
+      expect(discoveryCertificateWarning(failure)).toBe(false);
+      expect(discoveryIdentificationFailure(failure)).toBe(failure);
+    }
+  });
+
+  it.each(["smb", "rdp", "postgresql"])(
+    "keeps unconfirmed %s ports as hints and upgrades only validated protocol evidence",
+    (protocol) => {
+      expect(fingerprintService(12345, undefined, protocol).detection).toBe(
+        "port-hint",
+      );
+      expect(
+        fingerprintService(12345, undefined, protocol, {
+          protocol_confirmed: protocol,
+        }).detection,
+      ).toBe("port-hint");
+      expect(
+        fingerprintService(12345, undefined, protocol, {
+          protocol_confirmed: protocol,
+          protocol_evidence: "Validated negotiation response",
+          protocol_version: "3.0",
+        }),
+      ).toMatchObject({
+        port: 12345,
+        protocol,
+        detection: "identified",
+        version: "3.0",
+      });
+    },
+  );
+
+  it("identifies Tomcat from actual branding without inventing its version from the connector", () => {
+    expect(
+      fingerprintService(8080, undefined, "http", {
+        http_status: 200,
+        http_title: "Apache Tomcat/10.1.50",
+      }),
+    ).toMatchObject({
+      product: "Apache Tomcat",
+      version: "10.1.50",
+      protocol: "http",
+    });
+    const connector = fingerprintService(8080, undefined, "http", {
+      http_server: "Apache-Coyote/1.1",
+    });
+    expect(connector.product).toBe("Apache Tomcat / Coyote");
+    expect(connector.version).toBeUndefined();
+    expect(fingerprintService(8080).product).toBeUndefined();
+    expect(
+      fingerprintService(8080, undefined, "http", {
+        http_title: "How to deploy Apache Tomcat",
+      }).product,
+    ).toBeUndefined();
+  });
+
+  it("records redirects while preserving the original endpoint protocol and port", () => {
+    const result = fingerprintService(80, undefined, "http", {
+      httpScheme: "http",
+      http_status: 200,
+      http_title: "Portainer",
+      http_redirects: 2,
+      http_final_origin: "https://192.0.2.1:9443",
+    });
+    expect(result).toMatchObject({
+      protocol: "http",
+      port: 80,
+      product: "Portainer",
+    });
+    expect(result.evidence).toContain(
+      "Followed 2 redirects to https://192.0.2.1:9443; original TCP endpoint retained",
+    );
+  });
   it.each([
     [443, "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3", "https", "ssh", "OpenSSH"],
     [5900, "SSH-2.0-dropbear_2022.83", "vnc", "ssh", "Dropbear"],
