@@ -71,6 +71,7 @@ pub async fn check_port(
         banner: None,
         http_server: None,
         http_title: None,
+        http_basic_realm: None,
         http_status: None,
         http_final_origin: None,
         http_redirects: None,
@@ -336,6 +337,12 @@ async fn identify_with_lookup<F, Fut>(
                 .get(reqwest::header::SERVER)
                 .and_then(|v| v.to_str().ok())
                 .and_then(safe_text);
+            result.http_basic_realm = response
+                .headers()
+                .get_all(reqwest::header::WWW_AUTHENTICATE)
+                .iter()
+                .filter_map(|value| value.to_str().ok())
+                .find_map(extract_basic_realm);
             // Do not turn 401/403 into errors or attempt any authentication.
             while let Some(chunk) = response
                 .chunk()
@@ -430,6 +437,83 @@ fn safe_text(text: &str) -> Option<String> {
         .take(MAX_TEXT_CHARS)
         .collect();
     (!cleaned.is_empty()).then_some(cleaned)
+}
+
+// Parse only the public Basic realm. Keep commas inside quoted strings intact,
+// including combined challenges; never persist nonces, tokens or whole headers.
+fn extract_basic_realm(header: &str) -> Option<String> {
+    if header.len() > 4096 {
+        return None;
+    }
+    let mut quoted = false;
+    let mut escaped = false;
+    let parts: Vec<_> = header
+        .split(|c| {
+            if escaped {
+                escaped = false;
+            } else if quoted && c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                quoted = !quoted;
+            } else if !quoted && c == ',' {
+                return true;
+            }
+            false
+        })
+        .collect();
+    if quoted || escaped {
+        return None;
+    }
+    let mut basic = false;
+    for part in parts {
+        let part = part.trim();
+        let name_end = part
+            .find(|c: char| c.is_ascii_whitespace() || c == '=')
+            .unwrap_or(part.len());
+        let (name, rest) = part.split_at(name_end);
+        let rest = rest.trim_start();
+        let parameter = if rest.starts_with('=') {
+            part
+        } else {
+            basic = name.eq_ignore_ascii_case("Basic");
+            rest
+        };
+        if !basic {
+            continue;
+        }
+        let Some((name, value)) = parameter.split_once('=') else {
+            continue;
+        };
+        if !name.trim().eq_ignore_ascii_case("realm") {
+            continue;
+        }
+        let value = value.trim();
+        let decoded = if value.starts_with('"') {
+            let inner = value.strip_prefix('"')?.strip_suffix('"')?;
+            let mut chars = inner.chars();
+            let mut text = String::new();
+            while let Some(c) = chars.next() {
+                match c {
+                    '\\' => text.push(chars.next()?),
+                    '"' => return None,
+                    _ => text.push(c),
+                }
+            }
+            text
+        } else if value
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&c))
+        {
+            value.to_owned()
+        } else {
+            return None;
+        };
+        let cleaned = safe_text(&decoded)?;
+        // This value is also fingerprint evidence: stripping markup/control
+        // characters or truncating must never manufacture an exact brand name.
+        return (cleaned == decoded.trim()).then_some(cleaned);
+    }
+    None
 }
 
 fn extract_title(body: &[u8]) -> Option<String> {
@@ -542,6 +626,13 @@ const server = https.createServer({cert: tls.certificate, key: tls.privateKey}, 
   res.setHeader('Server', 'nginx');
   res.setHeader('Set-Cookie', 'session=must-not-forward');
   res.setHeader('Connection', 'close');
+  if (req.url === '/basic') {
+    res.writeHead(401, {
+      Server: 'httpd',
+      'WWW-Authenticate': ['Digest realm="private", nonce="must-not-persist"', 'Basic realm="FreshTomato"']
+    });
+    return res.end('<title>Error</title><h1>401 Unauthorized</h1>');
+  }
   if (req.url === '/slow') return; // Outer discovery deadline must end this response.
   if (req.url === '/start') {
     res.writeHead(302, {Location: '/final'});
@@ -658,6 +749,52 @@ setTimeout(() => process.exit(1), 30000).unref();
     }
 
     #[tokio::test]
+    async fn freshtomato_basic_realm_survives_redirect_and_certificate_retry_without_authentication(
+    ) {
+        let (mut child, mut requests, port) = self_signed_server().await;
+        let origin = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = origin.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            reply(
+                &origin,
+                301,
+                Some(&format!("https://127.0.0.1:{port}/basic")),
+                "<title>Moved</title>",
+            )
+            .await;
+        });
+        let mut result = open_result(addr.port());
+        identify(&mut result, "http", addr, Duration::from_secs(5)).await;
+        assert_eq!(result.http_status, Some(401));
+        assert_eq!(result.http_server.as_deref(), Some("httpd"));
+        assert_eq!(result.http_title.as_deref(), Some("Error"));
+        assert_eq!(result.http_basic_realm.as_deref(), Some("FreshTomato"));
+        assert_eq!(result.http_redirects, Some(1));
+        assert_eq!(
+            result.identification_error.as_deref(),
+            Some(CERTIFICATE_WARNING)
+        );
+        let persisted = serde_json::to_value(&result).unwrap();
+        assert_eq!(persisted["http_basic_realm"], "FreshTomato");
+        assert!(!persisted.to_string().contains("must-not-persist"));
+        let line = timeout(Duration::from_secs(2), requests.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(request["url"], "/basic");
+        for header in ["authorization", "proxy-authorization", "cookie"] {
+            assert!(request["headers"].get(header).is_none(), "{header}");
+        }
+        assert!(timeout(Duration::from_millis(100), requests.next_line())
+            .await
+            .is_err());
+        server.await.unwrap();
+        child.kill().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn certificate_retry_retains_redirect_guards_and_shared_budgets() {
         let (mut child, mut requests, port) = self_signed_server().await;
         for (path, error, request_count) in [
@@ -732,6 +869,7 @@ setTimeout(() => process.exit(1), 30000).unref();
         for key in [
             "http_server",
             "http_title",
+            "http_basic_realm",
             "http_status",
             "http_final_origin",
             "http_redirects",
@@ -823,6 +961,51 @@ setTimeout(() => process.exit(1), 30000).unref();
         assert!(timeout(Duration::from_millis(50), listener.accept())
             .await
             .is_err());
+    }
+
+    #[test]
+    fn basic_realm_is_parsed_without_retaining_other_authentication_parameters() {
+        for (header, expected) in [
+            (r#"Basic realm="FreshTomato""#, Some("FreshTomato")),
+            ("bAsIc\tReAlM = router", Some("router")),
+            (
+                r#"Basic charset="UTF-8", realm="FreshTomato""#,
+                Some("FreshTomato"),
+            ),
+            (
+                r#"Digest realm="not-basic", nonce="secret", Basic realm="FreshTomato""#,
+                Some("FreshTomato"),
+            ),
+            (
+                r#"Basic realm="office, \"router\"", charset="UTF-8""#,
+                Some("office, \"router\""),
+            ),
+            (r#"Digest realm="FreshTomato", nonce="secret""#, None),
+            (
+                r#"Bearer realm="FreshTomato", error_description="Basic realm=FreshTomato""#,
+                None,
+            ),
+            (r#"Basic charset="UTF-8", Digest realm="FreshTomato""#, None),
+            (r#"Basic realm="unfinished"#, None),
+            (r#"Basic realm="router" garbage"#, None),
+            ("Basic realm=two words", None),
+            ("NotBasic realm=FreshTomato", None),
+            ("Basic realm=", None),
+            (r#"Basic realm="Fresh<Tomato>""#, None),
+            ("Basic realm=\"Fresh\u{200b}Tomato\"", None),
+        ] {
+            assert_eq!(extract_basic_realm(header).as_deref(), expected, "{header}");
+        }
+        assert_eq!(extract_basic_realm(&"x".repeat(4097)), None);
+        assert_eq!(
+            extract_basic_realm(&format!("Basic realm=\"{}\"", "é".repeat(MAX_TEXT_CHARS)))
+                .unwrap()
+                .chars()
+                .count(),
+            MAX_TEXT_CHARS
+        );
+        assert!(extract_basic_realm(&format!("Basic realm=\"{}\"", "é".repeat(1024))).is_none());
+        assert_eq!(extract_basic_realm("Basic realm=\"a\u{202e}<b>\""), None);
     }
 
     #[tokio::test]
@@ -986,6 +1169,7 @@ setTimeout(() => process.exit(1), 30000).unref();
             assert_eq!(result.http_status, Some(status));
             assert_eq!(result.http_server.as_deref(), Some("Appliance/1"));
             assert_eq!(result.http_title.as_deref(), Some("Device & Console"));
+            assert_eq!(result.http_basic_realm.as_deref(), Some("private"));
             assert_eq!(result.http_redirects, Some(0));
             assert!(result.identification_error.is_none());
             server.await.unwrap();
@@ -1012,6 +1196,26 @@ setTimeout(() => process.exit(1), 30000).unref();
         let response = format!("HTTP/1.1 {status} Test\r\nServer: FinalDevice\r\n{location}Set-Cookie: auth=secret\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         stream.write_all(response.as_bytes()).await.unwrap();
         request
+    }
+
+    #[tokio::test]
+    async fn basic_realm_is_cleared_when_the_final_response_has_no_challenge() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_request(&mut stream).await;
+            stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: /final\r\nWWW-Authenticate: Basic realm=FreshTomato\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+            drop(stream);
+            reply(&listener, 200, None, "<title>Unrelated service</title>").await;
+        });
+        let mut result = open_result(addr.port());
+        identify(&mut result, "http", addr, Duration::from_secs(5)).await;
+        assert_eq!(result.http_status, Some(200));
+        assert_eq!(result.http_redirects, Some(1));
+        assert!(result.http_basic_realm.is_none());
+        assert!(result.identification_error.is_none());
+        server.await.unwrap();
     }
 
     #[test]

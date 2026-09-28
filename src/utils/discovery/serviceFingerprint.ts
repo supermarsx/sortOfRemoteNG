@@ -9,6 +9,8 @@ import serviceMap from "./serviceMap";
 export interface ServiceFingerprintEvidence {
   http_server?: string;
   http_title?: string;
+  /** Public WWW-Authenticate Basic realm; never the full challenge header. */
+  http_basic_realm?: string;
   http_status?: number;
   http_final_origin?: string;
   http_redirects?: number;
@@ -62,6 +64,10 @@ const WEB_PRODUCTS: ReadonlyArray<readonly [string, RegExp]> = [
     /^(?:Dell(?: EMC)?\s+)?(?:Integrated Dell Remote Access Controller|iDRAC)(?:\s*\d+)?(?:\s*[-–|:]\s*(?:Login|Sign In))?$/i,
   ],
   ["OPNsense", /^OPNsense(?:®)?(?:\s*[-–|:]\s*(?:Login|Sign In|Dashboard))?$/i],
+  [
+    "FreshTomato",
+    /^FreshTomato(?:\s+(?:Firmware|Login|Sign In))?(?:\s+\d[\w.-]*)?(?:\s*[-–|:]\s*[\w.-]+)?$/i,
+  ],
   [
     "Lenovo XClarity",
     /^Lenovo XClarity(?: Controller| Administrator)?(?:\s*[-–|:]\s*(?:Login|Sign In))?$/i,
@@ -191,6 +197,7 @@ export function fingerprintService(
     !!bannerStatus ||
     !!server ||
     !!http.http_title?.trim() ||
+    !!http.http_basic_realm?.trim() ||
     /^\s*(?:<!doctype html\b|<html\b)/i.test(text);
   if (isHttp) {
     const scheme =
@@ -207,6 +214,9 @@ export function fingerprintService(
           : undefined,
       server ? `Server: ${display(server)}` : undefined,
       title ? `Title: ${display(title)}` : undefined,
+      http.http_basic_realm?.trim()
+        ? `HTTP Basic realm: ${display(http.http_basic_realm)}`
+        : undefined,
       Number.isInteger(http.http_redirects) &&
       http.http_redirects! > 0 &&
       http.http_redirects! <= 5
@@ -223,9 +233,21 @@ export function fingerprintService(
     const serverBrand = server
       ? WEB_PRODUCTS.find(([, pattern]) => pattern.test(server))?.[0]
       : undefined;
+    // FreshTomato uses the configurable router_name as its Basic-auth realm.
+    // Only its exact default is a brand signal; httpd/401/Error and custom
+    // router names are shared with many other appliances.
+    const authBrand =
+      (status ?? Number(bannerStatus?.[1])) === 401 &&
+      /^FreshTomato$/i.test(http.http_basic_realm?.trim() ?? "")
+        ? "FreshTomato"
+        : undefined;
+    if (authBrand) {
+      parts.push("FreshTomato default authentication realm (configurable)");
+    }
     const software = server?.match(WEB_SERVER);
     const product =
       branded ??
+      authBrand ??
       serverBrand ??
       (/^Apache-Coyote(?:\/|$)/i.test(server ?? "")
         ? "Apache Tomcat / Coyote"
@@ -245,7 +267,7 @@ export function fingerprintService(
       product,
       branded === "Apache Tomcat"
         ? title?.match(/\/(\d[\w.-]*)/)?.[1]
-        : branded || serverBrand
+        : branded || authBrand || serverBrand
           ? undefined
           : software?.[2],
     );

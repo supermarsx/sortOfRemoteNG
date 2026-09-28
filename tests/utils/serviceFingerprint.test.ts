@@ -227,6 +227,8 @@ describe("evidence-based service fingerprinting", () => {
     ["OPNsense - Login", "OPNsense"],
     ["Lenovo XClarity Controller", "Lenovo XClarity"],
     ["Supermicro IPMI", "Supermicro"],
+    ["FreshTomato", "FreshTomato"],
+    ["FreshTomato - router", "FreshTomato"],
   ])("recognizes branded HTTP title %s", (title, product) => {
     expect(
       fingerprintService(65000, undefined, undefined, {
@@ -262,6 +264,9 @@ describe("evidence-based service fingerprinting", () => {
     "OPNsense alternatives",
     "Lenovo XClarity documentation",
     "Supermicro fan control guide",
+    "FreshTomato setup guide",
+    "NotFreshTomato",
+    'Login "+top.location.hostname+"',
   ])("does not identify a product from title %s", (title) => {
     expect(
       fingerprintService(443, undefined, undefined, {
@@ -287,6 +292,80 @@ describe("evidence-based service fingerprinting", () => {
     expect(
       fingerprintService(443, "HTTP/1.1 200 OK\r\n\r\nSSH-2.0-OpenSSH_9.6"),
     ).toMatchObject({ protocol: "https", detection: "identified" });
+  });
+
+  it.each(["http", "https"] as const)(
+    "recognizes a FreshTomato Basic-auth challenge over %s without requiring a login page",
+    (httpScheme) => {
+      const service = fingerprintService(65000, undefined, undefined, {
+        httpScheme,
+        http_status: 401,
+        http_server: "httpd",
+        http_title: "Error",
+        http_basic_realm: "FreshTomato",
+        identification_error: "certificate_validation_bypassed",
+      });
+      expect(service).toMatchObject({
+        protocol: httpScheme,
+        product: "FreshTomato",
+        detection: "identified",
+        identificationError: "certificate_validation_bypassed",
+      });
+      expect(service.version).toBeUndefined();
+      expect(service.evidence).toContain("HTTP Basic realm: FreshTomato");
+      expect(service.evidence).toContain("authentication realm (configurable)");
+      expect(service.evidence).toContain("TLS warning:");
+    },
+  );
+
+  it.each([
+    undefined,
+    "unknown",
+    "office-router",
+    "Tomato",
+    "DD-WRT",
+    "NotFreshTomato",
+    "FreshTomatoGuide",
+    "Fresh<Tomato>",
+    "Fresh\u200bTomato",
+  ])(
+    "does not guess FreshTomato from generic 401/httpd/Error with realm %s",
+    (http_basic_realm) => {
+      const service = fingerprintService(443, undefined, undefined, {
+        http_status: 401,
+        http_server: "httpd",
+        http_title: "Error",
+        http_basic_realm,
+      });
+      expect(service.product).toBeUndefined();
+      expect(service.detection).toBe("identified"); // HTTP, not a product.
+      if (http_basic_realm) {
+        expect(service.evidence).toContain(
+          `HTTP Basic realm: ${http_basic_realm}`,
+        );
+      }
+    },
+  );
+
+  it("does not assign the generic web server version to realm-identified FreshTomato", () => {
+    const service = fingerprintService(443, undefined, undefined, {
+      http_status: 401,
+      http_server: "nginx/1.24.0",
+      http_basic_realm: "FreshTomato",
+    });
+    expect(service.product).toBe("FreshTomato");
+    expect(service.version).toBeUndefined();
+  });
+
+  it("does not treat an authentication realm on a successful page as a product challenge", () => {
+    expect(
+      fingerprintService(443, undefined, undefined, {
+        http_status: 200,
+        http_title: 'Login "+top.location.hostname+"',
+        http_server: "httpd",
+        http_basic_realm: "FreshTomato",
+      }).product,
+    ).toBeUndefined();
   });
 
   it("prefers application branding to its web server", () => {

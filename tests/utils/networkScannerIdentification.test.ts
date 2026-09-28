@@ -33,6 +33,41 @@ afterEach(() => {
 });
 
 describe("native service identification", () => {
+  it.each([false, true])(
+    "carries Basic-auth fingerprints and certificate warnings through native scanning (batches=%s)",
+    async (nativeBatchProbes) => {
+      const response = {
+        port: 443,
+        open: true,
+        http_status: 401,
+        http_server: "httpd",
+        http_title: "Error",
+        http_basic_realm: "FreshTomato",
+        http_redirects: 1,
+        http_final_origin: "https://192.0.2.1",
+        identification_error: "certificate_validation_bypassed",
+      };
+      invoke.mockResolvedValue(nativeBatchProbes ? [response] : response);
+      const [host] = await new NetworkScanner(true).scanNetwork({
+        ...base,
+        portRanges: ["443"],
+        identifyServices: true,
+        nativeBatchProbes,
+      });
+      expect(invoke).toHaveBeenCalledOnce();
+      expect(host.services[0]).toMatchObject({
+        port: 443,
+        protocol: "https",
+        product: "FreshTomato",
+        detection: "identified",
+        identificationError: "certificate_validation_bypassed",
+      });
+      expect(host.services[0].evidence).toContain(
+        "HTTP Basic realm: FreshTomato",
+      );
+      expect(host.services[0].evidence).toContain("Followed 1 redirect");
+    },
+  );
   it("uses bare IPv6 for HTTP identification and retains brackets for passive probes", async () => {
     invoke.mockResolvedValue({ open: false });
     await new NetworkScanner(true).scanNetwork({

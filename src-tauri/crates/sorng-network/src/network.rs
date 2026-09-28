@@ -550,6 +550,9 @@ pub struct PortCheckResult {
     pub http_server: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http_title: Option<String>,
+    /// Bounded public Basic-auth realm, never credentials or other challenge parameters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_basic_realm: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http_status: Option<u16>,
     /// Last HTTP identification response origin; never includes path/query/fragment.
