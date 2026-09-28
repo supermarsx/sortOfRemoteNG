@@ -738,7 +738,7 @@ pub(super) fn bootstrap(
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
     format!(
-        "{}\nvar sorngNetworkClient=installWebNetworkClient({},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}});Object.defineProperty(window,'__sorng_map_navigation',{{configurable:true,value:function(url){{return sorngNetworkClient.mapUrl(url,'navigation');}}}});p.networkRouting=sorngNetworkClient.capabilities;",
-        include_str!("web_network_client.js"), json
+        "{}\n{}\nvar sorngNetworkClient=installWebNetworkClient({},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}});Object.defineProperty(window,'__sorng_map_navigation',{{configurable:true,value:function(url){{return sorngNetworkClient.mapUrl(url,'navigation');}}}});p.networkRouting=sorngNetworkClient.capabilities;",
+        include_str!("web_popup_client.js"), include_str!("web_network_client.js"), json
     )
 }

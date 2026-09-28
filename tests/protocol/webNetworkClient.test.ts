@@ -5,6 +5,24 @@ const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_network_client.js",
   "utf8",
 );
+// Execute the URL cleanup from the native readiness template, not a duplicate
+// implementation. The routing token must remain in native configuration only.
+const readinessSource = readFileSync(
+  "src-tauri/crates/sorng-protocols/src/http_response.rs",
+  "utf8",
+);
+function cleanDocumentUrl() {
+  const prefix = readinessSource.match(
+    /var u=new URL\(location.href\),q=[\s\S]*?(?=\r?\nfunction emit)/,
+  )?.[0];
+  if (!prefix) throw new Error("Native readiness URL cleanup is unavailable");
+  window.eval(
+    `(function(){${prefix
+      .replace("{NAVIGATION_MARKER}", "__sorng_navigation_v1")
+      .replace(/\{\{/g, "{")
+      .replace(/\}\}/g, "}")}})()`,
+  );
+}
 const proxy = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
 const otherProxy = "http://p1123456789abcdef0123456789abcdef.localhost:43124";
 const upstream = "https://device.example";
@@ -454,6 +472,110 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     expect(xhrHeader).toHaveBeenLastCalledWith(
       "X-Sorng-Google-Credentials",
       "include",
+    );
+  });
+  it("keeps native generation proofs out of Google page state and a subsequent manual POST", () => {
+    const generation = "0123456789abcdef0123456789abcdef";
+    const options = googleConfig();
+    options.sourceOrigin = "https://accounts.google.com";
+    options.googleSession!.routes[0].upstreamOrigin = options.sourceOrigin;
+    options.googleSession!.routes[1].upstreamOrigin =
+      "https://analytics.google.com";
+    options.requestGeneration = generation;
+    vi.spyOn(history, "replaceState").mockImplementation(
+      (_state, _unused, url) => {
+        vi.stubGlobal("location", new URL(String(url)));
+      },
+    );
+    vi.spyOn(document, "baseURI", "get").mockImplementation(
+      () => location.href,
+    );
+    vi.stubGlobal(
+      "location",
+      new URL(`${proxy}/ServiceLogin?__sorng_navigation_v1=${generation}`),
+    );
+    cleanDocumentUrl();
+    start(options);
+    const query =
+      "continue=https%3A%2F%2Fanalytics.google.com%2F&token=a%2fb%20c+d~&key=one&key=two&empty=";
+    const next = controller!.mapUrl(
+      `/v3/signin/identifier?${query}`,
+      "navigation",
+    );
+    expect(next).toBe(
+      `${proxy}/v3/signin/identifier?${query}&__sorng_generation_v1=${generation}`,
+    );
+    controller!.dispose();
+    controller = undefined;
+
+    // The browser navigates; readiness must remove the local admission proof
+    // before Google reads location into its next request or the browser Referer.
+    vi.stubGlobal("location", new URL(next));
+    cleanDocumentUrl();
+    expect(location.href).toBe(`${proxy}/v3/signin/identifier?${query}`);
+    start({ ...options, documentSequence: 4 });
+    const body = JSON.stringify({
+      source: location.href,
+      identifier: "fixture",
+    });
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/_/signin/data/batchexecute");
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.send(body);
+    expect(xhrOpen).toHaveBeenLastCalledWith(
+      "POST",
+      `${proxy}/_/signin/data/batchexecute?__sorng_generation_v1=${generation}`,
+    );
+    expect(xhrSend).toHaveBeenLastCalledWith(body);
+    expect(body).not.toContain("__sorng_");
+    expect(xhrHeader).toHaveBeenLastCalledWith(
+      "X-Sorng-Google-Credentials",
+      "include",
+    );
+    expect(report).not.toHaveBeenCalled();
+  });
+  it("retains the native Synology continuation fence when readiness cleans a generation URL", () => {
+    const generation = "0123456789abcdef0123456789abcdef";
+    const nativeFence = readFileSync(
+      "src-tauri/crates/sorng-protocols/src/http_synology_continuation.rs",
+      "utf8",
+    ).match(
+      /r#"<script>([\s\S]*?var key='__sorng_navigation_v1'[\s\S]*?)<\/script>"#/,
+    )?.[1];
+    if (!nativeFence)
+      throw new Error("Native continuation fence is unavailable");
+    vi.spyOn(history, "replaceState").mockImplementation(
+      (_state, _unused, url) => {
+        vi.stubGlobal("location", new URL(String(url)));
+      },
+    );
+    vi.spyOn(history, "pushState").mockImplementation(
+      (_state, _unused, url) => {
+        vi.stubGlobal("location", new URL(String(url)));
+      },
+    );
+    vi.stubGlobal(
+      "location",
+      new URL(
+        `${proxy}/webman/?keep=a%2Fb&__sorng_generation_v1=${generation}`,
+      ),
+    );
+    window.eval(
+      nativeFence
+        .split("{token}")
+        .join(generation)
+        .split("{GENERATION_MARKER}")
+        .join("__sorng_generation_v1")
+        .replace(/\{\{/g, "{")
+        .replace(/\}\}/g, "}"),
+    );
+    cleanDocumentUrl();
+    expect(location.href).toBe(
+      `${proxy}/webman/?keep=a%2Fb&__sorng_navigation_v1=${generation}`,
+    );
+    history.pushState(null, "", "/webman/?keep=b%2Fc");
+    expect(location.href).toBe(
+      `${proxy}/webman/?keep=b%2Fc&__sorng_navigation_v1=${generation}`,
     );
   });
   it("routes only the exact Tactical API origins through its document-fenced endpoint", async () => {

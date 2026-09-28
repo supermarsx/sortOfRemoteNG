@@ -15,6 +15,17 @@ fn bootstrap_reports_installed_network_capabilities_on_existing_readiness_payloa
         None,
     );
     assert!(script.contains("var sorngNetworkClient=installWebNetworkClient("));
+    let popup_helper = script
+        .find("function installWebPopupClient(options)")
+        .unwrap();
+    let network_helper = script
+        .find("function installWebNetworkClient(configuration,")
+        .unwrap();
+    assert!(
+        popup_helper < network_helper,
+        "popup routing must exist before the page client installs"
+    );
+    assert!(script.contains("data-sorng-website-popup"));
     assert!(script.contains(r#""requestGeneration":"0123456789abcdef0123456789abcdef""#));
     assert!(script.contains("Object.defineProperty(window,'__sorng_map_navigation'"));
     assert!(script.contains("p.networkRouting=sorngNetworkClient.capabilities"));

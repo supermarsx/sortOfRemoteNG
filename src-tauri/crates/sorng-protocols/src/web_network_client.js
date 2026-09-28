@@ -38,6 +38,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     resourceAttributeInterception = false,
     formInterception = true,
     documentCookieBridge = false,
+    popupClient = null,
     active = true,
     disposed = false;
 
@@ -904,9 +905,33 @@ function installWebNetworkClient(configuration, reportBlocked) {
           blocked("worklet", "unsupported-network-context"),
         );
       }) && restrictedContextInterception;
+  if (typeof installWebPopupClient === "function") {
+    popupClient = installWebPopupClient({
+      proxyOrigin: proxyOrigin,
+      mapUrl: mapUrl,
+      isActive: function () {
+        return active;
+      },
+      blocked: blocked,
+    });
+    if (popupClient.closeSelf) {
+      replace(window, "close", popupClient.closeSelf);
+      // The immediate parent is the same-origin website, never the app shell.
+      // Editors can refresh their file-manager opener without exposing Tauri.
+      if (!window.frameElement?.hasAttribute("data-sorng-popup-noopener"))
+        replace(window, "opener", window.parent);
+    }
+  }
   if (typeof window.open === "function")
     restrictedContextInterception =
-      replace(window, "open", function () {
+      replace(window, "open", function (url, target, features) {
+        if (popupClient) {
+          try {
+            return popupClient.open(url, target, features);
+          } catch (_) {
+            return null;
+          }
+        }
         blocked("window", "unsupported-network-context");
         return null;
       }) && restrictedContextInterception;
@@ -1156,12 +1181,94 @@ function installWebNetworkClient(configuration, reportBlocked) {
         Object.defineProperty(object, name, descriptor);
     });
   });
-  function prepareForm(form, submitter) {
+  var preparedTargets = new WeakMap();
+  function originalTarget(element, attribute) {
+    var current = element.getAttribute(attribute),
+      previous = preparedTargets.get(element);
+    return previous &&
+      previous.attribute === attribute &&
+      current === previous.mapped
+      ? previous.original
+      : current;
+  }
+  function preparePopupTarget(
+    element,
+    attribute,
+    target,
+    submitting,
+    activationEvent,
+  ) {
+    var previous = preparedTargets.get(element);
+    if (
+      submitting &&
+      previous?.pending &&
+      previous.attribute === attribute &&
+      element.getAttribute(attribute) === previous.mapped
+    )
+      return;
+    var originalAttribute = element.getAttribute(attribute);
+    var mapped = popupClient.prepareTarget(target, {
+      noopener: /(?:^|\s)(?:noopener|noreferrer)(?:\s|$)/i.test(
+        element.getAttribute("rel") || "",
+      ),
+      activationEvent: activationEvent,
+    });
+    Reflect.apply(nativeSetAttribute, element, [attribute, mapped]);
+    var preparation = {
+      attribute: attribute,
+      original: target,
+      mapped: mapped,
+      pending: !!submitting,
+    };
+    preparedTargets.set(element, preparation);
+    if (submitting)
+      window.setTimeout(function () {
+        if (preparedTargets.get(element) !== preparation) return;
+        preparation.pending = false;
+        if (element.getAttribute(attribute) !== mapped) return;
+        if (originalAttribute === null) element.removeAttribute(attribute);
+        else
+          Reflect.apply(nativeSetAttribute, element, [
+            attribute,
+            originalAttribute,
+          ]);
+        preparedTargets.delete(element);
+      }, 0);
+  }
+  function prepareForm(form, submitter, activationEvent) {
     var overridden = submitter && submitter.hasAttribute("formaction"),
       element = overridden ? submitter : form,
       attr = overridden ? "formaction" : "action",
       url = element.getAttribute(attr) || location.href;
     Reflect.apply(nativeSetAttribute, element, [attr, mapUrl(url, "form")]);
+    if (popupClient) {
+      var overrideTarget = submitter && submitter.hasAttribute("formtarget"),
+        targetElement = overrideTarget ? submitter : form,
+        targetAttribute = overrideTarget ? "formtarget" : "target",
+        target =
+          originalTarget(targetElement, targetAttribute) ||
+          document.querySelector("base[target]")?.getAttribute("target") ||
+          "_self";
+      if (target.toLowerCase() !== "_self") {
+        var destination = new NativeURL(element.getAttribute(attr));
+        if (
+          destination.origin !== proxyOrigin ||
+          destination.pathname.startsWith("/__sortofremoteng_")
+        )
+          throw blocked(
+            "window",
+            "popup-origin-not-approved",
+            destination.origin,
+          );
+        preparePopupTarget(
+          targetElement,
+          targetAttribute,
+          target,
+          true,
+          activationEvent,
+        );
+      }
+    }
   }
   if (window.HTMLFormElement) {
     ["submit", "requestSubmit"].forEach(function (name) {
@@ -1169,6 +1276,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
       if (typeof native !== "function") return;
       formInterception =
         replace(window.HTMLFormElement.prototype, name, function (submitter) {
+          // requestSubmit runs constraint validation before emitting submit.
+          // Let capture route connected valid forms exactly once; otherwise an
+          // invalid cPanel form would open an empty popup with no submission.
+          if (popupClient && name === "requestSubmit" && this.isConnected)
+            return Reflect.apply(native, this, arguments);
           prepareForm(this, submitter);
           return Reflect.apply(native, this, arguments);
         }) && formInterception;
@@ -1177,20 +1289,19 @@ function installWebNetworkClient(configuration, reportBlocked) {
   function submit(event) {
     if (!(event.target instanceof HTMLFormElement)) return;
     try {
-      prepareForm(event.target, event.submitter);
+      prepareForm(event.target, event.submitter, event);
     } catch (_) {
       event.preventDefault();
     }
   }
   var preparedAnchors = new WeakMap();
   function prepareAnchor(anchor, event) {
-    var target = (
-      anchor.getAttribute("target") ||
+    var target =
+      originalTarget(anchor, "target") ||
       document.querySelector("base[target]")?.getAttribute("target") ||
-      "_self"
-    ).toLowerCase();
+      "_self";
     var sameContext =
-      target === "_self" &&
+      target.toLowerCase() === "_self" &&
       !anchor.hasAttribute("download") &&
       !event.ctrlKey &&
       !event.metaKey &&
@@ -1215,6 +1326,36 @@ function installWebNetworkClient(configuration, reportBlocked) {
     );
     Reflect.apply(nativeSetAttribute, anchor, ["href", mapped]);
     preparedAnchors.set(anchor, { original: original, mapped: mapped });
+    if (
+      popupClient &&
+      !anchor.hasAttribute("download") &&
+      event.type !== "contextmenu"
+    ) {
+      if (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.button === 1
+      ) {
+        // Modifiers force a native new window regardless of target. Handle the
+        // activation in the contained session instead; don't invoke native open.
+        event.preventDefault?.();
+        popupClient.open(
+          mapped,
+          target.toLowerCase() === "_self" ? "_blank" : target,
+        );
+      } else if (target.toLowerCase() !== "_self") {
+        // Validate the destination before creating a native form/link target.
+        // open() and target preparation share the same exact-session scope.
+        var popupUrl = new NativeURL(mapped);
+        if (
+          popupUrl.origin !== proxyOrigin ||
+          popupUrl.pathname.startsWith("/__sortofremoteng_")
+        )
+          throw blocked("window", "popup-origin-not-approved", popupUrl.origin);
+        preparePopupTarget(anchor, "target", target, false, event);
+      }
+    }
   }
   function click(event) {
     var anchor = event.target?.closest?.("a[href],area[href]");
@@ -1261,6 +1402,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
   function revoke() {
     if (!active) return;
     active = false;
+    if (popupClient) popupClient.closeAll();
     pendingReaders.forEach(function (reader) {
       reader.cancel().catch(function () {});
     });
@@ -1281,6 +1423,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     if (disposed) return;
     disposed = true;
     revoke();
+    if (popupClient) popupClient.dispose();
     document.removeEventListener("submit", submit, true);
     document.removeEventListener("click", click, true);
     document.removeEventListener("auxclick", click, true);
