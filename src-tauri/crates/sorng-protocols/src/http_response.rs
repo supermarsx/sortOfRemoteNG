@@ -485,7 +485,7 @@ pub(super) fn inject_readiness(
         .replace('\u{2029}', "\\u2029");
     let script = format!(
         r#"<script>(function(){{'use strict';var p={json};
-var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){{return v.split('=')[0]!=='{NAVIGATION_MARKER}'&&v.split('=')[0]!=='__sorng_google_hop_v1';}}).join('&');
+var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){{return v.split('=')[0]!=='{NAVIGATION_MARKER}'&&v.split('=')[0]!=='__sorng_generation_v1'&&v.split('=')[0]!=='__sorng_google_hop_v1';}}).join('&');
 u.search=q?'?'+q:'';try{{history.replaceState(history.state,'',u.href);}}catch(_){{}}
 function emit(type){{p.type=type;p.url=u.href;try{{window.parent.postMessage(p,'*');}}catch(_){{}}}}
 {network_client}

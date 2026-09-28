@@ -782,6 +782,163 @@ fn request_origins_translate_only_from_this_google_sessions_aliases() {
     }
 }
 
+#[test]
+fn google_referer_removes_private_markers_and_fragment_without_reencoding_application_query() {
+    let session = session("https://analytics.google.com/");
+    for source in session.routes.iter().filter(|route| route.documents) {
+        for (suffix, expected) in [
+            ("/v3/signin/identifier", "/v3/signin/identifier"),
+            ("/v3/signin/identifier?", "/v3/signin/identifier?"),
+            ("/v3/signin/identifier#private", "/v3/signin/identifier"),
+            (
+                "/v3/signin/identifier?__sorng_navigation_v1=nav&__sorng_generation_v1=gen&__sorng_google_hop_v1=2#private",
+                "/v3/signin/identifier",
+            ),
+            (
+                "/v3/signin/identifier?continue=https%3A%2F%2Fanalytics.google.com%2F%2523&__sorng_navigation_v1=one&a=%2f+%20&__sorng_generation_v1=two&a=%2F&__sorng_google_hop_v1=3&empty=&flag&&__sorng_navigation_v1=again#private",
+                "/v3/signin/identifier?continue=https%3A%2F%2Fanalytics.google.com%2F%2523&a=%2f+%20&a=%2F&empty=&flag&",
+            ),
+            (
+                "/v3/signin/identifier?%5f%5fsorng_navigation_v1=one&__sorng_%67eneration_v1=two&__sorng_google_hop_v%31=3&keep=%252F+%20#private",
+                "/v3/signin/identifier?keep=%252F+%20",
+            ),
+            (
+                "/v3/signin/identifier?application=__sorng_generation_v1&__sorng_google_hop_v1_extra=keep&__SORNG_GENERATION_V1=keep",
+                "/v3/signin/identifier?application=__sorng_generation_v1&__sorng_google_hop_v1_extra=keep&__SORNG_GENERATION_V1=keep",
+            ),
+        ] {
+            let mut incoming = axum::http::HeaderMap::new();
+            incoming.insert(
+                header::REFERER,
+                format!("{}{suffix}", source.proxy_origin).parse().unwrap(),
+            );
+            let forwarded = session.request_headers(&incoming, "https://accounts.google.com");
+            let referrers: Vec<_> = forwarded
+                .iter()
+                .filter(|(name, _)| name == "referer")
+                .map(|(_, value)| value.as_str())
+                .collect();
+            assert_eq!(
+                referrers,
+                vec![format!("{}{expected}", source.upstream_origin)],
+                "source {} suffix {suffix}",
+                source.upstream_origin,
+            );
+        }
+    }
+}
+
+#[test]
+fn google_referer_sanitizing_does_not_authorize_foreign_source_aliases() {
+    let session = session("https://analytics.google.com/");
+    let unrelated = self::session("https://analytics.google.com/");
+    let foreign_account = unrelated
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == "https://accounts.google.com")
+        .unwrap();
+    for origin in [
+        foreign_account.proxy_origin.clone(),
+        PRIMARY_PROXY.replace("http:", "https:"),
+        PRIMARY_PROXY.replace(":43123", ":43124"),
+        PRIMARY_PROXY.replace(".localhost", ".localhost.attacker.test"),
+        "https://accounts.google.com".into(),
+        "http://localhost:3001".into(),
+    ] {
+        let mut incoming = axum::http::HeaderMap::new();
+        incoming.insert(
+            header::REFERER,
+            format!("{origin}/v3/signin/identifier?__sorng_generation_v1=private#fragment")
+                .parse()
+                .unwrap(),
+        );
+        let forwarded = session.request_headers(&incoming, "https://accounts.google.com");
+        assert!(
+            !forwarded.iter().any(|(name, _)| name == "referer"),
+            "foreign source was projected: {origin}",
+        );
+    }
+}
+
+#[test]
+fn google_manual_post_referer_sanitizing_preserves_origin_native_identity_and_cookie_selection() {
+    let session = session("https://analytics.google.com/");
+    let account = session
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == "https://accounts.google.com")
+        .unwrap();
+    let target = Url::parse("https://accounts.google.com/v3/signin/identifier").unwrap();
+    let mut response_headers = reqwest::header::HeaderMap::new();
+    response_headers.insert(
+        header::SET_COOKIE,
+        "__Host-GAPS=native-session; Secure; HttpOnly; Path=/"
+            .parse()
+            .unwrap(),
+    );
+    session.observe_cookies(&response_headers, &target).unwrap();
+    let cookie_before = session.cookie_header(&target).unwrap();
+    let payload = b"f.req=%5B%22fixture%40example.test%22%5D&continue=%2F%2523&dup=1&dup=2";
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v3/signin/identifier")
+        .header(header::ORIGIN, &account.proxy_origin)
+        .header(
+            header::REFERER,
+            format!("{}/v3/signin/identifier?continue=%2F%2523&__sorng_navigation_v1=nav&__sorng_generation_v1=gen&__sorng_google_hop_v1=2#private", account.proxy_origin),
+        )
+        .header(header::USER_AGENT, "Native-WebView-Fixture/1")
+        .header("sec-ch-ua", "\"Native-WebView-Fixture\";v=\"1\"")
+        .header("sec-ch-ua-platform", "\"Windows\"")
+        .header("sec-fetch-dest", "empty")
+        .header("sec-fetch-mode", "cors")
+        .header("sec-fetch-site", "same-origin")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded;charset=UTF-8")
+        .header(header::COOKIE, "localhost-cookie=must-not-forward")
+        .body(payload.to_vec())
+        .unwrap();
+    let original_headers = request.headers().clone();
+    let forwarded: HashMap<_, _> = session
+        .request_headers(request.headers(), &account.upstream_origin)
+        .into_iter()
+        .collect();
+    assert_eq!(forwarded["origin"], "https://accounts.google.com");
+    assert_eq!(
+        forwarded["referer"],
+        "https://accounts.google.com/v3/signin/identifier?continue=%2F%2523",
+    );
+    for name in [
+        "user-agent",
+        "sec-ch-ua",
+        "sec-ch-ua-platform",
+        "sec-fetch-dest",
+        "sec-fetch-mode",
+        "sec-fetch-site",
+        "content-type",
+    ] {
+        assert_eq!(forwarded[name], request.headers()[name].to_str().unwrap());
+    }
+    // This header-only transformation leaves the caller's POST and opaque body
+    // untouched. GoogleSession::send, not a localhost Cookie header, owns the jar.
+    assert_eq!(request.method(), "POST");
+    assert_eq!(request.body().as_slice(), payload);
+    assert_eq!(request.headers(), &original_headers);
+    assert!(!forwarded.contains_key("cookie"));
+    assert_eq!(session.cookie_header(&target).unwrap(), cookie_before);
+    assert_eq!(
+        cookie_before.to_str().unwrap(),
+        "__Host-GAPS=native-session"
+    );
+    assert!(session.includes_credentials(request.headers()).unwrap());
+    let mut omitted = request.headers().clone();
+    omitted.insert("x-sorng-google-credentials", "omit".parse().unwrap());
+    assert!(!session.includes_credentials(&omitted).unwrap());
+    assert_eq!(
+        session.cookie_header(&Url::parse("https://analytics.google.com/").unwrap()),
+        None,
+    );
+}
+
 #[tokio::test]
 async fn document_cookie_bridge_enforces_upstream_domain_and_secure_prefix_rules() {
     let session = session("https://analytics.google.com/");

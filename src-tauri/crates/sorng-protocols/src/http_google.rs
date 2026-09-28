@@ -294,11 +294,7 @@ impl GoogleSession {
             headers.push((
                 name.into(),
                 if name == "referer" {
-                    format!(
-                        "{}{}",
-                        source.upstream_origin,
-                        &url[url::Position::BeforePath..],
-                    )
+                    upstream_document_referer(&url, &source.upstream_origin)
                 } else {
                     source.upstream_origin.clone()
                 },
@@ -722,6 +718,38 @@ impl GoogleSession {
         }
         result
     }
+}
+
+/// Called only after the source URL matches this session's exact local alias.
+/// Google also carries a private redirect-hop marker, so the generic referrer
+/// helper's navigation/generation filtering is not sufficient here. Filter raw
+/// fields rather than serializing query_pairs, which changes application data.
+fn upstream_document_referer(source: &Url, upstream_origin: &str) -> String {
+    let mut projected = format!("{upstream_origin}{}", source.path());
+    if let Some(query) = source.query() {
+        let kept: Vec<_> = query
+            .split('&')
+            .filter(|pair| {
+                let key = pair.split('=').next().unwrap_or_default();
+                // Decode only for recognizing private keys; retained fields
+                // keep their original encoding, ordering and duplicates.
+                !url::form_urlencoded::parse(key.as_bytes())
+                    .next()
+                    .is_some_and(|(key, _)| {
+                        matches!(
+                            key.as_ref(),
+                            "__sorng_navigation_v1" | "__sorng_generation_v1" | REDIRECT_MARKER
+                        )
+                    })
+            })
+            .collect();
+        if !kept.is_empty() {
+            projected.push('?');
+            projected.push_str(&kept.join("&"));
+        }
+    }
+    // A fragment describes browser-local state, never an HTTP Referer.
+    projected
 }
 
 fn valid_url(url: &Url) -> bool {
