@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Connection } from "../../types/connection/connection";
+import { resolveHttpBookmarkUrl } from "../../utils/protocol/httpBookmarkUrl";
 
 /* ------------------------------------------------------------------ */
 /*  Hook                                                               */
@@ -71,8 +72,11 @@ export function useHTTPOptions(
     const name = bookmarkName.trim();
     let path = bookmarkPath.trim();
     if (!name || !path) return;
-    // Ensure path starts with /
-    if (!path.startsWith("/")) path = "/" + path;
+    // Keep valid absolute URLs verbatim; retain legacy relative-path storage.
+    // Using the value as a validation-only base requires it to be absolute.
+    if (!path.startsWith("/") && !resolveHttpBookmarkUrl(path, path)) {
+      path = "/" + path;
+    }
     const bookmarks = [...(formData.httpBookmarks || [])];
     if (editingBookmarkIdx !== null) {
       bookmarks[editingBookmarkIdx] = { name, path };
@@ -93,12 +97,15 @@ export function useHTTPOptions(
     setShowAddBookmark(true);
   }, []);
 
-  const openEditBookmark = useCallback((idx: number, name: string, path: string) => {
-    setBookmarkName(name);
-    setBookmarkPath(path);
-    setEditingBookmarkIdx(idx);
-    setShowAddBookmark(true);
-  }, []);
+  const openEditBookmark = useCallback(
+    (idx: number, name: string, path: string) => {
+      setBookmarkName(name);
+      setBookmarkPath(path);
+      setEditingBookmarkIdx(idx);
+      setShowAddBookmark(true);
+    },
+    [],
+  );
 
   return {
     isHttpProtocol,

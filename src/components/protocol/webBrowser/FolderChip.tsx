@@ -14,7 +14,7 @@ const FolderChip: React.FC<{
   bm: HttpBookmarkItem;
   idx: number;
   baseUrl: string;
-}> = ({ mgr, bm, idx, baseUrl }) => {
+}> = ({ mgr, bm, idx }) => {
   if (!bm.isFolder) return null;
   const isOpen = mgr.openFolders.has(idx);
   const openItemMenu = (x: number, y: number, childIdx?: number) => {
@@ -119,12 +119,16 @@ const FolderChip: React.FC<{
             )}
             {bm.children.map((child, cIdx) => {
               if (child.isFolder) return null;
-              const childUrl = baseUrl + child.path;
-              const isActive = child.path === mgr.currentPath;
+              const childUrl = mgr.resolveBookmarkUrl(child.path);
+              const isActive =
+                Boolean(childUrl) &&
+                childUrl === mgr.resolveBookmarkUrl(mgr.currentPath);
               return (
                 <OptionItemButton
                   key={cIdx}
-                  onClick={() => mgr.navigateToUrl(childUrl)}
+                  onClick={() => {
+                    if (childUrl) mgr.navigateToUrl(childUrl);
+                  }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();

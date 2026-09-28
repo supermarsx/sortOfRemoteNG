@@ -335,6 +335,470 @@ describe("durable website appearance lifecycle", () => {
     hook.unmount();
     expect(db.listeners.size).toBe(0);
   });
+  it("does not disable a restored dark page while its saved appearance read is pending across navigation", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    let finish!: (value: { connections: Connection[] }) => void;
+    const pending = new Promise<{ connections: Connection[] }>((resolve) => {
+      finish = resolve;
+    });
+    db.read.mockReturnValue(pending);
+    const hook = mount();
+    expect(db.read).toHaveBeenCalled();
+    expect(hook.result.current.enabled).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+    hook.change({ navigationKey: "page-2", resetKey: "page-2:loading" });
+    expect(request).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalledWith(true);
+    await act(async () => finish({ connections: db.rows }));
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    expect(request.mock.calls.every(([, payload]) => payload.enabled)).toBe(
+      true,
+    );
+  });
+
+  it("reapplies verified appearance on document resets without a new database read or disable", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    db.read.mockClear().mockImplementation(() => new Promise(() => {}));
+    request.mockClear();
+    cancel.mockClear();
+    hook.change({ navigationKey: "page-2", resetKey: "page-2:loading" });
+    expect(hook.result.current.enabled).toBe(true);
+    expect(db.read).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(
+      "dark",
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(request.mock.calls.every(([, payload]) => payload.enabled)).toBe(
+      true,
+    );
+    expect(cancel).not.toHaveBeenCalledWith(true);
+  });
+
+  it.each([
+    ["connection rename", { name: "Renamed website" }],
+    [
+      "bookmark addition",
+      { httpBookmarks: [{ name: "Status", path: "/status" }] },
+    ],
+    ["bookmark rename", { httpBookmarks: [{ name: "Renamed", path: "/" }] }],
+    ["description edit", { description: "Updated description" }],
+    ["tag edit", { tags: ["production"] }],
+    ["order edit", { order: 2 }],
+    ["color edit", { color: "blue" }],
+    ["icon edit", { icon: "globe" }],
+    ["expanded edit", { expanded: true }],
+    ["last-accessed update", { lastAccessed: "2026-09-26T12:00:00Z" }],
+    ["last-used update", { lastUsed: "2026-09-26T12:00:00Z" }],
+  ] satisfies [string, Partial<Connection> & Record<string, unknown>][])(
+    "keeps verified appearance during an optimistic %s and its durable save",
+    async (_label, patch) => {
+      connection.httpAutomation!.forceDark = true;
+      connection.httpBookmarks = [{ name: "Home", path: "/" }];
+      db.rows = [structuredClone(connection)];
+      const hook = mount();
+      await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+      const initialScope = hook.result.current.scopeKey;
+      db.read.mockClear();
+      request.mockClear();
+      cancel.mockClear();
+      const updated = { ...connection, ...patch };
+      currentRows = [updated];
+      hook.change({ connection: updated });
+      expect(cancel).not.toHaveBeenCalledWith(true);
+      expect(hook.result.current.enabled).toBe(true);
+      expect(hook.result.current.available).toBe(true);
+      expect(hook.result.current.scopeKey).toBe(initialScope);
+      expect(hook.result.current.savedConnectionName).toBe(updated.name);
+      expect(db.read).not.toHaveBeenCalled();
+      expect(request).not.toHaveBeenCalled();
+      db.rows = [structuredClone(updated)];
+      hook.change({ connection: structuredClone(updated) });
+      expect(hook.result.current.enabled).toBe(true);
+      expect(db.read).not.toHaveBeenCalled();
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["pin", "remove", "reorder"] as const)(
+    "preserves appearance and failed-save fences when favorite refs %s",
+    async (operation) => {
+      const original = [
+        { kind: "script" as const, id: "first" },
+        { kind: "macro" as const, id: "second" },
+      ];
+      connection.httpAutomation = {
+        ...connection.httpAutomation!,
+        forceDark: true,
+        items: original,
+      };
+      db.rows = [structuredClone(connection)];
+      const hook = mount();
+      await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+      const initialScope = hook.result.current.scopeKey;
+      db.read.mockClear();
+      request.mockClear();
+      cancel.mockClear();
+      const items =
+        operation === "pin"
+          ? [
+              ...original,
+              {
+                kind: "script" as const,
+                id: "third",
+                scope: { kind: "database" as const, databaseId: "a" },
+              },
+            ]
+          : operation === "remove"
+            ? original.slice(1)
+            : [...original].reverse();
+      const updated = {
+        ...connection,
+        httpAutomation: { ...connection.httpAutomation!, items },
+      };
+      currentRows = [updated];
+      await act(async () => {
+        hook.change({ connection: updated });
+      });
+      expect(cancel).not.toHaveBeenCalledWith(true);
+      expect(hook.result.current.enabled).toBe(true);
+      expect(hook.result.current.scopeKey).toBe(initialScope);
+      expect(db.read).not.toHaveBeenCalled();
+      expect(request).not.toHaveBeenCalled();
+      db.rows = [structuredClone(updated)];
+      update.mockRejectedValueOnce(new Error("disk unavailable"));
+      await act(async () => {
+        expect(await hook.result.current.setEnabled(false)).toBe(false);
+      });
+      const failure = hook.result.current.error;
+      expect(failure).toMatch(/confirmed saved/);
+      expect(hook.result.current.enabled).toBe(false);
+      db.read.mockClear();
+      request.mockClear();
+      currentRows = [connection];
+      db.rows = [structuredClone(connection)];
+      await act(async () => {
+        hook.change({ connection });
+      });
+      expect(hook.result.current.enabled).toBe(false);
+      expect(hook.result.current.error).toBe(failure);
+      expect(hook.result.current.scopeKey).toBe(initialScope);
+      expect(db.read).not.toHaveBeenCalled();
+      expect(request).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalledWith(true);
+    },
+  );
+
+  it("finishes a pending appearance restore across optimistic bookmark and name edits", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    let finish!: (value: { connections: Connection[] }) => void;
+    db.read.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const hook = mount();
+    db.read.mockClear();
+    const updated = {
+      ...connection,
+      name: "Renamed website",
+      httpBookmarks: [{ name: "Status", path: "/status" }],
+    };
+    currentRows = [updated];
+    hook.change({ connection: updated });
+    expect(cancel).not.toHaveBeenCalledWith(true);
+    expect(db.read).not.toHaveBeenCalled();
+    await act(async () => finish({ connections: db.rows }));
+    expect(hook.result.current.enabled).toBe(true);
+    expect(request).toHaveBeenLastCalledWith(
+      "dark",
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("preserves live bookmark and name edits when an appearance save was already reading", async () => {
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.available).toBe(true));
+    let finish!: (value: { connections: Connection[] }) => void;
+    db.read.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let pending!: Promise<boolean>;
+    act(() => {
+      pending = hook.result.current.setEnabled(true);
+    });
+    const updated = {
+      ...connection,
+      name: "Renamed website",
+      httpBookmarks: [{ name: "Status", path: "/status" }],
+    };
+    currentRows = [updated];
+    hook.change({ connection: updated });
+    await act(async () => {
+      finish({ connections: db.rows });
+      expect(await pending).toBe(true);
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: updated.name,
+        httpBookmarks: updated.httpBookmarks,
+        httpAutomation: expect.objectContaining({ forceDark: true }),
+      }),
+    );
+  });
+
+  it("keeps failed appearance saves fenced after a bookmark rename", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    update.mockRejectedValueOnce(new Error("disk unavailable"));
+    await act(async () => {
+      expect(await hook.result.current.setEnabled(false)).toBe(false);
+    });
+    const failure = hook.result.current.error;
+    const updated = {
+      ...connection,
+      httpBookmarks: [{ name: "Renamed", path: "/" }],
+    };
+    currentRows = [updated];
+    db.rows = [structuredClone(updated)];
+    hook.change({ connection: updated });
+    await act(async () => {});
+    expect(hook.result.current.enabled).toBe(false);
+    expect(hook.result.current.error).toBe(failure);
+  });
+
+  it.each([
+    { hostname: "different.example.test" },
+    { password: "different-fixture" },
+    {
+      httpProxyPolicy: {
+        ...DEFAULT_HTTP_PROXY_POLICY,
+        pageScripts: "block" as const,
+      },
+    },
+    {
+      httpAutomation: {
+        ...normalizeHttpAutomation(undefined),
+        forceDark: true,
+        scriptInjectionEnabled: true,
+      },
+    },
+    {
+      httpAutomation: {
+        ...normalizeHttpAutomation(undefined),
+        forceDark: true,
+        interactionMacrosEnabled: true,
+      },
+    },
+  ] satisfies Partial<Connection>[])(
+    "revokes appearance for security edits: %j",
+    async (patch) => {
+      connection.httpAutomation!.forceDark = true;
+      db.rows = [structuredClone(connection)];
+      const hook = mount();
+      await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+      cancel.mockClear();
+      request.mockClear();
+      db.read.mockImplementation(() => new Promise(() => {}));
+      hook.change({ connection: { ...connection, ...patch } });
+      expect(cancel).toHaveBeenCalledWith(true);
+      expect(hook.result.current.enabled).toBe(false);
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
+
+  it("revokes appearance when the same database publishes a new availability generation", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    cancel.mockClear();
+    request.mockClear();
+    db.read.mockClear().mockImplementation(() => new Promise(() => {}));
+    db.generation++;
+    hook.change({ scopeKey: `a:${db.generation}` });
+    expect(cancel).toHaveBeenCalledWith(true);
+    expect(db.read).toHaveBeenCalled();
+    expect(hook.result.current.enabled).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("disables after a restored appearance read fails, including after a document reset", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    let reject!: (reason: Error) => void;
+    db.read.mockReturnValue(
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+    );
+    const hook = mount();
+    expect(request).not.toHaveBeenCalled();
+    await act(async () => reject(new Error("Database unavailable")));
+    expect(hook.result.current.enabled).toBe(false);
+    expect(hook.result.current.error).toContain("Database unavailable");
+    expect(request).toHaveBeenLastCalledWith(
+      "dark",
+      expect.objectContaining({ enabled: false }),
+    );
+    request.mockClear();
+    hook.change({ navigationKey: "page-2", resetKey: "page-2" });
+    expect(request).toHaveBeenLastCalledWith(
+      "dark",
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("invalidates cached consent on a native access revision even before the database scope rerenders", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    const hook = mount({ accessRevision: 0 });
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    request.mockClear();
+    cancel.mockClear();
+    db.read.mockClear().mockImplementation(() => new Promise(() => {}));
+    hook.change({ accessRevision: 1, resetKey: "native-lock" });
+    expect(cancel).toHaveBeenCalledWith(true);
+    expect(db.read).toHaveBeenCalled();
+    expect(hook.result.current.enabled).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("honors global off during pending restore and ignores the late read", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    let finish!: (value: { connections: Connection[] }) => void;
+    db.read.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const hook = mount();
+    expect(request).not.toHaveBeenCalled();
+    db.read.mockClear();
+    hook.change({
+      settings: {
+        ...settings,
+        sessionQuickActions: {
+          ...settings.sessionQuickActions,
+          allowWebForceDark: false,
+        },
+      },
+    });
+    expect(db.read).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledWith(true);
+    expect(request).toHaveBeenLastCalledWith(
+      "dark",
+      expect.objectContaining({ enabled: false }),
+    );
+    await act(async () => finish({ connections: db.rows }));
+    expect(hook.result.current.enabled).toBe(false);
+    expect(request.mock.calls.every(([, payload]) => !payload.enabled)).toBe(
+      true,
+    );
+  });
+
+  it("revokes pending restore on database suspension without another read or late enable", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    let finish!: (value: { connections: Connection[] }) => void;
+    db.read.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const hook = mount();
+    expect(request).not.toHaveBeenCalled();
+    db.read.mockClear();
+    act(() => {
+      db.locked = true;
+      for (const listener of db.listeners) listener({ status: "suspended" });
+    });
+    hook.change({ scopeKey: "", resetKey: "revoked" });
+    expect(cancel).toHaveBeenCalledWith(true);
+    expect(db.read).not.toHaveBeenCalled();
+    await act(async () => finish({ connections: db.rows }));
+    expect(hook.result.current.enabled).toBe(false);
+    expect(request.mock.calls.some(([, payload]) => payload.enabled)).toBe(
+      false,
+    );
+  });
+
+  it("cancels old appearance across an owner change while the new owner read is pending", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    cancel.mockClear();
+    request.mockClear();
+    db.id = "b";
+    db.generation++;
+    db.read.mockImplementation(() => new Promise(() => {}));
+    hook.change({ ownerDatabaseId: "b", scopeKey: "b:2" });
+    expect(cancel).toHaveBeenCalledWith(true);
+    expect(hook.result.current.enabled).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("confirms a durable toggle despite its optimistic render changing the document reset key", async () => {
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.available).toBe(true));
+    let finish!: () => void;
+    update.mockImplementationOnce(async (next: Connection) => {
+      currentRows = [next];
+      hook.change({ connection: next, resetKey: "permissions:forceDark:true" });
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      db.rows = [structuredClone(next)];
+    });
+    let pending!: Promise<boolean>;
+    act(() => {
+      pending = hook.result.current.setEnabled(true);
+    });
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    await act(async () => {
+      finish();
+      expect(await pending).toBe(true);
+    });
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    expect(hook.result.current.error).toBeNull();
+    hook.unmount();
+    connection = structuredClone(db.rows[0]);
+    currentRows = [connection];
+    const reopened = mount();
+    await waitFor(() => expect(reopened.result.current.enabled).toBe(true));
+  });
+
+  it("keeps a failed save disabled across document reset despite the persisted enabled value", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    update.mockRejectedValueOnce(new Error("disk unavailable"));
+    await act(async () => {
+      expect(await hook.result.current.setEnabled(false)).toBe(false);
+    });
+    expect(hook.result.current.enabled).toBe(false);
+    expect(hook.result.current.error).toMatch(/confirmed saved/);
+    request.mockClear();
+    hook.change({ navigationKey: "page-2", resetKey: "page-2" });
+    expect(hook.result.current.enabled).toBe(false);
+    expect(hook.result.current.error).toMatch(/confirmed saved/);
+    expect(request).toHaveBeenLastCalledWith(
+      "dark",
+      expect.objectContaining({ enabled: false }),
+    );
+  });
   it("waits for readiness and reapplies changed global defaults to a durably enabled connection", async () => {
     connection.httpAutomation!.forceDark = true;
     db.rows = [structuredClone(connection)];

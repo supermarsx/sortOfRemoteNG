@@ -72,8 +72,10 @@ interface Options {
   getDocument: () => WebAutomationDocument | null;
   updateConnection: (connection: Connection) => Promise<void>;
   bridge: WebAutomationBridge;
-  /** Reapply after the shared bridge's security cancellation, not library reads. */
+  /** Reapply after document/bridge changes without reloading durable consent. */
   resetKey: string;
+  /** An actual native security revocation must invalidate that consent. */
+  accessRevision?: number;
 }
 
 const UNAVAILABLE =
@@ -123,19 +125,36 @@ function pageScriptsPolicy(connection: Connection | undefined) {
 
 /** Private identity: retain target/auth/policy fields; never expose this key. */
 function sourceIdentity(connection: Connection): string {
-  const {
-    httpAutomation,
-    lastConnected: _lastConnected,
-    connectionCount: _count,
-    updatedAt: _updatedAt,
-    ...source
-  } = normalizeAdvancedProtocolConnection(connection);
+  const normalized = normalizeAdvancedProtocolConnection(connection);
+  const source: Record<string, unknown> = { ...normalized };
+  // Match the trust identity's presentation/bookkeeping exclusions, while
+  // retaining the trusted destination list as part of this consent scope.
+  // Optimistic metadata edits must not reset consent or a failed-save fence.
+  for (const key of [
+    "name",
+    "httpBookmarks",
+    "description",
+    "tags",
+    "order",
+    "color",
+    "icon",
+    "expanded",
+    "lastConnected",
+    "connectionCount",
+    "updatedAt",
+    "lastAccessed",
+    "lastUsed",
+  ])
+    delete source[key];
   const {
     forceDark: _enabled,
     darkMode: _theme,
+    // Favorites are references for the bar, not consent to execute. The runner
+    // checks the retained permission flags and resolves the exact library item.
+    items: _favorites,
     ...automation
-  } = normalizeHttpAutomation(httpAutomation);
-  const timestamp = new Date(source.createdAt).getTime();
+  } = normalizeHttpAutomation(normalized.httpAutomation);
+  const timestamp = new Date(normalized.createdAt).getTime();
   return stableJsonStringify({
     ...source,
     createdAt: Number.isFinite(timestamp)
@@ -221,6 +240,10 @@ export function useWebsiteDarkMode(
     appearance: string;
     enabled: boolean;
   } | null>(null);
+  const [verificationFailure, setVerificationFailure] = useState<{
+    scope: string;
+    appearance: string;
+  } | null>(null);
   const failures = useRef(new Set<string>());
   let configuration = normalizeWebsiteDarkModeConfig(undefined);
   let global = normalizeWebsiteDarkModeSettings(undefined);
@@ -269,13 +292,15 @@ export function useWebsiteDarkMode(
         ? failure.message
         : "Review the dark-mode extension settings.";
   }
+  // Durable consent belongs to the saved source and its database lease, not a
+  // document. Navigation/bridge resets only reapply it via applyKey below.
   const scope = stableJsonStringify([
     options.ownerDatabaseId,
     options.scopeKey,
     source,
     runtimeConnection?.id,
     runtimeSource,
-    options.resetKey,
+    options.accessRevision,
   ]);
   // A former page/owner's failure must not be shown for the next source. This
   // presentation scope is separate from the durable failed-save fences below.
@@ -414,6 +439,16 @@ export function useWebsiteDarkMode(
     };
   }, [options.bridge]);
 
+  const previousAuthority = useRef(scope);
+  useEffect(() => {
+    // Pending verification must never preserve appearance across an actual
+    // source/owner change or a revoked global/database gate. cancel(true) also
+    // reaches the last document when current access is already unavailable.
+    if (previousAuthority.current !== scope || problem)
+      options.bridge.cancel(true);
+    previousAuthority.current = scope;
+  }, [scope, problem, options.bridge]);
+
   useEffect(() => {
     if (problem || writing.current) return;
     let alive = true;
@@ -432,10 +467,12 @@ export function useWebsiteDarkMode(
           appearance: savedKey,
           enabled: saved.enabled && !failures.current.has(scope),
         });
+        setVerificationFailure(null);
         if (!failures.current.has(scope)) setError(null);
       } catch (failure) {
         if (alive) {
           setVerified(null);
+          setVerificationFailure({ scope, appearance: appearanceKey });
           setError(failure instanceof Error ? failure.message : UNAVAILABLE);
         }
       }
@@ -448,10 +485,20 @@ export function useWebsiteDarkMode(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, appearanceKey, problem, refresh]);
 
+  const appearanceVerified =
+    verified?.scope === scope && verified.appearance === appearanceKey;
+  const verificationPending =
+    !problem &&
+    requestedEnabled &&
+    !appearanceVerified &&
+    !failures.current.has(scope) &&
+    !(
+      verificationFailure?.scope === scope &&
+      verificationFailure.appearance === appearanceKey
+    );
   const enabled =
     !problem &&
-    verified?.scope === scope &&
-    verified.appearance === appearanceKey &&
+    appearanceVerified &&
     verified.enabled &&
     requestedEnabled &&
     !failures.current.has(scope);
@@ -478,6 +525,10 @@ export function useWebsiteDarkMode(
   useEffect(() => {
     const current = latest.current.options;
     if (
+      // A pending read is not consent to enable, nor a request to undo the
+      // proxy's already-established first-paint palette. Definite failures and
+      // explicit off/revocation still take the disable path.
+      verificationPending ||
       current.blocked ||
       !current.settingsReady ||
       !current.scopeKey ||
@@ -523,6 +574,7 @@ export function useWebsiteDarkMode(
       alive = false;
     };
   }, [
+    verificationPending,
     payloadKey,
     applyKey,
     enabled,

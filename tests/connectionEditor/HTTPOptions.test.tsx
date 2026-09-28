@@ -112,7 +112,7 @@ describe("HTTPOptions", () => {
     fireEvent.change(screen.getByLabelText("Bookmark name"), {
       target: { value: "Status" },
     });
-    fireEvent.change(screen.getByLabelText("Bookmark path"), {
+    fireEvent.change(screen.getByLabelText("Bookmark URL or path"), {
       target: { value: "/status" },
     });
 

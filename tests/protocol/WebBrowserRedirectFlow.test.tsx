@@ -1442,6 +1442,62 @@ describe("actual website redirect review integration", () => {
       ),
     ).toHaveLength(3);
   });
+  it("keeps a redeemed Synology login and MFA binding through bookmark and label edits", async () => {
+    automaticSource();
+    const { view } = await mountContinuation();
+    await waitFor(() => expect(proxies).toHaveLength(2));
+    const navigation = currentWebNavigation()!;
+    const lease = navigation.synologyRedirectSource!.formLogin!;
+    const proof = navigation.synologyMfaProof;
+    expect(lease).toBeDefined();
+    expect(proof).toBeDefined();
+    const iframe = view.container.querySelector("iframe")!;
+    const src = iframe.src;
+    for (const changes of [
+      { name: "Renamed NAS" },
+      {
+        httpAutomation: {
+          version: 1 as const,
+          interactionMacrosEnabled: false,
+          scriptInjectionEnabled: false,
+          forceDark: false,
+          items: [{ kind: "script" as const, id: "pinned-script" }],
+        },
+      },
+      { httpBookmarks: [{ name: "Files", path: "/files" }] },
+      {
+        httpBookmarks: [
+          {
+            name: "Tools",
+            isFolder: true as const,
+            children: [{ name: "Files", path: "/files/new" }],
+          },
+        ],
+      },
+    ]) {
+      h.connections = [
+        { ...h.connections[0], ...changes, updatedAt: "2026-09-26" },
+      ];
+      await act(async () => view.rerender(<Harness />));
+      expect(currentWebNavigation()).toBe(navigation);
+      expect(navigation.synologyMfaProof).toBe(proof);
+      expect(() =>
+        lease.assertCurrent(h.connections[0], h.vault),
+      ).not.toThrow();
+      expect(view.container.querySelector("iframe")).toBe(iframe);
+      expect(iframe.src).toBe(src);
+    }
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(1);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command]) => command === "stop_basic_auth_proxy",
+      ),
+    ).toHaveLength(0);
+  });
   it("does not let parent or another frame login reports refresh the current native status", async () => {
     automaticSource();
     h.loginStatuses = {

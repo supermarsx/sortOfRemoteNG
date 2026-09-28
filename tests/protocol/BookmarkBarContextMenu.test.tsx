@@ -25,6 +25,12 @@ const actions = vi.hoisted(() => ({
   removeFromFolder: vi.fn(),
   navigate: vi.fn(),
   invoke: vi.fn(),
+  edit: vi.fn(),
+  resolve: vi.fn((path: string) =>
+    /^javascript:/i.test(path)
+      ? ""
+      : new URL(path, "https://fixture.test").href,
+  ),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: actions.invoke }));
 
@@ -98,6 +104,8 @@ function Fixture({
     folderButtonRefs,
     currentPath: "/",
     buildTargetUrl: () => "https://fixture.test",
+    resolveBookmarkUrl: actions.resolve,
+    beginEditBookmark: actions.edit,
     closeFolderDropdown: (idx: number) =>
       setOpenFolders((previous) => {
         const next = new Set(previous);
@@ -131,6 +139,125 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 describe("HTTP bookmarks and automation bar context menus", () => {
+  it("retains the explicit external-open fallback with the resolved URL", async () => {
+    render(
+      <Fixture
+        items={[{ name: "Remote", path: "https://other.test/status" }]}
+      />,
+    );
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    actions.invoke.mockRejectedValueOnce(new Error("IPC unavailable"));
+    fireEvent.contextMenu(screen.getByText("Remote"));
+    fireEvent.click(within(itemMenu()).getByText("Open externally"));
+    await Promise.resolve();
+    expect(open).toHaveBeenCalledExactlyOnceWith(
+      "https://other.test/status",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    open.mockRestore();
+  });
+
+  it.each([false, true])(
+    "highlights an absolute bookmark matching the resolved current path (child=%s)",
+    (child) => {
+      const bookmark = { name: "Absolute home", path: "https://fixture.test/" };
+      render(
+        <Fixture
+          items={
+            child
+              ? [{ name: "Folder", isFolder: true, children: [bookmark] }]
+              : [bookmark]
+          }
+        />,
+      );
+      if (child) fireEvent.click(screen.getByText("Folder"));
+      expect(
+        screen
+          .getByText("Absolute home")
+          .closest("button")!
+          .querySelector("svg.lucide-star"),
+      ).not.toBeNull();
+    },
+  );
+
+  it.each([false, true])(
+    "edits bookmarks with the correct root and child indices (child=%s)",
+    (child) => {
+      render(<Fixture items={bookmarks} />);
+      if (child)
+        fireEvent.click(screen.getByRole("button", { name: "Admin folder" }));
+      fireEvent.contextMenu(
+        screen.getByText(child ? "Status page" : "Home page"),
+      );
+      fireEvent.click(within(itemMenu()).getByText("Edit bookmark"));
+      expect(actions.edit).toHaveBeenCalledExactlyOnceWith(
+        child ? 1 : 0,
+        child ? 0 : undefined,
+      );
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(actions.navigate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "resolves absolute URLs for chip navigation, copy and external opening (child=%s)",
+    (child) => {
+      const url = "https://other.test/status";
+      const bookmark = { name: "Absolute bookmark", path: url };
+      render(
+        <Fixture
+          items={
+            child
+              ? [{ name: "Folder", isFolder: true, children: [bookmark] }]
+              : [bookmark]
+          }
+        />,
+      );
+      const openMenu = () => {
+        if (child) fireEvent.click(screen.getByText("Folder"));
+        fireEvent.contextMenu(screen.getByText("Absolute bookmark"));
+      };
+      if (child) fireEvent.click(screen.getByText("Folder"));
+      fireEvent.click(screen.getByText("Absolute bookmark"));
+      expect(actions.navigate).toHaveBeenCalledExactlyOnceWith(url);
+      // The fixture's navigation spy does not close the folder.
+      fireEvent.contextMenu(screen.getByText("Absolute bookmark"));
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText },
+      });
+      fireEvent.click(within(itemMenu()).getByText("Copy URL"));
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(url);
+      openMenu();
+      actions.invoke.mockResolvedValueOnce(undefined);
+      fireEvent.click(within(itemMenu()).getByText("Open externally"));
+      expect(actions.invoke).toHaveBeenCalledExactlyOnceWith(
+        "open_url_external",
+        { url },
+      );
+      expect(actions.resolve).toHaveBeenCalledWith(url);
+    },
+  );
+
+  it("does not navigate, copy or open an invalid resolved URL", () => {
+    render(
+      <Fixture
+        items={[{ name: "Invalid bookmark", path: "javascript:alert(1)" }]}
+      />,
+    );
+    fireEvent.click(screen.getByText("Invalid bookmark"));
+    expect(actions.navigate).not.toHaveBeenCalled();
+    fireEvent.contextMenu(screen.getByText("Invalid bookmark"));
+    expect(
+      within(itemMenu()).getByText("Copy URL").closest("button"),
+    ).toBeDisabled();
+    expect(
+      within(itemMenu()).getByText("Open externally").closest("button"),
+    ).toBeDisabled();
+    expect(within(itemMenu()).getByText("Edit bookmark")).toBeEnabled();
+  });
   it.each(["bar", "scroll", "placeholder", "icon", "svg path"])(
     "opens the bar menu from its noninteractive %s without running anything",
     (target) => {

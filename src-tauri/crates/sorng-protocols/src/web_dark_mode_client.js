@@ -50,6 +50,9 @@ function createWebDarkModeController() {
     paintFrame = null,
     paintTimer = null,
     paintRevision = -1,
+    cpanelPaintBudget = 64,
+    cpanelPaintSeen = new WeakSet(),
+    cpanelPaintResetTimer = null,
     pendingChanges = new Map();
   var defaults = {
     mode: "dynamic",
@@ -119,6 +122,7 @@ function createWebDarkModeController() {
     }
   }
   function removeStyles() {
+    resetCpanelPaintBudget();
     releaseShadows(false);
     if (style) style.remove();
     style = null;
@@ -388,6 +392,73 @@ function createWebDarkModeController() {
     if (root.nodeType === 1 && root.matches(surfaces)) protect(root);
     if (subtree !== false) root.querySelectorAll(surfaces).forEach(protect);
   }
+  function resetCpanelPaintBudget() {
+    if (cpanelPaintResetTimer !== null)
+      window.clearTimeout(cpanelPaintResetTimer);
+    cpanelPaintResetTimer = null;
+    cpanelPaintBudget = 64;
+    cpanelPaintSeen = new WeakSet();
+  }
+  function repairCpanelBeforePaint(records, watcher, reconnect) {
+    if (
+      disposed ||
+      !desired ||
+      desired.mode === "filter" ||
+      !cpanelDetected ||
+      !watcher ||
+      cpanelPaintBudget === 0
+    )
+      return;
+    // A timer repair can run after the renderer presents inline-important white.
+    // Repair only a bounded set of changed elements in this observer delivery.
+    // One shared budget and one write per element per window also bound a site's
+    // observer that immediately writes white again in response to our repair.
+    if (cpanelPaintResetTimer === null)
+      cpanelPaintResetTimer = window.setTimeout(resetCpanelPaintBudget, 16);
+    function visit(node) {
+      if (!cpanelPaintBudget || node.nodeType !== 1 || !node.isConnected)
+        return;
+      cpanelPaintBudget--;
+      if (cpanelPaintSeen.has(node)) return;
+      cpanelPaintSeen.add(node);
+      protectCpanelSurfaces(node, desired, false);
+    }
+    watcher.disconnect();
+    try {
+      for (
+        var index = 0;
+        index < records.length && index < 256 && cpanelPaintBudget;
+        index++
+      ) {
+        var record = records[index];
+        if (engineMutation(record)) continue;
+        if (record.type === "attributes") {
+          if (
+            record.attributeName === "style" ||
+            record.attributeName === "class" ||
+            record.attributeName === "id"
+          )
+            visit(record.target);
+        } else if (record.type === "childList") {
+          for (
+            var added = 0;
+            added < record.addedNodes.length && cpanelPaintBudget;
+            added++
+          ) {
+            var node = record.addedNodes[added];
+            if (node.nodeType !== 1 || !node.isConnected) continue;
+            visit(node);
+            // TreeWalker stops at the budget; querySelectorAll would traverse an
+            // arbitrarily large inserted dashboard before any limit was applied.
+            var walker = node.ownerDocument.createTreeWalker(node, 1);
+            while (cpanelPaintBudget && (node = walker.nextNode())) visit(node);
+          }
+        }
+      }
+    } finally {
+      reconnect();
+    }
+  }
   function adjustments(theme) {
     return (
       "brightness(" +
@@ -545,6 +616,9 @@ function createWebDarkModeController() {
                 if (node === entry.style) entry.fullRepair = true;
               },
             );
+          });
+          repairCpanelBeforePaint(records, entry.observer, function () {
+            observeShadow(entry);
           });
           if (
             entry.repairQueued ||
@@ -1020,6 +1094,7 @@ function createWebDarkModeController() {
       });
     });
     if (!relevant) return;
+    repairCpanelBeforePaint(records, observer, observe);
     scheduleScan();
   }
   function scheduleScan() {
@@ -1346,6 +1421,7 @@ function createWebDarkModeController() {
     },
     dispose: function (keepAppearance) {
       disposed = true;
+      resetCpanelPaintBudget();
       completeReadiness(undefined);
       cancelDarkPaint();
       if (startupFallbackTimer !== null)

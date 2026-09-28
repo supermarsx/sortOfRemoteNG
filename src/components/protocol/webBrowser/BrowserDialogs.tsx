@@ -3,9 +3,11 @@ import React from "react";
 import { TrustWarningDialog } from "../../security/TrustWarningDialog";
 import { InputDialog } from "../../ui/dialogs/InputDialog";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
+import BookmarkEditDialog from "./BookmarkEditDialog";
 
 const BrowserDialogs: React.FC<SectionProps> = ({ mgr }) => (
   <>
+    <BookmarkEditDialog mgr={mgr} />
     <ConfirmDialog
       isOpen={mgr.showClearSessionConfirm}
       title="Clear this website session?"

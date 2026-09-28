@@ -5,12 +5,117 @@ import { execFile } from "node:child_process";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { test } from "node:test";
+import {
+  DevTools,
+  decodePng,
+  meanColor,
+  relativeLuminance,
+} from "../../scripts/test-website-dark-mode-browser.mjs";
+
+// Record compositor frames, not a computed-style read inside an rAF callback.
+// Keep a failing PNG and its measurements outside the disposable profile.
+async function captureCpanelPaint(profile, url, regions) {
+  const deadline = Date.now() + 5000;
+  let endpoint;
+  while (!endpoint && Date.now() < deadline) {
+    const lines = await readFile(
+      path.join(profile, "DevToolsActivePort"),
+      "utf8",
+    )
+      .then((text) => text.split(/\r?\n/u))
+      .catch(() => []);
+    if (lines[1]) endpoint = `ws://127.0.0.1:${lines[0]}${lines[1]}`;
+    else await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.ok(endpoint, "browser debugging endpoint available");
+  const devtools = await DevTools.connect(endpoint);
+  try {
+    const { targetInfos } = await devtools.send("Target.getTargets");
+    const target = targetInfos.find(
+      (item) => item.type === "page" && item.url === url,
+    );
+    assert.ok(target, "local fixture target");
+    const { sessionId } = await devtools.send("Target.attachToTarget", {
+      targetId: target.targetId,
+      flatten: true,
+    });
+    const send = (method, params = {}) =>
+      devtools.send(method, params, sessionId, 5000);
+    const samples = [];
+    let failedPng;
+    let captureError;
+    devtools.on((method, params, owner) => {
+      if (owner !== sessionId || method !== "Page.screencastFrame") return;
+      void send("Page.screencastFrameAck", {
+        sessionId: params.sessionId,
+      }).catch(() => {});
+      try {
+        const png = Buffer.from(params.data, "base64");
+        const image = decodePng(png);
+        const colors = regions.map((region) => meanColor(image, region));
+        const white = colors.map(
+          (color, index) =>
+            regions[index].kind !== "marker" && relativeLuminance(color) > 0.8,
+        );
+        samples.push({ timestamp: params.metadata.timestamp, colors, white });
+        if (white.some(Boolean) && !failedPng) failedPng = png;
+      } catch (error) {
+        captureError = error;
+      }
+    });
+    await send("Page.enable");
+    await send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
+    return {
+      async stop() {
+        try {
+          await send("Page.stopScreencast");
+          if (captureError) throw captureError;
+          const markersVisible = samples.every((sample) =>
+            regions.every(
+              (region, index) =>
+                region.kind !== "marker" ||
+                ["rgb(220, 40, 60)", "rgb(40, 100, 220)"].includes(
+                  sample.colors[index],
+                ),
+            ),
+          );
+          const result = {
+            samples: samples.length,
+            whiteFrames: samples.filter((sample) => sample.white.some(Boolean))
+              .length,
+            markersVisible,
+          };
+          if (failedPng) {
+            const artifacts = await mkdtemp(
+              path.join(tmpdir(), "sorng-cpanel-paint-evidence-"),
+            );
+            await writeFile(path.join(artifacts, "white-frame.png"), failedPng);
+            await writeFile(
+              path.join(artifacts, "samples.json"),
+              JSON.stringify({ regions, samples }, null, 2),
+            );
+            result.artifacts = artifacts;
+          }
+          return result;
+        } finally {
+          devtools.close();
+        }
+      },
+      close() {
+        devtools.close();
+      },
+    };
+  } catch (error) {
+    devtools.close();
+    throw error;
+  }
+}
 
 // Optional read-only baseline: CPANEL_TEST_RUNTIME_REF=HEAD. git show supplies
 // bytes to the fixture server; the independently edited runtime is never replaced.
@@ -153,7 +258,7 @@ test(
 
 // Real wall-clock timers and a Node watchdog: a timeout inside the renderer
 // cannot diagnose a microtask loop that prevents all browser timers from firing.
-async function dynamicBrowser(t, checks) {
+async function dynamicBrowser(t, checks, capturePaint = false) {
   const [source, bundle] = await Promise.all([
     runtimeSource(),
     readFile(
@@ -166,13 +271,31 @@ async function dynamicBrowser(t, checks) {
   t.diagnostic(
     `runtime SHA-256 ${createHash("sha256").update(source).digest("hex")}`,
   );
+  let paintShield = "";
+  if (capturePaint) {
+    const rust = await readFile(
+      new URL(
+        "../../src-tauri/crates/sorng-protocols/src/http_dark_mode.rs",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const match =
+      /fn paint_shield\(&self\)[\s\S]*?Some\(format!\(\s*("(?:\\.|[^"\\])*")\s*,\s*self\.background_color,\s*\)\)/u.exec(
+        rust,
+      );
+    assert.ok(match, "native paint shield template");
+    paintShield = JSON.parse(match[1]).replace(/\{\{|\}\}|\{\}/gu, (part) =>
+      part === "{}" ? "#181a1b" : part[0],
+    );
+  }
   // Mirror the native bootstrap's loading/canvas layers. This test exercises
   // JS adoption and computed CSS; Rust bootstrap generation has separate tests.
   const bootstrap = `<style id="__sorng_dark_bootstrap_v1" class="darkreader" data-background-color="#181a1b" data-text-color="#e8e6e3">
     @layer sorng-force-dark,sorng-dark-loading;
     @layer sorng-force-dark{html:root,html:root body{background-color:#181a1b!important;color:#e8e6e3!important}}
     @layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;transition:none!important}}
-    </style>`;
+    </style>${paintShield}`;
   const fixture = (frame) => `<!doctype html><html><head>${bootstrap}
     <link rel="stylesheet" href="/frontend/jupiter/theme.css"><script src="/runtime.js"></script>
     </head><body id="cpanel_body"><div class="unconverted">Opaque arbitrary upstream surface</div>
@@ -233,7 +356,37 @@ async function dynamicBrowser(t, checks) {
   });
   let lastProgress = null;
   let engineRequests = 0;
+  let camera;
   const server = createServer(async (req, res) => {
+    if (capturePaint && req.method === "POST" && req.url === "/paint-start") {
+      try {
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        camera = await captureCpanelPaint(
+          profile,
+          `http://127.0.0.1:${server.address().port}/`,
+          JSON.parse(body),
+        );
+        res.writeHead(204).end();
+      } catch (error) {
+        finish({ error: error.stack });
+        res.writeHead(500).end();
+      }
+      return;
+    }
+    if (capturePaint && req.method === "POST" && req.url === "/paint-stop") {
+      try {
+        const pixels = await camera.stop();
+        camera = null;
+        t.diagnostic(`Compositor pixels: ${JSON.stringify(pixels)}`);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(pixels));
+      } catch (error) {
+        finish({ error: error.stack });
+        res.writeHead(500).end();
+      }
+      return;
+    }
     if (req.method === "POST" && ["/progress", "/result"].includes(req.url)) {
       try {
         let body = "";
@@ -277,6 +430,14 @@ async function dynamicBrowser(t, checks) {
         "--disable-background-networking",
         "--disable-background-timer-throttling",
         "--disable-renderer-backgrounding",
+        ...(capturePaint
+          ? [
+              "--remote-debugging-address=127.0.0.1",
+              "--remote-debugging-port=0",
+              "--force-device-scale-factor=1",
+              "--window-size=800,800",
+            ]
+          : []),
         `--user-data-dir=${profile}`,
         `http://127.0.0.1:${server.address().port}/`,
       ],
@@ -307,6 +468,7 @@ async function dynamicBrowser(t, checks) {
     return { engineRequests, ...outcome.metrics };
   } finally {
     clearTimeout(deadline);
+    camera?.close();
     try {
       if (child?.pid && child.exitCode === null && child.signalCode === null) {
         // Only this test's fresh browser process tree, including hung renderers.
@@ -339,6 +501,171 @@ const dynamicOptions = {
     : "Set CPANEL_TEST_BROWSER to an installed Chromium browser",
   timeout: 45000,
 };
+
+test(
+  "cPanel after-ready inline mutations stay dark in compositor pixels",
+  dynamicOptions,
+  async (t) => {
+    await dynamicBrowser(
+      t,
+      async ({ assert, delay, eventually }) => {
+        const documents = [
+          document,
+          document.querySelector("iframe").contentDocument,
+        ];
+        const frame = document.querySelector("iframe");
+        frame.style.cssText =
+          "position:fixed;left:0;top:240px;width:700px;height:240px;border:0";
+        const headers = [];
+        const markers = [];
+        for (const doc of documents) {
+          doc.body.style.margin = "0";
+          const header = doc.createElement("header");
+          header.className = "panel-heading";
+          header.style.cssText =
+            "position:fixed;left:0;top:0;width:300px;height:100px";
+          doc.body.append(header);
+          const host = doc.createElement("div");
+          host.style.cssText =
+            "position:fixed;left:320px;top:0;width:300px;height:100px";
+          doc.body.append(host);
+          const shadow = host.attachShadow({ mode: "open" });
+          shadow.innerHTML =
+            '<header class="panel-heading" style="display:block;width:300px;height:100px"></header>';
+          headers.push(header, shadow.querySelector("header"));
+          const marker = doc.createElement("canvas");
+          marker.width = marker.height = 20;
+          marker.style.cssText =
+            "position:fixed;left:40px;top:130px;width:20px;height:20px";
+          doc.body.append(marker);
+          const context = marker.getContext("2d");
+          context.fillStyle = "rgb(220,40,60)";
+          context.fillRect(0, 0, 20, 20);
+          markers.push(context);
+        }
+        const controller = window.__sorngWebDarkModeDocument_v1;
+        assert(
+          (await controller.set({ enabled: true })) === "engine",
+          "real engine active",
+        );
+        await eventually(
+          () =>
+            documents.every((doc) =>
+              doc.documentElement.hasAttribute("data-sorng-dark-presented"),
+            ),
+          "both documents presented",
+        );
+        const regions = [
+          { x: 40, y: 40, width: 20, height: 20 },
+          { x: 360, y: 40, width: 20, height: 20 },
+          { x: 40, y: 280, width: 20, height: 20 },
+          { x: 360, y: 280, width: 20, height: 20 },
+          { x: 40, y: 130, width: 20, height: 20, kind: "marker" },
+          { x: 40, y: 370, width: 20, height: 20, kind: "marker" },
+        ];
+        await fetch("/paint-start", {
+          method: "POST",
+          body: JSON.stringify(regions),
+        });
+        await delay(100);
+        // Existing light/shadow headers in both documents are reset by a dashboard
+        // update during a rendering opportunity. No timer overrides or engine mocks.
+        for (let tick = 0; tick < 40; tick++) {
+          await delay(50);
+          await new Promise((resolve) =>
+            requestAnimationFrame(() => {
+              for (const header of headers)
+                header.style.setProperty(
+                  "background-color",
+                  "white",
+                  "important",
+                );
+              for (const context of markers) {
+                context.fillStyle =
+                  tick % 2 ? "rgb(220,40,60)" : "rgb(40,100,220)";
+                context.fillRect(0, 0, 20, 20);
+              }
+              resolve();
+            }),
+          );
+        }
+        await delay(150);
+        const pixels = await fetch("/paint-stop", { method: "POST" }).then(
+          (response) => response.json(),
+        );
+        assert(pixels.samples >= 10, "at least ten compositor frames sampled");
+        assert(
+          pixels.markersVisible,
+          "content markers stay visible in both documents; no opaque shield",
+        );
+        assert(pixels.whiteFrames === 0, JSON.stringify(pixels));
+        // A deliberately competing page observer must not turn a fast repair into
+        // an infinite microtask feedback loop. The Node watchdog guards this phase.
+        let reactions = 0;
+        let beats = 0;
+        let maxGap = 0;
+        let lastBeat = performance.now();
+        const heartbeat = setInterval(() => {
+          const now = performance.now();
+          maxGap = Math.max(maxGap, now - lastBeat);
+          lastBeat = now;
+          beats++;
+        }, 16);
+        const competitors = headers.map((header) => {
+          const observer = new MutationObserver(() => {
+            reactions++;
+            if (header.style.backgroundColor !== "white")
+              header.style.setProperty(
+                "background-color",
+                "white",
+                "important",
+              );
+          });
+          observer.observe(header, {
+            attributes: true,
+            attributeFilter: ["style"],
+          });
+          return observer;
+        });
+        try {
+          for (const header of headers)
+            header.style.setProperty("background-color", "white", "important");
+          await delay(500);
+        } finally {
+          competitors.forEach((observer) => observer.disconnect());
+          clearInterval(heartbeat);
+        }
+        assert(
+          beats >= 10 && maxGap < 500,
+          `heartbeat: ${beats} beats, ${maxGap}ms gap`,
+        );
+        assert(reactions < 1000, `bounded feedback: ${reactions} reactions`);
+        await eventually(
+          () =>
+            headers.every(
+              (header) =>
+                getComputedStyle(header).backgroundColor === "rgb(49, 50, 51)",
+            ),
+          "headers recover after competing observer stops",
+        );
+        assert(
+          documents.every((doc) =>
+            doc.documentElement.hasAttribute("data-sorng-dark-presented"),
+          ),
+          "feedback never blanks documents",
+        );
+        await controller.set({ enabled: false });
+        await delay(100);
+        assert(
+          headers.every((header) => header.style.backgroundColor === "white"),
+          "disable restores latest site colors and cancels repairs",
+        );
+        return { ...pixels, beats, maxGap, reactions };
+      },
+      true,
+    );
+  },
+);
 
 test(
   "shadow ancestor traversal stops at a document with a named host form",

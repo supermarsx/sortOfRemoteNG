@@ -741,6 +741,57 @@ describe("database-owned trusted HTTP redirect preferences", () => {
     );
     expect(new Set([original, ...distinct]).size).toBe(distinct.length + 1);
   });
+  it("keeps redirect authority for label and bookmark edits but not credential or policy changes", () => {
+    const original = httpRedirectTrustIdentity(source);
+    const edited: Connection = {
+      ...source,
+      name: "Renamed NAS",
+      updatedAt: "2026-09-26",
+      httpBookmarks: [
+        { name: "Files", path: "/files" },
+        {
+          name: "Tools",
+          isFolder: true,
+          children: [{ name: "Status", path: "https://other.invalid/status" }],
+        },
+      ],
+    };
+    expect(httpRedirectTrustIdentity(edited)).toBe(original);
+    expect(
+      httpRedirectTrustIdentity({
+        ...edited,
+        httpAutomation: {
+          version: 1,
+          interactionMacrosEnabled: false,
+          scriptInjectionEnabled: false,
+          forceDark: false,
+          items: [{ kind: "script", id: "pinned-script" }],
+        },
+      }),
+    ).toBe(original);
+    for (const changed of [
+      { ...edited, hostname: "other.invalid" },
+      { ...edited, basicAuthPassword: "different-password" },
+      {
+        ...edited,
+        httpAutomation: {
+          version: 1 as const,
+          interactionMacrosEnabled: false,
+          scriptInjectionEnabled: true,
+          forceDark: false,
+          items: [],
+        },
+      },
+      {
+        ...edited,
+        httpProxyPolicy: {
+          ...DEFAULT_HTTP_PROXY_POLICY,
+          pageScripts: "block" as const,
+        },
+      },
+    ])
+      expect(httpRedirectTrustIdentity(changed)).not.toBe(original);
+  });
   it("establishes reference-only original provenance even with no trusted destinations", async () => {
     const view = fixture();
     const result = await view.result.current.inspect(review, vi.fn());

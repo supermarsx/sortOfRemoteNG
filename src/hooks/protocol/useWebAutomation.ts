@@ -557,6 +557,7 @@ export function useWebAutomation(options: Options) {
     ...options,
     scopeKey: options.appearanceScopeKey ?? options.scopeKey,
     bridge: appearanceBridge,
+    accessRevision: appearanceEpoch,
     resetKey: `${executionKey}:${appearanceEpoch}`,
   });
 

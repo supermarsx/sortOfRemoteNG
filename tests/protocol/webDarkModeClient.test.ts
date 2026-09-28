@@ -446,6 +446,92 @@ describe("injected dark-mode extension runtime", () => {
     expect(root.querySelector("style")).toBeNull();
     expect(Element.prototype.attachShadow).toBe(originalAttach);
   });
+  it("repairs cPanel inline colors before timers with one shared light/shadow budget", async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div id="host"></div></main>';
+    const root = document
+      .getElementById("host")!
+      .attachShadow({ mode: "open" });
+    const headers: HTMLElement[] = [];
+    for (const parent of [document.body, root]) {
+      for (let index = 0; index < 80; index++) {
+        const header = document.createElement("header");
+        header.style.setProperty("background-color", "white", "important");
+        parent.append(header);
+        headers.push(header);
+      }
+    }
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    await vi.advanceTimersByTimeAsync(100);
+    for (const header of headers)
+      header.style.setProperty("background-color", "white", "important");
+    await Promise.resolve();
+    // No clock advancement: the first observer delivery protects only 64 nodes,
+    // shared across the document and shadow root. Deferred repair drains the rest.
+    expect(
+      headers.filter(
+        (header) => header.style.backgroundColor === "rgb(49, 50, 51)",
+      ),
+    ).toHaveLength(64);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(
+      headers.every(
+        (header) => header.style.backgroundColor === "rgb(49, 50, 51)",
+      ),
+    ).toBe(true);
+    await controller.set({ enabled: false });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(
+      headers.every((header) => header.style.backgroundColor === "white"),
+    ).toBe(true);
+  });
+  it("deduplicates same-element cPanel repairs until yielding and ignores engine nodes", async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML =
+      '<main id="cpanel_body"><header style="background-color:white!important"></header></main>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    await vi.advanceTimersByTimeAsync(100);
+    const header = document.querySelector("header")!;
+    header.style.setProperty("background-color", "white", "important");
+    await Promise.resolve();
+    expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)");
+    // Model a page observer reacting to the repair. A second microtask cannot
+    // write again and feed that observer indefinitely; the timer owns recovery.
+    header.style.setProperty("background-color", "white", "important");
+    await Promise.resolve();
+    expect(header.style.backgroundColor).toBe("white");
+    await vi.advanceTimersByTimeAsync(20);
+    expect(header.style.backgroundColor).toBe("rgb(49, 50, 51)");
+    const sheet = document.createElement("style");
+    sheet.className = "darkreader darkreader--sync";
+    const walk = vi.spyOn(document, "createTreeWalker");
+    document.head.append(sheet);
+    sheet.textContent = "header{color:white}";
+    await Promise.resolve();
+    expect(walk).not.toHaveBeenCalled();
+    sheet.remove();
+    controller.dispose();
+    header.style.setProperty("background-color", "white", "important");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(header.style.backgroundColor).toBe("white");
+  });
+  it("protects a newly identified cPanel header on class/id change before timers", async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML =
+      '<main id="cpanel_body"><div data-probe="class" style="background-color:white!important"></div><div data-probe="id" style="background-color:white!important"></div></main>';
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    await vi.advanceTimersByTimeAsync(100);
+    const byClass = document.querySelector<HTMLElement>(
+      '[data-probe="class"]',
+    )!;
+    const byId = document.querySelector<HTMLElement>('[data-probe="id"]')!;
+    byClass.className = "header";
+    byId.id = "topbar";
+    await Promise.resolve();
+    expect(byClass.style.backgroundColor).toBe("rgb(49, 50, 51)");
+    expect(byId.style.backgroundColor).toBe("rgb(49, 50, 51)");
+  });
   it("repairs a busy cPanel shadow root without rescanning the document", async () => {
     document.body.innerHTML =
       '<main id="cpanel_body"><div id="host"></div></main>';

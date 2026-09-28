@@ -8,10 +8,12 @@ const BookmarkChip: React.FC<{
   bm: HttpBookmarkItem;
   idx: number;
   baseUrl: string;
-}> = ({ mgr, bm, idx, baseUrl }) => {
+}> = ({ mgr, bm, idx }) => {
   if (bm.isFolder) return null;
-  const bookmarkUrl = baseUrl + bm.path;
-  const isActive = bm.path === mgr.currentPath;
+  const bookmarkUrl = mgr.resolveBookmarkUrl(bm.path);
+  const isActive =
+    Boolean(bookmarkUrl) &&
+    bookmarkUrl === mgr.resolveBookmarkUrl(mgr.currentPath);
 
   if (mgr.editingBmIdx === idx) {
     return (
@@ -46,7 +48,7 @@ const BookmarkChip: React.FC<{
       onDrop={mgr.handleDrop(idx)}
       onDragEnd={mgr.handleDragEnd}
       onClick={() => {
-        mgr.navigateToUrl(bookmarkUrl);
+        if (bookmarkUrl) mgr.navigateToUrl(bookmarkUrl);
       }}
       onContextMenu={(e) => {
         e.preventDefault();

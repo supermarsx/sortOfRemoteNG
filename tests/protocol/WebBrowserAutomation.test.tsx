@@ -4,6 +4,7 @@ import {
   cleanup,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
 } from "@testing-library/react";
@@ -27,6 +28,13 @@ const native = vi.hoisted(() => ({
   sessions: [] as ConnectionSession[],
   locked: false,
   vaultApi: undefined as DatabaseCredentialVaultApi | undefined,
+  // Production holds this lease in state. A fresh object per render would
+  // restart the async proxy-palette effect indefinitely inside async act().
+  databaseAvailability: {
+    status: "ready" as const,
+    databaseId: "owned-demo",
+    generation: 1,
+  },
   settings: {
     proxyKeepaliveEnabled: false,
     webRecording: { autoRecordWebSessions: false },
@@ -65,11 +73,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
     dispatch: native.dispatch,
     dispatchAndFlush: native.dispatch,
     credentialVault: native.vaultApi,
-    databaseAvailability: {
-      status: "ready",
-      databaseId: "owned-demo",
-      generation: 1,
-    },
+    databaseAvailability: native.databaseAvailability,
     recycleBin: {
       snapshot: { scope: { databaseId: "owned-demo", generation: 1 } },
     },
@@ -119,6 +123,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => {
   };
 });
 import { WebBrowser } from "../../src/components/protocol/WebBrowser";
+import { useWebBrowser } from "../../src/hooks/protocol/useWebBrowser";
 import { normalizeWebAutomationLibrary } from "../../src/utils/recording/webAutomationLibrary";
 import {
   normalizeWebsiteDarkModeConfig,
@@ -243,7 +248,259 @@ async function mount() {
     );
   return { ...view, iframe, post, identity, emit };
 }
+describe("live website bookmark editor", () => {
+  async function editor() {
+    native.connections[0].httpBookmarks = [
+      { name: "Home", path: "/" },
+      {
+        name: "Tools",
+        isFolder: true,
+        children: [{ name: "Files", path: "/files" }],
+      },
+    ];
+    const connection = native.connections[0];
+    const session: ConnectionSession = {
+      id: "bookmark-session",
+      connectionId: connection.id,
+      ownerDatabaseId: "owned-demo",
+      name: connection.name,
+      hostname: connection.hostname,
+      protocol: "http",
+      status: "connected",
+      startTime: new Date(),
+    };
+    native.sessions = [session];
+    const hook = renderHook(() => useWebBrowser(session));
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith(
+        "start_basic_auth_proxy",
+        expect.anything(),
+      ),
+    );
+    native.dispatch.mockClear();
+    return hook;
+  }
+  it.each([false, true])(
+    "saves the name and URL without navigating (inside folder=%s)",
+    async (nested) => {
+      const hook = await editor();
+      act(() =>
+        hook.result.current.beginEditBookmark(
+          nested ? 1 : 0,
+          nested ? 0 : undefined,
+        ),
+      );
+      act(() =>
+        hook.result.current.setBookmarkEdit(
+          (draft) =>
+            draft && {
+              ...draft,
+              name: " New title ",
+              path: " https://other.example.test/new?q=1#files ",
+            },
+        ),
+      );
+      native.invoke.mockClear();
+      const before = structuredClone(native.connections[0]);
+      act(() => hook.result.current.saveBookmarkEdit());
+      const action = native.dispatch.mock.calls.find(
+        ([value]) => value.type === "UPDATE_CONNECTION",
+      )?.[0];
+      expect(action).toBeDefined();
+      const saved = nested
+        ? action.payload.httpBookmarks[1].children[0]
+        : action.payload.httpBookmarks[0];
+      expect(saved).toEqual({
+        name: "New title",
+        path: "https://other.example.test/new?q=1#files",
+      });
+      expect(native.connections[0]).toEqual(before);
+      expect(hook.result.current.bookmarkEdit).toBeNull();
+      expect(
+        native.invoke.mock.calls.filter(([command]) =>
+          [
+            "start_basic_auth_proxy",
+            "stop_basic_auth_proxy",
+            "navigate_proxy_session",
+          ].includes(command),
+        ),
+      ).toEqual([]);
+    },
+  );
+  it.each([
+    "javascript:alert(1)",
+    "https://user:password@host.test/",
+    "",
+    "file:///file",
+  ])("refuses unsafe or empty URL %j without saving", async (path) => {
+    const hook = await editor();
+    act(() => hook.result.current.beginEditBookmark(0));
+    act(() =>
+      hook.result.current.setBookmarkEdit(
+        (draft) => draft && { ...draft, path },
+      ),
+    );
+    act(() => hook.result.current.saveBookmarkEdit());
+    expect(hook.result.current.bookmarkEdit?.error).toMatch(/valid HTTP/);
+    expect(native.dispatch).not.toHaveBeenCalled();
+  });
+  it("does not overwrite a different bookmark if the list changes while editing", async () => {
+    const hook = await editor();
+    act(() => hook.result.current.beginEditBookmark(0));
+    native.connections = [
+      {
+        ...native.connections[0],
+        httpBookmarks: [
+          { name: "Someone else's new bookmark", path: "/other" },
+        ],
+      },
+    ];
+    hook.rerender();
+    act(() => hook.result.current.saveBookmarkEdit());
+    expect(hook.result.current.bookmarkEdit?.error).toMatch(
+      /bookmarks or owning database changed/,
+    );
+    expect(native.dispatch).not.toHaveBeenCalled();
+  });
+  it("cancels an edit without changing connection data", async () => {
+    const hook = await editor();
+    act(() => hook.result.current.beginEditBookmark(0));
+    act(() => hook.result.current.setBookmarkEdit(null));
+    act(() => hook.result.current.saveBookmarkEdit());
+    expect(native.dispatch).not.toHaveBeenCalled();
+  });
+  it("refuses to save a draft after the owning database lease changes", async () => {
+    const hook = await editor();
+    act(() => hook.result.current.beginEditBookmark(0));
+    const original = native.databaseAvailability;
+    try {
+      native.databaseAvailability = {
+        ...original,
+        generation: original.generation + 1,
+      };
+      hook.rerender();
+      native.dispatch.mockClear();
+      act(() => hook.result.current.saveBookmarkEdit());
+      expect(hook.result.current.bookmarkEdit?.error).toMatch(
+        /owning database changed/,
+      );
+      expect(native.dispatch).not.toHaveBeenCalled();
+    } finally {
+      hook.unmount();
+      native.databaseAvailability = original;
+    }
+  });
+});
 describe("real WebBrowser iframe and website automation integration", () => {
+  it("keeps the live document and dark mode when labels and bookmark URLs change before their save finishes", async () => {
+    const { iframe, post, emit, rerender } = await mount();
+    emit("proxy_document_start");
+    emit("proxy_dom_ready");
+    await waitFor(() =>
+      expect(
+        post.mock.calls.some(
+          ([data]) => data.action === "dark" && data.payload.enabled,
+        ),
+      ).toBe(true),
+    );
+    for (const [data] of [...post.mock.calls])
+      if (data.action === "dark")
+        emit("proxy_web_automation", { ...data, status: "ok" });
+    emit("proxy_dark_ready");
+    const src = iframe.src;
+    native.persistedConnections = structuredClone(native.connections);
+    post.mockClear();
+    native.invoke.mockClear();
+    for (const changes of [
+      { name: "Renamed panel" },
+      { httpBookmarks: [{ name: "Files", path: "/files" }] },
+      {
+        httpBookmarks: [
+          { name: "Renamed files", path: "https://other.example.test/files" },
+        ],
+      },
+      { httpBookmarks: [] },
+      {
+        httpAutomation: { ...native.connections[0].httpAutomation!, items: [] },
+      },
+    ]) {
+      native.connections = [
+        { ...native.connections[0], ...changes, updatedAt: "2026-09-26" },
+      ];
+      await act(async () =>
+        rerender(<WebBrowser session={native.sessions[0]} />),
+      );
+      expect(document.querySelector("iframe")).toBe(iframe);
+      expect(iframe.src).toBe(src);
+      expect(screen.queryByTestId("web-dark-paint-shield")).toBeNull();
+      expect(
+        post.mock.calls.filter(
+          ([data]) => data.action === "dark" && !data.payload.enabled,
+        ),
+      ).toEqual([]);
+      expect(
+        native.invoke.mock.calls.filter(([command]) =>
+          ["start_basic_auth_proxy", "stop_basic_auth_proxy"].includes(command),
+        ),
+      ).toEqual([]);
+      expect(
+        native.invoke.mock.calls.filter(
+          ([command, args]) =>
+            command === "update_proxy_website_dark_mode" &&
+            args.palette === null,
+        ),
+      ).toEqual([]);
+    }
+  });
+  it("never sends dark-off while restoring saved appearance on successive website documents", async () => {
+    const { iframe, post, emit, identity } = await mount();
+    const firstSrc = iframe.src;
+    for (let sequence = 1; sequence <= 3; sequence++) {
+      if (sequence > 1) {
+        emit("proxy_navigation_start", {
+          documentSequence: sequence - 1,
+          documentToken: (sequence - 1).toString(16).repeat(32),
+          navigationToken: sequence === 2 ? identity.navigationToken : null,
+        });
+      }
+      const documentIdentity = {
+        documentSequence: sequence,
+        documentToken: sequence.toString(16).repeat(32),
+        navigationToken: sequence === 1 ? identity.navigationToken : null,
+      };
+      emit("proxy_document_start", documentIdentity);
+      emit("proxy_dom_ready", documentIdentity);
+      await waitFor(() =>
+        expect(
+          post.mock.calls.some(
+            ([data]) =>
+              data.documentSequence === sequence &&
+              data.action === "dark" &&
+              data.payload.enabled === true,
+          ),
+        ).toBe(true),
+      );
+      await act(async () => {
+        for (const [data] of [...post.mock.calls])
+          if (data.documentSequence === sequence && data.action === "dark")
+            emit("proxy_web_automation", { ...data, status: "ok" });
+        emit("proxy_dark_ready", documentIdentity);
+      });
+      expect(screen.queryByTestId("web-dark-paint-shield")).toBeNull();
+    }
+    expect(
+      post.mock.calls.filter(
+        ([data]) => data.action === "dark" && data.payload.enabled === false,
+      ),
+    ).toEqual([]);
+    expect(iframe.src).toBe(firstSrc);
+    expect(
+      native.invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("reapplies saved appearance and global defaults without replacing the iframe or restarting authentication", async () => {
     const { iframe, post, emit, rerender } = await mount();
     expect(native.invoke).toHaveBeenCalledWith("start_basic_auth_proxy", {
@@ -366,18 +623,16 @@ describe("real WebBrowser iframe and website automation integration", () => {
 
   it("does not send an optimistic unsaved dark palette to the proxy", async () => {
     const { rerender } = await mount();
-    await waitFor(() =>
-      expect(native.invoke).toHaveBeenCalledWith(
-        "update_proxy_website_dark_mode",
-        {
-          sessionId: proxy.session_id,
-          palette: {
-            backgroundColor: "#181a1b",
-            textColor: "#e8e6e3",
-          },
+    // Startup passes the durable palette with allocation, not a redundant
+    // update that depended on a new mock database lease on every render.
+    expect(native.invoke).toHaveBeenCalledWith("start_basic_auth_proxy", {
+      config: expect.objectContaining({
+        website_dark_mode: {
+          backgroundColor: "#181a1b",
+          textColor: "#e8e6e3",
         },
-      ),
-    );
+      }),
+    });
     native.invoke.mockClear();
     native.persistedConnections = structuredClone(native.connections);
     native.connections = [
@@ -734,6 +989,6 @@ describe("real WebBrowser iframe and website automation integration", () => {
       post.mock.calls.some(
         ([data]) => data.action === "dark" && data.payload.enabled === false,
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 });

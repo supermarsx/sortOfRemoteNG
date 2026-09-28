@@ -29,6 +29,82 @@ function Harness({ initial }: { initial: Partial<Connection> }) {
 const draft = () => JSON.parse(screen.getByTestId("draft").textContent!);
 
 describe("connection draft Favorites", () => {
+  it.each([
+    [
+      "https://Other.example:443/status?view=all#top",
+      "https://Other.example:443/status?view=all#top",
+    ],
+    ["http://other.example/status", "http://other.example/status"],
+    ["status?view=all#top", "/status?view=all#top"],
+    ["/status", "/status"],
+  ])(
+    "preserves bookmark targets when editing an existing connection: %s",
+    (path, expected) => {
+      const bookmark = {
+        name: "Status",
+        path,
+        customMetadata: { color: "green" },
+      };
+      render(
+        <Harness
+          initial={{
+            id: "existing-web",
+            protocol: "https",
+            httpBookmarks: [bookmark],
+          }}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Edit bookmark Status" }),
+      );
+      fireEvent.change(screen.getByLabelText("Bookmark name"), {
+        target: { value: "Renamed" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Save bookmark draft" }),
+      );
+      expect(draft().httpBookmarks).toEqual([
+        { ...bookmark, name: "Renamed", path: expected },
+      ]);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Edit bookmark Renamed" }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Save bookmark draft" }),
+      );
+      expect(draft().httpBookmarks[0].path).toBe(expected);
+    },
+  );
+
+  it("preserves absolute URLs when renaming an existing folder child", () => {
+    const child = {
+      name: "Remote",
+      path: "https://other.example/status?x=1#top",
+    };
+    render(
+      <Harness
+        initial={{
+          id: "existing-web",
+          protocol: "https",
+          httpBookmarks: [{ name: "Tools", isFolder: true, children: [child] }],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByText("Folder contents (1)"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit bookmark Remote" }),
+    );
+    fireEvent.change(screen.getByLabelText("Bookmark name"), {
+      target: { value: "Renamed" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save bookmark draft" }),
+    );
+    expect(draft().httpBookmarks[0].children).toEqual([
+      { ...child, name: "Renamed" },
+    ]);
+  });
+
   it("reorders and removes disabled HTTP favorites without changing permissions or resolving private libraries", () => {
     const initial = {
       id: "web",
@@ -95,7 +171,7 @@ describe("connection draft Favorites", () => {
     fireEvent.change(screen.getByLabelText("Bookmark name"), {
       target: { value: "Health" },
     });
-    fireEvent.change(screen.getByLabelText("Bookmark path"), {
+    fireEvent.change(screen.getByLabelText("Bookmark URL or path"), {
       target: { value: "health?view=all#top" },
     });
     fireEvent.click(
@@ -115,7 +191,9 @@ describe("connection draft Favorites", () => {
       ),
     ).toEqual(["Logs", "Health"]);
     fireEvent.click(screen.getByRole("button", { name: "Edit folder Tools" }));
-    expect(screen.queryByLabelText("Bookmark path")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Bookmark URL or path"),
+    ).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Bookmark name"), {
       target: { value: "Team" },
     });

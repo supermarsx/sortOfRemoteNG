@@ -5,6 +5,7 @@ import type {
   HttpBookmarkItem,
 } from "../../types/connection/connection";
 import { SessionQuickActionsSection } from "./SessionQuickActionsSection";
+import { resolveHttpBookmarkUrl } from "../../utils/protocol/httpBookmarkUrl";
 
 interface Props {
   formData: Partial<Connection>;
@@ -256,7 +257,7 @@ export function ConnectionFavoritesSection({ formData, setFormData }: Props) {
               </label>
               {!currentEdit.item.isFolder && (
                 <label className="block text-sm">
-                  Bookmark path
+                  Bookmark URL or path
                   <input
                     className="sor-form-input mt-1 w-full"
                     maxLength={8192}
@@ -284,7 +285,13 @@ export function ConnectionFavoritesSection({ formData, setFormData }: Props) {
                   }
                   onClick={() => {
                     let path = currentEdit.path.trim();
-                    if (!path.startsWith("/")) path = `/${path}`;
+                    // A validation-only base equal to the value checks that it is absolute.
+                    if (
+                      !path.startsWith("/") &&
+                      !resolveHttpBookmarkUrl(path, path)
+                    ) {
+                      path = `/${path}`;
+                    }
                     const replacement: HttpBookmarkItem = currentEdit.item
                       .isFolder
                       ? { ...currentEdit.item, name: currentEdit.name.trim() }

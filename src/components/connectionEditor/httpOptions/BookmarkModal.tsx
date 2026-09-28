@@ -29,6 +29,7 @@ const BookmarkModal: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <input
               ref={mgr.bookmarkNameRef}
               type="text"
+              aria-label="Name"
               value={mgr.bookmarkName}
               onChange={(e) => mgr.setBookmarkName(e.target.value)}
               onKeyDown={(e) => {
@@ -43,10 +44,11 @@ const BookmarkModal: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-2">
-              Path
+              URL or path
             </label>
             <input
               type="text"
+              aria-label="URL or path"
               value={mgr.bookmarkPath}
               onChange={(e) => mgr.setBookmarkPath(e.target.value)}
               onKeyDown={(e) => {
@@ -56,11 +58,10 @@ const BookmarkModal: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 }
               }}
               className="sor-form-input"
-              placeholder="e.g. /status-log.asp"
+              placeholder="/status-log.asp or https://example.com/status"
             />
             <p className="text-xs text-[var(--color-textMuted)] mt-1">
-              Relative path starting with /. Will be appended to the connection
-              URL.
+              Use a path on this connection or a full HTTP or HTTPS URL.
             </p>
           </div>
           <div className="flex justify-end space-x-3">

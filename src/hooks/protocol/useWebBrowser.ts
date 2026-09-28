@@ -109,6 +109,7 @@ import {
   normalizeWebsiteDarkModeSettings,
 } from "../../utils/connection/websiteDarkMode";
 import { httpRedirectTrustIdentity } from "../../utils/protocol/httpRedirectTrustIdentity";
+import { resolveHttpBookmarkUrl } from "../../utils/protocol/httpBookmarkUrl";
 import type {
   CertificateInspection,
   NativeTlsCertificateInfo,
@@ -915,11 +916,20 @@ export function useWebBrowser(session: ConnectionSession) {
       : null,
   ]);
   const continuationOwnerKey = stableJsonStringify([
-    connection && {
-      ...connection,
-      lastConnected: undefined,
-      connectionCount: undefined,
-    },
+    (() => {
+      if (!connection) return null;
+      try {
+        // A label, bookmark or appearance edit does not replace the source of
+        // a live redirect. Keep credentials and routing/security changes bound.
+        return [
+          httpRedirectTrustIdentity(connection),
+          connection.httpTrustedRedirectDestinations,
+        ];
+      } catch {
+        // Invalid configuration must still invalidate the previous lease.
+        return connection;
+      }
+    })(),
     reviewedFlowScope,
     vaultSource
       ? [credentialVault?.scope, credentialVault?.changeRevision]
@@ -1476,6 +1486,18 @@ export function useWebBrowser(session: ConnectionSession) {
   } | null>(null);
   const [editingBmIdx, setEditingBmIdx] = useState<number | null>(null);
   const [editBmName, setEditBmName] = useState("");
+  const [bookmarkEdit, setBookmarkEdit] = useState<{
+    idx: number;
+    childIdx?: number;
+    name: string;
+    path: string;
+    error?: string;
+  } | null>(null);
+  const bookmarkEditSource = useRef<{
+    connectionId: string;
+    ownerScope: string;
+    bookmarks: string;
+  } | null>(null);
   const editBmRef = useRef<HTMLInputElement>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -3716,6 +3738,83 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [connection, currentUrl, navigationFailure?.url, settings.diagnostics]);
 
   // ── Bookmark helpers ───────────────────────────────────────
+  const resolveBookmarkUrl = useCallback(
+    (path: string) => resolveHttpBookmarkUrl(path, buildTargetUrl()),
+    [buildTargetUrl],
+  );
+  const beginEditBookmark = useCallback(
+    (idx: number, childIdx?: number) => {
+      if (!connection) return;
+      const root = connection.httpBookmarks?.[idx];
+      const bookmark =
+        childIdx === undefined
+          ? root
+          : root?.isFolder
+            ? root.children[childIdx]
+            : undefined;
+      if (!bookmark || bookmark.isFolder) return;
+      bookmarkEditSource.current = {
+        connectionId: connection.id,
+        ownerScope: trustOwnerScope,
+        bookmarks: stableJsonStringify(connection.httpBookmarks),
+      };
+      setBookmarkEdit({
+        idx,
+        childIdx,
+        name: bookmark.name,
+        path: bookmark.path,
+      });
+    },
+    [connection, trustOwnerScope],
+  );
+  const saveBookmarkEdit = useCallback(() => {
+    if (!bookmarkEdit) return;
+    const fail = (error: string) => setBookmarkEdit({ ...bookmarkEdit, error });
+    const source = bookmarkEditSource.current;
+    if (
+      !connection ||
+      !source ||
+      connection.id !== source.connectionId ||
+      trustOwnerScope !== source.ownerScope ||
+      stableJsonStringify(connection.httpBookmarks) !== source.bookmarks
+    ) {
+      fail(
+        "The bookmarks or owning database changed. Reopen this bookmark before saving.",
+      );
+      return;
+    }
+    const name = bookmarkEdit.name.trim();
+    const path = bookmarkEdit.path.trim();
+    if (!name) {
+      fail("Enter a bookmark name.");
+      return;
+    }
+    if (!resolveBookmarkUrl(path)) {
+      fail(
+        "Enter a valid HTTP(S) URL or website path without embedded credentials.",
+      );
+      return;
+    }
+    const bookmarks = [...(connection.httpBookmarks ?? [])];
+    const root = bookmarks[bookmarkEdit.idx];
+    if (bookmarkEdit.childIdx !== undefined && root?.isFolder) {
+      const children = [...root.children];
+      children[bookmarkEdit.childIdx] = { name, path };
+      bookmarks[bookmarkEdit.idx] = { ...root, children };
+    } else if (bookmarkEdit.childIdx === undefined && root && !root.isFolder) {
+      bookmarks[bookmarkEdit.idx] = { ...root, name, path };
+    } else {
+      fail("The bookmark changed. Reopen it before saving.");
+      return;
+    }
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: { ...connection, httpBookmarks: bookmarks },
+    });
+    bookmarkEditSource.current = null;
+    setBookmarkEdit(null);
+  }, [bookmarkEdit, connection, trustOwnerScope, resolveBookmarkUrl, dispatch]);
+
   const collectPaths = useCallback((items: HttpBookmarkItem[]): string[] => {
     const out: string[] = [];
     for (const bm of items) {
@@ -4398,6 +4497,11 @@ export function useWebBrowser(session: ConnectionSession) {
     editBmName,
     setEditBmName,
     editBmRef,
+    bookmarkEdit,
+    setBookmarkEdit,
+    beginEditBookmark,
+    saveBookmarkEdit,
+    resolveBookmarkUrl,
     dragIdx,
     dragOverIdx,
     openFolders,

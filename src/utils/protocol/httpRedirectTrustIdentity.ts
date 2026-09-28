@@ -38,16 +38,19 @@ export function httpRedirectTrustIdentity(connection: Connection): string {
   const source: Record<string, unknown> = {
     ...normalizeAdvancedProtocolConnection(connection),
   };
-  // Appearance is not routing, authentication or script/macro consent. Editing
-  // only these visual settings must not invalidate a live saved-source lease.
+  // Appearance and favorite references are not routing, authentication or
+  // script/macro consent. Favorites still use the normal library/access checks
+  // when explicitly run. Editing the bar must not invalidate a login lease.
   const {
     forceDark: _forceDark,
     darkMode: _darkMode,
+    items: _favorites,
     ...automation
   } = normalizeHttpAutomation(connection.httpAutomation);
   source.httpAutomation = automation;
   for (const key of [
     "httpTrustedRedirectDestinations",
+    "httpBookmarks",
     "lastConnected",
     "connectionCount",
     "updatedAt",
