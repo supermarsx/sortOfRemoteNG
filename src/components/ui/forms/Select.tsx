@@ -43,7 +43,7 @@ export interface SelectProps {
   placeholder?: string;
   /** Visual variant. Defaults to `"settings"`. */
   variant?: SelectVariant;
-  /** Label text (consumed by wrapper layouts, not rendered by Select itself). */
+  /** Accessible name for the button trigger and listbox; not a visible label. */
   label?: string;
   className?: string;
   disabled?: boolean;
@@ -111,6 +111,12 @@ export const Select: React.FC<SelectProps> = ({
   const baseId = useId();
   const listboxId = `${baseId}-listbox`;
   const optionId = (index: number) => `${listboxId}-option-${index}`;
+  // :disabled includes a disabled ancestor fieldset (and its legend exception).
+  // The options portal itself lives outside that fieldset, so check the trigger.
+  const isControlDisabled = useCallback(
+    () => Boolean(disabled || triggerRef.current?.matches(":disabled")),
+    [disabled],
+  );
 
   // Options visible after the search filter.
   const visibleOptions = useMemo(() => {
@@ -152,7 +158,7 @@ export const Select: React.FC<SelectProps> = ({
   }, []);
 
   const open = useCallback(() => {
-    if (disabled) return;
+    if (isControlDisabled()) return;
     updatePosition();
     setIsOpen(true);
     // Pre-highlight current value
@@ -164,7 +170,7 @@ export const Select: React.FC<SelectProps> = ({
         searchInputRef.current?.focus({ preventScroll: true }),
       );
     }
-  }, [disabled, updatePosition, options, value, searchable]);
+  }, [isControlDisabled, updatePosition, options, value, searchable]);
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -175,12 +181,39 @@ export const Select: React.FC<SelectProps> = ({
 
   const selectOption = useCallback(
     (opt: SelectOption) => {
+      if (isControlDisabled()) {
+        close();
+        return;
+      }
       if (opt.disabled) return;
       onChange(String(opt.value));
       close();
     },
-    [onChange, close],
+    [onChange, close, isControlDisabled],
   );
+
+  // Close an already-open portal if either the prop or an enclosing fieldset
+  // disables the control. The selection guard above also covers the interval
+  // before a MutationObserver callback runs.
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeIfDisabled = () => {
+      if (isControlDisabled()) close();
+    };
+    closeIfDisabled();
+    const observer = new MutationObserver(closeIfDisabled);
+    let ancestor = triggerRef.current?.parentElement;
+    while (ancestor) {
+      if (ancestor.tagName === "FIELDSET") {
+        observer.observe(ancestor, {
+          attributes: true,
+          attributeFilter: ["disabled"],
+        });
+      }
+      ancestor = ancestor.parentElement;
+    }
+    return () => observer.disconnect();
+  }, [isOpen, isControlDisabled, close]);
 
   // ── Click outside ───────────────────────────────────────────
   useEffect(() => {
@@ -225,7 +258,10 @@ export const Select: React.FC<SelectProps> = ({
   // ── Keyboard navigation ─────────────────────────────────────
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (disabled) return;
+      if (isControlDisabled()) {
+        if (isOpen) close();
+        return;
+      }
 
       if (!isOpen) {
         if (
@@ -299,7 +335,7 @@ export const Select: React.FC<SelectProps> = ({
     },
     [
       isOpen,
-      disabled,
+      isControlDisabled,
       highlightIdx,
       visibleOptions,
       searchable,
@@ -310,6 +346,7 @@ export const Select: React.FC<SelectProps> = ({
   );
 
   const dropdownMinWidth = Math.max(pos.width, 200);
+  const expanded = isOpen && !disabled;
 
   return (
     <>
@@ -319,9 +356,9 @@ export const Select: React.FC<SelectProps> = ({
         id={id}
         title={title}
         role="combobox"
-        aria-expanded={isOpen}
+        aria-expanded={expanded}
         aria-haspopup="listbox"
-        aria-controls={isOpen ? listboxId : undefined}
+        aria-controls={expanded ? listboxId : undefined}
         aria-label={label}
         disabled={disabled}
         onClick={() => (isOpen ? close() : open())}
@@ -346,11 +383,11 @@ export const Select: React.FC<SelectProps> = ({
         </span>
         <ChevronDown
           size={14}
-          className={cx("sor-select-chevron", isOpen && "rotate-180")}
+          className={cx("sor-select-chevron", expanded && "rotate-180")}
         />
       </button>
 
-      {isOpen &&
+      {expanded &&
         createPortal(
           <div
             ref={dropdownRef}
@@ -392,6 +429,7 @@ export const Select: React.FC<SelectProps> = ({
               ref={optionsScrollRef}
               id={listboxId}
               role="listbox"
+              aria-label={label}
               className="sor-select-dropdown-scroll"
             >
               {visibleOptions.length === 0 && (

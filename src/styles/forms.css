@@ -2,7 +2,8 @@
 
 /* Legacy native dropdowns share the same tokens as the portal-based Select.
    Do not change their layout, sizing, or native keyboard/select semantics.
-   System pickers may control option geometry; color-scheme covers those too. */
+   OS-drawn pickers can ignore option colors; color-scheme is their fallback.
+   Supporting browsers opt into the themed picker below, without new markup. */
 select {
   color-scheme: var(--native-color-scheme, dark);
   background-color: var(--color-input) !important;
@@ -31,6 +32,52 @@ select[aria-disabled="true"] {
 select option:disabled,
 select optgroup:disabled {
   color: var(--color-textMuted) !important;
+}
+
+/* Progressive enhancement for single-choice dropdowns only. Keep native
+   listboxes and unsupported WebViews on their existing rendering path. */
+@supports (appearance: base-select) and selector(select::picker(select)) {
+  select:not([multiple]):is(:not([size]), [size="1"]) {
+    appearance: base-select;
+  }
+
+  select:not([multiple]):is(:not([size]), [size="1"])::picker(select) {
+    appearance: base-select;
+    color-scheme: var(--native-color-scheme, dark);
+    background-color: var(--color-input);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+  }
+
+  select:not([multiple]):is(:not([size]), [size="1"])::picker-icon {
+    color: var(--color-textMuted);
+  }
+
+  select:not([multiple]):is(:not([size]), [size="1"])
+    option:not(:disabled):is(:checked, :hover, :focus-visible) {
+    background-color: var(--color-surfaceHover) !important;
+    color: var(--color-text) !important;
+  }
+
+  /* Keep high-contrast system colors even inside the customizable popup. */
+  @media (forced-colors: active) {
+    select:not([multiple]):is(:not([size]), [size="1"])::picker(select) {
+      background-color: Canvas;
+      color: CanvasText;
+      border-color: ButtonText;
+    }
+
+    select:not([multiple]):is(:not([size]), [size="1"])::picker-icon {
+      color: ButtonText;
+    }
+
+    select:not([multiple]):is(:not([size]), [size="1"])
+      option:not(:disabled):is(:checked, :hover, :focus-visible) {
+      background-color: Highlight !important;
+      color: HighlightText !important;
+    }
+  }
 }
 
 @media (forced-colors: active) {
@@ -350,6 +397,7 @@ input[type="radio"][aria-disabled="true"] {
   text-align: left;
   appearance: none;
   -webkit-appearance: none;
+  color-scheme: var(--native-color-scheme, dark);
 }
 
 .sor-select-trigger:focus-visible {
@@ -374,6 +422,8 @@ input[type="radio"][aria-disabled="true"] {
 /* ── Custom Select dropdown ───────────────────────────────── */
 .sor-select-dropdown {
   overflow: hidden;
+  color-scheme: var(--native-color-scheme, dark);
+  color: var(--color-text);
 }
 
 /* ── Searchable Select filter input ─────────────────────────── */
@@ -405,6 +455,11 @@ input[type="radio"][aria-disabled="true"] {
 
 .sor-select-search-input:focus {
   border-color: var(--color-primary);
+}
+
+.sor-select-search-input::placeholder {
+  color: var(--color-textMuted);
+  opacity: 1;
 }
 
 .sor-select-dropdown-scroll {
@@ -448,12 +503,13 @@ input[type="radio"][aria-disabled="true"] {
 }
 
 .sor-select-option-selected {
-  color: var(--color-primary);
+  /* Custom accents need not contrast with the surface; keep labels readable. */
+  color: var(--color-text);
   font-weight: 500;
 }
 
 .sor-select-option-selected.sor-select-option-highlighted {
-  color: var(--color-primary);
+  color: var(--color-text);
 }
 
 .sor-select-option-disabled {
