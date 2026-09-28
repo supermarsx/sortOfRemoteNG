@@ -270,6 +270,7 @@ describe("Yealink phone web-login profile", () => {
       servletMarkup(true),
       servletMarkup(false),
       legacyMarkup,
+      readFileSync("tests/fixtures/yealink-t20p.html", "utf8"),
     ]) {
       document.body.innerHTML = markup;
       for (const selector of Object.values(profile.selectors!))
@@ -299,11 +300,14 @@ describe("Yealink phone web-login profile", () => {
     });
   });
 
-  it("promises no automatic sign-in the embedded viewer cannot yet deliver", () => {
+  it("distinguishes native RSA login from the T20P page handler", () => {
     expect(profile.description).toMatch(
-      /stays incomplete until the embedded viewer's page-script compatibility update ships/,
+      /RSA-capable servlet pages sign in natively/,
     );
-    expect(profile.description).toMatch(/remains a manual step/);
+    expect(profile.description).toMatch(/SIP-T20P.*OnConfirm/);
+    expect(profile.description).toMatch(
+      /unsupported forms require manual login/,
+    );
     expect(profile.description).toMatch(/one web session at a time/);
     expect(profile.description).toMatch(/never retried/);
   });

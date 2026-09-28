@@ -32,6 +32,13 @@ pub mod servlet {
     /// Login page (GET) — serves the form and (v8x+) an RSA public key.
     /// Real firmware appends `&Random=<n>`; see [`PARAM_FORM_NONCE`].
     pub const LOGIN_FORM: &str = "/servlet?m=mod_listener&p=login&q=loginForm";
+    /// Older T2x servlet router, before the `mod_listener` parameter.
+    /// Also used by Greenbone's `gb_yealink_ip_phone_http_detect.nasl` probe.
+    pub const LOGIN_FORM_LEGACY: &str = "/servlet?p=login&q=loginForm&jumpto=status";
+    /// The older router's matching submit endpoint. Never try both POST shapes.
+    pub const LOGIN_POST_LEGACY: &str = "/servlet?p=login&q=login";
+    /// Some firmware serves its full sign-in document only at the origin root.
+    pub const LOGIN_FORM_ROOT: &str = "/";
     /// Login POST target. Real firmware appends `&Rajax=<n>`; see
     /// [`PARAM_LOGIN_NONCE`].
     pub const LOGIN_POST: &str = "/servlet?m=mod_listener&p=login&q=login";

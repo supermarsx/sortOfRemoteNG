@@ -244,6 +244,17 @@ pub fn build_autologin_injection(
     document_sequence: u64,
     document_url: &str,
 ) -> Option<String> {
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::YealinkServlet {
+        if !crate::http::yealink_login::browser_login_pending(&state.yealink_session) {
+            return None;
+        }
+        return build_autologin_injection_from_slots_with_flow(
+            &state.auto_login_armed,
+            &state.auto_login_nonce,
+            &None,
+            Some("yealink-t20p"),
+        );
+    }
     if let Some(attempt) = state
         .attempt
         .as_ref()
@@ -323,6 +334,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
             Some("google") => ", 'google'",
             Some("google-password") => ", 'google-password'",
             Some("cpanel") => ", 'cpanel'",
+            Some("yealink-t20p") => ", 'yealink-t20p'",
             _ => "",
         },
     )
@@ -349,6 +361,12 @@ pub async fn autologin_cred_handler(
 ) -> Response<Body> {
     if state.proxy_policy.page_scripts == crate::http::PageScripts::Block {
         return forbidden("automatic form login is disabled by page script policy");
+    }
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::YealinkServlet
+        && (!crate::http::yealink_login::browser_login_pending(&state.yealink_session)
+            || state.http_form_automation.is_some())
+    {
+        return forbidden("native Yealink login cannot dispense a document credential");
     }
     if state
         .http_form_automation

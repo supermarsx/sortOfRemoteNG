@@ -58,6 +58,7 @@
     stopped = true;
     if (window.__sorng_bitwarden_login) window.__sorng_bitwarden_login.cancel();
     if (window.__sorng_synology_login) window.__sorng_synology_login.cancel();
+    if (window.__sorng_yealink_login) window.__sorng_yealink_login.cancel();
     if (fetchController) fetchController.abort();
     fetchController = null;
     if (cancelActive) cancelActive();
@@ -1597,6 +1598,19 @@
     // Client single-shot: never fetch/fill/submit more than once per page.
     if (hasRun || stopped) return;
     hasRun = true;
+
+    if (loginFlow === "yealink-t20p") {
+      var yealink = window.__sorng_yealink_login;
+      if (!yealink || typeof yealink.runWhenReady !== "function") {
+        report({ ok: false, reason: "autologin-client-unavailable" });
+        return;
+      }
+      return yealink.runWhenReady(nonce, {
+        fillField: fillField,
+        isVisible: isVisible,
+        report: report,
+      });
+    }
 
     // Native closed purpose hint: DSM must see a complete account panel before
     // dispensing its username and starting the short password continuation.

@@ -1,10 +1,14 @@
 //! Native Yealink servlet pre-authentication for the loopback mediator (t96 §3.1).
 //!
-//! A Yealink T2x phone cannot be signed into from inside the website frame: the
+//! RSA-capable Yealink T2x phones are signed into before the website frame: the
 //! page's own JavaScript has to encrypt the password under a per-session RSA
 //! key, and that script is aborted in our sandbox (t95). So the proxy performs
 //! the phone's login handshake **itself**, once, before the frame loads a
 //! single byte, and then serves an already-authenticated web UI.
+//! The attested keyless T20P form is different: native discovery sends no POST
+//! and leaves the session empty. Its reviewed browser client fills the named
+//! fields and clicks the phone's OnConfirm control under the existing form
+//! consent and one-use credential nonce. It never emulates that page handler.
 //!
 //! Two properties make this strictly safer than filling the page:
 //!
@@ -34,9 +38,11 @@
 //! [`sorng_voip_phone::yealink_servlet_auth`], shared with the native
 //! VoIP-phone driver so the two can never drift (t96 §3.3).
 
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, RwLock};
 
 use rand::SeedableRng;
+use reqwest::cookie::CookieStore;
 use reqwest::header::{HeaderMap, CONTENT_TYPE, COOKIE, SET_COOKIE, WWW_AUTHENTICATE};
 use sorng_voip_phone::endpoints::{legacy, servlet};
 use sorng_voip_phone::yealink_servlet_auth as auth;
@@ -65,12 +71,24 @@ const JSON_API_MARKERS: &[&str] = &["/api/auth/login", "/api/common/info"];
 /// Stores the whole `JSESSIONID=<value>` pair so it can be spliced into a
 /// forwarded `Cookie` header without re-deriving the name. **Secret**: never
 /// serialize, log or expose this through a status DTO.
-pub type YealinkSessionCookie = Arc<RwLock<Option<String>>>;
+#[derive(Clone, Default)]
+pub struct YealinkSessionCookie {
+    cookie: Arc<RwLock<Option<String>>>,
+    // Positive admission, not inferred from a missing/failed RSA session.
+    t20p_dom_admitted: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl std::ops::Deref for YealinkSessionCookie {
+    type Target = RwLock<Option<String>>;
+    fn deref(&self) -> &Self::Target {
+        &self.cookie
+    }
+}
 
 /// An empty slot for a session that has not pre-authenticated (every mode but
 /// [`crate::http::UpstreamAuthMode::YealinkServlet`]).
 pub fn session_slot() -> YealinkSessionCookie {
-    Arc::new(RwLock::new(None))
+    YealinkSessionCookie::default()
 }
 
 // ── login page classification ────────────────────────────────────────────────
@@ -114,8 +132,9 @@ impl UnsupportedPhone {
                  sign in on the phone's own page."
             }
             Self::Unrecognised => {
-                "The phone's sign-in page carried no session key, and it matches no Yealink \
-                 generation this app knows. Nothing was guessed and no password was sent. Set \
+                "The modern, older servlet and root sign-in pages provided no supported RSA \
+                 session key. No password was sent. This phone's firmware login format is not \
+                 supported yet. Set \
                  this connection's application login mode to Manual and sign in on the phone's \
                  own page."
             }
@@ -130,6 +149,8 @@ pub enum LoginPage {
     /// public key, so the password can be wrapped the way the page's own
     /// JavaScript would have wrapped it.
     Encrypted(auth::LoginFormFacts),
+    /// Exact keyless SIP-T20P form, submitted only by its own browser handler.
+    LegacyT20pDom,
     /// Recognised, or honestly unrecognised — either way, not signable here.
     Unsupported(UnsupportedPhone),
 }
@@ -141,6 +162,9 @@ pub fn classify_login_page(body: &str) -> LoginPage {
     if facts.is_encrypted() {
         return LoginPage::Encrypted(facts);
     }
+    if is_t20p_dom_form(body) {
+        return LoginPage::LegacyT20pDom;
+    }
     if body.contains(legacy::BODY_MARKER) {
         return LoginPage::Unsupported(UnsupportedPhone::LegacyBasic);
     }
@@ -148,6 +172,145 @@ pub fn classify_login_page(body: &str) -> LoginPage {
         return LoginPage::Unsupported(UnsupportedPhone::JsonApi);
     }
     LoginPage::Unsupported(UnsupportedPhone::Unrecognised)
+}
+
+/// Conservative discovery only; the browser independently validates the live
+/// form, handler readiness and same-origin action before redeeming any secret.
+fn is_t20p_dom_form(body: &str) -> bool {
+    use std::collections::HashMap;
+    fn attributes(text: &str) -> Option<HashMap<String, String>> {
+        static ATTR: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let re = ATTR.get_or_init(|| {
+            regex::Regex::new(
+                r#"(?is)\s+([^\s'"=<>`/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s'"=<>`]+)))?"#,
+            )
+            .unwrap()
+        });
+        let mut result = HashMap::new();
+        for cap in re.captures_iter(text) {
+            let value = (2..=4)
+                .find_map(|index| cap.get(index))
+                .map_or("", |v| v.as_str());
+            if result
+                .insert(cap[1].to_ascii_lowercase(), value.replace("&amp;", "&"))
+                .is_some()
+            {
+                return None;
+            }
+        }
+        Some(result)
+    }
+    fn value<'a>(attrs: &'a HashMap<String, String>, key: &str) -> &'a str {
+        attrs.get(key).map(String::as_str).unwrap_or_default()
+    }
+    fn handler(value: &str) -> String {
+        value
+            .chars()
+            .filter(|c| !c.is_ascii_whitespace())
+            .collect::<String>()
+            .trim_end_matches(';')
+            .to_string()
+    }
+    static INERT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static FORMS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static TAGS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let clean = INERT.get_or_init(|| regex::Regex::new(
+        r"(?is)<!--.*?-->|<(?:script|style|textarea|template)\b[^>]*>.*?</(?:script|style|textarea|template)\s*>",
+    ).unwrap()).replace_all(body, "");
+    let forms = FORMS.get_or_init(|| {
+        regex::Regex::new(r#"(?is)<form\b((?:"[^"]*"|'[^']*'|[^'">])*)>(.*?)</form\s*>"#).unwrap()
+    });
+    let mut forms = forms.captures_iter(&clean);
+    let Some(form) = forms.next() else {
+        return false;
+    };
+    if forms.next().is_some() {
+        return false;
+    }
+    let Some(attrs) = attributes(&form[1]) else {
+        return false;
+    };
+    if value(&attrs, "name") != "formInput"
+        || !value(&attrs, "method").eq_ignore_ascii_case("post")
+        || !value(&attrs, "autocomplete").eq_ignore_ascii_case("off")
+        || handler(value(&attrs, "onsubmit")) != "returnfalse"
+        || !matches!(value(&attrs, "target"), "" | "_self")
+        || value(&attrs, "action") != "/servlet?p=login&q=login"
+    {
+        return false;
+    }
+    let tags = TAGS.get_or_init(|| {
+        regex::Regex::new(r#"(?is)<([a-z][a-z0-9]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>"#).unwrap()
+    });
+    let mut roles = HashSet::new();
+    for tag in tags.captures_iter(&form[2]) {
+        let Some(attrs) = attributes(&tag[2]) else {
+            return false;
+        };
+        let name = value(&attrs, "name");
+        let id = value(&attrs, "id");
+        let kind = value(&attrs, "type");
+        let role = if matches!(name, "username" | "pwd" | "jumpto" | "acc") {
+            let valid = match name {
+                "username" => kind.eq_ignore_ascii_case("text"),
+                "pwd" => kind.eq_ignore_ascii_case("password"),
+                "jumpto" => {
+                    kind.eq_ignore_ascii_case("hidden") && value(&attrs, "value") == "status"
+                }
+                "acc" => kind.eq_ignore_ascii_case("hidden") && value(&attrs, "value").is_empty(),
+                _ => false,
+            };
+            if !valid {
+                return false;
+            }
+            name
+        } else if matches!(id, "idConfirm" | "idCancel") {
+            let expected = if id == "idConfirm" {
+                "OnConfirm()"
+            } else {
+                "OnClear()"
+            };
+            if !kind.eq_ignore_ascii_case("button") || handler(value(&attrs, "onclick")) != expected
+            {
+                return false;
+            }
+            id
+        } else {
+            continue;
+        };
+        if !tag[1].eq_ignore_ascii_case("input")
+            || attrs.contains_key("form")
+            || !roles.insert(role.to_string())
+        {
+            return false;
+        }
+    }
+    if roles.len() != 6 {
+        return false;
+    }
+    let mut models = 0;
+    for tag in tags.captures_iter(&clean) {
+        let Some(attrs) = attributes(&tag[2]) else {
+            return false;
+        };
+        if value(&attrs, "id") == "loginPhoneModel" {
+            models += 1;
+            let text = &clean[tag.get(0).unwrap().end()..];
+            if text.split('<').next().unwrap_or_default().trim() != "Enterprise IP phone SIP-T20P" {
+                return false;
+            }
+        }
+    }
+    models == 1
+}
+
+/// Native RSA sessions never authorize document credential delivery. Startup
+/// must positively recognize the T20P form; failure and restart have no grant.
+pub(crate) fn browser_login_pending(session: &YealinkSessionCookie) -> bool {
+    session
+        .t20p_dom_admitted
+        .load(std::sync::atomic::Ordering::SeqCst)
+        && session.read().is_ok_and(|cookie| cookie.is_none())
 }
 
 // ── session cookie ───────────────────────────────────────────────────────────
@@ -164,22 +327,22 @@ fn cookie_octet(byte: u8) -> bool {
 /// value against the cookie grammar and a length bound because it is spliced
 /// into every subsequent upstream request. **Secret**: never log the result.
 pub fn session_cookie_pair(headers: &HeaderMap) -> Option<String> {
-    let name = servlet::SESSION_COOKIE;
     headers
         .get_all(SET_COOKIE)
         .iter()
         .filter_map(|value| value.to_str().ok())
-        .find_map(|cookie| {
-            let (found, value) = cookie.trim_start().split_once('=')?;
-            if !found.eq_ignore_ascii_case(name) {
-                return None;
-            }
-            let value = value.split(';').next().unwrap_or_default().trim();
-            (!value.is_empty()
-                && value.len() <= MAX_SESSION_VALUE
-                && value.bytes().all(cookie_octet))
-            .then(|| format!("{name}={value}"))
-        })
+        .find_map(valid_session_cookie_pair)
+}
+
+fn valid_session_cookie_pair(cookie: &str) -> Option<String> {
+    let name = servlet::SESSION_COOKIE;
+    let (found, value) = cookie.trim_start().split_once('=')?;
+    if !found.eq_ignore_ascii_case(name) {
+        return None;
+    }
+    let value = value.split(';').next().unwrap_or_default().trim();
+    (!value.is_empty() && value.len() <= MAX_SESSION_VALUE && value.bytes().all(cookie_octet))
+        .then(|| format!("{name}={value}"))
 }
 
 /// Merge the proxy-held phone session into a browser `Cookie` header.
@@ -242,14 +405,13 @@ pub fn apply_session_cookie(headers: &mut Vec<(String, String)>, session: &Yeali
 
 /// What to say when the sign-in page did not arrive at all.
 ///
-/// A redirect gets its own sentence because this module deliberately follows
-/// none: the proxy talks to the connection's own origin and nowhere else, so a
-/// bounce is a dead end rather than something to chase.
+/// Only known same-origin login-page redirects may be followed. Other redirects
+/// are refused before any credential can be submitted.
 fn page_status_error(status: u16) -> String {
     if (300..400).contains(&status) {
         format!(
             "The phone answered its sign-in page with a redirect (HTTP {status}). Automatic \
-             sign-in never follows a redirect, so no password was sent. Set this connection's \
+             sign-in could not use that login-page redirect, so no password was sent. Set this connection's \
              application login mode to Manual and sign in on the phone's own page."
         )
     } else {
@@ -277,7 +439,7 @@ async fn bounded_body(response: &mut reqwest::Response) -> String {
 
 /// The connection's own origin, with the servlet path and its cache buster.
 /// Built from the validated target so the handshake can never leave the origin
-/// the user approved; there is no redirect chasing anywhere in this module.
+/// the user approved.
 fn servlet_url(
     target: &reqwest::Url,
     path: &str,
@@ -285,16 +447,250 @@ fn servlet_url(
     rng: &mut impl rand::RngCore,
 ) -> Result<reqwest::Url, String> {
     let origin = target.origin().ascii_serialization();
-    let path = auth::with_cache_buster(path, param, rng);
-    reqwest::Url::parse(&format!("{origin}{path}")).map_err(|_| {
+    let mut url = reqwest::Url::parse(&format!("{origin}{path}")).map_err(|_| {
         "The phone's web address could not be used for an automatic sign-in.".to_string()
+    })?;
+    // The root has no query yet; appending '&Random' would change its path.
+    if path != servlet::LOGIN_FORM_ROOT {
+        url.query_pairs_mut()
+            .append_pair(param, &rng.next_u32().to_string());
+    }
+    Ok(url)
+}
+
+// Indices distinguish the canonical servlet route AND the presence of the only
+// optional routing query we accept. Random is never part of visit identity.
+// The first three remain the ordinary discovery order; the last two are used
+// only when a redirect explicitly asks for that jumpto variant.
+const LOGIN_PAGES: [(&str, &str); 5] = [
+    (servlet::LOGIN_FORM, servlet::LOGIN_POST),
+    (servlet::LOGIN_FORM_LEGACY, servlet::LOGIN_POST_LEGACY),
+    (servlet::LOGIN_FORM_ROOT, servlet::LOGIN_POST),
+    (
+        "/servlet?m=mod_listener&p=login&q=loginForm&jumpto=status",
+        servlet::LOGIN_POST,
+    ),
+    ("/servlet?p=login&q=loginForm", servlet::LOGIN_POST_LEGACY),
+];
+const MAX_LOGIN_PAGE_GETS: usize = 5;
+
+/// Recognise only the phone's fixed login endpoints, never an arbitrary URL
+/// supplied by a response. Preserve the allowlisted jumpto=status variant,
+/// then rebuild the URL from constants with a fresh Random value.
+fn login_redirect_candidate(source: &reqwest::Url, location: &str) -> Option<usize> {
+    let destination = source.join(location).ok()?;
+    if destination.origin() != source.origin()
+        || !destination.username().is_empty()
+        || destination.password().is_some()
+        || destination.fragment().is_some()
+    {
+        return None;
+    }
+    if destination.path() == "/" && destination.query().is_none() {
+        return Some(2);
+    }
+    if destination.path() != "/servlet" {
+        return None;
+    }
+    let mut seen = HashSet::new();
+    let mut modern = false;
+    for (name, value) in destination.query_pairs() {
+        if !seen.insert(name.to_string()) {
+            return None;
+        }
+        match name.as_ref() {
+            "p" if value == "login" => {}
+            "q" if value == "loginForm" => {}
+            "m" if value == "mod_listener" => modern = true,
+            "jumpto" if value == "status" => {}
+            "Random"
+                if !value.is_empty()
+                    && value.len() <= 32
+                    && value.parse::<f64>().is_ok()
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || byte == b'.') => {}
+            _ => return None,
+        }
+    }
+    (seen.contains("p") && seen.contains("q")).then_some(match (modern, seen.contains("jumpto")) {
+        (true, false) => 0,
+        (false, true) => 1,
+        (true, true) => 3,
+        (false, false) => 4,
     })
 }
 
-/// Sign in to the phone and hold its web session for this proxy session.
+/// Read only a standalone literal location assignment in an inline bootstrap
+/// script. This is not a JavaScript evaluator: expressions, escapes, extra
+/// statements and multiple redirects are refused. Commented-out scripts are
+/// skipped, and normal login-page scripts are left to the form parser.
+fn login_script_redirect(body: &str) -> Result<Option<&str>, ()> {
+    static SCRIPTS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static ASSIGNMENT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let scripts = SCRIPTS.get_or_init(|| {
+        regex::Regex::new(
+            r#"(?is)<!--.*?-->|<script(?:\s+type\s*=\s*(?:"text/javascript"|'text/javascript'))?\s*>(.*?)</script\s*>"#,
+        )
+        .expect("fixed bootstrap script grammar")
+    });
+    let assignment = ASSIGNMENT.get_or_init(|| {
+        regex::Regex::new(
+            r"(?s)\A(?:window\s*\.\s*|document\s*\.\s*)?location(?:\s*\.\s*href)?\s*=\s*(.*)\z",
+        )
+        .expect("fixed location assignment grammar")
+    });
+    let mut location = None;
+    for script in scripts.captures_iter(body) {
+        let Some(script) = script.get(1) else {
+            continue;
+        };
+        let Some(value) = assignment.captures(script.as_str().trim()) else {
+            continue;
+        };
+        let value = value.get(1).ok_or(())?.as_str().trim();
+        let quote = value.chars().next().ok_or(())?;
+        if !matches!(quote, '\'' | '"') || location.is_some() {
+            return Err(());
+        }
+        let (literal, tail) = value[1..].split_once(quote).ok_or(())?;
+        if !matches!(tail.trim(), "" | ";")
+            || literal.is_empty()
+            || literal.len() > 2048
+            || literal
+                .chars()
+                .any(|ch| ch == '\\' || ch.is_control() || ch.is_whitespace())
+        {
+            return Err(());
+        }
+        location = Some(literal);
+    }
+    Ok(location)
+}
+
+/// Bounded credential-free discovery. Older T21P routing can return a normal
+/// HTML error at the modern servlet URL, not a 404. Read the older servlet and
+/// root variants before concluding the phone has an unsupported login format.
+/// No scripts are executed, no arbitrary links fetched, and no POST is retried.
+async fn discover_login_page(
+    client: &reqwest::Client,
+    target: &reqwest::Url,
+    rng: &mut impl rand::RngCore,
+) -> Result<(Option<auth::LoginFormFacts>, Option<String>, &'static str), String> {
+    let mut pending = VecDeque::from([0, 1, 2]);
+    let mut chain_visited = [false; LOGIN_PAGES.len()];
+    let mut self_navigated = [false; LOGIN_PAGES.len()];
+    // Track cookie provenance only within an explicit navigation chain. The
+    // supplied client's jar still handles transmission, including other phone
+    // cookies. A fallback page cannot authorize a later key with a stale cookie.
+    let mut chain_cookies = reqwest::cookie::Jar::default();
+    for attempt in 0..MAX_LOGIN_PAGE_GETS {
+        let Some(index) = pending.pop_front() else {
+            break;
+        };
+        chain_visited[index] = true;
+        let (page_path, post_path) = LOGIN_PAGES[index];
+        let form_url = servlet_url(target, page_path, servlet::PARAM_FORM_NONCE, rng)?;
+        let mut form = client.get(form_url.clone()).send().await.map_err(|_| {
+            "The phone did not answer its sign-in page. Check the address and that the phone's web interface is enabled.".to_string()
+        })?;
+        let status = form.status();
+        let headers = form.headers().clone();
+        chain_cookies.set_cookies(&mut headers.get_all(SET_COOKIE).iter(), &form_url);
+        let body = bounded_body(&mut form).await;
+        if status.is_redirection() {
+            let candidate = headers
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| login_redirect_candidate(&form_url, value))
+                .filter(|candidate| !chain_visited[*candidate] && attempt + 1 < MAX_LOGIN_PAGE_GETS)
+                .ok_or_else(|| page_status_error(status.as_u16()))?;
+            pending.retain(|value| *value != candidate);
+            pending.push_front(candidate);
+            continue;
+        }
+        if status.is_success() {
+            let redirect_error = || {
+                "The phone's sign-in page contained an unsafe, unsupported or repeated JavaScript \
+                 redirect. No password was sent. Set this connection's application login mode to \
+                 Manual and sign in on the phone's own page."
+                    .to_string()
+            };
+            if let Some(location) = login_script_redirect(&body).map_err(|_| redirect_error())? {
+                let candidate = login_redirect_candidate(&form_url, location)
+                    .filter(|candidate| {
+                        (!chain_visited[*candidate]
+                            || (*candidate == index && !self_navigated[index]))
+                            && attempt + 1 < MAX_LOGIN_PAGE_GETS
+                    })
+                    .ok_or_else(redirect_error)?;
+                // Firmware can navigate back to its own login URL after setting
+                // a cookie. Permit one such GET per route in this chain, never
+                // a cycle; changing Random or cookies buys no extra hops.
+                if candidate == index {
+                    self_navigated[index] = true;
+                }
+                // Use the same canonical endpoints, hop bound, proxy client and
+                // TLS policy as HTTP redirects, before inspecting form facts.
+                pending.retain(|value| *value != candidate);
+                pending.push_front(candidate);
+                continue;
+            }
+        }
+        if status == reqwest::StatusCode::UNAUTHORIZED
+            && headers.contains_key(WWW_AUTHENTICATE)
+            && !body.contains(servlet::USERNAME_ID_MARKER)
+        {
+            return Err(UnsupportedPhone::LegacyBasic.message().into());
+        }
+        let page = classify_login_page(&body);
+        log::debug!(
+            "yealink pre-auth: login page variant {} HTTP {} classified {}",
+            index,
+            status.as_u16(),
+            match &page {
+                LoginPage::Encrypted(_) => "encrypted",
+                LoginPage::LegacyT20pDom => "legacy-t20p-dom",
+                LoginPage::Unsupported(kind) => kind.as_str(),
+            }
+        );
+        match page {
+            LoginPage::Encrypted(facts) if status.is_success() => {
+                // The final page may not reissue the bootstrap's session. Use
+                // only cookies from this chain that remain valid for this URL
+                // (domain, path, Secure and expiration included).
+                let cookie = chain_cookies.cookies(&form_url).and_then(|header| {
+                    header
+                        .to_str()
+                        .ok()?
+                        .split(';')
+                        .find_map(valid_session_cookie_pair)
+                });
+                return Ok((Some(facts), cookie, post_path));
+            }
+            LoginPage::LegacyT20pDom if status.is_success() => return Ok((None, None, post_path)),
+            LoginPage::Unsupported(UnsupportedPhone::Unrecognised)
+                if status.is_success() || status == reqwest::StatusCode::NOT_FOUND => {}
+            LoginPage::Unsupported(kind) if kind != UnsupportedPhone::Unrecognised => {
+                return Err(kind.message().into());
+            }
+            _ => return Err(page_status_error(status.as_u16())),
+        }
+        // A miss ends this navigation chain. A later fallback (e.g. the root)
+        // may explicitly send us back to a previously probed login endpoint
+        // with a newly established cookie. Discovery history is not a cycle.
+        chain_visited = [false; LOGIN_PAGES.len()];
+        self_navigated = [false; LOGIN_PAGES.len()];
+        chain_cookies = reqwest::cookie::Jar::default();
+    }
+    Err(UnsupportedPhone::Unrecognised.message().into())
+}
+
+/// Prepare login: establish an RSA session, or admit the recognized T20P DOM
+/// flow without sending credentials. The latter keeps the session slot empty.
 ///
-/// Performs exactly one login-page GET and at most one login POST, then stores
-/// the resulting `JSESSIONID` in `session`. Returns `Err` with a message the
+/// Performs up to five credential-free login-page GETs and at most one login
+/// POST, then stores the resulting `JSESSIONID` in `session`. Returns `Err` with a message the
 /// user can act on; the caller refuses to open the connection rather than
 /// serving a half-authenticated frame.
 ///
@@ -313,57 +709,22 @@ pub async fn pre_authenticate(
         // failures, so a second handshake on one arm is a bug, not a fallback.
         return Err("This phone session has already signed in. Reconnect to sign in again.".into());
     }
+    if browser_login_pending(session) {
+        return Err(
+            "This phone session already prepared its page login. Reconnect to sign in again."
+                .into(),
+        );
+    }
     // `StdRng` rather than `thread_rng()`: this future has to stay `Send`.
     let mut rng = rand::rngs::StdRng::from_entropy();
 
-    let form_url = servlet_url(
-        target,
-        servlet::LOGIN_FORM,
-        servlet::PARAM_FORM_NONCE,
-        &mut rng,
-    )?;
-    let mut form = client
-        .get(form_url)
-        .send()
-        .await
-        .map_err(|_| "The phone did not answer its sign-in page. Check the address and that the phone's web interface is enabled.".to_string())?;
-    let status = form.status();
-    let headers = form.headers().clone();
-    let body = bounded_body(&mut form).await;
-
-    if status == reqwest::StatusCode::UNAUTHORIZED
-        && headers.contains_key(WWW_AUTHENTICATE)
-        && !body.contains(servlet::USERNAME_ID_MARKER)
-    {
-        // A Basic challenge on the servlet path is the legacy generation.
-        log::debug!(
-            "yealink pre-auth: generation {}",
-            UnsupportedPhone::LegacyBasic.as_str()
-        );
-        return Err(UnsupportedPhone::LegacyBasic.message().into());
-    }
-
-    let page = classify_login_page(&body);
-    log::debug!(
-        "yealink pre-auth: sign-in page HTTP {} classified {}",
-        status.as_u16(),
-        match &page {
-            LoginPage::Encrypted(_) => "encrypted",
-            LoginPage::Unsupported(kind) => kind.as_str(),
-        }
-    );
-    let facts = match page {
-        LoginPage::Encrypted(facts) if status.is_success() => facts,
-        // A recognised generation is the more useful answer even when it came
-        // with an odd status; an unplaceable page is reported by its status,
-        // which is far more actionable than "no session key".
-        LoginPage::Unsupported(UnsupportedPhone::Unrecognised) if !status.is_success() => {
-            return Err(page_status_error(status.as_u16()))
-        }
-        LoginPage::Encrypted(_) => return Err(page_status_error(status.as_u16())),
-        LoginPage::Unsupported(kind) => return Err(kind.message().into()),
+    let (facts, issued, post_path) = discover_login_page(client, target, &mut rng).await?;
+    let Some(facts) = facts else {
+        session
+            .t20p_dom_admitted
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        return Ok(());
     };
-    let issued = session_cookie_pair(&headers);
     // Model and firmware are readable before authenticating and are the only
     // two page values this module is allowed to log. The session id itself is
     // a secret: only its presence is ever recorded.
@@ -398,12 +759,7 @@ pub async fn pre_authenticate(
         )
         .finish();
 
-    let login_url = servlet_url(
-        target,
-        servlet::LOGIN_POST,
-        servlet::PARAM_LOGIN_NONCE,
-        &mut rng,
-    )?;
+    let login_url = servlet_url(target, post_path, servlet::PARAM_LOGIN_NONCE, &mut rng)?;
     let mut answer = client
         .post(login_url)
         .header(CONTENT_TYPE, "application/x-www-form-urlencoded")

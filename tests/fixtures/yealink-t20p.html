@@ -1,0 +1,112 @@
+<html>
+  <head>
+    <title>Yealink SIP-T20P</title>
+  </head>
+  <body>
+    <form
+      name="formInput"
+      onsubmit="return false;"
+      action="/servlet?p=login&amp;q=login"
+      method="post"
+      autocomplete="off"
+    >
+      <table id="login-table" width="100%" bgcolor="#EAEAEA">
+        <tbody>
+          <tr>
+            <td
+              id="loginLogin"
+              width="30%"
+              style="font-size: 26px; font-weight: bolder; height: 40px"
+            >
+              <script>
+                T("Login");
+              </script>
+              Login
+            </td>
+            <td
+              id="loginPhoneModel"
+              width="70%"
+              style="font-size: 12px; height: 40px"
+            >
+              <script>
+                T("Enterprise IP phone SIP-T20P");
+              </script>
+              Enterprise IP phone SIP-T20P
+            </td>
+          </tr>
+          <tr height="10">
+            <td colspan="2"><hr /></td>
+          </tr>
+          <tr>
+            <td>
+              <script>
+                T("Username");
+              </script>
+              Usuário
+            </td>
+            <td>
+              <input
+                type="text"
+                name="username"
+                style="width: 200px"
+                value=""
+                maxlength="32"
+                onkeydown="jumpToNext(event.keyCode)"
+              />
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <script>
+                T("Password");
+              </script>
+              Senha
+            </td>
+            <td>
+              <input
+                type="password"
+                name="pwd"
+                style="width: 200px"
+                value=""
+                maxlength="32"
+                onkeydown="jumpToNext(event.keyCode)"
+              />
+              <input
+                type="hidden"
+                name="jumpto"
+                value="status"
+                maxlength="32"
+              />
+              <input type="hidden" name="acc" value="" maxlength="32" />
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding-top: 20px" align="center">
+              <input
+                id="idConfirm"
+                type="button"
+                onclick="OnConfirm()"
+                onmousedown="on_down_event(this)"
+                value="Confirmar"
+                onmouseup="on_up_event(this)"
+                style="height: 33px; width: 101px; color: #fff"
+              />
+              <input
+                id="idCancel"
+                type="button"
+                onclick="OnClear()"
+                value="Cancelar"
+                onmousedown="on_down_event(this)"
+                onmouseup="on_up_event(this)"
+                style="height: 33px; width: 101px; color: #fff"
+              />
+            </td>
+          </tr>
+          <tr id="idNotice" height="40">
+            <td colspan="2"></td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  </body>
+</html>
