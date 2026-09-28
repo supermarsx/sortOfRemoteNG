@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import WebTotpPanel from "./WebTotpPanel";
 import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
+import CredentialCopyActions from "../../security/CredentialCopyActions";
 import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
 import { useCertificateTrustRecord } from "../../../hooks/security/useCertificateTrustRecord";
 import { MenuSurface } from "../../ui/overlays/MenuSurface";
@@ -271,7 +272,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           type="button"
           onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
           className={`p-2 rounded transition-colors relative ${mgr.showTotpPanel ? "text-primary bg-primary/20" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"}`}
-          title="2FA Codes — manually copy a configured authenticator code"
+          title="2FA Codes — copy credentials or authenticator codes"
           aria-label="2FA Codes"
         >
           <Shield size={16} />
@@ -284,6 +285,12 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
         {mgr.showTotpPanel && mgr.redirectedManualTotp && (
           <RuntimeVaultTotpPanel
             controller={mgr.redirectedManualTotp}
+            credentialActions={
+              <CredentialCopyActions
+                session={mgr.session}
+                connection={mgr.connection}
+              />
+            }
             anchorRef={mgr.totpBtnRef}
             onClose={() => mgr.setShowTotpPanel(false)}
             footer={
@@ -313,6 +320,12 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           mgr.connection?.credentialSource?.kind === "vault" && (
             <RuntimeVaultTotpPanel
               controller={mgr.vaultTotp}
+              credentialActions={
+                <CredentialCopyActions
+                  session={mgr.session}
+                  connection={mgr.connection}
+                />
+              }
               anchorRef={mgr.totpBtnRef}
               onClose={() => mgr.setShowTotpPanel(false)}
               footer={
@@ -342,6 +355,12 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           mgr.connection?.credentialSource?.kind !== "vault" && (
             <WebTotpPanel
               configs={mgr.totpConfigs}
+              credentialActions={
+                <CredentialCopyActions
+                  session={mgr.session}
+                  connection={mgr.connection}
+                />
+              }
               autoMfa={mgr.autoMfa}
               ownerDatabaseId={mgr.session.ownerDatabaseId}
               connectionId={mgr.connection?.id}

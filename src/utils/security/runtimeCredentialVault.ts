@@ -118,7 +118,12 @@ export interface RuntimeVaultCredentialResult {
   deviceTrust?: RuntimeDeviceTrustController;
 }
 export type RuntimeVaultCredentialIntent =
-  "login" | "totp" | "bindings" | "deviceTrust";
+  | "login"
+  | "totp"
+  | "bindings"
+  | "deviceTrust"
+  | "manual-copy-username"
+  | "manual-copy-password";
 
 /** One attempt's owner boundary: the values `useRuntimeCredentialVault` captures. */
 export interface RuntimeVaultAttempt {
@@ -199,7 +204,16 @@ export async function resolveRuntimeVaultCredential(
   const unsupported = getVaultRuntimeUnsupportedMessage(connection);
   if (unsupported && (intent === "login" || intent === "deviceTrust"))
     throw new Error(unsupported);
-  if (!["login", "totp", "bindings", "deviceTrust"].includes(intent))
+  if (
+    ![
+      "login",
+      "totp",
+      "bindings",
+      "deviceTrust",
+      "manual-copy-username",
+      "manual-copy-password",
+    ].includes(intent)
+  )
     throw new Error("Unsupported vault disclosure purpose.");
   if (intent === "deviceTrust") synologyDeviceTrustTarget(connection);
   const { snapshot, row, check } = await openRuntimeVaultEntry(
@@ -210,19 +224,23 @@ export async function resolveRuntimeVaultCredential(
     (connection.protocol === "http" || connection.protocol === "https") &&
     connection.httpApplication?.loginMode === "manual";
   const requested: DatabaseCredentialFacet[] =
-    intent === "totp"
-      ? ["totp"]
-      : intent === "bindings"
-        ? (["social", "passkey"] as const).filter((facet) =>
-            row.availableFacets.includes(facet),
-          )
-        : intent === "deviceTrust"
-          ? []
-          : manual && !isSynologyFileConnection(connection)
-            ? []
-            : connection.protocol === "ssh" && connection.authType === "key"
-              ? ["username", "privateKey"]
-              : ["username", "password"];
+    intent === "manual-copy-username"
+      ? ["username"]
+      : intent === "manual-copy-password"
+        ? ["password"]
+        : intent === "totp"
+          ? ["totp"]
+          : intent === "bindings"
+            ? (["social", "passkey"] as const).filter((facet) =>
+                row.availableFacets.includes(facet),
+              )
+            : intent === "deviceTrust"
+              ? []
+              : manual && !isSynologyFileConnection(connection)
+                ? []
+                : connection.protocol === "ssh" && connection.authType === "key"
+                  ? ["username", "privateKey"]
+                  : ["username", "password"];
   if (intent === "login" && connection.protocol === "ssh") {
     if (connection.authType === "key") {
       for (const facet of ["passphrase", "password"] as const)

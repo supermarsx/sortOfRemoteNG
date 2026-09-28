@@ -2,6 +2,7 @@ import { WebTerminalMgr } from "./types";
 import RDPTotpPanel from "../../rdp/RDPTotpPanel";
 import { Shield } from "lucide-react";
 import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
+import CredentialCopyActions from "../../security/CredentialCopyActions";
 
 function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
   const vaultSelected = mgr.connection?.credentialSource?.kind === "vault";
@@ -31,6 +32,12 @@ function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
       {mgr.showTotpPanel && vaultSelected && (
         <RuntimeVaultTotpPanel
           controller={mgr.vaultTotp}
+          credentialActions={
+            <CredentialCopyActions
+              session={mgr.session}
+              connection={mgr.connection}
+            />
+          }
           anchorRef={mgr.totpBtnRef}
           onClose={() => mgr.setShowTotpPanel(false)}
         />
@@ -38,6 +45,12 @@ function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
       {mgr.showTotpPanel && !vaultSelected && (
         <RDPTotpPanel
           configs={mgr.totpConfigs}
+          credentialActions={
+            <CredentialCopyActions
+              session={mgr.session}
+              connection={mgr.connection}
+            />
+          }
           onUpdate={mgr.handleUpdateTotpConfigs}
           onClose={() => mgr.setShowTotpPanel(false)}
           defaultIssuer={mgr.settings.totpIssuer}

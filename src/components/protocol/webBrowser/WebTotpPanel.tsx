@@ -18,6 +18,7 @@ export interface WebTotpPanelProps {
   onClose: () => void;
   anchorRef?: React.RefObject<HTMLElement | null>;
   autoMfa?: { status: string | null; canRetry: boolean; retry: () => void };
+  credentialActions?: React.ReactNode;
 }
 type Code = { value: string; expires: number };
 const unavailable =
@@ -32,6 +33,7 @@ export default function WebTotpPanel({
   onClose,
   anchorRef,
   autoMfa,
+  credentialActions,
 }: WebTotpPanelProps) {
   const manager = DatabaseManager.getInstance();
   const access = useMemo(() => {
@@ -250,6 +252,7 @@ export default function WebTotpPanel({
           <X size={16} />
         </button>
       </header>
+      {credentialActions}
       <div className="max-h-[60vh] overflow-y-auto p-3 space-y-3">
         {!allowed ? (
           <p role="status" className="text-sm">

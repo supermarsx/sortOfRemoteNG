@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   X,
   Plus,
@@ -15,14 +15,17 @@ import {
   KeyRound,
   QrCode,
   FileUp,
-} from 'lucide-react';
-import { TOTPConfig } from '../../types/settings/settings';
-import { totpApi } from '../../hooks/totp/useTOTP';
-import type { TotpAlgorithm } from '../../types/totp';
-import { TotpImportDialog } from '../security/TotpImportDialog';
-import { PopoverSurface } from '../ui/overlays/PopoverSurface';
-import { useRDPTotpPanel, type RDPTotpPanelMgr } from '../../hooks/rdp/useRDPTotpPanel';
-import { Select, Textarea} from '../ui/forms';
+} from "lucide-react";
+import { TOTPConfig } from "../../types/settings/settings";
+import { totpApi } from "../../hooks/totp/useTOTP";
+import type { TotpAlgorithm } from "../../types/totp";
+import { TotpImportDialog } from "../security/TotpImportDialog";
+import { PopoverSurface } from "../ui/overlays/PopoverSurface";
+import {
+  useRDPTotpPanel,
+  type RDPTotpPanelMgr,
+} from "../../hooks/rdp/useRDPTotpPanel";
+import { Select, Textarea } from "../ui/forms";
 
 // ─── Props ───────────────────────────────────────────────────────────
 
@@ -36,6 +39,7 @@ interface RDPTotpPanelProps {
   defaultPeriod?: number;
   defaultAlgorithm?: string;
   anchorRef?: React.RefObject<HTMLElement | null>;
+  credentialActions?: React.ReactNode;
 }
 
 // ─── QR display ──────────────────────────────────────────────────────
@@ -57,11 +61,11 @@ function QRDisplay({
           config.secret,
           config.issuer,
           config.account,
-          (config.algorithm ?? 'sha1').toUpperCase() as TotpAlgorithm,
+          (config.algorithm ?? "sha1").toUpperCase() as TotpAlgorithm,
           config.digits,
           config.period,
         );
-        const QRCode = await import('qrcode');
+        const QRCode = await import("qrcode");
         const url = await QRCode.toDataURL(uri);
         if (!cancelled) setQrUrl(url);
       } catch {
@@ -76,11 +80,13 @@ function QRDisplay({
   return (
     <div className="p-3 border-b border-[var(--color-border)] flex flex-col items-center space-y-2">
       {qrUrl ? (
-         
         <img src={qrUrl} alt="TOTP QR Code" className="w-40 h-40 rounded" />
       ) : (
         <div className="w-40 h-40 bg-[var(--color-border)] rounded flex items-center justify-center">
-          <QrCode size={32} className="text-[var(--color-textMuted)] animate-pulse" />
+          <QrCode
+            size={32}
+            className="text-[var(--color-textMuted)] animate-pulse"
+          />
         </div>
       )}
       <p className="text-[10px] text-[var(--color-textSecondary)] text-center">
@@ -108,9 +114,7 @@ function BackupCodesDisplay({
   return (
     <div className="px-3 py-2 border-t border-[var(--color-border)]/50 bg-[var(--color-surface)]/60">
       <div className="flex items-center justify-between mb-1">
-        <span className="sor-totp-label">
-          Backup Codes
-        </span>
+        <span className="sor-totp-label">Backup Codes</span>
         <button
           onClick={onCopyAll}
           className="text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors flex items-center space-x-1"
@@ -142,43 +146,38 @@ function ImportModal({
   onImport: (json: string) => void;
   onClose: () => void;
 }) {
-  const [text, setText] = useState('');
-  const [error, setError] = useState('');
+  const [text, setText] = useState("");
+  const [error, setError] = useState("");
 
   const handleImport = () => {
     try {
       const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed)) throw new Error('Expected an array');
+      if (!Array.isArray(parsed)) throw new Error("Expected an array");
       for (const c of parsed) {
         if (!c.secret || !c.account)
-          throw new Error('Each entry needs secret and account');
+          throw new Error("Each entry needs secret and account");
       }
       onImport(text);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid JSON');
+      setError(e instanceof Error ? e.message : "Invalid JSON");
     }
   };
 
   return (
     <div className="p-3 border-b border-[var(--color-border)] space-y-2">
-      <div className="sor-totp-label">
-        Import TOTP Configs (JSON)
-      </div>
+      <div className="sor-totp-label">Import TOTP Configs (JSON)</div>
       <Textarea
         value={text}
         onChange={(v) => {
           setText(v);
-          setError('');
+          setError("");
         }}
         placeholder='[{"secret":"...","account":"...","issuer":"...","digits":6,"period":30,"algorithm":"sha1"}]'
         className="w-full h-20 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[10px] text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] resize-none"
       />
       {error && <div className="text-[10px] text-error">{error}</div>}
       <div className="flex justify-end space-x-2">
-        <button
-          onClick={onClose}
-          className="sor-totp-action"
-        >
+        <button onClick={onClose} className="sor-totp-action">
           Cancel
         </button>
         <button
@@ -204,21 +203,37 @@ const PanelHeader: React.FC<{
       <span className="text-xs font-semibold text-[var(--color-text)]">
         2FA Codes
       </span>
-      {mgr.copiedSecret === 'export' && (
+      {mgr.copiedSecret === "export" && (
         <span className="text-[10px] text-success">Copied!</span>
       )}
     </div>
     <div className="flex items-center space-x-1">
-      <button onClick={mgr.handleExport} className="sor-icon-btn-sm" title="Export configs to clipboard">
+      <button
+        onClick={mgr.handleExport}
+        className="sor-icon-btn-sm"
+        title="Export configs to clipboard"
+      >
         <Download size={12} />
       </button>
-      <button onClick={() => mgr.setShowFileImport(true)} className="sor-icon-btn-sm" title="Import from authenticator app">
+      <button
+        onClick={() => mgr.setShowFileImport(true)}
+        className="sor-icon-btn-sm"
+        title="Import from authenticator app"
+      >
         <FileUp size={12} />
       </button>
-      <button onClick={() => mgr.setShowImport(!mgr.showImport)} className="sor-icon-btn-sm" title="Import from JSON">
+      <button
+        onClick={() => mgr.setShowImport(!mgr.showImport)}
+        className="sor-icon-btn-sm"
+        title="Import from JSON"
+      >
         <Upload size={12} />
       </button>
-      <button onClick={() => mgr.setShowAdd(!mgr.showAdd)} className="sor-icon-btn-sm" title="Add TOTP">
+      <button
+        onClick={() => mgr.setShowAdd(!mgr.showAdd)}
+        className="sor-icon-btn-sm"
+        title="Add TOTP"
+      >
         <Plus size={12} />
       </button>
       <button onClick={onClose} className="sor-icon-btn-sm">
@@ -248,7 +263,7 @@ const AddForm: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
     />
     <div className="relative">
       <input
-        type={mgr.showNewSecret ? 'text' : 'password'}
+        type={mgr.showNewSecret ? "text" : "password"}
         value={mgr.newSecret}
         onChange={(e) => mgr.setNewSecret(e.target.value)}
         placeholder="Secret (auto-generated if empty)"
@@ -263,15 +278,47 @@ const AddForm: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
       </button>
     </div>
     <div className="flex space-x-2">
-      <Select value={mgr.newDigits} onChange={(v: string) => mgr.setNewDigits(parseInt(v))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="sor-form-input-xs flex-1" />
-      <Select value={mgr.newPeriod} onChange={(v: string) => mgr.setNewPeriod(parseInt(v))} options={[{ value: "15", label: "15s" }, { value: "30", label: "30s" }, { value: "60", label: "60s" }]} className="sor-form-input-xs flex-1" />
-      <Select value={mgr.newAlgorithm} onChange={(v: string) => mgr.setNewAlgorithm(v)} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="sor-form-input-xs flex-1" />
+      <Select
+        value={mgr.newDigits}
+        onChange={(v: string) => mgr.setNewDigits(parseInt(v))}
+        options={[
+          { value: "6", label: "6 digits" },
+          { value: "8", label: "8 digits" },
+        ]}
+        className="sor-form-input-xs flex-1"
+      />
+      <Select
+        value={mgr.newPeriod}
+        onChange={(v: string) => mgr.setNewPeriod(parseInt(v))}
+        options={[
+          { value: "15", label: "15s" },
+          { value: "30", label: "30s" },
+          { value: "60", label: "60s" },
+        ]}
+        className="sor-form-input-xs flex-1"
+      />
+      <Select
+        value={mgr.newAlgorithm}
+        onChange={(v: string) => mgr.setNewAlgorithm(v)}
+        options={[
+          { value: "sha1", label: "SHA-1" },
+          { value: "sha256", label: "SHA-256" },
+          { value: "sha512", label: "SHA-512" },
+        ]}
+        className="sor-form-input-xs flex-1"
+      />
     </div>
     <div className="flex justify-end space-x-2">
-      <button onClick={() => mgr.setShowAdd(false)} className="px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors">
+      <button
+        onClick={() => mgr.setShowAdd(false)}
+        className="px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+      >
         Cancel
       </button>
-      <button onClick={mgr.handleAdd} className="px-2 py-1 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors">
+      <button
+        onClick={mgr.handleAdd}
+        className="px-2 py-1 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors"
+      >
         Add
       </button>
     </div>
@@ -284,28 +331,70 @@ const TotpEditRow: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
   <div className="px-3 py-2 border-b border-[var(--color-border)]/50 space-y-1.5 bg-[var(--color-surfaceHover)]">
     <input
       type="text"
-      value={mgr.editData.account ?? ''}
-      onChange={(e) => mgr.setEditData((d) => ({ ...d, account: e.target.value }))}
+      value={mgr.editData.account ?? ""}
+      onChange={(e) =>
+        mgr.setEditData((d) => ({ ...d, account: e.target.value }))
+      }
       placeholder="Account"
       className="sor-form-input-xs"
     />
     <input
       type="text"
-      value={mgr.editData.issuer ?? ''}
-      onChange={(e) => mgr.setEditData((d) => ({ ...d, issuer: e.target.value }))}
+      value={mgr.editData.issuer ?? ""}
+      onChange={(e) =>
+        mgr.setEditData((d) => ({ ...d, issuer: e.target.value }))
+      }
       placeholder="Issuer"
       className="sor-form-input-xs"
     />
     <div className="flex space-x-2">
-      <Select value={mgr.editData.digits ?? 6} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, digits: parseInt(v) }))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="sor-form-input-xs flex-1" />
-      <Select value={mgr.editData.period ?? 30} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, period: parseInt(v) }))} options={[{ value: "15", label: "15s" }, { value: "30", label: "30s" }, { value: "60", label: "60s" }]} className="sor-form-input-xs flex-1" />
-      <Select value={mgr.editData.algorithm ?? 'sha1'} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, algorithm: v as TOTPConfig['algorithm'] }))} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="sor-form-input-xs flex-1" />
+      <Select
+        value={mgr.editData.digits ?? 6}
+        onChange={(v: string) =>
+          mgr.setEditData((d) => ({ ...d, digits: parseInt(v) }))
+        }
+        options={[
+          { value: "6", label: "6 digits" },
+          { value: "8", label: "8 digits" },
+        ]}
+        className="sor-form-input-xs flex-1"
+      />
+      <Select
+        value={mgr.editData.period ?? 30}
+        onChange={(v: string) =>
+          mgr.setEditData((d) => ({ ...d, period: parseInt(v) }))
+        }
+        options={[
+          { value: "15", label: "15s" },
+          { value: "30", label: "30s" },
+          { value: "60", label: "60s" },
+        ]}
+        className="sor-form-input-xs flex-1"
+      />
+      <Select
+        value={mgr.editData.algorithm ?? "sha1"}
+        onChange={(v: string) =>
+          mgr.setEditData((d) => ({
+            ...d,
+            algorithm: v as TOTPConfig["algorithm"],
+          }))
+        }
+        options={[
+          { value: "sha1", label: "SHA-1" },
+          { value: "sha256", label: "SHA-256" },
+          { value: "sha512", label: "SHA-512" },
+        ]}
+        className="sor-form-input-xs flex-1"
+      />
     </div>
     <div className="flex justify-end space-x-2">
       <button onClick={mgr.cancelEdit} className="sor-totp-action">
         Cancel
       </button>
-      <button onClick={mgr.saveEdit} className="px-2 py-1 text-[10px] bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded">
+      <button
+        onClick={mgr.saveEdit}
+        className="px-2 py-1 text-[10px] bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded"
+      >
         Save
       </button>
     </div>
@@ -341,13 +430,13 @@ const TotpEntryRow: React.FC<{
           </div>
           <div className="flex items-center space-x-2">
             <span className="font-mono text-lg text-success tracking-wider">
-              {mgr.codes[cfg.secret] || '------'}
+              {mgr.codes[cfg.secret] || "------"}
             </span>
             <div className="flex items-center space-x-1">
               <div className="w-12 h-1 bg-[var(--color-border)] rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-1000 ${
-                    remaining <= 5 ? 'bg-error' : 'bg-primary'
+                    remaining <= 5 ? "bg-error" : "bg-primary"
                   }`}
                   style={{ width: `${progress * 100}%` }}
                 />
@@ -381,20 +470,30 @@ const TotpEntryRow: React.FC<{
               <Keyboard size={12} />
             </button>
           )}
-          <button onClick={() => mgr.copyCode(cfg.secret)} className="sor-icon-btn-sm" title="Copy code">
+          <button
+            onClick={() => mgr.copyCode(cfg.secret)}
+            className="sor-icon-btn-sm"
+            title="Copy code"
+          >
             {mgr.copiedSecret === cfg.secret ? (
               <Check size={12} className="text-success" />
             ) : (
               <Copy size={12} />
             )}
           </button>
-          <button onClick={() => mgr.toggleReveal(cfg.secret)} className="sor-icon-btn-sm" title={isRevealed ? 'Hide secret' : 'Show secret'}>
+          <button
+            onClick={() => mgr.toggleReveal(cfg.secret)}
+            className="sor-icon-btn-sm"
+            title={isRevealed ? "Hide secret" : "Show secret"}
+          >
             {isRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
           </button>
           <button
             onClick={() => {
               if (cfg.backupCodes && cfg.backupCodes.length > 0) {
-                mgr.setShowBackup(mgr.showBackup === cfg.secret ? null : cfg.secret);
+                mgr.setShowBackup(
+                  mgr.showBackup === cfg.secret ? null : cfg.secret,
+                );
               } else {
                 mgr.generateBackup(cfg.secret);
               }
@@ -404,10 +503,18 @@ const TotpEntryRow: React.FC<{
           >
             <KeyRound size={12} />
           </button>
-          <button onClick={() => mgr.startEdit(cfg)} className="sor-icon-btn-sm" title="Edit">
+          <button
+            onClick={() => mgr.startEdit(cfg)}
+            className="sor-icon-btn-sm"
+            title="Edit"
+          >
             <Pencil size={12} />
           </button>
-          <button onClick={() => mgr.handleDelete(cfg.secret)} className="p-1 hover:bg-[var(--color-border)] rounded text-error hover:text-error/80 transition-colors" title="Remove">
+          <button
+            onClick={() => mgr.handleDelete(cfg.secret)}
+            className="p-1 hover:bg-[var(--color-border)] rounded text-error hover:text-error/80 transition-colors"
+            title="Remove"
+          >
             <Trash2 size={12} />
           </button>
         </div>
@@ -458,11 +565,12 @@ export default function RDPTotpPanel({
   onUpdate,
   onClose,
   onAutoType,
-  defaultIssuer = 'sortOfRemoteNG',
+  defaultIssuer = "sortOfRemoteNG",
   defaultDigits = 6,
   defaultPeriod = 30,
-  defaultAlgorithm = 'sha1',
+  defaultAlgorithm = "sha1",
   anchorRef,
+  credentialActions,
 }: RDPTotpPanelProps) {
   const mgr = useRDPTotpPanel(configs, onUpdate, {
     issuer: defaultIssuer,
@@ -474,9 +582,13 @@ export default function RDPTotpPanel({
   const panel = (
     <div className="sor-popover-panel w-96 overflow-hidden">
       <PanelHeader mgr={mgr} onClose={onClose} />
+      {credentialActions}
 
       {mgr.showImport && (
-        <ImportModal onImport={mgr.handleImport} onClose={() => mgr.setShowImport(false)} />
+        <ImportModal
+          onImport={mgr.handleImport}
+          onClose={() => mgr.setShowImport(false)}
+        />
       )}
 
       {mgr.showFileImport && (
@@ -488,7 +600,10 @@ export default function RDPTotpPanel({
       )}
 
       {mgr.qrConfig && (
-        <QRDisplay config={mgr.qrConfig} onDismiss={() => mgr.setQrConfig(null)} />
+        <QRDisplay
+          config={mgr.qrConfig}
+          onDismiss={() => mgr.setQrConfig(null)}
+        />
       )}
 
       {mgr.showAdd && <AddForm mgr={mgr} />}

@@ -3,6 +3,7 @@ import { Mgr, RDPClientHeaderProps, btnActive, btnDefault } from "./helpers";
 import RDPTotpPanel from "../RDPTotpPanel";
 import { Shield } from "lucide-react";
 import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
+import { SessionCredentialCopyActions } from "../../security/CredentialCopyActions";
 
 const TotpButton: React.FC<{
   mgr: Mgr;
@@ -33,6 +34,12 @@ const TotpButton: React.FC<{
       {mgr.showTotpPanel && p.vaultTotp && (
         <RuntimeVaultTotpPanel
           controller={p.vaultTotp}
+          credentialActions={
+            <SessionCredentialCopyActions
+              sessionId={p.sessionId}
+              connectionId={p.connectionId}
+            />
+          }
           anchorRef={mgr.totpBtnRef}
           onClose={() => mgr.setShowTotpPanel(false)}
         />
@@ -40,6 +47,12 @@ const TotpButton: React.FC<{
       {mgr.showTotpPanel && !p.vaultTotp && !p.totpUnavailableReason && (
         <RDPTotpPanel
           configs={configs}
+          credentialActions={
+            <SessionCredentialCopyActions
+              sessionId={p.sessionId}
+              connectionId={p.connectionId}
+            />
+          }
           onUpdate={p.onUpdateTotpConfigs}
           onClose={() => mgr.setShowTotpPanel(false)}
           onAutoType={p.handleAutoTypeTOTP}

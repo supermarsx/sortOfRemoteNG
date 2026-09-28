@@ -13,10 +13,16 @@ type Props = {
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
   footer?: React.ReactNode;
+  credentialActions?: React.ReactNode;
 };
 type Code = Awaited<ReturnType<RuntimeVaultTotpController["generate"]>>;
 
-function Codes({ controller, onClose, footer }: Omit<Props, "anchorRef">) {
+function Codes({
+  controller,
+  onClose,
+  footer,
+  credentialActions,
+}: Omit<Props, "anchorRef">) {
   const connectionSource = controller.sourceKind === "connection";
   const [entries, setEntries] = useState<RuntimeVaultTotpEntry[]>([]);
   const [code, setCode] = useState<Code | null>(null);
@@ -130,6 +136,7 @@ function Codes({ controller, onClose, footer }: Omit<Props, "anchorRef">) {
           <X size={16} />
         </button>
       </div>
+      {credentialActions}
       <p className="text-xs text-[var(--color-textSecondary)]">
         Generate and copy explicitly. Codes are not pasted or submitted
         automatically.
@@ -201,6 +208,7 @@ export default function RuntimeVaultTotpPanel({
   onClose,
   anchorRef,
   footer,
+  credentialActions,
 }: Props) {
   return (
     <PopoverSurface isOpen onClose={onClose} anchorRef={anchorRef}>
@@ -209,6 +217,7 @@ export default function RuntimeVaultTotpPanel({
         controller={controller}
         onClose={onClose}
         footer={footer}
+        credentialActions={credentialActions}
       />
     </PopoverSurface>
   );
