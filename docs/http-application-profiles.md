@@ -11,6 +11,15 @@ Selecting a profile starts in **Manual browsing**. It does not change the TLS/tr
 
 Application and Organize can suggest a matching existing icon. The preview is optional: select **Use suggested icon** to apply it. Changing the application never overwrites your current icon automatically; Custom application uses a generic website suggestion.
 
+The hostname field also accepts a full HTTP(S) URL, such as
+`https://portal.example.com/pt/Account/Login`. The editor preserves its path,
+query and fragment and aligns the protocol and explicit port when pasted.
+Both browser views open that initial page through the internal proxy. A bare
+hostname still uses the application's normal entry page; reviewed hosted
+sign-in routes retain precedence. A conflicting saved protocol or explicit
+port must be corrected before connecting. URL-embedded credentials are not
+accepted, and a saved path never grants access to a different origin.
+
 ## Choose how to sign in
 
 | Mode                 | What happens                                                                                                                                                                                         |

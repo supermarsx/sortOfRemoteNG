@@ -110,7 +110,7 @@ describe("GeneralSection — protocol inferred from pasted URL (t71 RC4)", () =>
 
     expect(h.get().protocol).toBe("https");
     expect(h.get().port).toBe(8443);
-    expect(h.get().hostname).toBe("portal.example.com");
+    expect(h.get().hostname).toBe("https://portal.example.com:8443/login");
     expect(h.get().authType).toBe("basic");
     expect(screen.getByTestId("editor-protocol")).toHaveTextContent("HTTPS");
     expect(toastInfo).toHaveBeenCalledTimes(1);
@@ -126,17 +126,17 @@ describe("GeneralSection — protocol inferred from pasted URL (t71 RC4)", () =>
     fireEvent.blur(input, { target: { value: "https://portal.example.com" } });
     expect(h.get().protocol).toBe("https");
     expect(h.get().port).toBe(443);
-    expect(h.get().hostname).toBe("portal.example.com");
+    expect(h.get().hostname).toBe("https://portal.example.com");
   });
 
-  it("maps http:// with the path discarded", () => {
+  it("maps http:// while preserving its initial path", () => {
     const a = renderWith(NEW_RDP);
     fireEvent.blur(screen.getByTestId("editor-hostname"), {
       target: { value: "http://router.local/admin" },
     });
     expect(a.get().protocol).toBe("http");
     expect(a.get().port).toBe(80);
-    expect(a.get().hostname).toBe("router.local");
+    expect(a.get().hostname).toBe("http://router.local/admin");
   });
 
   it("infers ssh:// as well", () => {
@@ -146,6 +146,7 @@ describe("GeneralSection — protocol inferred from pasted URL (t71 RC4)", () =>
     });
     expect(h.get().protocol).toBe("ssh");
     expect(h.get().port).toBe(2222);
+    expect(h.get().hostname).toBe("box.lan");
   });
 
   it("works on paste (deferred one frame)", () => {
@@ -158,7 +159,7 @@ describe("GeneralSection — protocol inferred from pasted URL (t71 RC4)", () =>
     });
     expect(h.get().protocol).toBe("https");
     expect(h.get().port).toBe(9443);
-    expect(h.get().hostname).toBe("host.example");
+    expect(h.get().hostname).toBe("https://host.example:9443/x");
   });
 
   it("keeps a deliberately set non-default port", () => {
@@ -177,8 +178,9 @@ describe("GeneralSection — protocol inferred from pasted URL (t71 RC4)", () =>
     });
     expect(h.get().protocol).toBe("https");
     expect(h.get().port).toBe(443);
+    expect(h.get().hostname).toBe("https://portal.example.com/x");
     expect(toastInfo.mock.calls[0][0]).toContain(
-      "Removed the `https://` prefix",
+      "Kept the full HTTP(S) URL, including its initial path.",
     );
     expect(toastInfo.mock.calls[0][0]).not.toContain("Switched protocol");
   });
@@ -190,5 +192,24 @@ describe("GeneralSection — protocol inferred from pasted URL (t71 RC4)", () =>
     });
     expect(h.get().protocol).toBe("rdp");
     expect(toastInfo).not.toHaveBeenCalled();
+  });
+
+  it("preserves a safe web query and fragment but not URL userinfo", () => {
+    const safe = renderWith(NEW_RDP);
+    fireEvent.blur(screen.getByTestId("editor-hostname"), {
+      target: {
+        value: "https://portal.example.com/login?return=%2Fhome#sign-in",
+      },
+    });
+    expect(safe.get().hostname).toBe(
+      "https://portal.example.com/login?return=%2Fhome#sign-in",
+    );
+
+    const unsafe = renderWith(NEW_RDP);
+    const inputs = screen.getAllByTestId("editor-hostname");
+    fireEvent.blur(inputs[1], {
+      target: { value: "https://alice:secret@example.com/private" },
+    });
+    expect(unsafe.get().hostname).toBe("example.com");
   });
 });

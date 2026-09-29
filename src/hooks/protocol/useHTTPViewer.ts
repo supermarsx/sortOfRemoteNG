@@ -24,6 +24,7 @@ import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
 import { validateProtectedProxyUrl } from "./useWebBrowser";
 import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
+import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
 import {
   googleAccountsEntryFor,
   validateGoogleProxyRoutes,
@@ -87,7 +88,6 @@ export function useHTTPViewer(session: ConnectionSession) {
       : undefined;
     const protocol = session.protocol === "https" ? "https" : "http";
     const defaultPort = session.protocol === "https" ? 443 : 80;
-    const port = Number(connection.port || defaultPort);
     const rawHost = connection.hostname?.trim() ?? "";
     if (
       canonicalGoogleUrl &&
@@ -95,48 +95,33 @@ export function useHTTPViewer(session: ConnectionSession) {
     ) {
       return canonicalGoogleUrl.href;
     }
-    if (
-      !rawHost ||
-      Array.from(rawHost).some((character) => {
-        const codePoint = character.codePointAt(0) ?? 0;
-        return (
-          codePoint <= 0x1f ||
-          codePoint === 0x7f ||
-          character.trim() === "" ||
-          "/@?#\\".includes(character)
-        );
-      }) ||
-      !Number.isSafeInteger(port) ||
-      port < 1 ||
-      port > 65_535
-    ) {
-      return "";
-    }
-    const host =
-      rawHost.includes(":") &&
-      !rawHost.startsWith("[") &&
-      !rawHost.endsWith("]")
-        ? `[${rawHost}]`
-        : rawHost;
-    const portSuffix = port === defaultPort ? "" : `:${port}`;
     try {
-      const target = new URL(`${protocol}://${host}${portSuffix}/`);
+      const authority = parseCanonicalWebAuthority(rawHost);
+      const configuredPort = connection.port || undefined;
+      const port = configuredPort ?? authority.port ?? defaultPort;
       if (
-        target.protocol !== `${protocol}:` ||
-        target.username ||
-        target.password ||
-        target.pathname !== "/" ||
-        target.search ||
-        target.hash
-      ) {
+        (authority.sourceScheme && authority.sourceScheme !== protocol) ||
+        (authority.port &&
+          configuredPort &&
+          authority.port !== configuredPort) ||
+        !Number.isSafeInteger(port) ||
+        port < 1 ||
+        port > 65_535
+      )
         return "";
-      }
+      const target = new URL(`${protocol}://${authority.hostname}/`);
+      target.port = port === defaultPort ? "" : String(port);
+      target.pathname = authority.initialPathname ?? "/";
+      target.search = authority.initialSearch ?? "";
+      target.hash = authority.initialHash ?? "";
       if (connection.httpApplication?.id === "cloudflare") {
         validateHttpApplicationTarget(connection, target.href);
         if (connection.httpApplication.loginMode === "form")
           return `${target.origin}/login`;
       }
-      return target.origin;
+      return authority.initialPathname !== undefined
+        ? target.href
+        : target.origin;
     } catch {
       return "";
     }
@@ -257,6 +242,12 @@ export function useHTTPViewer(session: ConnectionSession) {
       const protectedProxyUrl = validateProtectedProxyUrl(response);
       proxySessionIdRef.current = response.session_id;
       const entry = new URL(targetUrl);
+      // Assign components, rather than resolving a path starting with //,
+      // so even unusual saved paths cannot replace the protected authority.
+      const mappedEntry = new URL(protectedProxyUrl);
+      mappedEntry.pathname = entry.pathname;
+      mappedEntry.search = entry.search;
+      mappedEntry.hash = entry.hash;
       const initialProxyUrl =
         reviewedApplicationProfile === "google-hosted"
           ? (googleAccountsEntryFor(
@@ -275,7 +266,7 @@ export function useHTTPViewer(session: ConnectionSession) {
             })())
           : reviewedApplicationProfile === "cloudflare" && login.autoLogin
             ? new URL("/login", protectedProxyUrl).href
-            : protectedProxyUrl;
+            : mappedEntry.href;
       setProxyUrl(initialProxyUrl);
       setProxySessionId(response.session_id);
       setHistory([initialProxyUrl]);

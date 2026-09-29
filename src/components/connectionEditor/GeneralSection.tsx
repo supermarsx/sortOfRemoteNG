@@ -24,6 +24,7 @@ import {
 import { Checkbox, NumberInput, Select, type SelectOption } from "../ui/forms";
 import { useTranslation } from "react-i18next";
 import {
+  parseCanonicalWebAuthority,
   sanitizeHostname,
   schemeToProtocol,
 } from "../../utils/connection/sanitizeHostname";
@@ -292,16 +293,10 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
     unavailableSavedMessage,
   ]);
 
-  /**
-   * P8: clean a hostname value (strip leading scheme,
-   * extract port if present, drop path/query). Runs on blur so
-   * the user can paste `http://example.com:8443/admin` and end up
-   * with hostname=`example.com`, port=8443, with a heads-up toast
-   * if anything got rewritten. Idempotent.
-   */
+  /** Preserve safe HTTP(S) URLs for initial navigation while continuing to
+   * normalise non-web schemes into their dedicated protocol/host/port fields. */
   const sanitizeHostnameField = (raw: string) => {
     const result = sanitizeHostname(raw);
-    if (!result.stripped && raw === result.hostname) return;
     // t71: the pasted scheme is *evidence* for the protocol. Switch the
     // record's protocol when the scheme maps to a protocol the picker
     // offers and it differs from the current one — never leave a pasted
@@ -313,8 +308,24 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
       runtimeProtocolOptions.some(({ value }) => value === schemeProtocol)
         ? schemeProtocol
         : undefined;
+    const effectiveProtocol = switchedTo ?? formData.protocol;
+    const trimmed = raw.trim();
+    let preserveWebUrl =
+      (schemeProtocol === "http" || schemeProtocol === "https") &&
+      effectiveProtocol === schemeProtocol;
+    if (preserveWebUrl) {
+      try {
+        parseCanonicalWebAuthority(trimmed);
+      } catch {
+        // Keep the previous fail-closed sanitisation for malformed URLs and
+        // URLs containing credentials or ambiguous authorities.
+        preserveWebUrl = false;
+      }
+    }
+    const hostname = preserveWebUrl ? trimmed : result.hostname;
+    if (!result.stripped && raw === hostname) return;
     setFormData((prev) => {
-      const next: Partial<Connection> = { ...prev, hostname: result.hostname };
+      const next: Partial<Connection> = { ...prev, hostname };
       const prevDefault = getDefaultPort(prev.protocol ?? "rdp");
       const portIsDefault = !prev.port || prev.port === prevDefault;
       if (switchedTo) {
@@ -348,6 +359,13 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
             { protocol: switchedTo.toUpperCase(), scheme: result.scheme },
           ) as string,
         );
+      } else if (preserveWebUrl) {
+        parts.push(
+          t(
+            "connectionEditor.hostnamePreservedWebUrl",
+            "Kept the full HTTP(S) URL, including its initial path.",
+          ) as string,
+        );
       } else {
         parts.push(
           t(
@@ -366,7 +384,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
           ) as string,
         );
       }
-      if (result.path && result.path !== "/") {
+      if (!preserveWebUrl && result.path && result.path !== "/") {
         parts.push(
           t(
             "connectionEditor.hostnameNormalizedPath",

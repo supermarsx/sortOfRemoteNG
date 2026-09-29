@@ -212,10 +212,87 @@ describe("parseCanonicalWebAuthority", () => {
         hostname: "[2001:db8::1]",
         port: 8443,
         sourceScheme: "https",
+        initialPathname: "/",
+        initialSearch: "",
+        initialHash: "",
       },
     ],
   ])("accepts canonical authority %s", (input, expected) => {
     expect(parseCanonicalWebAuthority(input as string)).toEqual(expected);
+  });
+
+  it("separates a full URL into its canonical authority and initial navigation", () => {
+    expect(
+      parseCanonicalWebAuthority(
+        "https://siif.apps.vogue-homes.com/pt/Account/Login?return=%2Fhome#sign-in",
+      ),
+    ).toEqual({
+      hostname: "siif.apps.vogue-homes.com",
+      sourceScheme: "https",
+      initialPathname: "/pt/Account/Login",
+      initialSearch: "?return=%2Fhome",
+      initialHash: "#sign-in",
+    });
+  });
+
+  it("preserves an explicit default URL port for conflict checks", () => {
+    expect(parseCanonicalWebAuthority("https://example.com:443/login")).toEqual(
+      {
+        hostname: "example.com",
+        port: 443,
+        sourceScheme: "https",
+        initialPathname: "/login",
+        initialSearch: "",
+        initialHash: "",
+      },
+    );
+  });
+
+  it("keeps initial URL fields absent for bare authorities", () => {
+    expect(parseCanonicalWebAuthority("example.com:8443")).toEqual({
+      hostname: "example.com",
+      port: 8443,
+    });
+  });
+
+  it("allows encoded data outside the authority", () => {
+    expect(
+      parseCanonicalWebAuthority(
+        "https://example.com/a%2Fb?next=%2Fhome#section%201",
+      ),
+    ).toMatchObject({
+      hostname: "example.com",
+      initialPathname: "/a%2Fb",
+      initialSearch: "?next=%2Fhome",
+      initialHash: "#section%201",
+    });
+  });
+
+  it("retains URL-standard numeric host normalization without relaxing bare authorities", () => {
+    expect(parseCanonicalWebAuthority("https://127.1/login")).toMatchObject({
+      hostname: "127.0.0.1",
+      sourceScheme: "https",
+      initialPathname: "/login",
+    });
+    expect(() => parseCanonicalWebAuthority("127.1")).toThrow(
+      "canonical authority spelling",
+    );
+  });
+
+  it("normalizes an explicitly written URL port before conflict checks", () => {
+    expect(
+      parseCanonicalWebAuthority("https://example.com:0443/login"),
+    ).toEqual({
+      hostname: "example.com",
+      port: 443,
+      sourceScheme: "https",
+      initialPathname: "/login",
+      initialSearch: "",
+      initialHash: "",
+    });
+    expect(() =>
+      parseCanonicalWebAuthority("https://example.com:00000/login"),
+    ).toThrow("invalid port");
   });
 
   it.each([
@@ -231,6 +308,12 @@ describe("parseCanonicalWebAuthority", () => {
     "device%2540attacker.test",
     "device.local%2f@attacker.test",
     "device.local\\@attacker.test",
+    "http:///device.local",
+    "https:///device.local",
+    "https://@device.local/path",
+    "https://device.local\\path",
+    "https://device.local\\@attacker.test/path",
+    "https://device%2f@attacker.test/path",
     "device.local:0",
     "device.local:65536",
     "device.local:invalid",

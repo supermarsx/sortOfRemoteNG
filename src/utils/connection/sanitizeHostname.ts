@@ -277,6 +277,10 @@ export interface CanonicalWebAuthority {
   hostname: string;
   port?: number;
   sourceScheme?: "http" | "https";
+  /** Initial URL components are present only when the input was a full URL. */
+  initialPathname?: string;
+  initialSearch?: string;
+  initialHash?: string;
 }
 
 const WEB_SCHEME_PREFIX_RE = /^([a-z][a-z0-9+.-]*):\/\//iu;
@@ -291,11 +295,13 @@ const AUTHORITY_WHITESPACE_OR_CONTROL_RE = {
 const DNS_LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/iu;
 
 /**
- * Parse a saved web hostname as one canonical URL authority.
+ * Parse a saved web hostname as one canonical URL authority, optionally with
+ * the initial navigation components from a full HTTP(S) URL.
  *
- * Unlike the permissive editor sanitiser above, this is a credential boundary:
- * it rejects path/query/fragment data, userinfo, encoded delimiter ambiguity,
- * whitespace, invalid ports, and non-canonical host spellings before a saved
+ * Unlike the permissive editor sanitiser above, this is a credential boundary.
+ * Full URLs may contribute a path, query, and fragment, but never a different
+ * authority: userinfo, encoded authority delimiters, backslashes, whitespace,
+ * invalid ports, and non-HTTP(S) schemes remain rejected before a saved
  * credential can be attached to a proxy request.
  */
 export function parseCanonicalWebAuthority(raw: string): CanonicalWebAuthority {
@@ -307,14 +313,12 @@ export function parseCanonicalWebAuthority(raw: string): CanonicalWebAuthority {
       "Web hostname cannot contain whitespace or control characters.",
     );
   }
-  if (raw.includes("%")) {
-    throw new Error(
-      "Web hostname cannot contain encoded authority delimiters.",
-    );
-  }
-
   let authority = raw;
   let sourceScheme: "http" | "https" | undefined;
+  let explicitPortSource = authority;
+  let initialPathname: string | undefined;
+  let initialSearch: string | undefined;
+  let initialHash: string | undefined;
   const schemeMatch = raw.match(WEB_SCHEME_PREFIX_RE);
   if (schemeMatch) {
     const scheme = schemeMatch[1].toLowerCase();
@@ -330,22 +334,46 @@ export function parseCanonicalWebAuthority(raw: string): CanonicalWebAuthority {
     if (parsed.username || parsed.password) {
       throw new Error("Web hostname cannot contain user information.");
     }
-    if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    const afterScheme = raw.slice(schemeMatch[0].length);
+    const suffixStart = afterScheme.search(/[/?#]/u);
+    const sourceAuthority =
+      suffixStart >= 0 ? afterScheme.slice(0, suffixStart) : afterScheme;
+    if (!sourceAuthority) {
+      throw new Error("Web hostname is not a valid URL authority.");
+    }
+    if (sourceAuthority.includes("@")) {
+      throw new Error("Web hostname cannot contain user information.");
+    }
+    if (sourceAuthority.includes("\\")) {
+      throw new Error("Web hostname authority cannot contain backslashes.");
+    }
+    if (sourceAuthority.includes("%")) {
       throw new Error(
-        "Web hostname cannot contain a path, query, or fragment.",
+        "Web hostname cannot contain encoded authority delimiters.",
       );
     }
     authority = parsed.host;
+    explicitPortSource = sourceAuthority;
     sourceScheme = scheme;
-  } else if (/[@/\\?#]/u.test(authority)) {
-    throw new Error(
-      "Web hostname cannot contain user information, a path, query, or fragment.",
-    );
+    initialPathname = parsed.pathname;
+    initialSearch = parsed.search;
+    initialHash = parsed.hash;
+  } else {
+    if (raw.includes("%")) {
+      throw new Error(
+        "Web hostname cannot contain encoded authority delimiters.",
+      );
+    }
+    if (/[@/\\?#]/u.test(authority)) {
+      throw new Error(
+        "Web hostname cannot contain user information, a path, query, or fragment.",
+      );
+    }
   }
 
-  const explicitPortMatch = authority.startsWith("[")
-    ? authority.match(/^\[[^\]]+\]:(\d+)$/u)
-    : authority.match(/^[^:]+:(\d+)$/u);
+  const explicitPortMatch = explicitPortSource.startsWith("[")
+    ? explicitPortSource.match(/^\[[^\]]+\]:(\d+)$/u)
+    : explicitPortSource.match(/^[^:]+:(\d+)$/u);
   const explicitPort = explicitPortMatch
     ? Number(explicitPortMatch[1])
     : undefined;
@@ -383,7 +411,10 @@ export function parseCanonicalWebAuthority(raw: string): CanonicalWebAuthority {
     explicitPort !== undefined && !parsedAuthority.port
       ? `${hostname}:${explicitPort}`
       : parsedAuthority.host;
-  if (authority.toLowerCase() !== canonicalAuthority.toLowerCase()) {
+  if (
+    !sourceScheme &&
+    authority.toLowerCase() !== canonicalAuthority.toLowerCase()
+  ) {
     throw new Error("Web hostname must use a canonical authority spelling.");
   }
 
@@ -411,9 +442,15 @@ export function parseCanonicalWebAuthority(raw: string): CanonicalWebAuthority {
     throw new Error("Web hostname contains an invalid port.");
   }
 
-  return {
+  const result: CanonicalWebAuthority = {
     hostname,
     port,
     sourceScheme,
   };
+  if (sourceScheme) {
+    result.initialPathname = initialPathname;
+    result.initialSearch = initialSearch;
+    result.initialHash = initialHash;
+  }
+  return result;
 }

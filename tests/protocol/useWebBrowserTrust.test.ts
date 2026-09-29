@@ -1683,6 +1683,60 @@ describe("HTTPS certificate and native trust stages", () => {
     },
   );
 
+  it.each([
+    "/pt/Account/Login",
+    "/pt/Account/Login?return=%2Fdashboard#signin",
+    "//other.example.test/login?return=%2F#signin",
+  ])(
+    "opens a full saved URL path through the proxy without widening authority: %s",
+    async (path) => {
+      const hostname = `https://10.10.10.2${path}`;
+      mocks.credentialOverrides = { hostname };
+      const { result, iframe } = await loadingFixture({ ...session, hostname });
+      expect(result.current.buildTargetUrl()).toBe(hostname);
+      expect(result.current.currentUrl).toBe(hostname);
+      const mapped = new URL(iframe.src);
+      const expected = new URL(hostname);
+      expect(mapped.origin).toBe(new URL(proxy.proxy_url).origin);
+      expect(mapped.pathname).toBe(expected.pathname);
+      expect(mapped.searchParams.get("return")).toBe(
+        expected.searchParams.get("return"),
+      );
+      expect(mapped.hash).toBe(expected.hash);
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "get_tls_certificate_info",
+        expect.objectContaining({ host: "10.10.10.2", port: 443 }),
+      );
+      const previousStarts = proxyStarts().length;
+      await act(async () =>
+        result.current.navigateToUrl("https://other.example.test/"),
+      );
+      expect(result.current.navigationFailure?.kind).toBe("invalid_navigation");
+      expect(proxyStarts()).toHaveLength(previousStarts);
+    },
+  );
+
+  it.each([
+    "http://10.10.10.2/pt/Account/Login",
+    "https://10.10.10.2:8443/pt/Account/Login",
+    "https://user:password@10.10.10.2/pt/Account/Login",
+  ])(
+    "refuses an ambiguous full saved URL before releasing credentials: %s",
+    async (hostname) => {
+      mocks.credentialOverrides = { hostname };
+      const { result } = renderHook(() =>
+        useWebBrowser({ ...session, hostname }),
+      );
+      await act(async () => {});
+      expect(result.current.buildTargetUrl()).toBe("");
+      expect(proxyStarts()).toHaveLength(0);
+      expect(mocks.invoke).not.toHaveBeenCalledWith(
+        "get_tls_certificate_info",
+        expect.anything(),
+      );
+    },
+  );
+
   it("inspects, verifies, pins and navigates on the port embedded in the hostname", async () => {
     mocks.policy = "always-ask";
     mocks.credentialOverrides = { port: undefined };

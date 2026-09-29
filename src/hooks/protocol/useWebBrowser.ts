@@ -756,6 +756,20 @@ export function useWebBrowser(
       else if (profileSettings?.loginPath && !profileSettings.invalid)
         target.pathname = profileSettings.loginPath;
       else if (profile?.loginPath) target.pathname = profile.loginPath;
+      // A full saved URL is an initial page, not permission to leave this
+      // authority. Keep reviewed hosted sign-in entries authoritative.
+      if (
+        !useCanonicalGoogle &&
+        !profile?.hostedLoginUrl &&
+        authority.initialPathname !== undefined &&
+        (authority.initialPathname !== "/" ||
+          authority.initialSearch ||
+          authority.initialHash)
+      ) {
+        target.pathname = authority.initialPathname;
+        target.search = authority.initialSearch ?? "";
+        target.hash = authority.initialHash ?? "";
+      }
       // The login grant is minted on /login, not on the dashboard shell. A
       // client-side redirect from / would otherwise miss native injection.
       if (profile?.id === "cloudflare" && profileSettings?.loginMode === "form")

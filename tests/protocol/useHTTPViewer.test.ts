@@ -95,6 +95,7 @@ vi.mock("../../src/contexts/SettingsContext", () => ({
 }));
 
 import { useHTTPViewer } from "../../src/hooks/protocol/useHTTPViewer";
+import { useConnections } from "../../src/contexts/useConnections";
 import type { ConnectionSession } from "../../src/types/connection/connection";
 
 const mockInvoke = vi.mocked(invoke);
@@ -218,6 +219,61 @@ describe("useHTTPViewer", () => {
   });
 
   // ── resolveCredentials ─────────────────────────────────────────────────
+
+  it.each([
+    "/pt/Account/Login",
+    "/pt/Account/Login?return=%2Fdashboard#signin",
+    "//other.example.test/login?return=%2F#signin",
+  ])("keeps a full saved URL path on the protected proxy: %s", async (path) => {
+    const context = useConnections();
+    const connection = context.state.connections[1];
+    const original = connection.hostname;
+    connection.hostname = `https://secure.example.com${path}`;
+    try {
+      const { result, unmount } =
+        await renderConnectedHTTPViewer(makeHttpsSession());
+      expect(result.current.buildTargetUrl()).toBe(connection.hostname);
+      expect(result.current.currentUrl).toBe(connection.hostname);
+      const mapped = new URL(result.current.proxyUrl);
+      const expected = new URL(connection.hostname);
+      expect(mapped.origin).toBe(
+        new URL(defaultProxyResponse.proxy_url).origin,
+      );
+      expect(mapped.pathname).toBe(expected.pathname);
+      expect(mapped.search).toBe(expected.search);
+      expect(mapped.hash).toBe(expected.hash);
+      unmount();
+    } finally {
+      connection.hostname = original;
+    }
+  });
+
+  it.each([
+    "http://secure.example.com/login",
+    "https://secure.example.com:8443/login",
+    "https://user:password@secure.example.com/login",
+  ])(
+    "refuses full URL authority conflicts before native startup: %s",
+    async (hostname) => {
+      const connection = useConnections().state.connections[1];
+      const original = connection.hostname;
+      connection.hostname = hostname;
+      try {
+        const { result, unmount } = renderHook(() =>
+          useHTTPViewer(makeHttpsSession()),
+        );
+        await waitFor(() => expect(result.current.status).toBe("error"));
+        expect(result.current.buildTargetUrl()).toBe("");
+        expect(mockInvoke).not.toHaveBeenCalledWith(
+          "start_basic_auth_proxy",
+          expect.anything(),
+        );
+        unmount();
+      } finally {
+        connection.hostname = original;
+      }
+    },
+  );
 
   it("resolveCredentials returns basic auth credentials", async () => {
     const { result, unmount } = await renderConnectedHTTPViewer();
