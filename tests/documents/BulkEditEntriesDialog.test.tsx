@@ -137,8 +137,12 @@ describe("bulk entry review dialog", () => {
     fireEvent.click(
       screen.getByRole("combobox", { name: "Bulk ticket status" }),
     );
+    const staleOption = screen.getByRole("option", { name: "Closed" });
     view.rerender(<BulkEditEntriesDialog {...view.props} disabled />);
-    fireEvent.mouseDown(screen.getByRole("option", { name: "Closed" }));
+    // Disabling the app Select now closes its portal. A retained stale node
+    // must not update the draft either.
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.mouseDown(staleOption);
     expect(
       screen.getByRole("combobox", { name: "Bulk ticket status" }),
     ).toHaveTextContent("Keep unchanged");
