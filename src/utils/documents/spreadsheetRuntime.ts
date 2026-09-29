@@ -1,7 +1,21 @@
 // Lazy module: no editor/engine dependency is reachable from cold document metadata.
-import { Univer, LocaleType, LogLevel, CommandType } from "@univerjs/core";
+import {
+  Univer,
+  LocaleType,
+  LogLevel,
+  CommandType,
+  ThemeService,
+} from "@univerjs/core";
 import { FUniver } from "@univerjs/core/facade";
-import { defaultTheme } from "@univerjs/themes";
+import {
+  ICanvasColorService,
+  UniverRenderEnginePlugin,
+} from "@univerjs/engine-render";
+import {
+  readSpreadsheetAppearance,
+  createSpreadsheetCanvasColors,
+  watchSpreadsheetAppearance,
+} from "./spreadsheetTheme";
 import {
   UniverSheetsCorePreset,
   UniverNetworkPlugin,
@@ -64,8 +78,11 @@ export function createSpreadsheetRuntime(
       );
     },
   };
+  let appearance = readSpreadsheetAppearance(container);
+  const canvasColors = createSpreadsheetCanvasColors(() => appearance);
   const univer = new Univer({
-    theme: defaultTheme,
+    theme: appearance.theme,
+    darkMode: appearance.darkMode,
     locale: LocaleType.EN_US,
     locales: {
       [LocaleType.EN_US]: {
@@ -103,6 +120,13 @@ export function createSpreadsheetRuntime(
         });
       else if (Array.isArray(entry)) univer.registerPlugin(entry[0], entry[1]);
       else univer.registerPlugin(entry);
+      if (plugin === UniverRenderEnginePlugin) {
+        // Core constructor overrides do not reach render-plugin dependencies
+        // in 0.25.1. Replace immediately after registration, before UI engines.
+        univer
+          .__getInjector()
+          .replace([ICanvasColorService, { useValue: canvasColors }]);
+      }
     }
   installLocalSpreadsheetFunctions(univer);
   const api = FUniver.newAPI(univer);
@@ -138,6 +162,19 @@ export function createSpreadsheetRuntime(
   const book = api.createWorkbook(toUniverWorkbook(workbook));
   book.setEditable(!options.readOnly);
   initialized = true;
+  const themeService = univer.__getInjector().get(ThemeService);
+  const stopTheme = watchSpreadsheetAppearance(
+    container,
+    appearance,
+    (next) => {
+      if (disposed) return;
+      appearance = next;
+      themeService.setTheme(next.theme);
+      // 0.25.1 emits even when the mode is unchanged. Its render manager then
+      // invalidates cached canvases, including same-mode custom palette changes.
+      themeService.setDarkMode(next.darkMode);
+    },
+  );
   const executed = api.addEvent(api.Event.CommandExecuted, (event) => {
     if (disposed || options.readOnly || event.type !== CommandType.MUTATION)
       return;
@@ -190,6 +227,7 @@ export function createSpreadsheetRuntime(
     },
     dispose() {
       disposed = true;
+      stopTheme();
       before.dispose();
       executed.dispose();
       // This captured instance owns a nested React root. Fence immediately;

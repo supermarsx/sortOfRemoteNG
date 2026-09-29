@@ -1,5 +1,18 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
+import {
+  Check,
+  CircleAlert,
+  Download,
+  ExternalLink,
+  FileUp,
+  Info,
+  Link2,
+  LoaderCircle,
+  RotateCcw,
+  StickyNote,
+  X,
+} from "lucide-react";
 import type {
   DocumentWorkbook,
   DocumentReference,
@@ -225,88 +238,127 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
     }
   };
   return (
-    <section aria-label="Document spreadsheet" className={styles.editor}>
-      <div className={styles.toolbar}>
-        <button
-          type="button"
-          className="sor-btn-secondary"
-          disabled={!ready || readOnly || busy || !props.onChooseReference}
-          onClick={() => void assign()}
+    <section
+      aria-label="Document spreadsheet"
+      className={`${styles.editor} ${styles.spreadsheet}`}
+    >
+      <div className={styles.actionToolbar}>
+        <div
+          role="group"
+          aria-label="Cell actions"
+          className={styles.actionGroup}
         >
-          Link selected cell
-        </button>
-        <button
-          type="button"
-          className="sor-btn-secondary"
-          disabled={!ready || busy}
-          onClick={() => {
-            const ref = runtime.current?.selection()?.reference;
-            if (ref) props.onReference?.(ref);
-            else setError("The selected cell has no document link.");
-          }}
-        >
-          Open cell link
-        </button>
-        <button
-          type="button"
-          className="sor-btn-secondary"
-          disabled={!ready || readOnly || busy}
-          onClick={() => {
-            const selected = runtime.current?.selection();
-            if (selected)
-              setNote({ text: selected.note ?? "", selection: selected });
-            else setError("Select a cell first.");
-          }}
-        >
-          Cell note
-        </button>
-        {props.onImport && (
+          <span className={styles.groupLabel}>Cells</span>
           <button
             type="button"
-            className="sor-btn-secondary"
-            disabled={!ready || readOnly || busy || !!review}
-            onClick={() => void importFile()}
+            className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+            disabled={!ready || readOnly || busy || !props.onChooseReference}
+            onClick={() => void assign()}
           >
-            Import XLSX / CSV
+            <Link2 size={14} aria-hidden="true" />
+            Link selected cell
           </button>
-        )}
-        {props.onExport && (
-          <>
-            <button
-              type="button"
-              className="sor-btn-secondary"
-              disabled={!ready || readOnly || busy || !!review || !!error}
-              onClick={() => void exportFile("xlsx")}
-            >
-              Export XLSX
-            </button>
-            <button
-              type="button"
-              className="sor-btn-secondary"
-              disabled={!ready || readOnly || busy || !!review || !!error}
-              onClick={() => void exportFile("csv")}
-            >
-              Export CSV
-            </button>
-          </>
+          <button
+            type="button"
+            className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+            disabled={!ready || busy}
+            onClick={() => {
+              const ref = runtime.current?.selection()?.reference;
+              if (ref) props.onReference?.(ref);
+              else setError("The selected cell has no document link.");
+            }}
+          >
+            <ExternalLink size={14} aria-hidden="true" />
+            Open cell link
+          </button>
+          <button
+            type="button"
+            className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+            disabled={!ready || readOnly || busy}
+            onClick={() => {
+              const selected = runtime.current?.selection();
+              if (selected)
+                setNote({ text: selected.note ?? "", selection: selected });
+              else setError("Select a cell first.");
+            }}
+          >
+            <StickyNote size={14} aria-hidden="true" />
+            Cell note
+          </button>
+        </div>
+        {(props.onImport || props.onExport) && (
+          <div
+            role="group"
+            aria-label="Spreadsheet files"
+            className={styles.actionGroup}
+          >
+            <span className={styles.groupLabel}>Files</span>
+            {props.onImport && (
+              <button
+                type="button"
+                className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+                disabled={!ready || readOnly || busy || !!review}
+                onClick={() => void importFile()}
+              >
+                <FileUp size={14} aria-hidden="true" />
+                Import XLSX / CSV
+              </button>
+            )}
+            {props.onExport && (
+              <>
+                <button
+                  type="button"
+                  className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+                  disabled={!ready || readOnly || busy || !!review || !!error}
+                  onClick={() => void exportFile("xlsx")}
+                >
+                  <Download size={14} aria-hidden="true" />
+                  Export XLSX
+                </button>
+                <button
+                  type="button"
+                  className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+                  disabled={!ready || readOnly || busy || !!review || !!error}
+                  onClick={() => void exportFile("csv")}
+                >
+                  <Download size={14} aria-hidden="true" />
+                  Export CSV
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
-      <p className="text-xs text-text-muted">
-        Offline editing. CSV exports the first sheet’s values with
-        formula-injection protection. XLSX does not include application links or
-        validation rules. Exported files are not encrypted.
-      </p>
+      <details className={styles.editorHelp}>
+        <summary>
+          <Info size={14} aria-hidden="true" /> Offline editing · Exported files
+          are not encrypted.
+        </summary>
+        <p>
+          CSV exports the first sheet’s values with formula-injection
+          protection. XLSX does not include application links or validation
+          rules.
+        </p>
+      </details>
       {!ready && !error && (
-        <p role="status">Loading offline spreadsheet editor…</p>
+        <p role="status" className={styles.editorStatus}>
+          <LoaderCircle size={14} aria-hidden="true" /> Loading offline
+          spreadsheet editor…
+        </p>
       )}
-      {busy && <p role="status">Preparing spreadsheet…</p>}
+      {busy && (
+        <p role="status" className={styles.editorStatus}>
+          <LoaderCircle size={14} aria-hidden="true" /> Preparing spreadsheet…
+        </p>
+      )}
       {error && (
-        <div role="alert">
+        <div role="alert" className={styles.editorAlert}>
+          <CircleAlert size={16} aria-hidden="true" />
           <p>{error}</p>
           {ready && (
             <button
               type="button"
-              className="sor-btn-secondary"
+              className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
               disabled={readOnly}
               onClick={() => {
                 try {
@@ -319,6 +371,7 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
                 }
               }}
             >
+              <RotateCcw size={14} aria-hidden="true" />
               Recheck current sheet
             </button>
           )}
@@ -328,49 +381,54 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
         <div
           role="region"
           aria-label="Spreadsheet compatibility review"
-          className={styles.block}
+          className={`${styles.block} ${styles.editorPanel}`}
         >
           <p>
             {review.imported
               ? "Replace this spreadsheet with the reviewed import?"
               : "Review unsupported formatting before saving."}
           </p>
-          <ul>
+          <ul className={styles.reviewList}>
             {review.warnings.map((warning) => (
               <li key={warning}>{warning}</li>
             ))}
           </ul>
-          <button
-            type="button"
-            className="sor-btn-primary"
-            disabled={readOnly || busy}
-            onClick={() => {
-              apply(review.workbook);
-              setReload((value) => value + 1);
-            }}
-          >
-            Use reviewed workbook
-          </button>
-          {review.imported && (
+          <div className={styles.actionGroup}>
             <button
               type="button"
-              className="sor-btn-secondary"
+              className={`sor-btn sor-btn-primary ${styles.actionButton}`}
+              disabled={readOnly || busy}
               onClick={() => {
-                setReview(null);
-                latest.current.onValidityChange?.(true);
+                apply(review.workbook);
+                setReload((value) => value + 1);
               }}
             >
-              Cancel import
+              <Check size={14} aria-hidden="true" />
+              Use reviewed workbook
             </button>
-          )}
+            {review.imported && (
+              <button
+                type="button"
+                className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+                onClick={() => {
+                  setReview(null);
+                  latest.current.onValidityChange?.(true);
+                }}
+              >
+                <X size={14} aria-hidden="true" />
+                Cancel import
+              </button>
+            )}
+          </div>
         </div>
       )}
       {note && (
-        <div className={styles.block}>
-          <label>
+        <div className={`${styles.block} ${styles.editorPanel}`}>
+          <label className={styles.field}>
             Selected cell note
             <textarea
               className="sor-form-input"
+              rows={3}
               maxLength={4096}
               value={note.text}
               disabled={readOnly || busy}
@@ -379,47 +437,46 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
               }
             />
           </label>
-          <button
-            type="button"
-            className="sor-btn-primary"
-            disabled={readOnly || busy}
-            onClick={() => {
-              const selected = runtime.current?.selection();
-              if (
-                !selected ||
-                selected.sheetId !== note.selection.sheetId ||
-                selected.address !== note.selection.address
-              ) {
-                setError("Cell selection changed. Reopen the note editor.");
-                return;
-              }
-              runtime.current?.setCellMetadata({
-                reference: selected.reference,
-                note: note.text,
-              });
-              setNote(null);
-            }}
-          >
-            Apply cell note
-          </button>
-          <button
-            type="button"
-            className="sor-btn-secondary"
-            onClick={() => setNote(null)}
-          >
-            Cancel
-          </button>
+          <div className={styles.actionGroup}>
+            <button
+              type="button"
+              className={`sor-btn sor-btn-primary ${styles.actionButton}`}
+              disabled={readOnly || busy}
+              onClick={() => {
+                const selected = runtime.current?.selection();
+                if (
+                  !selected ||
+                  selected.sheetId !== note.selection.sheetId ||
+                  selected.address !== note.selection.address
+                ) {
+                  setError("Cell selection changed. Reopen the note editor.");
+                  return;
+                }
+                runtime.current?.setCellMetadata({
+                  reference: selected.reference,
+                  note: note.text,
+                });
+                setNote(null);
+              }}
+            >
+              <Check size={14} aria-hidden="true" />
+              Apply cell note
+            </button>
+            <button
+              type="button"
+              className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+              onClick={() => setNote(null)}
+            >
+              <X size={14} aria-hidden="true" />
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       <div
         ref={container}
         data-testid="document-spreadsheet-surface"
-        style={{
-          height: 520,
-          minHeight: 360,
-          position: "relative",
-          overflow: "hidden",
-        }}
+        className={styles.spreadsheetSurface}
       />
     </section>
   );

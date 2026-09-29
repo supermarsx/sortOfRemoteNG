@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { ArrowDown, ArrowUp, ExternalLink, Plus, Trash2 } from "lucide-react";
 import type {
   DocumentAttachment,
   DocumentBlock,
@@ -20,7 +21,7 @@ import { initialDocumentBlock } from "../../utils/documents/documentBlocks";
 
 const RichTextEditor = dynamic(() => import("./RichTextEditor"), {
   ssr: false,
-  loading: () => <p>Loading text editor…</p>,
+  loading: () => <p className={styles.editorStatus}>Loading text editor…</p>,
 });
 const MermaidBlock = dynamic(() => import("./MermaidBlock"), { ssr: false });
 const AttachmentPreview = dynamic(() => import("./AttachmentPreview"), {
@@ -201,11 +202,11 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
     }
   };
   return (
-    <div className={styles.editor}>
+    <div className={`${styles.editor} ${styles.documentEditor}`}>
       {!props.readOnly && (
-        <div className={styles.toolbar}>
+        <div className={styles.actionToolbar}>
           <label htmlFor={addId}>Block type</label>
-          <div style={{ width: 200 }}>
+          <div className={styles.blockTypeSelect}>
             <Select
               id={addId}
               value={kind}
@@ -237,6 +238,7 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
               else append(initialDocumentBlock(kind));
             }}
           >
+            <Plus size={14} aria-hidden="true" />
             Add block
           </button>
           <input
@@ -250,12 +252,20 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
               if (file) void attach(file);
             }}
           />
-          {busy && <span role="status">Preparing block…</span>}
+          {busy && (
+            <span role="status" className={styles.editorStatus}>
+              Preparing block…
+            </span>
+          )}
         </div>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert" className={styles.editorAlert}>
+          {error}
+        </p>
+      )}
       {!valid && (
-        <p role="alert">
+        <p role="alert" className={styles.editorAlert}>
           Some draft fields are incomplete or invalid. Review email addresses,
           dates, URLs, references and size limits before saving.
         </p>
@@ -269,13 +279,18 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
       {props.blocks.map((block, index) => (
         <section
           key={block.id}
-          className={styles.block}
+          className={`${styles.block} ${styles.documentBlock}`}
           aria-label={`${LABELS[block.type] ?? "Unsupported"} block ${index + 1}`}
         >
-          <div className={styles.heading}>
-            <h3>{LABELS[block.type] ?? "Unsupported block"}</h3>
+          <div className={styles.blockHeading}>
+            <h3 className={styles.blockTitle}>
+              <span className={styles.blockNumber} aria-hidden="true">
+                {index + 1}
+              </span>
+              {LABELS[block.type] ?? "Unsupported block"}
+            </h3>
             {!props.readOnly && (
-              <div className={styles.toolbar}>
+              <div className={styles.actionGroup}>
                 <button
                   type="button"
                   className="sor-btn sor-btn-secondary"
@@ -290,7 +305,7 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
                     update(next);
                   }}
                 >
-                  ↑
+                  <ArrowUp size={14} aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -306,7 +321,7 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
                     update(next);
                   }}
                 >
-                  ↓
+                  <ArrowDown size={14} aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -315,13 +330,14 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
                   aria-label={`Remove block ${index + 1}`}
                   onClick={() => setRemove(block.id)}
                 >
+                  <Trash2 size={14} aria-hidden="true" />
                   Remove
                 </button>
               </div>
             )}
           </div>
           {remove === block.id && !props.readOnly && (
-            <div role="alert" className={styles.toolbar}>
+            <div role="alert" className={styles.editorAlert}>
               <span>
                 Remove this block from the draft? Shared attachments are kept.
               </span>
@@ -348,7 +364,9 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
               </button>
             </div>
           )}
-          <BlockFields block={block} change={change} props={props} />
+          <div className={styles.blockBody}>
+            <BlockFields block={block} change={change} props={props} />
+          </div>
         </section>
       ))}
     </div>
@@ -400,7 +418,7 @@ function SecretField({
     setRevealed(false);
   }, [value]);
   return (
-    <div>
+    <div className={styles.editorPanel}>
       <Field
         label={label}
         value={value}
@@ -452,7 +470,7 @@ function WifiQr({
     };
   }, [revealed, block]);
   return (
-    <div>
+    <div className={styles.editorPanel}>
       <button
         type="button"
         className="sor-btn sor-btn-secondary"
@@ -471,7 +489,11 @@ function WifiQr({
           alt="Wi-Fi join QR code containing the configured network secret"
         />
       )}
-      {error && <p role="alert">The QR code could not be generated.</p>}
+      {error && (
+        <p role="alert" className={styles.editorAlert}>
+          The QR code could not be generated.
+        </p>
+      )}
       <p className={styles.help}>
         A Wi-Fi QR code reveals the network password to anyone who scans it. It
         is not generated until you choose Reveal.
@@ -530,7 +552,7 @@ function BlockFields({
                 ? "Markdown source"
                 : "Note"}
             <textarea
-              className="sor-form-input"
+              className={`sor-form-input ${block.type === "note" ? styles.noteInput : styles.sourceInput}`}
               rows={block.type === "note" ? 4 : 8}
               value={block.text}
               readOnly={ro}
@@ -542,9 +564,11 @@ function BlockFields({
           </label>
           {block.type === "mermaid" && <MermaidBlock source={block.text} />}{" "}
           {block.type === "markdown" && (
-            <details>
+            <details className={styles.editorHelp}>
               <summary>Safe plain-text preview</summary>
-              <pre className={styles.text}>{block.text}</pre>
+              <pre className={`${styles.text} ${styles.sourcePreview}`}>
+                {block.text}
+              </pre>
               <p className={styles.help}>
                 Markdown source is preserved. Raw HTML and remote media are not
                 rendered.
@@ -624,7 +648,7 @@ function BlockFields({
             <label className={styles.field}>
               Wi-Fi security
               <select
-                className="sor-form-input"
+                className="sor-form-select"
                 value={block.authentication}
                 disabled={ro}
                 onChange={(event) =>
@@ -640,8 +664,9 @@ function BlockFields({
                 <option value="nopass">Open network</option>
               </select>
             </label>
-            <label>
+            <label className={styles.checkboxField}>
               <input
+                className={styles.checkbox}
                 type="checkbox"
                 disabled={ro}
                 checked={block.hidden}
@@ -709,8 +734,9 @@ function BlockFields({
             5,
             "number",
           )}
-          <label>
+          <label className={styles.checkboxField}>
             <input
+              className={styles.checkbox}
               type="checkbox"
               disabled={ro}
               checked={block.tls}
@@ -769,14 +795,12 @@ function BlockFields({
               "date",
             )}
           </div>
-          <fieldset>
+          <fieldset className={styles.attachmentChoices}>
             <legend>Linked attachments</legend>
             {props.attachments.map((attachment) => (
-              <label
-                key={attachment.id}
-                className="mr-3 inline-flex items-center gap-1"
-              >
+              <label key={attachment.id} className={styles.checkboxField}>
                 <input
+                  className={styles.checkbox}
                   type="checkbox"
                   disabled={
                     ro ||
@@ -832,7 +856,7 @@ function BlockFields({
           {item ? (
             <AttachmentPreview attachment={item} />
           ) : (
-            <p role="alert">
+            <p role="alert" className={styles.editorAlert}>
               The referenced attachment is missing. Its identifier was
               preserved.
             </p>
@@ -862,6 +886,7 @@ function BlockFields({
             disabled={!props.onReference}
             onClick={() => props.onReference?.(block.reference)}
           >
+            <ExternalLink size={14} aria-hidden="true" />
             Open reference
           </button>
         </>
@@ -874,14 +899,14 @@ function BlockFields({
           !!ro,
         )
       ) : (
-        <p role="status">
+        <p role="status" className={styles.editorStatus}>
           The spreadsheet editor is not available in this view. Workbook data
           has been preserved.
         </p>
       );
     default:
       return (
-        <p role="alert">
+        <p role="alert" className={styles.editorAlert}>
           This block type is unsupported. Its data has not been replaced.
         </p>
       );
