@@ -429,12 +429,29 @@ let trustRefreshSequence = 0;
 /**
  * Barrier for the in-flight `trust_set_active_database`. Every read and every
  * mutation waits on it, so a connection attempted the instant a database
- * opens cannot race ahead of the runtime being re-pointed. Never rejects.
+ * opens cannot race ahead of the runtime being re-pointed. Rejection blocks
+ * this selection until an explicit unlock/reopen establishes a new activation.
  */
 let scopeActivation: Promise<void> = Promise.resolve();
+let scopeSelectedByLifecycle = false;
+
+async function awaitScopeActivation(): Promise<void> {
+  const generation = scopeGeneration;
+  const activation = scopeActivation;
+  try {
+    await activation;
+  } catch (error) {
+    if (generation !== scopeGeneration || activation !== scopeActivation)
+      throw new TrustScopeChangedError();
+    throw lastHydrationError ?? markTrustStoreUnavailable(error);
+  }
+  if (generation !== scopeGeneration || activation !== scopeActivation)
+    throw new TrustScopeChangedError();
+}
 
 interface NativeTrustOperation {
   timedOut: boolean;
+  ancillary: boolean;
   settled: Promise<void>;
 }
 
@@ -548,9 +565,12 @@ async function invokeTrustNative<T>(
   command: string,
   args?: Record<string, unknown>,
 ): Promise<T> {
+  const ancillary = command === "trust_get_summary";
   if (
     Array.from(nativeTrustOperations.values()).some(
-      (operation) => operation.timedOut,
+      (operation) =>
+        (operation.timedOut && !operation.ancillary) ||
+        (ancillary && operation.ancillary),
     )
   ) {
     throw new NativeTrustDeadlineError(
@@ -567,6 +587,7 @@ async function invokeTrustNative<T>(
   const nativeWork = invoke<T>(command, args);
   const operation: NativeTrustOperation = {
     timedOut: false,
+    ancillary,
     settled: Promise.resolve(),
   };
   operation.settled = nativeWork.then(
@@ -596,8 +617,8 @@ async function invokeTrustNative<T>(
   } catch (error) {
     if (error instanceof NativeTrustDeadlineError) {
       // Tauri invoke cannot be cancelled. Keep the original Promise tracked and
-      // reject all retries without spawning new native work until every timed
-      // out operation settles.
+      // reject retries without spawning new work until the original settles.
+      // Ancillary summary reads block only summaries, never verification.
       operation.timedOut = true;
     }
     throw error;
@@ -1188,12 +1209,12 @@ function markTrustStoreUnavailable(cause?: unknown): Error {
     1_000 * 2 ** Math.min(hydrationFailureCount - 1, 5),
   );
   nextHydrationAttemptAt = Date.now() + delay;
-  notifyTrustStoreChanged();
   lastHydrationError = isNativeTrustTransition(cause)
     ? new TransientTrustStoreError()
     : new Error(
         "The native Trust Center is unavailable. Trust decisions remain blocked until it recovers.",
       );
+  notifyTrustStoreChanged();
   return lastHydrationError;
 }
 
@@ -1441,14 +1462,49 @@ async function migrateLegacyLocalStorage(): Promise<void> {
   }
 }
 
+/** Retry only positively identified contention, and only for read operations. */
+function boundedTrustRead(assertCurrent: () => void) {
+  const deadline = Date.now() + TRUST_REFRESH_RETRY_BUDGET_MS;
+  let attempt = 0;
+  return async <T>(read: () => Promise<T>): Promise<T> => {
+    for (;;) {
+      assertCurrent();
+      try {
+        const result = await read();
+        assertCurrent();
+        return result;
+      } catch (error) {
+        assertCurrent();
+        const delay = TRUST_REFRESH_RETRY_DELAYS_MS[attempt];
+        if (
+          !isNativeTrustTransition(error) ||
+          delay === undefined ||
+          Date.now() + delay > deadline
+        )
+          throw error;
+        attempt += 1;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  };
+}
+
 async function hydrateTrustStore(): Promise<void> {
   const generation = scopeGeneration;
-  if (!(await refreshNativeCache(false, false))) return;
-  if (generation !== scopeGeneration) return;
+  const assertCurrent = () => {
+    if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+  };
+  // Share one bounded retry budget across both reads. Migration is deliberately
+  // outside this helper: never replay a mutation or a forgotten legacy record.
+  const read = boundedTrustRead(assertCurrent);
+  const readRecords = async () => {
+    if (!(await refreshNativeCache(false, false)))
+      throw new TrustRefreshSupersededError();
+  };
+  await read(readRecords);
   await migrateLegacyLocalStorage();
-  if (generation !== scopeGeneration) return;
-  if (!(await refreshNativeCache(false, false))) return;
-  if (generation !== scopeGeneration) return;
+  assertCurrent();
+  await read(readRecords);
   hydrated = true;
   hydrationState = "ready";
   hydrationFailureCount = 0;
@@ -1473,25 +1529,57 @@ async function resolveTrustStoreScope(): Promise<TrustStoreScope> {
   if (activeScope.resolved) return activeScope;
   if (!scopeResolution) {
     const generation = scopeGeneration;
-    scopeResolution = invokeTrustNative<NativeActiveTrustDatabase | null>(
-      "trust_get_active_database",
+    const resolution = boundedTrustRead(() => {
+      if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+    })(() =>
+      invokeTrustNative<NativeActiveTrustDatabase | null>(
+        "trust_get_active_database",
+      ),
     )
       .then((info) => {
         if (generation !== scopeGeneration) return activeScope;
+        const databaseId =
+          typeof info?.databaseId === "string" ? info.databaseId : null;
+        if (scopeSelectedByLifecycle && databaseId !== activeScope.databaseId)
+          throw new TrustScopeChangedError();
+        const changed =
+          databaseId !== activeScope.databaseId &&
+          (activeScope.databaseId !== null || hydrated);
+        // A refresh can discover a native switch before its lifecycle event.
+        // Retire the old reads and cache just as an explicit transition would.
+        if (changed) {
+          scopeGeneration += 1;
+          hydrationPromise = null;
+          clearCache();
+          hydrationState = "idle";
+          hydrationFailureCount = 0;
+          nextHydrationAttemptAt = 0;
+          lastHydrationError = null;
+        }
         activeScope = {
-          databaseId:
-            typeof info?.databaseId === "string" ? info.databaseId : null,
+          databaseId,
           encrypted: Boolean(info?.encrypted),
           recordCount: asOptionalNumber(info?.recordCount) ?? 0,
           seededRecords: asOptionalNumber(info?.seededRecords) ?? 0,
           resolved: true,
         };
+        if (changed) notifyTrustStoreChanged();
         return activeScope;
       })
-      .catch(() => activeScope)
+      .catch((error) => {
+        if (generation !== scopeGeneration) throw new TrustScopeChangedError();
+        if (isNativeTrustTransition(error))
+          throw markTrustStoreUnavailable(error);
+        if (scopeSelectedByLifecycle)
+          throw new Error(
+            "The native Trust Center has not activated the selected database. Unlock or reopen it and retry.",
+          );
+        return activeScope;
+      })
       .finally(() => {
-        scopeResolution = null;
+        if (scopeResolution === resolution) scopeResolution = null;
       });
+    scopeResolution = resolution;
   }
   return scopeResolution;
 }
@@ -1506,6 +1594,9 @@ export function getTrustStoreScope(): TrustStoreScope {
 
 /** Re-read the active database from the native runtime. */
 export async function refreshTrustStoreScope(): Promise<TrustStoreScope> {
+  const generation = scopeGeneration;
+  await awaitScopeActivation();
+  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
   activeScope = { ...activeScope, resolved: false };
   return resolveTrustStoreScope();
 }
@@ -1525,7 +1616,9 @@ function adoptTrustStoreScope(
 ): void {
   scopeGeneration += 1;
   scopeResolution = null;
-  scopeActivation = activation.catch(() => undefined);
+  scopeActivation = activation;
+  void activation.catch(() => undefined);
+  scopeSelectedByLifecycle = true;
   // Synchronous, deliberately: a display consumer that reads between the
   // transition and the re-hydration must see nothing, never the previous
   // database's records.
@@ -1559,8 +1652,10 @@ async function hydrateAdoptedScope(
 ): Promise<void> {
   try {
     await activation;
-  } catch {
-    // Activation is best-effort; hydration will surface any real failure.
+  } catch (error) {
+    if (generation === scopeGeneration && !lastHydrationError)
+      markTrustStoreUnavailable(error);
+    return;
   }
   if (generation !== scopeGeneration) return;
 
@@ -1569,10 +1664,9 @@ async function hydrateAdoptedScope(
       "trust_get_active_database",
     );
     if (generation !== scopeGeneration) return;
-    if (typeof info?.databaseId === "string") {
+    if (info?.databaseId === activeScope.databaseId) {
       activeScope = {
         ...activeScope,
-        databaseId: info.databaseId,
         encrypted: Boolean(info.encrypted),
         seededRecords: asOptionalNumber(info.seededRecords) ?? 0,
       };
@@ -1596,16 +1690,24 @@ onCurrentDatabaseChange((change) => {
   // leave the scope where it is.
   if (change.databaseId !== nextDatabaseId) return;
   if (activeScope.resolved && activeScope.databaseId === nextDatabaseId) {
-    // Same database. An unlock can make a previously unreadable store
-    // readable, so re-hydrate; a redundant open is a no-op.
-    if (change.reason !== "unlock") return;
+    // Even a same-ID reopen has a new native handoff. Retaining an old rejected
+    // acknowledgement would make that repaired database permanently unavailable.
+    if (
+      change.trustActivation === scopeActivation &&
+      change.reason !== "unlock" &&
+      change.reason !== "security-change"
+    )
+      return;
   }
   adoptTrustStoreScope(nextDatabaseId, change.trustActivation);
 });
 
 export async function ensureTrustStoreReady(): Promise<void> {
-  await scopeActivation;
+  const generation = scopeGeneration;
+  await awaitScopeActivation();
+  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
   const scope = await resolveTrustStoreScope();
+  if (generation !== scopeGeneration) throw new TrustScopeChangedError();
   if (scope.resolved && scope.databaseId === null) {
     throw new NoActiveDatabaseError();
   }
@@ -1619,14 +1721,21 @@ export async function ensureTrustStoreReady(): Promise<void> {
   }
   if (!hydrationPromise) {
     hydrationState = "loading";
-    notifyTrustStoreChanged();
-    hydrationPromise = hydrateTrustStore()
+    const hydration = hydrateTrustStore()
       .catch((error) => {
+        if (
+          generation !== scopeGeneration ||
+          hydrationPromise !== hydration ||
+          error instanceof TrustRefreshSupersededError
+        )
+          throw error;
         throw markTrustStoreUnavailable(error);
       })
       .finally(() => {
-        hydrationPromise = null;
+        if (hydrationPromise === hydration) hydrationPromise = null;
       });
+    hydrationPromise = hydration;
+    notifyTrustStoreChanged();
   }
   return hydrationPromise;
 }
@@ -1664,7 +1773,8 @@ export async function refreshTrustStoreRecords(): Promise<void> {
     assertCurrentRefresh();
     return true;
   };
-  await scopeActivation;
+  await awaitScopeActivation();
+  assertCurrentRefresh();
   const scope = await resolveTrustStoreScope();
   assertCurrentRefresh();
   if (scope.resolved && scope.databaseId === null)
@@ -1708,6 +1818,55 @@ export async function refreshTrustStoreRecords(): Promise<void> {
   }
 }
 
+export interface TrustStoreSummary {
+  total_records: number;
+  revoked_count: number;
+  expired_count: number;
+  records_with_history: number;
+  total_verifications: number;
+  total_mismatches: number;
+  average_trust_score: number;
+}
+
+let summaryRead: {
+  generation: number;
+  databaseId: string;
+  promise: Promise<TrustStoreSummary>;
+} | null = null;
+
+/** Scoped, bounded read; summary contention must not invalidate trust records. */
+export async function readTrustStoreSummary(): Promise<TrustStoreSummary> {
+  const generation = scopeGeneration;
+  const databaseId = activeScope.databaseId;
+  const assertCurrent = () => {
+    if (generation !== scopeGeneration || databaseId !== activeScope.databaseId)
+      throw new TrustScopeChangedError();
+  };
+  if (!activeScope.resolved || !databaseId) throw new NoActiveDatabaseError();
+  if (
+    summaryRead?.generation === generation &&
+    summaryRead.databaseId === databaseId
+  )
+    return summaryRead.promise;
+  const reading = boundedTrustRead(assertCurrent)(() =>
+    invokeTrustNative<TrustStoreSummary>("trust_get_summary", {
+      expectedDatabaseId: databaseId,
+    }),
+  )
+    .catch((error) => {
+      assertCurrent();
+      if (isNativeTrustTransition(error)) throw new TransientTrustStoreError();
+      throw new Error(
+        "The Trust Center summary could not be loaded. Retry the refresh.",
+      );
+    })
+    .finally(() => {
+      if (summaryRead?.promise === reading) summaryRead = null;
+    });
+  summaryRead = { generation, databaseId, promise: reading };
+  return reading;
+}
+
 function startHydrationForDisplay(): void {
   void ensureTrustStoreReady().catch(() => {
     // Display consumers remain empty. Connection decisions call the async API
@@ -1728,6 +1887,9 @@ class TrustScopeChangedError extends Error {
     super("Trust database changed; refresh and review the action again");
   }
 }
+
+/** A healthy store can deny one host without becoming globally unavailable. */
+class TrustPolicyRejectedError extends Error {}
 
 function serializeMutation<T>(
   operation: (invokeMutation: typeof invokeTrustNative) => Promise<T>,
@@ -1884,7 +2046,7 @@ export async function verifyIdentity<T extends TrustRecordType>(
       case "revoked":
       case "pending-threshold":
       case "pending-verification":
-        throw new Error(
+        throw new TrustPolicyRejectedError(
           `Native trust policy rejected identity (${result.status})`,
         );
       default:
@@ -1895,7 +2057,8 @@ export async function verifyIdentity<T extends TrustRecordType>(
     assertCurrentDecision();
     if (
       error instanceof TrustScopeChangedError ||
-      error instanceof TrustRefreshSupersededError
+      error instanceof TrustRefreshSupersededError ||
+      error instanceof TrustPolicyRejectedError
     )
       throw error;
     throw markTrustStoreUnavailable(error);
@@ -1983,13 +2146,15 @@ export async function getEffectiveStoredIdentity(
     if (sequence !== cacheReadSequence) throw new TrustRefreshSupersededError();
   };
   try {
-    const native = await invokeTrustNative<NativeTrustRecord | null>(
-      "trust_get_effective_identity",
-      {
-        host: encodeNativeHost(host, port, connectionId),
-        recordType: type,
-        ...(databaseId ? { expectedDatabaseId: databaseId } : {}),
-      },
+    const native = await boundedTrustRead(assertCurrent)(() =>
+      invokeTrustNative<NativeTrustRecord | null>(
+        "trust_get_effective_identity",
+        {
+          host: encodeNativeHost(host, port, connectionId),
+          recordType: type,
+          ...(databaseId ? { expectedDatabaseId: databaseId } : {}),
+        },
+      ),
     );
     assertCurrent();
     if (native === null) return undefined;
@@ -2019,7 +2184,7 @@ export async function getEffectiveStoredIdentity(
       error instanceof TrustRefreshSupersededError
     )
       throw error;
-    throw markTrustStoreUnavailable();
+    throw markTrustStoreUnavailable(error);
   }
 }
 
@@ -2269,8 +2434,10 @@ export function resetTrustStoreCacheForTests(): void {
   lastHydrationError = null;
   hydrationState = "idle";
   nativeTrustOperations.clear();
+  summaryRead = null;
   scopeGeneration += 1;
   scopeResolution = null;
   scopeActivation = Promise.resolve();
+  scopeSelectedByLifecycle = false;
   activeScope = { ...UNRESOLVED_SCOPE };
 }

@@ -3,9 +3,11 @@ import {
   getAllTrustRecords,
   getAllPerConnectionTrustRecords,
   getTrustStoreScope,
+  getTrustStoreAvailability,
   getTrustRecordStorageKey,
   refreshTrustStoreRecords,
   refreshTrustStoreScope,
+  readTrustStoreSummary,
   updateTrustRecordNickname,
   parseTrustRecordAddress,
   type TrustRecord,
@@ -13,6 +15,7 @@ import {
   type TrustExportRecord,
   type TrustImportOutcome,
   type TrustPolicy,
+  type TrustStoreSummary,
 } from "../../utils/auth/trustStore";
 import {
   DatabaseManager,
@@ -31,15 +34,6 @@ export interface TrustCenterRow {
 }
 export type TrustCenterAction =
   "revoke" | "reinstate" | "forget" | "policy" | "tags" | "scope";
-interface TrustSummary {
-  total_records: number;
-  revoked_count: number;
-  expired_count: number;
-  records_with_history: number;
-  total_verifications: number;
-  total_mismatches: number;
-  average_trust_score: number;
-}
 type Review = {
   databaseId: string;
   databaseName: string;
@@ -68,7 +62,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
   const [rows, setRows] = useState<TrustCenterRow[]>([]);
   const [databaseName, setDatabaseName] = useState<string | null>(null);
   const [databaseId, setDatabaseId] = useState<string | null>(null);
-  const [summary, setSummary] = useState<TrustSummary | null>(null);
+  const [summary, setSummary] = useState<TrustStoreSummary | null>(null);
   const [inspection, setInspection] = useState<{
     rowId: string;
     history: unknown;
@@ -77,6 +71,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [review, setReview] = useState<Review | null>(null);
@@ -95,6 +90,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
     const epoch = generation.current;
     const load = ++loadingGeneration.current;
     setLoading(true);
+    setLoadError(null);
     if (clearError) setError(null);
     try {
       await refreshTrustStoreScope();
@@ -108,12 +104,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
       const scope = getTrustStoreScope();
       if (!scope.resolved || !scope.databaseId)
         throw new Error("Open a database to manage its trusted identities.");
-      const invoke = await getInvoke();
-      if (!invoke)
-        throw new Error("Trust management requires the desktop app.");
-      const inspectedSummary = await invoke<TrustSummary>("trust_get_summary", {
-        expectedDatabaseId: scope.databaseId,
-      });
+      const inspectedSummary = await readTrustStoreSummary();
       if (
         !mounted.current ||
         epoch !== generation.current ||
@@ -151,8 +142,9 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
         epoch === generation.current &&
         load === loadingGeneration.current
       ) {
-        setError(errorText(e));
+        setLoadError(errorText(e));
         setRows([]);
+        setSummary(null);
       }
     } finally {
       if (
@@ -183,6 +175,20 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
     // records on notifications without recursively forcing another hydration.
     const cacheChanged = () => {
       if (busyRef.current) return;
+      if (getTrustStoreAvailability().state !== "ready") {
+        setRows([]);
+        setSummary(null);
+        return;
+      }
+      // Recovery elsewhere (for example after unlock) also repairs this view.
+      // Do not clear a rejected user action just because records were re-read.
+      setLoadError(null);
+      const scope = getTrustStoreScope();
+      setDatabaseId(scope.databaseId);
+      setDatabaseName(
+        DatabaseManager.getInstance().getCurrentDatabase()?.name ??
+          scope.databaseId,
+      );
       setRows([
         ...getAllTrustRecords().map((record) => ({
           id: rowKey(record),
@@ -765,7 +771,7 @@ export function useTrustCenter(connectionName?: (id: string) => string) {
     inspect,
     loading,
     busy,
-    error,
+    error: error ?? loadError,
     message,
     selected,
     setSelected,

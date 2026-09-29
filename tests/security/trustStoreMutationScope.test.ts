@@ -58,6 +58,36 @@ beforeEach(() => {
   });
 });
 describe("queued trust mutation scope", () => {
+  it("retries an effective-identity read only while its snapshot and scope remain current", async () => {
+    await ensureTrustStoreReady();
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let reads = 0;
+    fixture.invoke.mockImplementation((command: string, args: unknown) => {
+      if (command === "trust_get_effective_identity") {
+        reads += 1;
+        if (reads === 1)
+          return Promise.reject("encryption key transition in progress");
+        return Promise.resolve({
+          host: "server:443",
+          record_type: "tls",
+          identity,
+          user_approved: true,
+          history: [],
+        });
+      }
+      return invoke(command, args);
+    });
+    try {
+      const lookup = getEffectiveStoredIdentity("server", 443, "tls");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await lookup)?.record.identity.fingerprint).toBe("REVIEWED-FP");
+      expect(reads).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("preserves the full native decision snapshot and clones policy arrays for review", async () => {
     await ensureTrustStoreReady();
     const config = { threshold_count: 7, allowed_networks: ["10.0.0.0/8"] };

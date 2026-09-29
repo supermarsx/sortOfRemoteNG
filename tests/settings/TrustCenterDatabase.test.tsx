@@ -102,6 +102,7 @@ vi.mock("../../src/utils/auth/trustStore", () => ({
   ensureTrustStoreReady: vi.fn(() => Promise.resolve()),
   retryTrustStoreHydration: vi.fn(() => Promise.resolve()),
   refreshTrustStoreRecords: vi.fn(() => Promise.resolve()),
+  readTrustStoreSummary: vi.fn(() => Promise.resolve(null)),
   getTrustStoreAvailability: vi.fn(() => ({ state: "ready" })),
   getTrustStoreScope: vi.fn(() => scope),
   refreshTrustStoreScope: vi.fn(() => Promise.resolve(scope)),

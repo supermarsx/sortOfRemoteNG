@@ -47,6 +47,11 @@ vi.mock("../../src/utils/auth/trustStore", async (importOriginal) => ({
     resolved: true,
   }),
   refreshTrustStoreScope: vi.fn().mockResolvedValue(undefined),
+  getTrustStoreAvailability: () => ({ state: "ready" }),
+  readTrustStoreSummary: () =>
+    fixture.invoke("trust_get_summary", {
+      expectedDatabaseId: fixture.databaseId,
+    }),
   retryTrustStoreHydration: fixture.hydrate,
   refreshTrustStoreRecords: fixture.hydrate,
   // Fixture native keys mirror the cache entries supplied by mocked hydration.

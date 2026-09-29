@@ -301,7 +301,8 @@ export interface CurrentDatabaseChange {
    * but anything that *reads* trust data must await this first: hydrating
    * ahead of the activation would read the outgoing database's store, or
    * fail closed against a runtime that has not been told about the new one.
-   * Never rejects — activation is best-effort.
+   * Rejects if activation fails or the selection becomes obsolete. Database
+   * opening remains independent; the manager observes failures separately.
    */
   trustActivation: Promise<void>;
 }
@@ -485,6 +486,8 @@ export class DatabaseManager {
   private currentPassword: string | null = null;
   private selectionGeneration = 0;
   private operationSelectionRevision = 0;
+  private trustActivationRevision = 0;
+  private trustActivationQueue: Promise<void> = Promise.resolve();
   private readonly unlockedDatabasePasswords = new Map<string, string>();
   // Only successful selections count as previously opened. Merely listing,
   // creating, or inspecting an on-disk database must not grant this scope.
@@ -855,13 +858,12 @@ export class DatabaseManager {
         protectionFormat: "sorng-db",
         securityRevision,
       };
-      emitCurrentDatabaseChange({
+      this.announceDatabaseChange({
         reason: "security-change",
         database: this.currentDatabase,
         databaseId: id,
         previousDatabaseId: id,
         connectionIds: this.connectionIdsOf(result.data),
-        trustActivation: Promise.resolve(),
       });
     }
     this.emitAccess({
@@ -1044,10 +1046,9 @@ export class DatabaseManager {
    * writing (t62 / D3).
    *
    * Deliberately best-effort: the Trust Center failing to switch must never
-   * stop a database from opening. Rust fails closed on its side — a verifier
-   * with no active database errors out rather than silently accepting — so a
-   * dropped activation degrades to "trust prompts reappear", never to
-   * "everything is trusted".
+   * stop a database from opening. Trust consumers must observe the separate
+   * activation acknowledgement before reading the new scope; a failed or
+   * obsolete handoff must not authorize reading the outgoing database.
    */
   private announceDatabaseChange(
     change: Omit<CurrentDatabaseChange, "trustActivation">,
@@ -1063,23 +1064,48 @@ export class DatabaseManager {
     emitCurrentDatabaseChange({ ...change, trustActivation });
   }
 
-  private async syncActiveTrustDatabase(
+  private syncActiveTrustDatabase(
     databaseId: string | null,
     connectionIds: string[],
   ): Promise<void> {
-    try {
+    const revision = ++this.trustActivationRevision;
+    const securityEpoch = this.securityEpoch;
+    const ids = databaseId ? [...connectionIds] : [];
+    const assertCurrent = () => {
+      if (
+        this.disposed ||
+        revision !== this.trustActivationRevision ||
+        securityEpoch !== this.securityEpoch ||
+        databaseId !== (this.currentDatabase?.id ?? null)
+      ) {
+        throw new Error("Trust database activation is obsolete.");
+      }
+    };
+    // Keep this queue independent of database opening. A native call already
+    // in flight cannot be cancelled; the newest handoff must run after it.
+    // Only published handoffs supersede selection here: a failed select or
+    // managed close leaves the current database needing its queued activation.
+    // Global security invalidation still cancels work even without a handoff.
+    const activation = this.trustActivationQueue.then(async () => {
+      assertCurrent();
       const invoke = await getInvoke();
-      if (!invoke) return;
+      assertCurrent();
+      if (!invoke) throw new Error("Trust runtime unavailable.");
       await invoke("trust_set_active_database", {
         databaseId,
-        connectionIds: databaseId ? connectionIds : [],
+        connectionIds: ids,
       });
-    } catch (error) {
+      assertCurrent();
+    });
+    // Observe rejection without turning a failed handoff into a successful
+    // acknowledgement for listeners, and allow the next explicit attempt.
+    this.trustActivationQueue = activation.catch((error) => {
       console.warn(
         "Trust Center: could not switch the active trust database",
         error,
       );
-    }
+    });
+    return activation;
   }
 
   /**

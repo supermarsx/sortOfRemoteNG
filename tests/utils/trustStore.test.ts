@@ -257,15 +257,18 @@ describe("native-backed trustStore", () => {
         recordCount: 0,
         seededRecords: 0,
       };
-      let now = 1000;
-      const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+      vi.useFakeTimers();
       const original = native.invoke.getMockImplementation()!;
       native.invoke.mockImplementation(async (command, args) => {
         if (command === "trust_get_all_records") throw message;
         return original(command, args);
       });
       try {
-        const failure = await ensureTrustStoreReady().catch((error) => error);
+        const hydration = ensureTrustStoreReady().catch((error) => error);
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(getTrustStoreAvailability().state).toBe("loading");
+        await vi.advanceTimersByTimeAsync(1);
+        const failure = await hydration;
         expect(failure).toBeInstanceOf(TransientTrustStoreError);
         expect(isTransientTrustStoreError(failure)).toBe(true);
         expect(isTransientTrustStoreError(message)).toBe(false);
@@ -284,15 +287,15 @@ describe("native-backed trustStore", () => {
         ).toBe(failure);
         expect(native.invoke.mock.calls).toHaveLength(reads);
         expect(getTrustStoreAvailability().retryCount).toBe(1);
-        now += 1000;
-        expect(
-          await ensureTrustStoreReady().catch((error) => error),
-        ).toBeInstanceOf(TransientTrustStoreError);
+        await vi.advanceTimersByTimeAsync(1000);
+        const retry = ensureTrustStoreReady().catch((error) => error);
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(await retry).toBeInstanceOf(TransientTrustStoreError);
         expect(getTrustStoreAvailability()).toMatchObject({
           retryCount: 2,
           retryAfterMs: 2000,
         });
-        now += 2000;
+        await vi.advanceTimersByTimeAsync(2000);
         native.invoke.mockImplementation(original);
         await ensureTrustStoreReady();
         expect(getTrustStoreAvailability()).toMatchObject({
@@ -301,7 +304,7 @@ describe("native-backed trustStore", () => {
           retryAfterMs: 0,
         });
       } finally {
-        clock.mockRestore();
+        vi.useRealTimers();
       }
     },
   );
@@ -361,6 +364,12 @@ describe("native-backed trustStore", () => {
   it.each(["revoked", "pending-threshold", "pending-verification", "unknown"])(
     "never retries policy denial or malformed status %s",
     async (status) => {
+      native.activeDatabase = {
+        databaseId: "fixture-db",
+        encrypted: false,
+        recordCount: 0,
+        seededRecords: 0,
+      };
       await ensureTrustStoreReady();
       native.invoke.mockResolvedValueOnce({ status });
       expect(
@@ -373,6 +382,30 @@ describe("native-backed trustStore", () => {
           ).catch((error) => error),
         ),
       ).toBe(false);
+    },
+  );
+
+  it.each(["revoked", "pending-threshold", "pending-verification"])(
+    "keeps the Trust Center usable after one identity is rejected as %s",
+    async (status) => {
+      native.activeDatabase = {
+        databaseId: "fixture-db",
+        encrypted: false,
+        recordCount: 0,
+        seededRecords: 0,
+      };
+      await ensureTrustStoreReady();
+      native.invoke.mockResolvedValueOnce({ status });
+      await expect(
+        verifyIdentity("blocked", 443, "https", makeTlsIdentity("aa")),
+      ).rejects.toThrow(`Native trust policy rejected identity (${status})`);
+      expect(getTrustStoreAvailability()).toMatchObject({
+        state: "ready",
+        retryCount: 0,
+      });
+      await expect(
+        verifyIdentity("other", 443, "https", makeTlsIdentity("bb")),
+      ).resolves.toMatchObject({ status: "first-use" });
     },
   );
 
@@ -717,6 +750,25 @@ describe("database scope (t62)", () => {
       resolved: true,
     });
     expect(getTrustStoreScope()).toEqual(scope);
+  });
+
+  it("retires cached identities when a native scope refresh discovers a switch", async () => {
+    native.activeDatabase = {
+      databaseId: "db-a",
+      encrypted: true,
+      recordCount: 0,
+      seededRecords: 0,
+    };
+    await ensureTrustStoreReady();
+    await trustIdentity("only-in-a", 443, "https", makeTlsIdentity("aa"));
+    expect(getStoredIdentity("only-in-a", 443, "https")).toBeDefined();
+    native.activeDatabase.databaseId = "db-b";
+    native.records = [];
+    await refreshTrustStoreScope();
+    expect(getTrustStoreScope().databaseId).toBe("db-b");
+    expect(getStoredIdentity("only-in-a", 443, "https")).toBeUndefined();
+    await ensureTrustStoreReady();
+    expect(getAllTrustRecords()).toEqual([]);
   });
 
   it("fails closed with NoActiveDatabaseError when no database is open", async () => {

@@ -5,6 +5,7 @@ import type { CurrentDatabaseChange } from "../../src/utils/connection/databaseM
 const fixture = vi.hoisted(() => ({
   invoke: vi.fn(),
   databaseId: "db-a",
+  nativeDatabaseId: undefined as string | null | undefined,
   records: [] as Array<Record<string, unknown>>,
   changed: [] as Array<(event: CurrentDatabaseChange) => void>,
 }));
@@ -35,10 +36,13 @@ import {
   ensureTrustStoreReady,
   getAllTrustRecords,
   getStoredIdentity,
+  getTrustStoreAvailability,
+  getTrustStoreScope,
   isTransientTrustStoreError,
   refreshTrustStoreRecords,
+  refreshTrustStoreScope,
+  readTrustStoreSummary,
   resetTrustStoreCacheForTests,
-  TransientTrustStoreError,
   verifyIdentity,
 } from "../../src/utils/auth/trustStore";
 
@@ -59,40 +63,361 @@ beforeEach(() => {
   resetTrustStoreCacheForTests();
   localStorage.clear();
   fixture.databaseId = "db-a";
+  fixture.nativeDatabaseId = undefined;
   fixture.records = [record()];
   fixture.invoke.mockReset();
-  fixture.invoke.mockImplementation(async (command: string) => {
-    if (command === "trust_get_active_database")
-      return {
-        databaseId: fixture.databaseId,
-        encrypted: true,
-        recordCount: fixture.records.length,
-        seededRecords: 0,
-      };
-    if (command === "trust_get_all_records")
-      return structuredClone(fixture.records);
-    if (command === "trust_get_summary")
-      return {
-        total_records: fixture.records.length,
-        revoked_count: 0,
-        expired_count: 0,
-        records_with_history: 0,
-        total_verifications: 0,
-        total_mismatches: 0,
-        average_trust_score: 0,
-      };
-    if (command === "trust_apply_reviewed_batch") {
-      fixture.records = [];
-      return { updated: 1 };
-    }
-    if (command === "trust_verify_identity")
-      return { status: "first-use", identity };
-    throw new Error(`Unexpected fixture command ${command}`);
-  });
+  fixture.invoke.mockImplementation(
+    async (command: string, args?: { expectedDatabaseId?: string }) => {
+      const nativeId =
+        fixture.nativeDatabaseId === undefined
+          ? fixture.databaseId
+          : fixture.nativeDatabaseId;
+      if (args?.expectedDatabaseId && args.expectedDatabaseId !== nativeId)
+        throw new Error(
+          "Trust database changed; refresh and review the action again",
+        );
+      if (command === "trust_get_active_database")
+        return {
+          databaseId: nativeId,
+          encrypted: true,
+          recordCount: fixture.records.length,
+          seededRecords: 0,
+        };
+      if (command === "trust_get_all_records")
+        return structuredClone(fixture.records);
+      if (command === "trust_get_summary")
+        return {
+          total_records: fixture.records.length,
+          revoked_count: 0,
+          expired_count: 0,
+          records_with_history: 0,
+          total_verifications: 0,
+          total_mismatches: 0,
+          average_trust_score: 0,
+        };
+      if (command === "trust_apply_reviewed_batch") {
+        fixture.records = [];
+        return { updated: 1 };
+      }
+      if (command === "trust_verify_identity")
+        return { status: "first-use", identity };
+      throw new Error(`Unexpected fixture command ${command}`);
+    },
+  );
 });
 afterEach(cleanup);
 
 describe("fresh native Trust Center records", () => {
+  it("a same-ID reopen replaces a failed activation acknowledgement", async () => {
+    const announce = (activation: Promise<void>) => {
+      for (const changed of fixture.changed)
+        changed({
+          database: { id: "db-a" } as CurrentDatabaseChange["database"],
+          databaseId: "db-a",
+          previousDatabaseId: "db-a",
+          reason: "open",
+          connectionIds: [],
+          trustActivation: activation,
+        });
+    };
+    announce(Promise.reject(new Error("private activation failure")));
+    await expect(ensureTrustStoreReady()).rejects.toThrow("Trust Center");
+    announce(Promise.resolve());
+    await expect(ensureTrustStoreReady()).resolves.toBeUndefined();
+    expect(getTrustStoreAvailability().state).toBe("ready");
+    expect(getAllTrustRecords()).toHaveLength(1);
+  });
+
+  it("retries recognized native scope contention before reporting the store unavailable", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let scopes = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_active_database" && ++scopes < 3)
+        return Promise.reject(
+          "encryption storage transition in progress; retry after it completes",
+        );
+      return invoke(command, ...args);
+    });
+    try {
+      const ready = ensureTrustStoreReady();
+      await vi.advanceTimersByTimeAsync(3000);
+      await ready;
+      expect(scopes).toBe(3);
+      expect(getTrustStoreAvailability().state).toBe("ready");
+      expect(getTrustStoreScope().databaseId).toBe("db-a");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([true, false])(
+    "bounds native scope retries and cancels on close (close=%s)",
+    async (close) => {
+      vi.useFakeTimers();
+      const invoke = fixture.invoke.getMockImplementation()!;
+      let reads = 0;
+      fixture.invoke.mockImplementation(
+        (command: string, ...args: unknown[]) => {
+          if (command === "trust_get_active_database") {
+            reads++;
+            return Promise.reject("encryption key transition in progress");
+          }
+          return invoke(command, ...args);
+        },
+      );
+      try {
+        const pending = ensureTrustStoreReady().catch((error) => error);
+        await vi.advanceTimersByTimeAsync(0);
+        if (close)
+          for (const changed of fixture.changed)
+            changed({
+              database: null,
+              databaseId: null,
+              previousDatabaseId: "db-a",
+              reason: "close",
+              connectionIds: [],
+              trustActivation: Promise.resolve(),
+            });
+        await vi.advanceTimersByTimeAsync(3000);
+        const error = await pending;
+        expect(isTransientTrustStoreError(error)).toBe(!close);
+        expect(reads).toBe(close ? 1 : 3);
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(vi.getTimerCount()).toBe(0);
+        expect(reads).toBe(close ? 1 : 3);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each([true, false])(
+    "does not discover the outgoing scope while activation is pending (succeeds=%s)",
+    async (succeeds) => {
+      await ensureTrustStoreReady();
+      fixture.databaseId = "db-b";
+      fixture.nativeDatabaseId = "db-a";
+      let activate!: () => void;
+      let fail!: (error: Error) => void;
+      const activation = new Promise<void>((resolve, reject) => {
+        activate = resolve;
+        fail = reject;
+      });
+      for (const changed of fixture.changed)
+        changed({
+          database: { id: "db-b" } as CurrentDatabaseChange["database"],
+          databaseId: "db-b",
+          previousDatabaseId: "db-a",
+          reason: "open",
+          connectionIds: [],
+          trustActivation: activation,
+        });
+      fixture.invoke.mockClear();
+      const refresh = refreshTrustStoreScope().catch((error) => error);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(fixture.invoke).not.toHaveBeenCalled();
+      if (succeeds) {
+        fixture.nativeDatabaseId = "db-b";
+        fixture.records = [];
+        activate();
+        expect(await refresh).toMatchObject({ databaseId: "db-b" });
+        await ensureTrustStoreReady();
+        expect(getTrustStoreAvailability().state).toBe("ready");
+      } else {
+        fail(new Error("private activation failure"));
+        expect((await refresh).message).toContain("Trust Center");
+        await expect(ensureTrustStoreReady()).rejects.toThrow("Trust Center");
+        expect(getTrustStoreAvailability().state).toBe("error");
+        expect(fixture.invoke).not.toHaveBeenCalled();
+      }
+      expect(getTrustStoreScope().databaseId).toBe("db-b");
+      expect(getAllTrustRecords()).toEqual([]);
+    },
+  );
+
+  it("does not adopt a different native database after the selected activation was acknowledged", async () => {
+    fixture.databaseId = "db-b";
+    fixture.nativeDatabaseId = "db-a";
+    for (const changed of fixture.changed)
+      changed({
+        database: { id: "db-b" } as CurrentDatabaseChange["database"],
+        databaseId: "db-b",
+        previousDatabaseId: "db-a",
+        reason: "open",
+        connectionIds: [],
+        trustActivation: Promise.resolve(),
+      });
+    await expect(refreshTrustStoreScope()).rejects.toThrow("selected database");
+    expect(getTrustStoreScope().databaseId).toBe("db-b");
+    expect(getAllTrustRecords()).toEqual([]);
+  });
+
+  it("a hung summary neither replays itself nor blocks unrelated identity verification", async () => {
+    await ensureTrustStoreReady();
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let complete!: (value: unknown) => void;
+    let summaries = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_summary") {
+        summaries++;
+        return new Promise((resolve) => {
+          complete = resolve;
+        });
+      }
+      return invoke(command, ...args);
+    });
+    try {
+      const first = readTrustStoreSummary().catch((error) => error);
+      const second = readTrustStoreSummary().catch((error) => error);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect((await first).message).toContain("summary");
+      expect((await second).message).toContain("summary");
+      expect(getTrustStoreAvailability().state).toBe("ready");
+      await expect(readTrustStoreSummary()).rejects.toThrow("summary");
+      expect(summaries).toBe(1);
+      await expect(
+        verifyIdentity("device.test", 443, "https", {
+          fingerprint: "EXACT-CERT",
+          firstSeen: "2026-01-01",
+          lastSeen: "2026-09-01",
+        }),
+      ).resolves.toMatchObject({ status: "first-use" });
+      expect(getTrustStoreAvailability().state).toBe("ready");
+      complete({});
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.invoke.mockImplementation(invoke);
+      await expect(readTrustStoreSummary()).resolves.toHaveProperty(
+        "total_records",
+        1,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers summary contention without exposing an unavailable view", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let summaries = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_summary" && ++summaries === 1)
+        return Promise.reject("encryption key transition in progress");
+      return invoke(command, ...args);
+    });
+    try {
+      const { result } = renderHook(() => useTrustCenter());
+      await act(() => vi.advanceTimersByTimeAsync(999));
+      expect(result.current.loading).toBe(true);
+      expect(result.current.error).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(result.current.loading).toBe(false);
+      expect(result.current.rows).toHaveLength(1);
+      expect(result.current.error).toBeNull();
+      expect(summaries).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears a stale load error when another consumer recovers the same store", async () => {
+    const invoke = fixture.invoke.getMockImplementation()!;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_all_records")
+        return Promise.reject("Temporarily unavailable fixture");
+      return invoke(command, ...args);
+    });
+    const { result } = renderHook(() => useTrustCenter());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toContain("Trust Center");
+    fixture.invoke.mockImplementation(invoke);
+    await act(async () => {
+      await refreshTrustStoreRecords();
+    });
+    expect(result.current.rows).toHaveLength(1);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("an outgoing hydration cannot clear or replace the new scope's in-flight hydration", async () => {
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let rejectOld!: (reason: Error) => void;
+    let resolveNew!: (records: unknown[]) => void;
+    let newReads = 0;
+    fixture.invoke.mockImplementation(
+      (command: string, args: Record<string, unknown>) => {
+        if (command === "trust_get_all_records") {
+          if (args.expectedDatabaseId === "db-a")
+            return new Promise((_, reject) => {
+              rejectOld = reject;
+            });
+          if (++newReads === 1)
+            return new Promise((resolve) => {
+              resolveNew = resolve;
+            });
+        }
+        return invoke(command, args);
+      },
+    );
+    const old = ensureTrustStoreReady().catch((error) => error);
+    await waitFor(() => expect(rejectOld).toBeTypeOf("function"));
+    fixture.databaseId = "db-b";
+    for (const changed of fixture.changed)
+      changed({
+        database: { id: "db-b" } as CurrentDatabaseChange["database"],
+        databaseId: "db-b",
+        previousDatabaseId: "db-a",
+        reason: "open",
+        connectionIds: [],
+        trustActivation: Promise.resolve(),
+      });
+    await waitFor(() => expect(resolveNew).toBeTypeOf("function"));
+    rejectOld(new Error("encryption key transition in progress"));
+    expect((await old).message).toContain("Trust database changed");
+    const joined = ensureTrustStoreReady();
+    await Promise.resolve();
+    expect(getTrustStoreAvailability().state).toBe("loading");
+    expect(newReads).toBe(1);
+    resolveNew([record()]);
+    await joined;
+    expect(newReads).toBe(2);
+    expect(getTrustStoreAvailability().state).toBe("ready");
+  });
+
+  it("cancels bootstrap retries on close without marking the closed scope unavailable", async () => {
+    vi.useFakeTimers();
+    const invoke = fixture.invoke.getMockImplementation()!;
+    let reads = 0;
+    fixture.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "trust_get_all_records") {
+        reads += 1;
+        return Promise.reject("encryption key transition in progress");
+      }
+      return invoke(command, ...args);
+    });
+    try {
+      const pending = ensureTrustStoreReady().catch((error) => error);
+      await vi.advanceTimersByTimeAsync(0);
+      for (const changed of fixture.changed)
+        changed({
+          database: null,
+          databaseId: null,
+          previousDatabaseId: "db-a",
+          reason: "close",
+          connectionIds: [],
+          trustActivation: Promise.resolve(),
+        });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect((await pending).message).toContain("Trust database changed");
+      expect(reads).toBe(1);
+      expect(getTrustStoreAvailability().state).toBe("idle");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([true, false])(
     "requires native metadata readback before reporting save success (persisted=%s)",
     async (persisted) => {
@@ -351,7 +676,7 @@ describe("fresh native Trust Center records", () => {
       return invoke(command, ...args);
     });
     try {
-      const hydrationFailure = ensureTrustStoreReady().catch((error) => error);
+      const hydration = ensureTrustStoreReady();
       await started;
       const refresh = refreshTrustStoreRecords();
       rejectHydration(
@@ -363,8 +688,8 @@ describe("fresh native Trust Center records", () => {
       expect(reads).toBe(1);
       await vi.advanceTimersByTimeAsync(1);
       await expect(refresh).resolves.toBeUndefined();
-      expect(await hydrationFailure).toBeInstanceOf(TransientTrustStoreError);
-      expect(reads).toBe(2);
+      await expect(hydration).resolves.toBeUndefined();
+      expect(reads).toBe(4);
       expect(getAllTrustRecords()).toHaveLength(1);
     } finally {
       vi.useRealTimers();

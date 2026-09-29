@@ -21,6 +21,9 @@ const bridge = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: bridge.invoke,
 }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+}));
 
 import { openDB } from "idb";
 import {
@@ -60,6 +63,7 @@ const native = {
     connectionIds: string[];
   }>,
   failTrust: false,
+  sessionExpiresAt: 0,
 };
 
 function trustFileFor(databaseId: string): TrustFile {
@@ -96,6 +100,16 @@ function nativeInvoke(command: string, args: any = {}): unknown {
       native.data.delete(args.databaseId as string);
       native.trust.delete(args.databaseId as string);
       return undefined;
+    case "database_protection_unlock":
+    case "database_protection_load":
+      return {
+        sessionId: `session-${args.databaseId}`,
+        sessionExpiresAt: native.sessionExpiresAt,
+        securityRevision: "rev-1",
+        data: structuredClone(native.data.get(args.databaseId)),
+      };
+    case "database_protection_lock":
+      return { locked: true, notificationPending: false, warnings: [] };
 
     // ── trust runtime (t62-e1b command surface) ──
     case "trust_set_active_database": {
@@ -229,9 +243,42 @@ function lastActivation() {
   return native.activations[native.activations.length - 1];
 }
 
+function seedManagedDatabase(id: string) {
+  seedDatabase(id, id, [`${id}-connection`]);
+  Object.assign(
+    native.index.find((item) => item.id === id),
+    {
+      isEncrypted: true,
+      protectionFormat: "sorng-db",
+      securityRevision: "rev-1",
+    },
+  );
+}
+
+function deferActivation(databaseId: string) {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = vi.fn();
+  bridge.invoke.mockImplementation(async (command: string, args?: any) => {
+    if (
+      command === "trust_set_active_database" &&
+      args.databaseId === databaseId
+    ) {
+      started();
+      await pending;
+    }
+    return nativeInvoke(command, args);
+  });
+  return { release, started };
+}
+
 let manager: DatabaseManager;
 let logActionSpy: ReturnType<typeof vi.spyOn> | null = null;
 let warnSpy: ReturnType<typeof vi.spyOn> | null = null;
+let changes: CurrentDatabaseChange[];
+let unsubscribeChanges: () => void;
 
 beforeEach(async () => {
   native.index = [];
@@ -240,6 +287,7 @@ beforeEach(async () => {
   native.activeDatabaseId = null;
   native.activations = [];
   native.failTrust = false;
+  native.sessionExpiresAt = Date.now() + 900000;
 
   await IndexedDbService.init();
   const db = await openDB(DB_NAME, 1);
@@ -257,11 +305,17 @@ beforeEach(async () => {
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
   DatabaseManager.resetInstance();
-  manager = new DatabaseManager();
+  manager = DatabaseManager.getInstance();
   resetTrustStoreCacheForTests();
+  changes = [];
+  unsubscribeChanges = onCurrentDatabaseChange((change) =>
+    changes.push(change),
+  );
 });
 
 afterEach(() => {
+  unsubscribeChanges();
+  DatabaseManager.resetInstance();
   delete (globalThis as any).__TAURI__;
   logActionSpy?.mockRestore();
   logActionSpy = null;
@@ -275,6 +329,178 @@ async function settle(): Promise<void> {
 }
 
 describe("DatabaseManager → active trust database", () => {
+  it("reports failed activation and explicitly retries after managed unlock of the same selection", async () => {
+    seedManagedDatabase("db-a");
+    await manager.unlockManagedDatabase("db-a", "password-slot", "secret");
+    native.failTrust = true;
+    await expect(manager.selectDatabase("db-a")).resolves.toBeUndefined();
+    await expect(changes[0].trustActivation).rejects.toThrow(
+      "trust runtime unavailable",
+    );
+    expect(manager.getCurrentDatabase()?.id).toBe("db-a");
+    const attempts = () =>
+      bridge.invoke.mock.calls.filter(
+        ([command]) => command === "trust_set_active_database",
+      );
+    expect(attempts()).toHaveLength(1);
+
+    native.failTrust = false;
+    const deferred = deferActivation("db-a");
+    await manager.unlockManagedDatabase("db-a", "password-slot", "secret");
+    expect(changes[1]).toMatchObject({
+      reason: "security-change",
+      databaseId: "db-a",
+      previousDatabaseId: "db-a",
+    });
+    let acknowledged = false;
+    const activation = changes[1].trustActivation.then(() => {
+      acknowledged = true;
+    });
+    await vi.waitFor(() => expect(deferred.started).toHaveBeenCalledOnce());
+    expect(acknowledged).toBe(false);
+    deferred.release();
+    await activation;
+    expect(attempts()).toHaveLength(2);
+    expect(lastActivation()).toEqual({
+      databaseId: "db-a",
+      connectionIds: ["db-a-connection"],
+    });
+  });
+
+  it("serializes an in-flight activation before a switch without blocking database opening", async () => {
+    seedDatabase("db-a", "Alpha", []);
+    seedDatabase("db-b", "Bravo", []);
+    const deferred = deferActivation("db-a");
+    await manager.selectDatabase("db-a");
+    await vi.waitFor(() => expect(deferred.started).toHaveBeenCalledOnce());
+    await manager.selectDatabase("db-b");
+    expect(manager.getCurrentDatabase()?.id).toBe("db-b");
+    expect(
+      bridge.invoke.mock.calls.filter(
+        ([command]) => command === "trust_set_active_database",
+      ),
+    ).toHaveLength(1);
+    deferred.release();
+    await expect(changes[0].trustActivation).rejects.toThrow("obsolete");
+    await changes[1].trustActivation;
+    expect(native.activations.map(({ databaseId }) => databaseId)).toEqual([
+      "db-a",
+      "db-b",
+    ]);
+    expect(native.activeDatabaseId).toBe("db-b");
+  });
+
+  it.each(["switch", "close"] as const)(
+    "invalidates queued managed reactivation and intermediate switch after %s",
+    async (action) => {
+      seedManagedDatabase("db-a");
+      seedDatabase("db-b", "Bravo", []);
+      seedDatabase("db-c", "Charlie", []);
+      await manager.unlockManagedDatabase("db-a", "password-slot", "secret");
+      const deferred = deferActivation("db-a");
+      await manager.selectDatabase("db-a");
+      await vi.waitFor(() => expect(deferred.started).toHaveBeenCalledOnce());
+      await manager.unlockManagedDatabase("db-a", "password-slot", "secret");
+      await manager.selectDatabase("db-b");
+      if (action === "switch") await manager.selectDatabase("db-c");
+      else await manager.closeCurrentDatabase();
+      const expectedId = action === "switch" ? "db-c" : null;
+      expect(manager.getCurrentDatabase()?.id ?? null).toBe(expectedId);
+      deferred.release();
+      const outcomes = await Promise.allSettled(
+        changes.map((change) => change.trustActivation),
+      );
+      expect(outcomes.map(({ status }) => status)).toEqual([
+        "rejected",
+        "rejected",
+        "rejected",
+        "fulfilled",
+      ]);
+      expect(native.activations.map(({ databaseId }) => databaseId)).toEqual([
+        "db-a",
+        expectedId,
+      ]);
+      expect(native.activeDatabaseId).toBe(expectedId);
+    },
+  );
+
+  it.each(["missing", "flush"] as const)(
+    "keeps queued activation for the committed selection when a later selection fails at %s",
+    async (failure) => {
+      seedDatabase("db-outgoing", "Outgoing", []);
+      seedDatabase("db-a", "Alpha", ["a-connection"]);
+      seedDatabase("db-b", "Bravo", []);
+      const deferred = deferActivation("db-outgoing");
+      await manager.selectDatabase("db-outgoing");
+      await vi.waitFor(() => expect(deferred.started).toHaveBeenCalledOnce());
+      await manager.selectDatabase("db-a");
+      if (failure === "flush") {
+        manager.registerBeforeDatabaseTransition(async () => {
+          throw new Error("Could not flush outgoing edits");
+        });
+      }
+      await expect(
+        manager.selectDatabase(failure === "missing" ? "missing-db" : "db-b"),
+      ).rejects.toThrow();
+      expect(manager.getCurrentDatabase()?.id).toBe("db-a");
+      expect(changes).toHaveLength(2);
+      expect(native.activeDatabaseId).toBeNull();
+
+      deferred.release();
+      await expect(changes[0].trustActivation).rejects.toThrow("obsolete");
+      await expect(changes[1].trustActivation).resolves.toBeUndefined();
+      expect(native.activations.map(({ databaseId }) => databaseId)).toEqual([
+        "db-outgoing",
+        "db-a",
+      ]);
+      expect(native.activeDatabaseId).toBe("db-a");
+    },
+  );
+
+  it("keeps queued activation when managed close fails without publishing a new selection", async () => {
+    seedDatabase("db-outgoing", "Outgoing", []);
+    seedManagedDatabase("db-a");
+    await manager.unlockManagedDatabase("db-a", "password-slot", "secret");
+    const deferred = deferActivation("db-outgoing");
+    const invoke = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command: string, args?: any) => {
+      if (command === "database_protection_lock") {
+        throw new Error("Native lock failed");
+      }
+      return invoke(command, args);
+    });
+    await manager.selectDatabase("db-outgoing");
+    await vi.waitFor(() => expect(deferred.started).toHaveBeenCalledOnce());
+    await manager.selectDatabase("db-a");
+    await expect(manager.closeCurrentDatabase()).rejects.toThrow(
+      "Native lock failed",
+    );
+    expect(manager.getCurrentDatabase()?.id).toBe("db-a");
+    expect(changes).toHaveLength(2);
+    expect(native.activeDatabaseId).toBeNull();
+
+    deferred.release();
+    await expect(changes[0].trustActivation).rejects.toThrow("obsolete");
+    await expect(changes[1].trustActivation).resolves.toBeUndefined();
+    expect(native.activeDatabaseId).toBe("db-a");
+    expect(lastActivation()).toEqual({
+      databaseId: "db-a",
+      connectionIds: ["db-a-connection"],
+    });
+  });
+
+  it("unlocking a non-current managed database does not move trust", async () => {
+    seedManagedDatabase("db-a");
+    seedDatabase("db-b", "Bravo", []);
+    await manager.selectDatabase("db-b");
+    await changes[0].trustActivation;
+    await manager.unlockManagedDatabase("db-a", "password-slot", "secret");
+    expect(changes).toHaveLength(1);
+    expect(native.activations.map(({ databaseId }) => databaseId)).toEqual([
+      "db-b",
+    ]);
+  });
+
   it("points the Trust Center at the opened database and its connection ids", async () => {
     seedDatabase("db-a", "Alpha", ["conn-1", "conn-2"]);
 
