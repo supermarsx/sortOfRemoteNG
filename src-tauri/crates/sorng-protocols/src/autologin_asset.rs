@@ -60,6 +60,7 @@ pub const AUTOLOGIN_CLIENT_JS: &str = include_str!("autologin_client.js");
 pub const BITWARDEN_CLIENT_JS: &str = include_str!("bitwarden_autologin_client.js");
 pub const SYNOLOGY_CLIENT_JS: &str = include_str!("synology_autologin_client.js");
 pub const GOOGLE_CLIENT_JS: &str = include_str!("google_autologin_client.js");
+pub const CLOUDFLARE_CLIENT_JS: &str = include_str!("cloudflare_autologin_client.js");
 pub const YEALINK_CLIENT_JS: &str = include_str!("yealink_autologin_client.js");
 
 /// The full e5 client asset wrapped in a `<script>` element, ready to splice
@@ -72,10 +73,11 @@ pub const YEALINK_CLIENT_JS: &str = include_str!("yealink_autologin_client.js");
 /// so it never needs templating and never embeds a credential.
 pub fn autologin_client_asset_script() -> String {
     format!(
-        "<script>{}{}{}{}{}</script>",
+        "<script>{}{}{}{}{}{}</script>",
         BITWARDEN_CLIENT_JS,
         SYNOLOGY_CLIENT_JS,
         GOOGLE_CLIENT_JS,
+        CLOUDFLARE_CLIENT_JS,
         YEALINK_CLIENT_JS,
         AUTOLOGIN_CLIENT_JS
     )

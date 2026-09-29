@@ -54,6 +54,8 @@ import {
   isToolProtocol,
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
+  WEB_POPUP_PROTOCOL,
+  WEB_POPUP_WINDOW_MESSAGE,
   ICON_EXPLORER_PROTOCOL,
   CONNECTION_RECYCLE_BIN_PROTOCOL,
 } from "../app/toolSession";
@@ -116,6 +118,8 @@ const getSessionIcon = (
   connections: readonly Connection[],
 ) => {
   if (isToolProtocol(session.protocol)) {
+    if (session.protocol === WEB_POPUP_PROTOCOL)
+      return { icon: Monitor, key: WEB_POPUP_PROTOCOL };
     if (session.protocol === DOCUMENTS_PROTOCOL)
       return { icon: FileText, key: DOCUMENTS_PROTOCOL };
     if (session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL) {
@@ -721,6 +725,11 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
   const handleDetachSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (
+      sessions.find((session) => session.id === sessionId)?.protocol ===
+      WEB_POPUP_PROTOCOL
+    )
+      return;
     onSessionDetach(sessionId);
   };
 
@@ -752,7 +761,12 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
       clientX >= windowWidth ||
       clientY >= windowHeight;
 
-    if (outsideWindow && draggedSessionId) {
+    if (
+      outsideWindow &&
+      draggedSessionId &&
+      sessions.find((session) => session.id === sessionId)?.protocol !==
+        WEB_POPUP_PROTOCOL
+    ) {
       // Let the WindowManager decide: drop onto existing detached window
       // or create a new one. It checks screen coords against all windows.
       import("@tauri-apps/api/window")
@@ -1178,11 +1192,16 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               data-tooltip="Detach"
               data-testid="session-tab-detach"
               aria-label={`Detach ${session.name}`}
-              disabled={session.protocol === RDP_INTERNALS_PROTOCOL}
+              disabled={
+                session.protocol === RDP_INTERNALS_PROTOCOL ||
+                session.protocol === WEB_POPUP_PROTOCOL
+              }
               title={
-                session.protocol === RDP_INTERNALS_PROTOCOL
-                  ? RDP_INTERNALS_WINDOW_MESSAGE
-                  : undefined
+                session.protocol === WEB_POPUP_PROTOCOL
+                  ? WEB_POPUP_WINDOW_MESSAGE
+                  : session.protocol === RDP_INTERNALS_PROTOCOL
+                    ? RDP_INTERNALS_WINDOW_MESSAGE
+                    : undefined
               }
             >
               <ExternalLink size={12} />
@@ -1770,17 +1789,23 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                   onClick={() => act(() => onSessionDetach(sessionId))}
                   className="sor-menu-item"
                   data-testid="session-tab-detach"
-                  disabled={targetSession?.protocol === RDP_INTERNALS_PROTOCOL}
+                  disabled={
+                    targetSession?.protocol === RDP_INTERNALS_PROTOCOL ||
+                    targetSession?.protocol === WEB_POPUP_PROTOCOL
+                  }
                   title={
-                    targetSession?.protocol === RDP_INTERNALS_PROTOCOL
-                      ? RDP_INTERNALS_WINDOW_MESSAGE
-                      : undefined
+                    targetSession?.protocol === WEB_POPUP_PROTOCOL
+                      ? WEB_POPUP_WINDOW_MESSAGE
+                      : targetSession?.protocol === RDP_INTERNALS_PROTOCOL
+                        ? RDP_INTERNALS_WINDOW_MESSAGE
+                        : undefined
                   }
                 >
                   <ExternalLink size={14} className="mr-2" /> Detach to New
                   Window
                 </button>
                 {detachedWindows.length > 0 &&
+                  targetSession?.protocol !== WEB_POPUP_PROTOCOL &&
                   targetSession?.protocol !== RDP_INTERNALS_PROTOCOL && (
                     <div
                       className="sor-menu-submenu"

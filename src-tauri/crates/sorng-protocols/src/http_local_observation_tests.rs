@@ -13,6 +13,9 @@ fn bootstrap_reports_installed_network_capabilities_on_existing_readiness_payloa
         &HttpProxyPolicy::default(),
         None,
         None,
+        None,
+        None,
+        None,
     );
     assert!(script.contains("var sorngNetworkClient=installWebNetworkClient("));
     let popup_helper = script
@@ -29,6 +32,9 @@ fn bootstrap_reports_installed_network_capabilities_on_existing_readiness_payloa
     assert!(script.contains(r#""requestGeneration":"0123456789abcdef0123456789abcdef""#));
     assert!(script.contains("Object.defineProperty(window,'__sorng_map_navigation'"));
     assert!(script.contains("p.networkRouting=sorngNetworkClient.capabilities"));
+    assert!(script.contains(r#""popupParentDocument":null"#));
+    assert!(script.contains(r#""popupTabs":false"#));
+    assert!(script.contains("type:'proxy_web_popup',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href"));
     assert!(script.ends_with("p.networkRouting=sorngNetworkClient.capabilities;"));
 }
 

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getHttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
 const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_automation_client.js",
   "utf8",
@@ -299,8 +300,390 @@ afterEach(() => {
   document.head.querySelectorAll("script").forEach((script) => script.remove());
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 describe("actual injected page-only automation client", () => {
+  describe("Cloudflare synthetic authenticator contract (not live DOM)", () => {
+    const probe = {
+      nonce: "b".repeat(32),
+      codeSelector: 'form input[autocomplete="one-time-code"]',
+      submitSelector:
+        'form:has(input[autocomplete="one-time-code"]) button[type="submit"]',
+      submission: "cloudflare",
+    };
+    const code = () => ({
+      nonce: probe.nonce,
+      code: "123456",
+      expires: Date.now() + 20_000,
+    });
+    function fixture(path = "/login") {
+      vi.useFakeTimers();
+      history.replaceState({}, "", path);
+      // Install with the actual challenge URL as the document identity.
+      pageHandlers.clear();
+      documentHandlers.clear();
+      window.eval(
+        `(function(){var p=${JSON.stringify(identity)},u=new URL(location.href);${darkSource}\n${source}\n})();`,
+      );
+      setupPage(`<form id="challenge"><h1>Two-factor authentication</h1>
+        <label for="cf-code">Code from your authenticator app</label>
+        <input id="cf-code" autocomplete="one-time-code" inputmode="numeric">
+        <button type="submit" disabled>Verify</button></form>`);
+      const form = document.querySelector("form")!;
+      const field = document.querySelector("input")!;
+      const button = document.querySelector("button")!;
+      const label = document.querySelector("label")!;
+      let model = "";
+      field.addEventListener("input", () => {
+        const next = field.value;
+        void Promise.resolve().then(() => {
+          model = next;
+          button.disabled = !model;
+        });
+      });
+      const submitted: string[] = [];
+      const prevented: boolean[] = [];
+      form.addEventListener("submit", (event) => {
+        prevented.push(event.defaultPrevented);
+        event.preventDefault();
+        submitted.push(model);
+      });
+      const clicked = vi.spyOn(button, "click");
+      const send = (action: string, payload?: unknown) =>
+        command(action, payload, { url: new URL(path, location.origin).href });
+      return {
+        form,
+        field,
+        button,
+        label,
+        submitted,
+        prevented,
+        clicked,
+        send,
+      };
+    }
+    it.each(["/login", "/login/"])(
+      "commits the authenticator model at %s before one SPA submission",
+      async (path) => {
+        const { field, button, clicked, submitted, prevented, send } =
+          fixture(path);
+        send("recordStart");
+        send("totpProbe", probe);
+        expect(reports().slice(-1)[0].status).toBe("ok");
+        expect(button.disabled).toBe(true);
+        send("totpSubmit", code());
+        expect(clicked).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(submitted).toEqual(["123456"]);
+        expect(prevented).toEqual([true]);
+        expect(clicked).toHaveBeenCalledOnce();
+        expect(reports().slice(-1)[0].status).toBe("ok");
+        gesture("change", field);
+        send("totpSubmit", code());
+        send("totpProbe", { ...probe, nonce: "c".repeat(32) });
+        expect(reports().slice(-1)[0].status).toBe("failed");
+        expect(clicked).toHaveBeenCalledOnce();
+        expect(reports().filter((report) => report.status === "step")).toEqual(
+          [],
+        );
+        expect(JSON.stringify(reports())).not.toContain("123456");
+      },
+    );
+    it("permits an explicit same-origin login POST", async () => {
+      const { form, submitted, prevented, send } = fixture();
+      form.action = `${location.origin}/login/`;
+      form.method = "post";
+      send("totpProbe", probe);
+      send("totpSubmit", code());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(submitted).toEqual(["123456"]);
+      expect(prevented).toEqual([false]);
+    });
+    it.each(["aria-label", "aria-labelledby", "aria-describedby", "heading"])(
+      "accepts scoped authenticator evidence from %s",
+      async (kind) => {
+        const { form, field, label, submitted, send } = fixture();
+        label.textContent = "Verification code";
+        if (kind === "aria-label") field.setAttribute(kind, "TOTP code");
+        else if (kind === "heading")
+          form.querySelector("h1")!.textContent =
+            "Time-based one-time password";
+        else {
+          form.insertAdjacentHTML(
+            "afterbegin",
+            '<p id="hint">Code from your authenticator app</p>',
+          );
+          field.setAttribute(kind, "hint");
+        }
+        send("totpProbe", probe);
+        send("totpSubmit", code());
+        await vi.advanceTimersByTimeAsync(0);
+        expect(submitted).toEqual(["123456"]);
+      },
+    );
+    it("ignores hidden other factors and unrelated alternative links", async () => {
+      const { form, submitted, send } = fixture();
+      form.insertAdjacentHTML(
+        "beforeend",
+        `<div hidden>Email recovery <input type="password"><input autocomplete="one-time-code"><button type="submit">Backup</button></div>
+        <p style="display:none">Set up your authenticator app</p>
+        <a href="#email">Use email instead</a><button type="button">Use a backup code</button>`,
+      );
+      document.body.insertAdjacentHTML("beforeend", "<h2>Email recovery</h2>");
+      send("totpProbe", probe);
+      send("totpSubmit", code());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(submitted).toEqual(["123456"]);
+    });
+    it.each([
+      "Enter the code sent to your email",
+      "Enter the SMS code",
+      "Enter a recovery code",
+      "Enter a backup code",
+      "Set-up authenticator app",
+      "Enable two-factor authentication",
+      "Register your authenticator app",
+      "Reconfigure TOTP",
+      "Use your security key",
+    ])("rejects conflicting visible instructions: %s", (instruction) => {
+      const { form, send } = fixture();
+      const hint = document.createElement("p");
+      hint.textContent = instruction;
+      form.append(hint);
+      send("totpProbe", probe);
+      expect(reports().slice(-1)[0].status).toBe("failed");
+    });
+    it("rejects an email-code input despite an authenticator heading", () => {
+      const { field, send } = fixture();
+      field.name = "email_code";
+      send("totpProbe", probe);
+      expect(reports().slice(-1)[0].status).toBe("failed");
+    });
+    it.each([
+      "generic",
+      "email",
+      "sms",
+      "recovery",
+      "backup",
+      "security-key",
+      "enrollment",
+      "qr",
+      "password",
+      "captcha",
+      "hidden-evidence",
+      "foreign-evidence",
+      "alternative-evidence",
+      "ambiguous-code",
+      "ambiguous-button",
+      "foreign-form",
+      "foreign-action",
+      "foreign-submit",
+      "target",
+      "formtarget",
+      "formmethod",
+      "get",
+      "method-only",
+      "empty-action",
+      "other-action",
+      "base",
+      "readonly",
+      "disabled",
+      "hidden",
+      "path",
+      "selector",
+      "manual",
+    ])("refuses %s before writing a saved code", async (reason) => {
+      const { form, field, button, label, clicked, submitted, send } =
+        fixture();
+      let metadata = probe;
+      if (reason === "generic")
+        label.textContent = "One-time verification code";
+      if (["email", "sms", "recovery", "backup"].includes(reason))
+        label.textContent = `Enter your ${reason} code`;
+      if (reason === "security-key")
+        label.textContent = "Security key authenticator";
+      if (reason === "enrollment")
+        form.querySelector("h1")!.textContent = "Set up your authenticator app";
+      if (reason === "qr")
+        form.insertAdjacentHTML("beforeend", "<p>Scan the QR code</p>");
+      if (reason === "password")
+        form.insertAdjacentHTML("beforeend", '<input type="password">');
+      if (reason === "captcha")
+        form.insertAdjacentHTML(
+          "beforeend",
+          '<div class="cf-turnstile"></div>',
+        );
+      if (reason === "hidden-evidence")
+        label.innerHTML =
+          "Code <span hidden>from your authenticator app</span>";
+      if (reason === "foreign-evidence") {
+        label.remove();
+        document.body.append(label);
+        field.setAttribute("aria-labelledby", "foreign-label");
+        label.id = "foreign-label";
+      }
+      if (reason === "alternative-evidence")
+        label.innerHTML = 'Code <a href="#totp">Use an authenticator app</a>';
+      if (reason === "ambiguous-code") form.append(field.cloneNode());
+      if (reason === "ambiguous-button") form.append(button.cloneNode(true));
+      if (reason === "foreign-form") {
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          '<form id="other"></form>',
+        );
+        button.setAttribute("form", "other");
+      }
+      if (reason === "foreign-action") {
+        form.action = "https://foreign.example/login";
+        form.method = "post";
+      }
+      if (reason === "foreign-submit")
+        button.setAttribute("formaction", "https://foreign.example/login");
+      if (reason === "target") form.target = "_blank";
+      if (reason === "formtarget") button.setAttribute("formtarget", "_self");
+      if (reason === "formmethod") button.setAttribute("formmethod", "post");
+      if (reason === "get") {
+        form.action = "/login";
+        form.method = "get";
+      }
+      if (reason === "method-only") form.method = "post";
+      if (reason === "empty-action") form.setAttribute("action", "");
+      if (reason === "other-action") {
+        form.action = "/settings";
+        form.method = "post";
+      }
+      if (reason === "base")
+        form.insertAdjacentHTML(
+          "beforeend",
+          '<base href="https://foreign.example/">',
+        );
+      if (reason === "readonly") field.readOnly = true;
+      if (reason === "disabled") field.disabled = true;
+      if (reason === "hidden") form.style.display = "none";
+      if (reason === "path") history.replaceState({}, "", "/login/reset");
+      if (reason === "selector")
+        metadata = { ...probe, codeSelector: "#cf-code" };
+      if (reason === "manual") field.value = "654321";
+      send("totpProbe", metadata);
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      send("totpSubmit", code());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(clicked).not.toHaveBeenCalled();
+      expect(submitted).toEqual([]);
+      expect(field.value).toBe(reason === "manual" ? "654321" : "");
+    });
+    it.each([
+      "field",
+      "button",
+      "form",
+      "label",
+      "action",
+      "type",
+      "name",
+      "url",
+      "expired",
+      "nonce",
+      "lock",
+    ])("refuses a stale %s between probe and code delivery", async (reason) => {
+      const { field, button, form, label, clicked, submitted, send } =
+        fixture();
+      send("totpProbe", probe);
+      expect(reports().slice(-1)[0].status).toBe("ok");
+      if (reason === "field") field.replaceWith(field.cloneNode());
+      if (reason === "button") button.replaceWith(button.cloneNode(true));
+      if (reason === "form") form.replaceWith(form.cloneNode(true));
+      if (reason === "label") label.textContent = "TOTP code";
+      if (reason === "action") {
+        form.action = "/login/";
+        form.method = "post";
+      }
+      if (reason === "type") field.type = "tel";
+      if (reason === "name") field.name = "changed";
+      if (reason === "url") history.replaceState({}, "", "/login?step=other");
+      if (reason === "lock") send("totpCancel");
+      send("totpSubmit", {
+        ...code(),
+        ...(reason === "expired" ? { expires: Date.now() } : {}),
+        ...(reason === "nonce" ? { nonce: "c".repeat(32) } : {}),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      expect(clicked).not.toHaveBeenCalled();
+      expect(submitted).toEqual([]);
+      expect(field.value).toBe("");
+    });
+    it.each([
+      "field",
+      "button",
+      "form",
+      "email",
+      "action",
+      "target",
+      "url",
+      "expired",
+      "lease",
+      "lock",
+      "pagehide",
+      "manual",
+      "manual-lock",
+      "disabled",
+    ])("cancels %s during async settling", async (reason) => {
+      const {
+        field,
+        button,
+        form,
+        label,
+        clicked,
+        submitted,
+        prevented,
+        send,
+      } = fixture();
+      send("totpProbe", probe);
+      send("totpSubmit", code());
+      expect(field.value).toBe("123456");
+      await Promise.resolve();
+      if (reason === "field") field.replaceWith(field.cloneNode());
+      if (reason === "button") button.replaceWith(button.cloneNode(true));
+      if (reason === "form") form.replaceWith(form.cloneNode(true));
+      if (reason === "email") label.textContent = "Email code";
+      if (reason === "action") {
+        form.action = "/login/";
+        form.method = "post";
+      }
+      if (reason === "target") button.setAttribute("formtarget", "_blank");
+      if (reason === "url") history.replaceState({}, "", "/login?step=other");
+      if (reason === "expired") vi.setSystemTime(Date.now() + 21_000);
+      if (reason === "lease") vi.setSystemTime(Date.now() + 15_001);
+      if (reason.startsWith("manual")) field.value = "654321";
+      if (reason === "lock" || reason === "manual-lock") send("totpCancel");
+      if (reason === "pagehide")
+        for (const handler of pageHandlers.get("pagehide") ?? [])
+          handler(new Event("pagehide"));
+      if (reason === "disabled") button.disabled = true;
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(clicked).not.toHaveBeenCalled();
+      expect(submitted).toEqual([]);
+      expect(field.value).toBe(reason.startsWith("manual") ? "654321" : "");
+      // Cancellation must not leave a preventDefault listener on manual submit.
+      const event = new Event("submit", { cancelable: true });
+      form.dispatchEvent(event);
+      expect(prevented).toEqual([false]);
+      send("totpProbe", { ...probe, nonce: "c".repeat(32) });
+      expect(clicked).not.toHaveBeenCalled();
+    });
+    it("waits for a delayed enabled state, then revalidates and clicks once", async () => {
+      const { button, clicked, submitted, send } = fixture();
+      button.setAttribute("aria-disabled", "true");
+      send("totpProbe", probe);
+      send("totpSubmit", code());
+      await vi.advanceTimersByTimeAsync(50);
+      expect(clicked).not.toHaveBeenCalled();
+      button.removeAttribute("aria-disabled");
+      await vi.advanceTimersByTimeAsync(25);
+      expect(clicked).toHaveBeenCalledOnce();
+      expect(submitted).toEqual(["123456"]);
+    });
+  });
   it("prints inside the accepted page without trusting a later page override", () => {
     const hostilePrint = vi.fn();
     window.print = hostilePrint;
@@ -426,7 +809,8 @@ describe("actual injected page-only automation client", () => {
       expect(document.querySelector<HTMLInputElement>("#otp")!.value).toBe("");
     },
   );
-  it("allows reviewed SPA handlers but prevents implicit GET fallback navigation", () => {
+  it("allows reviewed SPA handlers but prevents implicit GET fallback navigation", async () => {
+    vi.useFakeTimers();
     setupPage(
       '<form><input id="otp" autocomplete="one-time-code"><button id="otp-submit" type="submit">Verify</button></form>',
     );
@@ -438,9 +822,80 @@ describe("actual injected page-only automation client", () => {
       );
     command("totpProbe", { ...otpProbe, submission: "spa" });
     command("totpSubmit", otpCode());
+    await vi.advanceTimersByTimeAsync(0);
     expect(observed).toEqual([true]);
     expect(reports().slice(-1)[0].status).toBe("ok");
   });
+  function tacticalChallenge() {
+    setupPage(`<div class="q-dialog"><div class="q-card q-card--dark q-dark">
+      <form class="q-form"><div class="q-card__section">Two-Factor Token</div>
+        <label class="q-field q-input q-field--error">
+          <input class="q-field__native" autocomplete="one-time-code" inputmode="numeric" type="text" value="">
+          <div role="alert">This field is required</div>
+        </label>
+        <div class="q-card__actions"><button type="button">Cancel</button><button type="submit">Submit</button></div>
+      </form></div></div>`);
+    const challenge =
+      getHttpApplicationProfile("tacticalrmm")!.totpChallenges![0];
+    const field = document.querySelector<HTMLInputElement>(
+      challenge.codeSelector,
+    )!;
+    const button = document.querySelector<HTMLButtonElement>(
+      challenge.submitSelector,
+    )!;
+    const form = field.form!;
+    let model = "";
+    // Quasar's input emits its model update, then Vue updates QInput's props on
+    // a microtask. QForm validation reads those props, not the raw DOM value.
+    field.addEventListener("input", () => {
+      const next = field.value;
+      void Promise.resolve().then(() => {
+        model = next;
+        if (model) document.querySelector('[role="alert"]')?.remove();
+      });
+    });
+    const submitted: string[] = [];
+    form.addEventListener("submit", (event) => {
+      expect(event.defaultPrevented).toBe(true);
+      if (model) submitted.push(model);
+    });
+    const clicked = vi.spyOn(button, "click");
+    command("totpProbe", { ...challenge, nonce: otpProbe.nonce });
+    expect(reports().slice(-1)[0].status).toBe("ok");
+    return { field, button, submitted, clicked };
+  }
+  it("lets Tactical RMM commit its token model before clicking Submit once", async () => {
+    vi.useFakeTimers();
+    const { field, submitted, clicked } = tacticalChallenge();
+    command("totpSubmit", otpCode());
+    expect(clicked).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(field.value).toBe("123456");
+    expect(submitted).toEqual(["123456"]);
+    expect(clicked).toHaveBeenCalledOnce();
+    expect(reports().slice(-1)[0].status).toBe("ok");
+    expect(JSON.stringify(reports())).not.toContain("123456");
+    command("totpSubmit", otpCode());
+    expect(clicked).toHaveBeenCalledOnce();
+  });
+  it.each(["cancel", "replace", "disable", "action", "expire", "edit"])(
+    "does not submit Tactical RMM after %s during model settling",
+    async (change) => {
+      vi.useFakeTimers();
+      const { field, button, submitted, clicked } = tacticalChallenge();
+      command("totpSubmit", otpCode());
+      if (change === "cancel") command("totpCancel");
+      if (change === "replace") field.replaceWith(field.cloneNode());
+      if (change === "disable") button.disabled = true;
+      if (change === "action") field.form!.action = "https://other.example/otp";
+      if (change === "expire") vi.setSystemTime(Date.now() + 21000);
+      if (change === "edit") field.value = "654321";
+      await vi.advanceTimersByTimeAsync(0);
+      expect(clicked).not.toHaveBeenCalled();
+      expect(submitted).toEqual([]);
+      expect(field.value).toBe(change === "edit" ? "654321" : "");
+    },
+  );
   it("blocks a public-looking form when an external password control belongs to it", () => {
     setupPage(
       '<form id="linked"><input type="submit"></form><input form="linked" type="password" value="external-secret">',

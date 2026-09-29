@@ -31,6 +31,26 @@ export const TOOL_PROTOCOL_PREFIX = "tool:";
 
 // Session-scoped tools are not global tools or configurable display modes.
 export const RDP_INTERNALS_PROTOCOL = "tool:rdpInternals";
+export const WEB_POPUP_PROTOCOL = "tool:webPopup";
+export const WEB_POPUP_WINDOW_MESSAGE =
+  "Take Control stays in the window containing its source browser session.";
+
+/** The opaque id resolves only in this window's live popup registry. */
+export const createWebPopupSession = (
+  id: string,
+  source: ConnectionSession,
+): ConnectionSession => ({
+  id,
+  connectionId: "tool-web-popup",
+  name: "Take Control",
+  status: "connected",
+  startTime: new Date(),
+  protocol: WEB_POPUP_PROTOCOL,
+  hostname: "",
+  ownerDatabaseId: source.ownerDatabaseId,
+  tabGroupId: source.tabGroupId,
+  ...(source.layout?.isDetached ? { layout: { ...source.layout } } : {}),
+});
 export const RDP_INTERNALS_WINDOW_MESSAGE =
   "RDP Internals stays in the desktop viewer's window. Open it from the RDP desktop after moving that session.";
 export const RECORDING_PLAYER_PROTOCOL = "tool:recordingPlayer";

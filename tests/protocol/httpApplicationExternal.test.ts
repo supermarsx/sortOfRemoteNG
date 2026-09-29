@@ -21,6 +21,40 @@ const connection = (
   password: "fixture-password",
 });
 describe("safe true-origin browser handoff", () => {
+  it.each(["manual", "form"] as const)(
+    "keeps Cloudflare %s handoff pinned to the fixed root without session secrets",
+    (loginMode) => {
+      const saved = {
+        ...connection("cloudflare", "dash.cloudflare.com"),
+        httpApplication: { version: 1 as const, id: "cloudflare", loginMode },
+      };
+      expect(
+        getHttpApplicationExternalTarget(
+          saved,
+          "https://dash.cloudflare.com/login?token=secret#private",
+        ),
+      ).toEqual({ label: "Cloudflare", url: "https://dash.cloudflare.com/" });
+      for (const target of [
+        "http://dash.cloudflare.com/",
+        "https://dash.cloudflare.com:8443/",
+        "https://dash.cloudflare.com.evil.test/",
+        "https://user:secret@dash.cloudflare.com/",
+        "https://dash.cloudflare.com./",
+        "not a URL",
+      ]) {
+        expect(() => validateHttpApplicationTarget(saved, target)).toThrow(
+          /requires HTTPS/,
+        );
+        expect(getHttpApplicationExternalTarget(saved, target)).toBeNull();
+      }
+      expect(
+        getHttpApplicationExternalTarget(
+          { ...saved, hostname: "evil.test" },
+          "https://evil.test/",
+        ),
+      ).toBeNull();
+    },
+  );
   it.each(FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS)(
     "%s exposes its built-in service without saved endpoint metadata",
     (id) => {

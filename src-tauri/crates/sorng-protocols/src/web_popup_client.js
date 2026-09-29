@@ -6,11 +6,151 @@ function installWebPopupClient(options) {
   "use strict";
   var nativeSetAttribute = Element.prototype.setAttribute,
     entries = new Map(),
+    tabs = new Map(),
     nextName = 0,
     namePrefix =
       "sorng_website_popup_" + Math.random().toString(36).slice(2) + "_",
     disposed = false,
     closeProperty = "__sorngCloseWebsitePopup_v1";
+
+  function tabTitle(value) {
+    var path = new URL(value).pathname;
+    if (/^\/takecontrol\/[^/]+\/?$/.test(path)) return "Take Control";
+    if (/^\/remotebackground\/[^/]+\/?$/.test(path)) return "Remote Background";
+    if (/^\/webvnc\/[^/]+\/[0-9]+\/?$/.test(path)) return "Remote VNC";
+    if (/^\/webterm\/?$/.test(path)) return "Remote Terminal";
+    return null;
+  }
+  function sendTab(entry, action) {
+    options.tabBridge.report({
+      action: action,
+      id: entry.id,
+      ...(action === "open" || action === "navigate"
+        ? { destination: entry.url, title: tabTitle(entry.url) }
+        : {}),
+    });
+  }
+  function closeTab(entry, notify) {
+    if (entry.closed) return;
+    entry.closed = true;
+    tabs.delete(entry.id);
+    if (notify) sendTab(entry, "close");
+  }
+  function openTab(mapped, name) {
+    var title = tabTitle(mapped);
+    if (!options.tabBridge || !title) return null;
+    var entry =
+      name !== "_blank"
+        ? Array.from(tabs.values()).find(function (tab) {
+            return tab.name === name;
+          })
+        : null;
+    function navigate(value) {
+      alive();
+      if (entry.closed) fail("document-closed");
+      var next = mappedUrl(value);
+      if (!tabTitle(next)) fail("unsupported-popup-tab-route");
+      entry.url = tabUrl(next);
+      sendTab(entry, "navigate");
+    }
+    if (entry) {
+      navigate(mapped);
+      sendTab(entry, "focus");
+      return entry.handle;
+    }
+    if (entries.size + tabs.size >= 8) fail("popup-limit");
+    var id = Array.from(
+      crypto.getRandomValues(new Uint8Array(16)),
+      function (byte) {
+        return byte.toString(16).padStart(2, "0");
+      },
+    ).join("");
+    entry = {
+      id: id,
+      name: name,
+      url: tabUrl(mapped),
+      closed: false,
+      handle: null,
+    };
+    var locationHandle = {
+      assign: navigate,
+      replace: navigate,
+      toString: function () {
+        return entry.url;
+      },
+    };
+    Object.defineProperty(locationHandle, "href", {
+      get: function () {
+        return entry.url;
+      },
+      set: navigate,
+    });
+    var handle = {
+      focus: function () {
+        alive();
+        if (!entry.closed) sendTab(entry, "focus");
+      },
+      close: function () {
+        closeTab(entry, true);
+      },
+    };
+    Object.defineProperties(handle, {
+      closed: {
+        get: function () {
+          return entry.closed || disposed || !options.isActive();
+        },
+      },
+      location: {
+        get: function () {
+          return locationHandle;
+        },
+        set: navigate,
+      },
+      window: {
+        get: function () {
+          return handle;
+        },
+      },
+      self: {
+        get: function () {
+          return handle;
+        },
+      },
+    });
+    entry.handle = handle;
+    tabs.set(id, entry);
+    sendTab(entry, "open");
+    return handle;
+  }
+  function tabUrl(value) {
+    var target = new URL(value);
+    var pairs = target.search
+      .slice(1)
+      .split("&")
+      .filter(function (pair) {
+        return pair && pair.split("=")[0] !== "__sorng_popup_parent_v1";
+      });
+    pairs.push("__sorng_popup_parent_v1=" + options.tabBridge.documentSequence);
+    target.search = pairs.join("&");
+    return target.href;
+  }
+  function tabMessage(event) {
+    var message = event.data;
+    if (
+      !options.tabBridge ||
+      event.source !== window.parent ||
+      !message ||
+      message.type !== "sorng_web_popup" ||
+      message.version !== 1 ||
+      message.sessionId !== options.tabBridge.sessionId ||
+      message.documentSequence !== options.tabBridge.documentSequence ||
+      message.action !== "closed"
+    )
+      return;
+    var entry = tabs.get(message.id);
+    if (entry) closeTab(entry, false);
+  }
+  if (options.tabBridge) window.addEventListener("message", tabMessage);
 
   function fail(reason) {
     throw options.blocked("window", reason);
@@ -80,7 +220,7 @@ function installWebPopupClient(options) {
     }
     var existing = name !== "_blank" && entries.get(name);
     if (existing) return existing;
-    if (entries.size >= 8) fail("popup-limit");
+    if (entries.size + tabs.size >= 8) fail("popup-limit");
     var key = name === "_blank" ? Symbol("website-popup") : name;
     var root = document.createElement("sorng-website-popup"),
       bar = document.createElement("div"),
@@ -275,6 +415,19 @@ function installWebPopupClient(options) {
         /(?:^|[,\s])(?:noopener|noreferrer)(?:\s*=\s*(?:1|yes|true))?(?=[,\s]|$)/i.test(
           String(features || ""),
         );
+      // A named context created blank already belongs to the contained-window
+      // flow. Reuse its handle before considering promotion to an app tab.
+      var existing = !noOpener && name !== "_blank" && entries.get(name);
+      if (existing && !existing.closed && existing.root.isConnected) {
+        if (mapped) navigate(existing, mapped, false);
+        else focus(existing);
+        return existing.handle;
+      }
+      // Reviewed Tactical tools use ordinary nonblank window.open URLs. Keep
+      // their shared protected origin in a sibling app tab; generic/blank and
+      // form-target popups retain the existing contained-window behavior.
+      var tab = mapped && openTab(mapped, noOpener ? "_blank" : name);
+      if (tab) return noOpener ? null : tab;
       var entry = create(noOpener ? "_blank" : name, noOpener);
       if (mapped) navigate(entry, mapped, false);
       else focus(entry);
@@ -328,10 +481,17 @@ function installWebPopupClient(options) {
     })(),
     closeAll: function () {
       Array.from(entries.values()).forEach(close);
+      Array.from(tabs.values()).forEach(function (entry) {
+        closeTab(entry, true);
+      });
     },
     dispose: function () {
       disposed = true;
       Array.from(entries.values()).forEach(close);
+      Array.from(tabs.values()).forEach(function (entry) {
+        closeTab(entry, true);
+      });
+      window.removeEventListener("message", tabMessage);
     },
   };
 }

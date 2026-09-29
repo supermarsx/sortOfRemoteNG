@@ -2,7 +2,7 @@
  * denial and response CSP must remain effective if a page removes this code.
  * No origin is approved here; only the native document's immutable map is used.
  */
-function installWebNetworkClient(configuration, reportBlocked) {
+function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
   "use strict";
   var NativeURL = window.URL,
     NativeRequest = window.Request,
@@ -20,6 +20,7 @@ function installWebNetworkClient(configuration, reportBlocked) {
     quickConnectRpc = null,
     quickConnectDiscovered = null,
     tacticalRmmApi = null,
+    tacticalRmmMesh = null,
     googleSession = null,
     googleDocuments = new Set(),
     regionalNavigationAlias = null,
@@ -67,6 +68,10 @@ function installWebNetworkClient(configuration, reportBlocked) {
     configuration.sessionId.length > 256 ||
     !Number.isSafeInteger(configuration.documentSequence) ||
     configuration.documentSequence < 1 ||
+    (configuration.popupParentDocument != null &&
+      (!Number.isSafeInteger(configuration.popupParentDocument) ||
+        configuration.popupParentDocument !==
+          configuration.documentSequence)) ||
     (configuration.requestGeneration !== null &&
       configuration.requestGeneration !== undefined &&
       (typeof configuration.requestGeneration !== "string" ||
@@ -94,6 +99,46 @@ function installWebNetworkClient(configuration, reportBlocked) {
     if (!entry) throw new TypeError("Invalid network route configuration");
     addRoute(entry.upstreamOrigin, entry.proxyOrigin);
   });
+  // Cloudflare's challenge is a separate, credential-free native route, never
+  // a wildcard permission for Cloudflare services or an external network exit.
+  if (configuration.cloudflareChallenge !== undefined) {
+    var challenge = configuration.cloudflareChallenge;
+    if (
+      !challenge ||
+      challenge.version !== 1 ||
+      sourceOrigin !== "https://dash.cloudflare.com" ||
+      challenge.upstreamOrigin !== "https://challenges.cloudflare.com"
+    )
+      throw new TypeError("Invalid Cloudflare challenge route");
+    var challengeProxy = new NativeURL(origin(challenge.proxyOrigin, true));
+    if (challengeProxy.port !== new NativeURL(proxyOrigin).port)
+      throw new TypeError("Invalid Cloudflare challenge route");
+    addRoute(challenge.upstreamOrigin, challengeProxy.origin);
+  }
+  // An exact, native-issued MeshCentral alias is isolated from dashboard
+  // cookies and belongs to this root document's network lifetime.
+  if (configuration.tacticalRmmMesh !== undefined) {
+    var mesh = configuration.tacticalRmmMesh;
+    if (!mesh || mesh.version !== 1)
+      throw new TypeError("Invalid Tactical RMM MeshCentral route");
+    var meshUpstream = new NativeURL(origin(mesh.upstreamOrigin, false));
+    var meshProxy = new NativeURL(origin(mesh.proxyOrigin, true));
+    if (
+      meshUpstream.protocol !== "https:" ||
+      meshProxy.port !== new NativeURL(proxyOrigin).port
+    )
+      throw new TypeError("Invalid Tactical RMM MeshCentral route");
+    if (meshUpstream.origin === sourceOrigin) {
+      if (meshProxy.origin !== proxyOrigin)
+        throw new TypeError("MeshCentral document route mismatch");
+    } else {
+      addRoute(meshUpstream.origin, meshProxy.origin);
+    }
+    tacticalRmmMesh = {
+      upstreamOrigin: meshUpstream.origin,
+      proxyOrigin: meshProxy.origin,
+    };
+  }
   if (configuration.googleSession !== undefined) {
     var google = configuration.googleSession;
     if (
@@ -369,7 +414,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
     // query and can make a hash route look like a different document. Actual
     // Link activation is prepared separately below, including detached clicks
     // and browser-menu/auxiliary activation.
-    if (!requestGeneration || navigationReference) return mapped;
+    if (
+      navigationReference ||
+      (!requestGeneration && configuration.popupParentDocument == null)
+    )
+      return mapped;
     var url = new NativeURL(mapped);
     if (
       sameDocumentNavigation &&
@@ -395,9 +444,22 @@ function installWebNetworkClient(configuration, reportBlocked) {
         .slice(1)
         .split("&")
         .filter(function (pair) {
-          return pair && pair.split("=")[0] !== generationKey;
+          return (
+            pair &&
+            pair.split("=")[0] !== generationKey &&
+            (configuration.popupParentDocument == null ||
+              pair.split("=")[0] !== "__sorng_popup_parent_v1")
+          );
         });
-      pairs.push(generationKey + "=" + requestGeneration);
+      if (requestGeneration)
+        pairs.push(generationKey + "=" + requestGeneration);
+      if (
+        configuration.popupParentDocument != null &&
+        (kind === "navigation" || kind === "document")
+      )
+        pairs.push(
+          "__sorng_popup_parent_v1=" + configuration.popupParentDocument,
+        );
       url.search = pairs.join("&");
     }
     return url.href;
@@ -407,7 +469,16 @@ function installWebNetworkClient(configuration, reportBlocked) {
     var target;
     try {
       var input = String(value);
-      if (input.length > 16_384) throw new Error("URL is too long");
+      // MeshCentral renders each desktop tile by assigning an in-memory JPEG
+      // data URL to Image.src. Those payloads routinely exceed the network URL
+      // limit, but cannot cause egress from this image-only sink.
+      var meshDesktopTile =
+        localData === "mesh-desktop-image" &&
+        // This only checks the expected prefix and character shape. The native
+        // image decoder remains responsible for validating the actual content.
+        /^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(input);
+      if (input.length > 16_384 && !meshDesktopTile)
+        throw new Error("URL is too long");
       target = new NativeURL(input, document.baseURI || rootLocation);
       if (input.startsWith("//") && !proxies.has(target.origin))
         target = new NativeURL(new NativeURL(sourceOrigin).protocol + input);
@@ -487,21 +558,6 @@ function installWebNetworkClient(configuration, reportBlocked) {
         return reviewUrl.href;
       }
     }
-    if (
-      tacticalRmmApi &&
-      (kind === "fetch" || kind === "xhr") &&
-      tacticalRmmApi.apiOrigins.has(target.origin)
-    ) {
-      if (target.hash || target.href.length > 16_384)
-        throw blocked(kind, "invalid-url", target.origin);
-      var tacticalApiUrl = new NativeURL(tacticalRmmApi.proxyUrl);
-      tacticalApiUrl.searchParams.set("destination", target.href);
-      tacticalApiUrl.searchParams.set(
-        "__sorng_tactical_document_v1",
-        String(sequence),
-      );
-      return tacticalApiUrl.href;
-    }
     if (fontAssets.has(target.href)) {
       if (kind === "font" || kind === "css") return fontAssets.get(target.href);
       if (kind === "fetch" || kind === "xhr") {
@@ -527,6 +583,32 @@ function installWebNetworkClient(configuration, reportBlocked) {
     var lookup = new NativeURL(target.href);
     if (socket)
       lookup.protocol = target.protocol === "wss:" ? "https:" : "http:";
+    if (
+      tacticalRmmApi &&
+      (kind === "fetch" || kind === "xhr" || kind === "websocket") &&
+      tacticalRmmApi.apiOrigins.has(lookup.origin)
+    ) {
+      if (lookup.hash || lookup.href.length > 16_384)
+        throw blocked(kind, "invalid-url", lookup.origin);
+      if (socket && lookup.searchParams.has("__sorng_ws_document_v1"))
+        throw blocked(kind, "reserved-url-parameter");
+      // Native revalidates this exact HTTPS destination and uses the API's
+      // certificate-verifying proxy client for both HTTP and WSS upgrades.
+      var tacticalApiUrl = new NativeURL(tacticalRmmApi.proxyUrl);
+      tacticalApiUrl.searchParams.set("destination", lookup.href);
+      tacticalApiUrl.searchParams.set(
+        "__sorng_tactical_document_v1",
+        String(sequence),
+      );
+      if (socket) {
+        tacticalApiUrl.protocol = "ws:";
+        tacticalApiUrl.searchParams.set(
+          "__sorng_ws_document_v1",
+          String(sequence),
+        );
+      }
+      return tacticalApiUrl.href;
+    }
     var mapped = proxies.has(lookup.origin)
       ? lookup.origin
       : routes.get(lookup.origin);
@@ -907,6 +989,17 @@ function installWebNetworkClient(configuration, reportBlocked) {
       }) && restrictedContextInterception;
   if (typeof installWebPopupClient === "function") {
     popupClient = installWebPopupClient({
+      tabBridge:
+        tacticalRmmApi &&
+        configuration.popupTabs === true &&
+        !configuration.popupParentDocument &&
+        typeof reportPopup === "function"
+          ? {
+              sessionId: sessionId,
+              documentSequence: sequence,
+              report: reportPopup,
+            }
+          : null,
       proxyOrigin: proxyOrigin,
       mapUrl: mapUrl,
       isActive: function () {
@@ -961,8 +1054,11 @@ function installWebNetworkClient(configuration, reportBlocked) {
     if (!allowed || allowed.indexOf(name.toLowerCase()) === -1) return value;
     if (
       /^(IFRAME|FRAME)$/.test(element.tagName) &&
-      String(value).trim() === "about:blank"
+      (String(value).trim() === "" || String(value).trim() === "about:blank")
     )
+      // An empty frame src is a blank document, not a relative URL. Resolving
+      // it against this page recursively nests SPA popup/status/control UI
+      // while the application is still waiting for its real frame address.
       return "about:blank";
     return mapUrl(
       value,
@@ -970,12 +1066,17 @@ function installWebNetworkClient(configuration, reportBlocked) {
         ? "navigation"
         : element.tagName === "FORM" || name.toLowerCase() === "formaction"
           ? "form"
-          : element.tagName === "LINK" &&
-              element.getAttribute("rel")?.toLowerCase() === "preload" &&
-              element.getAttribute("as")?.toLowerCase() === "font"
-            ? "font"
-            : "resource",
-      /^(IMG|SOURCE|AUDIO|VIDEO)$/.test(element.tagName),
+          : /^(IFRAME|FRAME)$/.test(element.tagName) &&
+              configuration.popupParentDocument != null
+            ? "document"
+            : element.tagName === "LINK" &&
+                element.getAttribute("rel")?.toLowerCase() === "preload" &&
+                element.getAttribute("as")?.toLowerCase() === "font"
+              ? "font"
+              : "resource",
+      element.tagName === "IMG" && name.toLowerCase() === "src"
+        ? "mesh-desktop-image"
+        : /^(SOURCE|AUDIO|VIDEO)$/.test(element.tagName),
       undefined,
       /^(A|AREA)$/.test(element.tagName),
     );
@@ -1466,6 +1567,9 @@ function installWebNetworkClient(configuration, reportBlocked) {
       tacticalRmmApiOrigins: Object.freeze(
         tacticalRmmApi ? Array.from(tacticalRmmApi.apiOrigins) : [],
       ),
+      ...(tacticalRmmMesh
+        ? { tacticalRmmMeshOrigin: tacticalRmmMesh.upstreamOrigin }
+        : {}),
       fetchInterception: fetchInterception,
       xhrInterception: xhrInterception,
       pageNetworkInterception:

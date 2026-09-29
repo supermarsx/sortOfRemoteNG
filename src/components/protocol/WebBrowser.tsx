@@ -4,6 +4,8 @@ import type { ConnectionSession } from "../../types/connection/connection";
 
 interface WebBrowserProps {
   session: ConnectionSession;
+  onActivateSession?: (sessionId: string) => void;
+  sharedPopupId?: string;
 }
 import SecurityIcon from "./webBrowser/SecurityIcon";
 import RecordingControls from "./webBrowser/RecordingControls";
@@ -18,8 +20,12 @@ import ERROR_BASE from "./webBrowser/ERROR_BASE";
 import ContentArea from "./webBrowser/ContentArea";
 import BrowserDialogs from "./webBrowser/BrowserDialogs";
 
-export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
-  const mgr = useWebBrowser(session);
+export const WebBrowser: React.FC<WebBrowserProps> = ({
+  session,
+  onActivateSession,
+  sharedPopupId,
+}) => {
+  const mgr = useWebBrowser(session, onActivateSession, sharedPopupId);
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-background)]">

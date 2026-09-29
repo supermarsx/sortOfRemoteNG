@@ -369,6 +369,25 @@ async fn dispatch(
     } else {
         state
     };
+    // The dedicated challenge handler never enters dashboard auth routes.
+    if let Some(challenge) = &state.network.cloudflare_challenge {
+        request = match challenge.dispatch(&state, request).await {
+            Ok(response) => return response,
+            Err(source_request) => source_request,
+        };
+    }
+    let (state, mesh_root) = if let Some(mesh) = &state.network.tactical_mesh {
+        match mesh.request_state(&state, &request) {
+            Ok(Some((scoped, root))) => {
+                request.extensions_mut().insert(root);
+                (scoped, Some(root.0))
+            }
+            Ok(None) => (state, None),
+            Err(_) => return gone(),
+        }
+    } else {
+        (state, None)
+    };
     request.extensions_mut().insert(state.clone());
     // Explicit stops cancel in-flight work immediately. Listener replacement
     // first closes admission and gives already-dispatched requests a bounded
@@ -376,6 +395,16 @@ async fn dispatch(
     state
         .network
         .while_active(async {
+            if let Some(root) = mesh_root {
+                return state
+                    .network
+                    .while_document(
+                        root,
+                        enforce_proxy_access(State(state.clone()), request, next),
+                    )
+                    .await
+                    .unwrap_or_else(|_| gone());
+            }
             let response = enforce_proxy_access(State(state.clone()), request, next).await;
             match generation {
                 Some(token) => fence_response(response, &token).await,

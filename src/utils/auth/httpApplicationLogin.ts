@@ -23,13 +23,14 @@ export { YEALINK_SERVLET_UPSTREAM_SUPPORTED };
  */
 export function getReviewedApplicationProfile(
   connection: Partial<Connection> | null | undefined,
-): "tacticalrmm" | "google-hosted" | "cpanel" | undefined {
+): "tacticalrmm" | "google-hosted" | "cpanel" | "cloudflare" | undefined {
   const settings = normalizeHttpApplicationSettings(
     connection?.httpApplication,
   );
   if (!settings || settings.invalid) return undefined;
   if (settings.id === "tacticalrmm") return "tacticalrmm";
   if (settings.id === "cpanel") return "cpanel";
+  if (settings.id === "cloudflare") return "cloudflare";
   return getFirstPartyGoogleHostedApplicationUrl(settings.id)
     ? "google-hosted"
     : undefined;
@@ -47,14 +48,39 @@ export function getReviewedApplicationApiOrigin(
     : undefined;
 }
 
+/** Non-secret MeshCentral origin, emitted only for a valid reviewed Tactical profile. */
+export function getReviewedApplicationMeshOrigin(
+  connection: Partial<Connection> | null | undefined,
+): string | undefined {
+  const settings = normalizeHttpApplicationSettings(
+    connection?.httpApplication,
+  );
+  return settings?.id === "tacticalrmm" && !settings.invalid
+    ? settings.meshOrigin
+    : undefined;
+}
+
+export const TACTICAL_MESH_ORIGIN_CONFLICT_MESSAGE =
+  "MeshCentral origin must differ from the Tactical RMM dashboard origin. Review MeshCentral origin in the connection's Application settings.";
+
+export function validateTacticalRmmMeshTarget(
+  connection: Partial<Connection> | null | undefined,
+  targetUrl: string,
+): void {
+  const meshOrigin = getReviewedApplicationMeshOrigin(connection);
+  if (meshOrigin && meshOrigin === new URL(targetUrl).origin)
+    throw new Error(TACTICAL_MESH_ORIGIN_CONFLICT_MESSAGE);
+}
+
 /** Hosted presets cannot label an arbitrary origin as their provider's login. */
 export function validateHttpApplicationTarget(
   connection: Partial<Connection> | null | undefined,
   targetUrl: string,
 ): void {
-  const profileId = normalizeHttpApplicationSettings(
+  const settings = normalizeHttpApplicationSettings(
     connection?.httpApplication,
-  )?.id;
+  );
+  const profileId = settings?.id;
   const profile = profileId ? getHttpApplicationProfile(profileId) : undefined;
   const hostedLoginUrl = profile?.hostedLoginUrl;
   if (!hostedLoginUrl && profileId !== "tacticalrmm" && !profile?.requiresHttps)
@@ -79,6 +105,7 @@ export function validateHttpApplicationTarget(
           ? `${getHttpApplicationProfile(profileId!)!.label} requires HTTPS at ${new URL(hostedLoginUrl).hostname} on port 443. Use the hosted login address in Application settings, or choose a custom profile for another host.`
           : `${profile?.label ?? "This application"} requires an HTTPS website address. Review the connection protocol and address; API keys are not website passwords.`,
     );
+  validateTacticalRmmMeshTarget(connection, targetUrl);
 }
 
 export interface HttpApplicationLogin {
@@ -91,8 +118,9 @@ export interface HttpApplicationLogin {
     | "bitwarden-form"
     | "synology-form"
     | "google-form"
+    | "cloudflare-form"
     | "yealink-servlet";
-  loginFlow?: "bitwarden" | "synology" | "google" | "yealink";
+  loginFlow?: "bitwarden" | "synology" | "google" | "yealink" | "cloudflare";
   autoLogin: boolean;
   selectors?: HttpAutoLoginSelectors;
 }
@@ -105,6 +133,7 @@ const STAGED_LOGIN_UPSTREAM_MODES: Record<
   bitwarden: "bitwarden-form",
   synology: "synology-form",
   google: "google-form",
+  cloudflare: "cloudflare-form",
   yealink: "yealink-servlet",
 };
 

@@ -185,6 +185,75 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("explicit origin-bound automatic website 2FA", () => {
+  it("uses Cloudflare's authenticator-specific probe and saved local consent", async () => {
+    conn.hostname = "dash.cloudflare.com";
+    conn.httpApplication = { version: 1, id: "cloudflare", loginMode: "form" };
+    conn.httpAutoMfa!.origin = "https://dash.cloudflare.com";
+    conn.httpAutoMfa!.challengeId = "cloudflare-totp";
+    currentUrl = "https://dash.cloudflare.com/login";
+    doc!.url = "http://127.0.0.1:41000/login";
+    saved = structuredClone(conn);
+    await mount();
+    expect(requests("totpProbe")[0].payload.submission).toBe("cloudflare");
+    expect(mock.compute).not.toHaveBeenCalled();
+    await acceptChallenge();
+    expect(mock.compute).toHaveBeenCalledOnce();
+    expect(requests("totpSubmit")).toHaveLength(1);
+    expect(requests("totpSubmit")[0].payload.code).toBe("123456");
+  });
+  it("checks saved Tactical MFA consent without pinning unrelated database contents", async () => {
+    conn.httpApplication = { version: 1, id: "tacticalrmm", loginMode: "form" };
+    conn.httpAutoMfa!.challengeId = "tacticalrmm-totp";
+    currentUrl = "https://nas.example/login";
+    doc!.url = "http://127.0.0.1:41000/login";
+    saved = structuredClone(conn);
+    await mount();
+    // The connection's routine lastConnected save changed the whole database
+    // after capture. Its authenticator, consent and owner remain unchanged.
+    saved.lastConnected = "2026-09-10T00:00:02Z";
+    mock.verify.mockRejectedValue(
+      new Error("Database contents changed in another window."),
+    );
+    await acceptChallenge();
+    expect(mock.verify).not.toHaveBeenCalled();
+    expect(mock.read).toHaveBeenCalledTimes(3);
+    expect(mock.compute).toHaveBeenCalledOnce();
+    expect(requests("totpSubmit")).toHaveLength(1);
+    expect(requests("totpProbe")[0].payload.submission).toBe("spa");
+  });
+  it.each([
+    "seed",
+    "account",
+    "certificate",
+    "routing",
+    "duplicate",
+    "removed",
+    "read-failed",
+  ])(
+    "still rejects saved %s changes before automatic disclosure",
+    async (change) => {
+      await mount();
+      if (change === "seed") saved.totpConfigs![0].secret = "OTHER-SEED";
+      if (change === "account") saved.basicAuthUsername = "other-user";
+      if (change === "certificate") saved.httpVerifySsl = false;
+      if (change === "routing")
+        saved.httpProxyPolicy = {
+          version: 1,
+          pageScripts: "block",
+        } as Connection["httpProxyPolicy"];
+      if (change === "duplicate")
+        mock.read.mockResolvedValue({ connections: [saved, saved] });
+      if (change === "removed")
+        mock.read.mockResolvedValue({ connections: [] });
+      if (change === "read-failed")
+        mock.read.mockRejectedValue(new Error("private storage failure"));
+      await reply(requests("totpProbe")[0]);
+      expect(mock.compute).not.toHaveBeenCalled();
+      expect(requests("totpSubmit")).toHaveLength(0);
+      expect(api.status).toMatch(/Automatic 2FA stopped/);
+      expect(api.status).not.toMatch(/OTHER-SEED|other-user|private storage/);
+    },
+  );
   it("keeps saved Google consent while accepting the exact Account TOTP origin", async () => {
     conn = {
       ...conn,
@@ -216,7 +285,7 @@ describe("explicit origin-bound automatic website 2FA", () => {
       submission: "google",
     });
     await reply(requests("totpProbe")[0]);
-    expect(mock.verify).toHaveBeenCalled();
+    expect(mock.verify).not.toHaveBeenCalled();
     expect(mock.read).toHaveBeenCalled();
     expect(mock.compute).toHaveBeenCalledWith("SYNTHETIC-SEED", "SHA1", 6, 30);
     expect(requests("totpProbe")).toHaveLength(2);
@@ -829,4 +898,106 @@ describe("explicit origin-bound automatic website 2FA", () => {
     expect(requests("totpProbe")).toHaveLength(0);
     expect(mock.compute).not.toHaveBeenCalled();
   });
+});
+
+describe("Cloudflare opted-in vault MFA source flow", () => {
+  beforeEach(() => {
+    conn.hostname = "dash.cloudflare.com";
+    conn.httpApplication = { version: 1, id: "cloudflare", loginMode: "form" };
+    conn.httpAutoMfa!.origin = "https://dash.cloudflare.com";
+    conn.httpAutoMfa!.challengeId = "cloudflare-totp";
+    conn.credentialSource = {
+      kind: "vault",
+      credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      totpId: "auth",
+    };
+    currentUrl = "https://dash.cloudflare.com/login";
+    doc!.url = "http://127.0.0.1:41000/login";
+    saved = structuredClone(conn);
+    vaultTotp = {
+      scopeKey: "cloudflare-owning-vault",
+      available: true,
+      unavailableReason: "",
+      load: vi.fn(),
+      generate: vi.fn(async () => ({
+        code: "87654321",
+        expires: Date.now() + 30_000,
+        assertCurrent: vi.fn(),
+      })),
+    };
+  });
+
+  it("probes before vault generation, revalidates, and submits the linked code once", async () => {
+    await mount();
+    const probe = requests("totpProbe")[0];
+    expect(probe.payload).toMatchObject({
+      submission: "cloudflare",
+      codeSelector: 'form input[autocomplete="one-time-code"]',
+      submitSelector:
+        'form:has(input[autocomplete="one-time-code"]) button[type="submit"]',
+    });
+    expect(vaultTotp!.generate).not.toHaveBeenCalled();
+    await reply(probe);
+    expect(vaultTotp!.generate).toHaveBeenCalledExactlyOnceWith("auth");
+    expect(requests("totpSubmit")).toHaveLength(0);
+    const revalidation = requests("totpProbe")[1];
+    expect(revalidation.payload).toEqual(probe.payload);
+    await reply(revalidation);
+    expect(requests("totpSubmit")).toHaveLength(1);
+    expect(requests("totpSubmit")[0].payload).toMatchObject({
+      nonce: probe.payload.nonce,
+      code: "87654321",
+    });
+    await reply(requests("totpSubmit")[0]);
+    act(() => api.retry());
+    await act(async () => vi.advanceTimersByTimeAsync(35_000));
+    expect(requests("totpSubmit")).toHaveLength(1);
+    expect(mock.compute).not.toHaveBeenCalled();
+    expect(JSON.stringify(post.mock.calls)).not.toContain("SYNTHETIC-SEED");
+    expect(api.status).not.toContain("87654321");
+  });
+
+  it.each(["unavailable-vault", "owner-locked", "disabled", "unsaved-consent"])(
+    "refuses %s without generating or falling back to a local seed",
+    async (reason) => {
+      if (reason === "unavailable-vault") vaultTotp!.available = false;
+      if (reason === "owner-locked") mock.accessible = false;
+      if (reason === "disabled") conn.httpAutoMfa!.enabled = false;
+      if (reason === "unsaved-consent") saved.httpAutoMfa!.enabled = false;
+      await mount();
+      if (reason === "unsaved-consent") await reply(requests("totpProbe")[0]);
+      else expect(requests("totpProbe")).toHaveLength(0);
+      expect(vaultTotp!.generate).not.toHaveBeenCalled();
+      expect(mock.compute).not.toHaveBeenCalled();
+      expect(requests("totpSubmit")).toHaveLength(0);
+      expect(JSON.stringify(post.mock.calls)).not.toContain("SYNTHETIC-SEED");
+    },
+  );
+
+  it.each(["owner-lock", "native-lock"])(
+    "discards a vault code after %s while the final probe is pending",
+    async (reason) => {
+      await mount();
+      await reply(requests("totpProbe")[0]);
+      expect(vaultTotp!.generate).toHaveBeenCalledExactlyOnceWith("auth");
+      const revalidation = requests("totpProbe")[1];
+      expect(revalidation).toBeDefined();
+      act(() => {
+        if (reason === "native-lock") mock.lock();
+        else {
+          mock.accessible = false;
+          mock.access({ databaseId: "db", status: "suspended" });
+        }
+      });
+      await reply(revalidation);
+      await act(async () => vi.advanceTimersByTimeAsync(35_000));
+      expect(requests("totpSubmit")).toHaveLength(0);
+      expect(mock.compute).not.toHaveBeenCalled();
+      expect(api.canRetry).toBe(false);
+      expect(JSON.stringify(post.mock.calls)).not.toMatch(
+        /87654321|SYNTHETIC-SEED/,
+      );
+      expect(api.status).not.toMatch(/87654321|SYNTHETIC-SEED/);
+    },
+  );
 });

@@ -15,6 +15,8 @@ import {
   normalizeHttpAutoMfa,
 } from "../../utils/connection/httpAutoMfa";
 import { getHttpApplicationProfile } from "../../utils/connection/httpApplicationProfiles";
+import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
+import { runtimeCredentialTargetKey } from "../../utils/security/runtimeCredentialVault";
 import { WebAutomationBridge } from "../../utils/recording/webAutomationBridge";
 import { totpApi } from "../totp/useTOTP";
 import type { RuntimeVaultTotpController } from "../security/useRuntimeVaultTotp";
@@ -34,7 +36,7 @@ interface Options {
   synologyMfa?: SynologyMfaCapability;
 }
 const failure =
-  "Automatic 2FA stopped. Use 2FA Codes manually or review the saved Application settings.";
+  "Automatic 2FA stopped. Use Credentials & 2FA manually or review the saved Application settings.";
 const sameDocument = (
   a: WebAutomationDocument | null,
   b: WebAutomationDocument,
@@ -47,14 +49,18 @@ const sameDocument = (
   a.navigationToken === b.navigationToken &&
   a.url === b.url;
 const receipt = (connection: Connection) =>
-  JSON.stringify({
-    id: connection.id,
-    protocol: connection.protocol,
-    hostname: connection.hostname,
-    port: connection.port,
-    mfa: connection.httpAutoMfa,
-    profile: connection.httpApplication,
-    credentialSource: connection.credentialSource,
+  stableJsonStringify({
+    target: runtimeCredentialTargetKey(connection),
+    account:
+      connection.credentialSource?.kind === "vault"
+        ? undefined
+        : {
+            username: connection.username,
+            password: connection.password,
+            domain: connection.domain,
+            basicAuthUsername: connection.basicAuthUsername,
+            basicAuthPassword: connection.basicAuthPassword,
+          },
     authenticators:
       connection.credentialSource?.kind === "vault"
         ? undefined
@@ -262,7 +268,6 @@ export function useWebAutoMfa(options: Options) {
         (!synologyMfa && !vault && !authenticator) ||
         !challenge ||
         !target?.readCurrent ||
-        !target.verifyCurrent ||
         (!synologyMfa &&
           !vault &&
           (!authenticator ||
@@ -286,8 +291,11 @@ export function useWebAutoMfa(options: Options) {
       valid();
       // The redirected capability owns saved-source verification and generation.
       if (synologyMfa) return;
-      await target!.verifyCurrent!();
-      valid();
+      // Re-read and compare the selected credential/consent, not a snapshot of
+      // the entire database taken before password login. Routine lastConnected
+      // saves and unrelated library edits must not stop a pending challenge.
+      // readCurrent and valid still enforce the owner/security generation; the
+      // receipt below rejects changed or missing saved MFA authorization.
       const data = await target!.readCurrent!();
       valid();
       const saved =
@@ -336,7 +344,7 @@ export function useWebAutoMfa(options: Options) {
         if (Date.now() < deadline) timer = setTimeout(() => void probe(), 1000);
         else {
           setStatus(
-            "No supported 2FA challenge detected. Use 2FA Codes or check again when the code field appears.",
+            "No supported 2FA challenge detected. Use Credentials & 2FA or check again when the code field appears.",
           );
           setCanRetry(true);
         }

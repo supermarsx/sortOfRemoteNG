@@ -4,6 +4,8 @@
 mod attempt_response_tests;
 #[path = "http_cpanel_post_tests.rs"]
 mod cpanel_post_tests;
+#[path = "http_cloudflare_tests.rs"]
+mod cloudflare_tests;
 #[path = "http_dark_mode_tests.rs"]
 mod dark_mode_tests;
 #[path = "http_font_asset_tests.rs"]
@@ -109,6 +111,30 @@ async fn proxy_with_redirect_profile(
     network: Arc<ProxyNetworkState>,
     redirect_profile: Option<BrowserRedirectProfile>,
 ) -> FixtureProxy {
+    proxy_with_tactical_api(
+        target,
+        client,
+        auth_mode,
+        policy,
+        custom_headers,
+        network,
+        redirect_profile,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn proxy_with_tactical_api(
+    target: String,
+    client: reqwest::Client,
+    auth_mode: UpstreamAuthMode,
+    policy: HttpProxyPolicy,
+    custom_headers: HashMap<String, String>,
+    network: Arc<ProxyNetworkState>,
+    redirect_profile: Option<BrowserRedirectProfile>,
+    tactical_rmm_api: Option<tactical_rmm::TacticalRmmApiRoute>,
+) -> FixtureProxy {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let authority = format!("p{TOKEN}.localhost:{port}");
@@ -128,7 +154,7 @@ async fn proxy_with_redirect_profile(
         upstream_auth_mode: auth_mode,
         proxy_policy: policy,
         redirect_profile,
-        tactical_rmm_api: None,
+        tactical_rmm_api,
         custom_headers,
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(
@@ -467,6 +493,7 @@ async fn reviewed_login_proxy(mode: UpstreamAuthMode) -> FixtureProxy {
             redirect_profile: state.redirect_profile,
             reviewed_application_profile: None,
             reviewed_application_api_origin: None,
+            reviewed_application_mesh_origin: None,
             custom_headers: HashMap::new(),
             upstream_proxy_url: None,
             target_origin: state.target_origin.clone(),

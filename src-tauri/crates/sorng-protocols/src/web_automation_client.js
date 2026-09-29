@@ -159,7 +159,8 @@
   var totpChallenge = null,
     totpSubmitted = false,
     totpRevision = 0,
-    totpPendingField = null;
+    totpPendingField = null,
+    totpPendingCode = null;
   // DSM's reviewed desktop OTP panel is deliberately not a form. Keep this
   // fixed contract separate from generic POST/SPA form validation.
   function synologyButtonReady(button) {
@@ -234,12 +235,183 @@
       ]),
     };
   }
-  function totpTarget(payload, requireSynologyReady) {
+  // Conservative semantic contract, not a captured/live-verified dashboard DOM.
+  // A generic one-time-code input can also be Cloudflare email MFA.
+  function cloudflareVisible(element) {
+    if (!visible(element)) return false;
+    for (var node = element; node; node = node.parentElement) {
+      var style = getComputedStyle(node);
+      if (
+        node.getAttribute("aria-hidden") === "true" ||
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.visibility === "collapse" ||
+        style.opacity === "0"
+      )
+        return false;
+    }
+    return true;
+  }
+  function cloudflareText(element) {
+    // Exclude hidden copy and alternative-method links/buttons, including when
+    // nested in a label/heading. Never read input values or the whole page.
+    if (
+      !cloudflareVisible(element) ||
+      element.matches(
+        'a, [role="link"], button:not([type="submit"]), [role="button"], input, select, textarea, script, style, template',
+      )
+    )
+      return "";
+    return Array.prototype.map
+      .call(element.childNodes, function (node) {
+        return node.nodeType === 3
+          ? node.textContent
+          : node.nodeType === 1
+            ? cloudflareText(node)
+            : "";
+      })
+      .join(" ");
+  }
+  function cloudflareButtonReady(button) {
+    return !button.matches(":disabled,[aria-disabled=true],[aria-busy=true]");
+  }
+  function cloudflareTotpTarget(payload, field, button, requireReady) {
+    var form = field.form;
+    if (
+      payload.codeSelector !== 'form input[autocomplete="one-time-code"]' ||
+      payload.submitSelector !==
+        'form:has(input[autocomplete="one-time-code"]) button[type="submit"]' ||
+      !["/login", "/login/"].includes(location.pathname) ||
+      document.querySelector("base") ||
+      !(field instanceof HTMLInputElement) ||
+      !["text", "tel", "number"].includes(field.type) ||
+      field.ownerDocument !== document ||
+      field.matches(":disabled,[aria-disabled=true]") ||
+      field.readOnly ||
+      !(form instanceof HTMLFormElement) ||
+      !form.isConnected ||
+      form.ownerDocument !== document ||
+      field.closest("form") !== form ||
+      !(button instanceof HTMLButtonElement) ||
+      button.type !== "submit" ||
+      button.form !== form ||
+      button.closest("form") !== form ||
+      button.ownerDocument !== document ||
+      !cloudflareVisible(field) ||
+      !cloudflareVisible(button) ||
+      (requireReady && !cloudflareButtonReady(button)) ||
+      ["target", "formaction", "formmethod", "formtarget"].some(function (key) {
+        return (
+          form.hasAttribute(key) ||
+          button.hasAttribute(key) ||
+          field.hasAttribute(key)
+        );
+      })
+    )
+      throw new Error("challenge");
+    var spa = !form.hasAttribute("action") && !form.hasAttribute("method"),
+      action = form.getAttribute("action"),
+      method = form.getAttribute("method"),
+      destination = new URL(action || location.href, document.baseURI);
+    if (
+      (!spa && (!action || !method || method.toLowerCase() !== "post")) ||
+      destination.origin !== location.origin ||
+      destination.username ||
+      destination.password ||
+      !["/login", "/login/"].includes(destination.pathname)
+    )
+      throw new Error("challenge");
+    var context = [];
+    Array.prototype.forEach.call(field.labels || [], function (label) {
+      if (label.closest("form") === form) context.push(cloudflareText(label));
+    });
+    context.push(field.getAttribute("aria-label") || "");
+    ["aria-labelledby", "aria-describedby"].forEach(function (key) {
+      (field.getAttribute(key) || "").split(/\s+/).forEach(function (id) {
+        var label = id && document.getElementById(id);
+        if (label && label.closest("form") === form)
+          context.push(cloudflareText(label));
+      });
+    });
+    Array.prototype.forEach.call(
+      form.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend'),
+      function (heading) {
+        context.push(cloudflareText(heading));
+      },
+    );
+    var positive = context.join(" ").replace(/\s+/g, " ").trim(),
+      negative = (
+        positive +
+        " " +
+        cloudflareText(form) +
+        " " +
+        field.name +
+        " " +
+        field.id
+      )
+        .replace(/[_-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (
+      !/\b(?:authenticator app(?:lication)?|(?:google|microsoft) authenticator|totp|time[- ]based one[- ]time password)\b/i.test(
+        positive,
+      ) ||
+      /\b(?:e[- ]?mail|sms|text message|recovery|backup|back up|enroll\w*|set\s*up|setup|enabl\w*|activat\w*|register\w*|(?:re)?configur\w*|scan|qr|secret key|security key|passkey|password|captcha|turnstile)\b/i.test(
+        negative.replace(/\btime[- ]based one[- ]time password\b/gi, "TOTP"),
+      ) ||
+      Array.prototype.some.call(form.elements, function (control) {
+        return (
+          control instanceof HTMLInputElement &&
+          control.type === "password" &&
+          cloudflareVisible(control)
+        );
+      }) ||
+      Array.prototype.some.call(
+        form.querySelectorAll(
+          'input[type="email"],input[name*="captcha" i],[class*="captcha" i],[class*="turnstile" i],iframe',
+        ),
+        cloudflareVisible,
+      )
+    )
+      throw new Error("challenge");
+    return {
+      field: field,
+      button: button,
+      form: form,
+      spa: spa,
+      fingerprint: JSON.stringify([
+        location.href,
+        document.baseURI,
+        payload.submission,
+        action,
+        method,
+        positive,
+        negative,
+        [form, field, button].map(function (control) {
+          return [
+            "id",
+            "name",
+            "type",
+            "form",
+            "autocomplete",
+            "aria-label",
+            "aria-labelledby",
+            "aria-describedby",
+          ].map(function (key) {
+            return control.getAttribute(key);
+          });
+        }),
+      ]),
+    };
+  }
+  function totpTarget(payload, requireReady) {
     if (
       !payload ||
       typeof payload.nonce !== "string" ||
       !/^[0-9a-f]{32}$/.test(payload.nonce) ||
-      !["post", "spa", "synology", "google"].includes(payload.submission)
+      !["post", "spa", "synology", "google", "cloudflare"].includes(
+        payload.submission,
+      )
     )
       throw new Error("challenge");
     var selectors = [payload.codeSelector, payload.submitSelector];
@@ -255,17 +427,23 @@
       throw new Error("challenge");
     var fields = document.querySelectorAll(payload.codeSelector),
       buttons = document.querySelectorAll(payload.submitSelector);
+    if (payload.submission === "cloudflare") {
+      fields = Array.prototype.filter.call(fields, cloudflareVisible);
+      buttons = Array.prototype.filter.call(buttons, cloudflareVisible);
+    }
     if (fields.length !== 1 || buttons.length !== 1)
       throw new Error("challenge");
     var field = fields[0],
       button = buttons[0],
       form = field.form;
     if (payload.submission === "synology")
-      return synologyTotpTarget(
+      return synologyTotpTarget(payload, field, button, requireReady !== false);
+    if (payload.submission === "cloudflare")
+      return cloudflareTotpTarget(
         payload,
         field,
         button,
-        requireSynologyReady !== false,
+        requireReady !== false,
       );
     if (payload.submission === "google") {
       if (
@@ -444,24 +622,35 @@
       )
         throw new Error("challenge");
     } catch (_) {
-      setValue.call(target.field, "");
+      if (target.field.value === payload.code) setValue.call(target.field, "");
       throw new Error("challenge");
     }
     totpSubmitted = true; // Consumed before clicking, including uncertain outcomes.
-    if (challenge.payload.submission === "spa")
-      target.form.addEventListener(
-        "submit",
-        function (event) {
-          event.preventDefault();
-        },
-        { capture: true, once: true },
-      );
+    function clickSubmit(checked) {
+      // Install only when we actually click: a cancelled settling task must
+      // not leave a handler behind on the user's next manual submission.
+      if (challenge.payload.submission === "spa" || checked.spa)
+        checked.form.addEventListener(
+          "submit",
+          function (event) {
+            event.preventDefault();
+          },
+          { capture: true, once: true },
+        );
+      checked.button.click();
+    }
     if (
-      challenge.payload.submission === "synology" &&
-      !synologyButtonReady(target.button)
+      challenge.payload.submission === "spa" ||
+      challenge.payload.submission === "cloudflare" ||
+      (challenge.payload.submission === "synology" &&
+        !synologyButtonReady(target.button))
     ) {
       totpPendingField = target.field;
-      // Vue may commit the enabled state on its next render tick. Revalidate
+      totpPendingCode = payload.code;
+      // Vue/Quasar commits model props on the next render tick. Submitting in
+      // the input event's turn can validate the old empty model ("required")
+      // despite the DOM containing a code. Yield once before SPA submission.
+      // DSM may also need its enabled state to commit. Revalidate
       // the exact captured field/button/panel while waiting; never click a
       // replacement or carry the code into another challenge.
       return new Promise(function (resolve, reject) {
@@ -471,12 +660,15 @@
           Date.now() + 3000,
         );
         function clearAndReject() {
-          if (target.field.value) {
+          if (target.field.value === payload.code) {
             setValue.call(target.field, "");
             target.field.dispatchEvent(new Event("input", { bubbles: true }));
             target.field.dispatchEvent(new Event("change", { bubbles: true }));
           }
-          if (totpPendingField === target.field) totpPendingField = null;
+          if (totpPendingField === target.field) {
+            totpPendingField = null;
+            totpPendingCode = null;
+          }
           reject(new Error("challenge"));
         }
         function ready() {
@@ -500,14 +692,20 @@
               checked.field.value !== payload.code
             )
               return clearAndReject();
-            if (!synologyButtonReady(checked.button)) {
+            if (
+              (challenge.payload.submission === "synology" &&
+                !synologyButtonReady(checked.button)) ||
+              (challenge.payload.submission === "cloudflare" &&
+                !cloudflareButtonReady(checked.button))
+            ) {
               if (Date.now() < deadline) return setTimeout(ready, 25);
               return clearAndReject();
             }
             totpTarget(challenge.payload, true);
             if (operation !== totpRevision || closed) return clearAndReject();
             totpPendingField = null;
-            checked.button.click();
+            totpPendingCode = null;
+            clickSubmit(checked);
             resolve();
           } catch (_) {
             clearAndReject();
@@ -516,7 +714,7 @@
         setTimeout(ready, 0);
       });
     }
-    target.button.click();
+    clickSubmit(target);
   }
   function matches(message) {
     return (
@@ -800,14 +998,17 @@
               HTMLInputElement.prototype,
               "value",
             ).set;
-            pendingSetValue.call(totpPendingField, "");
-            totpPendingField.dispatchEvent(
-              new Event("input", { bubbles: true }),
-            );
-            totpPendingField.dispatchEvent(
-              new Event("change", { bubbles: true }),
-            );
+            if (totpPendingField.value === totpPendingCode) {
+              pendingSetValue.call(totpPendingField, "");
+              totpPendingField.dispatchEvent(
+                new Event("input", { bubbles: true }),
+              );
+              totpPendingField.dispatchEvent(
+                new Event("change", { bubbles: true }),
+              );
+            }
             totpPendingField = null;
+            totpPendingCode = null;
           }
           reply(request, event.origin, "ok");
           return;
@@ -890,6 +1091,7 @@
     ++totpRevision;
     totpChallenge = null;
     totpPendingField = null;
+    totpPendingCode = null;
     recording = null;
     if (darkMode) darkMode.dispose();
     document.removeEventListener("click", record, true);

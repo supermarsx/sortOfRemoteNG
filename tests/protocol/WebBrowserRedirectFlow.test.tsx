@@ -1112,9 +1112,11 @@ describe("actual website redirect review integration", () => {
       // The destination still receives neither source references nor seeds;
       // the toolbar resolves the original authenticator through its revocable
       // same-tab facade only when the user opens it.
-      fireEvent.click(screen.getByRole("button", { name: "2FA Codes" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Credentials & 2FA" }),
+      );
       const panel = await screen.findByRole("region", {
-        name: vault ? /authenticator codes/i : "Website 2FA codes",
+        name: "Credentials & 2FA",
       });
       expect(
         within(panel).getAllByText(

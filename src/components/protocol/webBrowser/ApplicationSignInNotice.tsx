@@ -54,9 +54,10 @@ export default function ApplicationSignInNotice({
         </summary>
         <p className="mt-2">
           Complete unsupported authenticator, email, SMS or approval prompts in
-          the website. The toolbar's 2FA Codes panel offers manual copying;
-          automatic codes require a separate saved opt-in for a supported
-          challenge. This does not enroll an account or create recovery codes.
+          the website. The toolbar's Credentials &amp; 2FA panel offers manual
+          copying; automatic codes require a separate saved opt-in for a
+          supported challenge. This does not enroll an account or create
+          recovery codes.
         </p>
         <p className="mt-2">
           YubiKey and other WebAuthn security keys, passkeys and Windows Hello

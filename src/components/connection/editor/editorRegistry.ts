@@ -2489,12 +2489,14 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "Website username",
           "Website password",
           "Account realm",
+          "MeshCentral origin",
           "Selector overrides",
         ],
         valuePaths: [
           "httpApplication.id",
           "httpApplication.loginMode",
           "httpApplication.realm",
+          "httpApplication.meshOrigin",
         ],
       },
       {

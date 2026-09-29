@@ -17,6 +17,8 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 import {
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
+  WEB_POPUP_PROTOCOL,
+  WEB_POPUP_WINDOW_MESSAGE,
   CREDENTIAL_VAULT_PROTOCOL,
   CREDENTIAL_VAULT_WINDOW_MESSAGE,
 } from "../../components/app/toolSession";
@@ -169,6 +171,13 @@ export function useSessionDetach(
         }
       };
 
+      if (session.protocol === WEB_POPUP_PROTOCOL) {
+        refuseDetach(
+          "Take Control is a source-window-owned view",
+          WEB_POPUP_WINDOW_MESSAGE,
+        );
+        return;
+      }
       if (session.protocol === CREDENTIAL_VAULT_PROTOCOL) {
         refuseDetach(
           "Credential vault private drafts are window-local",

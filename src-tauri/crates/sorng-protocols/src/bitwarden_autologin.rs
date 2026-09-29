@@ -9,6 +9,9 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 const GRANT_LIFETIME: Duration = Duration::from_secs(30);
+// Cloudflare may finish a managed challenge before the form becomes ready.
+// Only the initial grant gets this window; password grants stay at 30 seconds.
+const CLOUDFLARE_READINESS_LIFETIME: Duration = Duration::from_secs(120);
 
 /// Reviewed staged-login grant slot. The historical name is kept for the shared
 /// proxy state. A vault continuation follows the global document issuance
@@ -51,10 +54,19 @@ impl GoogleContinuation {
 }
 impl VaultContinuation {
     fn valid(&self, token: &str, sequence: u64, password_stage: bool) -> bool {
+        self.valid_with_lifetime(token, sequence, password_stage, GRANT_LIFETIME)
+    }
+    fn valid_with_lifetime(
+        &self,
+        token: &str,
+        sequence: u64,
+        password_stage: bool,
+        lifetime: Duration,
+    ) -> bool {
         self.password_stage == password_stage
             && self.token == token
             && self.document_sequence == sequence
-            && !self.expired()
+            && self.issued.elapsed() < lifetime
     }
     fn expired(&self) -> bool {
         self.issued.elapsed() >= GRANT_LIFETIME
@@ -74,6 +86,46 @@ pub fn bind_document(state: &AxumProxyState, sequence: u64) -> Option<()> {
             password_stage: false,
         })));
     Some(())
+}
+
+fn cloudflare_origin(url: &reqwest::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str() == Some("dash.cloudflare.com")
+        && url.port_or_known_default() == Some(443)
+        && url.username().is_empty()
+        && url.password().is_none()
+}
+
+/// Only the reviewed dashboard login document may receive a grant. There is
+/// deliberately no full-page password rebinding or secondary-origin login.
+pub fn bind_cloudflare_document(
+    state: &AxumProxyState,
+    sequence: u64,
+    document_url: &str,
+) -> Option<String> {
+    let url = reqwest::Url::parse(document_url).ok()?;
+    if state.target_origin != "https://dash.cloudflare.com"
+        || !cloudflare_origin(&url)
+        || !matches!(url.path(), "/login" | "/login/")
+    {
+        return None;
+    }
+    let mut pending = state.bitwarden_continuation.lock().ok()?;
+    if !state.auto_login_armed.load(Ordering::SeqCst)
+        || sequence == 0
+        || sequence != state.document_sequence.load(Ordering::SeqCst)
+    {
+        return None;
+    }
+    let token = crate::themed_auth::fresh_nonce();
+    *state.auto_login_nonce.write().ok()? = Some(token.clone());
+    *pending = Some(BitwardenContinuation(Grant::Vault(VaultContinuation {
+        token: token.clone(),
+        document_sequence: sequence,
+        issued: Instant::now(),
+        password_stage: false,
+    })));
+    Some(token)
 }
 
 /// Bind only the exact reviewed Google Account identifier/password documents.
@@ -152,6 +204,7 @@ pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
         UpstreamAuthMode::BitwardenForm
             | UpstreamAuthMode::SynologyForm
             | UpstreamAuthMode::GoogleForm
+            | UpstreamAuthMode::CloudflareForm
     ) {
         return Ok(());
     }
@@ -177,6 +230,13 @@ pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
             "Reviewed Google form login requires an exact built-in Google website profile.".into(),
         );
     }
+    if config.upstream_auth_mode == UpstreamAuthMode::CloudflareForm
+        && (config.reviewed_application_profile
+            != Some(crate::http::ReviewedApplicationProfile::Cloudflare)
+            || !reqwest::Url::parse(&config.target_url).is_ok_and(|url| cloudflare_origin(&url)))
+    {
+        return Err("Reviewed Cloudflare login requires the built-in Cloudflare profile and exact https://dash.cloudflare.com origin on port 443.".into());
+    }
     Ok(())
 }
 
@@ -201,6 +261,7 @@ pub(crate) fn reviewed_flow_label(mode: UpstreamAuthMode) -> Option<&'static str
         UpstreamAuthMode::BitwardenForm => Some("bitwarden"),
         UpstreamAuthMode::SynologyForm => Some("synology"),
         UpstreamAuthMode::GoogleForm => Some("google"),
+        UpstreamAuthMode::CloudflareForm => Some("cloudflare"),
         UpstreamAuthMode::Basic
         | UpstreamAuthMode::Digest
         | UpstreamAuthMode::Header
@@ -235,6 +296,32 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
     if state.upstream_auth_mode == UpstreamAuthMode::GoogleForm {
         return dispense_google(state, &mut pending, query);
     }
+    if state.upstream_auth_mode == UpstreamAuthMode::CloudflareForm {
+        if state.target_origin != "https://dash.cloudflare.com" {
+            return forbidden("reviewed Cloudflare origin required");
+        }
+        // Keep the selected document lease through credential serialization.
+        // Selection/revocation and new document issuance cannot race a grant.
+        return state
+            .network
+            .with_selected_document(|selected| {
+                if selected != state.document_sequence.load(Ordering::SeqCst) {
+                    *pending = None;
+                    return forbidden("reviewed Cloudflare document changed");
+                }
+                dispense_vault(state, &mut pending, query, flow)
+            })
+            .unwrap_or_else(|| forbidden("reviewed Cloudflare document unavailable"));
+    }
+    dispense_vault(state, &mut pending, query, flow)
+}
+
+fn dispense_vault(
+    state: &AxumProxyState,
+    pending: &mut Option<BitwardenContinuation>,
+    query: &AutoLoginQuery,
+    flow: &str,
+) -> Response<Body> {
     fn vault(pending: &Option<BitwardenContinuation>) -> Option<&VaultContinuation> {
         match pending {
             Some(BitwardenContinuation(Grant::Vault(grant))) => Some(grant),
@@ -243,13 +330,18 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
     }
     let sequence = state.document_sequence.load(Ordering::SeqCst);
     if query.phase.as_deref() == Some("password") {
-        let valid = vault(&pending).is_some_and(|grant| grant.valid(&query.nonce, sequence, true));
+        let valid = vault(pending).is_some_and(|grant| grant.valid(&query.nonce, sequence, true));
         if !valid {
             // A navigation/expiry permanently invalidates this attempt. A wrong
             // random token must not consume somebody else's still-valid grant.
-            if vault(&pending)
-                .is_some_and(|grant| grant.document_sequence != sequence || grant.expired())
-            {
+            if vault(pending).is_some_and(|grant| {
+                let expired = if flow == "cloudflare" && !grant.password_stage {
+                    grant.issued.elapsed() >= CLOUDFLARE_READINESS_LIFETIME
+                } else {
+                    grant.expired()
+                };
+                grant.document_sequence != sequence || expired
+            }) {
                 *pending = None;
             }
             return forbidden("reviewed login continuation expired or invalid");
@@ -264,7 +356,14 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
     if query.phase.is_some() || !state.auto_login_armed.load(Ordering::SeqCst) {
         return forbidden("reviewed login not armed");
     }
-    if !vault(&pending).is_some_and(|grant| grant.valid(&query.nonce, sequence, false)) {
+    let readiness_lifetime = if flow == "cloudflare" {
+        CLOUDFLARE_READINESS_LIFETIME
+    } else {
+        GRANT_LIFETIME
+    };
+    if !vault(pending).is_some_and(|grant| {
+        grant.valid_with_lifetime(&query.nonce, sequence, false, readiness_lifetime)
+    }) {
         return forbidden("reviewed login document changed or expired");
     }
     let mut nonce = match state.auto_login_nonce.write() {
@@ -395,6 +494,27 @@ fn dispense_synology(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cloudflare_readiness_is_120_seconds_but_password_is_only_30() {
+        let mut grant = VaultContinuation {
+            token: "fixture".into(),
+            document_sequence: 7,
+            issued: Instant::now() - Duration::from_secs(90),
+            password_stage: false,
+        };
+        assert!(grant.valid_with_lifetime("fixture", 7, false, CLOUDFLARE_READINESS_LIFETIME));
+        assert!(!grant.valid("fixture", 7, false));
+        assert!(!grant.valid_with_lifetime("wrong", 7, false, CLOUDFLARE_READINESS_LIFETIME));
+        assert!(!grant.valid_with_lifetime("fixture", 8, false, CLOUDFLARE_READINESS_LIFETIME));
+        assert!(!grant.valid_with_lifetime("fixture", 7, true, CLOUDFLARE_READINESS_LIFETIME));
+        grant.issued = Instant::now() - CLOUDFLARE_READINESS_LIFETIME;
+        assert!(!grant.valid_with_lifetime("fixture", 7, false, CLOUDFLARE_READINESS_LIFETIME));
+        grant.password_stage = true;
+        grant.issued = Instant::now() - Duration::from_secs(29);
+        assert!(grant.valid("fixture", 7, true));
+        grant.issued = Instant::now() - GRANT_LIFETIME;
+        assert!(!grant.valid("fixture", 7, true));
+    }
     #[test]
     fn reviewed_vault_grants_expire_and_never_cross_stage_or_document() {
         let mut grant = VaultContinuation {

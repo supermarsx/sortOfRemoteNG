@@ -212,6 +212,80 @@ describe("HTTP Application subtab", () => {
     expect(value().httpApplication?.loginMode).toBe("manual");
   });
 
+  it("edits and clears MeshCentral independently of API origin, dashboard and login settings", () => {
+    render(
+      <Fixture
+        value={{
+          ...initial,
+          httpApplication: {
+            version: 1,
+            id: "tacticalrmm",
+            loginMode: "manual",
+            apiOrigin: "https://api.example.com",
+          },
+        }}
+      />,
+    );
+    const mesh = screen.getByLabelText("MeshCentral origin (optional)");
+    fireEvent.change(mesh, {
+      target: { value: "https://mesh.internal:8443/private?token=secret" },
+    });
+    expect(mesh).toHaveAttribute("aria-invalid", "true");
+    expect(
+      screen.getByText(/Enter a MeshCentral HTTPS origin/),
+    ).toBeInTheDocument();
+    fireEvent.change(mesh, {
+      target: { value: "HTTPS://MESH.internal:8443/" },
+    });
+    fireEvent.blur(mesh);
+    expect(mesh).toHaveValue("https://mesh.internal:8443");
+    expect(mesh).toHaveAttribute("aria-invalid", "false");
+    expect(value()).toMatchObject({
+      ...initial,
+      httpApplication: {
+        version: 1,
+        id: "tacticalrmm",
+        loginMode: "manual",
+        apiOrigin: "https://api.example.com",
+        meshOrigin: "https://mesh.internal:8443",
+      },
+    });
+    fireEvent.change(mesh, { target: { value: "" } });
+    expect(value().httpApplication?.meshOrigin).toBeUndefined();
+    expect(value().httpApplication?.apiOrigin).toBe("https://api.example.com");
+    expect(mesh).toHaveAttribute("aria-invalid", "false");
+    fireEvent.change(mesh, { target: { value: "https://10.0.0.5:8443" } });
+    choose("Website application", "Joomla Administrator");
+    expect(
+      screen.queryByLabelText("MeshCentral origin (optional)"),
+    ).not.toBeInTheDocument();
+    expect(value().httpApplication?.meshOrigin).toBeUndefined();
+  });
+
+  it("retains malformed imported MeshCentral input for correction", () => {
+    render(
+      <Fixture
+        value={{
+          ...initial,
+          httpApplication: {
+            version: 1,
+            id: "tacticalrmm",
+            loginMode: "manual",
+            meshOrigin: "https://mesh.internal/mesh",
+          },
+        }}
+      />,
+    );
+    const mesh = screen.getByLabelText("MeshCentral origin (optional)");
+    expect(mesh).toHaveValue("https://mesh.internal/mesh");
+    expect(mesh).toHaveAttribute("aria-invalid", "true");
+    fireEvent.change(mesh, { target: { value: "https://[fd00::1]:8443" } });
+    expect(mesh).toHaveAttribute("aria-invalid", "false");
+    expect(
+      screen.queryByText(/This imported application profile is invalid/),
+    ).not.toBeInTheDocument();
+  });
+
   it("selects Joomla versions without changing path, overrides, authority or consent", () => {
     render(
       <Fixture
@@ -284,17 +358,104 @@ describe("HTTP Application subtab", () => {
       screen.queryByText(/Enter a path beginning with one slash/),
     ).not.toBeInTheDocument();
   });
-  it("offers Cloudflare in networking with manual 2FA guidance and an explicit address action only", () => {
+  it.each(["", "stale.custom.test"])(
+    "sets the Cloudflare authority on explicit selection from '%s' while preserving credentials and TLS",
+    (hostname) => {
+      const saved: Partial<Connection> = {
+        ...initial,
+        protocol: "http",
+        hostname,
+        port: 8080,
+        basicAuthUsername: "saved-email",
+        basicAuthPassword: "saved-password",
+        credentialSource: { kind: "vault", credentialId: vaultCredentialId },
+        httpApplication: { version: 1, id: "wordpress", loginMode: "form" },
+        httpAutoLogin: true,
+        httpAutoLoginSelectors: { usernameSelector: "#old" },
+        httpAutoMfa: {
+          version: 1,
+          enabled: true,
+          totpConfigId: "saved-authenticator",
+          challengeId: "wordpress-two-factor-totp",
+          origin: "https://stale.custom.test",
+        },
+      };
+      render(<Fixture value={saved} />);
+      choose("Website application", "Cloudflare Dashboard");
+      expect(value()).toEqual({
+        ...saved,
+        protocol: "https",
+        hostname: "dash.cloudflare.com",
+        port: 443,
+        httpApplication: { version: 1, id: "cloudflare", loginMode: "manual" },
+        httpAutoLogin: false,
+        httpAutoLoginSelectors: undefined,
+        httpAutoMfa: { version: 1, enabled: false },
+      });
+    },
+  );
+
+  it("preserves later address edits on rerender until Cloudflare is explicitly selected again", () => {
+    function EditableFixture() {
+      const [formData, setFormData] =
+        React.useState<Partial<Connection>>(initial);
+      return (
+        <>
+          <HTTPOptions
+            formData={formData}
+            setFormData={setFormData}
+            sections={["application"]}
+          />
+          <button
+            onClick={() =>
+              setFormData((previous) => ({
+                ...previous,
+                protocol: "http",
+                hostname: "edited.test",
+                port: 8080,
+              }))
+            }
+          >
+            Edit address
+          </button>
+          <output data-testid="value">{JSON.stringify(formData)}</output>
+        </>
+      );
+    }
+    const { rerender } = render(<EditableFixture />);
+    choose("Website application", "Cloudflare Dashboard");
+    fireEvent.click(screen.getByRole("button", { name: "Edit address" }));
+    const edited = value();
+    rerender(<EditableFixture />);
+    choose("Application category", "Networking / proxies");
+    expect(value()).toEqual(edited);
+    expect(value()).toMatchObject({
+      protocol: "http",
+      hostname: "edited.test",
+      port: 8080,
+    });
+    choose("Website application", "Cloudflare Dashboard");
+    expect(value()).toMatchObject({
+      protocol: "https",
+      hostname: "dash.cloudflare.com",
+      port: 443,
+    });
+  });
+
+  it("offers Cloudflare manual and form modes with interactive challenge guidance and an explicit address action", () => {
     render(<Fixture />);
     choose("Application category", "Networking / proxies");
     choose("Website application", "Cloudflare Dashboard");
     expect(value()).toMatchObject({
       ...initial,
+      protocol: "https",
+      hostname: "dash.cloudflare.com",
+      port: 443,
       httpApplication: { version: 1, id: "cloudflare", loginMode: "manual" },
     });
     expect(screen.queryByLabelText("Website password")).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Embedded sign-in and challenge compatibility/),
+      screen.getByText(/Manual browsing sends no saved credentials/),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Application login mode"));
     expect(
@@ -302,11 +463,13 @@ describe("HTTP Application subtab", () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("option", { name: /Automatic form/ }),
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("option", { name: "HTTP Basic authentication" }),
     ).not.toBeInTheDocument();
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: /Manual browsing/ }),
+    );
     fireEvent.click(
       screen.getByRole("button", { name: "Use Cloudflare Dashboard address" }),
     );
@@ -318,6 +481,17 @@ describe("HTTP Application subtab", () => {
     });
     expect(value().password).toBe(initial.password);
     expect(value().httpVerifySsl).toBe(initial.httpVerifySsl);
+    choose(
+      "Application login mode",
+      "Automatic form login — explicitly opt in",
+    );
+    expect(screen.getByLabelText("Website email")).toHaveValue(
+      initial.username,
+    );
+    expect(screen.getByLabelText("Website password")).toHaveValue(
+      initial.password,
+    );
+    expect(value().httpAutoMfa?.enabled).not.toBe(true);
   });
   it("selects manually without changing authority, TLS, or saved credentials", () => {
     render(
@@ -395,63 +569,72 @@ describe("HTTP Application subtab", () => {
     });
     expect(screen.getByText(/No preemptive Basic header/)).toBeInTheDocument();
   });
-  it("chooses a vault explicitly, locks its fields, and disarms automatic MFA", async () => {
-    render(
-      <VaultFixture
-        value={{
-          ...initial,
-          httpApplication: {
-            version: 1,
-            id: "wordpress",
-            loginMode: "form",
-          },
-          totpConfigs: [
-            {
-              id: "local-authenticator",
-              account: "Local account",
-              issuer: "Local",
-              secret: "LOCAL_SECRET",
-              algorithm: "sha1",
-              digits: 6,
-              period: 30,
+  it.each(["wordpress", "cloudflare"])(
+    "%s chooses a vault explicitly, locks its fields, and disarms automatic MFA",
+    async (id) => {
+      render(
+        <VaultFixture
+          value={{
+            ...initial,
+            httpApplication: {
+              version: 1,
+              id,
+              loginMode: "form",
             },
-          ],
-          httpAutoMfa: {
-            version: 1,
-            enabled: true,
-            totpConfigId: "local-authenticator",
-            challengeId: "wordpress-two-factor-totp",
-            origin: "https://fixture.example.test:9443",
-          },
-        }}
-      />,
-    );
-    expect(screen.getByText("Website credential source")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Database vault" }));
-    await waitFor(() =>
+            totpConfigs: [
+              {
+                id: "local-authenticator",
+                account: "Local account",
+                issuer: "Local",
+                secret: "LOCAL_SECRET",
+                algorithm: "sha1",
+                digits: 6,
+                period: 30,
+              },
+            ],
+            httpAutoMfa: {
+              version: 1,
+              enabled: true,
+              totpConfigId: "local-authenticator",
+              challengeId: "wordpress-two-factor-totp",
+              origin: "https://fixture.example.test:9443",
+            },
+          }}
+        />,
+      );
+      expect(screen.getByText("Website credential source")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Database vault" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("combobox", { name: "Reusable vault credential" }),
+        ).toBeEnabled(),
+      );
+      choose(
+        "Reusable vault credential",
+        "Application vault credential · Username, Password, TOTP authenticators",
+      );
+      expect(value().credentialSource).toEqual({
+        kind: "vault",
+        credentialId: vaultCredentialId,
+      });
+      expect(value().httpAutoMfa).toEqual({ version: 1, enabled: false });
       expect(
-        screen.getByRole("combobox", { name: "Reusable vault credential" }),
-      ).toBeEnabled(),
-    );
-    choose(
-      "Reusable vault credential",
-      "Application vault credential · Username, Password, TOTP authenticators",
-    );
-    expect(value().credentialSource).toEqual({
-      kind: "vault",
-      credentialId: vaultCredentialId,
-    });
-    expect(value().httpAutoMfa).toEqual({ version: 1, enabled: false });
-    expect(screen.getByLabelText("Website username or email")).toBeDisabled();
-    expect(screen.getByLabelText("Website password")).toBeDisabled();
-    expect(
-      screen.getByText(/Website username and password fields are locked here/),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Vault authenticator")).toBeInTheDocument();
-    expect(JSON.stringify(value())).not.toContain(
-      "VAULT_SECRET_MUST_NOT_APPEAR",
-    );
-  });
+        screen.getByLabelText(
+          id === "cloudflare" ? "Website email" : "Website username or email",
+        ),
+      ).toBeDisabled();
+      expect(screen.getByLabelText("Website password")).toBeDisabled();
+      expect(
+        screen.getByText(
+          /Website username and password fields are locked here/,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText("Vault authenticator")).toBeInTheDocument();
+      expect(JSON.stringify(value())).not.toContain(
+        "VAULT_SECRET_MUST_NOT_APPEAR",
+      );
+    },
+  );
   it("restores editable connection-local fields only after switching sources", () => {
     render(
       <Fixture

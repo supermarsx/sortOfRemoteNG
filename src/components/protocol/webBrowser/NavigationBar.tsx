@@ -142,9 +142,13 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
         <button
           type="button"
           className="sor-icon-btn-sm"
-          title="Clear session data"
+          title={
+            mgr.sharedSession
+              ? "Clear shared session data from the source browser tab"
+              : "Clear session data"
+          }
           aria-label="Clear session data"
-          disabled={mgr.clearingSession}
+          disabled={mgr.clearingSession || mgr.sharedSession}
           onClick={() => mgr.setShowClearSessionConfirm(true)}
         >
           <Eraser size={16} />

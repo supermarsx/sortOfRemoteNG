@@ -275,6 +275,10 @@ pub fn build_autologin_injection(
             bitwarden::bind_google_document(state, document_sequence, document_url)?;
         return Some(autologin_client_script(&nonce, "null", Some(flow)));
     }
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::CloudflareForm {
+        let nonce = bitwarden::bind_cloudflare_document(state, document_sequence, document_url)?;
+        return Some(autologin_client_script(&nonce, "null", Some("cloudflare")));
+    }
     let login_flow = state
         .network
         .has_cpanel_login_readiness()
@@ -332,6 +336,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
         flow_hint = match login_flow {
             Some("synology") => ", 'synology'",
             Some("google") => ", 'google'",
+            Some("cloudflare") => ", 'cloudflare'",
             Some("google-password") => ", 'google-password'",
             Some("cpanel") => ", 'cpanel'",
             Some("yealink-t20p") => ", 'yealink-t20p'",
@@ -403,6 +408,7 @@ pub async fn autologin_cred_handler(
         crate::http::UpstreamAuthMode::BitwardenForm
             | crate::http::UpstreamAuthMode::SynologyForm
             | crate::http::UpstreamAuthMode::GoogleForm
+            | crate::http::UpstreamAuthMode::CloudflareForm
     ) {
         return bitwarden::dispense(&state, &query);
     }

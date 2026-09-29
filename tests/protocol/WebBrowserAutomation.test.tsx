@@ -23,6 +23,7 @@ import {
 } from "../../src/utils/session/runtimeConnectionRegistry";
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
+  activate: vi.fn(async () => false),
   dispatch: vi.fn(),
   connections: [] as Connection[],
   persistedConnections: undefined as Connection[] | undefined,
@@ -59,7 +60,7 @@ vi.mock("@tauri-apps/api/core", () => ({
           allNetworkRequestsMediated: false,
         })
       : command === "activate_proxy_network_document"
-        ? Promise.resolve(false)
+        ? native.activate()
         : native.invoke(command, ...args),
 }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -125,6 +126,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => {
 });
 import { WebBrowser } from "../../src/components/protocol/WebBrowser";
 import { useWebBrowser } from "../../src/hooks/protocol/useWebBrowser";
+import { webPopupTabs } from "../../src/utils/protocol/webPopupTabs";
 import { normalizeWebAutomationLibrary } from "../../src/utils/recording/webAutomationLibrary";
 import {
   normalizeWebsiteDarkModeConfig,
@@ -150,6 +152,7 @@ const holdFrameLoad = (event: Event) => {
     event.stopImmediatePropagation();
 };
 beforeEach(() => {
+  native.activate.mockClear();
   document.addEventListener("load", holdFrameLoad, true);
   native.locked = false;
   Object.assign(native.settings, {
@@ -249,6 +252,238 @@ async function mount() {
     );
   return { ...view, iframe, post, identity, emit };
 }
+it("restricts the old page before stopping its listener on browser teardown", async () => {
+  const view = await mount();
+  const invokeBefore = native.invoke.getMockImplementation()!;
+  let stoppedAfterBlank = false;
+  native.invoke.mockImplementation(async (command, args) => {
+    if (command === "stop_basic_auth_proxy")
+      stoppedAfterBlank =
+        view.iframe.getAttribute("src") === "about:blank" &&
+        view.iframe.getAttribute("sandbox") === "";
+    return invokeBefore(command, args);
+  });
+  view.unmount();
+  expect(stoppedAfterBlank).toBe(true);
+});
+
+describe("source-owned full browser tabs", () => {
+  async function shared(strict = false) {
+    const connection = native.connections[0];
+    const source: ConnectionSession = {
+      id: "shared-source",
+      connectionId: connection.id,
+      ownerDatabaseId: "owned-demo",
+      name: connection.name,
+      hostname: connection.hostname,
+      protocol: "http",
+      status: "connected",
+      startTime: new Date(),
+    };
+    const root = {
+      generation: 1,
+      sessionId: proxy.session_id,
+      sequence: 1,
+      token: "a".repeat(32),
+      navigationToken: null,
+    };
+    let current = true;
+    const child = webPopupTabs.open({
+      source,
+      document: root,
+      proxyUrl: proxy.proxy_url,
+      url: `${proxy.proxy_url}takecontrol/agent-one?__sorng_popup_parent_v1=1`,
+      isCurrent: () => current,
+    });
+    native.sessions = [source, child];
+    const session = {
+      ...source,
+      ...child,
+      connectionId: source.connectionId,
+      hostname: source.hostname,
+      protocol: source.protocol,
+    };
+    const element = <WebBrowser session={session} sharedPopupId={child.id} />;
+    const view = render(
+      strict ? <React.StrictMode>{element}</React.StrictMode> : element,
+    );
+    const iframe = (await screen.findByTitle(child.name)) as HTMLIFrameElement;
+    await waitFor(() => expect(iframe.src).toContain("takecontrol/agent-one"));
+    const post = vi
+      .spyOn(iframe.contentWindow!, "postMessage")
+      .mockImplementation(() => undefined);
+    const identity = {
+      version: 1,
+      sessionId: root.sessionId,
+      documentSequence: 2,
+      documentToken: "b".repeat(32),
+      navigationToken: null,
+      popupParentSequence: 1,
+      url: iframe.src,
+    };
+    const emit = (type: string, values = {}) =>
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow!,
+            origin: new URL(proxy.proxy_url).origin,
+            data: { ...identity, ...values, type },
+          }),
+        );
+      });
+    return {
+      ...view,
+      iframe,
+      post,
+      emit,
+      identity,
+      child,
+      source,
+      expire: () => {
+        current = false;
+        webPopupTabs.revokeSource(source.id);
+      },
+    };
+  }
+  const assertNoProxyOwnership = () => {
+    expect(
+      native.invoke.mock.calls.filter(([name]) =>
+        [
+          "start_basic_auth_proxy",
+          "stop_basic_auth_proxy",
+          "restart_proxy_session",
+          "update_proxy_website_dark_mode",
+        ].includes(name),
+      ),
+    ).toEqual([]);
+    expect(native.activate).not.toHaveBeenCalled();
+  };
+  it.each([false, true])(
+    "uses the complete browser chrome without taking proxy ownership (StrictMode=%s)",
+    async (strict) => {
+      const view = await shared(strict);
+      expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+      expect(screen.getByPlaceholderText("Enter URL...")).toHaveValue(
+        "http://panel.example.test:81/takecontrol/agent-one",
+      );
+      expect(screen.getByTitle("Print / Save as PDF")).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Clear session data" }),
+      ).toBeDisabled();
+      expect(screen.getByText(/Shared browser session/)).toBeVisible();
+      expect(view.iframe.src).not.toContain("__sorng_navigation_v1");
+      view.emit("proxy_document_start");
+      view.emit("proxy_dom_ready");
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled(),
+      );
+      view.emit("proxy_web_popup_title", {
+        title: "PC-WEST-01 - Client - Site | Take Control",
+      });
+      expect(native.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: view.child.id,
+          name: "PC-WEST-01 — Take Control",
+        },
+      });
+      assertNoProxyOwnership();
+      view.unmount();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(webPopupTabs.getSnapshot(view.child.id)).toBeNull();
+      assertNoProxyOwnership();
+    },
+  );
+  it("refreshes and navigates history on the shared listener while rejecting foreign addresses", async () => {
+    const view = await shared();
+    view.emit("proxy_document_start");
+    view.emit("proxy_dom_ready");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(
+      new URL(view.iframe.src).searchParams.get("__sorng_popup_parent_v1"),
+    ).toBe("1");
+    view.emit("proxy_document_start", { documentSequence: 3 });
+    view.emit("proxy_dom_ready", { documentSequence: 3 });
+    const input = screen.getByPlaceholderText("Enter URL...");
+    fireEvent.change(input, {
+      target: {
+        value:
+          "http://panel.example.test:81/takecontrol/agent-two?opaque=a%2fb+",
+      },
+    });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() =>
+      expect(view.iframe.src).toContain(
+        "takecontrol/agent-two?opaque=a%2fb+&__sorng_popup_parent_v1=1",
+      ),
+    );
+    view.emit("proxy_document_start", {
+      documentSequence: 4,
+      url: view.iframe.src,
+    });
+    view.emit("proxy_dom_ready", { documentSequence: 4, url: view.iframe.src });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() =>
+      expect(view.iframe.src).toContain(
+        "takecontrol/agent-one?__sorng_popup_parent_v1=1",
+      ),
+    );
+    fireEvent.change(input, {
+      target: { value: "https://unapproved.example.test/" },
+    });
+    fireEvent.submit(input.closest("form")!);
+    expect(view.iframe.src).not.toContain("unapproved");
+    expect(
+      screen.getByText("Shared browser navigation unavailable"),
+    ).toBeVisible();
+    assertNoProxyOwnership();
+  });
+  it("rejects root/wrong-parent reports without activating or completing the child", async () => {
+    const view = await shared();
+    view.emit("proxy_document_start", { popupParentSequence: 9 });
+    view.emit("proxy_dom_ready", { popupParentSequence: 9 });
+    view.emit("proxy_document_start", { documentSequence: 1 });
+    view.emit("proxy_dom_ready", { documentSequence: 1 });
+    expect(screen.getByRole("button", { name: "Stop loading" })).toBeEnabled();
+    assertNoProxyOwnership();
+  });
+  it("sends page actions to the accepted child identity and rejects them after source revocation", async () => {
+    const view = await shared();
+    view.emit("proxy_document_start");
+    view.emit("proxy_dom_ready");
+    view.emit("proxy_dark_ready");
+    fireEvent.click(screen.getByTitle("Print / Save as PDF"));
+    await waitFor(() =>
+      expect(view.post).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "print",
+          documentSequence: 2,
+          documentToken: "b".repeat(32),
+          sessionId: proxy.session_id,
+        }),
+        new URL(proxy.proxy_url).origin,
+      ),
+    );
+    const request = view.post.mock.calls.find(
+      ([value]) => value.action === "print",
+    )![0];
+    view.emit("proxy_web_automation", {
+      ...request,
+      type: "proxy_web_automation",
+      status: "ok",
+    });
+    act(() => view.expire());
+    view.post.mockClear();
+    fireEvent.click(screen.getByTitle("Print / Save as PDF"));
+    expect(
+      view.post.mock.calls.filter(([value]) => value.action === "print"),
+    ).toEqual([]);
+    assertNoProxyOwnership();
+  });
+});
+
 describe("live website bookmark editor", () => {
   async function editor() {
     native.connections[0].httpBookmarks = [

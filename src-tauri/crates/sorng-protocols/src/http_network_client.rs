@@ -202,6 +202,9 @@ pub struct ProxyNetworkState {
         Option<super::quickconnect_control::ReviewedQuickConnectControl>,
     #[doc(hidden)]
     pub google: Option<Arc<super::google::GoogleSession>>,
+    #[doc(hidden)]
+    pub tactical_mesh: Option<Arc<super::tactical_mesh::TacticalMeshRoute>>,
+    pub cloudflare_challenge: Option<Arc<super::cloudflare_challenge::CloudflareChallenge>>,
     reviewed_application_profile: Option<super::ReviewedApplicationProfile>,
 }
 
@@ -286,6 +289,8 @@ impl Default for ProxyNetworkState {
             font_assets: None,
             quickconnect_control: None,
             google: None,
+            tactical_mesh: None,
+            cloudflare_challenge: None,
             reviewed_application_profile: None,
         }
     }
@@ -417,6 +422,48 @@ impl ProxyNetworkState {
         self
     }
 
+    pub fn with_tactical_mesh(
+        mut self,
+        mesh: Option<super::tactical_mesh::TacticalMeshRoute>,
+    ) -> Self {
+        self.tactical_mesh = mesh.map(Arc::new);
+        self
+    }
+
+    pub fn with_cloudflare_challenge(
+        mut self,
+        route: Option<super::cloudflare_challenge::CloudflareChallenge>,
+    ) -> Self {
+        self.cloudflare_challenge = route.map(Arc::new);
+        self
+    }
+
+    pub(super) fn cloudflare_manifest_eligible(&self, sequence: u64) -> bool {
+        let current = *self.document.borrow();
+        self.is_active()
+            && sequence > 0
+            && sequence >= current
+            && self
+                .issued
+                .lock()
+                .is_ok_and(|issued| issued.contains(&sequence))
+            && self.reviewed_application_profile
+                == Some(super::ReviewedApplicationProfile::Cloudflare)
+    }
+
+    pub(super) fn mesh_manifest_eligible(&self, sequence: u64) -> bool {
+        let current = *self.document.borrow();
+        self.is_active()
+            && sequence > 0
+            && sequence >= current
+            && self
+                .issued
+                .lock()
+                .is_ok_and(|issued| issued.contains(&sequence))
+            && self.reviewed_application_profile
+                == Some(super::ReviewedApplicationProfile::TacticalRmm)
+    }
+
     pub fn with_reviewed_application_profile(
         mut self,
         profile: Option<super::ReviewedApplicationProfile>,
@@ -427,6 +474,11 @@ impl ProxyNetworkState {
 
     pub(crate) fn has_cpanel_login_readiness(&self) -> bool {
         self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::Cpanel)
+    }
+
+    pub(super) fn permits_tactical_popup_parent(&self, sequence: u64) -> bool {
+        self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::TacticalRmm)
+            && self.document_is_current(sequence)
     }
 
     pub fn google_routes(&self) -> Vec<super::google::GoogleProxyRoute> {
@@ -507,6 +559,12 @@ impl ProxyNetworkState {
     pub(super) fn retire_activity(&self) {
         self.requests.stop_accepting();
         self.active.store(false, Ordering::Release);
+        if let Some(mesh) = &self.tactical_mesh {
+            mesh.prune(None);
+        }
+        if let Some(challenge) = &self.cloudflare_challenge {
+            challenge.prune(None);
+        }
         if let Ok(mut policies) = self.document_referrers.lock() {
             policies.clear();
         }
@@ -568,6 +626,14 @@ impl ProxyNetworkState {
         if stale {
             Err("Proxy document selection is stale or unavailable".into())
         } else {
+            if changed {
+                if let Some(mesh) = &self.tactical_mesh {
+                    mesh.prune(Some(sequence));
+                }
+                if let Some(challenge) = &self.cloudflare_challenge {
+                    challenge.prune(Some(sequence));
+                }
+            }
             Ok(changed)
         }
     }
@@ -601,6 +667,20 @@ impl ProxyNetworkState {
 
     pub(super) fn document_is_current(&self, sequence: u64) -> bool {
         self.is_active() && sequence > 0 && *self.document.borrow() == sequence
+    }
+
+    /// Hold selection stable while preparing a pending/active origin alias.
+    /// The document guard must precede alias/cookie-store locks, including
+    /// before the first document is selected. Never await in the operation.
+    pub(super) fn with_document_selection<T>(
+        &self,
+        operation: impl FnOnce(Option<u64>) -> T,
+    ) -> Option<T> {
+        let current = self.document.borrow();
+        if !self.is_active() {
+            return None;
+        }
+        Some(operation((*current != 0).then_some(*current)))
     }
 
     /// Serialize a short synchronous native-state operation against document
@@ -712,10 +792,16 @@ pub(super) fn bootstrap(
     policy: &HttpProxyPolicy,
     tactical_rmm_api: Option<&super::tactical_rmm::TacticalRmmApiRoute>,
     google: Option<&super::google::GoogleSession>,
+    popup_parent_sequence: Option<u64>,
+    tactical_mesh: Option<serde_json::Value>,
+    cloudflare_challenge: Option<serde_json::Value>,
 ) -> String {
     let mut config = serde_json::json!({
-        "version": 1, "sessionId": session_id, "documentSequence": sequence,
+        "version": 1, "sessionId": session_id,
+        "documentSequence": popup_parent_sequence.unwrap_or(sequence),
         "requestGeneration": request_generation,
+        "popupParentDocument": popup_parent_sequence,
+        "popupTabs": tactical_rmm_api.is_some(),
         "sourceOrigin": source_origin, "proxyOrigin": proxy_origin, "mappings": [],
         "fontAssets": super::font_assets::manifest(proxy_origin)
     });
@@ -730,6 +816,12 @@ pub(super) fn bootstrap(
     if let Some(google) = google {
         config["googleSession"] = google.manifest();
     }
+    if let Some(mesh) = tactical_mesh {
+        config["tacticalRmmMesh"] = mesh;
+    }
+    if let Some(challenge) = cloudflare_challenge {
+        config["cloudflareChallenge"] = challenge;
+    }
     let json = config
         .to_string()
         .replace('<', "\\u003c")
@@ -738,7 +830,7 @@ pub(super) fn bootstrap(
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
     format!(
-        "{}\n{}\nvar sorngNetworkClient=installWebNetworkClient({},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}});Object.defineProperty(window,'__sorng_map_navigation',{{configurable:true,value:function(url){{return sorngNetworkClient.mapUrl(url,'navigation');}}}});p.networkRouting=sorngNetworkClient.capabilities;",
+        "{}\n{}\nvar sorngNetworkClient=installWebNetworkClient({},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'proxy_web_popup',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}});Object.defineProperty(window,'__sorng_map_navigation',{{configurable:true,value:function(url){{return sorngNetworkClient.mapUrl(url,'navigation');}}}});p.networkRouting=sorngNetworkClient.capabilities;",
         include_str!("web_popup_client.js"), include_str!("web_network_client.js"), json
     )
 }

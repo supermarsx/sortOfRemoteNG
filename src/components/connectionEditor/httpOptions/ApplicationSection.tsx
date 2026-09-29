@@ -14,6 +14,7 @@ import {
   getHttpApplicationLoginModes,
   normalizeHttpApplicationSettings,
   normalizeTacticalRmmApiOrigin,
+  normalizeTacticalRmmMeshOrigin,
   isSafeHttpApplicationLoginPath,
   getJoomlaLoginSelectors,
   JOOMLA_VERSION_OPTIONS,
@@ -46,6 +47,20 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
   const apiOrigin = mgr.formData.httpApplication?.apiOrigin;
   const normalizedApiOrigin = normalizeTacticalRmmApiOrigin(apiOrigin);
   const invalidApiOrigin = apiOrigin !== undefined && !normalizedApiOrigin;
+  const meshOrigin = mgr.formData.httpApplication?.meshOrigin;
+  const normalizedMeshOrigin = normalizeTacticalRmmMeshOrigin(meshOrigin);
+  const invalidMeshOrigin = meshOrigin !== undefined && !normalizedMeshOrigin;
+  const updateMeshOrigin = (value: string) =>
+    mgr.setFormData((previous) => {
+      if (previous.httpApplication?.id !== "tacticalrmm") return previous;
+      return {
+        ...previous,
+        httpApplication: {
+          ...previous.httpApplication,
+          meshOrigin: value || undefined,
+        },
+      };
+    });
   const updateApiOrigin = (value: string) =>
     mgr.setFormData((previous) => {
       if (previous.httpApplication?.id !== "tacticalrmm") return previous;
@@ -84,10 +99,12 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       const googleUrl = applyBuiltInGoogleAuthority
         ? new URL(googleHostedUrl)
         : undefined;
+      const selectedUrl =
+        id === "cloudflare" ? new URL(CLOUDFLARE_DASHBOARD_URL) : googleUrl;
       return {
         ...previous,
-        ...(googleUrl
-          ? { protocol: "https", hostname: googleUrl.hostname, port: 443 }
+        ...(selectedUrl
+          ? { protocol: "https", hostname: selectedUrl.hostname, port: 443 }
           : {}),
         httpApplication: id
           ? { version: 1, id, loginMode: "manual" }
@@ -177,7 +194,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
             className="block text-sm font-medium mb-2"
           >
             Website application{" "}
-            <InfoTooltip text="Profiles describe browser login, not native API sign-in. Selecting one never changes the host, port, TLS policy, or saved secret. Automatic form login requires your explicit choice." />
+            <InfoTooltip text="Profiles describe browser login, not native API sign-in. Selecting Cloudflare sets its HTTPS dashboard address and port 443, replacing any existing address. Google profiles fill a blank or previously managed Google address. TLS policy and saved credentials are preserved. Automatic form login requires your explicit choice." />
           </label>
           <Select
             id="http-application-profile"
@@ -271,6 +288,49 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
               )}
             </div>
           )}
+          {profile.id === "tacticalrmm" && (
+            <div className="max-w-xl space-y-2">
+              <label
+                htmlFor="tactical-mesh-origin"
+                className="block text-sm font-medium"
+              >
+                MeshCentral origin (optional)
+              </label>
+              <input
+                id="tactical-mesh-origin"
+                className="sor-form-input"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={2048}
+                placeholder="https://mesh.example.com"
+                value={typeof meshOrigin === "string" ? meshOrigin : ""}
+                aria-invalid={invalidMeshOrigin}
+                aria-describedby="tactical-mesh-origin-help"
+                onChange={(event) => updateMeshOrigin(event.target.value)}
+                onBlur={() => {
+                  if (normalizedMeshOrigin)
+                    updateMeshOrigin(normalizedMeshOrigin);
+                }}
+              />
+              <p
+                id="tactical-mesh-origin-help"
+                className="text-xs text-[var(--color-textMuted)]"
+              >
+                The exact HTTPS address of MeshCentral for this Tactical RMM
+                connection. Internal hostnames, IP addresses and custom ports
+                are supported. Enter only the origin, without a path, query,
+                fragment or credentials.
+              </p>
+              {invalidMeshOrigin && (
+                <p role="alert" className="text-sm text-error">
+                  Enter a MeshCentral HTTPS origin such as
+                  https://mesh.example.com:8443, without a path, query, fragment
+                  or credentials.
+                </p>
+              )}
+            </div>
+          )}
           {profile.id === "joomla" && (
             <div className="max-w-xl space-y-2">
               <label
@@ -354,8 +414,10 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                 <span className="font-mono break-all">
                   {CLOUDFLARE_DASHBOARD_URL}
                 </span>
-                . This hosted preset requires HTTPS and port 443. Selecting it
-                has not changed your address or TLS policy.
+                . Selecting this hosted preset sets HTTPS, this hostname and
+                port 443, replacing any existing address. TLS policy and saved
+                credentials are preserved. Later address edits remain until you
+                select the profile again or use the address button.
               </p>
               <button
                 type="button"
@@ -370,7 +432,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                     return {
                       ...previous,
                       protocol: "https",
-                      hostname: "dash.cloudflare.com",
+                      hostname: new URL(CLOUDFLARE_DASHBOARD_URL).hostname,
                       port: 443,
                     };
                   })
@@ -380,12 +442,13 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                 Use Cloudflare Dashboard address
               </button>
               <p className="text-xs text-[var(--color-textMuted)]">
-                Complete the website's email/password and authenticator or
-                email-code prompts yourself. For security keys, Windows Hello,
-                social login, or SSO, use the session's explicit system-browser
-                action. Embedded sign-in and challenge compatibility is not
-                guaranteed; no 2FA seed or recovery code is stored by this
-                preset.
+                Manual browsing sends no saved credentials. Automatic form login
+                uses your selected website email and password. Verification
+                codes remain interactive unless you explicitly enable Automatic
+                2FA for a reviewed challenge. CAPTCHA, security keys, Windows
+                Hello and SSO remain interactive while automation waits. The
+                session's system-browser action is available when a challenge
+                needs it. API keys and tokens cannot sign into the website.
               </p>
             </div>
           )}

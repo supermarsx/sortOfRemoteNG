@@ -391,6 +391,11 @@ async fn send_inner(
         .filter(|(name, _)| !native_cookies_only && name.eq_ignore_ascii_case("cookie"))
         .map(|(_, value)| value.as_str())
         .collect();
+    let mesh = state
+        .network
+        .tactical_mesh
+        .as_ref()
+        .filter(|route| !route.is_dashboard(&state.proxy_origin));
     let mut cookie_overlay = RedirectCookieOverlay {
         origin: approved_origin.clone(),
         updates: Vec::new(),
@@ -426,6 +431,17 @@ async fn send_inner(
                 .attempt
                 .as_ref()
                 .and_then(|attempt| attempt.merged_request_cookies(&url, &effective_cookies));
+            let mesh_cookies = mesh
+                .map(|route| {
+                    route.request_cookies(
+                        &state.network,
+                        &state.proxy_origin,
+                        &url,
+                        &effective_cookies,
+                    )
+                })
+                .transpose()
+                .map_err(UpstreamError::Policy)?;
             for (name, value) in headers {
                 if name.eq_ignore_ascii_case("referer")
                     && match redirect_referrer {
@@ -438,7 +454,10 @@ async fn send_inner(
                     continue;
                 }
                 if name.eq_ignore_ascii_case("cookie")
-                    && (native_cookies_only || merged_cookies.is_some() || changed_cookie.is_some())
+                    && (mesh_cookies.is_some()
+                        || native_cookies_only
+                        || merged_cookies.is_some()
+                        || changed_cookie.is_some())
                 {
                     continue;
                 }
@@ -450,7 +469,11 @@ async fn send_inner(
                 }
                 request = request.header(name, value);
             }
-            if let Some(cookies) = merged_cookies {
+            if let Some(cookies) = mesh_cookies {
+                if !cookies.is_empty() {
+                    request = request.header(reqwest::header::COOKIE, cookies);
+                }
+            } else if let Some(cookies) = merged_cookies {
                 request = request.header(reqwest::header::COOKIE, cookies);
             } else if let Some(cookies) = changed_cookie.filter(|value| !value.is_empty()) {
                 request = request.header(reqwest::header::COOKIE, cookies);
@@ -466,9 +489,13 @@ async fn send_inner(
             if !body.is_empty() {
                 request = request.body(body.clone());
             }
-            request
+            Ok::<_, UpstreamError>(request)
         };
-        let mut response = request(None, &cookie_overlay).send().await?;
+        let mut response = request(None, &cookie_overlay)?.send().await?;
+        if let Some(mesh) = mesh {
+            mesh.observe_cookies(&state.network, &state.proxy_origin, &response)
+                .map_err(UpstreamError::Policy)?;
+        }
         if !websocket && !tactical_api_request {
             cookie_overlay.observe(
                 &response,
@@ -501,7 +528,9 @@ async fn send_inner(
                         &crate::themed_auth::fresh_nonce(),
                     )
                     .map_err(UpstreamError::Policy)?;
-                response = request(Some(authorization), &cookie_overlay).send().await?;
+                response = request(Some(authorization), &cookie_overlay)?
+                    .send()
+                    .await?;
                 if !websocket {
                     cookie_overlay.observe(&response, true)?;
                 }

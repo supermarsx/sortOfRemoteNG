@@ -10,7 +10,7 @@ import {
   INTEGRATION_PROTOCOL_PREFIX,
   isIntegrationConnectionProtocol,
 } from "../../types/connection/connection";
-import { isToolProtocol } from "../app/toolSession";
+import { isToolProtocol, WEB_POPUP_PROTOCOL } from "../app/toolSession";
 import { isWinmgmtProtocol } from "../windows/WindowsToolPanel.helpers";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { FeatureErrorBoundary } from "../app/FeatureErrorBoundary";
@@ -37,6 +37,10 @@ import type { IntegrationSessionStateEvent } from "../../hooks/integrations/Inte
 
 const ToolTabViewer = dynamic(
   () => import("../app/ToolPanel").then((module) => module.ToolTabViewer),
+  { ssr: false },
+);
+const WebPopupTab = dynamic(
+  () => import("../protocol/WebPopupTab").then((module) => module.WebPopupTab),
   { ssr: false },
 );
 const WindowsToolPanel = dynamic(() => import("../windows/WindowsToolPanel"), {
@@ -305,6 +309,11 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
 }) => {
   const { state, credentialVault, databaseAvailability } = useConnections();
   const renderContent = () => {
+    if (session.protocol === WEB_POPUP_PROTOCOL) {
+      return (
+        <WebPopupTab session={session} onActivateSession={onActivateSession} />
+      );
+    }
     // Tool tabs render their own component
     if (isToolProtocol(session.protocol)) {
       return (
@@ -598,7 +607,9 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
       // A reviewed redirect replaces the tab's volatile target, not the tab.
       // Keeping this component mounted preserves the iframe, toolbar state and
       // automation lifetime while the next protected proxy is prepared.
-      return <WebBrowser session={session} />;
+      return (
+        <WebBrowser session={session} onActivateSession={onActivateSession} />
+      );
     }
 
     if (

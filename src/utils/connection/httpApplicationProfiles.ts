@@ -34,7 +34,7 @@ export interface HttpApplicationProfile {
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];
   requiresHttps?: boolean;
-  loginFlow?: "bitwarden" | "synology" | "google" | "yealink";
+  loginFlow?: "bitwarden" | "synology" | "google" | "yealink" | "cloudflare";
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -44,7 +44,7 @@ export interface HttpApplicationTotpChallenge {
   codeSelector: string;
   submitSelector: string;
   paths: readonly string[];
-  submission: "post" | "spa" | "synology" | "google";
+  submission: "post" | "spa" | "synology" | "google" | "cloudflare";
   /** Additional reviewed identity-provider origins for this challenge. */
   origins?: readonly string[];
 }
@@ -232,10 +232,28 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     id: "cloudflare",
     label: "Cloudflare Dashboard",
     category: "networking",
-    capability: "manual",
+    capability: "known-form",
+    loginModes: ["manual", "form"],
+    loginFlow: "cloudflare",
+    usernameLabel: "Email",
+    requiresHttps: true,
     hostedLoginUrl: CLOUDFLARE_DASHBOARD_URL,
+    loginPath: "/login",
+    totpChallenges: [
+      {
+        id: "cloudflare-totp",
+        label: "Cloudflare authenticator app",
+        codeSelector: 'form input[autocomplete="one-time-code"]',
+        submitSelector:
+          'form:has(input[autocomplete="one-time-code"]) button[type="submit"]',
+        paths: ["/login", "/login/"],
+        // The specialized runtime also requires explicit authenticator context;
+        // matching a generic or email-code input alone never authorizes typing.
+        submission: "cloudflare",
+      },
+    ],
     description:
-      "Hosted HTTPS dashboard with interactive sign-in and two-factor authentication. No saved password, API token, or automatic form login is supplied. Use the system browser for SSO, security keys, or unsupported embedded-browser challenges.",
+      "Optional staged email/password login adapter at https://dash.cloudflare.com/login; current live form compatibility is not verified. Automation waits while you complete CAPTCHA or other interactive challenges. Verification codes remain interactive unless Automatic 2FA is explicitly enabled for a supported authenticator challenge. Security keys and SSO remain interactive. API keys and tokens are not website passwords.",
   },
   {
     id: "tacticalrmm",
@@ -697,6 +715,37 @@ export function normalizeTacticalRmmApiOrigin(
   }
 }
 
+/** Exact HTTPS MeshCentral authority, including internal hosts/IPs and custom ports. */
+export function normalizeTacticalRmmMeshOrigin(
+  value: unknown,
+): string | undefined {
+  if (
+    typeof value !== "string" ||
+    value.length > 2048 ||
+    !/^https:\/\/[^/?#\\@%\s]+\/?$/i.test(value)
+  )
+    return undefined;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      !url.hostname ||
+      url.hostname.endsWith(".") ||
+      url.hostname.includes("*") ||
+      url.port === "0" ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    )
+      return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
 export function normalizeHttpApplicationSettings(
   value: unknown,
 ): HttpApplicationSettings | undefined {
@@ -736,6 +785,12 @@ export function normalizeHttpApplicationSettings(
       ? normalizeTacticalRmmApiOrigin(raw.apiOrigin)
       : undefined;
   const apiOriginValid = raw.apiOrigin === undefined || apiOrigin !== undefined;
+  const meshOrigin =
+    id === "tacticalrmm"
+      ? normalizeTacticalRmmMeshOrigin(raw.meshOrigin)
+      : undefined;
+  const meshOriginValid =
+    raw.meshOrigin === undefined || meshOrigin !== undefined;
   const valid =
     raw.version === 1 &&
     !!profile &&
@@ -745,12 +800,14 @@ export function normalizeHttpApplicationSettings(
     loginPathValid &&
     joomlaVersionValid &&
     apiOriginValid &&
+    meshOriginValid &&
     raw.invalid !== true;
   return {
     version: 1,
     id,
     loginMode: validMode ? loginMode : "manual",
     ...(apiOrigin ? { apiOrigin } : {}),
+    ...(meshOrigin ? { meshOrigin } : {}),
     ...(id === "proxmox" && realmValid && typeof raw.realm === "string"
       ? { realm: raw.realm }
       : {}),

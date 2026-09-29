@@ -455,12 +455,60 @@ pub(super) fn navigation_request(path_and_query: &str) -> (String, Option<String
     (path, token)
 }
 
+pub(super) const POPUP_PARENT_MARKER: &str = "__sorng_popup_parent_v1";
+
+/// Remove only the local popup proof, retaining application query bytes.
+pub(super) fn popup_parent_request(value: &str) -> Result<(String, Option<u64>), &'static str> {
+    let Some((path, query)) = value.split_once('?') else {
+        return Ok((value.into(), None));
+    };
+    let mut parent = None;
+    let mut primary_marker = false;
+    let mut kept = Vec::new();
+    for pair in query.split('&') {
+        let (name, raw) = pair.split_once('=').unwrap_or((pair, ""));
+        let decoded = url::form_urlencoded::parse(pair.as_bytes()).next();
+        match decoded.as_ref().map(|(name, _)| name.as_ref()) {
+            Some(POPUP_PARENT_MARKER) => {
+                let parsed = raw.parse::<u64>().ok();
+                if name != POPUP_PARENT_MARKER
+                    || parent.is_some()
+                    || parsed
+                        .is_none_or(|n| n == 0 || n > 9_007_199_254_740_991 || n.to_string() != raw)
+                {
+                    return Err("Invalid popup parent document proof.");
+                }
+                parent = parsed;
+            }
+            Some(NAVIGATION_MARKER) => {
+                primary_marker = true;
+                kept.push(pair);
+            }
+            _ => kept.push(pair),
+        }
+    }
+    if parent.is_some() && (primary_marker || value.len() > 16_384) {
+        return Err("Ambiguous popup document request.");
+    }
+    Ok((
+        if kept.is_empty() {
+            path.into()
+        } else {
+            format!("{path}?{}", kept.join("&"))
+        },
+        parent,
+    ))
+}
+
 pub(super) struct ReadinessNetworkContext<'a> {
     pub(super) source_origin: &'a str,
     pub(super) proxy_origin: &'a str,
     pub(super) policy: &'a super::HttpProxyPolicy,
     pub(super) tactical_rmm_api: Option<&'a super::tactical_rmm::TacticalRmmApiRoute>,
     pub(super) google: Option<&'a super::google::GoogleSession>,
+    pub(super) popup_parent_sequence: Option<u64>,
+    pub(super) tactical_mesh: Option<serde_json::Value>,
+    pub(super) cloudflare_challenge: Option<serde_json::Value>,
 }
 
 pub(super) fn inject_readiness(
@@ -475,7 +523,8 @@ pub(super) fn inject_readiness(
     }
     let payload = serde_json::json!({"version":1,
         "sessionId":session_id, "navigationToken":token,
-        "documentToken":crate::themed_auth::fresh_nonce(), "documentSequence":sequence});
+        "documentToken":crate::themed_auth::fresh_nonce(), "documentSequence":sequence,
+        "popupParentSequence":network.popup_parent_sequence});
     let json = payload
         .to_string()
         .replace('<', "\\u003c")
@@ -483,6 +532,16 @@ pub(super) fn inject_readiness(
         .replace('&', "\\u0026")
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
+    let popup_title_client = network
+        .popup_parent_sequence
+        .filter(|_| network.tactical_rmm_api.is_some())
+        .map(|parent| {
+            format!(
+                "var popupTitleParentSequence={parent};\n{}",
+                include_str!("web_popup_title_client.js")
+            )
+        })
+        .unwrap_or_default();
     let script = format!(
         r#"<script>(function(){{'use strict';var p={json};
 var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){{return v.split('=')[0]!=='{NAVIGATION_MARKER}'&&v.split('=')[0]!=='__sorng_generation_v1'&&v.split('=')[0]!=='__sorng_google_hop_v1';}}).join('&');
@@ -493,6 +552,7 @@ window.addEventListener('beforeunload',function(){{emit('proxy_navigation_start'
 {dark_mode_client}
 {automation_client}
 emit('proxy_document_start');
+{popup_title_client}
 {synology_progress_client}
 function ready(){{emit('proxy_dom_ready');}}
 if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',ready,{{once:true}});}}else{{ready();}}
@@ -509,6 +569,9 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
             network.policy,
             network.tactical_rmm_api,
             network.google,
+            network.popup_parent_sequence,
+            network.tactical_mesh,
+            network.cloudflare_challenge,
         ),
     );
     let insertion = early_script_insertion(html);
@@ -901,10 +964,14 @@ mod tests {
                     policy: &super::super::HttpProxyPolicy::default(),
                     tactical_rmm_api: None,
                     google: None,
+                    popup_parent_sequence: None,
+                    tactical_mesh: None,
+                    cloudflare_challenge: None,
                 },
             );
             assert!(result.starts_with("<!DOCTYPE html>"));
             assert!(result.contains("proxy_dom_ready"));
+            assert!(!result.contains("proxy_web_popup_title"));
             let injected = result.find("<script>(function()").unwrap();
             if let Some(comment) = result.find("<!--") {
                 let comment_end = result.find("-->").unwrap();

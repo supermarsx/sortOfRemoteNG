@@ -337,9 +337,14 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     });
   });
 
-  it.each([undefined, "HTTPS://API.example.test:443/"])(
-    "uses the same form-only policy in the legacy HTTP viewer with API origin %s",
-    async (apiOrigin) => {
+  it.each([
+    [undefined, undefined],
+    ["HTTPS://API.example.test:443/", undefined],
+    [undefined, "HTTPS://MESH.internal:8443/"],
+    ["https://api.example.test", "https://10.0.0.5:443/"],
+  ])(
+    "uses the same form-only policy in the legacy HTTP viewer with API %s and Mesh %s",
+    async (apiOrigin, meshOrigin) => {
       connections.push({
         id: "conn-1",
         hostname: "device.local",
@@ -351,6 +356,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
           id: "tacticalrmm",
           loginMode: "form",
           apiOrigin,
+          meshOrigin,
         },
       });
       renderHook(() => useHTTPViewer(session));
@@ -372,12 +378,27 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
           "reviewed_application_api_origin",
         );
       }
+      if (meshOrigin) {
+        expect(lastProxyConfig()).toHaveProperty(
+          "reviewed_application_mesh_origin",
+          new URL(meshOrigin).origin,
+        );
+      } else {
+        expect(lastProxyConfig()).not.toHaveProperty(
+          "reviewed_application_mesh_origin",
+        );
+      }
     },
   );
 
-  it.each([undefined, "HTTPS://API.example.test:443/"])(
-    "passes the reviewed Tactical RMM marker and API origin %s to the browser proxy and revokes edits",
-    async (apiOrigin) => {
+  it.each([
+    [undefined, undefined],
+    ["HTTPS://API.example.test:443/", undefined],
+    [undefined, "HTTPS://MESH.internal:8443/"],
+    ["https://api.example.test", "https://10.0.0.5:443/"],
+  ])(
+    "passes Tactical API %s and Mesh %s to the browser proxy and revokes origin edits",
+    async (apiOrigin, meshOrigin) => {
       const httpsSession: ConnectionSession = {
         ...session,
         protocol: "https",
@@ -395,6 +416,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
           id: "tacticalrmm",
           loginMode: "form",
           apiOrigin,
+          meshOrigin,
         },
       });
       mockResolveEffectiveTrustPolicy.mockReturnValue("tofu");
@@ -457,13 +479,24 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
       const starts = mockInvoke.mock.calls.filter(
         ([command]) => command === "start_basic_auth_proxy",
       ).length;
+      if (meshOrigin) {
+        expect(lastProxyConfig()).toHaveProperty(
+          "reviewed_application_mesh_origin",
+          new URL(meshOrigin).origin,
+        );
+      } else {
+        expect(lastProxyConfig()).not.toHaveProperty(
+          "reviewed_application_mesh_origin",
+        );
+      }
       connections[0] = {
         ...connections[0],
         httpApplication: {
           version: 1,
           id: "tacticalrmm",
           loginMode: "form",
-          apiOrigin: "https://new-api.example.test",
+          apiOrigin: meshOrigin ? apiOrigin : "https://new-api.example.test",
+          meshOrigin: meshOrigin ? "https://new-mesh.internal:4443" : undefined,
         },
       };
       rerender();
@@ -477,6 +510,58 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
           ([command]) => command === "start_basic_auth_proxy",
         ),
       ).toHaveLength(starts);
+      if (meshOrigin) {
+        await act(async () => {
+          await result.current.navigateToUrl("https://rmm.example.test/login");
+        });
+        const restartCalls = mockInvoke.mock.calls.filter(
+          ([command]) => command === "start_basic_auth_proxy",
+        );
+        const restarted = restartCalls[restartCalls.length - 1];
+        expect(restarted?.[1].config.reviewed_application_mesh_origin).toBe(
+          "https://new-mesh.internal:4443",
+        );
+      }
+    },
+  );
+
+  it.each(["browser", "legacy"])(
+    "refuses a dashboard/Mesh origin collision before native startup in %s",
+    async (viewer) => {
+      const httpsSession = {
+        ...session,
+        protocol: "https",
+        hostname: "rmm.example.test",
+      };
+      connections.push({
+        id: "conn-1",
+        hostname: "rmm.example.test",
+        protocol: "https",
+        port: 443,
+        httpApplication: {
+          version: 1,
+          id: "tacticalrmm",
+          loginMode: "manual",
+          meshOrigin: "HTTPS://RMM.example.test:443/",
+        },
+      });
+      if (viewer === "browser") {
+        const { result } = renderHook(() => useWebBrowser(httpsSession));
+        await act(async () =>
+          result.current.navigateToUrl("https://rmm.example.test/"),
+        );
+        expect(result.current.loadError).toContain(
+          "MeshCentral origin must differ",
+        );
+      } else {
+        const { result } = renderHook(() => useHTTPViewer(httpsSession));
+        await waitFor(() =>
+          expect(result.current.error).toContain(
+            "MeshCentral origin must differ",
+          ),
+        );
+      }
+      expect(lastProxyConfig()).toBeUndefined();
     },
   );
 

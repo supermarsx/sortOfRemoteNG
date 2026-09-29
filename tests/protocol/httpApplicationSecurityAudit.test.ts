@@ -55,6 +55,7 @@ const STAGED_UPSTREAM_MODES = {
   bitwarden: "bitwarden-form",
   synology: "synology-form",
   google: "google-form",
+  cloudflare: "cloudflare-form",
   yealink: YEALINK_SERVLET_UPSTREAM_SUPPORTED ? "yealink-servlet" : "none",
 } as const;
 

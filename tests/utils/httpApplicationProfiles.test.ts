@@ -6,6 +6,7 @@ import {
 } from "../../src/utils/connection/httpApplicationProfiles";
 import {
   resolveHttpApplicationLogin,
+  getReviewedApplicationProfile,
   validateHttpApplicationTarget,
 } from "../../src/utils/auth/httpApplicationLogin";
 import type {
@@ -65,6 +66,7 @@ describe("HTTP application profile policy", () => {
       "nginxProxyMgr",
       "proxmox",
       "pfsense",
+      "cloudflare",
       "tacticalrmm",
       "meshcentral",
       "guacamole",
@@ -81,7 +83,7 @@ describe("HTTP application profile policy", () => {
       "gdrive",
     ]);
   });
-  it("makes Cloudflare manual-only and ignores retained website credentials, API headers, and automatic selectors", () => {
+  it("keeps Cloudflare manual mode credential-free and rejects imported transport auth", () => {
     const selected = {
       ...connection(),
       httpAutoLogin: true,
@@ -97,7 +99,7 @@ describe("HTTP application profile policy", () => {
       upstreamAuthMode: "none",
       autoLogin: false,
     });
-    for (const loginMode of ["form", "basic"] as const) {
+    for (const loginMode of ["basic", "digest"] as const) {
       expect(
         normalizeHttpApplicationSettings({
           ...selected.httpApplication,
@@ -136,6 +138,83 @@ describe("HTTP application profile policy", () => {
         "https://fixture.example.test/",
       ),
     ).not.toThrow();
+  });
+  it("resolves Cloudflare form credentials locally or from the vault without transport auth", () => {
+    const selected: Partial<Connection> = {
+      ...connection(),
+      hostname: "dash.cloudflare.com",
+      authType: "header",
+      httpApplication: { version: 1, id: "cloudflare", loginMode: "form" },
+    };
+    const mode = {
+      upstreamAuthMode: "cloudflare-form",
+      loginFlow: "cloudflare",
+      autoLogin: true,
+    };
+    expect(resolveHttpApplicationLogin(selected)).toEqual({
+      ...mode,
+      credentials: { username: "website-user", password: "fixture-password" },
+    });
+    const vault = {
+      ...selected,
+      credentialSource: {
+        kind: "vault" as const,
+        credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      },
+    };
+    expect(resolveHttpApplicationLogin(vault)).toEqual({
+      ...mode,
+      credentials: null,
+    });
+    const credentials = {
+      username: "vault@example.test",
+      password: "vault-password",
+    };
+    expect(resolveHttpApplicationLogin(vault, credentials)).toEqual({
+      ...mode,
+      credentials,
+    });
+    expect(() =>
+      resolveHttpApplicationLogin({ ...selected, password: "" }),
+    ).toThrow(/requires/);
+    expect(() =>
+      resolveHttpApplicationLogin({
+        ...selected,
+        httpAutoLoginSelectors: { usernameSelector: "#guessed" },
+      }),
+    ).toThrow(/does not accept selector overrides/);
+  });
+  it("emits the Cloudflare capability only for normalized valid profiles", () => {
+    for (const loginMode of ["manual", "form"] as const) {
+      expect(
+        getReviewedApplicationProfile({
+          httpApplication: {
+            version: 1,
+            id: "cloudflare",
+            loginMode,
+          },
+        }),
+      ).toBe("cloudflare");
+    }
+    for (const metadata of [
+      null,
+      { version: 2, id: "cloudflare", loginMode: "form" },
+      { version: 1, id: "cloudflare", loginMode: "basic" },
+      { version: 1, id: "cloudflare", loginMode: "digest" },
+      { version: 1, id: "cloudflare", loginMode: "form", invalid: true },
+      {
+        version: 1,
+        id: "cloudflare",
+        loginMode: "form",
+        loginPath: "https://evil.test/",
+      },
+    ]) {
+      expect(
+        getReviewedApplicationProfile({
+          httpApplication: metadata as Connection["httpApplication"],
+        }),
+      ).toBeUndefined();
+    }
   });
   it("requires three explicit selectors for Custom and never falls back to generic detection", () => {
     const custom = {

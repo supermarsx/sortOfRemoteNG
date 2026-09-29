@@ -69,7 +69,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function startHelper() {
+function startHelper(tabBridge?: object) {
   const install = window.eval(
     `(function(){${helperSource}\nreturn installWebPopupClient;})()`,
   );
@@ -77,6 +77,7 @@ function startHelper() {
     proxyOrigin: proxy,
     isActive: () => active,
     blocked,
+    tabBridge,
     // Deliberately permit arbitrary origins here: the helper must independently
     // reject even an already-mapped, otherwise approved sibling proxy route.
     mapUrl(value: string) {
@@ -88,7 +89,7 @@ function startHelper() {
   }) as PopupClient;
   return helper;
 }
-function startNetwork(withHelper = true) {
+function startNetwork(withHelper = true, extra = {}, reportPopup = vi.fn()) {
   const install = window.eval(
     `(function(){${withHelper ? helperSource : ""}\n${networkSource}\nreturn installWebNetworkClient;})()`,
   );
@@ -103,10 +104,179 @@ function startNetwork(withHelper = true) {
       mappings: [
         { upstreamOrigin: "https://sibling.example", proxyOrigin: sibling },
       ],
+      ...extra,
     },
     blocked,
+    reportPopup,
   );
 }
+
+describe("Tactical RMM shared-session tabs", () => {
+  it("reuses a contained named blank context before promoting a reviewed tool", () => {
+    const report = vi.fn();
+    const client = startHelper({
+      sessionId: "popup-fixture",
+      documentSequence: 3,
+      report,
+    });
+    const first = client.open("", "reuse");
+    expect(client.open(`${upstream}/takecontrol/a`, "reuse")).toBe(first);
+    expect(frames()).toHaveLength(1);
+    expect(frames()[0].src).toBe(`${proxy}/takecontrol/a`);
+    expect(report).not.toHaveBeenCalled();
+  });
+  it("opens reviewed tools as tabs with parent proof, preserves query bytes and reuses named handles", () => {
+    const report = vi.fn();
+    const client = startHelper({
+      sessionId: "popup-fixture",
+      documentSequence: 3,
+      report,
+    });
+    const first = client.open(
+      `${upstream}/takecontrol/agent-one?token=a%20b%2Fc`,
+      "control",
+    )!;
+    expect(frames()).toHaveLength(0);
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        action: "open",
+        title: "Take Control",
+        destination: `${proxy}/takecontrol/agent-one?token=a%20b%2Fc&__sorng_popup_parent_v1=3`,
+      }),
+    );
+    expect(first.document).toBeUndefined();
+    expect(client.open(`${upstream}/takecontrol/agent-two`, "control")).toBe(
+      first,
+    );
+    expect(report.mock.calls.map(([value]) => value.action)).toEqual([
+      "open",
+      "navigate",
+      "focus",
+    ]);
+    first.close();
+    expect(first.closed).toBe(true);
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: "close" }),
+    );
+    expect(nativeOpen).not.toHaveBeenCalled();
+  });
+
+  it("keeps unrelated and blank-then-navigate popups contained, rejects tab origin and route escapes", () => {
+    const client = startHelper({
+      sessionId: "popup-fixture",
+      documentSequence: 3,
+      report: vi.fn(),
+    });
+    const control = client.open(`${upstream}/takecontrol/a`)!;
+    expect(() => {
+      control.location = `${sibling}/takecontrol/a`;
+    }).toThrow();
+    expect(() => {
+      control.location = `${upstream}/__sortofremoteng_credentials_v1`;
+    }).toThrow();
+    expect(() => {
+      control.location = `${upstream}/ordinary`;
+    }).toThrow();
+    client.open(destination);
+    client.open("");
+    expect(frames()).toHaveLength(2);
+    expect(nativeOpen).not.toHaveBeenCalled();
+  });
+
+  it("bounds tabs and ignores forged close messages", () => {
+    const report = vi.fn();
+    const client = startHelper({
+      sessionId: "popup-fixture",
+      documentSequence: 3,
+      report,
+    });
+    const handles = Array.from({ length: 8 }, () =>
+      client.open(`${upstream}/takecontrol/a`)!,
+    );
+    expect(() => client.open(`${upstream}/takecontrol/a`)).toThrow();
+    const id = report.mock.calls[0][0].id;
+    const close = {
+      type: "sorng_web_popup",
+      version: 1,
+      action: "closed",
+      sessionId: "popup-fixture",
+      documentSequence: 3,
+      id,
+    };
+    window.dispatchEvent(
+      new MessageEvent("message", { data: close, source: null }),
+    );
+    expect(handles[0].closed).toBe(false);
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { ...close, documentSequence: 2 },
+        source: window.parent,
+      }),
+    );
+    expect(handles[0].closed).toBe(false);
+    window.dispatchEvent(
+      new MessageEvent("message", { data: close, source: window.parent }),
+    );
+    expect(handles[0].closed).toBe(true);
+    client.dispose();
+    expect(handles.every((handle) => handle.closed)).toBe(true);
+  });
+
+  it("wires the native popup reporter only for an enabled Tactical source", () => {
+    const report = vi.fn();
+    startNetwork(
+      true,
+      {
+        popupTabs: true,
+        sourceOrigin: "https://rmm.example",
+        tacticalRmmApi: {
+          version: 2,
+          apiOrigins: ["https://api.rmm.example"],
+          proxyUrl: `${proxy}/__sortofremoteng_tactical_rmm_api_v1`,
+        },
+      },
+      report,
+    );
+    window.open("https://rmm.example/takecontrol/agent", "_blank");
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "open" }),
+    );
+    expect(frames()).toHaveLength(0);
+    expect(nativeOpen).not.toHaveBeenCalled();
+  });
+
+  it("keeps child navigation scoped to its root without adding document proof to background resources", () => {
+    const report = vi.fn();
+    startNetwork(
+      true,
+      {
+        popupTabs: true,
+        popupParentDocument: 3,
+        sourceOrigin: "https://rmm.example",
+        tacticalRmmApi: {
+          version: 2,
+          apiOrigins: ["https://api.rmm.example"],
+          proxyUrl: `${proxy}/__sortofremoteng_tactical_rmm_api_v1`,
+        },
+      },
+      report,
+    );
+    const frame = document.createElement("iframe");
+    frame.src = "https://rmm.example/takecontrol/agent?token=a%20b";
+    expect(frame.src).toContain("token=a%20b");
+    expect(new URL(frame.src).searchParams.get("__sorng_popup_parent_v1")).toBe(
+      "3",
+    );
+    const image = document.createElement("img");
+    image.src = "https://rmm.example/image.png?__sorng_popup_parent_v1=3";
+    expect(new URL(image.src).searchParams.has("__sorng_popup_parent_v1")).toBe(
+      false,
+    );
+    window.open("https://rmm.example/takecontrol/another");
+    expect(report).not.toHaveBeenCalled();
+    expect(frames()).toHaveLength(1);
+  });
+});
 function expectLocalFrame(frame = frames()[0]) {
   expect(frame).toBeDefined();
   const url = new URL(frame.src);

@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   getReviewedApplicationApiOrigin,
+  getReviewedApplicationMeshOrigin,
   getReviewedApplicationProfile,
   resolveHttpApplicationLogin,
+  validateHttpApplicationTarget,
+  validateTacticalRmmMeshTarget,
+  TACTICAL_MESH_ORIGIN_CONFLICT_MESSAGE,
 } from "../../utils/auth/httpApplicationLogin";
 import { ConnectionSession } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
@@ -11,6 +21,7 @@ import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
+import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
 import { validateProtectedProxyUrl } from "./useWebBrowser";
 import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
 import {
@@ -33,6 +44,7 @@ export function useHTTPViewer(session: ConnectionSession) {
   const connection = state.connections.find(
     (c) => c.id === session.connectionId,
   );
+  const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const totpBtnRef = useRef<HTMLDivElement>(null);
@@ -119,6 +131,11 @@ export function useHTTPViewer(session: ConnectionSession) {
       ) {
         return "";
       }
+      if (connection.httpApplication?.id === "cloudflare") {
+        validateHttpApplicationTarget(connection, target.href);
+        if (connection.httpApplication.loginMode === "form")
+          return `${target.origin}/login`;
+      }
       return target.origin;
     } catch {
       return "";
@@ -173,12 +190,31 @@ export function useHTTPViewer(session: ConnectionSession) {
       setCurrentUrl(targetUrl);
       setIsSecure(targetUrl.startsWith("https"));
 
-      const login = resolveHttpApplicationLogin(connection);
+      const initialLogin = resolveHttpApplicationLogin(connection);
+      const vault =
+        connection.credentialSource?.kind === "vault" &&
+        connection.httpApplication?.loginMode !== "manual"
+          ? await resolveVaultCredential(() => {
+              if (generation !== proxyGenerationRef.current)
+                throw new Error("Website login attempt changed");
+            })
+          : null;
+      vault?.assertCurrent();
+      const login = vault
+        ? resolveHttpApplicationLogin(connection, {
+            username: vault.facets.username ?? "",
+            password: vault.facets.password ?? "",
+          })
+        : initialLogin;
+      if (vault) vault.facets = {};
       const creds = login.credentials;
       const reviewedApplicationProfile =
         getReviewedApplicationProfile(connection);
       const reviewedApplicationApiOrigin =
         getReviewedApplicationApiOrigin(connection);
+      const reviewedApplicationMeshOrigin =
+        getReviewedApplicationMeshOrigin(connection);
+      validateTacticalRmmMeshTarget(connection, targetUrl);
       const proxyConfig = {
         target_url: targetUrl,
         username: creds?.username ?? "",
@@ -195,6 +231,9 @@ export function useHTTPViewer(session: ConnectionSession) {
           : {}),
         ...(reviewedApplicationApiOrigin
           ? { reviewed_application_api_origin: reviewedApplicationApiOrigin }
+          : {}),
+        ...(reviewedApplicationMeshOrigin
+          ? { reviewed_application_mesh_origin: reviewedApplicationMeshOrigin }
           : {}),
         http_auto_login: login.autoLogin,
         http_auto_login_selectors: login.selectors
@@ -214,6 +253,7 @@ export function useHTTPViewer(session: ConnectionSession) {
         return;
       }
       startedSession = response.session_id;
+      vault?.assertCurrent();
       const protectedProxyUrl = validateProtectedProxyUrl(response);
       proxySessionIdRef.current = response.session_id;
       const entry = new URL(targetUrl);
@@ -233,7 +273,9 @@ export function useHTTPViewer(session: ConnectionSession) {
                 "Backend did not provide a safe Google Accounts entry route.",
               );
             })())
-          : protectedProxyUrl;
+          : reviewedApplicationProfile === "cloudflare" && login.autoLogin
+            ? new URL("/login", protectedProxyUrl).href
+            : protectedProxyUrl;
       setProxyUrl(initialProxyUrl);
       setProxySessionId(response.session_id);
       setHistory([initialProxyUrl]);
@@ -245,7 +287,9 @@ export function useHTTPViewer(session: ConnectionSession) {
       proxySessionIdRef.current = "";
       const safeMessage =
         err instanceof Error &&
-        err.message === "Connection host or port is not a valid HTTP authority"
+        (err.message ===
+          "Connection host or port is not a valid HTTP authority" ||
+          err.message === TACTICAL_MESH_ORIGIN_CONFLICT_MESSAGE)
           ? err.message
           : connection.httpApplication !== undefined
             ? "Unable to open this website application. Review its login mode, website credentials, and selectors, then retry."
@@ -254,7 +298,7 @@ export function useHTTPViewer(session: ConnectionSession) {
       setStatus("error");
       setError(safeMessage);
     }
-  }, [connection, buildTargetUrl, stopProxy]);
+  }, [connection, buildTargetUrl, stopProxy, resolveVaultCredential]);
 
   useEffect(() => {
     void initProxy();
@@ -262,6 +306,80 @@ export function useHTTPViewer(session: ConnectionSession) {
       proxyGenerationRef.current += 1;
     };
   }, [initProxy]);
+
+  useLayoutEffect(() => {
+    if (
+      connection?.httpApplication?.id !== "cloudflare" ||
+      !proxySessionId ||
+      !proxyUrl
+    )
+      return;
+    const origin = new URL(proxyUrl).origin;
+    const generation = proxyGenerationRef.current;
+    let latestSequence = 0;
+    let disposed = false;
+    const onDocument = (event: MessageEvent) => {
+      const report = event.data;
+      if (
+        disposed ||
+        generation !== proxyGenerationRef.current ||
+        event.source !== iframeRef.current?.contentWindow ||
+        event.origin !== origin ||
+        report?.type !== "proxy_document_start" ||
+        report.version !== 1 ||
+        report.sessionId !== proxySessionId ||
+        typeof report.documentToken !== "string" ||
+        !/^[0-9a-f]{32}$/.test(report.documentToken) ||
+        report.navigationToken !== null ||
+        !Number.isSafeInteger(report.documentSequence) ||
+        report.documentSequence <= latestSequence ||
+        typeof report.url !== "string" ||
+        report.url.length > 16384
+      )
+        return;
+      try {
+        const reported = new URL(report.url);
+        if (
+          reported.origin !== origin ||
+          reported.username ||
+          reported.password ||
+          reported.searchParams.has("__sorng_navigation_v1")
+        )
+          return;
+      } catch {
+        return;
+      }
+      const documentSequence = report.documentSequence;
+      latestSequence = documentSequence;
+      // Native verifies that this sequence was actually issued for the proxy.
+      // This happens at document-start, before parser-blocking challenge scripts.
+      void invoke<boolean>("activate_proxy_network_document", {
+        sessionId: proxySessionId,
+        documentSequence,
+      })
+        .then((accepted) => {
+          if (accepted !== true) throw new Error("Document not accepted");
+        })
+        .catch(() => {
+          if (
+            disposed ||
+            generation !== proxyGenerationRef.current ||
+            latestSequence !== documentSequence
+          )
+            return;
+          setError(
+            "The website document could not be activated. Reload to retry.",
+          );
+          setStatus("error");
+          void stopProxy(proxySessionId);
+        });
+    };
+    window.addEventListener("message", onDocument);
+    return () => {
+      disposed = true;
+      window.removeEventListener("message", onDocument);
+    };
+  }, [connection?.httpApplication?.id, proxySessionId, proxyUrl, stopProxy]);
 
   useEffect(() => {
     return () => {

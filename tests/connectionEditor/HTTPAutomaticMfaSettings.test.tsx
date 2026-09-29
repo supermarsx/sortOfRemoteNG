@@ -55,6 +55,32 @@ const enable = () =>
   });
 
 describe("explicit linked website authenticator consent", () => {
+  it("requires explicit Cloudflare authenticator consent bound to the dashboard origin", () => {
+    render(
+      <Fixture
+        value={{
+          ...initial,
+          hostname: "dash.cloudflare.com",
+          port: 443,
+          httpApplication: { version: 1, id: "cloudflare", loginMode: "form" },
+        }}
+      />,
+    );
+    expect(enable()).toBeDisabled();
+    expect(draft().httpAutoMfa).toBeUndefined();
+    choose("Connection authenticator", "Fixture — admin");
+    expect(draft().httpAutoMfa?.enabled).toBe(false);
+    fireEvent.click(enable());
+    expect(draft().httpAutoMfa).toMatchObject({
+      enabled: true,
+      challengeId: "cloudflare-totp",
+      origin: "https://dash.cloudflare.com",
+      totpConfigId: draft().totpConfigs![0].id,
+    });
+    expect(JSON.stringify(draft().httpAutoMfa)).not.toContain(
+      initial.totpConfigs![0].secret,
+    );
+  });
   it("exposes the reviewed DSM code challenge without enabling it or selecting an authenticator", () => {
     render(
       <Fixture

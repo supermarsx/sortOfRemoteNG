@@ -6,6 +6,14 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[path = "http_network_extra_tests.rs"]
 mod extra_tests;
+#[path = "http_tactical_popup_tests.rs"]
+mod tactical_popup_tests;
+#[path = "http_tactical_mesh_tests.rs"]
+mod tactical_mesh_tests;
+#[path = "http_cloudflare_challenge_tests.rs"]
+mod cloudflare_challenge_tests;
+#[path = "http_tactical_websocket_tests.rs"]
+mod tactical_websocket_tests;
 #[path = "http_websocket_acceptance_tests.rs"]
 mod websocket_acceptance_tests;
 

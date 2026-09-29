@@ -54,6 +54,8 @@ mod tls_test_fixture;
 mod web_automation;
 pub use dark_mode::WebsiteDarkModeBootstrap;
 pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
+#[path = "http_cloudflare_challenge.rs"]
+pub mod cloudflare_challenge;
 #[path = "http_font_assets.rs"]
 mod font_assets;
 #[path = "http_google.rs"]
@@ -72,6 +74,8 @@ mod redirect;
 mod synology_login;
 #[path = "http_synology_redirect_defaults.rs"]
 mod synology_redirect_defaults;
+#[path = "http_tactical_mesh.rs"]
+pub mod tactical_mesh;
 #[path = "http_tactical_rmm.rs"]
 #[doc(hidden)]
 pub mod tactical_rmm;
@@ -555,6 +559,9 @@ pub enum UpstreamAuthMode {
     /// released only on exact accounts.google.com proxy documents.
     #[serde(rename = "google-form")]
     GoogleForm,
+    /// Reviewed dashboard form credentials, never HTTP Basic or API tokens.
+    #[serde(rename = "cloudflare-form")]
+    CloudflareForm,
     /// Form-only or manual application login: never inject proxy credentials
     /// into Authorization. Opted-in form fill may still consume them once.
     #[serde(rename = "none")]
@@ -593,6 +600,7 @@ impl UpstreamAuthMode {
             | Self::BitwardenForm
             | Self::SynologyForm
             | Self::GoogleForm
+            | Self::CloudflareForm
             | Self::YealinkServlet
             | Self::Unknown => None,
             Self::PfSenseV1 if !username.is_empty() && !password.is_empty() => {
@@ -614,6 +622,7 @@ impl UpstreamAuthMode {
             | Self::BitwardenForm
             | Self::SynologyForm
             | Self::GoogleForm
+            | Self::CloudflareForm
             | Self::YealinkServlet
             | Self::Unknown => String::new(),
         }
@@ -640,6 +649,7 @@ impl UpstreamAuthMode {
             | Self::BitwardenForm
             | Self::SynologyForm
             | Self::GoogleForm
+            | Self::CloudflareForm
             | Self::YealinkServlet
             | Self::Unknown => request,
         }
@@ -670,6 +680,7 @@ pub enum ReviewedApplicationProfile {
     TacticalRmm,
     #[serde(rename = "google-hosted")]
     GoogleHosted,
+    Cloudflare,
     Cpanel,
 }
 
@@ -708,6 +719,9 @@ pub struct BasicAuthProxyConfig {
     /// a canonical HTTPS/default-port origin and still validates every request.
     #[serde(default)]
     pub reviewed_application_api_origin: Option<String>,
+    /// Explicit separate MeshCentral HTTPS origin; never inferred from the API.
+    #[serde(default)]
+    pub reviewed_application_mesh_origin: Option<String>,
     /// One-use native continuation, never a persisted setting or log identity.
     #[serde(default)]
     pub continuation_id: Option<String>,
@@ -1230,6 +1244,7 @@ pub struct ProxySessionEntry {
     pub redirect_profile: Option<BrowserRedirectProfile>,
     pub reviewed_application_profile: Option<ReviewedApplicationProfile>,
     pub reviewed_application_api_origin: Option<String>,
+    pub reviewed_application_mesh_origin: Option<String>,
     pub custom_headers: HashMap<String, String>,
     pub upstream_proxy_url: Option<String>,
     pub target_origin: String,
@@ -1635,6 +1650,14 @@ fn upstream_referer(value: &str, proxy_origin: &str, target_origin: &str) -> Opt
     }
     let origin = source.origin().ascii_serialization();
     if matches!(source.scheme(), "http" | "https") && origin == proxy_origin {
+        // A child keeps its parent proof in its browser URL for reloads. Never
+        // expose that proof in Referer or borrow the root's looser policy.
+        if source
+            .query_pairs()
+            .any(|(name, _)| name == proxy_response::POPUP_PARENT_MARKER)
+        {
+            return None;
+        }
         // These are local control/resource routes, not upstream documents.
         if source.path().starts_with("/__sortofremoteng_") {
             return None;
@@ -1763,7 +1786,10 @@ pub async fn enforce_proxy_access(
             request.headers(),
             &state.proxy_authority,
             &state.proxy_origin,
-        )
+        ) || state.network.tactical_mesh.as_ref().is_some_and(|mesh| {
+            mesh.dashboard_websocket_origin(&state.network, &request, &state.proxy_origin)
+                .is_some()
+        })
     };
     if !authorized {
         return axum::http::Response::builder()
@@ -1796,9 +1822,17 @@ pub async fn enforce_proxy_access(
         || network::content_security_policy(&state.proxy_policy, &state.proxy_authority),
         |google| google.content_security_policy(&state.proxy_policy),
     );
+    let policy = state.network.tactical_mesh.as_ref().map_or_else(
+        || policy.clone(),
+        |mesh| mesh.content_security_policy(policy.clone(), &state.proxy_origin),
+    );
     response.headers_mut().insert(
         "x-dns-prefetch-control",
         axum::http::HeaderValue::from_static("off"),
+    );
+    let policy = state.network.cloudflare_challenge.as_ref().map_or_else(
+        || policy.clone(),
+        |challenge| challenge.source_csp(policy.clone(), &state.proxy_origin),
     );
     response.headers_mut().insert(
         axum::http::header::CONTENT_SECURITY_POLICY,
@@ -2069,7 +2103,119 @@ fn observe_local_response(
 /// and other mutations are never automatically replayed.
 pub async fn axum_proxy_handler(
     axum::extract::State(state): axum::extract::State<Arc<AxumProxyState>>,
+    mut req: axum::extract::Request,
+) -> axum::response::Response {
+    let refuse = |detail: &'static str| {
+        axum::http::Response::builder()
+            .status(axum::http::StatusCode::FORBIDDEN)
+            .header("Cache-Control", "no-store")
+            .body(axum::body::Body::from(detail))
+            .expect("static popup scope refusal")
+    };
+    let mesh_root = req.extensions().get::<tactical_mesh::MeshRoot>().copied();
+    let (cleaned, mut popup_parent) = match proxy_response::popup_parent_request(
+        req.uri()
+            .path_and_query()
+            .map_or("/", |value| value.as_str()),
+    ) {
+        Ok(value) => value,
+        Err(detail) => return refuse(detail),
+    };
+    if let Some(tactical_mesh::MeshRoot(root)) = mesh_root {
+        if popup_parent.is_some_and(|parent| parent != root)
+            || proxy_response::navigation_request(&cleaned).1.is_some()
+        {
+            return refuse("Mesh documents cannot select a different root.");
+        }
+        let Ok(uri) = cleaned.parse() else {
+            return refuse("Invalid Mesh document URL.");
+        };
+        *req.uri_mut() = uri;
+        popup_parent = Some(root);
+    } else if let Some(parent) = popup_parent {
+        if !state.network.permits_tactical_popup_parent(parent)
+            || state.tactical_rmm_api.is_none()
+            || !matches!(
+                *req.method(),
+                axum::http::Method::GET | axum::http::Method::HEAD
+            )
+            || !proxy_response::is_document_request(req.headers(), None)
+            || websocket::is_upgrade_candidate(req.headers())
+            || req.uri().path().starts_with("/__sortofremoteng")
+            || !proxy_request_headers_are_authorized(
+                req.headers(),
+                &state.proxy_authority,
+                &state.proxy_origin,
+            )
+            || req
+                .uri()
+                .authority()
+                .is_some_and(|authority| authority.as_str() != state.proxy_authority)
+            || req
+                .uri()
+                .scheme_str()
+                .is_some_and(|scheme| scheme != "http")
+        {
+            return refuse("This popup is not an active same-origin Tactical document.");
+        }
+        let Ok(uri) = cleaned.parse() else {
+            return refuse("Invalid popup document URL.");
+        };
+        *req.uri_mut() = uri;
+    }
+    // API HTTP requests, like sockets, must remain bound through response-body
+    // completion, not merely pass a current-document check before the send.
+    let api_document = if req.uri().path() == tactical_rmm::PATH
+        && !websocket::is_upgrade_candidate(req.headers())
+    {
+        let documents: Vec<_> =
+            url::form_urlencoded::parse(req.uri().query().unwrap_or_default().as_bytes())
+                .filter(|(name, _)| name == "__sorng_tactical_document_v1")
+                .collect();
+        match documents.as_slice() {
+            [(_, value)] => value.parse::<u64>().ok(),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if let Some(sequence) = api_document {
+        // A reloaded page can issue fetch/XHR before its readiness message has
+        // selected the already-issued document. Match WebSocket admission:
+        // wait for that exact selection, never activate a renderer's proof.
+        // Destination and duplicate-parameter checks still run before I/O.
+        if state.network.await_document(sequence).await.is_err() {
+            return refuse("The Tactical RMM API document is no longer active.");
+        }
+    }
+    let lifetime = popup_parent.or(api_document);
+    if let Some(sequence) = lifetime {
+        match state
+            .network
+            .while_document(
+                sequence,
+                axum_proxy_handler_inner(state.clone(), req, popup_parent),
+            )
+            .await
+        {
+            Ok(response) => response,
+            Err(_) => axum::http::Response::builder()
+                .status(axum::http::StatusCode::GONE)
+                .header("Cache-Control", "no-store")
+                .body(axum::body::Body::from(
+                    "This popup's parent document has ended.",
+                ))
+                .expect("static popup lifetime refusal"),
+        }
+    } else {
+        axum_proxy_handler_inner(state, req, None).await
+    }
+}
+
+async fn axum_proxy_handler_inner(
+    state: Arc<AxumProxyState>,
     req: axum::extract::Request,
+    popup_parent: Option<u64>,
 ) -> axum::response::Response {
     use axum::body::Body;
     use axum::http::{Response, StatusCode};
@@ -2146,6 +2292,11 @@ pub async fn axum_proxy_handler(
             req_start,
         );
     }
+    if websocket::is_upgrade_candidate(req.headers()) {
+        // The upgrade handler strips its document marker before independently
+        // validating the Tactical capability and destination, when present.
+        return websocket::handle(state, req).await;
+    }
     let tactical_api_destination =
         match tactical_rmm::destination(state.tactical_rmm_api.as_ref(), &state.network, req.uri())
         {
@@ -2159,12 +2310,11 @@ pub async fn axum_proxy_handler(
             }
         };
     if tactical_api_destination.is_some()
-        && (websocket::is_upgrade_candidate(req.headers())
-            || req
-                .headers()
-                .get("sec-fetch-dest")
-                .and_then(|value| value.to_str().ok())
-                .is_some_and(|destination| destination != "empty"))
+        && req
+            .headers()
+            .get("sec-fetch-dest")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|destination| destination != "empty")
     {
         return Response::builder()
             .status(StatusCode::FORBIDDEN)
@@ -2173,9 +2323,6 @@ pub async fn axum_proxy_handler(
                 "The Tactical RMM API route accepts only background HTTP requests.",
             ))
             .expect("static Tactical RMM request-kind refusal");
-    }
-    if websocket::is_upgrade_candidate(req.headers()) {
-        return websocket::handle(state, req).await;
     }
     if req.uri().path() == web_automation::DARKREADER_PATH {
         // The router's protected-host/origin middleware has already run. Never
@@ -2229,7 +2376,12 @@ pub async fn axum_proxy_handler(
         // A queued old-page redemption cannot observe a pre-navigation sequence.
         // Direct Synology grants bind to the frontend-selected document instead
         // (serialized with selection), so child frame issuance never revokes them.
-        if state.upstream_auth_mode == UpstreamAuthMode::BitwardenForm {
+        if popup_parent.is_some() {
+            state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1
+        } else if matches!(
+            state.upstream_auth_mode,
+            UpstreamAuthMode::BitwardenForm | UpstreamAuthMode::CloudflareForm
+        ) {
             let mut continuation = state.bitwarden_continuation.lock().ok();
             let next = state.document_sequence.fetch_add(1, Ordering::SeqCst) + 1;
             if let Some(slot) = continuation.as_mut() {
@@ -2244,7 +2396,7 @@ pub async fn axum_proxy_handler(
     } else {
         0
     };
-    if document_request {
+    if document_request && popup_parent.is_none() {
         state
             .network
             .document_issued(document_sequence, navigation_token.is_some());
@@ -2280,7 +2432,13 @@ pub async fn axum_proxy_handler(
                 path_and_query
             )
         });
-    let full_url = if state.network.google.is_some() {
+    let full_url = if state.network.google.is_some()
+        || state
+            .network
+            .tactical_mesh
+            .as_ref()
+            .is_some_and(|mesh| !mesh.is_dashboard(&state.proxy_origin))
+    {
         state.target_origin.clone()
     } else {
         state.proxy_policy.redacted_url(&request_url)
@@ -2348,6 +2506,9 @@ pub async fn axum_proxy_handler(
         // host-only cookies. This closed route is deliberately stateless, and
         // suppressing Referer is safe for every browser referrer policy.
         retain_tactical_api_headers(&mut fwd_headers);
+    }
+    if popup_parent.is_some() {
+        fwd_headers.retain(|(name, _)| !name.eq_ignore_ascii_case("referer"));
     }
     if document_request
         && navigation_token.is_some()
@@ -2660,6 +2821,7 @@ pub async fn axum_proxy_handler(
 
             if state.proxy_policy.synology_quick_connect_defaults.is_some()
                 && document_request
+                && popup_parent.is_none()
                 && status_code.is_success()
                 && proxy_response::is_html(content_type.as_deref())
             {
@@ -2684,6 +2846,7 @@ pub async fn axum_proxy_handler(
                 .as_ref()
                 .is_some_and(|attempt| attempt.uses_deferred_synology_login())
                 && document_request
+                && popup_parent.is_none()
                 && status_code.is_success()
                 && proxy_response::is_html(content_type.as_deref())
                 && !proxy_response::quickconnect_connector_asset(
@@ -2775,7 +2938,22 @@ pub async fn axum_proxy_handler(
             // expects to see the JSON, not a themed page. The raw
             // upstream body lives in a `<details>` block on the
             // themed page so power users can still read it.
-            if document_request && status_u16 >= 400 {
+            // A reviewed dashboard's managed challenge is executable HTML,
+            // even on HTTP 403. Keep it in the normal bounded rewrite/injection
+            // pipeline. The route exists only for the exact reviewed profile;
+            // the classifier also checks the final response origin and signal.
+            if document_request
+                && status_u16 >= 400
+                && !cloudflare_challenge::is_managed_challenge_response(
+                    state
+                        .network
+                        .cloudflare_challenge
+                        .as_ref()
+                        .map(|_| ReviewedApplicationProfile::Cloudflare),
+                    &response_url,
+                    &resp_hdrs,
+                )
+            {
                 let is_html_or_empty = content_type
                     .as_deref()
                     .map(|ct| {
@@ -2887,6 +3065,19 @@ pub async fn axum_proxy_handler(
             // Preserve absolute URL semantics while routing matching-origin
             // resources through the protected proxy. Vendor fixes are strictly
             // versioned, not a global URL/Location override.
+            let cloudflare_challenge =
+                state
+                    .network
+                    .cloudflare_challenge
+                    .as_ref()
+                    .and_then(|route| {
+                        let root = if document_request {
+                            document_sequence
+                        } else {
+                            state.network.selected_document_sequence()?
+                        };
+                        route.manifest(root, &state.network)
+                    });
             let mut final_body = if is_rewritable
                 && tactical_api_destination.is_none()
                 && !state.target_origin.is_empty()
@@ -2902,6 +3093,16 @@ pub async fn axum_proxy_handler(
                     )
                 };
                 let text = font_assets::rewrite(&text, &state.proxy_origin);
+                // Parser-inserted tags must already target the alias before
+                // browser loading; JS property wrappers cannot catch them.
+                let text = if let Some(alias) = cloudflare_challenge
+                    .as_ref()
+                    .and_then(|value| value["proxyOrigin"].as_str())
+                {
+                    cloudflare_challenge::rewrite(&text, alias)
+                } else {
+                    text
+                };
                 // Apply the versioned adapter last: its deliberately bound
                 // upstream discovery origin must not be rewritten to loopback.
                 proxy_response::repair_quickconnect_redirect(
@@ -2933,12 +3134,16 @@ pub async fn axum_proxy_handler(
                 // device login form. Returns None (and injects nothing extra)
                 // when not armed. The injected HTML carries ONLY a per-page
                 // nonce + non-secret selectors — never the credential.
-                let autologin_script = crate::themed_autologin::build_autologin_injection(
-                    &state,
-                    document_sequence,
-                    &request_url,
-                )
-                .unwrap_or_default();
+                let autologin_script = if popup_parent.is_some() {
+                    String::new()
+                } else {
+                    crate::themed_autologin::build_autologin_injection(
+                        &state,
+                        document_sequence,
+                        &request_url,
+                    )
+                    .unwrap_or_default()
+                };
                 // e5 hardened client asset defines
                 // `window.__sorng_autologin.fetchCredsAndRun`, which the e3
                 // bootstrap checks for and defers to. It MUST appear BEFORE the
@@ -2963,11 +3168,23 @@ pub async fn axum_proxy_handler(
                     navigation_token.as_deref(),
                     document_sequence,
                     proxy_response::ReadinessNetworkContext {
+                        cloudflare_challenge,
                         source_origin: &state.target_origin,
                         proxy_origin: &state.proxy_origin,
                         policy: &state.proxy_policy,
                         tactical_rmm_api: state.tactical_rmm_api.as_ref(),
                         google: state.network.google.as_deref(),
+                        popup_parent_sequence: popup_parent,
+                        tactical_mesh: state.network.tactical_mesh.as_ref().and_then(|mesh| {
+                            mesh.is_dashboard(&state.proxy_origin)
+                                .then(|| {
+                                    mesh.manifest(
+                                        popup_parent.unwrap_or(document_sequence),
+                                        &state.network,
+                                    )
+                                })
+                                .flatten()
+                        }),
                     },
                 )
                 .into_bytes();
@@ -3095,6 +3312,17 @@ pub async fn axum_proxy_handler(
             })
         }
         Err(e) => {
+            if popup_parent.is_some()
+                && matches!(e, upstream::UpstreamError::CrossOriginRedirect(_))
+            {
+                return Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .header("Cache-Control", "no-store")
+                    .body(Body::from(
+                        "A Tactical popup cannot leave its owning connection origin.",
+                    ))
+                    .expect("static popup redirect refusal");
+            }
             // P2: themed HTML error page in place of the plain-text
             let cycle_edge = match &e {
                 upstream::UpstreamError::CrossOriginRedirect(redirect)

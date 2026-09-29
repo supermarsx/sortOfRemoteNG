@@ -59,6 +59,7 @@
     if (window.__sorng_bitwarden_login) window.__sorng_bitwarden_login.cancel();
     if (window.__sorng_synology_login) window.__sorng_synology_login.cancel();
     if (window.__sorng_yealink_login) window.__sorng_yealink_login.cancel();
+    if (window.__sorng_cloudflare_login) window.__sorng_cloudflare_login.cancel();
     if (fetchController) fetchController.abort();
     fetchController = null;
     if (cancelActive) cancelActive();
@@ -1640,6 +1641,18 @@
       return loginFlow === "google"
         ? google.runWhenReady(nonce, googleHelpers)
         : google.runPasswordWhenReady(nonce, googleHelpers);
+    }
+    if (loginFlow === "cloudflare") {
+      var cloudflare = window.__sorng_cloudflare_login;
+      if (!cloudflare || typeof cloudflare.runWhenReady !== "function") {
+        report({ ok: false, reason: "autologin-client-unavailable" });
+        return;
+      }
+      return cloudflare.runWhenReady(nonce, {
+        fillField: fillField,
+        isVisible: isVisible,
+        report: report,
+      });
     }
     var readinessProfile = loginFlow === "cpanel" ? "cpanel" : null;
     if (loginFlow != null && readinessProfile == null) {

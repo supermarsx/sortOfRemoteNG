@@ -12,6 +12,8 @@ import { ToastContext } from "../../contexts/ToastContext";
 import {
   RDP_INTERNALS_PROTOCOL,
   RDP_INTERNALS_WINDOW_MESSAGE,
+  WEB_POPUP_PROTOCOL,
+  WEB_POPUP_WINDOW_MESSAGE,
   CREDENTIAL_VAULT_PROTOCOL,
   CREDENTIAL_VAULT_WINDOW_MESSAGE,
 } from "../../components/app/toolSession";
@@ -343,6 +345,13 @@ export function useWindowManager({
 
   const handleMoveSession = useCallback(
     async (sessionId: string, targetWindow: WindowId, insertIndex?: number) => {
+      if (
+        sessionsRef.current.find((session) => session.id === sessionId)
+          ?.protocol === WEB_POPUP_PROTOCOL
+      ) {
+        console.warn(WEB_POPUP_WINDOW_MESSAGE);
+        return;
+      }
       const currentOwner = registry.current.sessionOwnership.get(sessionId);
       if (!currentOwner || currentOwner === targetWindow) return;
       if (
@@ -452,6 +461,13 @@ export function useWindowManager({
     ) => {
       // Move to main + update terminal buffer
       if (
+        sessionsRef.current.find((session) => session.id === sessionId)
+          ?.protocol === WEB_POPUP_PROTOCOL
+      ) {
+        console.warn(WEB_POPUP_WINDOW_MESSAGE);
+        return;
+      }
+      if (
         sessionsRef.current.find((item) => item.id === sessionId)?.protocol ===
         CREDENTIAL_VAULT_PROTOCOL
       ) {
@@ -535,6 +551,13 @@ export function useWindowManager({
       screenX: number,
       screenY: number,
     ) => {
+      if (
+        sessionsRef.current.find((session) => session.id === sessionId)
+          ?.protocol === WEB_POPUP_PROTOCOL
+      ) {
+        console.warn(WEB_POPUP_WINDOW_MESSAGE);
+        return;
+      }
       // Find which window the cursor landed on
       try {
         const { getAllWindows } = await import("@tauri-apps/api/window");

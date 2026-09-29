@@ -26,9 +26,11 @@ is mediated**. It does not change SSH, RDP, or other integration transports.
 - A WebSocket requires the protected origin and current document identity.
   Redirected or malformed handshakes are refused. Source navigation, session
   stop/restart, and listener termination revoke relays. Limits are 16 sockets
-  per session, 15-second handshake/upgrade deadlines, 60 seconds without traffic
-  in either direction, and a 30-minute maximum relay lifetime. Frames pass
-  through fixed-size buffers; compression extensions are not negotiated.
+  per session and 15-second handshake/upgrade deadlines. Established sockets
+  have no age or idle cutoff: quiet remote consoles remain connected until TCP
+  termination or document/session cancellation. Frames pass through fixed-size
+  buffers with backpressure; compression extensions are not negotiated. The
+  transparent relay does not inject pings or impose a pong deadline.
 - Both `ws://` and `wss://` URLs for the current upstream origin use this route;
   `wss://` retains verified upstream TLS even though the protected loopback
   browser connection uses `ws://`. Negotiated subprotocols, binary messages,
@@ -37,6 +39,21 @@ is mediated**. It does not change SSH, RDP, or other integration transports.
   QuickConnect discovery/probe grant is not a WebSocket grant. After an approved
   navigation establishes a new session origin, its same-origin sockets use
   that new session's independent route.
+- Tactical RMM's approved API origins and explicitly configured Mesh origin
+  have separate WSS routes using certificate-verifying proxy clients. Dashboard
+  sockets to Mesh require its exact issued alias, dashboard Origin, and active
+  parent-root identity. The upstream Origin reflects the remote dashboard;
+  Mesh-frame sockets retain the remote Mesh Origin. Each alias/root retains
+  its own server-issued HttpOnly cookies natively, so an embedded browser
+  withholding Secure/SameSite cookies does not lose Mesh's signed session
+  pair between the login document, Commander iframe and control WebSocket.
+  Redirect/final HTTP and upgrade responses update that bounded in-memory
+  store; path/expiry rules and deletions are respected. Browser copies cannot
+  override or resurrect these protected cookies. The store is discarded on
+  root replacement or session closure, never persisted or exposed to scripts.
+  Other page-managed cookies remain browser-managed. Dashboard saved credentials,
+  custom headers, cookies and certificate bypass are not transferred. This
+  socket exception grants no cross-origin HTTP or frame access.
 - Handshake attempts reaching the WebSocket handler appear in the bounded
   proxy request log as **WebSocket handshake**, with status and a fixed error
   category only. Socket paths, query strings, headers, subprotocol values and
@@ -45,8 +62,9 @@ is mediated**. It does not change SSH, RDP, or other integration transports.
   headers are exposed. Malformed upstream upgrades and transport failures remain 502.
 
 The parent browser validates and selects the primary document. Loading an
-embedded child frame does not revoke its parent's sockets; child-frame
-WebSockets are not supported in this slice. A new primary document's early
+embedded child frame does not revoke its parent's sockets. Approved Tactical
+popup and Mesh-frame sockets share their parent root's lifetime; arbitrary
+child-frame origins receive no socket grant. A new primary document's early
 socket waits up to five seconds for selection, without contacting the upstream
 before approval. Stale document identities cannot regain access.
 
@@ -631,7 +649,9 @@ and query handling, HTTPS pinning through HTTP CONNECT, handshake refusals,
 revocation, and response-policy coverage. `http_websocket_acceptance_tests.rs`
 adds real plain/TLS-plus-CONNECT binary, fragmented, ping/pong, close and
 subprotocol exchanges, rejection status fidelity and secret-safe bounded logs.
-`http_websocket.rs` includes raw-query and one-way-traffic idle regressions.
+`http_websocket.rs` includes raw-query and quiet-session cancellation regressions.
+`http_tactical_mesh_tests.rs` covers dashboard-initiated Mesh upgrades, exact
+origin/root admission, cookie isolation and rejection without a direct fallback.
 Existing HTTP response, TLS, and reviewed
 redirect fixtures remain relevant. These tests do not contact user sites,
 install trusted roots, prove compatibility with every website, or establish

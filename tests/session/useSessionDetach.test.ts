@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { useSessionDetach } from "../../src/hooks/session/useSessionDetach";
 import {
   createRdpInternalsSession,
+  createWebPopupSession,
   createSecurityToolSession,
 } from "../../src/components/app/toolSession";
 import { ToastContext } from "../../src/contexts/ToastContext";
@@ -217,6 +218,18 @@ describe("useSessionDetach", () => {
     expect(invoke).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
     expect(registerWindow).not.toHaveBeenCalled();
+    expect(localStorage.getItem(`detached-session-${tab.id}`)).toBeNull();
+  });
+  it("refuses direct popup detach before native calls, window creation or persistence", async () => {
+    const tab = createWebPopupSession("popup", makeSession("source", "https"));
+    const { result, dispatch, registerWindow } = renderDetach({
+      sessions: [tab],
+    });
+    await act(async () => result.current.handleSessionDetach(tab.id));
+    expect(invoke).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(registerWindow).not.toHaveBeenCalled();
+    expect(mockWebviewCreate).not.toHaveBeenCalled();
     expect(localStorage.getItem(`detached-session-${tab.id}`)).toBeNull();
   });
   it("keeps the private vault in main with actionable guidance before unmount or handoff", async () => {

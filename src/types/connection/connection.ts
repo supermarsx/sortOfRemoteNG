@@ -81,6 +81,8 @@ export interface HttpApplicationSettings {
   loginMode: "manual" | "form" | "basic" | "digest";
   /** Tactical RMM's exact HTTPS API origin (port 443); non-secret, no path. */
   apiOrigin?: string;
+  /** Tactical RMM's exact HTTPS MeshCentral origin; optional port, no path or secrets. */
+  meshOrigin?: string;
   /** Proxmox account realm; applied only to the volatile login username. */
   realm?: string;
   /** Joomla administrator entry pathname only; never a URL or query secret. */

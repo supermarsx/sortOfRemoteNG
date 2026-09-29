@@ -660,6 +660,46 @@ pub async fn start_basic_auth_proxy(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
+    let cloudflare_challenge =
+        if config.reviewed_application_profile == Some(ReviewedApplicationProfile::Cloudflare) {
+            crate::http::cloudflare_challenge::CloudflareChallenge::new(
+                config.reviewed_application_profile,
+                &validated_target,
+                &protected_endpoint.origin,
+                proxy_client_builder_with_cookies(
+                    true,
+                    None,
+                    &min_tls,
+                    upstream_proxy_url.as_deref(),
+                    false,
+                    None,
+                    None,
+                    false,
+                )?,
+            )?
+        } else {
+            None
+        };
+    let tactical_mesh = if config.reviewed_application_mesh_origin.is_some() {
+        crate::http::tactical_mesh::TacticalMeshRoute::new(
+            config.reviewed_application_profile,
+            &validated_target,
+            config.reviewed_application_mesh_origin.as_deref(),
+            &protected_endpoint.origin,
+            proxy_client_builder_with_cookies(
+                true,
+                None,
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                false,
+                None,
+                None,
+                false,
+            )?,
+        )?
+    } else {
+        None
+    };
     let google =
         if config.reviewed_application_profile == Some(ReviewedApplicationProfile::GoogleHosted) {
             crate::http::google::GoogleSession::new(
@@ -701,6 +741,8 @@ pub async fn start_basic_auth_proxy(
                 &proxy_policy,
             )
             .with_google_routes(google)
+            .with_tactical_mesh(tactical_mesh)
+            .with_cloudflare_challenge(cloudflare_challenge)
             .with_reviewed_application_profile(config.reviewed_application_profile),
     );
     let google_routes = network.google_routes();
@@ -806,6 +848,7 @@ pub async fn start_basic_auth_proxy(
                 redirect_profile: config.redirect_profile,
                 reviewed_application_profile: config.reviewed_application_profile,
                 reviewed_application_api_origin: config.reviewed_application_api_origin.clone(),
+                reviewed_application_mesh_origin: config.reviewed_application_mesh_origin.clone(),
                 custom_headers: config.custom_headers.clone(),
                 upstream_proxy_url,
                 target_origin,
@@ -1258,6 +1301,7 @@ pub async fn restart_proxy_session(
         redirect_profile,
         reviewed_application_profile,
         reviewed_application_api_origin,
+        reviewed_application_mesh_origin,
         custom_headers,
         upstream_proxy_url,
         target_origin,
@@ -1288,6 +1332,7 @@ pub async fn restart_proxy_session(
             entry.redirect_profile,
             entry.reviewed_application_profile,
             entry.reviewed_application_api_origin.clone(),
+            entry.reviewed_application_mesh_origin.clone(),
             entry.custom_headers.clone(),
             entry.upstream_proxy_url.clone(),
             entry.target_origin.clone(),
@@ -1372,6 +1417,46 @@ pub async fn restart_proxy_session(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
+    let cloudflare_challenge =
+        if reviewed_application_profile == Some(ReviewedApplicationProfile::Cloudflare) {
+            crate::http::cloudflare_challenge::CloudflareChallenge::new(
+                reviewed_application_profile,
+                &validated_target,
+                &protected_endpoint.origin,
+                proxy_client_builder_with_cookies(
+                    true,
+                    None,
+                    &min_tls,
+                    upstream_proxy_url.as_deref(),
+                    false,
+                    None,
+                    None,
+                    false,
+                )?,
+            )?
+        } else {
+            None
+        };
+    let tactical_mesh = if reviewed_application_mesh_origin.is_some() {
+        crate::http::tactical_mesh::TacticalMeshRoute::new(
+            reviewed_application_profile,
+            &validated_target,
+            reviewed_application_mesh_origin.as_deref(),
+            &protected_endpoint.origin,
+            proxy_client_builder_with_cookies(
+                true,
+                None,
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                false,
+                None,
+                None,
+                false,
+            )?,
+        )?
+    } else {
+        None
+    };
     let tactical_rmm_api =
         if reviewed_application_profile == Some(ReviewedApplicationProfile::TacticalRmm) {
             let api_client = proxy_client_builder_with_cookies(
@@ -1437,6 +1522,8 @@ pub async fn restart_proxy_session(
                 &proxy_policy,
             )
             .with_google_routes(google)
+            .with_tactical_mesh(tactical_mesh)
+            .with_cloudflare_challenge(cloudflare_challenge)
             .with_reviewed_application_profile(reviewed_application_profile),
     );
     let google_routes = network.google_routes();
@@ -1530,6 +1617,7 @@ pub async fn restart_proxy_session(
                 redirect_profile,
                 reviewed_application_profile,
                 reviewed_application_api_origin,
+                reviewed_application_mesh_origin,
                 custom_headers,
                 upstream_proxy_url,
                 target_origin,

@@ -6,6 +6,7 @@ import {
 } from "../../src/hooks/window/useWindowManager";
 import {
   createRdpInternalsSession,
+  createWebPopupSession,
   createSecurityToolSession,
   createToolSession,
   selectDetachedSessionManager,
@@ -1318,6 +1319,55 @@ describe("useWindowManager", () => {
     ).toEqual([]);
     act(() => result.current.reattachSession(tab.id));
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("refuses popup move, drop-to-new-window and reattach commands without changing ownership", async () => {
+    const tab = createWebPopupSession(
+      "popup",
+      makeSession("source", { protocol: "https" }),
+    );
+    const dispatch = vi.fn();
+    const handleSessionDetach = vi.fn();
+    const { result } = renderWindowManager({
+      sessions: [tab],
+      dispatch,
+      handleSessionDetach,
+    });
+    const target = "detached-popup-test" as any;
+    act(() =>
+      result.current.registry.current.windows.set(target, {
+        windowId: target,
+        sessionIds: [],
+        createdAt: Date.now(),
+      }),
+    );
+    await waitFor(() =>
+      expect(mockWindowListeners.get("wm:command")).toBeTypeOf("function"),
+    );
+    for (const command of [
+      { type: "MOVE_SESSION", targetWindow: target },
+      { type: "DROP_ON_WINDOW", screenX: 500, screenY: 500 },
+      { type: "REATTACH_SESSION" },
+    ]) {
+      await act(async () => {
+        await mockWindowListeners.get("wm:command")!({
+          payload: {
+            ...command,
+            sessionId: tab.id,
+            sourceWindow: "main",
+          },
+        });
+      });
+    }
+    act(() => result.current.reattachSession(tab.id));
+    expect(result.current.registry.current.sessionOwnership.get(tab.id)).toBe(
+      "main",
+    );
+    expect(
+      result.current.registry.current.windows.get(target)?.sessionIds,
+    ).toEqual([]);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(handleSessionDetach).not.toHaveBeenCalled();
   });
 
   it("rejects stale detached reattach and move commands after main owns the session", async () => {

@@ -9,7 +9,10 @@ import {
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionTabs } from "../../src/components/session/SessionTabs";
-import { createIconExplorerSession } from "../../src/components/app/toolSession";
+import {
+  createIconExplorerSession,
+  createWebPopupSession,
+} from "../../src/components/app/toolSession";
 import { publishIconLibrary } from "../../src/utils/icons/iconLibraryRuntime";
 import { parsePassiveSvg } from "../../src/utils/icons/iconLibrary";
 import type {
@@ -191,6 +194,20 @@ describe("SessionTabs accessibility", () => {
     expect(
       container.querySelector('[data-session-icon="tool:unknown"]'),
     ).toBeNull();
+  });
+
+  it("keeps Take Control as a closeable top-level tab with detachment disabled", () => {
+    mockSessions = [createWebPopupSession("popup", mockSessions[0])];
+    const { container } = renderTabs({ activeSessionId: "popup" });
+    expect(
+      container.querySelector('[data-session-icon="tool:webPopup"]'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Detach Take Control" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Close Take Control" }));
+    expect(onSessionClose).toHaveBeenCalledWith("popup");
+    expect(onSessionDetach).not.toHaveBeenCalled();
   });
 
   it("reveals the active tab only in its horizontal lane", () => {

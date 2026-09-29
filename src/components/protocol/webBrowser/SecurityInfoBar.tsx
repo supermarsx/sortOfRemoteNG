@@ -34,6 +34,11 @@ const SecurityInfoBar: React.FC<SectionProps> = ({ mgr }) => (
     <span className="min-w-0 break-all text-[var(--color-textSecondary)]">
       Connected to {mgr.session.hostname}
     </span>
+    {mgr.sharedSession && (
+      <span className="text-[var(--color-textMuted)]">
+        • Shared browser session
+      </span>
+    )}
     {mgr.deferredLogin ? (
       <>
         <span className="text-[var(--color-textMuted)]">•</span>

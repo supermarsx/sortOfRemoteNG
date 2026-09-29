@@ -15,8 +15,6 @@ use std::{
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const DOCUMENT_MARKER: &str = "__sorng_ws_document_v1";
-const MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
-const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn contains_token(headers: &HeaderMap, name: &str, token: &str) -> bool {
     headers
@@ -41,6 +39,26 @@ fn refusal(status: StatusCode, text: &'static str) -> Response<Body> {
         .header("Cache-Control", "no-store")
         .body(Body::from(text))
         .expect("static WebSocket refusal")
+}
+
+#[derive(Clone)]
+struct UpstreamFailure {
+    code: &'static str,
+    status: Option<u16>,
+}
+
+fn upstream_refusal(
+    status: StatusCode,
+    text: &'static str,
+    code: &'static str,
+    upstream_status: Option<u16>,
+) -> Response<Body> {
+    let mut response = refusal(status, text);
+    response.extensions_mut().insert(UpstreamFailure {
+        code,
+        status: upstream_status,
+    });
+    response
 }
 
 fn path_and_document(path: &str) -> Option<(String, u64)> {
@@ -77,6 +95,10 @@ fn path_and_document(path: &str) -> Option<(String, u64)> {
         format!("{path}?{}", kept.join("&"))
     };
     Some((output, sequence?))
+}
+
+pub(super) fn document_sequence(uri: &axum::http::Uri) -> Option<u64> {
+    path_and_document(uri.path_and_query()?.as_str()).map(|(_, sequence)| sequence)
 }
 
 fn protocols(headers: &HeaderMap) -> Option<Vec<String>> {
@@ -117,8 +139,34 @@ pub(super) async fn handle(
     } else {
         "OTHER"
     };
-    let response = handle_inner(state.clone(), request).await;
+    let mut response = handle_inner(state.clone(), request).await;
     let status = response.status().as_u16();
+    // Distinguish native admission from upstream refusal/transport errors.
+    // Only closed categories enter logs: reqwest error strings include URLs.
+    let failure = response.extensions_mut().remove::<UpstreamFailure>();
+    let mut diagnostic = super::ProxyLogDiagnostic::new(
+        "websocket",
+        if failure.is_some() {
+            "upstream"
+        } else if status == 101 {
+            "complete"
+        } else {
+            "admission"
+        },
+        failure.as_ref().map_or(
+            match status {
+                101 => "websocket_handshake",
+                403 => "websocket_origin_or_route_denied",
+                410 => "websocket_document_ended",
+                429 => "websocket_limit",
+                _ => "websocket_invalid_request",
+            },
+            |failure| failure.code,
+        ),
+        if status == 101 { "succeeded" } else { "failed" },
+        started,
+    );
+    diagnostic.upstream_status = failure.and_then(|failure| failure.status);
     let error = (status >= 400).then(|| format!("HTTP {status} [websocket_handshake]"));
     state.request_count.fetch_add(1, Ordering::Relaxed);
     if error.is_some() {
@@ -136,16 +184,7 @@ pub(super) async fn handle(
             status,
             error,
             timestamp: chrono::Utc::now().to_rfc3339(),
-            diagnostic: Some(super::session_diagnostic(
-                &state,
-                super::ProxyLogDiagnostic::new(
-                    "websocket",
-                    "complete",
-                    "websocket_handshake",
-                    if status == 101 { "succeeded" } else { "failed" },
-                    started,
-                ),
-            )),
+            diagnostic: Some(super::session_diagnostic(&state, diagnostic)),
         });
     }
     response
@@ -157,17 +196,21 @@ async fn handle_inner(
 ) -> Response<Body> {
     // Origin is mandatory here (unlike ordinary document GET). Validate even
     // when this handler is called directly in a fixture, before any network.
-    if !super::proxy_request_headers_are_authorized(
-        request.headers(),
-        &state.proxy_authority,
-        &state.proxy_origin,
-    ) || count(request.headers(), "host") != 1
-        || count(request.headers(), "origin") != 1
-        || request
-            .headers()
-            .get("origin")
-            .and_then(|v| v.to_str().ok())
-            != Some(state.proxy_origin.as_str())
+    let dashboard_origin = state.network.tactical_mesh.as_ref().and_then(|mesh| {
+        mesh.dashboard_websocket_origin(&state.network, &request, &state.proxy_origin)
+    });
+    if dashboard_origin.is_none()
+        && (!super::proxy_request_headers_are_authorized(
+            request.headers(),
+            &state.proxy_authority,
+            &state.proxy_origin,
+        ) || count(request.headers(), "host") != 1
+            || count(request.headers(), "origin") != 1
+            || request
+                .headers()
+                .get("origin")
+                .and_then(|v| v.to_str().ok())
+                != Some(state.proxy_origin.as_str()))
     {
         return refusal(StatusCode::FORBIDDEN, "WebSocket origin is not authorized.");
     }
@@ -216,6 +259,24 @@ async fn handle_inner(
             "WebSocket document identity is missing or invalid.",
         );
     };
+    let mesh_request = state
+        .network
+        .tactical_mesh
+        .as_ref()
+        .is_some_and(|mesh| !mesh.is_dashboard(&state.proxy_origin));
+    if mesh_request
+        && state
+            .network
+            .tactical_mesh
+            .as_ref()
+            .and_then(|mesh| mesh.root_for_origin(&state.proxy_origin))
+            != Some(sequence)
+    {
+        return refusal(
+            StatusCode::GONE,
+            "This Mesh alias belongs to a different root document.",
+        );
+    }
     let Ok(permit) = state.network.sockets.clone().try_acquire_owned() else {
         return refusal(
             StatusCode::TOO_MANY_REQUESTS,
@@ -225,23 +286,52 @@ async fn handle_inner(
     if state.network.await_document(sequence).await.is_err() {
         return refusal(StatusCode::GONE, "This proxy document has ended.");
     }
+    let Ok(uri) = path.parse::<axum::http::Uri>() else {
+        return refusal(StatusCode::BAD_REQUEST, "Invalid WebSocket route.");
+    };
+    let tactical_destination = match super::tactical_rmm::destination(
+        state.tactical_rmm_api.as_ref(),
+        &state.network,
+        &uri,
+    ) {
+        Ok(destination) => destination,
+        Err(detail) => return refusal(StatusCode::FORBIDDEN, detail),
+    };
+    let tactical_api_request = tactical_destination.is_some();
     let mut forwarded = collect_upstream_headers(
         headers,
-        state.upstream_auth_mode,
+        if tactical_api_request {
+            super::UpstreamAuthMode::None
+        } else {
+            state.upstream_auth_mode
+        },
         &state.proxy_origin,
         &state.target_origin,
     );
     // Browser extension negotiation is not forwarded. The transparent tunnel
     // has fixed-size buffers and does not decompress untrusted frames.
     forwarded.retain(|(name, _)| !name.starts_with("sec-websocket-") && name != "upgrade");
-    for (name, value) in &state.custom_headers {
-        forwarded.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
-        forwarded.push((name.clone(), value.clone()));
+    if mesh_request {
+        forwarded.retain(|(name, _)| name != "referer");
+        if let Some(origin) = dashboard_origin {
+            // Match the actual remote initiator, not the Mesh destination.
+            // Cookie scope remains the destination alias's browser scope.
+            forwarded.retain(|(name, _)| name != "origin");
+            forwarded.push(("origin".into(), origin.into()));
+        }
     }
-    // An authenticated page must not open an unauthenticated socket: this path
-    // shares `collect_upstream_headers` with documents, so the natively
-    // established phone session has to reach the upgrade too.
-    super::yealink_login::apply_session_cookie(&mut forwarded, &state.yealink_session);
+    if tactical_api_request {
+        // Match HTTP API isolation: preserve the dashboard Origin, but never
+        // project its cookies, referrer, custom headers or saved login.
+        super::retain_tactical_api_headers(&mut forwarded);
+    } else {
+        for (name, value) in &state.custom_headers {
+            forwarded.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
+            forwarded.push((name.clone(), value.clone()));
+        }
+        // Same-origin sockets retain the natively established phone session.
+        super::yealink_login::apply_session_cookie(&mut forwarded, &state.yealink_session);
+    }
     forwarded.extend([
         ("connection".into(), "Upgrade".into()),
         ("upgrade".into(), "websocket".into()),
@@ -261,7 +351,9 @@ async fn handle_inner(
             "WebSocket upgrade bodies are not supported.",
         );
     }
-    let target = format!("{}{}", state.target_origin, path);
+    let target = tactical_destination
+        .map(|destination| destination.to_string())
+        .unwrap_or_else(|| format!("{}{}", state.target_origin, path));
     let response = match state
         .network
         .while_document(
@@ -271,20 +363,35 @@ async fn handle_inner(
         .await
     {
         Ok(Ok(response)) => response,
-        Ok(Err(_)) => {
-            return refusal(
+        Ok(Err(error)) => {
+            let code = match error {
+                upstream::UpstreamError::Deadline => "websocket_upstream_timeout",
+                upstream::UpstreamError::Transport(error) if error.is_timeout() => {
+                    "websocket_upstream_timeout"
+                }
+                upstream::UpstreamError::Transport(error) if error.is_connect() => {
+                    "websocket_upstream_connect_failed"
+                }
+                upstream::UpstreamError::Transport(_) => "websocket_upstream_transport_failed",
+                _ => "websocket_upstream_policy_denied",
+            };
+            return upstream_refusal(
                 StatusCode::BAD_GATEWAY,
                 "The WebSocket upstream handshake failed; no alternate route was attempted.",
-            )
+                code,
+                None,
+            );
         }
         Err(_) => return refusal(StatusCode::GONE, "This proxy document has ended."),
     };
     if response.status().is_client_error() || response.status().is_server_error() {
         // Preserve actionable rejection status without exposing an upstream
         // login challenge, cookies, redirect, error body or response headers.
-        return refusal(
+        return upstream_refusal(
             response.status(),
             "The upstream rejected the WebSocket handshake; no alternate route was attempted.",
+            "websocket_upstream_rejected",
+            Some(response.status().as_u16()),
         );
     }
     let expected_accept = base64::engine::general_purpose::STANDARD.encode(Sha1::digest(
@@ -294,9 +401,11 @@ async fn handle_inner(
         Some(value) => match value.to_str() {
             Ok(value) => Some(value.to_string()),
             Err(_) => {
-                return refusal(
+                return upstream_refusal(
                     StatusCode::BAD_GATEWAY,
                     "The upstream returned an invalid WebSocket handshake.",
+                    "websocket_upstream_invalid_handshake",
+                    Some(response.status().as_u16()),
                 )
             }
         },
@@ -316,9 +425,11 @@ async fn handle_inner(
         || response.headers().contains_key("sec-websocket-extensions")
         || selected.as_ref().is_some_and(|v| !offered.contains(v))
     {
-        return refusal(
+        return upstream_refusal(
             StatusCode::BAD_GATEWAY,
             "The upstream returned an invalid WebSocket handshake.",
+            "websocket_upstream_invalid_handshake",
+            Some(response.status().as_u16()),
         );
     }
     let upstream = match state
@@ -331,9 +442,11 @@ async fn handle_inner(
     {
         Ok(Ok(Ok(stream))) => stream,
         _ => {
-            return refusal(
+            return upstream_refusal(
                 StatusCode::BAD_GATEWAY,
                 "The upstream WebSocket upgrade did not complete.",
+                "websocket_upstream_upgrade_failed",
+                Some(101),
             )
         }
     };
@@ -351,7 +464,7 @@ async fn handle_inner(
                     return;
                 };
                 let browser = hyper_util::rt::TokioIo::new(browser);
-                let _ = tokio::time::timeout(MAX_LIFETIME, relay(browser, upstream)).await;
+                let _ = relay(browser, upstream).await;
             })
             .await;
     });
@@ -371,7 +484,6 @@ async fn handle_inner(
 async fn copy_active<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     mut input: R,
     mut output: W,
-    activity: tokio::sync::watch::Sender<()>,
 ) -> std::io::Result<()> {
     let mut buffer = [0u8; 8192];
     loop {
@@ -379,10 +491,8 @@ async fn copy_active<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         if count == 0 {
             return Ok(());
         }
-        activity.send_modify(|_| {});
         output.write_all(&buffer[..count]).await?;
         output.flush().await?;
-        activity.send_modify(|_| {});
     }
 }
 
@@ -391,23 +501,14 @@ where
     A: AsyncRead + AsyncWrite + Unpin,
     B: AsyncRead + AsyncWrite + Unpin,
 {
-    relay_with_idle(browser, upstream, IDLE_TIMEOUT).await
-}
-
-async fn relay_with_idle<A, B>(browser: A, upstream: B, idle: Duration) -> std::io::Result<()>
-where
-    A: AsyncRead + AsyncWrite + Unpin,
-    B: AsyncRead + AsyncWrite + Unpin,
-{
+    // Quiet remote consoles are valid indefinitely. This is a bounded byte
+    // relay, not a frame terminator: never inject ping frames between partial
+    // writes. TCP EOF/error or the enclosing root/session lease ends it.
     let (browser_read, browser_write) = tokio::io::split(browser);
     let (upstream_read, upstream_write) = tokio::io::split(upstream);
-    let (activity, mut changes) = tokio::sync::watch::channel(());
     tokio::select! {
-        result = copy_active(browser_read, upstream_write, activity.clone()) => result,
-        result = copy_active(upstream_read, browser_write, activity.clone()) => result,
-        _ = async {
-            while matches!(tokio::time::timeout(idle, changes.changed()).await, Ok(Ok(()))) {}
-        } => Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "WebSocket idle timeout")),
+        result = copy_active(browser_read, upstream_write) => result,
+        result = copy_active(upstream_read, browser_write) => result,
     }
 }
 
@@ -434,16 +535,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn receive_only_activity_keeps_both_directions_open_and_true_idle_expires() {
+    async fn quiet_websocket_stays_open_until_source_session_cancels() {
         let (mut browser_peer, browser) = tokio::io::duplex(64);
         let (mut server_peer, upstream) = tokio::io::duplex(64);
-        let task = tokio::spawn(relay_with_idle(
-            browser,
-            upstream,
-            Duration::from_millis(250),
-        ));
-        // Total duration exceeds the idle window while only server-to-browser
-        // traffic flows: an independent client-read timeout would close it.
+        let network = Arc::new(super::super::ProxyNetworkState::default());
+        network.document_issued(1, true);
+        let lifetime = network.clone();
+        let mut task =
+            tokio::spawn(async move { lifetime.while_document(1, relay(browser, upstream)).await });
+        assert!(tokio::time::timeout(Duration::from_millis(100), &mut task)
+            .await
+            .is_err());
         for _ in 0..7 {
             tokio::time::sleep(Duration::from_millis(50)).await;
             server_peer.write_all(b"push").await.unwrap();
@@ -455,10 +557,20 @@ mod tests {
             assert_eq!(&bytes, b"push");
         }
         assert!(!task.is_finished());
+        assert!(tokio::time::timeout(Duration::from_millis(100), &mut task)
+            .await
+            .is_err());
+        browser_peer.write_all(b"back").await.unwrap();
+        let mut bytes = [0u8; 4];
+        server_peer.read_exact(&mut bytes).await.unwrap();
+        assert_eq!(&bytes, b"back");
+        network.revoke();
         let result = tokio::time::timeout(Duration::from_secs(2), task)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
+        assert!(result.is_err());
+        assert_eq!(browser_peer.read(&mut bytes).await.unwrap(), 0);
+        assert_eq!(server_peer.read(&mut bytes).await.unwrap(), 0);
     }
 }

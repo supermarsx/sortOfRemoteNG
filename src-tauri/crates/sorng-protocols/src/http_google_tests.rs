@@ -110,6 +110,7 @@ fn activate(state: &Arc<AxumProxyState>) {
             redirect_profile: None,
             reviewed_application_profile: Some(ReviewedApplicationProfile::GoogleHosted),
             reviewed_application_api_origin: None,
+            reviewed_application_mesh_origin: None,
             custom_headers: HashMap::new(),
             upstream_proxy_url: None,
             target_origin: state.target_origin.clone(),

@@ -233,6 +233,7 @@ async fn login_proxy(
             redirect_profile: state.redirect_profile,
             reviewed_application_profile: None,
             reviewed_application_api_origin: None,
+            reviewed_application_mesh_origin: None,
             custom_headers: HashMap::new(),
             upstream_proxy_url: Some(peer.proxy_url.clone()),
             target_origin: state.target_origin.clone(),

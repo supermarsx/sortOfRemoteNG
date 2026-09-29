@@ -45,6 +45,12 @@ import { useWebRecorder } from "../recording/useWebRecorder";
 import { useDisplayRecorder } from "../recording/useDisplayRecorder";
 import { useWebAutomation } from "./useWebAutomation";
 import { useWebAutoMfa } from "./useWebAutoMfa";
+import { useWebPopupTabs } from "./useWebPopupTabs";
+import { webPopupTabs } from "../../utils/protocol/webPopupTabs";
+import {
+  popupProxyUrl,
+  popupUpstreamUrl,
+} from "../../utils/protocol/webPopupNavigation";
 import { WebAutomationBridge } from "../../utils/recording/webAutomationBridge";
 import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
 import { useRuntimeVaultTotp } from "../security/useRuntimeVaultTotp";
@@ -88,6 +94,7 @@ import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostic
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
 import {
   getReviewedApplicationApiOrigin,
+  getReviewedApplicationMeshOrigin,
   getReviewedApplicationProfile,
   resolveHttpApplicationLogin,
   sameHttpApplicationLogin,
@@ -526,7 +533,11 @@ export function validateProtectedProxyUrl(
    Hook
    ═══════════════════════════════════════════════════════════════ */
 
-export function useWebBrowser(session: ConnectionSession) {
+export function useWebBrowser(
+  session: ConnectionSession,
+  onActivateSession?: (id: string) => void,
+  sharedPopupId?: string,
+) {
   const {
     state,
     dispatch,
@@ -745,6 +756,10 @@ export function useWebBrowser(session: ConnectionSession) {
       else if (profileSettings?.loginPath && !profileSettings.invalid)
         target.pathname = profileSettings.loginPath;
       else if (profile?.loginPath) target.pathname = profile.loginPath;
+      // The login grant is minted on /login, not on the dashboard shell. A
+      // client-side redirect from / would otherwise miss native injection.
+      if (profile?.id === "cloudflare" && profileSettings?.loginMode === "form")
+        target.pathname = "/login";
       // Enter the reviewed SPA route directly. An empty hash would let initial
       // router startup look like a navigation revocation between the two grants.
       if (profile?.loginFlow === "bitwarden") target.hash = "/login";
@@ -991,7 +1006,16 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [dispatch, session]);
 
   // ── State ───────────────────────────────────────────────────
-  const [currentUrl, setCurrentUrl] = useState(targetResolution.url);
+  const [currentUrl, setCurrentUrl] = useState(() => {
+    const popup = sharedPopupId && webPopupTabs.getSnapshot(sharedPopupId);
+    try {
+      return popup
+        ? popupUpstreamUrl(popup, targetResolution.url)
+        : targetResolution.url;
+    } catch {
+      return targetResolution.url;
+    }
+  });
   const [inputUrl, setInputUrl] = useState(currentUrl);
   // This authority follows a natively reviewed in-session continuation while
   // the saved connection and its owning-database identity remain unchanged.
@@ -1007,7 +1031,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const clearingSessionRef = useRef(false);
   const [isLoading, setIsLoading] = useState(!targetResolution.error);
   const [waitingForTrust, setWaitingForTrust] = useState(
-    session.protocol === "https",
+    !sharedPopupId && session.protocol === "https",
   );
   const [loadingIndicatorReady, setLoadingIndicatorReady] = useState(false);
   const [loadError, setLoadError] = useState<string>(
@@ -1054,6 +1078,9 @@ export function useWebBrowser(session: ConnectionSession) {
     setNavigationHistory(next);
   }, []);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const popupViewerRef =
+    useRef<ReturnType<typeof webPopupTabs.attachViewer>>(null);
+  const popupNavigatedUrlRef = useRef<string | null>(null);
 
   // ── Certificate trust ──────────────────────────────────────
   const [showCertPopup, setShowCertPopup] = useState(false);
@@ -1149,11 +1176,12 @@ export function useWebBrowser(session: ConnectionSession) {
     useState(0);
   const publishAutomationDocument = useCallback(
     (document: typeof currentDocumentRef.current) => {
+      webPopupTabs.revokeSource(session.id);
       resetDarkPaint();
       currentDocumentRef.current = document;
       setAutomationDocumentRevision((revision) => revision + 1);
     },
-    [resetDarkPaint],
+    [resetDarkPaint, session.id],
   );
   const acceptAutomationDocument = useCallback(
     () => setAutomationDocumentRevision((revision) => revision + 1),
@@ -1260,7 +1288,7 @@ export function useWebBrowser(session: ConnectionSession) {
     generation: number;
     url: string;
     cleanUrl: string;
-    token: string;
+    token: string | null;
     sessionId: string;
   } | null>(null);
   const [shouldMountIframe, setShouldMountIframe] = useState(false);
@@ -1271,26 +1299,38 @@ export function useWebBrowser(session: ConnectionSession) {
     clearWebBrowserFrame(iframeRef.current);
     setShouldMountIframe(false);
   }, [resetDarkPaint]);
-  const attachIframe = useCallback((iframe: HTMLIFrameElement | null) => {
-    iframeRef.current = iframe;
-    const pending = pendingFrameRef.current;
-    if (
-      iframe &&
-      pending &&
-      pending.generation === navGenRef.current &&
-      pending.sessionId === proxySessionIdRef.current
-    ) {
-      awaitingFrameGenerationRef.current = pending.generation;
-      const documentAliases = googleRoutesRef.current
-        .filter((route) => route.documents)
-        .map((route) => route.proxyOrigin);
-      navigateWebBrowserFrame(
-        iframe,
-        pending.url,
-        documentAliases.length ? documentAliases : proxyUrlRef.current,
-      );
-    }
-  }, []);
+  const attachIframe = useCallback(
+    (iframe: HTMLIFrameElement | null) => {
+      if (!sharedPopupId && iframeRef.current !== iframe)
+        clearWebBrowserFrame(iframeRef.current);
+      if (sharedPopupId && iframeRef.current !== iframe) {
+        popupViewerRef.current?.release({ preserveTab: true });
+        popupViewerRef.current = iframe
+          ? webPopupTabs.attachViewer(sharedPopupId, iframe)
+          : null;
+      }
+      iframeRef.current = iframe;
+      const pending = pendingFrameRef.current;
+      if (
+        iframe &&
+        pending &&
+        pending.generation === navGenRef.current &&
+        pending.sessionId === proxySessionIdRef.current
+      ) {
+        if (sharedPopupId && !popupViewerRef.current) return;
+        awaitingFrameGenerationRef.current = pending.generation;
+        const documentAliases = googleRoutesRef.current
+          .filter((route) => route.documents)
+          .map((route) => route.proxyOrigin);
+        navigateWebBrowserFrame(
+          iframe,
+          pending.url,
+          documentAliases.length ? documentAliases : proxyUrlRef.current,
+        );
+      }
+    },
+    [sharedPopupId],
+  );
   const navigateFrame = useCallback(
     (url: string, generation: number, sessionId: string) => {
       resetDarkPaint();
@@ -1933,9 +1973,13 @@ export function useWebBrowser(session: ConnectionSession) {
   // ── Proxy lifecycle ────────────────────────────────────────
   const stopProxy = useCallback(
     async (sessionId?: string) => {
+      // A popup owns only its view, never the source listener/cookie jar.
+      if (sharedPopupId) return;
       const id = sessionId ?? proxySessionIdRef.current;
       if (!id) return;
       if (id === proxySessionIdRef.current) {
+        clearWebBrowserFrame(iframeRef.current);
+        webPopupTabs.revokeSource(session.id);
         proxySessionIdRef.current = "";
         proxyUrlRef.current = "";
         googleRoutesRef.current = [];
@@ -1948,7 +1992,7 @@ export function useWebBrowser(session: ConnectionSession) {
         // Session may already be gone
       }
     },
-    [sessionNavigationKey],
+    [sessionNavigationKey, sharedPopupId, session.id],
   );
   const cancelPendingContinuation = useCallback(() => {
     const navigation = getRuntimeWebNavigation(runtimeNavigationKey);
@@ -1972,8 +2016,9 @@ export function useWebBrowser(session: ConnectionSession) {
     accessKey: reviewedFlowScope,
     route: getGlobalHttpProxyUrl(),
     enabled:
-      proxyOptions.policy?.allowCrossOriginRedirects === true ||
-      !!proxyOptions.policy?.synologyQuickConnectDefaults,
+      !sharedPopupId &&
+      (proxyOptions.policy?.allowCrossOriginRedirects === true ||
+        !!proxyOptions.policy?.synologyQuickConnectDefaults),
     effectivePolicy: proxyOptions.policy ?? undefined,
     redirectBudget: redirectTrust.redirectBudget,
     generation: () => navGenRef.current,
@@ -1982,6 +2027,8 @@ export function useWebBrowser(session: ConnectionSession) {
     runtimeNavigationKey,
     revocationKey: proxyInputs,
     continueSynologyInSession: async (request) => {
+      if (sharedPopupId)
+        throw new Error("The source browser owns shared-session redirects.");
       request.assertCurrent();
       const existingProxyUrl = proxyUrlRef.current;
       if (
@@ -2111,6 +2158,8 @@ export function useWebBrowser(session: ConnectionSession) {
       }
     },
     stopSource: async (id, continuationId, preserveTabContext = false) => {
+      if (sharedPopupId)
+        throw new Error("The source browser owns this shared session.");
       // Unlike generic best-effort cleanup, a handoff requires confirmed stop.
       await invoke("stop_basic_auth_proxy", {
         sessionId: id,
@@ -2244,6 +2293,59 @@ export function useWebBrowser(session: ConnectionSession) {
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
         loadTimeoutRef.current = null;
+      }
+      if (sharedPopupId) {
+        try {
+          const popup = webPopupTabs.getSnapshot(sharedPopupId);
+          if (!popup || !webPopupTabs.isCurrent(sharedPopupId))
+            throw new Error(
+              "This shared browser session has expired. Open Take Control again from its source tab.",
+            );
+          const mapped = popupProxyUrl(popup, targetResolution.url, url);
+          proxySessionIdRef.current = popup.document.sessionId;
+          proxyUrlRef.current = popup.proxyUrl;
+          pendingInternalNavigationRef.current = true;
+          setWaitingForTrust(false);
+          setWebsiteDarkBootstrap(websiteDarkBootstrapCandidate);
+          setProxyAlive(true);
+          armNavigationDeadline(gen, url);
+          // Register before notifying subscribers to avoid a second navigation.
+          popupNavigatedUrlRef.current = mapped;
+          if (!webPopupTabs.navigate(sharedPopupId, popup.document, mapped))
+            throw new Error("The source browser changed while navigating.");
+          pendingFrameRef.current = {
+            generation: gen,
+            url: mapped,
+            cleanUrl: mapped,
+            token: null,
+            sessionId: popup.document.sessionId,
+          };
+          setShouldMountIframe(true);
+          if (iframeRef.current) {
+            const reloading = iframeRef.current.getAttribute("src") === mapped;
+            attachIframe(iframeRef.current);
+            // Reassigning the same URL explicitly reloads only this child.
+            if (reloading && popupViewerRef.current)
+              iframeRef.current.src = mapped;
+          }
+          setCurrentUrl(url);
+          setInputUrl(url);
+          setIsSecure(url.startsWith("https:"));
+          if (addToHistory) appendHistory(url);
+        } catch (error) {
+          setWaitingForTrust(false);
+          applyNavigationFailure(
+            localNavigationFailure(
+              "invalid_navigation",
+              "Shared browser navigation unavailable",
+              url,
+              error instanceof Error
+                ? error.message
+                : "The source browser is unavailable.",
+            ),
+          );
+        }
+        return;
       }
       if (applicationAuth.error || proxyOptions.error) {
         applyNavigationFailure(
@@ -2474,6 +2576,8 @@ export function useWebBrowser(session: ConnectionSession) {
             getReviewedApplicationProfile(connection);
           const reviewedApplicationApiOrigin =
             getReviewedApplicationApiOrigin(connection);
+          const reviewedApplicationMeshOrigin =
+            getReviewedApplicationMeshOrigin(connection);
           const response = await invoke<ProxyMediatorResponse>(
             "start_basic_auth_proxy",
             {
@@ -2522,6 +2626,12 @@ export function useWebBrowser(session: ConnectionSession) {
                   ? {
                       reviewed_application_api_origin:
                         reviewedApplicationApiOrigin,
+                    }
+                  : {}),
+                ...(reviewedApplicationMeshOrigin
+                  ? {
+                      reviewed_application_mesh_origin:
+                        reviewedApplicationMeshOrigin,
                     }
                   : {}),
                 // If the app has a global HTTP(S) proxy, the loopback
@@ -2709,6 +2819,9 @@ export function useWebBrowser(session: ConnectionSession) {
       resolveWebsiteDarkBootstrap,
       runtimeNavigationKey,
       sessionNavigationKey,
+      sharedPopupId,
+      websiteDarkBootstrapCandidate,
+      attachIframe,
     ],
   );
 
@@ -2735,6 +2848,8 @@ export function useWebBrowser(session: ConnectionSession) {
       previous.profile?.id === connection?.httpApplication?.id &&
       previous.profile?.loginPath === connection?.httpApplication?.loginPath &&
       previous.profile?.apiOrigin === connection?.httpApplication?.apiOrigin &&
+      previous.profile?.meshOrigin ===
+        connection?.httpApplication?.meshOrigin &&
       previous.profile?.joomlaVersion ===
         connection?.httpApplication?.joomlaVersion &&
       previous.auth.error === applicationAuth.error &&
@@ -2784,6 +2899,21 @@ export function useWebBrowser(session: ConnectionSession) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: initial navigation
 
+  // window.open(..., existingName) may retarget the same tool tab. Its registry
+  // URL is runtime-only; do not persist token-bearing control links in sessions.
+  useEffect(() => {
+    if (!sharedPopupId) return;
+    return webPopupTabs.subscribe(sharedPopupId, () => {
+      const popup = webPopupTabs.getSnapshot(sharedPopupId);
+      if (
+        popup &&
+        popup.url !== popupNavigatedUrlRef.current &&
+        webPopupTabs.isCurrent(sharedPopupId)
+      )
+        void navigateToUrl(popupUpstreamUrl(popup, targetResolution.url));
+    });
+  }, [sharedPopupId, navigateToUrl, targetResolution.url]);
+
   // A reviewed same-tab handoff changes the volatile connection id without
   // replacing this component or iframe. Start the destination only after the
   // rerender has installed its target, policy and continuation closures.
@@ -2822,11 +2952,23 @@ export function useWebBrowser(session: ConnectionSession) {
       const id = proxySessionIdRef.current;
       proxySessionIdRef.current = "";
       proxyUrlRef.current = "";
-      if (id) {
+      if (id && !sharedPopupId) {
+        // Fast Refresh can retain the DOM while cleaning up this effect. Stop
+        // the old page (and its retrying sockets) before retiring its listener
+        // and protected-origin lease, not after asynchronous proxy startup.
+        clearWebBrowserFrame(iframeRef.current);
+        webPopupTabs.revokeSource(session.id);
         invoke("stop_basic_auth_proxy", { sessionId: id }).catch(() => {});
       }
+      if (sharedPopupId) {
+        popupViewerRef.current?.release({ preserveTab: true });
+        popupViewerRef.current = null;
+        queueMicrotask(() => {
+          if (!mountedRef.current) webPopupTabs.close(sharedPopupId);
+        });
+      }
     };
-  }, [cancelTrustRead, sessionNavigationKey]);
+  }, [cancelTrustRead, sessionNavigationKey, sharedPopupId, session.id]);
 
   // P3/P4: listen for `proxy-credentials-applied`. The Rust-side
   // themed-auth POST handler emits this after the user submits the
@@ -2842,6 +2984,7 @@ export function useWebBrowser(session: ConnectionSession) {
   // iframe, neither of which exist today. Documented as a TODO so
   // the next iteration can land it without re-investigation.
   useEffect(() => {
+    if (sharedPopupId) return;
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     listen<{
@@ -2876,12 +3019,16 @@ export function useWebBrowser(session: ConnectionSession) {
       cancelled = true;
       unlisten?.();
     };
-  }, [toast]);
+  }, [toast, sharedPopupId]);
 
   // Both manual and automatic recovery share one in-flight operation. A late
   // result belongs only to the same navigation generation and proxy session.
   const restartOwnedProxy = useCallback(
     async (sid: string, gen: number) => {
+      if (sharedPopupId)
+        throw new Error(
+          "Restart the shared proxy from its source browser tab.",
+        );
       await requireNetworkGuard(() => {
         if (gen !== navGenRef.current || proxySessionIdRef.current !== sid)
           throw new Error("The website restart was cancelled.");
@@ -2891,6 +3038,8 @@ export function useWebBrowser(session: ConnectionSession) {
           throw new Error("The website restart was cancelled.");
       }, true);
       vault?.assertCurrent();
+      clearWebBrowserFrame(iframeRef.current);
+      publishAutomationDocument(null);
       const resp = await invoke<ProxyMediatorResponse>(
         "restart_proxy_session",
         { sessionId: sid },
@@ -2949,11 +3098,13 @@ export function useWebBrowser(session: ConnectionSession) {
       beginLoadingPresentation,
       resolveVaultCredential,
       requireNetworkGuard,
+      sharedPopupId,
+      publishAutomationDocument,
     ],
   );
 
   useEffect(() => {
-    if (!settings.proxyKeepaliveEnabled) return;
+    if (sharedPopupId || !settings.proxyKeepaliveEnabled) return;
     const intervalMs = (settings.proxyKeepaliveIntervalSeconds ?? 10) * 1000;
     const id = setInterval(async () => {
       const sid = proxySessionIdRef.current;
@@ -3004,9 +3155,14 @@ export function useWebBrowser(session: ConnectionSession) {
     settings.proxyAutoRestart,
     settings.proxyMaxAutoRestarts,
     restartOwnedProxy,
+    sharedPopupId,
   ]);
 
   const handleRestartProxy = useCallback(async () => {
+    if (sharedPopupId) {
+      await navigateToUrl(currentUrl, false);
+      return;
+    }
     if (proxyRecoveryBusyRef.current) return;
     const sid = proxySessionIdRef.current;
     if (!sid) {
@@ -3027,7 +3183,7 @@ export function useWebBrowser(session: ConnectionSession) {
       proxyRecoveryBusyRef.current = false;
       if (mountedRef.current) setProxyRestarting(false);
     }
-  }, [currentUrl, navigateToUrl, restartOwnedProxy, stopProxy]);
+  }, [currentUrl, navigateToUrl, restartOwnedProxy, stopProxy, sharedPopupId]);
 
   // Track in-proxy navigation
   useEffect(() => {
@@ -3035,6 +3191,11 @@ export function useWebBrowser(session: ConnectionSession) {
       const iframeWindow = iframeRef.current?.contentWindow;
       const proxyUrl = proxyUrlRef.current;
       if (!iframeWindow || event.source !== iframeWindow || !proxyUrl) return;
+      const popup = sharedPopupId
+        ? webPopupTabs.getSnapshot(sharedPopupId)
+        : null;
+      if (sharedPopupId && (!popup || !webPopupTabs.isCurrent(sharedPopupId)))
+        return;
 
       let expectedOrigin: string;
       try {
@@ -3050,6 +3211,14 @@ export function useWebBrowser(session: ConnectionSession) {
         )
           return;
         expectedOrigin = event.origin;
+      }
+      if (popup) {
+        const name = popupViewerRef.current?.receiveTitleReport(event);
+        if (name && activitySessionRef.current.name !== name)
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: { id: session.id, name },
+          });
       }
       if (event.data?.type === "proxy_synology_login_progress") {
         const current = currentDocumentRef.current;
@@ -3135,6 +3304,8 @@ export function useWebBrowser(session: ConnectionSession) {
         return;
       }
       const targetUrlFor = (reported: URL) => {
+        if (popup)
+          return popupUpstreamUrl(popup, baseTargetRef.current, reported.href);
         const googleUrl = googleUpstreamForProxy(
           googleRoutesRef.current,
           reported,
@@ -3158,6 +3329,13 @@ export function useWebBrowser(session: ConnectionSession) {
         ].includes(event.data?.type)
       ) {
         const report = event.data;
+        if (
+          popup &&
+          (report.popupParentSequence !== popup.document.sequence ||
+            report.documentSequence <= popup.document.sequence ||
+            report.navigationToken !== null)
+        )
+          return;
         const failed = navigationFailureRef.current;
         if (
           (failed &&
@@ -3301,34 +3479,35 @@ export function useWebBrowser(session: ConnectionSession) {
               googleRoutesRef.current.map((route) => route.upstreamOrigin),
             ),
           });
-          void invoke<boolean>("activate_proxy_network_document", {
-            sessionId: activatedDocument.sessionId,
-            documentSequence: activatedDocument.sequence,
-          })
-            .then((selected) => {
-              if (typeof selected !== "boolean")
-                throw new Error("Invalid document activation result");
+          if (!popup)
+            void invoke<boolean>("activate_proxy_network_document", {
+              sessionId: activatedDocument.sessionId,
+              documentSequence: activatedDocument.sequence,
             })
-            .catch(() => {
-              if (
-                !mountedRef.current ||
-                currentDocumentRef.current !== activatedDocument ||
-                activatedDocument.generation !== navGenRef.current ||
-                activatedDocument.ownerScope !== trustOwnerScopeRef.current
-              )
-                return;
-              setNetworkReports((previous) => ({
-                scope: activationScope,
-                rows: appendWebNetworkReport(
-                  previous.scope === activationScope ? previous.rows : [],
-                  {
-                    kind: "document",
-                    reason: "document-activation-failed",
-                    origin: null,
-                  },
-                ),
-              }));
-            });
+              .then((selected) => {
+                if (typeof selected !== "boolean")
+                  throw new Error("Invalid document activation result");
+              })
+              .catch(() => {
+                if (
+                  !mountedRef.current ||
+                  currentDocumentRef.current !== activatedDocument ||
+                  activatedDocument.generation !== navGenRef.current ||
+                  activatedDocument.ownerScope !== trustOwnerScopeRef.current
+                )
+                  return;
+                setNetworkReports((previous) => ({
+                  scope: activationScope,
+                  rows: appendWebNetworkReport(
+                    previous.scope === activationScope ? previous.rows : [],
+                    {
+                      kind: "document",
+                      reason: "document-activation-failed",
+                      origin: null,
+                    },
+                  ),
+                }));
+              });
           const realUrl = targetUrlFor(reported);
           activeNavigationUrlRef.current = realUrl;
           setCurrentUrl(realUrl);
@@ -3441,6 +3620,9 @@ export function useWebBrowser(session: ConnectionSession) {
     networkReportScope,
     publishAutomationDocument,
     acceptAutomationDocument,
+    sharedPopupId,
+    dispatch,
+    session.id,
   ]);
 
   // ── Navigation handlers ────────────────────────────────────
@@ -3555,6 +3737,13 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [currentUrl, navigateToUrl, proxyAlive, handleRestartProxy]);
 
   const handleClearSessionData = useCallback(async () => {
+    if (sharedPopupId) {
+      setShowClearSessionConfirm(false);
+      toast.info(
+        "This tab shares its source browser's login. Clear session data from the source tab.",
+      );
+      return;
+    }
     if (clearingSessionRef.current) return;
     clearingSessionRef.current = true;
     setClearingSession(true);
@@ -3617,6 +3806,7 @@ export function useWebBrowser(session: ConnectionSession) {
     publishAutomationDocument,
     runtimeNavigationKey,
     sessionNavigationKey,
+    sharedPopupId,
   ]);
 
   const canGoBack = historyIndex > 0;
@@ -3649,6 +3839,31 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [handleHistoryJump]);
 
   const handleOpenInNewTab = useCallback(() => {
+    if (sharedPopupId) {
+      const popup = webPopupTabs.getSnapshot(sharedPopupId);
+      const source =
+        popup &&
+        sessionsRef.current.find((row) => row.id === popup.sourceSessionId);
+      if (!popup || !source || !webPopupTabs.isCurrent(sharedPopupId)) return;
+      try {
+        const next = webPopupTabs.open({
+          source,
+          document: popup.document,
+          proxyUrl: popup.proxyUrl,
+          url: popupProxyUrl(popup, baseTargetRef.current, currentUrl),
+          isCurrent: webPopupTabs.sourceGuard(sharedPopupId),
+          onClose: (id) => dispatch({ type: "REMOVE_SESSION", payload: id }),
+          onFocus: onActivateSession,
+        });
+        dispatch({
+          type: "ADD_SESSION",
+          payload: { ...next, name: session.name },
+        });
+      } catch {
+        toast.error("Unable to open another shared browser tab.");
+      }
+      return;
+    }
     if (!connection) return;
     const newSession: ConnectionSession = {
       id: generateId(),
@@ -3660,7 +3875,15 @@ export function useWebBrowser(session: ConnectionSession) {
       hostname: connection.hostname,
     };
     dispatch({ type: "ADD_SESSION", payload: newSession });
-  }, [connection, dispatch]);
+  }, [
+    connection,
+    dispatch,
+    sharedPopupId,
+    currentUrl,
+    session.name,
+    onActivateSession,
+    toast,
+  ]);
 
   const handleOpenExternal = useCallback(() => {
     invoke("open_url_external", { url: currentUrl }).catch(() => {
@@ -4082,6 +4305,7 @@ export function useWebBrowser(session: ConnectionSession) {
       const frame = iframeRef.current?.contentWindow;
       return document &&
         frame &&
+        (!sharedPopupId || webPopupTabs.isCurrent(sharedPopupId)) &&
         document.generation === navGenRef.current &&
         document.sessionId === proxySessionIdRef.current &&
         !pendingNavigationRef.current &&
@@ -4497,13 +4721,34 @@ export function useWebBrowser(session: ConnectionSession) {
   const getAutomationDocument = useCallback(() => {
     const doc = currentDocumentRef.current;
     return doc &&
+      (!sharedPopupId || webPopupTabs.isCurrent(sharedPopupId)) &&
       doc.generation === navGenRef.current &&
       doc.sessionId === proxySessionIdRef.current &&
       !pendingNavigationRef.current &&
       !navigationFailureRef.current
       ? doc
       : null;
-  }, []);
+  }, [sharedPopupId]);
+  useWebPopupTabs({
+    session,
+    sessions: state.sessions,
+    enabled:
+      !sharedPopupId &&
+      settingsReady === true &&
+      getReviewedApplicationProfile(connection) === "tacticalrmm" &&
+      proxyOptions.policy?.pageScripts !== "block" &&
+      !proxyOptions.error &&
+      !clearingSession &&
+      !waitingForTrust &&
+      !redirectHandoffPending &&
+      !trustPrompt &&
+      !loadError,
+    iframe: iframeRef,
+    getDocument: getAutomationDocument,
+    getProxyUrl: () => proxyUrlRef.current,
+    dispatch,
+    onActivateSession,
+  });
   const automation = useWebAutomation({
     activityContext: session.ownerDatabaseId
       ? {
@@ -4547,6 +4792,7 @@ export function useWebBrowser(session: ConnectionSession) {
     availability: databaseAvailability,
     settingsReady: settingsReady === true,
     blocked:
+      !!sharedPopupId ||
       waitingForTrust ||
       redirectHandoffPending ||
       !!trustPrompt ||
@@ -4565,6 +4811,10 @@ export function useWebBrowser(session: ConnectionSession) {
     websiteDarkBootstrapCandidate,
   );
   useEffect(() => {
+    if (sharedPopupId) {
+      setWebsiteDarkBootstrap(JSON.parse(websiteDarkBootstrapKey));
+      return;
+    }
     const sessionId = proxySessionIdRef.current;
     if (!sessionId) return;
     let cancelled = false;
@@ -4595,9 +4845,10 @@ export function useWebBrowser(session: ConnectionSession) {
     return () => {
       cancelled = true;
     };
-  }, [resolveWebsiteDarkBootstrap, websiteDarkBootstrapKey]);
+  }, [resolveWebsiteDarkBootstrap, websiteDarkBootstrapKey, sharedPopupId]);
 
   return {
+    sharedSession: !!sharedPopupId,
     webNetworkRouting:
       networkRouting?.scope === networkReportScope()
         ? networkRouting.value

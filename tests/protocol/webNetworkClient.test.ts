@@ -36,6 +36,17 @@ const config = () => ({
   mappings: [] as Array<{ upstreamOrigin: string; proxyOrigin: string }>,
 });
 interface ClientConfiguration extends ReturnType<typeof config> {
+  cloudflareChallenge?: {
+    version: number;
+    upstreamOrigin: string;
+    proxyOrigin: string;
+  };
+  tacticalRmmMesh?: {
+    version: number;
+    upstreamOrigin: string;
+    proxyOrigin: string;
+  };
+  popupParentDocument?: number;
   fontAssets?: Array<{ upstreamUrl: string; proxyUrl: string }>;
   synologyQuickConnect?: {
     version: number;
@@ -211,6 +222,189 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       apiOrigins: ["https://api.device.example", "https://api.example"],
       proxyUrl: tacticalApiProxy,
     },
+  });
+  const meshOrigin = "https://mesh.example:8443";
+  const challengeProxy =
+    "http://p33333333333333333333333333333333.localhost:43123";
+  const cloudflareConfig = (): ClientConfiguration => ({
+    ...config(),
+    sourceOrigin: "https://dash.cloudflare.com",
+    cloudflareChallenge: {
+      version: 1,
+      upstreamOrigin: "https://challenges.cloudflare.com",
+      proxyOrigin: challengeProxy,
+    },
+  });
+  it("routes Cloudflare challenge scripts, frames and requests through the exact isolated alias", () => {
+    start(cloudflareConfig());
+    const script = document.createElement("script");
+    script.src =
+      "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    expect(script.src).toBe(
+      `${challengeProxy}/turnstile/v0/api.js?render=explicit`,
+    );
+    const frame = document.createElement("iframe");
+    frame.src =
+      "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/widget";
+    expect(frame.src).toBe(
+      `${challengeProxy}/cdn-cgi/challenge-platform/widget`,
+    );
+    expect(
+      controller!.mapUrl(
+        "https://challenges.cloudflare.com/check?q=a%2Fb",
+        "fetch",
+      ),
+    ).toBe(`${challengeProxy}/check?q=a%2Fb`);
+    for (const denied of [
+      "http://challenges.cloudflare.com/",
+      "https://challenges.cloudflare.com:8443/",
+      "https://challenges.cloudflare.com.evil.test/",
+      "https://api.cloudflare.com/",
+    ])
+      expect(() => controller!.mapUrl(denied, "fetch")).toThrow(
+        "origin-not-approved",
+      );
+  });
+  it("never invents challenge routing from a Cloudflare source hostname alone", () => {
+    start({ ...config(), sourceOrigin: "https://dash.cloudflare.com" });
+    expect(() =>
+      controller!.mapUrl(
+        "https://challenges.cloudflare.com/turnstile/v0/api.js",
+        "resource",
+      ),
+    ).toThrow("origin-not-approved");
+  });
+  it.each([
+    { version: 2 },
+    { upstreamOrigin: "https://api.cloudflare.com" },
+    { upstreamOrigin: "https://challenges.cloudflare.com:8443" },
+    { proxyOrigin: proxy },
+    { proxyOrigin: "http://p33333333333333333333333333333333.localhost:43124" },
+    { proxyOrigin: "https://challenges.cloudflare.com" },
+  ])("rejects an unsafe Cloudflare manifest %j", (extra) => {
+    const settings = cloudflareConfig();
+    settings.cloudflareChallenge = {
+      ...settings.cloudflareChallenge!,
+      ...extra,
+    };
+    expect(() => start(settings)).toThrow();
+  });
+  it("rejects granting Cloudflare routes to a different application origin", () => {
+    expect(() =>
+      start({ ...cloudflareConfig(), sourceOrigin: upstream }),
+    ).toThrow("Cloudflare");
+  });
+  const meshProxy = "http://p22222222222222222222222222222222.localhost:43123";
+  const meshConfig = (): ClientConfiguration => ({
+    ...tacticalConfig(),
+    tacticalRmmMesh: {
+      version: 1,
+      upstreamOrigin: meshOrigin,
+      proxyOrigin: meshProxy,
+    },
+  });
+  it.each(["property", "attribute"])(
+    "keeps Tactical's empty %s iframe blank while its Mesh URL is loading",
+    (setter) => {
+      vi.stubGlobal("location", new URL(`${proxy}/takecontrol/agent-one`));
+      vi.spyOn(document, "baseURI", "get").mockReturnValue(
+        `${proxy}/takecontrol/agent-one`,
+      );
+      start({ ...meshConfig(), popupParentDocument: 3 });
+      const frame = document.createElement("iframe");
+      const assign = (value: string) => {
+        if (setter === "property") frame.src = value;
+        else frame.setAttribute("src", value);
+      };
+      // Vue's initial control ref is empty. Mapping it to the current URL
+      // recursively loads another Take Control/status bar inside the first.
+      for (const blank of ["", " \t\r\n", "about:blank"]) {
+        assign(blank);
+        expect(frame.getAttribute("src")).toBe("about:blank");
+      }
+      assign(`${meshOrigin}/?auth=synthetic%2Ftoken&viewmode=11`);
+      expect(frame.src).toBe(
+        `${meshProxy}/?auth=synthetic%2Ftoken&viewmode=11`,
+      );
+      // Restart/Recover resets control to empty before requesting a new URL.
+      assign("");
+      expect(frame.src).toBe("about:blank");
+      expect(report).not.toHaveBeenCalled();
+      frame.remove();
+    },
+  );
+  it("maps the configured MeshCentral iframe, assets and websocket onto its isolated exact alias", () => {
+    start(meshConfig());
+    const frame = document.createElement("iframe");
+    frame.src = `${meshOrigin}/?auth=synthetic%2Ftoken&viewmode=11`;
+    expect(frame.src).toBe(`${meshProxy}/?auth=synthetic%2Ftoken&viewmode=11`);
+    expect(
+      controller!.mapUrl(`${meshOrigin}/styles/style.css`, "resource"),
+    ).toBe(`${meshProxy}/styles/style.css`);
+    new WebSocket(
+      "wss://mesh.example:8443/meshrelay.ashx?auth=synthetic%20token",
+    );
+    expect(constructed[constructed.length - 1]?.args[0]).toBe(
+      `${meshProxy.replace("http:", "ws:")}/meshrelay.ashx?auth=synthetic%20token&__sorng_ws_document_v1=3`,
+    );
+    expect(() =>
+      controller!.mapUrl("https://unconfigured.example/", "resource"),
+    ).toThrow("origin-not-approved");
+    expect(() =>
+      controller!.mapUrl("https://mesh.example/", "resource"),
+    ).toThrow("origin-not-approved");
+    expect(() =>
+      controller!.mapUrl("http://mesh.example:8443/", "resource"),
+    ).toThrow("origin-not-approved");
+  });
+  it("does not invent a MeshCentral route when no native capability was supplied", () => {
+    start(tacticalConfig());
+    expect(() =>
+      controller!.mapUrl(`${meshOrigin}/?auth=synthetic`, "resource"),
+    ).toThrow("origin-not-approved");
+  });
+  it.each([
+    { version: 2 },
+    { upstreamOrigin: "http://mesh.example" },
+    { upstreamOrigin: "https://mesh.example/path" },
+    { upstreamOrigin: "https://user:password@mesh.example" },
+    { proxyOrigin: "https://mesh.example" },
+    { proxyOrigin: "http://p22222222222222222222222222222222.localhost:43124" },
+    { proxyOrigin: proxy },
+  ])("refuses malformed or non-isolated MeshCentral manifests %j", (extra) => {
+    const settings = meshConfig();
+    settings.tacticalRmmMesh = { ...settings.tacticalRmmMesh!, ...extra };
+    expect(() => start(settings)).toThrow();
+  });
+  it("keeps a MeshCentral child under its pinned root sequence without routing dashboard API requests", () => {
+    vi.stubGlobal("location", new URL(`${meshProxy}/?auth=synthetic`));
+    vi.spyOn(document, "baseURI", "get").mockReturnValue(
+      `${meshProxy}/?auth=synthetic`,
+    );
+    start({
+      ...config(),
+      sourceOrigin: meshOrigin,
+      proxyOrigin: meshProxy,
+      popupParentDocument: 3,
+      tacticalRmmMesh: {
+        version: 1,
+        upstreamOrigin: meshOrigin,
+        proxyOrigin: meshProxy,
+      },
+    });
+    const socket = controller!.mapUrl(
+      "wss://mesh.example:8443/meshrelay.ashx?auth=synthetic",
+      "websocket",
+    );
+    expect(new URL(socket).searchParams.get("__sorng_ws_document_v1")).toBe(
+      "3",
+    );
+    expect(() =>
+      controller!.mapUrl("https://api.device.example/core/dashinfo/", "fetch"),
+    ).toThrow("origin-not-approved");
+    expect(controller!.mapUrl(`${meshOrigin}/image.png`, "resource")).toBe(
+      `${meshProxy}/image.png`,
+    );
   });
   const googleConfig = (): ClientConfiguration => ({
     ...config(),
@@ -622,7 +816,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     expect(() =>
       controller!.mapUrl("https://user@api.device.example/accounts/", "fetch"),
     ).toThrow("url-credentials");
-    for (const kind of ["navigation", "resource", "form", "websocket"])
+    for (const kind of ["navigation", "resource", "form"])
       expect(() => controller!.mapUrl(destination, kind)).toThrow(
         "origin-not-approved",
       );
@@ -666,6 +860,53 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     expect(() => controller!.mapUrl(destination, "resource")).toThrow(
       "origin-not-approved",
     );
+  });
+  it.each(["wss:", "https:"])(
+    "routes saved Tactical API %s sockets only through the app proxy",
+    (scheme) => {
+      const input = tacticalConfig();
+      input.tacticalRmmApi!.apiOrigins.push(
+        "https://api.rmm.apps.vogue-homes.com",
+      );
+      start(input);
+      const destination = `${scheme}//api.rmm.apps.vogue-homes.com/ws/agents/?token=a%2Fb+`;
+      new WebSocket(destination, ["tactical"]);
+      const expected = new URL(tacticalApiProxy);
+      expected.protocol = "ws:";
+      expected.searchParams.set(
+        "destination",
+        "https://api.rmm.apps.vogue-homes.com/ws/agents/?token=a%2Fb+",
+      );
+      expected.searchParams.set("__sorng_tactical_document_v1", "3");
+      expected.searchParams.set("__sorng_ws_document_v1", "3");
+      expect(constructed).toEqual([
+        { kind: "WebSocket", args: [expected.href, ["tactical"]] },
+      ]);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+  it("blocks unconfigured, downgraded and ambiguous Tactical sockets before native construction", () => {
+    start(tacticalConfig());
+    for (const destination of [
+      "wss://api.rmm.apps.vogue-homes.com/ws/",
+      "wss://other.device.example/ws/",
+      "wss://api.device.example.evil.test/ws/",
+      "wss://child.api.device.example/ws/",
+      "wss://api.device.example:8443/ws/",
+      "ws://api.device.example/ws/",
+    ])
+      expect(() => new WebSocket(destination)).toThrow("origin-not-approved");
+    expect(() => new WebSocket("wss://user@api.device.example/ws/")).toThrow(
+      "url-credentials",
+    );
+    expect(
+      () => new WebSocket("wss://api.device.example/ws/#fragment"),
+    ).toThrow("invalid-url");
+    expect(
+      () =>
+        new WebSocket("wss://api.device.example/ws/?__sorng_ws_document_v1=3"),
+    ).toThrow("reserved-url-parameter");
+    expect(constructed).toEqual([]);
   });
   const directProbe =
     "https://192-168-50-100.example-nas.direct.quickconnect.to:5002/webman/pingpong.cgi?action=cors&quickconnect=true";
@@ -2005,6 +2246,55 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
         "url('https://foreign.example/image')",
       ),
     ).toThrow();
+  });
+  it("preserves small data and blob IMG sources without admitting them to srcset", () => {
+    start();
+    const dataImage = "data:image/png;base64,iVBORw0KGgo=";
+    const blobImage = `blob:${proxy}/synthetic-image`;
+    const image = new Image();
+
+    image.src = dataImage;
+    expect(image.src).toBe(dataImage);
+    image.setAttribute("src", blobImage);
+    expect(image.getAttribute("src")).toBe(blobImage);
+
+    expect(() => {
+      image.srcset = dataImage;
+    }).toThrow("unsupported-srcset");
+    expect(() => {
+      image.setAttribute("srcset", blobImage);
+    }).toThrow("unsupported-scheme");
+  });
+  it("accepts a multi-MiB Mesh desktop JPEG data tile through Image.src", () => {
+    start();
+    const tile = `data:image/jpeg;base64,/9j/${"AQID".repeat(512 * 1_024)}`;
+    expect(tile.length).toBeGreaterThan(2 * 1_024 * 1_024);
+
+    const propertyImage = new Image();
+    propertyImage.src = tile;
+    expect(propertyImage.src).toBe(tile);
+  });
+  it("does not extend oversized local image handling to scripts, navigation, frames or other data", () => {
+    start();
+    const tile = `data:image/jpeg;base64,/9j/${"AQID".repeat(5_000)}`;
+    const nonImageData = `data:text/html;base64,${"AQID".repeat(5_000)}`;
+
+    expect(() => {
+      document.createElement("script").src = tile;
+    }).toThrow("invalid-url");
+    expect(() => {
+      document.createElement("a").href = tile;
+    }).toThrow("invalid-url");
+    expect(() => {
+      document.createElement("iframe").src = tile;
+    }).toThrow("invalid-url");
+    expect(() => {
+      document.createElement("img").src = nonImageData;
+    }).toThrow("invalid-url");
+    expect(() => {
+      document.createElement("img").src =
+        `${upstream}/image.jpg?payload=${"A".repeat(20_000)}`;
+    }).toThrow("invalid-url");
   });
   it("stops foreign form submissions and preserves original form method/body fields", () => {
     const form = document.createElement("form");
