@@ -4,6 +4,7 @@ import {
   type DiscoveryScanStatus,
 } from "../../src/utils/network/networkScanner";
 import type { NetworkDiscoveryConfig } from "../../src/types/settings/settings";
+import { normalizeDiscoveryScan } from "../../src/utils/discovery/scanHistory";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -33,6 +34,102 @@ afterEach(() => {
 });
 
 describe("native service identification", () => {
+  it.each([
+    [false, 443, "https"],
+    [true, 443, "https"],
+    [false, 80, "http"],
+    [true, 80, "http"],
+  ] as const)(
+    "carries Hades TLS evidence and history while retaining the original endpoint (batches=%s, port=%i)",
+    async (nativeBatchProbes, port, protocol) => {
+      const response = {
+        port,
+        open: true,
+        http_status: 401,
+        http_server: "httpd",
+        http_title: "Error",
+        http_basic_realm: "Hades",
+        http_tls_fingerprint: "freshtomato",
+        http_redirects: 1,
+        http_final_origin: "https://192.0.2.1:8443",
+        identification_error: "certificate_validation_bypassed",
+      };
+      invoke.mockResolvedValue(nativeBatchProbes ? [response] : response);
+      const config = {
+        ...base,
+        portRanges: [String(port)],
+        identifyServices: true,
+        nativeBatchProbes,
+      };
+      const hosts = await new NetworkScanner(true).scanNetwork(config);
+      expect(invoke).toHaveBeenCalledOnce();
+      const service = hosts[0].services[0];
+      expect(service).toMatchObject({
+        port,
+        protocol,
+        product: "FreshTomato",
+        detection: "identified",
+        identificationError: "certificate_validation_bypassed",
+      });
+      expect(service.evidence).toContain("HTTP Basic realm: Hades");
+      expect(service.evidence).toContain(
+        "TLS certificate subject FreshTomato / FreshTomato Team; self-reported branding, not identity verification",
+      );
+      expect(service.evidence).toContain("TLS warning:");
+      expect(service.evidence).toContain(
+        "Followed 1 redirect to https://192.0.2.1:8443; original TCP endpoint retained",
+      );
+      const saved = normalizeDiscoveryScan(
+        JSON.parse(
+          JSON.stringify({
+            id: "hades-tls",
+            startedAt: 1,
+            elapsedMs: 100,
+            outcome: "complete",
+            config,
+            hosts,
+          }),
+        ),
+      );
+      expect(saved.hosts[0].services[0]).toEqual(service);
+    },
+  );
+
+  it.each([false, true])(
+    "does not infer HTTP port branding from an unrelated HTTPS probe (batches=%s)",
+    async (nativeBatchProbes) => {
+      const response = (port: number) => ({
+        port,
+        open: true,
+        http_status: 401,
+        http_server: "httpd",
+        http_title: "Error",
+        http_basic_realm: "Hades",
+        ...(port === 443 ? { http_tls_fingerprint: "freshtomato" } : {}),
+      });
+      invoke.mockImplementation(async (_command, args) =>
+        nativeBatchProbes
+          ? args.probes.map(({ port }: { port: number }) => response(port))
+          : response(args.port),
+      );
+      const [host] = await new NetworkScanner(true).scanNetwork({
+        ...base,
+        portRanges: ["80", "443"],
+        identifyServices: true,
+        nativeBatchProbes,
+      });
+      const http = host.services.find((service) => service.port === 80)!;
+      const https = host.services.find((service) => service.port === 443)!;
+      expect(http.protocol).toBe("http");
+      expect(http.product).toBeUndefined();
+      expect(http.evidence).not.toContain("TLS certificate subject");
+      expect(https).toMatchObject({
+        protocol: "https",
+        product: "FreshTomato",
+      });
+    },
+  );
+
   it.each([false, true])(
     "carries Basic-auth fingerprints and certificate warnings through native scanning (batches=%s)",
     async (nativeBatchProbes) => {

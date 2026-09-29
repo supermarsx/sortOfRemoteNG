@@ -72,6 +72,7 @@ pub async fn check_port(
         http_server: None,
         http_title: None,
         http_basic_realm: None,
+        http_tls_fingerprint: None,
         http_status: None,
         http_final_origin: None,
         http_redirects: None,
@@ -91,15 +92,7 @@ pub async fn check_port(
         result.open = true;
         result.time_ms = Some(start.elapsed().as_millis() as u64);
         if target.is_none() {
-            let mut buf = [0u8; 128];
-            if let Ok(Ok(n)) = timeout(Duration::from_secs(2), stream.read(&mut buf)).await {
-                let cleaned: String = String::from_utf8_lossy(&buf[..n])
-                    .chars()
-                    .filter(|c| c.is_ascii_graphic() || *c == ' ')
-                    .take(64)
-                    .collect();
-                result.banner = (!cleaned.is_empty()).then_some(cleaned);
-            }
+            result.banner = read_passive_banner(&mut stream, Duration::from_secs(2)).await;
         }
         drop(stream);
         if let Some(addr) = target {
@@ -112,6 +105,54 @@ pub async fn check_port(
         }
     }
     Ok(result)
+}
+
+async fn read_passive_banner<R: tokio::io::AsyncRead + Unpin>(
+    stream: &mut R,
+    budget: Duration,
+) -> Option<String> {
+    // RFC 4253 section 4.2: identification is at most 255 bytes including CRLF.
+    // The next packet is binary and can arrive in the very same TCP read.
+    let mut buffer = [0u8; 255];
+    let mut length = 0;
+    let deadline = Instant::now() + budget;
+    loop {
+        let count = timeout_at(deadline, stream.read(&mut buffer[length..]))
+            .await
+            .ok()?
+            .ok()?;
+        if count == 0 {
+            return None;
+        }
+        length += count;
+        let bytes = &buffer[..length];
+        if bytes.starts_with(b"SSH-") || b"SSH-".starts_with(bytes) {
+            if let Some(end) = bytes.iter().position(|byte| *byte == b'\n') {
+                let line = bytes[..end].strip_suffix(b"\r").unwrap_or(&bytes[..end]);
+                // Do not delete controls and accidentally manufacture a valid
+                // software identifier from malformed/binary data.
+                if !line
+                    .iter()
+                    .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+                {
+                    return None;
+                }
+                return String::from_utf8(line.to_vec()).ok();
+            }
+            if length == buffer.len() {
+                return None; // Never identify a truncated SSH version string.
+            }
+            continue; // An identification line may span several TCP reads.
+        }
+        // Other passive greetings retain their small, immediate-read behavior,
+        // but stop before a line ending or binary data instead of joining it.
+        let end = bytes
+            .iter()
+            .position(|byte| !byte.is_ascii_graphic() && *byte != b' ')
+            .unwrap_or(length)
+            .min(64);
+        return (end > 0).then(|| String::from_utf8_lossy(&bytes[..end]).into_owned());
+    }
 }
 
 async fn identify(result: &mut PortCheckResult, scheme: &str, addr: SocketAddr, budget: Duration) {
@@ -227,6 +268,7 @@ fn discovery_client(
 ) -> Result<reqwest::Client, &'static str> {
     reqwest::Client::builder()
         .use_rustls_tls()
+        .tls_info(true)
         .no_proxy()
         .dns_resolver(Arc::new(PinnedDns {
             original: addr.ip(),
@@ -343,6 +385,13 @@ async fn identify_with_lookup<F, Fut>(
                 .iter()
                 .filter_map(|value| value.to_str().ok())
                 .find_map(extract_basic_realm);
+            // Capture only this response's leaf certificate. Never carry
+            // branding across redirects or confuse issuer names with the peer.
+            result.http_tls_fingerprint = response
+                .extensions()
+                .get::<reqwest::tls::TlsInfo>()
+                .and_then(reqwest::tls::TlsInfo::peer_certificate)
+                .and_then(tls_certificate_fingerprint);
             // Do not turn 401/403 into errors or attempt any authentication.
             while let Some(chunk) = response
                 .chunk()
@@ -387,6 +436,29 @@ async fn identify_with_lookup<F, Fut>(
         (true, None) => Some(CERTIFICATE_WARNING.into()),
         (false, error) => error.map(str::to_owned),
     };
+}
+
+fn tls_certificate_fingerprint(der: &[u8]) -> Option<String> {
+    if der.is_empty() || der.len() > 64 * 1024 {
+        return None;
+    }
+    let (rest, certificate) = x509_parser::parse_x509_certificate(der).ok()?;
+    if !rest.is_empty() {
+        return None;
+    }
+    // Renamed FreshTomato routers expose their custom name as the Basic realm,
+    // while generated certificates retain these two subject attributes.
+    // These are self-reported strings, not authentication or verified identity.
+    let mut organizations = certificate.subject().iter_organization();
+    let mut units = certificate.subject().iter_organizational_unit();
+    if organizations.next()?.as_str().ok()? != "FreshTomato"
+        || organizations.next().is_some()
+        || units.next()?.as_str().ok()? != "FreshTomato Team"
+        || units.next().is_some()
+    {
+        return None;
+    }
+    Some("freshtomato".into())
 }
 
 fn certificate_validation_failed(error: &(dyn std::error::Error + 'static)) -> bool {
@@ -604,17 +676,40 @@ mod tests {
         tokio::io::Lines<tokio::io::BufReader<tokio::process::ChildStdout>>,
         u16,
     ) {
+        self_signed_server_with_subject(None).await
+    }
+
+    async fn self_signed_server_with_subject(
+        subject: Option<&str>,
+    ) -> (
+        tokio::process::Child,
+        tokio::io::Lines<tokio::io::BufReader<tokio::process::ChildStdout>>,
+        u16,
+    ) {
         use tokio::io::AsyncBufReadExt;
         let script = r#"
 import https from 'node:https';
-import { mkdtempSync, unlinkSync, rmdirSync } from 'node:fs';
+import { mkdtempSync, unlinkSync, rmdirSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureMockPveCertificate } from './e2e/helpers/fixtures/mock-pve/server.mjs';
 const dir = mkdtempSync(join(tmpdir(), 'sorng-probe-tls-'));
 let tls;
 try {
-  tls = ensureMockPveCertificate({certDir: dir});
+  if (process.env.SORNG_PROBE_CERT_SUBJECT) {
+    const key = join(dir, 'server.key');
+    const cert = join(dir, 'server.crt');
+    const generated = spawnSync(process.env.OPENSSL_BIN || 'openssl', [
+      'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
+      '-nodes', '-sha256', '-days', '1', '-keyout', key, '-out', cert,
+      '-subj', process.env.SORNG_PROBE_CERT_SUBJECT
+    ], {encoding: 'utf8', windowsHide: true});
+    if (generated.error || generated.status !== 0) throw new Error('TLS fixture certificate generation failed');
+    tls = {certificate: readFileSync(cert), privateKey: readFileSync(key)};
+  } else {
+    tls = ensureMockPveCertificate({certDir: dir});
+  }
 } finally {
   for (const name of ['server.crt', 'server.key']) {
     try { unlinkSync(join(dir, name)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -626,6 +721,14 @@ const server = https.createServer({cert: tls.certificate, key: tls.privateKey}, 
   res.setHeader('Server', 'nginx');
   res.setHeader('Set-Cookie', 'session=must-not-forward');
   res.setHeader('Connection', 'close');
+  if (process.env.SORNG_PROBE_CERT_SUBJECT && req.url === '/') {
+    res.writeHead(401, {Server: 'httpd', 'WWW-Authenticate': 'Basic realm="Hades"'});
+    return res.end('<title>Error</title><h1>401 Unauthorized</h1>');
+  }
+  if (req.url.startsWith('/switch/')) {
+    res.writeHead(302, {Location: `https://127.0.0.1:${Number(req.url.slice(8))}/basic`});
+    return res.end('intermediate');
+  }
   if (req.url === '/basic') {
     res.writeHead(401, {
       Server: 'httpd',
@@ -665,6 +768,10 @@ setTimeout(() => process.exit(1), 30000).unref();
             .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."))
             .stdout(std::process::Stdio::piped())
             .kill_on_drop(true);
+        command.env_remove("SORNG_PROBE_CERT_SUBJECT");
+        if let Some(subject) = subject {
+            command.env("SORNG_PROBE_CERT_SUBJECT", subject);
+        }
         #[cfg(windows)]
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
         let mut child = command
@@ -709,6 +816,7 @@ setTimeout(() => process.exit(1), 30000).unref();
             Some("Proxmox Virtual Environment")
         );
         assert_eq!(result.http_server.as_deref(), Some("nginx"));
+        assert!(result.http_tls_fingerprint.is_none());
         assert_eq!(
             result.http_final_origin,
             Some(format!("https://device.example.test:{port}"))
@@ -746,6 +854,160 @@ setTimeout(() => process.exit(1), 30000).unref();
             .is_err());
         server.await.unwrap();
         child.kill().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn renamed_freshtomato_is_identified_from_leaf_subject_without_authentication() {
+        let (mut child, mut requests, port) = self_signed_server_with_subject(Some(
+            "/CN=router.example.test/O=FreshTomato/OU=FreshTomato Team",
+        ))
+        .await;
+        let result = check_port(
+            "127.0.0.1".into(),
+            port,
+            Some(5),
+            Some("https".into()),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(result.open);
+        assert_eq!(result.http_status, Some(401));
+        assert_eq!(result.http_server.as_deref(), Some("httpd"));
+        assert_eq!(result.http_title.as_deref(), Some("Error"));
+        assert_eq!(result.http_basic_realm.as_deref(), Some("Hades"));
+        assert_eq!(result.http_tls_fingerprint.as_deref(), Some("freshtomato"));
+        assert_eq!(
+            result.identification_error.as_deref(),
+            Some(CERTIFICATE_WARNING)
+        );
+        let persisted = serde_json::to_value(&result).unwrap();
+        assert_eq!(persisted["http_tls_fingerprint"], "freshtomato");
+        assert_eq!(persisted["identification_error"], CERTIFICATE_WARNING);
+        let request: serde_json::Value = serde_json::from_str(
+            &timeout(Duration::from_secs(2), requests.next_line())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(request["url"], "/");
+        for header in ["authorization", "proxy-authorization", "cookie"] {
+            assert!(request["headers"].get(header).is_none(), "{header}");
+        }
+        assert!(timeout(Duration::from_millis(100), requests.next_line())
+            .await
+            .is_err());
+        child.kill().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn certificate_branding_requires_exact_unambiguous_subject_attributes() {
+        for subject in [
+            "/CN=FreshTomato/O=Other/OU=FreshTomato Team",
+            "/CN=router.example.test/O=FreshTomato/OU=Other",
+            "/CN=router.example.test/O=FreshTomato",
+            "/CN=router.example.test/O=FreshTomato/O=Other/OU=FreshTomato Team",
+            "/CN=router.example.test/O=FreshTomato/OU=FreshTomato Team/OU=Other",
+        ] {
+            let (mut child, _requests, port) = self_signed_server_with_subject(Some(subject)).await;
+            let result = check_port(
+                "127.0.0.1".into(),
+                port,
+                Some(5),
+                Some("https".into()),
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.http_status, Some(401), "{subject}");
+            assert_eq!(result.http_basic_realm.as_deref(), Some("Hades"));
+            assert!(result.http_tls_fingerprint.is_none(), "{subject}");
+            assert_eq!(
+                result.identification_error.as_deref(),
+                Some(CERTIFICATE_WARNING)
+            );
+            child.kill().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn redirect_final_response_does_not_inherit_previous_certificate_branding() {
+        let (mut final_child, _final_requests, final_port) = self_signed_server().await;
+        let (mut branded_child, _branded_requests, branded_port) = self_signed_server_with_subject(
+            Some("/CN=router.example.test/O=FreshTomato/OU=FreshTomato Team"),
+        )
+        .await;
+        let origin = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = origin.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            reply(
+                &origin,
+                301,
+                Some(&format!(
+                    "https://127.0.0.1:{branded_port}/switch/{final_port}"
+                )),
+                "intermediate",
+            )
+            .await;
+        });
+        let mut result = open_result(addr.port());
+        identify(&mut result, "http", addr, Duration::from_secs(5)).await;
+        assert_eq!(result.http_status, Some(401));
+        assert_eq!(result.http_redirects, Some(2));
+        assert_eq!(
+            result.http_final_origin,
+            Some(format!("https://127.0.0.1:{final_port}"))
+        );
+        assert!(result.http_tls_fingerprint.is_none());
+        assert_eq!(
+            result.identification_error.as_deref(),
+            Some(CERTIFICATE_WARNING)
+        );
+        server.await.unwrap();
+        final_child.kill().await.unwrap();
+        branded_child.kill().await.unwrap();
+    }
+
+    #[test]
+    fn certificate_branding_rejects_malformed_and_oversized_der() {
+        for bytes in [
+            b"".as_slice(),
+            b"FreshTomato FreshTomato Team",
+            &[0x30, 0x00],
+        ] {
+            assert!(tls_certificate_fingerprint(bytes).is_none());
+        }
+        assert!(tls_certificate_fingerprint(&vec![0; 64 * 1024 + 1]).is_none());
+    }
+
+    /// Explicit opt-in diagnostic; never contacts real devices in default test runs.
+    #[tokio::test]
+    #[ignore = "requires SORNG_DISCOVERY_TEST_IP, _PORT and _SCHEME for an authorized device"]
+    async fn live_http_probe_requires_explicit_target() {
+        let host = std::env::var("SORNG_DISCOVERY_TEST_IP").expect("explicit target IP required");
+        let port = std::env::var("SORNG_DISCOVERY_TEST_PORT")
+            .expect("explicit port required")
+            .parse()
+            .expect("valid port required");
+        let scheme = std::env::var("SORNG_DISCOVERY_TEST_SCHEME").expect("http/https required");
+        let result = check_port(host, port, Some(5), Some(scheme), None)
+            .await
+            .unwrap();
+        assert!(result.open, "TCP port is not reachable");
+        assert!(
+            result.http_status.is_some(),
+            "HTTP response was not obtained"
+        );
+        // Only bounded public metadata; no body, certificate, cookies or credentials.
+        println!("{}", serde_json::to_string(&result).unwrap());
+        if let Ok(expected) = std::env::var("SORNG_DISCOVERY_TEST_FINGERPRINT") {
+            assert_eq!(
+                result.http_tls_fingerprint.as_deref(),
+                Some(expected.as_str())
+            );
+        }
     }
 
     #[tokio::test]
@@ -870,6 +1132,7 @@ setTimeout(() => process.exit(1), 30000).unref();
             "http_server",
             "http_title",
             "http_basic_realm",
+            "http_tls_fingerprint",
             "http_status",
             "http_final_origin",
             "http_redirects",
@@ -1104,20 +1367,23 @@ setTimeout(() => process.exit(1), 30000).unref();
     }
 
     #[tokio::test]
-    async fn omitted_scheme_preserves_passive_banner_and_sends_nothing() {
+    async fn omitted_scheme_preserves_only_ssh_identification_line_and_sends_nothing() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
-            stream.write_all(b"SSH-2.0-test\r\n").await.unwrap();
-            assert_eq!(
+            stream
+                .write_all(b"SSH-2.0-dropbear\r\n\0\0\x01\x04\x14m`>Tcurve25519-sha256,curve25519-sha256@libssh.org")
+                .await
+                .unwrap();
+            assert!(matches!(
                 timeout(Duration::from_secs(2), stream.read_u8())
                     .await
                     .unwrap()
                     .unwrap_err()
                     .kind(),
-                std::io::ErrorKind::UnexpectedEof
-            );
+                std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset
+            ));
             assert!(timeout(Duration::from_millis(50), listener.accept())
                 .await
                 .is_err());
@@ -1126,9 +1392,110 @@ setTimeout(() => process.exit(1), 30000).unref();
             .await
             .unwrap();
         assert!(result.open);
-        assert_eq!(result.banner.as_deref(), Some("SSH-2.0-test"));
+        assert_eq!(result.banner.as_deref(), Some("SSH-2.0-dropbear"));
         assert!(result.http_status.is_none());
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn passive_ssh_banner_handles_fragmentation_and_full_length_identifiers() {
+        for banner in [
+            b"SSH-2.0-dropbear\r\n".to_vec(),
+            b"SSH-2.0-dropbear\n".to_vec(),
+            b"SSH-2.0-OpenSSH_9.6p1 Ubuntu\r\n".to_vec(),
+            format!(
+                "SSH-2.0-dropbear {}\r\n",
+                "x".repeat(255 - b"SSH-2.0-dropbear \r\n".len())
+            )
+            .into_bytes(),
+        ] {
+            assert!(banner.len() <= 255);
+            let expected = String::from_utf8(banner.clone())
+                .unwrap()
+                .trim_end()
+                .to_owned();
+            // Capacity 1 forces every byte, including CR/LF, into separate reads.
+            let (mut reader, mut writer) = tokio::io::duplex(1);
+            let send = tokio::spawn(async move { writer.write_all(&banner).await.unwrap() });
+            assert_eq!(
+                read_passive_banner(&mut reader, Duration::from_secs(1)).await,
+                Some(expected)
+            );
+            send.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn passive_banner_never_joins_lines_or_manufactures_ssh_from_binary() {
+        for (bytes, expected) in [
+            (
+                b"SSH-2.0-dropbear\r\n\0\x14curve25519-sha256".as_slice(),
+                Some("SSH-2.0-dropbear"),
+            ),
+            (b"SSH-2.0-dro\0pbear\r\n".as_slice(), None),
+            (b"SSH-2.0-dropbear".as_slice(), None),
+            (b"\0SSH-2.0-dropbear\r\n".as_slice(), None),
+            (b"RFB 003.008\n\0\x01".as_slice(), Some("RFB 003.008")),
+            (
+                b"220 FTP ready\r\nsecond line".as_slice(),
+                Some("220 FTP ready"),
+            ),
+            (
+                b"first-local-fixture".as_slice(),
+                Some("first-local-fixture"),
+            ),
+        ] {
+            let mut reader = bytes;
+            assert_eq!(
+                read_passive_banner(&mut reader, Duration::from_secs(1))
+                    .await
+                    .as_deref(),
+                expected
+            );
+        }
+        let oversized = format!(
+            "SSH-2.0-dropbear {}\r\n",
+            "x".repeat(256 - b"SSH-2.0-dropbear \r\n".len())
+        );
+        assert!(
+            read_passive_banner(&mut oversized.as_bytes(), Duration::from_secs(1))
+                .await
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn incomplete_passive_ssh_banner_uses_one_deadline_and_returns_no_partial_identity() {
+        let (mut reader, mut writer) = tokio::io::duplex(32);
+        writer.write_all(b"SSH-2.0-dropbear\r").await.unwrap();
+        let start = Instant::now();
+        assert!(read_passive_banner(&mut reader, Duration::from_millis(30))
+            .await
+            .is_none());
+        assert!(start.elapsed() < Duration::from_secs(1));
+        // The reader is passive even when it times out; no client identification.
+        assert!(timeout(Duration::from_millis(30), writer.read_u8())
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn trickling_passive_ssh_banner_does_not_restart_the_deadline() {
+        let (mut reader, mut writer) = tokio::io::duplex(32);
+        let send = tokio::spawn(async move {
+            for byte in b"SSH-2.0-dropbear\r\n" {
+                writer.write_all(&[*byte]).await.unwrap();
+                // Each read makes progress within the timeout, but the entire
+                // greeting takes longer than the original total budget.
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        let start = Instant::now();
+        let banner = read_passive_banner(&mut reader, Duration::from_millis(40)).await;
+        send.abort();
+        let _ = send.await;
+        assert!(banner.is_none());
+        assert!(start.elapsed() < Duration::from_secs(1));
     }
 
     #[tokio::test]

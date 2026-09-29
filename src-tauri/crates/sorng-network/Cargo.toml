@@ -20,6 +20,7 @@ qrcode = "0.14"
 base64 = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
+x509-parser = "0.18"
 uuid = { workspace = true }
 chrono = { workspace = true }
 

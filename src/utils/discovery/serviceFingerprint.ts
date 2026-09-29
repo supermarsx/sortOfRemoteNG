@@ -11,6 +11,8 @@ export interface ServiceFingerprintEvidence {
   http_title?: string;
   /** Public WWW-Authenticate Basic realm; never the full challenge header. */
   http_basic_realm?: string;
+  /** Native leaf-subject branding hint; not certificate identity verification. */
+  http_tls_fingerprint?: string;
   http_status?: number;
   http_final_origin?: string;
   http_redirects?: number;
@@ -128,7 +130,10 @@ export function fingerprintService(
   const text = banner?.trim() ?? "";
   const ssh = text.match(/^SSH-(?:2\.0|1\.99|1\.5)-([^\s]+)[^\r\n]*/);
   if (ssh) {
-    const software = ssh[1].match(/^(OpenSSH|dropbear)[_\-]([\d][\w.]*)$/i);
+    // Dropbear may omit its version; still require the entire software token.
+    const software =
+      ssh[1].match(/^(OpenSSH|dropbear)[_\-]([\d][\w.]*)$/i) ??
+      ssh[1].match(/^(dropbear)$/i);
     return identified(
       "ssh",
       `SSH banner: ${display(ssh[0])}`,
@@ -244,10 +249,18 @@ export function fingerprintService(
     if (authBrand) {
       parts.push("FreshTomato default authentication realm (configurable)");
     }
+    const tlsBrand =
+      http.http_tls_fingerprint === "freshtomato" ? "FreshTomato" : undefined;
+    if (tlsBrand) {
+      parts.push(
+        "TLS certificate subject FreshTomato / FreshTomato Team; self-reported branding, not identity verification",
+      );
+    }
     const software = server?.match(WEB_SERVER);
     const product =
       branded ??
       authBrand ??
+      tlsBrand ??
       serverBrand ??
       (/^Apache-Coyote(?:\/|$)/i.test(server ?? "")
         ? "Apache Tomcat / Coyote"
@@ -267,7 +280,7 @@ export function fingerprintService(
       product,
       branded === "Apache Tomcat"
         ? title?.match(/\/(\d[\w.-]*)/)?.[1]
-        : branded || authBrand || serverBrand
+        : branded || authBrand || tlsBrand || serverBrand
           ? undefined
           : software?.[2],
     );

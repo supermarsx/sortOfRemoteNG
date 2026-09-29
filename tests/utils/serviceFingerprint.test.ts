@@ -171,6 +171,79 @@ describe("evidence-based service fingerprinting", () => {
     },
   );
 
+  it.each(["SSH-2.0-dropbear", "SSH-2.0-dropbear router firmware 2026.09"])(
+    "identifies versionless Dropbear without inventing a version: %s",
+    (banner) => {
+      const result = fingerprintService(65000, banner);
+      expect(result).toMatchObject({
+        banner,
+        protocol: "ssh",
+        service: "ssh",
+        detection: "identified",
+        product: "Dropbear",
+        evidence: `SSH banner: ${banner}`,
+      });
+      expect(result).not.toHaveProperty("version");
+    },
+  );
+
+  it.each([
+    ["dropbear_2022.83", "Dropbear", "2022.83"],
+    ["dropbear-2022.83", "Dropbear", "2022.83"],
+    ["OpenSSH_9.6p1", "OpenSSH", "9.6p1"],
+    ["OpenSSH-9.6p1", "OpenSSH", "9.6p1"],
+  ])(
+    "preserves the product and version of %s with a comment",
+    (software, product, version) => {
+      const banner = `SSH-2.0-${software} vendor build 123`;
+      expect(fingerprintService(65000, banner)).toMatchObject({
+        banner,
+        protocol: "ssh",
+        detection: "identified",
+        product,
+        version,
+        evidence: `SSH banner: ${banner}`,
+      });
+    },
+  );
+
+  it.each([
+    "dropbearm`>Tcurve25519-sha256,curve25519-sha256@libssh.o",
+    "dropbearm",
+    "dropbear_",
+    "dropbear_fake",
+    "dropbear\x00garbage",
+    "dropbear\x7fgarbage",
+    "other Dropbear server",
+  ])(
+    "does not label corrupted or lookalike SSH software as Dropbear: %s",
+    (software) => {
+      const result = fingerprintService(65000, `SSH-2.0-${software}`);
+      expect(result).toMatchObject({
+        protocol: "ssh",
+        detection: "identified",
+      });
+      expect(result).not.toHaveProperty("product");
+      expect(result).not.toHaveProperty("version");
+    },
+  );
+
+  it.each(["\r\n", "\n"])(
+    "keeps SSH evidence within its existing line boundary %j",
+    (newline) => {
+      const line = "SSH-2.0-dropbear router firmware";
+      const banner = `${line}${newline}\x00curve25519-sha256`;
+      const result = fingerprintService(65000, banner);
+      expect(result).toMatchObject({
+        banner,
+        protocol: "ssh",
+        product: "Dropbear",
+        evidence: `SSH banner: ${line}`,
+      });
+      expect(result).not.toHaveProperty("version");
+    },
+  );
+
   it.each(["sftp", "scp"])("SSH does not confirm %s", (hint) => {
     expect(fingerprintService(22, "SSH-2.0-OpenSSH_9.6", hint)).toMatchObject({
       protocol: "ssh",
@@ -322,6 +395,7 @@ describe("evidence-based service fingerprinting", () => {
     undefined,
     "unknown",
     "office-router",
+    "Hades",
     "Tomato",
     "DD-WRT",
     "NotFreshTomato",
@@ -355,6 +429,61 @@ describe("evidence-based service fingerprinting", () => {
     });
     expect(service.product).toBe("FreshTomato");
     expect(service.version).toBeUndefined();
+  });
+
+  it.each(["httpd", "nginx/1.24.0"])(
+    "identifies Hades from native TLS branding with server %s",
+    (http_server) => {
+      const service = fingerprintService(443, undefined, undefined, {
+        http_status: 401,
+        http_server,
+        http_title: "Error",
+        http_basic_realm: "Hades",
+        http_tls_fingerprint: "freshtomato",
+        identification_error: "certificate_validation_bypassed",
+      });
+      expect(service).toMatchObject({
+        port: 443,
+        protocol: "https",
+        product: "FreshTomato",
+        detection: "identified",
+        identificationError: "certificate_validation_bypassed",
+      });
+      expect(service.version).toBeUndefined();
+      expect(service.evidence).toContain("HTTP Basic realm: Hades");
+      expect(service.evidence).toContain(
+        "TLS certificate subject FreshTomato / FreshTomato Team; self-reported branding, not identity verification",
+      );
+      expect(service.evidence).toContain("TLS warning:");
+    },
+  );
+
+  it.each([undefined, "unknown", "FreshTomato", "freshtomato-extra"])(
+    "ignores unsupported TLS fingerprint %s",
+    (http_tls_fingerprint) => {
+      const service = fingerprintService(443, undefined, undefined, {
+        http_status: 401,
+        http_server: "httpd",
+        http_title: "Error",
+        http_basic_realm: "Hades",
+        http_tls_fingerprint,
+      });
+      expect(service.product).toBeUndefined();
+      expect(service.evidence).not.toContain("TLS certificate subject");
+    },
+  );
+
+  it("prefers explicit page branding over TLS certificate branding", () => {
+    const service = fingerprintService(443, undefined, undefined, {
+      http_status: 200,
+      http_title: "Proxmox Virtual Environment",
+      http_tls_fingerprint: "freshtomato",
+    });
+    expect(service.product).toBe("Proxmox VE");
+    expect(service.evidence).toContain("Title: Proxmox Virtual Environment");
+    expect(service.evidence).toContain(
+      "self-reported branding, not identity verification",
+    );
   });
 
   it("does not treat an authentication realm on a successful page as a product challenge", () => {
