@@ -594,6 +594,174 @@ describe("RDPClient", () => {
     })) as any;
   });
 
+  describe("shared RDP connection status", () => {
+    const storedSession = (initial = mockSession) =>
+      connectionContextMocks.dispatch.mock.calls.reduce(
+        (current, [action]) =>
+          action.type === "UPDATE_SESSION" && action.payload.id === current.id
+            ? mergeLocalSessionUpdate(current, action.payload)
+            : current,
+        initial,
+      );
+
+    it("keeps the tab connecting until native handshake success reaches the reducer", async () => {
+      const { result, rerender } = renderHook(
+        ({ session }) => useRDPClient(session),
+        { wrapper: hookWrapper, initialProps: { session: mockSession } },
+      );
+      await waitFor(() =>
+        expect(result.current.rdpSessionId).toBe("rdp-session-123"),
+      );
+      expect(storedSession().status).toBe("connecting");
+      expect(result.current.isConnected).toBe(false);
+      const connecting = storedSession();
+      rerender({ session: connecting });
+
+      emitStatus("negotiating", "Authenticating");
+      expect(storedSession().status).toBe("connecting");
+      emitStatus(
+        "connected",
+        "Handshake complete",
+        "rdp-session-123",
+        1920,
+        1080,
+      );
+      const connected = storedSession();
+      expect(connected.status).toBe("connected");
+      expect(connected.backendSessionId).toBe("rdp-session-123");
+      expect(connected.lifecycleRevision).toBeGreaterThan(
+        connecting.lifecycleRevision!,
+      );
+      expect(result.current.isConnected).toBe(true);
+      rerender({ session: connected });
+      expect(result.current.connectionStatus).toBe("connected");
+    });
+
+    it("publishes handshake failure to the tab and clears it after native reconnect succeeds", async () => {
+      const { result } = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(result.current.rdpSessionId).toBe("rdp-session-123"),
+      );
+      emitStatus("error", "Authentication failed");
+      expect(storedSession()).toMatchObject({
+        status: "error",
+        errorMessage: "Authentication failed",
+      });
+      expect(result.current.isConnected).toBe(false);
+
+      emitStatus("reconnecting", "Retrying handshake");
+      expect(storedSession().status).toBe("connecting");
+      expect(storedSession().errorMessage).toBeUndefined();
+      expect(result.current.connectionStatus).toBe("reconnecting");
+      expect(result.current.isConnected).toBe(false);
+      emitStatus("connected", "Reconnected");
+      expect(storedSession().status).toBe("connected");
+      expect(result.current.isConnected).toBe(true);
+
+      emitStatus("reconnecting", "Transport lost");
+      expect(storedSession().status).toBe("connecting");
+      expect(result.current.isConnected).toBe(false);
+      emitStatus("connected", "Reconnected again");
+      expect(storedSession().status).toBe("connected");
+    });
+
+    it("publishes command failure even when no native actor or status event exists", async () => {
+      const fallback = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation((cmd, args) =>
+        cmd === "connect_rdp"
+          ? Promise.reject(new Error("Connection refused"))
+          : fallback(cmd, args),
+      );
+      const { result } = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(result.current.connectionStatus).toBe("error"),
+      );
+      expect(storedSession()).toMatchObject({
+        status: "error",
+        errorMessage: expect.stringContaining("Connection refused"),
+      });
+      expect(storedSession().backendSessionId).toBeUndefined();
+      expect(result.current.isConnected).toBe(false);
+    });
+
+    it("rejects events from the old native actor after a manual reconnect", async () => {
+      const fallback = mockInvoke.getMockImplementation()!;
+      let connects = 0;
+      mockInvoke.mockImplementation((cmd, args) =>
+        cmd === "connect_rdp"
+          ? Promise.resolve(
+              ++connects === 1 ? "rdp-session-123" : "rdp-replacement",
+            )
+          : fallback(cmd, args),
+      );
+      const { result } = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(result.current.rdpSessionId).toBe("rdp-session-123"),
+      );
+      emitStatus("connected", "Connected");
+      await act(async () => {
+        await result.current.handleReconnect();
+      });
+      await waitFor(() =>
+        expect(result.current.rdpSessionId).toBe("rdp-replacement"),
+      );
+      expect(storedSession().status).toBe("connecting");
+      const replacement = storedSession();
+      for (const status of [
+        "connected",
+        "error",
+        "reconnecting",
+        "disconnected",
+      ]) {
+        emitStatus(status, "Stale actor");
+        expect(storedSession()).toEqual(replacement);
+      }
+      emitStatus(
+        "connected",
+        "Replacement handshake complete",
+        "rdp-replacement",
+      );
+      expect(storedSession().status).toBe("connected");
+    });
+
+    it.each(["rdp-replacement", "rdp-session-123"])(
+      "rejects old viewer events after authority moves to %s",
+      async (backendSessionId) => {
+        const { result, rerender } = renderHook(
+          ({ session }) => useRDPClient(session),
+          { wrapper: hookWrapper, initialProps: { session: mockSession } },
+        );
+        await waitFor(() =>
+          expect(result.current.rdpSessionId).toBe("rdp-session-123"),
+        );
+        emitStatus("connected", "Connected");
+        const replacement = advanceSessionLifecycleAuthority(
+          { ...storedSession(), backendSessionId },
+          "replacement-writer",
+        );
+        rerender({ session: replacement });
+        connectionContextMocks.dispatch.mockClear();
+        for (const status of [
+          "connected",
+          "error",
+          "reconnecting",
+          "negotiating",
+        ]) {
+          emitStatus(status, "Stale viewer");
+        }
+        expect(connectionContextMocks.dispatch).not.toHaveBeenCalled();
+        expect(result.current.connectionStatus).toBe("connected");
+        expect(storedSession(replacement)).toEqual(replacement);
+      },
+    );
+  });
+
   describe("RDP Connection", () => {
     it("rejects retained local TOTP writes after selecting a vault credential", () => {
       const codes = [

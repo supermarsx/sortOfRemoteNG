@@ -482,6 +482,12 @@ export function useRDPClient(session: ConnectionSession) {
     backendSessionId: string;
     session: ConnectionSession;
   } | null>(null);
+  // Captured at attach/connect, independently of incoming cleanup snapshots.
+  const rdpStatusAuthorityRef = useRef<{
+    backendSessionId: string;
+    generation: number;
+    writerId: string;
+  } | null>(null);
   const incomingCleanupQuarantineRef = useRef(
     session.vpnLeaseCleanupQuarantine,
   );
@@ -1424,7 +1430,11 @@ export function useRDPClient(session: ConnectionSession) {
       if (sess.reattachOnly)
         assertReattachAccess = captureSessionDatabaseAccess(sess);
       const reservation = reserveSessionLifecycleActorAttempt(
-        sessionRef.current,
+        {
+          ...sessionRef.current,
+          status: "connecting",
+          errorMessage: undefined,
+        },
         expectedLifecycleAuthority,
       );
       lifecycleAttempt = reservation.attempt;
@@ -1651,6 +1661,7 @@ export function useRDPClient(session: ConnectionSession) {
               backendSessionId: sessionInfo.id,
               name: conn?.name || sess.name,
               status: "connected" as const,
+              errorMessage: undefined,
               networkPath: runtimePath?.snapshot ?? sess.networkPath,
               ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
             },
@@ -1660,6 +1671,11 @@ export function useRDPClient(session: ConnectionSession) {
           activeRdpActorSessionRef.current = {
             backendSessionId: sessionInfo.id,
             session: updatedSession,
+          };
+          rdpStatusAuthorityRef.current = {
+            backendSessionId: sessionInfo.id,
+            generation: getSessionLifecycleActorGeneration(updatedSession),
+            writerId: getSessionLifecycleWriterId(updatedSession),
           };
           dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
           return;
@@ -1897,6 +1913,11 @@ export function useRDPClient(session: ConnectionSession) {
         backendSessionId: sessionId,
         session: updatedSession,
       };
+      rdpStatusAuthorityRef.current = {
+        backendSessionId: sessionId,
+        generation: getSessionLifecycleActorGeneration(updatedSession),
+        writerId: getSessionLifecycleWriterId(updatedSession),
+      };
       dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
       attemptRdpBackendSessionId = null;
 
@@ -1927,6 +1948,25 @@ export function useRDPClient(session: ConnectionSession) {
       ]);
       setConnectionStatus("error");
       setStatusMessage(`Connection failed: ${safeError}`);
+      setIsConnected(false);
+      const current = sessionRef.current;
+      const authority = lifecycleAttempt ?? expectedLifecycleAuthority;
+      if (
+        getSessionLifecycleActorGeneration(current) === authority.generation &&
+        getSessionLifecycleWriterId(current) === authority.writerId
+      ) {
+        const failedSession = withSessionLifecycleAttempt(
+          {
+            ...current,
+            status: "error",
+            errorMessage: `Connection failed: ${safeError}`,
+            lifecycleRevision: getSessionLifecycleRevision(current) + 1,
+          },
+          lifecycleAttempt,
+        );
+        sessionRef.current = failedSession;
+        dispatch({ type: "UPDATE_SESSION", payload: failedSession });
+      }
       console.error("RDP initialization failed:", safeError);
       toast.error("RDP connection failed", 5000);
     } finally {
@@ -2416,9 +2456,52 @@ export function useRDPClient(session: ConnectionSession) {
     track(
       listen<RDPStatusEvent>("rdp://status", (event) => {
         const status = event.payload;
-        if (status.session_id !== sessionIdRef.current) return;
+        if (cleaned || status.session_id !== sessionIdRef.current) return;
 
         if (status.status !== "disconnected") {
+          const current = sessionRef.current;
+          const actor = rdpStatusAuthorityRef.current;
+          // A viewer can retain the old native ID after a window handoff or
+          // replacement. Only that actor's current authority may publish state.
+          if (
+            !actor ||
+            actor.backendSessionId !== status.session_id ||
+            current.backendSessionId !== status.session_id ||
+            getSessionLifecycleActorGeneration(current) !== actor.generation ||
+            getSessionLifecycleWriterId(current) !== actor.writerId ||
+            hasSessionVpnCleanupQuarantine(current) ||
+            hasSessionVpnCleanupQuarantine({
+              vpnLeaseCleanupQuarantine: incomingCleanupQuarantineRef.current,
+            })
+          ) {
+            return;
+          }
+          const nextStatus =
+            status.status === "connected"
+              ? "connected"
+              : status.status === "error"
+                ? "error"
+                : ["connecting", "negotiating", "reconnecting"].includes(
+                      status.status,
+                    )
+                  ? "connecting"
+                  : null;
+          if (!nextStatus) return;
+          // SessionTabs reads the shared session, not this hook's local state.
+          // Advance the revision so the lifecycle reducer accepts this event.
+          const updatedSession: ConnectionSession = {
+            ...current,
+            status: nextStatus,
+            errorMessage: nextStatus === "error" ? status.message : undefined,
+            lifecycleRevision: getSessionLifecycleRevision(current) + 1,
+          };
+          sessionRef.current = updatedSession;
+          activeRdpActorSessionRef.current = {
+            backendSessionId: status.session_id,
+            session: updatedSession,
+          };
+          dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+          setIsConnected(nextStatus === "connected");
           setStatusMessage(status.message);
         }
 
