@@ -13,15 +13,39 @@ const STORE_NAME = "keyval";
 export class IndexedDbService {
   private static dbPromise: Promise<IDBPDatabase<KeyValDB>> | null = null;
 
+  private static invalidateDB(promise: Promise<IDBPDatabase<KeyValDB>>): void {
+    // A late failure/event from an old handle must not evict its replacement.
+    if (this.dbPromise === promise) this.dbPromise = null;
+  }
+
   private static getDB(): Promise<IDBPDatabase<KeyValDB>> {
     if (!this.dbPromise) {
-      this.dbPromise = openDB<KeyValDB>(DB_NAME, 1, {
+      let connection: IDBPDatabase<KeyValDB> | undefined;
+      let releaseOnOpen = false;
+      const promise = openDB<KeyValDB>(DB_NAME, 1, {
         upgrade(db) {
           if (!db.objectStoreNames.contains(STORE_NAME)) {
             db.createObjectStore(STORE_NAME);
           }
         },
-      });
+        blocking: () => {
+          this.invalidateDB(promise);
+          releaseOnOpen = true;
+          connection?.close();
+        },
+        terminated: () => this.invalidateDB(promise),
+      }).then(
+        (db) => {
+          connection = db;
+          if (releaseOnOpen) db.close();
+          return db;
+        },
+        (error: unknown) => {
+          this.invalidateDB(promise);
+          throw error;
+        },
+      );
+      this.dbPromise = promise;
     }
     return this.dbPromise;
   }
@@ -70,8 +94,31 @@ export class IndexedDbService {
   }
 
   static async getItemStrict<T>(key: string): Promise<T | null> {
-    const db = await this.getDB();
-    const raw = await db.get(STORE_NAME, key);
+    let raw: string | undefined;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const promise = this.getDB();
+      // Open failures propagate; a later call may try opening again.
+      const db = await promise;
+      try {
+        raw = await db.get(STORE_NAME, key);
+        break;
+      } catch (error) {
+        // IDBDatabase.transaction reports a closed/closing connection this way.
+        // Do not retry aborts, schema errors, or arbitrary message matches.
+        if (
+          typeof error !== "object" ||
+          error === null ||
+          !("name" in error) ||
+          error.name !== "InvalidStateError"
+        ) {
+          throw error;
+        }
+        this.invalidateDB(promise);
+        db.close();
+        if (attempt === 1) throw error;
+      }
+    }
+    // Corrupt JSON is a strict error, never a reason to reconnect or retry.
     return raw === undefined ? null : (JSON.parse(raw) as T);
   }
 
