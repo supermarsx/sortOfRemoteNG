@@ -87,6 +87,7 @@ const FolderChip: React.FC<{
         draggable
         onDragStart={mgr.handleDragStart(idx)}
         onDragOver={mgr.handleDragOver(idx)}
+        onDragLeave={mgr.handleDragLeave}
         onDrop={mgr.handleDrop(idx)}
         onDragEnd={mgr.handleDragEnd}
         className={`text-xs px-2 py-0.5 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors whitespace-nowrap flex items-center gap-1 ${
@@ -111,7 +112,16 @@ const FolderChip: React.FC<{
           className="sor-popover-panel min-w-[140px] py-0.5"
           dataTestId={`web-browser-folder-popover-${idx}`}
         >
-          <OptionList>
+          <OptionList
+            onDragOver={mgr.handleDragOver(idx)}
+            onDragLeave={mgr.handleDragLeave}
+            onDrop={mgr.handleDrop(idx)}
+            className={
+              mgr.dragOverIdx === idx
+                ? "ring-1 ring-[var(--color-primary)] rounded"
+                : undefined
+            }
+          >
             {bm.children.length === 0 && (
               <OptionEmptyState className="italic text-[var(--color-textMuted,var(--color-textSecondary))]">
                 Empty folder
@@ -126,6 +136,9 @@ const FolderChip: React.FC<{
               return (
                 <OptionItemButton
                   key={cIdx}
+                  draggable
+                  onDragStart={mgr.handleDragStart(idx, cIdx)}
+                  onDragEnd={mgr.handleDragEnd}
                   onClick={() => {
                     if (childUrl) mgr.navigateToUrl(childUrl);
                   }}

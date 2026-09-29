@@ -45,6 +45,7 @@ const BookmarkChip: React.FC<{
       draggable
       onDragStart={mgr.handleDragStart(idx)}
       onDragOver={mgr.handleDragOver(idx)}
+      onDragLeave={mgr.handleDragLeave}
       onDrop={mgr.handleDrop(idx)}
       onDragEnd={mgr.handleDragEnd}
       onClick={() => {

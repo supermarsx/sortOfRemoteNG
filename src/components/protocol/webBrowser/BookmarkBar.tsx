@@ -21,14 +21,27 @@ const BookmarkBar: React.FC<SectionProps> = ({ mgr }) => {
     closeBookmarkMenus();
     mgr.setBmBarContextMenu({ x, y });
   };
+  const isBarDropTarget = (e: React.DragEvent<HTMLDivElement>) =>
+    e.target instanceof Element &&
+    e.currentTarget.contains(e.target) &&
+    !e.target.closest(
+      'button, a, input, textarea, select, [role="button"], [role="menu"]',
+    );
   return (
     <div
-      className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-3 py-1 flex min-w-0 items-center gap-2 min-h-[28px] relative"
+      className={`bg-[var(--color-surface)] border-b border-[var(--color-border)] px-3 py-1 flex min-w-0 items-center gap-2 min-h-[28px] relative ${mgr.dragOverBar ? "ring-1 ring-inset ring-[var(--color-primary)]" : ""}`}
       data-testid="web-bookmark-bar"
       role="group"
       aria-label="Bookmarks, scripts and macros"
       tabIndex={0}
       aria-haspopup="menu"
+      onDragOver={(e) => {
+        if (isBarDropTarget(e)) mgr.handleDragOver(null)(e);
+      }}
+      onDragLeave={mgr.handleDragLeave}
+      onDrop={(e) => {
+        if (isBarDropTarget(e)) mgr.handleDrop(null)(e);
+      }}
       onContextMenu={(e) => {
         const target = e.target;
         // Portaled menus still bubble through React. Only claim noninteractive

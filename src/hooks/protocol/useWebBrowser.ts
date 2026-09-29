@@ -110,6 +110,12 @@ import {
 } from "../../utils/connection/websiteDarkMode";
 import { httpRedirectTrustIdentity } from "../../utils/protocol/httpRedirectTrustIdentity";
 import { resolveHttpBookmarkUrl } from "../../utils/protocol/httpBookmarkUrl";
+import {
+  HTTP_BOOKMARK_DRAG_TYPE,
+  moveHttpBookmark,
+  type HttpBookmarkLocation,
+} from "../../utils/protocol/httpBookmarkDrag";
+import { readHttpBookmarkDrop } from "../../utils/protocol/httpBookmarkDrop";
 import type {
   CertificateInspection,
   NativeTlsCertificateInfo,
@@ -1501,6 +1507,13 @@ export function useWebBrowser(session: ConnectionSession) {
   const editBmRef = useRef<HTMLInputElement>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [dragOverBar, setDragOverBar] = useState(false);
+  const bookmarkDragSource = useRef<{
+    location: HttpBookmarkLocation;
+    connectionId: string;
+    ownerScope: string;
+    bookmarks: string;
+  } | null>(null);
   const [openFolders, setOpenFolders] = useState<Set<number>>(new Set());
   const folderButtonRefs = useRef<Record<number, HTMLButtonElement | null>>({});
 
@@ -3738,9 +3751,12 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [connection, currentUrl, navigationFailure?.url, settings.diagnostics]);
 
   // ── Bookmark helpers ───────────────────────────────────────
+  const bookmarkBaseUrl = baseTargetRef.current;
   const resolveBookmarkUrl = useCallback(
-    (path: string) => resolveHttpBookmarkUrl(path, buildTargetUrl()),
-    [buildTargetUrl],
+    // Use the live navigation URL, never an unsubmitted address-bar draft.
+    // cPanel's saved /cpsess…/ prefix belongs to an earlier login session.
+    (path: string) => resolveHttpBookmarkUrl(path, bookmarkBaseUrl, currentUrl),
+    [bookmarkBaseUrl, currentUrl],
   );
   const beginEditBookmark = useCallback(
     (idx: number, childIdx?: number) => {
@@ -3825,26 +3841,34 @@ export function useWebBrowser(session: ConnectionSession) {
   }, []);
 
   const currentPath = useMemo(() => {
-    const base = buildTargetUrl().replace(/\/+$/, "");
-    const url = inputUrl || currentUrl;
-    const raw = url.startsWith(base) ? url.slice(base.length) : "/";
-    return raw && raw.startsWith("/") ? raw : "/" + raw;
-  }, [inputUrl, currentUrl, buildTargetUrl]);
+    const resolved = resolveHttpBookmarkUrl(currentUrl, bookmarkBaseUrl);
+    if (!resolved) return "/";
+    const url = new URL(resolved);
+    // A double-leading-slash pathname must stay absolute, otherwise resolving
+    // the saved bookmark would interpret its first segment as another host.
+    return url.origin === new URL(bookmarkBaseUrl).origin &&
+      !url.pathname.startsWith("//")
+      ? `${url.pathname}${url.search}${url.hash}`
+      : resolved;
+  }, [currentUrl, bookmarkBaseUrl]);
 
   const activeBookmarkPaths = useMemo(
-    () => new Set(collectPaths(connection?.httpBookmarks || [])),
-    [connection?.httpBookmarks, collectPaths],
+    () =>
+      new Set(
+        collectPaths(connection?.httpBookmarks || [])
+          .map(resolveBookmarkUrl)
+          .filter(Boolean),
+      ),
+    [connection?.httpBookmarks, collectPaths, resolveBookmarkUrl],
   );
-  const isCurrentPageBookmarked = activeBookmarkPaths.has(currentPath);
+  const isCurrentPageBookmarked = activeBookmarkPaths.has(
+    resolveBookmarkUrl(currentPath),
+  );
 
   const handleAddBookmark = useCallback(() => {
     if (!connection) return;
-    const url = inputUrl || currentUrl;
-    const base = buildTargetUrl().replace(/\/+$/, "");
-    const rawPath = url.startsWith(base) ? url.slice(base.length) : "/";
-    const normalizedPath =
-      rawPath && rawPath.startsWith("/") ? rawPath : "/" + rawPath;
-    if (activeBookmarkPaths.has(normalizedPath)) return;
+    const normalizedPath = currentPath;
+    if (activeBookmarkPaths.has(resolveBookmarkUrl(normalizedPath))) return;
     const name =
       normalizedPath === "/"
         ? "Home"
@@ -3863,9 +3887,8 @@ export function useWebBrowser(session: ConnectionSession) {
     });
   }, [
     connection,
-    inputUrl,
-    currentUrl,
-    buildTargetUrl,
+    currentPath,
+    resolveBookmarkUrl,
     activeBookmarkPaths,
     dispatch,
   ]);
@@ -3960,15 +3983,10 @@ export function useWebBrowser(session: ConnectionSession) {
   const handleMoveToFolder = useCallback(
     (bmIdx: number, folderIdx: number) => {
       if (!connection) return;
-      const bookmarks = [...(connection.httpBookmarks || [])].map((b) =>
-        b.isFolder ? { ...b, children: [...b.children] } : { ...b },
-      );
-      const [item] = bookmarks.splice(bmIdx, 1);
-      if (item.isFolder) return;
-      const folder = bookmarks[folderIdx > bmIdx ? folderIdx - 1 : folderIdx];
-      if (folder && folder.isFolder) {
-        folder.children.push(item);
-      }
+      const items = connection.httpBookmarks ?? [];
+      if (items[bmIdx]?.isFolder || !items[folderIdx]?.isFolder) return;
+      const bookmarks = moveHttpBookmark(items, { idx: bmIdx }, folderIdx);
+      if (!bookmarks) return;
       dispatch({
         type: "UPDATE_CONNECTION",
         payload: { ...connection, httpBookmarks: bookmarks },
@@ -4136,36 +4154,149 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [currentUrl, toast]);
 
   // ── Drag handlers ──────────────────────────────────────────
-  const handleDragStart = useCallback(
-    (idx: number) => (e: React.DragEvent) => {
-      setDragIdx(idx);
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", String(idx));
-    },
-    [],
-  );
-  const handleDragOver = useCallback(
-    (idx: number) => (e: React.DragEvent) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      setDragOverIdx(idx);
-    },
-    [],
-  );
-  const handleDrop = useCallback(
-    (idx: number) => (e: React.DragEvent) => {
-      e.preventDefault();
-      if (dragIdx !== null && dragIdx !== idx) {
-        handleMoveBookmark(dragIdx, idx);
-      }
-      setDragIdx(null);
-      setDragOverIdx(null);
-    },
-    [dragIdx, handleMoveBookmark],
-  );
   const handleDragEnd = useCallback(() => {
+    bookmarkDragSource.current = null;
     setDragIdx(null);
     setDragOverIdx(null);
+    setDragOverBar(false);
+  }, []);
+  // A source is local to this tab and this exact owning-database lease/list.
+  // External text/URL drags and stale indices must never move a saved bookmark.
+  const currentBookmarkDrag = useCallback(() => {
+    const source = bookmarkDragSource.current;
+    if (
+      !source ||
+      !connection ||
+      source.connectionId !== connection.id ||
+      source.ownerScope !== trustOwnerScope ||
+      source.bookmarks !== stableJsonStringify(connection.httpBookmarks)
+    )
+      return null;
+    return source;
+  }, [connection, trustOwnerScope]);
+  const handleDragStart = useCallback(
+    (idx: number, childIdx?: number) => (e: React.DragEvent) => {
+      e.stopPropagation();
+      handleDragEnd();
+      const root = connection?.httpBookmarks?.[idx];
+      const item =
+        childIdx === undefined
+          ? root
+          : root?.isFolder
+            ? root.children[childIdx]
+            : undefined;
+      if (!connection || !item || (childIdx !== undefined && item.isFolder)) {
+        e.preventDefault();
+        return;
+      }
+      bookmarkDragSource.current = {
+        location: { idx, childIdx },
+        connectionId: connection.id,
+        ownerScope: trustOwnerScope,
+        bookmarks: stableJsonStringify(connection.httpBookmarks),
+      };
+      setDragIdx(idx);
+      e.dataTransfer.effectAllowed = "move";
+      // Do not put the bookmark URL (which may contain sensitive parameters)
+      // into an OS/browser drag payload. The actual source stays in this tab.
+      e.dataTransfer.setData(HTTP_BOOKMARK_DRAG_TYPE, "1");
+      e.dataTransfer.setData("text/plain", "Move bookmark");
+      setBmContextMenu(null);
+      setBmBarContextMenu(null);
+    },
+    [connection, trustOwnerScope, handleDragEnd],
+  );
+  const handleDragOver = useCallback(
+    (idx: number | null) => (e: React.DragEvent) => {
+      e.stopPropagation();
+      const source = currentBookmarkDrag();
+      const types = Array.from(e.dataTransfer.types ?? []);
+      const internalDrag =
+        bookmarkDragSource.current !== null ||
+        types.includes(HTTP_BOOKMARK_DRAG_TYPE);
+      const allowed = internalDrag
+        ? source &&
+          moveHttpBookmark(
+            connection?.httpBookmarks ?? [],
+            source.location,
+            idx,
+          )
+        : connection &&
+          (idx === null || connection.httpBookmarks?.[idx]) &&
+          (types.includes("text/uri-list") || types.includes("text/plain")) &&
+          !types.includes("Files");
+      if (!allowed) {
+        e.dataTransfer.dropEffect = "none";
+        setDragOverIdx(null);
+        setDragOverBar(false);
+        return;
+      }
+      e.preventDefault();
+      e.dataTransfer.dropEffect = internalDrag ? "move" : "copy";
+      setDragOverIdx(idx);
+      setDragOverBar(idx === null);
+    },
+    [connection, currentBookmarkDrag],
+  );
+  const handleDrop = useCallback(
+    (idx: number | null) => (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const source = currentBookmarkDrag();
+      const types = Array.from(e.dataTransfer.types ?? []);
+      const internalDrag =
+        bookmarkDragSource.current !== null ||
+        types.includes(HTTP_BOOKMARK_DRAG_TYPE);
+      handleDragEnd();
+      if (!connection) return;
+      let bookmarks: HttpBookmarkItem[] | null;
+      if (internalDrag) {
+        if (!source) return;
+        bookmarks = moveHttpBookmark(
+          connection.httpBookmarks ?? [],
+          source.location,
+          idx,
+        );
+      } else {
+        if (types.includes("Files")) return;
+        const imported = readHttpBookmarkDrop(e.dataTransfer, {
+          proxyOrigin: proxyUrlRef.current
+            ? new URL(proxyUrlRef.current).origin
+            : undefined,
+          upstreamUrl: baseTargetRef.current,
+          routes: googleRoutesRef.current,
+        });
+        if (imported.length === 0) return;
+        bookmarks = [...(connection.httpBookmarks ?? [])];
+        if (idx === null) bookmarks.push(...imported);
+        else {
+          const target = bookmarks[idx];
+          if (!target) return;
+          if (target.isFolder) {
+            bookmarks[idx] = {
+              ...target,
+              children: [...target.children, ...imported],
+            };
+          } else bookmarks.splice(idx, 0, ...imported);
+        }
+      }
+      if (!bookmarks) return;
+      setOpenFolders(new Set());
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...connection, httpBookmarks: bookmarks },
+      });
+    },
+    [connection, currentBookmarkDrag, dispatch, handleDragEnd],
+  );
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (
+      e.relatedTarget instanceof Node &&
+      e.currentTarget.contains(e.relatedTarget)
+    )
+      return;
+    setDragOverIdx(null);
+    setDragOverBar(false);
   }, []);
 
   // ── Recording handlers ─────────────────────────────────────
@@ -4504,6 +4635,7 @@ export function useWebBrowser(session: ConnectionSession) {
     resolveBookmarkUrl,
     dragIdx,
     dragOverIdx,
+    dragOverBar,
     openFolders,
     setOpenFolders,
     folderButtonRefs,
@@ -4525,6 +4657,7 @@ export function useWebBrowser(session: ConnectionSession) {
     handleDragOver,
     handleDrop,
     handleDragEnd,
+    handleDragLeave,
     // Page actions
     handleSavePage,
     handleCopyAll,

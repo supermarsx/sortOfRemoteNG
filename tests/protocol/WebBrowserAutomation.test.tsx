@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Connection,
   ConnectionSession,
+  HttpBookmarkItem,
 } from "../../src/types/connection/connection";
 import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 import * as redirectHooks from "../../src/hooks/protocol/useHttpRedirectReview";
@@ -391,6 +392,622 @@ describe("live website bookmark editor", () => {
     }
   });
 });
+describe("live website bookmark drag and drop", () => {
+  const home = { name: "Home", path: "/" };
+  const files = { name: "Files", path: "/files" };
+  const logs = { name: "Logs", path: "/logs" };
+  const folder = (
+    name: string,
+    children: HttpBookmarkItem[] = [],
+  ): HttpBookmarkItem => ({
+    name,
+    isFolder: true,
+    children,
+  });
+  function dragEvent() {
+    const data = new Map<string, string>();
+    return {
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      dataTransfer: {
+        get types() {
+          return [...data.keys()];
+        },
+        files: [],
+        effectAllowed: "none",
+        dropEffect: "none",
+        setData: vi.fn((type: string, value: string) => data.set(type, value)),
+        getData: vi.fn((type: string) => data.get(type) ?? ""),
+      },
+    } as unknown as React.DragEvent;
+  }
+  async function dragHook(items: HttpBookmarkItem[]) {
+    native.connections[0].httpBookmarks = structuredClone(items);
+    const connection = native.connections[0];
+    const session: ConnectionSession = {
+      id: "bookmark-drag-session",
+      connectionId: connection.id,
+      ownerDatabaseId: "owned-demo",
+      name: connection.name,
+      hostname: connection.hostname,
+      protocol: "http",
+      status: "connected",
+      startTime: new Date(),
+    };
+    native.sessions = [session];
+    const hook = renderHook(({ session }) => useWebBrowser(session), {
+      initialProps: { session },
+    });
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith(
+        "start_basic_auth_proxy",
+        expect.anything(),
+      ),
+    );
+    native.dispatch.mockClear();
+    return { ...hook, session };
+  }
+  function expectBookmarkOnlyEdit(
+    before: Connection,
+    expected: HttpBookmarkItem[],
+  ) {
+    expect(native.dispatch).toHaveBeenCalledTimes(1);
+    expect(native.dispatch).toHaveBeenCalledWith({
+      type: "UPDATE_CONNECTION",
+      payload: { ...before, httpBookmarks: expected },
+    });
+    expect(native.connections[0]).toEqual(before);
+  }
+
+  it.each([
+    { before: true, filled: false },
+    { before: true, filled: true },
+    { before: false, filled: false },
+    { before: false, filled: true },
+  ])(
+    "dispatches only a bookmark edit for root-to-folder (source before=$before, filled=$filled)",
+    async ({ before, filled }) => {
+      const children = filled ? [files] : [];
+      const tools = folder("Tools", children);
+      const hook = await dragHook(before ? [home, tools] : [tools, home]);
+      const connection = structuredClone(native.connections[0]);
+      const event = dragEvent();
+      act(() => hook.result.current.handleDragStart(before ? 0 : 1)(event));
+      act(() => hook.result.current.handleDragOver(before ? 1 : 0)(event));
+      act(() => hook.result.current.handleDrop(before ? 1 : 0)(event));
+      expectBookmarkOnlyEdit(connection, [
+        folder("Tools", [...children, home]),
+      ]);
+      expect(hook.result.current.dragOverIdx).toBeNull();
+      native.dispatch.mockClear();
+      act(() => hook.result.current.handleDrop(null)(event));
+      expect(native.dispatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    "external",
+    "cancelled",
+    "self",
+    "same folder",
+    "invalid source",
+    "invalid target",
+  ])("ignores %s drops", async (kind) => {
+    const hook = await dragHook([home, folder("Tools", [files])]);
+    const event = dragEvent();
+    event.dataTransfer.setData("text/plain", "0");
+    if (kind !== "external") {
+      act(() =>
+        hook.result.current.handleDragStart(
+          kind === "invalid source" ? 99 : kind === "same folder" ? 1 : 0,
+          kind === "same folder" ? 0 : undefined,
+        )(event),
+      );
+    }
+    if (kind === "cancelled") act(() => hook.result.current.handleDragEnd());
+    act(() =>
+      hook.result.current.handleDrop(
+        kind === "self" ? 0 : kind === "invalid target" ? 99 : 1,
+      )(event),
+    );
+    expect(native.dispatch).not.toHaveBeenCalled();
+    expect(hook.result.current.dragOverIdx).toBeNull();
+  });
+
+  it.each(["connection", "owner", "lease", "bookmarks"])(
+    "rejects a drag after its %s changes",
+    async (changed) => {
+      const hook = await dragHook([home, folder("Tools", [files])]);
+      const event = dragEvent();
+      act(() => hook.result.current.handleDragStart(0)(event));
+      const availability = native.databaseAvailability;
+      let session = hook.session;
+      try {
+        if (changed === "connection") {
+          native.connections = [
+            { ...native.connections[0], id: "replacement" },
+          ];
+          session = { ...session, connectionId: "replacement" };
+        } else if (changed === "owner") {
+          session = { ...session, ownerDatabaseId: "another-database" };
+        } else if (changed === "lease") {
+          native.databaseAvailability = {
+            ...availability,
+            generation: availability.generation + 1,
+          };
+        } else {
+          // Even an in-place edit must invalidate the serialized drag snapshot.
+          native.connections[0].httpBookmarks![0].name =
+            "Changed while dragging";
+        }
+        hook.rerender({ session });
+        native.dispatch.mockClear();
+        act(() => hook.result.current.handleDrop(1)(event));
+        expect(native.dispatch).not.toHaveBeenCalled();
+      } finally {
+        hook.unmount();
+        native.databaseAvailability = availability;
+      }
+    },
+  );
+
+  it("accepts an equivalent bookmark snapshot after an unrelated connection edit", async () => {
+    const hook = await dragHook([home, folder("Tools", [files])]);
+    const event = dragEvent();
+    act(() => hook.result.current.handleDragStart(0)(event));
+    native.connections = [
+      { ...structuredClone(native.connections[0]), name: "New label" },
+    ];
+    hook.rerender({ session: hook.session });
+    const before = structuredClone(native.connections[0]);
+    act(() => hook.result.current.handleDrop(1)(event));
+    expectBookmarkOnlyEdit(before, [folder("Tools", [files, home])]);
+  });
+
+  it.each([false, true])(
+    "drops onto an open folder dropdown (filled=%s)",
+    async (filled) => {
+      native.connections[0].httpBookmarks = [
+        home,
+        folder("Tools", filled ? [files] : []),
+      ];
+      await mount();
+      fireEvent.click(screen.getByRole("button", { name: "Tools" }));
+      const target = filled
+        ? await screen.findByRole("button", { name: "Files" })
+        : screen.getByText("Empty folder");
+      await waitFor(() => expect(target).toBeVisible());
+      const event = dragEvent();
+      native.dispatch.mockClear();
+      const before = structuredClone(native.connections[0]);
+      fireEvent.dragStart(screen.getByRole("button", { name: "Home" }), event);
+      fireEvent.dragOver(target, event);
+      fireEvent.drop(target, event);
+      expectBookmarkOnlyEdit(before, [
+        folder("Tools", filled ? [files, home] : [home]),
+      ]);
+    },
+  );
+
+  it.each(["folder", "bookmark", "bar"])(
+    "drags a dropdown child onto a root %s",
+    async (target) => {
+      native.connections[0].httpBookmarks = [
+        home,
+        folder("Source", [files]),
+        folder("Target", [logs]),
+      ];
+      await mount();
+      fireEvent.click(screen.getByRole("button", { name: "Source" }));
+      const child = await screen.findByRole("button", { name: "Files" });
+      expect(child).toHaveAttribute("draggable", "true");
+      const destination =
+        target === "folder"
+          ? screen.getByRole("button", { name: "Target" })
+          : target === "bookmark"
+            ? screen.getByRole("button", { name: "Home" })
+            : screen.getByTestId("web-bookmark-scroll");
+      const event = dragEvent();
+      native.dispatch.mockClear();
+      const before = structuredClone(native.connections[0]);
+      fireEvent.dragStart(child, event);
+      fireEvent.dragOver(destination, event);
+      fireEvent.drop(destination, event);
+      expectBookmarkOnlyEdit(
+        before,
+        target === "folder"
+          ? [home, folder("Source"), folder("Target", [logs, files])]
+          : target === "bookmark"
+            ? [files, home, folder("Source"), folder("Target", [logs])]
+            : [home, folder("Source"), folder("Target", [logs]), files],
+      );
+    },
+  );
+
+  it.each([
+    { type: "text/uri-list", destination: "bar" },
+    { type: "text/uri-list", destination: "folder" },
+    { type: "text/uri-list", destination: "bookmark" },
+    { type: "text/uri-list", destination: "scroll lane" },
+    { type: "text/uri-list", destination: "empty bar" },
+    { type: "text/plain", destination: "bar" },
+  ])(
+    "imports an external $type URL onto the $destination without moving existing bookmarks or navigating",
+    async ({ type, destination }) => {
+      native.connections[0].httpBookmarks = [
+        home,
+        folder("Tools", [files]),
+        logs,
+      ];
+      if (destination === "empty bar") native.connections[0].httpBookmarks = [];
+      const { iframe, post, rerender } = await mount();
+      const src = iframe.src;
+      const before = structuredClone(native.connections[0]);
+      native.persistedConnections = structuredClone(native.connections);
+      const event = dragEvent();
+      event.dataTransfer.setData(
+        type,
+        "https://EXTERNAL.example.test:443/reports/../files?q=1#latest",
+      );
+      const target =
+        destination === "bar" || destination === "empty bar"
+          ? screen.getByTestId("web-bookmark-bar")
+          : destination === "scroll lane"
+            ? screen.getByTestId("web-bookmark-scroll")
+            : screen.getByRole("button", {
+                name: destination === "folder" ? "Tools" : "Logs",
+              });
+      native.dispatch.mockClear();
+      native.invoke.mockClear();
+      post.mockClear();
+      fireEvent.dragOver(target, event);
+      fireEvent.drop(target, event);
+      const imported = {
+        name: "external.example.test",
+        path: "https://external.example.test/files?q=1#latest",
+      };
+      expectBookmarkOnlyEdit(
+        before,
+        destination === "empty bar"
+          ? [imported]
+          : destination === "bar" || destination === "scroll lane"
+            ? [home, folder("Tools", [files]), logs, imported]
+            : destination === "folder"
+              ? [home, folder("Tools", [files, imported]), logs]
+              : [home, folder("Tools", [files]), imported, logs],
+      );
+      native.connections = [native.dispatch.mock.calls[0][0].payload];
+      await act(async () =>
+        rerender(<WebBrowser session={native.sessions[0]} />),
+      );
+      expect(document.querySelector("iframe")).toBe(iframe);
+      expect(iframe.src).toBe(src);
+      expect(
+        native.invoke.mock.calls.filter(([command]) =>
+          [
+            "start_basic_auth_proxy",
+            "stop_basic_auth_proxy",
+            "navigate_proxy_session",
+          ].includes(command),
+        ),
+      ).toEqual([]);
+      expect(post).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    {
+      label: "plain prose",
+      type: "text/plain",
+      value: "Read the latest report",
+    },
+    { label: "malformed URL", type: "text/plain", value: "https://" },
+    { label: "script", type: "text/uri-list", value: "javascript:alert(1)" },
+    {
+      label: "file URL",
+      type: "text/uri-list",
+      value: "file:///C:/report.html",
+    },
+    { label: "file-typed drag", type: "Files", value: "report.html" },
+    {
+      label: "internal marker without local source",
+      type: "application/x-sorng-http-bookmark",
+      value: "0",
+    },
+  ])("ignores an external $label drop", async ({ label, type, value }) => {
+    native.connections[0].httpBookmarks = [
+      home,
+      folder("Tools", [files]),
+      logs,
+    ];
+    const { iframe } = await mount();
+    const before = structuredClone(native.connections[0]);
+    const src = iframe.src;
+    const event = dragEvent();
+    event.dataTransfer.setData(type, value);
+    if (
+      label === "file-typed drag" ||
+      label === "internal marker without local source"
+    ) {
+      event.dataTransfer.setData(
+        "text/uri-list",
+        "https://external.example.test/files",
+      );
+      event.dataTransfer.setData(
+        "text/plain",
+        "https://external.example.test/files",
+      );
+    }
+    native.dispatch.mockClear();
+    native.invoke.mockClear();
+    const bar = screen.getByTestId("web-bookmark-bar");
+    fireEvent.dragOver(bar, event);
+    fireEvent.drop(bar, event);
+    expect(native.dispatch).not.toHaveBeenCalled();
+    expect(native.connections[0]).toEqual(before);
+    expect(iframe.src).toBe(src);
+    expect(native.invoke).not.toHaveBeenCalled();
+  });
+
+  it("imports an iframe proxy alias as its upstream URL without navigation or generation tokens", async () => {
+    native.connections[0].httpBookmarks = [home, folder("Tools", [files])];
+    const { iframe } = await mount();
+    const src = iframe.src;
+    const before = structuredClone(native.connections[0]);
+    const url = new URL(
+      "/reports/latest?q=1&__sorng_generation_v1=42&__sorng_navigation_v1=" +
+        "a".repeat(32) +
+        "&view=full#summary",
+      iframe.src,
+    );
+    const event = dragEvent();
+    event.dataTransfer.setData("text/uri-list", url.href);
+    native.dispatch.mockClear();
+    native.invoke.mockClear();
+    const bar = screen.getByTestId("web-bookmark-bar");
+    fireEvent.dragOver(bar, event);
+    fireEvent.drop(bar, event);
+    expectBookmarkOnlyEdit(before, [
+      home,
+      folder("Tools", [files]),
+      {
+        name: "panel.example.test:81",
+        path: "http://panel.example.test:81/reports/latest?q=1&view=full#summary",
+      },
+    ]);
+    expect(iframe.src).toBe(src);
+    expect(native.invoke).not.toHaveBeenCalled();
+  });
+
+  it("reorders folder chips without nesting", async () => {
+    const source = folder("Source", [files]);
+    const target = folder("Target", [logs]);
+    native.connections[0].httpBookmarks = [source, target];
+    await mount();
+    native.dispatch.mockClear();
+    const before = structuredClone(native.connections[0]);
+    const event = dragEvent();
+    fireEvent.dragStart(screen.getByRole("button", { name: "Source" }), event);
+    fireEvent.drop(screen.getByRole("button", { name: "Target" }), event);
+    expectBookmarkOnlyEdit(before, [target, source]);
+  });
+
+  it("keeps the active iframe and dark mode through a real drop and pending bookmark persistence", async () => {
+    native.connections[0].httpBookmarks = [home, folder("Tools", [files])];
+    const { iframe, post, emit, rerender } = await mount();
+    emit("proxy_document_start");
+    emit("proxy_dom_ready");
+    await waitFor(() =>
+      expect(
+        post.mock.calls.some(
+          ([data]) => data.action === "dark" && data.payload.enabled,
+        ),
+      ).toBe(true),
+    );
+    for (const [data] of [...post.mock.calls])
+      if (data.action === "dark")
+        emit("proxy_web_automation", { ...data, status: "ok" });
+    emit("proxy_dark_ready");
+    const src = iframe.src;
+    native.persistedConnections = structuredClone(native.connections);
+    const before = structuredClone(native.connections[0]);
+    native.dispatch.mockClear();
+    native.invoke.mockClear();
+    post.mockClear();
+    const event = dragEvent();
+    fireEvent.dragStart(screen.getByRole("button", { name: "Home" }), event);
+    fireEvent.drop(screen.getByRole("button", { name: "Tools" }), event);
+    expectBookmarkOnlyEdit(before, [folder("Tools", [files, home])]);
+    native.connections = [native.dispatch.mock.calls[0][0].payload];
+    await act(async () =>
+      rerender(<WebBrowser session={native.sessions[0]} />),
+    );
+    expect(document.querySelector("iframe")).toBe(iframe);
+    expect(iframe.src).toBe(src);
+    expect(iframe).not.toHaveAttribute("inert");
+    expect(screen.queryByTestId("web-dark-paint-shield")).toBeNull();
+    expect(
+      post.mock.calls.filter(
+        ([data]) => data.action === "dark" && data.payload.enabled === false,
+      ),
+    ).toEqual([]);
+    expect(
+      native.invoke.mock.calls.filter(([command]) =>
+        [
+          "start_basic_auth_proxy",
+          "stop_basic_auth_proxy",
+          "navigate_proxy_session",
+        ].includes(command),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("cPanel session-aware bookmarks", () => {
+  const saved = "/cpsess111111/frontend/jupiter/";
+  const live = "/cpsess222222/frontend/jupiter/";
+  async function panel() {
+    native.connections[0].httpBookmarks = [
+      {
+        name: "File Manager",
+        path: `${saved}filemanager/index.html?dir=%2Fhome#files`,
+      },
+      {
+        name: "cPanel tools",
+        isFolder: true,
+        children: [{ name: "Databases", path: `${saved}sql/index.html` }],
+      },
+    ];
+    const view = await mount();
+    view.emit("proxy_document_start");
+    view.emit("proxy_dom_ready");
+    const arrived = {
+      documentToken: "e".repeat(32),
+      documentSequence: 2,
+      navigationToken: null,
+      url: new URL(`${live}index.html`, proxy.proxy_url).href,
+    };
+    view.emit("proxy_document_start", arrived);
+    view.emit("proxy_dom_ready", arrived);
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Enter URL...")).toHaveValue(
+        `http://panel.example.test:81${live}index.html`,
+      ),
+    );
+    native.dispatch.mockClear();
+    return view;
+  }
+
+  it.each([false, true])(
+    "opens a saved bookmark with the live slug without replacing its proxy (folder=%s)",
+    async (nested) => {
+      const { iframe } = await panel();
+      const savedBookmarks = structuredClone(
+        native.connections[0].httpBookmarks,
+      );
+      // A draft in the address bar is not a new session.
+      fireEvent.change(screen.getByPlaceholderText("Enter URL..."), {
+        target: { value: "http://panel.example.test:81/cpsess999999/" },
+      });
+      if (nested)
+        fireEvent.click(screen.getByRole("button", { name: "cPanel tools" }));
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: nested ? "Databases" : "File Manager",
+        }),
+      );
+      await waitFor(() =>
+        expect(new URL(iframe.src).pathname).toBe(
+          `${live}${nested ? "sql/index.html" : "filemanager/index.html"}`,
+        ),
+      );
+      if (!nested) {
+        expect(iframe.src).toContain("dir=%2Fhome");
+        expect(new URL(iframe.src).hash).toBe("#files");
+      }
+      expect(document.querySelector("iframe")).toBe(iframe);
+      expect(
+        native.invoke.mock.calls.filter(
+          ([command]) => command === "start_basic_auth_proxy",
+        ),
+      ).toHaveLength(1);
+      expect(
+        native.invoke.mock.calls.filter(
+          ([command]) => command === "stop_basic_auth_proxy",
+        ),
+      ).toHaveLength(0);
+      expect(native.connections[0].httpBookmarks).toEqual(savedBookmarks);
+      expect(
+        native.dispatch.mock.calls.filter(
+          ([action]) => action.type === "UPDATE_CONNECTION",
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it("updates copied URLs after another login and forgets the slug on logout", async () => {
+    const { emit } = await panel();
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      for (const [sequence, path, expected] of [
+        [3, "/cpsess333333/frontend/jupiter/index.html", "/cpsess333333"],
+        [4, "/login/", "/cpsess111111"],
+      ] as const) {
+        const arrived = {
+          documentToken: sequence.toString().repeat(32),
+          documentSequence: sequence,
+          navigationToken: null,
+          url: new URL(path, proxy.proxy_url).href,
+        };
+        emit("proxy_document_start", arrived);
+        emit("proxy_dom_ready", arrived);
+        fireEvent.contextMenu(
+          screen.getByRole("button", { name: "File Manager" }),
+        );
+        fireEvent.click(screen.getByRole("button", { name: "Copy URL" }));
+        expect(writeText).toHaveBeenLastCalledWith(
+          `http://panel.example.test:81${expected}/frontend/jupiter/filemanager/index.html?dir=%2Fhome#files`,
+        );
+      }
+    } finally {
+      if (clipboardDescriptor)
+        Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
+  it("recognizes an old-session bookmark as current and does not save a duplicate", async () => {
+    const { emit } = await panel();
+    const arrived = {
+      documentToken: "f".repeat(32),
+      documentSequence: 3,
+      navigationToken: null,
+      url: new URL(
+        `${live}filemanager/index.html?dir=%2Fhome#files`,
+        proxy.proxy_url,
+      ).href,
+    };
+    emit("proxy_document_start", arrived);
+    emit("proxy_dom_ready", arrived);
+    expect(screen.getByRole("button", { name: "File Manager" })).toHaveClass(
+      "font-semibold",
+    );
+    fireEvent.click(screen.getByTitle("Page is bookmarked"));
+    expect(
+      native.dispatch.mock.calls.filter(
+        ([action]) => action.type === "UPDATE_CONNECTION",
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps double-slash page paths on the current host when adding a bookmark", async () => {
+    const { emit } = await panel();
+    const arrived = {
+      documentToken: "f".repeat(32),
+      documentSequence: 3,
+      navigationToken: null,
+      url: `${proxy.proxy_url}/files?view=list#home`,
+    };
+    emit("proxy_document_start", arrived);
+    emit("proxy_dom_ready", arrived);
+    fireEvent.click(screen.getByTitle("Bookmark this page"));
+    const saved = native.dispatch.mock.calls
+      .find(([action]) => action.type === "UPDATE_CONNECTION")?.[0]
+      .payload.httpBookmarks.at(-1);
+    expect(saved?.path).toBe(
+      "http://panel.example.test:81//files?view=list#home",
+    );
+  });
+});
+
 describe("real WebBrowser iframe and website automation integration", () => {
   it("keeps the live document and dark mode when labels and bookmark URLs change before their save finishes", async () => {
     const { iframe, post, emit, rerender } = await mount();
