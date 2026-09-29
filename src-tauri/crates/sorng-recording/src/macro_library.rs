@@ -126,7 +126,8 @@ async fn decode(
     Ok(envelope.payload_json)
 }
 
-/// Caller holds the shared settings coordinator and has checked current Macros access.
+/// Caller holds a serialized routine write lease (or exclusive transition) and
+/// has checked current Macros access. A bare read lease could observe a CAS stage.
 pub async fn read(
     root: &Path,
     key: &str,
@@ -162,7 +163,8 @@ pub async fn read(
     }
 }
 
-/// Exact source CAS. No fallback overwrite, no source removal until verified publication.
+/// Exact source CAS. Caller retains the serialized lease through publication.
+/// No fallback overwrite, no source removal until verified publication.
 pub async fn compare_and_swap(
     root: &Path,
     key: &str,
@@ -266,6 +268,23 @@ mod tests {
     use crate::{storage, RecordingService};
     use sorng_encryption::{artifact_policy, ArtifactKind, MasterDek};
     use std::sync::Arc;
+    use std::{future::Future, pin::Pin, task::Poll, time::Duration};
+
+    async fn assert_queued<F: Future>(mut operation: Pin<&mut F>) {
+        std::future::poll_fn(|cx| {
+            assert!(operation.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        // These tests use Tokio's current-thread runtime: waiting must yield.
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    async fn finish<F: Future>(operation: F) -> F::Output {
+        tokio::time::timeout(Duration::from_secs(5), operation)
+            .await
+            .expect("macro library operation did not resume")
+    }
 
     async fn unlocked() -> Arc<EncryptionState> {
         let state = Arc::new(EncryptionState::new());
@@ -273,6 +292,160 @@ mod tests {
             .install(MasterDek::from_bytes(&[41; 32]).unwrap())
             .await;
         state
+    }
+
+    #[tokio::test]
+    async fn queued_library_reads_and_cas_preserve_data_under_routine_contention() {
+        let _fixture = crate::service::recording_fixture_guard().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let svc = RecordingService::new(tmp.path().to_str().unwrap());
+        svc.set_encryption_state(unlocked().await).await;
+        let original = " {\"macros\":[\"saved\"]} ";
+        let replacement = "{\"macros\":[\"saved\",\"new\"]}";
+        assert!(svc
+            .compare_and_swap_macro_library(TERMINAL_KEY, None, original)
+            .await
+            .unwrap());
+
+        // Model the concurrent script/settings read holding the routine lease.
+        let writer = sorng_encryption::settings_coordinator::lock_settings_write().await;
+        let mut read = Box::pin(svc.read_macro_library(TERMINAL_KEY));
+        let mut save =
+            Box::pin(svc.compare_and_swap_macro_library(TERMINAL_KEY, Some(original), replacement));
+        let mut stale =
+            Box::pin(svc.compare_and_swap_macro_library(TERMINAL_KEY, Some(original), "{}"));
+        let mut after = Box::pin(svc.read_macro_library(TERMINAL_KEY));
+        assert_queued(read.as_mut()).await;
+        assert_queued(save.as_mut()).await;
+        assert_queued(stale.as_mut()).await;
+        assert_queued(after.as_mut()).await;
+        assert!(svc.engine.try_lock().is_ok());
+        assert!(svc.storage_root.try_lock().is_ok());
+        drop(writer);
+
+        assert_eq!(finish(read).await.unwrap().as_deref(), Some(original));
+        assert!(finish(save).await.unwrap());
+        assert!(!finish(stale).await.unwrap());
+        assert_eq!(finish(after).await.unwrap().as_deref(), Some(replacement));
+        let (plain, encrypted) = paths(&svc.storage_root_snapshot().await, TERMINAL_KEY).unwrap();
+        assert!(!plain.exists());
+        assert!(encrypted.exists());
+    }
+
+    #[tokio::test]
+    async fn cancelling_queued_library_io_releases_barrier_and_never_writes() {
+        let _fixture = crate::service::recording_fixture_guard().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let svc = RecordingService::new(tmp.path().to_str().unwrap());
+        svc.set_encryption_state(unlocked().await).await;
+        let original = "{\"keep\":true}";
+        assert!(svc
+            .compare_and_swap_macro_library(TERMINAL_KEY, None, original)
+            .await
+            .unwrap());
+        let (_, encrypted) = paths(&svc.storage_root_snapshot().await, TERMINAL_KEY).unwrap();
+        let before = std::fs::read(&encrypted).unwrap();
+
+        // Cancel at both await points: before barrier admission and while the
+        // shared barrier is held but the ordinary writer mutex is unavailable.
+        for transition in [true, false] {
+            let held = if transition {
+                sorng_encryption::settings_coordinator::lock().await
+            } else {
+                sorng_encryption::settings_coordinator::lock_settings_write().await
+            };
+            let mut read = Box::pin(svc.read_macro_library(TERMINAL_KEY));
+            let mut save =
+                Box::pin(svc.compare_and_swap_macro_library(TERMINAL_KEY, Some(original), "{}"));
+            assert_queued(read.as_mut()).await;
+            assert_queued(save.as_mut()).await;
+            drop(read);
+            drop(save);
+            drop(held);
+            let exclusive = sorng_encryption::settings_coordinator::try_lock()
+                .expect("cancelled library I/O leaked a storage lease");
+            assert_eq!(std::fs::read(&encrypted).unwrap(), before);
+            drop(exclusive);
+            assert_eq!(
+                finish(svc.read_macro_library(TERMINAL_KEY))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some(original)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn queued_library_io_checks_locked_policy_after_transition() {
+        let _fixture = crate::service::recording_fixture_guard().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let svc = RecordingService::new(tmp.path().to_str().unwrap());
+        let state = unlocked().await;
+        svc.set_encryption_state(state.clone()).await;
+        assert!(svc
+            .compare_and_swap_macro_library(TERMINAL_KEY, None, "{}")
+            .await
+            .unwrap());
+        let (_, encrypted) = paths(&svc.storage_root_snapshot().await, TERMINAL_KEY).unwrap();
+        let before = std::fs::read(&encrypted).unwrap();
+        let transition = sorng_encryption::settings_coordinator::lock().await;
+        let mut read = Box::pin(svc.read_macro_library(TERMINAL_KEY));
+        let mut save = Box::pin(svc.compare_and_swap_macro_library(
+            TERMINAL_KEY,
+            Some("{}"),
+            "{\"new\":true}",
+        ));
+        assert_queued(read.as_mut()).await;
+        assert_queued(save.as_mut()).await;
+        state.lock().await;
+        drop(transition);
+        assert!(matches!(
+            finish(read).await,
+            Err(RecordingError::EncryptionRequired(_))
+        ));
+        assert!(matches!(
+            finish(save).await,
+            Err(RecordingError::EncryptionRequired(_))
+        ));
+        assert_eq!(std::fs::read(encrypted).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn queued_library_io_preserves_real_recovery_data() {
+        let _fixture = crate::service::recording_fixture_guard().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let svc = RecordingService::new(tmp.path().to_str().unwrap());
+        svc.set_encryption_state(unlocked().await).await;
+        assert!(svc
+            .compare_and_swap_macro_library(TERMINAL_KEY, None, "{}")
+            .await
+            .unwrap());
+        let (_, encrypted) = paths(&svc.storage_root_snapshot().await, TERMINAL_KEY).unwrap();
+        let before = std::fs::read(&encrypted).unwrap();
+        let stage = encrypted.with_file_name(format!(
+            "{}.v0.bak",
+            encrypted.file_name().unwrap().to_string_lossy()
+        ));
+        let writer = sorng_encryption::settings_coordinator::lock_settings_write().await;
+        let mut read = Box::pin(svc.read_macro_library(TERMINAL_KEY));
+        let mut save = Box::pin(svc.compare_and_swap_macro_library(
+            TERMINAL_KEY,
+            Some("{}"),
+            "{\"new\":true}",
+        ));
+        assert_queued(read.as_mut()).await;
+        assert_queued(save.as_mut()).await;
+        std::fs::write(&stage, b"recovery evidence").unwrap();
+        drop(writer);
+        for error in [
+            finish(read).await.unwrap_err(),
+            finish(save).await.unwrap_err(),
+        ] {
+            assert!(error.to_string().contains("recovery data requires review"));
+        }
+        assert_eq!(std::fs::read(encrypted).unwrap(), before);
+        assert_eq!(std::fs::read(stage).unwrap(), b"recovery evidence");
     }
 
     #[tokio::test]

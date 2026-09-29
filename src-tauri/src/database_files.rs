@@ -562,6 +562,24 @@ fn recover_database_transactions(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Select a serialized routine lease, or an exclusive lease when a security
+/// transaction is pending. This helper never recovers or modifies storage:
+/// callers must validate access under the lease before their existing recovery
+/// and snapshot paths run. Retain the selected lease for the whole operation.
+pub(crate) async fn lock_database_operation(
+    dir: &Path,
+) -> Result<sorng_encryption::settings_coordinator::CoordinatorGuard<'static>, String> {
+    let routine = sorng_encryption::settings_coordinator::lock_settings_write().await;
+    if !database_transaction::pending(dir)? {
+        return Ok(routine);
+    }
+    // Never await an exclusive lease while retaining our shared lease. Even if
+    // another operation recovers in this gap, keep exclusive ownership so the
+    // caller can safely recheck and recover after its access checks.
+    drop(routine);
+    Ok(sorng_encryption::settings_coordinator::lock().await)
+}
+
 async fn require_database_access(app: &AppHandle, state: &EncryptionState) -> Result<bool, String> {
     state.resolve_write_policy(ArtifactKind::Connections, false)?;
     let configured = master_encryption_configured(app, state).await?;
@@ -709,9 +727,10 @@ pub async fn databases_list(
     app: AppHandle,
     enc_state: tauri::State<'_, EncryptionState>,
 ) -> Result<Option<LoadResult>, String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let dir = databases_dir(&app)?;
+    let _guard = lock_database_operation(&dir).await?;
     require_database_access(&app, &enc_state).await?;
-    recover_database_transactions(&databases_dir(&app)?)?;
+    recover_database_transactions(&dir)?;
     let path = index_path(&app)?;
     encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &path).await
 }
@@ -727,9 +746,10 @@ pub async fn databases_save_index(
     list: serde_json::Value,
     expected_list: serde_json::Value,
 ) -> Result<(), String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let dir = databases_dir(&app)?;
+    let _guard = lock_database_operation(&dir).await?;
     let configured = require_database_access(&app, &enc_state).await?;
-    recover_database_transactions(&databases_dir(&app)?)?;
+    recover_database_transactions(&dir)?;
     let path = index_path(&app)?;
     let proposed = list.as_array().ok_or("database index must be an array")?;
     let current = encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &path).await?;
@@ -792,9 +812,10 @@ pub async fn load_database_data(
     enc_state: tauri::State<'_, EncryptionState>,
     database_id: String,
 ) -> Result<Option<LoadResult>, String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let dir = databases_dir(&app)?;
+    let _guard = lock_database_operation(&dir).await?;
     require_database_access(&app, &enc_state).await?;
-    recover_database_transactions(&databases_dir(&app)?)?;
+    recover_database_transactions(&dir)?;
     let path = per_db_path(&app, &database_id)?;
     encrypted_load(&enc_state, ArtifactKind::Connections, &path).await
 }
@@ -824,9 +845,10 @@ pub async fn save_database_data(
     expected_security_revision: Option<String>,
     migration_metadata: Option<serde_json::Value>,
 ) -> Result<(), String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let dir = databases_dir(&app)?;
+    let _guard = lock_database_operation(&dir).await?;
     let configured = require_database_access(&app, &enc_state).await?;
-    recover_database_transactions(&databases_dir(&app)?)?;
+    recover_database_transactions(&dir)?;
     let path = per_db_path(&app, &database_id)?;
     let index =
         encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &index_path(&app)?).await?;
@@ -1931,6 +1953,109 @@ mod tests {
     }
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn database_operation_lease_selects_exclusive_without_recovering_before_access_checks() {
+        // The coordinator is process-global. Isolate this regression so another
+        // test's queued transition cannot close shared admission mid-assertion.
+        const CHILD: &str = "SORNG_DATABASE_OPERATION_LEASE_TEST_CHILD";
+        let thread = std::thread::current();
+        let test_name = thread.name().expect("named test harness thread");
+        if std::env::var(CHILD).ok().as_deref() != Some(test_name) {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", test_name, "--nocapture"])
+                .env(CHILD, test_name)
+                .output()
+                .expect("run isolated database operation lease regression");
+            assert!(
+                output.status.success(),
+                "isolated lease regression failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            use sorng_encryption::settings_coordinator;
+            use std::time::Duration;
+
+            let profile = tempdir().unwrap();
+            let dir = profile.path().join("databases");
+            {
+                let guard = lock_database_operation(&dir).await.unwrap();
+                assert!(guard.require_serialized_write().is_ok());
+                assert!(guard.require_exclusive().is_err());
+                let trust = settings_coordinator::try_lock_trust()
+                    .expect("ordinary database operations must admit trust reads");
+                assert!(!dir.exists(), "a fresh read must not create storage");
+                drop(trust);
+                drop(guard);
+            }
+
+            // Even a recoverable control-file temp must remain untouched until
+            // the caller checks access. Selecting exclusive admission must first
+            // release the routine lease, without upgrading a held shared lease.
+            std::fs::create_dir(&dir).unwrap();
+            let interrupted = dir.join(".database-security-transaction.tmp");
+            std::fs::write(&interrupted, b"interrupted journal preparation").unwrap();
+            {
+                let guard =
+                    tokio::time::timeout(Duration::from_secs(2), lock_database_operation(&dir))
+                        .await
+                        .expect("must not await exclusive while holding shared")
+                        .unwrap();
+                assert!(guard.require_exclusive().is_ok());
+                assert!(settings_coordinator::try_lock_trust().is_err());
+                assert_eq!(
+                    std::fs::read(&interrupted).unwrap(),
+                    b"interrupted journal preparation"
+                );
+                assert!(database_transaction::pending(&dir).unwrap());
+                drop(guard);
+            }
+
+            // A damaged canonical journal still selects exclusive ownership
+            // without mutation. The caller's existing recovery then fails closed.
+            let journal = dir.join(".database-security-transaction");
+            std::fs::write(&journal, b"damaged journal").unwrap();
+            for name in ["db.json", "index.json", "db.trust.json"] {
+                std::fs::write(dir.join(name), b"unchanged generation").unwrap();
+            }
+            let guard = tokio::time::timeout(Duration::from_secs(2), lock_database_operation(&dir))
+                .await
+                .expect("pending journal must select exclusive without deadlocking")
+                .unwrap();
+            assert!(guard.require_exclusive().is_ok());
+            assert!(settings_coordinator::try_lock_trust().is_err());
+            assert_eq!(std::fs::read(&journal).unwrap(), b"damaged journal");
+            for name in ["db.json", "index.json", "db.trust.json"] {
+                assert_eq!(
+                    std::fs::read(dir.join(name)).unwrap(),
+                    b"unchanged generation"
+                );
+            }
+            let error = recover_database_transactions(&dir).unwrap_err();
+            assert!(error.contains("transaction journal"), "{error}");
+            assert_eq!(std::fs::read(&journal).unwrap(), b"damaged journal");
+            assert_eq!(
+                std::fs::read(&interrupted).unwrap(),
+                b"interrupted journal preparation"
+            );
+            for name in ["db.json", "index.json", "db.trust.json"] {
+                assert_eq!(
+                    std::fs::read(dir.join(name)).unwrap(),
+                    b"unchanged generation"
+                );
+            }
+            drop(guard);
+            assert!(settings_coordinator::try_lock_trust().is_ok());
+        });
+    }
 
     fn payload_json(obj: serde_json::Value) -> Vec<u8> {
         serde_json::to_vec(&obj).unwrap()

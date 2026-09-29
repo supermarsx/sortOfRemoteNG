@@ -12,10 +12,10 @@ pub async fn read_macro_library(
     state: tauri::State<'_, RecordingServiceState>,
     key: String,
 ) -> Result<Option<String>, String> {
-    state
-        .lock()
-        .await
-        .read_macro_library(&key)
+    // Transitions take the coordinator before this mutex when discovering
+    // recording roots. Do not retain the service mutex while awaiting admission.
+    let svc = state.lock().await.clone();
+    svc.read_macro_library(&key)
         .await
         .map_err(|error| error.to_string())
 }
@@ -27,10 +27,8 @@ pub async fn compare_and_swap_macro_library(
     expected: Option<String>,
     replacement: String,
 ) -> Result<bool, String> {
-    state
-        .lock()
-        .await
-        .compare_and_swap_macro_library(&key, expected.as_deref(), &replacement)
+    let svc = state.lock().await.clone();
+    svc.compare_and_swap_macro_library(&key, expected.as_deref(), &replacement)
         .await
         .map_err(|error| error.to_string())
 }

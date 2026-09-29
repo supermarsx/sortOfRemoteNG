@@ -26,6 +26,7 @@ fn fixture() -> (tempfile::TempDir, TrustRuntime, ForceDeleteContext) {
         app_dir: root.path().into(),
         enc_state: None,
         active: RwLock::new(None),
+        activation_generation: AtomicU64::new(0),
         io: std::sync::Mutex::new(()),
     };
     rt.set_active(Some("active".into()), None).unwrap();
@@ -43,8 +44,67 @@ fn remove(path: &Path) -> Result<(), String> {
     std::fs::remove_file(path).map_err(|e| e.to_string())
 }
 
-#[test]
-fn force_bypasses_only_coverage_preserves_exact_bytes_and_active_database() {
+#[tokio::test]
+async fn database_save_serialization_covers_inventory_review_and_force_cleanup() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
+    let (root, rt, context) = fixture();
+    let preview = rt.preview_force_delete_legacy(context.clone()).unwrap();
+    let original = std::fs::read(root.path().join(LEGACY_TRUST_FILE)).unwrap();
+    let save = sorng_encryption::settings_coordinator::lock_settings_write().await;
+    let busy = "storage write in progress; retry after it completes";
+    assert_eq!(rt.legacy_status().unwrap_err(), busy);
+    assert_eq!(rt.delete_legacy_stores().unwrap_err(), busy);
+    assert_eq!(
+        rt.preview_force_delete_legacy(context.clone()).unwrap_err(),
+        busy
+    );
+    assert_eq!(
+        rt.force_delete_legacy(&context, &preview.token, CONFIRMATION)
+            .unwrap_err(),
+        busy
+    );
+    assert_eq!(
+        std::fs::read(root.path().join(LEGACY_TRUST_FILE)).unwrap(),
+        original
+    );
+    assert!(!root.path().join(QUARANTINE).exists());
+    assert!(sorng_encryption::settings_coordinator::try_lock_trust().is_ok());
+    drop(save);
+
+    // Admission failed before consuming the review. The same reviewed action
+    // can still run once; its lease must cover preservation and final removal.
+    let assert_serialized = || {
+        assert_eq!(
+            sorng_encryption::settings_coordinator::try_lock_settings_write().err(),
+            Some(busy)
+        );
+        assert!(sorng_encryption::settings_coordinator::try_lock_trust().is_ok());
+    };
+    let result = rt
+        .force_delete_checked(
+            &context,
+            &preview.token,
+            CONFIRMATION,
+            |_| {
+                assert_serialized();
+                Ok(())
+            },
+            |_| assert_serialized(),
+            |path| {
+                assert_serialized();
+                remove(path)
+            },
+            sync_parent,
+        )
+        .unwrap();
+    assert!(result.completed);
+    assert_eq!(result.removed_files.len(), 2);
+    assert!(sorng_encryption::settings_coordinator::try_lock_settings_write().is_ok());
+}
+
+#[tokio::test]
+async fn force_bypasses_only_coverage_preserves_exact_bytes_and_active_database() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
     let (root, rt, context) = fixture();
     assert!(rt.delete_legacy_stores().is_err());
     let preview = rt.preview_force_delete_legacy(context.clone()).unwrap();
@@ -97,8 +157,9 @@ fn force_bypasses_only_coverage_preserves_exact_bytes_and_active_database() {
     }
 }
 
-#[test]
-fn force_review_is_expiring_cancelable_one_use_and_bound_to_full_native_scope() {
+#[tokio::test]
+async fn force_review_is_expiring_cancelable_one_use_and_bound_to_full_native_scope() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
     let (root, rt, context) = fixture();
     let preview = rt.preview_force_delete_legacy(context.clone()).unwrap();
     assert!(rt
@@ -151,8 +212,9 @@ fn force_review_is_expiring_cancelable_one_use_and_bound_to_full_native_scope() 
     assert!(root.path().join(LEGACY_TRUST_FILE).exists());
 }
 
-#[test]
-fn force_refuses_inventory_drift_unknown_siblings_and_directory_targets() {
+#[tokio::test]
+async fn force_refuses_inventory_drift_unknown_siblings_and_directory_targets() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
     let (root, rt, context) = fixture();
     let preview = rt.preview_force_delete_legacy(context.clone()).unwrap();
     std::fs::write(root.path().join(LEGACY_TRUST_FILE), b"changed").unwrap();
@@ -168,8 +230,9 @@ fn force_refuses_inventory_drift_unknown_siblings_and_directory_targets() {
     assert!(rt.preview_force_delete_legacy(context).is_err());
 }
 
-#[test]
-fn force_preservation_failure_never_removes_any_original() {
+#[tokio::test]
+async fn force_preservation_failure_never_removes_any_original() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
     let (root, rt, context) = fixture();
     let preview = rt.preview_force_delete_legacy(context.clone()).unwrap();
     let result = rt
@@ -197,8 +260,9 @@ fn force_preservation_failure_never_removes_any_original() {
     }
 }
 
-#[test]
-fn force_rechecks_all_recovery_bytes_and_manifest_before_first_deletion() {
+#[tokio::test]
+async fn force_rechecks_all_recovery_bytes_and_manifest_before_first_deletion() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
     for corrupt in [LEGACY_TRUST_FILE, "inventory.json"] {
         let (root, rt, context) = fixture();
         let preview = rt.preview_force_delete_legacy(context.clone()).unwrap();
@@ -221,8 +285,9 @@ fn force_rechecks_all_recovery_bytes_and_manifest_before_first_deletion() {
     }
 }
 
-#[test]
-fn force_source_drift_after_preservation_retains_all_sources() {
+#[tokio::test]
+async fn force_source_drift_after_preservation_retains_all_sources() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
     let (root, rt, context) = fixture();
     let preview = rt.preview_force_delete_legacy(context.clone()).unwrap();
     let result = rt
@@ -241,8 +306,9 @@ fn force_source_drift_after_preservation_retains_all_sources() {
     assert!(!result.completed);
 }
 
-#[test]
-fn force_partial_remove_and_post_remove_sync_errors_report_actual_removals() {
+#[tokio::test]
+async fn force_partial_remove_and_post_remove_sync_errors_report_actual_removals() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
     for sync_failure in [false, true] {
         let (root, rt, context) = fixture();
         let preview = rt.preview_force_delete_legacy(context.clone()).unwrap();
@@ -283,8 +349,9 @@ fn force_partial_remove_and_post_remove_sync_errors_report_actual_removals() {
 }
 
 #[cfg(unix)]
-#[test]
-fn force_ignores_unrelated_non_utf8_names_but_rejects_links() {
+#[tokio::test]
+async fn force_ignores_unrelated_non_utf8_names_but_rejects_links() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
     use std::os::unix::{ffi::OsStringExt, fs::symlink};
     let (root, rt, context) = fixture();
     std::fs::write(

@@ -187,7 +187,7 @@ impl TrustRuntime {
         if context.window.is_empty() || context.window.len() > 256 {
             return Err("Invalid force cleanup window scope".into());
         }
-        let _io = self.io_guard()?;
+        let _io = self.inventory_io_guard()?;
         self.validate_force_context(&context)?;
         let files = self.force_inventory()?;
         if files.is_empty() {
@@ -280,7 +280,7 @@ impl TrustRuntime {
                 "Exact force deletion confirmation and a current review are required".into(),
             );
         }
-        let _io = self.io_guard()?;
+        let _io = self.inventory_io_guard()?;
         self.validate_force_context(context)?;
         self.with_current_key(|_| Ok(()))?;
         let profile = self

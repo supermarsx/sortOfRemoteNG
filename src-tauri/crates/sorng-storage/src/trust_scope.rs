@@ -227,9 +227,10 @@ impl TrustRuntime {
         connection_ids: &[String],
         targets: Vec<ReviewedTrustScopeTarget>,
         target_connection_id: Option<&str>,
-        _coordinator: &tokio::sync::MutexGuard<'_, ()>,
+        _coordinator: &sorng_encryption::settings_coordinator::CoordinatorGuard<'_>,
         validate_access: impl FnOnce() -> Result<(), String>,
     ) -> Result<ReviewedTrustOutcome, String> {
+        _coordinator.require_exclusive().map_err(str::to_string)?;
         crate::database_transaction::validate_database_id(database_id)?;
         if self.databases_dir != profile.join("databases") {
             return Err("Trust profile changed".into());

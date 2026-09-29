@@ -81,8 +81,8 @@ impl RecordingService {
     async fn capture_storage_guard(
         &self,
         kind: sorng_encryption::ArtifactKind,
-    ) -> RecordingResult<tokio::sync::MutexGuard<'static, ()>> {
-        let guard = sorng_encryption::settings_coordinator::try_lock()
+    ) -> RecordingResult<sorng_encryption::settings_coordinator::SettingsWriteGuard> {
+        let guard = sorng_encryption::settings_coordinator::try_lock_settings_write()
             .map_err(|e| RecordingError::StorageError(e.into()))?;
         if let Some(state) = self.enc_handle().await {
             state
@@ -220,7 +220,7 @@ impl RecordingService {
         root: PathBuf,
         envelope: SavedRecordingEnvelope,
     ) -> RecordingResult<SavedRecordingEnvelope> {
-        let coordinator = sorng_encryption::settings_coordinator::try_lock()
+        let coordinator = sorng_encryption::settings_coordinator::try_lock_settings_write()
             .map_err(|e| RecordingError::StorageError(e.into()))?;
         self.persist_envelope_guarded(root, envelope, &coordinator)
             .await
@@ -230,8 +230,11 @@ impl RecordingService {
         &self,
         root: PathBuf,
         envelope: SavedRecordingEnvelope,
-        _coordinator: &tokio::sync::MutexGuard<'_, ()>,
+        _coordinator: &sorng_encryption::settings_coordinator::CoordinatorGuard<'_>,
     ) -> RecordingResult<SavedRecordingEnvelope> {
+        _coordinator
+            .require_serialized_write()
+            .map_err(|error| RecordingError::StorageError(error.into()))?;
         let mut env = envelope;
 
         // Resolve the encrypt-vs-plaintext policy ONCE up front. Under
@@ -358,8 +361,11 @@ impl RecordingService {
         &self,
         root: PathBuf,
         m: MacroRecording,
-        _coordinator: &tokio::sync::MutexGuard<'static, ()>,
+        _coordinator: &sorng_encryption::settings_coordinator::CoordinatorGuard<'_>,
     ) -> RecordingResult<()> {
+        _coordinator
+            .require_serialized_write()
+            .map_err(|error| RecordingError::StorageError(error.into()))?;
         match self
             .resolve_persist_mode(sorng_encryption::ArtifactKind::Macros)
             .await?
@@ -415,12 +421,15 @@ impl RecordingService {
         &self,
         progress: &dyn storage::MigrationProgress,
     ) -> RecordingResult<(usize, usize, usize, usize)> {
-        let _coordinator = self
-            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
-            .await?;
+        // Representation migration still requires an exclusive lease, unlike
+        // ordinary recording saves and periodic crash-recovery snapshots.
+        let _coordinator = sorng_encryption::settings_coordinator::try_lock()
+            .map_err(|e| RecordingError::StorageError(e.into()))?;
         let enc = self.enc_handle().await.ok_or_else(|| {
             RecordingError::StorageError("encryption state not installed; cannot migrate".into())
         })?;
+        enc.resolve_write_policy(sorng_encryption::ArtifactKind::RecordingsMeta, false)
+            .map_err(RecordingError::EncryptionRequired)?;
         // The legacy migration assumes its dispatched writes produce ciphertext.
         // Managed per-family plaintext overrides invalidate that assumption.
         sorng_encryption::artifact_policy::require_legacy_mutation_allowed(&enc)
@@ -448,7 +457,7 @@ impl RecordingService {
     pub async fn init(&self) -> RecordingResult<()> {
         let root = self.storage_root.lock().await.clone();
         let config = if let Some(enc) = self.enc_handle().await {
-            let _coordinator = sorng_encryption::settings_coordinator::try_lock()
+            let _coordinator = sorng_encryption::settings_coordinator::try_lock_settings_write()
                 .map_err(|e| RecordingError::StorageError(e.into()))?;
             storage::load_config_dispatched(&root, &enc).await?
         } else {
@@ -495,7 +504,7 @@ impl RecordingService {
     }
 
     pub async fn update_config(&self, config: RecordingGlobalConfig) -> RecordingResult<()> {
-        let _coordinator = sorng_encryption::settings_coordinator::try_lock()
+        let _coordinator = sorng_encryption::settings_coordinator::try_lock_settings_write()
             .map_err(|e| RecordingError::StorageError(e.into()))?;
         let root = self.storage_root.lock().await.clone();
         if let Some(enc) = self.enc_handle().await {
@@ -605,7 +614,8 @@ impl RecordingService {
     /// path. A write failure is logged, never propagated — losing a
     /// snapshot must not disrupt live capture.
     async fn flush_terminal_snapshot(&self, recording: TerminalRecording) {
-        let Ok(_coordinator) = sorng_encryption::settings_coordinator::try_lock() else {
+        let Ok(_coordinator) = sorng_encryption::settings_coordinator::try_lock_settings_write()
+        else {
             return;
         };
         let id = recording.metadata.recording_id.clone();
@@ -1004,9 +1014,10 @@ impl RecordingService {
     }
 
     pub async fn read_macro_library(&self, key: &str) -> RecordingResult<Option<String>> {
-        let _guard = self
-            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
-            .await?;
+        // Reads also serialize with publication so they cannot mistake a live
+        // CAS stage for abandoned recovery data. Acquire before service locks;
+        // cancellation while queued drops the coordinator's partial leases.
+        let _guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
         self.resolve_persist_mode(sorng_encryption::ArtifactKind::Macros)
             .await?;
         let state = self.enc_handle().await;
@@ -1020,9 +1031,9 @@ impl RecordingService {
         expected: Option<&str>,
         replacement: &str,
     ) -> RecordingResult<bool> {
-        let _guard = self
-            .capture_storage_guard(sorng_encryption::ArtifactKind::Macros)
-            .await?;
+        // Ordinary contention waits asynchronously. Resolve the current policy
+        // only after admission and retain the lease through exact CAS/read-back.
+        let _guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
         let mode = self
             .resolve_persist_mode(sorng_encryption::ArtifactKind::Macros)
             .await?;
@@ -1691,6 +1702,35 @@ mod phase_2c_split_tests {
         }
         svc.save_to_library(envelope).await.unwrap();
         assert_eq!(svc.get_from_library("keep").await.unwrap().data, "payload");
+    }
+
+    #[tokio::test]
+    async fn ordinary_recording_storage_does_not_exclude_trust_verification() {
+        let _fixture = recording_fixture_guard().await;
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        let recording = svc
+            .capture_storage_guard(sorng_encryption::ArtifactKind::RecordingsMeta)
+            .await
+            .unwrap();
+        let trust = sorng_encryption::settings_coordinator::try_lock_trust().unwrap();
+        assert!(sorng_encryption::settings_coordinator::try_lock().is_err());
+        drop(recording);
+        // A true recording representation migration must still be exclusive.
+        assert!(svc.migrate_to_encrypted().await.is_err());
+        drop(trust);
+        svc.save_to_library(fixture_envelope(
+            "shared-trust",
+            ExportFormat::Asciicast,
+            3,
+            "ssh".into(),
+        ))
+        .await
+        .unwrap();
+        assert_eq!(
+            svc.get_from_library("shared-trust").await.unwrap().data,
+            "ssh"
+        );
     }
 
     #[tokio::test]

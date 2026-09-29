@@ -41,6 +41,7 @@ use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use sha2::Sha256;
+use sorng_encryption::settings_coordinator::{self, SettingsWriteGuard};
 use std::fs;
 use std::io::Read;
 use std::path::Path;
@@ -69,6 +70,52 @@ pub struct StorageData {
 
 /// Type alias for the secure storage service state wrapped in an Arc<Mutex<>> for thread-safe access.
 pub type SecureStorageState = Arc<Mutex<SecureStorage>>;
+
+/// Appdata IPC transaction. Acquire the coordinator BEFORE the service mutex,
+/// matching artifact management and master-key rotation. Field order releases
+/// the service before the coordinator. Guarded helpers never reacquire a lease;
+/// mutable access prevents overlapping operations through the same transaction.
+pub struct AppDataStorageGuard<'a> {
+    storage: tokio::sync::MutexGuard<'a, SecureStorage>,
+    coordinator: SettingsWriteGuard,
+}
+
+impl AppDataStorageGuard<'_> {
+    pub async fn read_app_data(&mut self, key: &str) -> Result<Option<String>, String> {
+        self.storage
+            .read_app_data_with_guard(key, &self.coordinator)
+            .await
+    }
+
+    pub async fn write_app_data(&mut self, key: &str, value: &str) -> Result<(), String> {
+        self.storage
+            .write_app_data_with_guard(key, value, &self.coordinator)
+            .await
+    }
+
+    pub async fn compare_and_swap_app_data(
+        &mut self,
+        key: &str,
+        expected: Option<&str>,
+        replacement: &str,
+    ) -> Result<bool, String> {
+        self.storage
+            .compare_and_swap_app_data_with_guard(key, expected, replacement, &self.coordinator)
+            .await
+    }
+}
+
+/// Queue routine appdata IPC without holding a service mutex while waiting for
+/// the global coordinator. Direct service callers retain nonblocking admission.
+/// Call this before acquiring any service mutex or coordinator lease.
+pub async fn lock_app_data(state: &SecureStorageState) -> AppDataStorageGuard<'_> {
+    let coordinator = settings_coordinator::lock_settings_write().await;
+    let storage = state.lock().await;
+    AppDataStorageGuard {
+        storage,
+        coordinator,
+    }
+}
 
 /// The main secure storage service for persisting application data.
 ///
@@ -219,8 +266,21 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
-        let _coordinator =
-            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        let coordinator =
+            settings_coordinator::try_lock_settings_write().map_err(str::to_string)?;
+        self.save_data_with_guard(data, use_password, &coordinator)
+            .await
+    }
+
+    async fn save_data_with_guard(
+        &self,
+        data: StorageData,
+        use_password: bool,
+        coordinator: &SettingsWriteGuard,
+    ) -> Result<(), String> {
+        coordinator
+            .require_serialized_write()
+            .map_err(str::to_string)?;
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
         if json.len() > MAX_STORAGE_PLAINTEXT_BYTES {
             return Err("Connections storage exceeds the 255 MiB limit".to_string());
@@ -332,8 +392,18 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn load_data(&self) -> Result<Option<StorageData>, String> {
-        let _coordinator =
-            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        let coordinator =
+            settings_coordinator::try_lock_settings_write().map_err(str::to_string)?;
+        self.load_data_with_guard(&coordinator).await
+    }
+
+    async fn load_data_with_guard(
+        &self,
+        coordinator: &SettingsWriteGuard,
+    ) -> Result<Option<StorageData>, String> {
+        coordinator
+            .require_serialized_write()
+            .map_err(str::to_string)?;
         if let Some(state) = &self.encryption_state {
             // A plaintext override never bypasses the global locked/recovery gate.
             state.resolve_write_policy(sorng_encryption::ArtifactKind::Connections, false)?;
@@ -474,8 +544,8 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn clear_storage(&self) -> Result<(), String> {
-        let _coordinator =
-            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        let _coordinator = sorng_encryption::settings_coordinator::try_lock_settings_write()
+            .map_err(str::to_string)?;
         if let Some(state) = &self.encryption_state {
             state.resolve_write_policy(sorng_encryption::ArtifactKind::Connections, false)?;
         }
@@ -501,7 +571,17 @@ impl SecureStorage {
     /// `Ok(Some(String))` if the key exists, `Ok(None)` if the key is not found
     /// or no storage data exists, `Err(String)` on read errors
     pub async fn read_app_data(&self, key: &str) -> Result<Option<String>, String> {
-        let data = self.load_data().await?;
+        let coordinator =
+            settings_coordinator::try_lock_settings_write().map_err(str::to_string)?;
+        self.read_app_data_with_guard(key, &coordinator).await
+    }
+
+    async fn read_app_data_with_guard(
+        &self,
+        key: &str,
+        coordinator: &SettingsWriteGuard,
+    ) -> Result<Option<String>, String> {
+        let data = self.load_data_with_guard(coordinator).await?;
         Ok(data.and_then(|d| d.app_data.get(key).cloned()))
     }
 
@@ -519,12 +599,27 @@ impl SecureStorage {
     ///
     /// `Ok(())` on success, `Err(String)` on read or write errors
     pub async fn write_app_data(&self, key: &str, value: &str) -> Result<(), String> {
-        let mut data = self.load_data().await?.unwrap_or_else(|| StorageData {
-            connections: Vec::new(),
-            settings: std::collections::HashMap::new(),
-            timestamp: 0,
-            app_data: std::collections::HashMap::new(),
-        });
+        let coordinator =
+            settings_coordinator::try_lock_settings_write().map_err(str::to_string)?;
+        self.write_app_data_with_guard(key, value, &coordinator)
+            .await
+    }
+
+    async fn write_app_data_with_guard(
+        &self,
+        key: &str,
+        value: &str,
+        coordinator: &SettingsWriteGuard,
+    ) -> Result<(), String> {
+        let mut data = self
+            .load_data_with_guard(coordinator)
+            .await?
+            .unwrap_or_else(|| StorageData {
+                connections: Vec::new(),
+                settings: std::collections::HashMap::new(),
+                timestamp: 0,
+                app_data: std::collections::HashMap::new(),
+            });
         data.app_data.insert(key.to_string(), value.to_string());
         data.timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -532,25 +627,41 @@ impl SecureStorage {
             .unwrap_or(0);
         // The global master-key state determines whether the write is
         // encrypted; no per-record password is retained here.
-        self.save_data(data, false).await
+        self.save_data_with_guard(data, false, coordinator).await
     }
 
     /// Atomically replace one app-data value when it still matches the caller's
-    /// expected snapshot. The command layer holds the surrounding
-    /// `SecureStorageState` mutex for this entire read/compare/write operation,
-    /// preventing detached windows from overwriting each other's updates.
+    /// expected snapshot. One serialized lease covers the entire operation.
+    /// IPC also holds the service mutex via `lock_app_data`; direct callers
+    /// retain nonblocking admission even when they already hold that mutex.
     pub async fn compare_and_swap_app_data(
         &self,
         key: &str,
         expected: Option<&str>,
         replacement: &str,
     ) -> Result<bool, String> {
-        let mut data = self.load_data().await?.unwrap_or_else(|| StorageData {
-            connections: Vec::new(),
-            settings: std::collections::HashMap::new(),
-            timestamp: 0,
-            app_data: std::collections::HashMap::new(),
-        });
+        let coordinator =
+            settings_coordinator::try_lock_settings_write().map_err(str::to_string)?;
+        self.compare_and_swap_app_data_with_guard(key, expected, replacement, &coordinator)
+            .await
+    }
+
+    async fn compare_and_swap_app_data_with_guard(
+        &self,
+        key: &str,
+        expected: Option<&str>,
+        replacement: &str,
+        coordinator: &SettingsWriteGuard,
+    ) -> Result<bool, String> {
+        let mut data = self
+            .load_data_with_guard(coordinator)
+            .await?
+            .unwrap_or_else(|| StorageData {
+                connections: Vec::new(),
+                settings: std::collections::HashMap::new(),
+                timestamp: 0,
+                app_data: std::collections::HashMap::new(),
+            });
         if data.app_data.get(key).map(String::as_str) != expected {
             return Ok(false);
         }
@@ -560,8 +671,362 @@ impl SecureStorage {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_secs())
             .unwrap_or(0);
-        self.save_data(data, false).await?;
+        self.save_data_with_guard(data, false, coordinator).await?;
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod queued_app_data_tests {
+    use super::*;
+    use sorng_encryption::{
+        artifact_policy::{self, PolicyDocument, ProtectionMode},
+        ArtifactKind, EncryptionState, MasterDek,
+    };
+    use std::{future::Future, pin::Pin, task::Poll, time::Duration};
+
+    async fn pending_once<F: Future>(mut future: Pin<&mut F>) {
+        std::future::poll_fn(|cx| {
+            assert!(future.as_mut().poll(cx).is_pending(), "must queue");
+            Poll::Ready(())
+        })
+        .await;
+    }
+
+    async fn finish<F: Future>(future: F) -> F::Output {
+        tokio::time::timeout(Duration::from_secs(2), future)
+            .await
+            .expect("appdata operation deadlocked")
+    }
+
+    fn sample() -> StorageData {
+        StorageData {
+            connections: vec![serde_json::json!({"id": "keep-connection"})],
+            settings: [("keep-setting".into(), serde_json::json!(true))].into(),
+            timestamp: 1,
+            app_data: [
+                ("scripts".into(), "old".into()),
+                ("keep".into(), "local".into()),
+            ]
+            .into(),
+        }
+    }
+
+    async fn set_policy(root: &Path, state: &EncryptionState, mode: ProtectionMode) {
+        let policy = PolicyDocument::default()
+            .with_mode(ArtifactKind::Connections, mode)
+            .unwrap();
+        fs::write(
+            root.join(artifact_policy::POLICY_FILENAME),
+            artifact_policy::encode(state, &policy).await.unwrap(),
+        )
+        .unwrap();
+        artifact_policy::initialize(state, root).await;
+        assert!(state.artifact_policy_error().is_none());
+    }
+
+    #[tokio::test]
+    async fn routine_contention_queues_read_write_and_cas_with_fresh_snapshots() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let state = SecureStorage::new(dir.path().join("data.json").to_string_lossy().into());
+        state.lock().await.save_data(sample(), false).await.unwrap();
+        let busy = settings_coordinator::lock_settings_write().await;
+        let mut write = std::pin::pin!(async {
+            lock_app_data(&state)
+                .await
+                .write_app_data("scripts", "new")
+                .await
+        });
+        let mut read =
+            std::pin::pin!(async { lock_app_data(&state).await.read_app_data("scripts").await });
+        let mut cas = std::pin::pin!(async {
+            lock_app_data(&state)
+                .await
+                .compare_and_swap_app_data("scripts", Some("new"), "winner")
+                .await
+        });
+        let mut stale = std::pin::pin!(async {
+            lock_app_data(&state)
+                .await
+                .compare_and_swap_app_data("scripts", Some("new"), "loser")
+                .await
+        });
+        pending_once(write.as_mut()).await;
+        pending_once(read.as_mut()).await;
+        pending_once(cas.as_mut()).await;
+        pending_once(stale.as_mut()).await;
+        assert!(
+            state.try_lock().is_ok(),
+            "queued IPC must not own the service"
+        );
+        assert!(settings_coordinator::try_lock_trust().is_ok());
+        drop(busy);
+        let (write, read, cas, stale) =
+            finish(async { tokio::join!(write, read, cas, stale) }).await;
+        write.unwrap();
+        assert_eq!(read.unwrap().as_deref(), Some("new"));
+        assert!(cas.unwrap());
+        assert!(!stale.unwrap());
+        let data = state.lock().await.load_data().await.unwrap().unwrap();
+        assert_eq!(data.app_data["scripts"], "winner");
+        assert_eq!(data.app_data["keep"], "local");
+        assert_eq!(data.connections, sample().connections);
+        assert_eq!(data.settings, sample().settings);
+        assert!(settings_coordinator::try_lock().is_ok());
+    }
+
+    #[tokio::test]
+    async fn queued_ipc_leaves_service_available_to_transition_and_reads_its_commit() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let state = SecureStorage::new(dir.path().join("data.json").to_string_lossy().into());
+        let transition = settings_coordinator::lock().await;
+        let mut read =
+            std::pin::pin!(async { lock_app_data(&state).await.read_app_data("scripts").await });
+        pending_once(read.as_mut()).await;
+        // Same lock order as rotation/artifact roots: transition -> service.
+        let service = finish(state.lock()).await;
+        service
+            .save_data_with_guard(sample(), false, &transition)
+            .await
+            .unwrap();
+        drop(service);
+        drop(transition);
+        assert_eq!(finish(read).await.unwrap().as_deref(), Some("old"));
+    }
+
+    #[tokio::test]
+    async fn admitted_cas_finishes_with_one_lease_while_transition_is_queued() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("data.json");
+        let state = SecureStorage::new(path.to_string_lossy().into());
+        let mut transaction = lock_app_data(&state).await;
+        transaction.write_app_data("scripts", "old").await.unwrap();
+        let mut transition = std::pin::pin!(settings_coordinator::lock());
+        pending_once(transition.as_mut()).await;
+        assert!(settings_coordinator::try_lock_settings_write().is_err());
+        // Reacquiring either coordinator lease during the read or the write
+        // would fail or deadlock behind the queued exclusive waiter.
+        assert!(
+            finish(transaction.compare_and_swap_app_data("scripts", Some("old"), "new"))
+                .await
+                .unwrap()
+        );
+        let committed = fs::read(&path).unwrap();
+        assert!(
+            !finish(transaction.compare_and_swap_app_data("scripts", Some("old"), "stale"))
+                .await
+                .unwrap()
+        );
+        assert_eq!(fs::read(&path).unwrap(), committed);
+        assert_eq!(
+            finish(transaction.read_app_data("scripts"))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("new")
+        );
+        pending_once(transition.as_mut()).await;
+        drop(transaction);
+        let transition = finish(transition).await;
+        assert!(state.try_lock().is_ok());
+        drop(transition);
+    }
+
+    #[tokio::test]
+    async fn queued_operations_recheck_locked_recovery_and_authenticated_policy_fences() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        for fence in ["locked", "recovery", "policy-error", "encrypted-policy"] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("data.json");
+            let state = SecureStorage::new(path.to_string_lossy().into());
+            let encryption = Arc::new(EncryptionState::new());
+            encryption
+                .install(MasterDek::from_bytes(&[7; 32]).unwrap())
+                .await;
+            set_policy(dir.path(), &encryption, ProtectionMode::Plaintext).await;
+            state.lock().await.set_encryption_state(encryption.clone());
+            state.lock().await.save_data(sample(), false).await.unwrap();
+            let before = fs::read(&path).unwrap();
+            let transition = settings_coordinator::lock().await;
+            let mut read = std::pin::pin!(async {
+                lock_app_data(&state).await.read_app_data("scripts").await
+            });
+            let mut write = std::pin::pin!(async {
+                lock_app_data(&state)
+                    .await
+                    .write_app_data("scripts", "unsafe")
+                    .await
+            });
+            let mut cas = std::pin::pin!(async {
+                lock_app_data(&state)
+                    .await
+                    .compare_and_swap_app_data("scripts", Some("old"), "unsafe")
+                    .await
+            });
+            pending_once(read.as_mut()).await;
+            pending_once(write.as_mut()).await;
+            pending_once(cas.as_mut()).await;
+            let expected_error = match fence {
+                "locked" => {
+                    encryption.lock().await;
+                    "master encryption is locked"
+                }
+                "recovery" => {
+                    encryption.set_artifact_recovery_required(true);
+                    "requires recovery"
+                }
+                "policy-error" => {
+                    fs::write(
+                        dir.path().join(artifact_policy::POLICY_FILENAME),
+                        b"corrupt",
+                    )
+                    .unwrap();
+                    artifact_policy::refresh(&encryption).await;
+                    "artifact policy authentication failed"
+                }
+                "encrypted-policy" => {
+                    set_policy(dir.path(), &encryption, ProtectionMode::Encrypted).await;
+                    "plaintext connections conflict"
+                }
+                _ => unreachable!(),
+            };
+            drop(transition);
+            let (read, write, cas) = finish(async { tokio::join!(read, write, cas) }).await;
+            for error in [read.unwrap_err(), write.unwrap_err(), cas.unwrap_err()] {
+                assert!(error.contains(expected_error), "{fence}: {error}");
+            }
+            assert_eq!(fs::read(&path).unwrap(), before, "{fence} changed storage");
+            assert!(settings_coordinator::try_lock().is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn queued_write_uses_policy_installed_before_admission() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("data.json");
+        let state = SecureStorage::new(path.to_string_lossy().into());
+        let encryption = Arc::new(EncryptionState::new());
+        encryption
+            .install(MasterDek::from_bytes(&[8; 32]).unwrap())
+            .await;
+        set_policy(dir.path(), &encryption, ProtectionMode::Plaintext).await;
+        state.lock().await.set_encryption_state(encryption.clone());
+        let transition = settings_coordinator::lock().await;
+        let mut write = std::pin::pin!(async {
+            lock_app_data(&state)
+                .await
+                .write_app_data("scripts", "protected")
+                .await
+        });
+        pending_once(write.as_mut()).await;
+        set_policy(dir.path(), &encryption, ProtectionMode::Encrypted).await;
+        drop(transition);
+        finish(write).await.unwrap();
+        assert!(fs::read(path)
+            .unwrap()
+            .starts_with(sorng_encryption::envelope::MAGIC));
+        assert_eq!(
+            finish(async { lock_app_data(&state).await.read_app_data("scripts").await })
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("protected")
+        );
+    }
+
+    #[tokio::test]
+    async fn queued_ipc_rechecks_lock_after_waiting_for_service_mutex() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.json");
+        let state = SecureStorage::new(path.to_string_lossy().into());
+        let encryption = Arc::new(EncryptionState::new());
+        encryption
+            .install(MasterDek::from_bytes(&[9; 32]).unwrap())
+            .await;
+        let mut service = state.lock().await;
+        service.set_encryption_state(encryption.clone());
+        let mut write = std::pin::pin!(async {
+            lock_app_data(&state)
+                .await
+                .write_app_data("scripts", "unsafe")
+                .await
+        });
+        pending_once(write.as_mut()).await;
+        assert!(settings_coordinator::try_lock_settings_write().is_err());
+        // Existing direct callers must fail promptly even with a queued IPC
+        // owning the coordinator and waiting for this service mutex.
+        let error = finish(service.write_app_data("scripts", "direct"))
+            .await
+            .unwrap_err();
+        assert!(error.contains("storage write in progress"));
+        encryption.lock().await;
+        drop(service);
+        assert!(finish(write)
+            .await
+            .unwrap_err()
+            .contains("master encryption is locked"));
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn cancelling_either_queue_stage_releases_all_leases() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let state = SecureStorage::new(dir.path().join("data.json").to_string_lossy().into());
+        let busy = settings_coordinator::lock_settings_write().await;
+        let mut waiting = Box::pin(lock_app_data(&state));
+        pending_once(waiting.as_mut()).await;
+        drop(waiting);
+        drop(busy);
+        assert!(settings_coordinator::try_lock().is_ok());
+        let service = state.lock().await;
+        let mut waiting = Box::pin(lock_app_data(&state));
+        pending_once(waiting.as_mut()).await;
+        assert!(settings_coordinator::try_lock().is_err());
+        drop(waiting);
+        assert!(settings_coordinator::try_lock().is_ok());
+        drop(service);
+        finish(async {
+            lock_app_data(&state)
+                .await
+                .write_app_data("scripts", "ok")
+                .await
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn guarded_helpers_reject_bare_read_capability_before_io() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("data.json");
+        let state = SecureStorage::new(path.to_string_lossy().into());
+        let read = settings_coordinator::try_lock_trust().unwrap();
+        let storage = state.lock().await;
+        for error in [
+            storage.load_data_with_guard(&read).await.unwrap_err(),
+            storage
+                .save_data_with_guard(sample(), false, &read)
+                .await
+                .unwrap_err(),
+            storage
+                .write_app_data_with_guard("scripts", "unsafe", &read)
+                .await
+                .unwrap_err(),
+            storage
+                .compare_and_swap_app_data_with_guard("scripts", None, "unsafe", &read)
+                .await
+                .unwrap_err(),
+        ] {
+            assert_eq!(error, "serialized storage write lease required");
+        }
+        assert!(!path.exists());
     }
 }
 
@@ -595,6 +1060,34 @@ mod connections_dispatch_tests {
             store_path: path,
             encryption_state: None,
         }
+    }
+
+    #[tokio::test]
+    async fn ordinary_storage_operations_allow_a_shared_trust_lease() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let storage = build_storage(dir.path().join("trust.json").to_string_lossy().into());
+        let trust = sorng_encryption::settings_coordinator::try_lock_trust().unwrap();
+        storage.save_data(sample_data(), false).await.unwrap();
+        assert_eq!(
+            storage.load_data().await.unwrap().unwrap().connections,
+            sample_data().connections
+        );
+        storage.write_app_data("keep", "local").await.unwrap();
+        let restored = storage
+            .apply_restored_backup_transactionally(&serde_json::json!({
+                "connections": [{"id":"restored"}], "settings":{"theme":"dark"}
+            }))
+            .await
+            .unwrap();
+        assert_eq!(restored.connections[0]["id"], "restored");
+        assert_eq!(
+            restored.app_data.get("keep").map(String::as_str),
+            Some("local")
+        );
+        storage.clear_storage().await.unwrap();
+        assert!(storage.load_data().await.unwrap().is_none());
+        drop(trust);
     }
 
     #[tokio::test]

@@ -175,6 +175,32 @@ afterEach(() => {
 });
 
 describe("SSH actions with real protected stores", () => {
+  it.each([
+    ["read_app_data", "storage write in progress; retry after it completes"],
+    [
+      "read_macro_library",
+      "Storage error: storage write in progress; retry after it completes",
+    ],
+  ])(
+    "recovers a competing ordinary save while %s loads the library",
+    async (command, error) => {
+      const original = h.invoke.getMockImplementation()!;
+      let reads = 0;
+      h.invoke.mockImplementation(async (name, args) => {
+        if (name === command && ++reads === 1) throw error;
+        return original(name, args);
+      });
+      const view = mount();
+      await waitFor(() =>
+        expect(view.result.current.favorites[0]?.name).toBe("Existing macro"),
+      );
+      expect(view.result.current.error).toBeNull();
+      expect(reads).toBe(2);
+      expect(mutations()).toEqual([]);
+      expect(view.options.replayMacro).not.toHaveBeenCalled();
+    },
+  );
+
   it("aborts a sibling macro backoff when app scripts fail permanently", async () => {
     let rejectScripts!: (error: unknown) => void;
     h.invoke.mockImplementation(async (command) => {

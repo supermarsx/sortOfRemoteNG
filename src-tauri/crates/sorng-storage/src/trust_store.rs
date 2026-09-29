@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 use tokio::sync::Mutex;
 
@@ -1621,14 +1622,15 @@ pub struct TrustRuntime {
     app_dir: PathBuf,
     enc_state: Option<Arc<EncryptionState>>,
     active: RwLock<Option<ActiveDb>>,
+    activation_generation: AtomicU64,
     /// Serialises every read-modify-write across the async service and the
     /// synchronous verifiers (they share the file, not the memory).
     io: std::sync::Mutex<()>,
 }
 
 struct TrustIoGuard<'a> {
-    _coordinator: Option<tokio::sync::MutexGuard<'static, ()>>,
     _io: std::sync::MutexGuard<'a, ()>,
+    _coordinator: Option<sorng_encryption::settings_coordinator::CoordinatorGuard<'static>>,
 }
 
 static RUNTIME: OnceLock<RwLock<Option<Arc<TrustRuntime>>>> = OnceLock::new();
@@ -1653,6 +1655,7 @@ pub fn install_runtime(
         app_dir,
         enc_state,
         active: RwLock::new(None),
+        activation_generation: AtomicU64::new(0),
         io: std::sync::Mutex::new(()),
     });
     match runtime_slot().write() {
@@ -1823,12 +1826,26 @@ impl TrustRuntime {
     }
 
     fn io_guard(&self) -> Result<TrustIoGuard<'_>, String> {
+        let generation = self.activation_generation.load(Ordering::Acquire);
+        let guard = self.snapshot_io_guard()?;
+        if self.activation_generation.load(Ordering::Acquire) != generation {
+            return Err("Trust database changed; refresh and review the action again".into());
+        }
+        Ok(guard)
+    }
+
+    /// Shared storage barrier -> trust I/O -> key lease. The barrier never
+    /// waits on a runtime thread. Snapshot reads choose the database under I/O;
+    /// decisions additionally reject activation changes while queued for I/O.
+    fn snapshot_io_guard(&self) -> Result<TrustIoGuard<'_>, String> {
         let coordinator = self
             .enc_state
             .as_ref()
-            .map(|_| sorng_encryption::settings_coordinator::try_lock())
+            .map(|_| sorng_encryption::settings_coordinator::try_lock_trust())
             .transpose()
             .map_err(str::to_string)?;
+        #[cfg(test)]
+        test_support::signal_io_acquisition();
         let io = self
             .io
             .lock()
@@ -1839,14 +1856,32 @@ impl TrustRuntime {
         })
     }
 
+    /// Legacy inventory/cleanup compares database payloads with trust files.
+    /// Hold ordinary-write serialization as well as trust I/O so a concurrent
+    /// database autosave cannot invalidate the inventory before its commit.
+    fn inventory_io_guard(&self) -> Result<TrustIoGuard<'_>, String> {
+        let coordinator = sorng_encryption::settings_coordinator::try_lock_settings_write()
+            .map_err(str::to_string)?;
+        let io = self
+            .io
+            .lock()
+            .map_err(|_| "trust runtime io lock poisoned".to_string())?;
+        Ok(TrustIoGuard {
+            _io: io,
+            _coordinator: Some(coordinator),
+        })
+    }
+
     fn with_current_key<R>(
         &self,
         f: impl FnOnce(Option<&SubKey>) -> Result<R, String>,
     ) -> Result<R, String> {
         if let Some(state) = &self.enc_state {
-            state.resolve_write_policy(ArtifactKind::TrustStore, false)?;
             return state
-                .with_sub_key_sync(ArtifactKind::TrustStore, f)
+                .with_sub_key_sync(ArtifactKind::TrustStore, |key| {
+                    state.resolve_write_policy_with_key(ArtifactKind::TrustStore, false, key)?;
+                    f(key)
+                })
                 .map_err(str::to_string)?;
         }
         // Explicit-key legacy/test runtimes have no shared master state.
@@ -1877,6 +1912,7 @@ impl TrustRuntime {
             .write()
             .map_err(|_| "trust runtime active lock poisoned".to_string())?;
         *guard = next;
+        self.activation_generation.fetch_add(1, Ordering::AcqRel);
         Ok(())
     }
 
@@ -1964,6 +2000,9 @@ impl TrustRuntime {
     /// Current activation snapshot (never seeds, never errors on "no active
     /// database" — that is reported as `database_id: None`).
     pub fn active_info(&self) -> Result<ActiveTrustDatabase, String> {
+        // The ID and file must belong to the same activation, including when
+        // a concurrent close clears the selection before this lease is acquired.
+        let _io = self.snapshot_io_guard()?;
         let Some(id) = self.active_database_id() else {
             return Ok(ActiveTrustDatabase {
                 database_id: None,
@@ -1972,7 +2011,6 @@ impl TrustRuntime {
                 seeded_records: 0,
             });
         };
-        let _io = self.io_guard()?;
         let data = self.load_active()?;
         Ok(ActiveTrustDatabase {
             database_id: Some(id),
@@ -2081,7 +2119,7 @@ impl TrustRuntime {
             decrypt_with_subkey(key, &payload)?
         } else {
             if let Some(state) = &self.enc_state {
-                if state.resolve_write_policy(ArtifactKind::TrustStore, false)? {
+                if state.resolve_write_policy_with_key(ArtifactKind::TrustStore, false, key)? {
                     return Err(
                         "plaintext trust store conflicts with the authenticated encryption policy"
                             .into(),
@@ -2124,7 +2162,9 @@ impl TrustRuntime {
             return Err("serialized trust store exceeds the size limit".to_string());
         }
         let encrypt = match &self.enc_state {
-            Some(state) => state.resolve_write_policy(ArtifactKind::TrustStore, key.is_some())?,
+            Some(state) => {
+                state.resolve_write_policy_with_key(ArtifactKind::TrustStore, key.is_some(), key)?
+            }
             None => key.is_some(),
         };
         let payload = {
@@ -2313,8 +2353,8 @@ impl TrustRuntime {
     /// file can be read because the sub-key is per artifact kind, not per
     /// database.
     pub fn export(&self, database_id: Option<&str>) -> Result<TrustExportDocument, String> {
-        let path = self.resolve_db(database_id)?;
         let _io = self.io_guard()?;
+        let path = self.resolve_db(database_id)?;
         let data = self.read_file(&path)?;
         let mut records: Vec<TrustRecord> = data.records.into_values().collect();
         records.sort_by(|a, b| (&a.record_type, &a.host).cmp(&(&b.record_type, &b.host)));
@@ -2356,8 +2396,8 @@ impl TrustRuntime {
         for record in &document.records {
             metadata::validate_description(record.description.as_deref())?;
         }
-        let path = self.resolve_db(database_id)?;
         let _io = self.io_guard()?;
+        let path = self.resolve_db(database_id)?;
         let current = self.read_file(&path)?;
         if let Some(expected_records) = expected_records {
             if database_id != self.active_database_id().as_deref() {
@@ -2408,8 +2448,9 @@ impl TrustRuntime {
     pub fn delete_store_with_coordinator_guard(
         &self,
         database_id: &str,
-        _coordinator: &tokio::sync::MutexGuard<'_, ()>,
+        _coordinator: &sorng_encryption::settings_coordinator::CoordinatorGuard<'_>,
     ) -> Result<(), String> {
+        _coordinator.require_exclusive().map_err(str::to_string)?;
         if let Some(state) = &self.enc_state {
             state.resolve_write_policy(ArtifactKind::TrustStore, false)?;
         }
@@ -2646,6 +2687,28 @@ pub mod test_support {
     use super::*;
 
     static TEST_MUTEX: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+
+    #[cfg(test)]
+    std::thread_local! {
+        // One-shot, worker-local observation: it neither acquires the global
+        // barrier nor exposes other tests' operations to this test's receiver.
+        static IO_ACQUISITION_SIGNAL: std::cell::RefCell<Option<std::sync::mpsc::Sender<()>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    #[cfg(test)]
+    pub(super) fn signal_next_io_acquisition(signal: std::sync::mpsc::Sender<()>) {
+        IO_ACQUISITION_SIGNAL.with(|slot| *slot.borrow_mut() = Some(signal));
+    }
+
+    #[cfg(test)]
+    pub(super) fn signal_io_acquisition() {
+        IO_ACQUISITION_SIGNAL.with(|slot| {
+            if let Some(signal) = slot.borrow_mut().take() {
+                let _ = signal.send(());
+            }
+        });
+    }
 
     /// Holds the test mutex and the installed runtime; dropping it
     /// deactivates the database.
@@ -3136,6 +3199,19 @@ mod runtime_tests {
         Arc::new(state)
     }
 
+    fn ssh_identity(fingerprint: &str) -> Identity {
+        let now = Utc::now().to_rfc3339();
+        Identity::Ssh(SshHostKeyIdentity {
+            fingerprint: fingerprint.into(),
+            key_type: Some("ssh-ed25519".into()),
+            key_bits: Some(256),
+            first_seen: now.clone(),
+            last_seen: now,
+            public_key: None,
+            algorithms_offered: vec![],
+        })
+    }
+
     #[tokio::test]
     async fn rotation_refreshes_native_key_without_renderer_and_blocks_inflight_io() {
         let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
@@ -3237,6 +3313,59 @@ mod runtime_tests {
     }
 
     #[tokio::test]
+    async fn shared_leases_cannot_authorize_transition_only_helpers() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "db");
+        let rt = &guard.runtime;
+        SyncTrustStore::shared()
+            .trust_identity_blocking("h:22".into(), "ssh".into(), ssh_identity("approved"), true)
+            .unwrap();
+        let path = rt.trust_file_path("db").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        for lease in [
+            sorng_encryption::settings_coordinator::try_lock_trust().unwrap(),
+            sorng_encryption::settings_coordinator::lock_settings_write().await,
+        ] {
+            assert_eq!(
+                rt.delete_store_with_coordinator_guard("db", &lease)
+                    .unwrap_err(),
+                "exclusive storage transition lease required"
+            );
+            assert_eq!(
+                rt.reassign_scope_with_coordinator_guard(
+                    dir.path(),
+                    "db",
+                    "r0",
+                    &serde_json::Value::Null,
+                    &[],
+                    vec![],
+                    None,
+                    &lease,
+                    || panic!("must reject before validating access"),
+                )
+                .unwrap_err(),
+                "exclusive storage transition lease required"
+            );
+            assert_eq!(
+                rt.migrate_legacy_database_with_coordinator_guard(
+                    dir.path(),
+                    "db",
+                    "r0",
+                    &serde_json::Value::Null,
+                    &[],
+                    &lease,
+                    || panic!("must reject before validating access"),
+                )
+                .unwrap_err(),
+                "exclusive storage transition lease required"
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+            assert_eq!(rt.active_database_id().as_deref(), Some("db"));
+        }
+    }
+
+    #[tokio::test]
     async fn activation_queues_and_failure_deactivates_instead_of_reusing_old_scope() {
         let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
         let dir = tempdir().unwrap();
@@ -3282,6 +3411,204 @@ mod runtime_tests {
         guard.runtime.refresh_sub_key().await.unwrap();
         assert_eq!(guard.runtime.active_database_id(), None);
     }
+    #[tokio::test]
+    async fn active_info_snapshots_selection_after_acquiring_io() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard =
+            install_runtime_for_tests(dir.path().join("databases"), Some(unlocked_state().await));
+        let rt = &guard.runtime;
+        rt.activate_database(Some("second".into()), &[])
+            .await
+            .unwrap();
+        SyncTrustStore::shared()
+            .trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+
+        for next in [Some("second".to_string()), None] {
+            rt.activate_database(Some("first".into()), &[])
+                .await
+                .unwrap();
+            // Stage a switch/close while the snapshot waits for trust I/O.
+            // The worker signals after shared admission, immediately before
+            // the held I/O mutex. Probing with try_lock would itself acquire
+            // an exclusive barrier and could make this read fail admission.
+            let io = rt.io.lock().unwrap();
+            let (reached_io, await_io) = std::sync::mpsc::channel();
+            let reader_rt = rt.clone();
+            let reader = std::thread::spawn(move || {
+                signal_next_io_acquisition(reached_io);
+                reader_rt.active_info()
+            });
+            if let Err(error) = await_io.recv_timeout(std::time::Duration::from_secs(5)) {
+                drop(io);
+                let result = reader.join().unwrap();
+                panic!("snapshot reader did not reach I/O: {error}; result: {result:?}");
+            }
+            // Test-only low-level switch under the held I/O lease; never wait
+            // for the coordinator here (the snapshot reader owns it).
+            let switched = rt.set_active(next.clone(), None);
+            drop(io);
+            let snapshot = reader.join().unwrap();
+            switched.unwrap();
+            assert_eq!(
+                snapshot.unwrap(),
+                ActiveTrustDatabase {
+                    database_id: next.clone(),
+                    encrypted: next.is_some(),
+                    record_count: u64::from(next.is_some()),
+                    seeded_records: 0,
+                }
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn active_info_does_not_report_no_database_during_coordinator_contention() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard =
+            install_runtime_for_tests(dir.path().join("databases"), Some(unlocked_state().await));
+        let coordinator = sorng_encryption::settings_coordinator::lock().await;
+        assert_eq!(
+            guard.runtime.active_info().unwrap_err(),
+            "encryption storage transition in progress; retry after it completes"
+        );
+        drop(coordinator);
+        assert_eq!(guard.runtime.active_info().unwrap().database_id, None);
+    }
+
+    #[tokio::test]
+    async fn ordinary_settings_writes_allow_concurrent_trust_io_and_preserve_host_key_decisions() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard =
+            install_runtime_for_tests(dir.path().join("databases"), Some(unlocked_state().await));
+        guard
+            .runtime
+            .activate_database(Some("db".into()), &[])
+            .await
+            .unwrap();
+        SyncTrustStore::shared()
+            .trust_identity_blocking(
+                "known:22".into(),
+                "ssh".into(),
+                ssh_identity("approved"),
+                true,
+            )
+            .unwrap();
+        let coordinator = sorng_encryption::settings_coordinator::lock_settings_write().await;
+        let mut workers = Vec::new();
+        for (host, fingerprint) in [
+            ("known:22", "approved"),
+            ("known:22", "changed"),
+            ("new:22", "unknown"),
+            ("known:22", "approved"),
+        ] {
+            workers.push(tokio::task::spawn_blocking(move || {
+                SyncTrustStore::shared().verify_identity_blocking(
+                    host,
+                    "ssh",
+                    ssh_identity(fingerprint),
+                )
+            }));
+        }
+        let mut results = Vec::new();
+        for worker in workers {
+            results.push(
+                tokio::time::timeout(std::time::Duration::from_secs(2), worker)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+        assert!(matches!(results[0], TrustVerifyResult::Trusted));
+        assert!(matches!(results[1], TrustVerifyResult::Mismatch { .. }));
+        assert!(matches!(results[2], TrustVerifyResult::FirstUse { .. }));
+        assert!(matches!(results[3], TrustVerifyResult::Trusted));
+        let records = guard.runtime.export(None).unwrap().records;
+        assert_eq!(
+            records.len(),
+            1,
+            "verification must not store consent for an unknown key"
+        );
+        assert_eq!(
+            TrustStoreService::identity_fingerprint(&records[0].identity),
+            "approved"
+        );
+        assert_eq!(guard.runtime.active_info().unwrap().record_count, 1);
+        drop(coordinator);
+    }
+
+    #[tokio::test]
+    async fn verification_observes_real_lock_and_recovery_errors_after_transition() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        for recovery in [false, true] {
+            let dir = tempdir().unwrap();
+            let state = unlocked_state().await;
+            let guard =
+                install_runtime_for_tests(dir.path().join("databases"), Some(state.clone()));
+            guard
+                .runtime
+                .activate_database(Some("db".into()), &[])
+                .await
+                .unwrap();
+            let coordinator = sorng_encryption::settings_coordinator::lock().await;
+            if recovery {
+                state.set_artifact_recovery_required(true);
+            } else {
+                state.lock().await;
+            }
+            drop(coordinator);
+            let error = SyncTrustStore::shared()
+                .verify_identity_blocking("new:22", "ssh", ssh_identity("unknown"))
+                .unwrap_err();
+            assert!(
+                error.contains(if recovery {
+                    "requires recovery"
+                } else {
+                    "locked"
+                }),
+                "{error}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn queued_decision_cannot_follow_a_database_close_and_reopen() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard =
+            install_runtime_for_tests(dir.path().join("databases"), Some(unlocked_state().await));
+        let rt = &guard.runtime;
+        rt.activate_database(Some("db".into()), &[]).await.unwrap();
+        let io = rt.io.lock().unwrap();
+        let (reached_io, await_io) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            signal_next_io_acquisition(reached_io);
+            SyncTrustStore::shared().trust_identity_blocking(
+                "queued:22".into(),
+                "ssh".into(),
+                ssh_identity("unreviewed"),
+                true,
+            )
+        });
+        if let Err(error) = await_io.recv_timeout(std::time::Duration::from_secs(5)) {
+            drop(io);
+            let result = worker.join().unwrap();
+            panic!("decision worker did not reach I/O: {error}; result: {result:?}");
+        }
+        // Stage the lifecycle change under the held I/O lease, as in the
+        // snapshot regression. Same ID must not restore an old decision's lease.
+        rt.set_active(None, None).unwrap();
+        rt.set_active(Some("db".into()), None).unwrap();
+        drop(io);
+        let error = worker.join().unwrap().unwrap_err();
+        assert!(error.contains("Trust database changed"), "{error}");
+        assert!(rt.export(None).unwrap().records.is_empty());
+    }
+
     #[test]
     fn per_database_isolation_and_bak_recovery() {
         let dir = tempdir().unwrap();

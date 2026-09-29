@@ -440,9 +440,10 @@ impl TrustRuntime {
         revision: &str,
         expected_data: &Value,
         connection_ids: &[String],
-        _coordinator: &tokio::sync::MutexGuard<'static, ()>,
+        _coordinator: &sorng_encryption::settings_coordinator::CoordinatorGuard<'static>,
         validate_access: impl FnOnce() -> Result<(), String>,
     ) -> Result<TrustLegacyMigrationOutcome, String> {
+        _coordinator.require_exclusive().map_err(str::to_string)?;
         crate::database_transaction::validate_database_id(database_id)?;
         if profile
             .canonicalize()
@@ -713,7 +714,7 @@ impl TrustRuntime {
     }
 
     pub fn legacy_status(&self) -> Result<TrustLegacyStatus, String> {
-        let _io = self.io_guard()?;
+        let _io = self.inventory_io_guard()?;
         self.legacy_status_inner().map(|(status, _)| status)
     }
 
@@ -724,7 +725,7 @@ impl TrustRuntime {
     }
 
     fn delete_legacy_stores_checked(&self, before_recheck: impl FnOnce()) -> Result<u32, String> {
-        let _io = self.io_guard()?;
+        let _io = self.inventory_io_guard()?;
         let (status, verified_source_digest) = self.legacy_status_inner()?;
         if !status.can_delete_legacy {
             return Err("Legacy trust cleanup refused: migrate and verify every database; resolve all inventory blockers first".into());

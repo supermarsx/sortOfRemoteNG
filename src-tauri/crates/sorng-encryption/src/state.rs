@@ -97,6 +97,27 @@ impl EncryptionState {
         let unlocked = self
             .with_sub_key_sync(kind, |key| key.is_some())
             .map_err(str::to_string)?;
+        self.resolve_write_policy_for_key(kind, legacy_encrypt, unlocked)
+    }
+
+    /// Resolve policy inside this state's key callback without recursively
+    /// acquiring a read lease (a queued writer would deadlock a nested read).
+    /// `key` must be the key supplied by this state's `with_sub_key_*` callback.
+    pub fn resolve_write_policy_with_key(
+        &self,
+        kind: ArtifactKind,
+        legacy_encrypt: bool,
+        key: Option<&SubKey>,
+    ) -> Result<bool, String> {
+        self.resolve_write_policy_for_key(kind, legacy_encrypt, key.is_some())
+    }
+
+    fn resolve_write_policy_for_key(
+        &self,
+        kind: ArtifactKind,
+        legacy_encrypt: bool,
+        unlocked: bool,
+    ) -> Result<bool, String> {
         let cache = self
             .artifact_policy
             .0
@@ -345,6 +366,47 @@ mod tests {
         assert!(state
             .with_sub_key_sync(ArtifactKind::TrustStore, |key| key.is_none())
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn synchronous_key_contention_fails_closed_without_blocking_the_executor() {
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let mut writer = state.inner.write().await;
+        assert_eq!(
+            state
+                .with_sub_key_sync(ArtifactKind::TrustStore, |_| ())
+                .unwrap_err(),
+            "encryption key transition in progress"
+        );
+        *writer = None;
+        drop(writer);
+        assert!(state
+            .resolve_write_policy(ArtifactKind::TrustStore, true)
+            .unwrap_err()
+            .contains("locked"));
+    }
+
+    #[tokio::test]
+    async fn policy_resolution_under_key_lease_does_not_reacquire_behind_waiting_writer() {
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let reader = state.inner.read().await;
+        let key = reader
+            .as_ref()
+            .map(|dek| dek.sub_key(ArtifactKind::TrustStore));
+        let mut writer = std::pin::pin!(state.inner.write());
+        std::future::poll_fn(|cx| {
+            use std::future::Future;
+            assert!(writer.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        assert!(state
+            .resolve_write_policy_with_key(ArtifactKind::TrustStore, true, key.as_ref())
+            .unwrap());
+        drop(reader);
+        drop(writer.await);
     }
 
     #[tokio::test]

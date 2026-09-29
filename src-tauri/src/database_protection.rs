@@ -1,6 +1,8 @@
 //! Native managed inner-database control plane. The renderer receives plaintext
 //! only for an unlocked database, never DEKs, KEKs, or vault secret material.
-use crate::database_files::{managed_commit, managed_snapshot, ManagedSnapshot};
+use crate::database_files::{
+    lock_database_operation, managed_commit, managed_snapshot, ManagedSnapshot,
+};
 // Shared artifact adapters also compile in app_lib, which intentionally has no
 // database_files module. Expose the same guard through the existing public
 // protection facade; do not duplicate or weaken its plaintext-vault checks.
@@ -426,8 +428,11 @@ pub async fn database_protection_status<R: Runtime>(
     state: State<'_, EncryptionState>,
     database_id: String,
 ) -> Result<ProtectionStatus, String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
     let root = native_root(&window, &state)?;
+    let _guard = lock_database_operation(&root.join("databases")).await?;
+    if native_root(&window, &state)? != root {
+        return Err("Database profile changed; reload before retrying".into());
+    }
     status_inner(&root, &state, window.label(), &database_id).await
 }
 async fn status_inner(
@@ -484,8 +489,11 @@ pub async fn database_protection_unlock<R: Runtime>(
     password: Option<String>,
 ) -> Result<UnlockResult, String> {
     let password = password.map(Zeroizing::new);
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
     let root = native_root(&window, &state)?;
+    let _guard = lock_database_operation(&root.join("databases")).await?;
+    if native_root(&window, &state)? != root {
+        return Err("Database profile changed; reload before retrying".into());
+    }
     unlock_inner(
         &root,
         &state,
@@ -556,7 +564,7 @@ pub async fn database_protection_lock<R: Runtime>(
     state: State<'_, EncryptionState>,
     database_id: String,
 ) -> Result<LockResult, String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let _guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
     sorng_storage::database_transaction::validate_database_id(&database_id)?;
     let profile = profile_binding(&native_root(&window, &state)?)?;
     revoke_database_sessions(
@@ -583,7 +591,7 @@ pub async fn database_protection_release_session<R: Runtime>(
     database_id: String,
     session_id: String,
 ) -> Result<ReleaseSessionResult, String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
+    let _guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
     sorng_storage::database_transaction::validate_database_id(&database_id)?;
     if session_id.is_empty()
         || session_id.len() > 128
@@ -616,8 +624,11 @@ pub async fn database_protection_save<R: Runtime>(
     data: Value,
     expected_data: Option<Value>,
 ) -> Result<SaveResult, String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
     let root = native_root(&window, &state)?;
+    let _guard = lock_database_operation(&root.join("databases")).await?;
+    if native_root(&window, &state)? != root {
+        return Err("Database profile changed; reload before retrying".into());
+    }
     save_inner(
         &root,
         &state,
@@ -639,8 +650,11 @@ pub async fn database_protection_load<R: Runtime>(
     session_id: String,
     expected_security_revision: String,
 ) -> Result<UnlockResult, String> {
-    let _guard = sorng_encryption::settings_coordinator::lock().await;
     let root = native_root(&window, &state)?;
+    let _guard = lock_database_operation(&root.join("databases")).await?;
+    if native_root(&window, &state)? != root {
+        return Err("Database profile changed; reload before retrying".into());
+    }
     let snapshot = managed_snapshot(&root, &state, &database_id).await?;
     if revision(&snapshot) != expected_security_revision {
         return Err("database security changed; unlock again".into());

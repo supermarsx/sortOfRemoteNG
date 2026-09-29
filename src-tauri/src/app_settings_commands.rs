@@ -248,7 +248,7 @@ pub(crate) async fn read_app_settings_secure_inner(
     // A legacy-secret migration is a read-sanitize-write transaction. Taking
     // the same lock as ordinary settings writes before the read prevents a
     // stale `restApi` object from replaying over a concurrent patch.
-    let _write_guard = sorng_encryption::settings_coordinator::lock().await;
+    let _write_guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
     read_app_settings_secure_locked(dir, enc_state).await
 }
 
@@ -401,7 +401,7 @@ pub async fn write_app_settings_reviewed_inner(
     expected_icon_library: Option<Value>,
 ) -> Result<u64, String> {
     reject_rest_api_secret_patch(&patch)?;
-    let _write_guard = sorng_encryption::settings_coordinator::lock().await;
+    let _write_guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
     let current = read_app_settings_inner(dir, enc_state).await?;
     require_icon_library_review(
         current.as_ref().unwrap_or(&serde_json::json!({})),
@@ -569,7 +569,7 @@ pub async fn write_app_settings_inner(
     // Cover the entire transaction, not only the rename: a later writer must
     // read the generation committed by the previous writer before merging its
     // own patch. This also keeps verify-readback isolated from another save.
-    let _write_guard = sorng_encryption::settings_coordinator::lock().await;
+    let _write_guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
     write_app_settings_locked(dir, enc_state, patch).await
 }
 
@@ -737,6 +737,66 @@ mod tests {
             }
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn ordinary_settings_transactions_preserve_migration_and_reviewed_cas() {
+        // Shared-trust coexistence is tested with isolated coordinators in
+        // sorng-encryption. Do not retain a global read lease across another
+        // acquisition here: parallel tests may queue an exclusive transition.
+        let temp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let path = temp.path().join(SETTINGS_FILENAME);
+        std::fs::write(
+            &path,
+            br#"{"theme":"dark","restApi":{"enabled":false,"apiKey":""}}"#,
+        )
+        .unwrap();
+        let first =
+            write_app_settings_inner(temp.path(), &state, serde_json::json!({"language":"fr"}))
+                .await
+                .unwrap();
+        // Secure reads may sanitize legacy secrets. An empty legacy field
+        // exercises that write without accessing the real OS vault.
+        let sanitized = read_app_settings_secure_inner(temp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(sanitized["theme"], "dark");
+        assert_eq!(sanitized["language"], "fr");
+        assert!(sanitized["restApi"].get("apiKey").is_none());
+
+        let empty = normalized_icon_library(None);
+        let library = icon_library("Reviewed settings");
+        let reviewed = write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":library,"theme":"light"}),
+            Some(empty.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(reviewed > first);
+        let committed = std::fs::read(&path).unwrap();
+        let stale = write_app_settings_reviewed_inner(
+            temp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":icon_library("Stale"),"language":"de"}),
+            Some(empty),
+        )
+        .await
+        .unwrap_err();
+        assert!(stale.contains("another window"));
+        assert_eq!(std::fs::read(&path).unwrap(), committed);
+
+        let persisted = read_app_settings_secure_inner(temp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted["iconLibrary"], library);
+        assert_eq!(persisted["theme"], "light");
+        assert_eq!(persisted["language"], "fr");
+        assert_eq!(persisted["restApi"], serde_json::json!({"enabled":false}));
     }
 
     #[tokio::test]

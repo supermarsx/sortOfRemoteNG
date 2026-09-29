@@ -100,7 +100,7 @@ pub async fn read_app_data(
     key: String,
     state: tauri::State<'_, SecureStorageState>,
 ) -> Result<Option<String>, String> {
-    let storage = state.lock().await;
+    let mut storage = lock_app_data(state.inner()).await;
     storage.read_app_data(&key).await
 }
 
@@ -121,7 +121,7 @@ pub async fn write_app_data(
     value: String,
     state: tauri::State<'_, SecureStorageState>,
 ) -> Result<(), String> {
-    let storage = state.lock().await;
+    let mut storage = lock_app_data(state.inner()).await;
     storage.write_app_data(&key, &value).await
 }
 
@@ -136,7 +136,7 @@ pub async fn compare_and_swap_app_data(
     replacement: String,
     state: tauri::State<'_, SecureStorageState>,
 ) -> Result<bool, String> {
-    let storage = state.lock().await;
+    let mut storage = lock_app_data(state.inner()).await;
     storage
         .compare_and_swap_app_data(&key, expected.as_deref(), &replacement)
         .await

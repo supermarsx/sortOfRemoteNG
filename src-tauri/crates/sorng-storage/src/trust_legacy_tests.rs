@@ -53,6 +53,7 @@ fn fixture() -> (tempfile::TempDir, TrustRuntime, Value) {
         app_dir: root.path().into(),
         enc_state: None,
         active: RwLock::new(None),
+        activation_generation: AtomicU64::new(0),
         io: std::sync::Mutex::new(()),
     };
     (root, rt, payload)

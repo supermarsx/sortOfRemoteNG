@@ -425,8 +425,8 @@ impl BackupService {
 
     /// Update backup configuration
     pub fn update_config(&mut self, config: BackupConfig) -> Result<(), String> {
-        let _coordinator =
-            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        let _coordinator = sorng_encryption::settings_coordinator::try_lock_settings_write()
+            .map_err(str::to_string)?;
         if let Some(state) = &self.encryption_state {
             state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, false)?;
         }
@@ -623,8 +623,8 @@ impl BackupService {
         // legacy SORNG1 paths. The migrator that converted SORNG1
         // files to v2 lived briefly between commits 57cf5505 and Z;
         // it's been removed now that the dev tree is fully migrated.
-        let snapshot_guard =
-            sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?;
+        let snapshot_guard = sorng_encryption::settings_coordinator::try_lock_settings_write()
+            .map_err(str::to_string)?;
         let policy_revision = self
             .encryption_state
             .as_ref()
@@ -733,7 +733,10 @@ impl BackupService {
             let _write_guard = if remote {
                 None
             } else {
-                Some(sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?)
+                Some(
+                    sorng_encryption::settings_coordinator::try_lock_settings_write()
+                        .map_err(str::to_string)?,
+                )
             };
             if let Some(state) = self.encryption_state.as_ref() {
                 let current_mode =
@@ -928,7 +931,10 @@ impl BackupService {
             let _coordinator = if remote {
                 None
             } else {
-                Some(sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?)
+                Some(
+                    sorng_encryption::settings_coordinator::try_lock_settings_write()
+                        .map_err(str::to_string)?,
+                )
             };
             if let Some(state) = &self.encryption_state {
                 state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, false)?;
@@ -1183,7 +1189,10 @@ impl BackupService {
         let coordinator = if remote {
             None
         } else {
-            Some(sorng_encryption::settings_coordinator::try_lock().map_err(str::to_string)?)
+            Some(
+                sorng_encryption::settings_coordinator::try_lock_settings_write()
+                    .map_err(str::to_string)?,
+            )
         };
         if let Some(state) = &self.encryption_state {
             state.resolve_write_policy(sorng_encryption::ArtifactKind::Backups, false)?;
@@ -2479,6 +2488,34 @@ mod tests {
     // with the legacy crypto functions in commit Z.
 
     // ── Full backup round-trip with temp dir ────────────────────────────
+
+    #[tokio::test]
+    async fn ordinary_backup_operations_allow_a_shared_trust_lease() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let state = BackupService::new(dir.path().to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        let trust = sorng_encryption::settings_coordinator::try_lock_trust().unwrap();
+        let mut config = BackupConfig::default();
+        config.destination_path = dir.path().to_string_lossy().into_owned();
+        config.compress_backups = true;
+        config.max_backups_to_keep = 1;
+        svc.update_config(config).unwrap();
+        let payload = serde_json::json!({"connections":[{"id":"shared-trust"}]});
+        let metadata = svc.run_backup("manual", &payload).await.unwrap();
+        svc.cleanup_old_backups_all_targets().await.unwrap();
+        assert_eq!(
+            svc.restore_backup_from_target(&metadata.id, "legacy-default")
+                .await
+                .unwrap(),
+            payload
+        );
+        svc.delete_backup(&metadata.id, "legacy-default")
+            .await
+            .unwrap();
+        assert!(svc.list_backups().await.unwrap().is_empty());
+        drop(trust);
+    }
 
     #[tokio::test]
     async fn run_backup_and_restore() {

@@ -139,7 +139,7 @@ impl EncryptedLogSink {
         }
         // Never wait while a protocol logger may already hold a service lock.
         // Keep the buffer untouched during a representation/key transition.
-        let Ok(_coordinator) = crate::settings_coordinator::try_lock() else {
+        let Ok(_coordinator) = crate::settings_coordinator::try_lock_settings_write() else {
             return Ok(0);
         };
         if !self.state.is_unlocked().await {

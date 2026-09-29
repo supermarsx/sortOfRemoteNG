@@ -1,6 +1,7 @@
 import type { AutomationLibraryDiagnostic } from "../../types/recording/automationLibrary";
 import {
   isAppDataReadBusy,
+  isLibraryStorageWriteBusy,
   isMacroLibraryReadBusy,
 } from "../storage/macroLibraryReadRecovery";
 
@@ -16,6 +17,13 @@ export function automationLibraryDiagnostic(
   error: unknown,
 ): AutomationLibraryDiagnostic {
   if (error instanceof AutomationLibraryAccessError) return error.diagnostic;
+  if (isLibraryStorageWriteBusy(error))
+    return {
+      code: "storage-unavailable",
+      message:
+        "Another storage operation is still finishing. Retry loading the library shortly. Existing data was not reset.",
+      retryable: true,
+    };
   if (isMacroLibraryReadBusy(error) || isAppDataReadBusy(error))
     return {
       code: "storage-unavailable",

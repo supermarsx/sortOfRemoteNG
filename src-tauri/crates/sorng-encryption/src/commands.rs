@@ -452,7 +452,7 @@ pub async fn encryption_validate_new_password(
     password: String,
     purpose: String,
 ) -> Result<(), String> {
-    let _guard = crate::settings_coordinator::lock().await;
+    let _guard = crate::settings_coordinator::lock_settings_write().await;
     let password = Zeroizing::new(password);
     crate::password_policy::validate_saved_locked(
         &ensure_app_data_dir(&app)?,
@@ -767,7 +767,9 @@ pub async fn encryption_lock(
     Ok(())
 }
 
-async fn lock_encryption_state(state: &EncryptionState) -> tokio::sync::MutexGuard<'static, ()> {
+async fn lock_encryption_state(
+    state: &EncryptionState,
+) -> crate::settings_coordinator::TransitionGuard {
     let guard = crate::settings_coordinator::lock().await;
     state.lock().await;
     guard

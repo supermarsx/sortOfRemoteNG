@@ -13,6 +13,8 @@ const busy =
   "Storage error: encryption storage transition in progress; retry after it completes";
 const appBusy =
   "encryption storage transition in progress; retry after it completes";
+const writeBusy = "storage write in progress; retry after it completes";
+const macroWriteBusy = `Storage error: ${writeBusy}`;
 const raw = JSON.stringify({ items: ["Existing item"] });
 let key = 0;
 const store = (backend: "macro-library" | "app-data" = "macro-library") =>
@@ -49,6 +51,54 @@ afterEach(() => {
 });
 
 describe("bounded native macro-library pre-read recovery", () => {
+  it.each([
+    ["app-data", writeBusy],
+    ["macro-library", macroWriteBusy],
+  ] as const)(
+    "recovers ordinary %s write contention without a mutation or encryption warning",
+    async (backend, busyError) => {
+      native.invoke.mockRejectedValueOnce(new Error(busyError));
+      const result = settled(store(backend).load(access()));
+      await vi.runAllTimersAsync();
+      expect((await result).value?.value).toEqual({ items: ["Existing item"] });
+      expect(native.invoke.mock.calls.map(([command]) => command)).toEqual(
+        Array(2).fill(
+          backend === "app-data" ? "read_app_data" : "read_macro_library",
+        ),
+      );
+      const diagnostic = automationLibraryDiagnostic(busyError);
+      expect(diagnostic.message).toMatch(/Another storage operation/);
+      expect(diagnostic.message).not.toMatch(/encryption|unlocked/);
+      expect(diagnostic.retryable).toBe(true);
+    },
+  );
+
+  it.each([
+    ["app-data", macroWriteBusy],
+    ["macro-library", writeBusy],
+    ["macro-library", `${macroWriteBusy}: unexpected suffix`],
+  ] as const)(
+    "does not retry a nonmatching %s busy error",
+    async (backend, error) => {
+      native.invoke.mockRejectedValue(error);
+      await expect(store(backend).load(access())).rejects.toBe(error);
+      expect(native.invoke).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("does not replay an uncertain macro write just because it reports routine contention", async () => {
+    native.invoke.mockResolvedValueOnce(raw).mockRejectedValue(macroWriteBusy);
+    const edit = vi.fn(() => ({ items: ["Reviewed edit"] }));
+    await expect(store().update(edit)).rejects.toBe(macroWriteBusy);
+    expect(edit).toHaveBeenCalledOnce();
+    expect(native.invoke.mock.calls.map(([command]) => command)).toEqual([
+      "read_macro_library",
+      "compare_and_swap_macro_library",
+    ]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("uses the app-data backend's exact bare pre-read error and rejects crossed backend spellings", async () => {
     native.invoke.mockRejectedValueOnce(appBusy);
     const result = settled(store("app-data").load(access()));
