@@ -19,10 +19,12 @@ export interface WebTotpPanelProps {
   anchorRef?: React.RefObject<HTMLElement | null>;
   autoMfa?: { status: string | null; canRetry: boolean; retry: () => void };
   credentialActions?: React.ReactNode;
+  typingRef?: React.RefObject<HTMLElement | null>;
+  renderTypeCode?: (index: number) => React.ReactNode;
 }
 type Code = { value: string; expires: number };
 const unavailable =
-  "The owning database is unavailable. Unlock it and reopen 2FA Codes.";
+  "The owning database is unavailable. Unlock it and reopen Credentials & 2FA.";
 
 /** Displays already-enrolled connection codes only. No seed management, page
  * messaging, automatic typing, or website recovery-code generation. */
@@ -34,6 +36,8 @@ export default function WebTotpPanel({
   anchorRef,
   autoMfa,
   credentialActions,
+  typingRef,
+  renderTypeCode,
 }: WebTotpPanelProps) {
   const manager = DatabaseManager.getInstance();
   const access = useMemo(() => {
@@ -238,15 +242,16 @@ export default function WebTotpPanel({
   };
   const panel = (
     <section
-      aria-label="Website 2FA codes"
+      ref={typingRef}
+      aria-label="Credentials & 2FA"
       className="sor-popover-panel w-96 max-w-[calc(100vw-1rem)] overflow-hidden"
     >
       <header className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] p-3">
-        <h2 className="text-sm font-semibold">2FA Codes</h2>
+        <h2 className="text-sm font-semibold">Credentials &amp; 2FA</h2>
         <button
           type="button"
           className="sor-icon-btn-sm"
-          aria-label="Close 2FA codes"
+          aria-label="Close Credentials & 2FA"
           onClick={onClose}
         >
           <X size={16} />
@@ -261,8 +266,8 @@ export default function WebTotpPanel({
         ) : (
           <>
             <p className="text-xs text-[var(--color-textSecondary)]">
-              Copy a code from an existing authenticator configuration, then
-              paste it yourself. Copying here never types or submits a code.
+              Copy a code or choose Type code for the captured field. Type does
+              not press Enter or click a submit button.
             </p>
             {autoMfa?.status && (
               <div className="rounded border border-[var(--color-border)] p-2 space-y-2 text-xs">
@@ -306,15 +311,19 @@ export default function WebTotpPanel({
                     <span className="font-mono text-lg tracking-widest select-text">
                       {fresh ? code.value : "Unavailable"}
                     </span>
-                    <button
-                      type="button"
-                      className="sor-icon-btn-sm"
-                      aria-label={`Copy code ${index + 1}`}
-                      disabled={!fresh}
-                      onClick={() => void copy(index)}
-                    >
-                      <Copy size={16} />
-                    </button>
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        className="sor-icon-btn-sm"
+                        aria-label={`Copy code ${index + 1}`}
+                        title={`Copy code ${index + 1}`}
+                        disabled={!fresh}
+                        onClick={() => void copy(index)}
+                      >
+                        <Copy size={14} aria-hidden="true" />
+                      </button>
+                      {renderTypeCode?.(index)}
+                    </div>
                   </div>
                   {fresh && (
                     <p className="text-xs text-[var(--color-textSecondary)]">

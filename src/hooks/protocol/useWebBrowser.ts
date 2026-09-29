@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
+  captureCredentialFocus,
+  typingUnavailable,
+  type CredentialTypingTarget,
+} from "../../utils/security/credentialTyping";
+import {
   googleAccountsEntryFor,
   googleProxyForUpstream,
   googleUpstreamForProxy,
@@ -4086,6 +4091,89 @@ export function useWebBrowser(session: ConnectionSession) {
         : null;
     });
   const pageActionBridge = pageActionBridgeRef.current;
+  const credentialRuntimeRef = useRef({ session, scriptsBlocked: false });
+  credentialRuntimeRef.current = {
+    session,
+    scriptsBlocked:
+      settingsReady !== true ||
+      proxyOptions.policy?.pageScripts === "block" ||
+      !!proxyOptions.error ||
+      clearingSession,
+  };
+  const credentialFocusBlocked =
+    pageActionBlockedRef.current || credentialRuntimeRef.current.scriptsBlocked;
+  useEffect(() => {
+    if (credentialFocusBlocked) return;
+    void pageActionBridge.watchCredentialFocus().catch(() => {
+      // Missing/CSP-blocked bridges leave typing unavailable; no fallback.
+    });
+  }, [
+    credentialFocusBlocked,
+    pageActionBridge,
+    automationDocumentRevision,
+    currentUrl,
+    isLoading,
+    trustOwnerScope,
+    settingsReady,
+  ]);
+  const captureCredentialTarget = (
+    isPopupControl: (element: Element) => boolean,
+  ): Promise<CredentialTypingTarget> => {
+    const frame = iframeRef.current;
+    if (!frame || credentialRuntimeRef.current.scriptsBlocked)
+      throw new Error(typingUnavailable);
+    const assertOwner = captureSessionDatabaseAccess(session);
+    const ownerScope = trustOwnerScopeRef.current;
+    const focus = captureCredentialFocus(frame, isPopupControl);
+    const assertCurrent = () => {
+      focus.assertCurrent();
+      assertOwner();
+      const next = credentialRuntimeRef.current;
+      if (
+        !mountedRef.current ||
+        next.scriptsBlocked ||
+        next.session.id !== session.id ||
+        next.session.ownerDatabaseId !== session.ownerDatabaseId ||
+        trustOwnerScopeRef.current !== ownerScope ||
+        iframeRef.current !== frame
+      )
+        throw new Error(typingUnavailable);
+    };
+    try {
+      assertCurrent();
+    } catch (error) {
+      focus.dispose();
+      throw error;
+    }
+    return pageActionBridge
+      .captureCredentialTarget(session.id)
+      .then((target) => ({
+        sessionId: session.id,
+        assertCurrent: () => {
+          assertCurrent();
+          target.assertCurrent();
+        },
+        dispose: () => {
+          focus.dispose();
+          target.dispose();
+        },
+        type: (value, assertDisclosure, validity) => {
+          assertCurrent();
+          return target.type(
+            value,
+            () => {
+              assertCurrent();
+              assertDisclosure();
+            },
+            validity,
+          );
+        },
+      }))
+      .catch(() => {
+        focus.dispose();
+        throw new Error(typingUnavailable);
+      });
+  };
   useEffect(() => {
     const receive = (event: MessageEvent) =>
       pageActionBridge.handleMessage(event);
@@ -4523,6 +4611,7 @@ export function useWebBrowser(session: ConnectionSession) {
     clearingSession,
     handleClearSessionData,
     automation,
+    captureCredentialTarget,
     autoMfa,
     redirectedManualTotp,
     // Context

@@ -6869,6 +6869,28 @@ impl SshService {
             .map_err(|error| format!("Failed to send secure input to shell: {error}"))
     }
 
+    /// The caller holds the service mutex. Bind the disclosure to the shell
+    /// captured by the UI, not a replacement under the same SSH session ID.
+    pub fn send_shell_bound_secret_input(
+        &mut self,
+        session_id: &str,
+        expected_shell_id: &str,
+        data: zeroize::Zeroizing<String>,
+        validity: Option<SshCredentialInputValidity>,
+    ) -> Result<(), String> {
+        let shell = self.shells.get(session_id).ok_or("Shell not started")?;
+        if expected_shell_id.is_empty() || shell.id != expected_shell_id {
+            return Err("Credential typing shell changed; reopen Credentials & 2FA".into());
+        }
+        if let Some(validity) = validity {
+            validity.assert_current(Utc::now().timestamp_millis())?;
+        }
+        shell
+            .sender
+            .send(SshShellCommand::SecretInput(data))
+            .map_err(|error| format!("Failed to send secure input to shell: {error}"))
+    }
+
     pub async fn resize_shell(
         &mut self,
         session_id: &str,
@@ -10602,6 +10624,133 @@ mod tests {
     };
     use crate::ssh::types::ScriptExecutionResult;
     use serde_json::json;
+
+    fn credential_input_fixture() -> (
+        SshServiceState,
+        super::super::shell_runtime::ShellMailboxReceiver,
+    ) {
+        let (sender, receiver) = shell_mailbox(ShellMailboxLimits::default());
+        let mut service = empty_test_service();
+        service.shells.insert(
+            "session".into(),
+            SshShellHandle {
+                id: "captured-shell".into(),
+                sender,
+                thread: std::thread::spawn(|| {}),
+                suspend_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                completion: ShellCompletion::new(),
+                generation: 1,
+            },
+        );
+        (Arc::new(tokio::sync::Mutex::new(service)), receiver)
+    }
+
+    #[tokio::test]
+    async fn credential_input_rejects_shell_replaced_while_waiting_for_service_lock() {
+        let (state, mut receiver) = credential_input_fixture();
+        let mut guard = state.lock().await;
+        let queued_state = Arc::clone(&state);
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let pending = tokio::spawn(async move {
+            started.send(()).unwrap();
+            let mut service = queued_state.lock().await;
+            service.send_shell_bound_secret_input(
+                "session",
+                "captured-shell",
+                zeroize::Zeroizing::new("private".into()),
+                None,
+            )
+        });
+        waiting.await.unwrap();
+        guard.shells.get_mut("session").unwrap().id = "replacement-shell".into();
+        drop(guard);
+        assert!(pending
+            .await
+            .unwrap()
+            .unwrap_err()
+            .contains("shell changed"));
+        assert!(receiver.try_recv_input().is_none());
+    }
+
+    #[tokio::test]
+    async fn credential_input_rejects_expiry_and_missing_binding_without_queueing() {
+        let (state, mut receiver) = credential_input_fixture();
+        let mut service = state.lock().await;
+        let now = Utc::now().timestamp_millis();
+        for (shell_id, validity) in [
+            ("", None),
+            (
+                "captured-shell",
+                Some(SshCredentialInputValidity {
+                    starts: 0,
+                    expires: now,
+                }),
+            ),
+            (
+                "captured-shell",
+                Some(SshCredentialInputValidity {
+                    starts: now + 60_000,
+                    expires: now + 120_000,
+                }),
+            ),
+        ] {
+            assert!(service
+                .send_shell_bound_secret_input(
+                    "session",
+                    shell_id,
+                    zeroize::Zeroizing::new("123456".into()),
+                    validity
+                )
+                .is_err());
+            assert!(receiver.try_recv_input().is_none());
+        }
+        service
+            .send_shell_bound_secret_input(
+                "session",
+                "captured-shell",
+                zeroize::Zeroizing::new("123456".into()),
+                Some(SshCredentialInputValidity {
+                    starts: now,
+                    expires: now + 60_000,
+                }),
+            )
+            .unwrap();
+        assert!(
+            matches!(receiver.try_recv_input(), Some(SshShellCommand::SecretInput(value)) if value.as_str() == "123456")
+        );
+        service
+            .send_shell_input("session", "ordinary\n".into())
+            .await
+            .unwrap();
+        assert!(
+            matches!(receiver.try_recv_input(), Some(SshShellCommand::Input(value)) if value == "ordinary\n")
+        );
+    }
+
+    #[test]
+    fn credential_input_validity_boundaries_and_malformed_metadata() {
+        let validity = SshCredentialInputValidity {
+            starts: 100,
+            expires: 200,
+        };
+        assert!(validity.assert_current(99).is_err());
+        assert!(validity.assert_current(100).is_ok());
+        assert!(validity.assert_current(199).is_ok());
+        assert!(validity.assert_current(200).is_err());
+        assert!(SshCredentialInputValidity {
+            starts: -1,
+            expires: 200
+        }
+        .assert_current(100)
+        .is_err());
+        for value in [
+            json!({"starts": 1}),
+            json!({"starts": 1.5, "expires": 2}),
+            json!({"starts": "1", "expires": 2}),
+        ] {
+            assert!(serde_json::from_value::<SshCredentialInputValidity>(value).is_err());
+        }
+    }
 
     fn output_deadline() -> Instant {
         Instant::now() + Duration::from_secs(1)

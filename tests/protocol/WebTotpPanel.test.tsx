@@ -115,7 +115,7 @@ describe("code-only owner-scoped website TOTP", () => {
     await waitFor(() => expect(boundary.nativeLock).not.toBeNull());
     act(() => boundary.nativeLock?.());
     expect(screen.queryByText("123456")).not.toBeInTheDocument();
-    expect(screen.getByText(/reopen 2FA Codes/)).toBeInTheDocument();
+    expect(screen.getByText(/reopen Credentials & 2FA/)).toBeInTheDocument();
   });
   it("masks codes on a connection change even when the configs array is identical", async () => {
     const view = mount();
@@ -159,6 +159,13 @@ describe("code-only owner-scoped website TOTP", () => {
       30,
     );
     expect(boundary.copy).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Copy code 1" })).toHaveAttribute(
+      "title",
+      "Copy code 1",
+    );
+    expect(
+      screen.getByRole("button", { name: "Copy code 1" }).textContent,
+    ).toBe("");
     expect(document.body.textContent).not.toContain(configs[0].secret);
     expect(document.body.textContent).not.toContain("never-display-backup");
     expect(
@@ -210,7 +217,7 @@ describe("code-only owner-scoped website TOTP", () => {
     boundary.lease++;
     await act(async () => resolve("123456"));
     expect(screen.queryByText("123456")).not.toBeInTheDocument();
-    expect(screen.getByText(/reopen 2FA Codes/)).toBeInTheDocument();
+    expect(screen.getByText(/reopen Credentials & 2FA/)).toBeInTheDocument();
   });
   it("rechecks access at copy even before a lock notification renders", async () => {
     mount();

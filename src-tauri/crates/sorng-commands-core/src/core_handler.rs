@@ -354,6 +354,7 @@ define_command_group!(
         rdp_commands::rdp_get_thumbnail,
         rdp_commands::rdp_report_frame_telemetry,
         rdp_commands::rdp_save_screenshot,
+        rdp_commands::rdp_send_credential_input,
         rdp_commands::rdp_send_input,
         rdp_commands::rdp_set_desktop_size,
         rdp_commands::rdp_set_session_activity,
@@ -363,6 +364,7 @@ define_command_group!(
         rdp_commands::reconnect_rdp_session,
         vnc_commands::request_vnc_update,
         ssh_commands::resize_ssh_shell,
+        ssh_commands::send_ssh_credential_input,
         ssh_commands::send_ssh_input,
         vnc_commands::send_vnc_clipboard,
         vnc_commands::send_vnc_key_event,
@@ -1561,6 +1563,7 @@ mod tests {
         "get_system_info",
         "monitor_process",
         "reattach_session",
+        "send_ssh_credential_input",
         "send_ssh_input",
         "resize_ssh_shell",
         "setup_port_forward",
@@ -1584,6 +1587,15 @@ mod tests {
     fn runtime_capabilities_are_always_recognized_and_registered() {
         assert!(is_command("get_runtime_capabilities"));
         assert!(GROUP_A_COMMANDS.contains(&"get_runtime_capabilities"));
+    }
+
+    #[test]
+    fn credential_input_commands_have_distinct_registered_routes() {
+        for command in ["send_ssh_credential_input", "rdp_send_credential_input"] {
+            assert!(is_command(command));
+            assert!(GROUP_J_COMMANDS.contains(&command));
+            assert_eq!(command_route_count(command), 1);
+        }
     }
 
     #[test]

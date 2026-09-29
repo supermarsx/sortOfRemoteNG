@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { captureNativeCredentialTarget } from "../../utils/security/credentialTyping";
 import {
   canOpenTerminalLink,
   openTerminalLink,
@@ -2570,6 +2571,35 @@ export function useWebTerminal(
     return assertCurrent;
   }, [isSsh]);
 
+  const captureCredentialTarget = (
+    isPopupControl: (element: Element) => boolean,
+  ) => {
+    const assertSession = captureQuickActionSession();
+    const target = captureNativeCredentialTarget(
+      () => {
+        assertSession();
+        const surface = termRef.current?.element;
+        const current = sessionRef.current;
+        return surface && current.ownerDatabaseId && sshSessionId.current
+          ? {
+              sessionId: current.id,
+              backendSessionId: sshSessionId.current,
+              shellId: current.shellId,
+              ownerDatabaseId: current.ownerDatabaseId,
+              generation: `${sshInitGenRef.current}:${getSessionLifecycleActorGeneration(current)}:${current.shellId}`,
+              protocol: "ssh" as const,
+              connected:
+                isSshReady.current && !isDisposed.current && canRender(),
+              surface,
+            }
+          : null;
+      },
+      isPopupControl,
+      invoke,
+    );
+    return target;
+  };
+
   const runScript = useCallback(
     async (script: ManagedScript, assertReviewed?: () => Promise<void>) => {
       if (
@@ -3863,6 +3893,7 @@ export function useWebTerminal(
     proxyCommandResolveRef,
     /* TOTP */
     showTotpPanel,
+    captureCredentialTarget,
     setShowTotpPanel,
     totpConfigs,
     vaultTotp,

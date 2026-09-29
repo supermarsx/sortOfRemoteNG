@@ -10,8 +10,16 @@ import { normalizeConnectionCredentialSource } from "../../utils/security/databa
 import { runtimeCredentialTargetKey } from "../../utils/security/runtimeCredentialVault";
 import { useSessionObservationActivity } from "../session/useSessionObservationActivity";
 import { useRuntimeCredentialVault } from "./useRuntimeCredentialVault";
+import {
+  assertCredentialText,
+  type CredentialTypingTarget,
+} from "../../utils/security/credentialTyping";
+import { totpApi } from "../totp/useTOTP";
+import type { TotpAlgorithm } from "../../types/totp";
 
 export type CredentialCopyField = "username" | "password";
+export type CredentialCodeSelection =
+  { localIndex: number } | { vaultId: string };
 const failure =
   "Could not copy the selected credential. Check owning database access and try again.";
 
@@ -19,6 +27,7 @@ const failure =
 export function useCredentialCopy(
   session: ConnectionSession,
   connection?: Connection,
+  typingTarget?: CredentialTypingTarget | null,
 ) {
   const {
     state,
@@ -40,6 +49,9 @@ export function useCredentialCopy(
     session.ownerDatabaseId,
     session.hostname,
     session.protocol,
+    session.status,
+    session.backendSessionId,
+    session.shellId,
     databaseAvailability,
     credentialVault?.scope,
     credentialVault?.changeRevision,
@@ -59,6 +71,8 @@ export function useCredentialCopy(
       epoch: version.current.epoch + 1,
     };
   const epoch = version.current.epoch;
+  const typingRef = useRef(typingTarget);
+  typingRef.current = typingTarget;
   const lifetime = useRef(0);
   const alive = useRef(false);
   const pending = useRef(false);
@@ -80,7 +94,10 @@ export function useCredentialCopy(
     databaseAvailability?.status === "ready" &&
     databaseAvailability.databaseId === session.ownerDatabaseId;
 
-  const copy = async (field: CredentialCopyField) => {
+  const disclose = async (
+    field: CredentialCopyField | CredentialCodeSelection,
+    action: "copy" | "type",
+  ) => {
     if (pending.current || !alive.current || !available) return;
     const lease = lifetime.current;
     const current = () =>
@@ -89,13 +106,26 @@ export function useCredentialCopy(
       version.current.epoch === epoch;
     const assertAttempt = () => {
       if (!current() || document.hidden) throw new Error(failure);
+      if (action === "type") {
+        if (
+          !typingTarget ||
+          typingRef.current !== typingTarget ||
+          typingTarget.sessionId !== session.id ||
+          session.status !== "connected"
+        )
+          throw new Error(failure);
+        typingTarget.assertCurrent();
+      }
     };
     pending.current = true;
     setStatus({ epoch, busy: true, message: "" });
     let value: string | undefined;
     let resolved: Awaited<ReturnType<typeof resolveVault>> = null;
+    let expires = Infinity;
+    let starts = -Infinity;
+    const isCode = typeof field === "object";
     try {
-      if (field !== "username" && field !== "password")
+      if (!isCode && field !== "username" && field !== "password")
         throw new Error(failure);
       assertAttempt();
       const manager = DatabaseManager.getInstance();
@@ -135,12 +165,26 @@ export function useCredentialCopy(
       const source = normalizeConnectionCredentialSource(
         connection!.credentialSource,
       );
+      let codeConfig:
+        | { secret: string; algorithm: string; digits: number; period: number }
+        | undefined;
       if (source?.kind === "vault") {
-        resolved = await resolveVault(check, false, `manual-copy-${field}`);
+        resolved = await resolveVault(
+          check,
+          false,
+          isCode ? "totp" : `manual-${action}-${field}`,
+        );
         check();
         if (!resolved) throw new Error(failure);
         resolved.assertCurrent();
-        value = resolved.facets[field];
+        if (isCode) {
+          if (!("vaultId" in field)) throw new Error(failure);
+          const entries = resolved.facets.totp?.filter(
+            (entry) => entry.id === field.vaultId,
+          );
+          if (entries?.length !== 1) throw new Error(failure);
+          codeConfig = entries[0];
+        } else value = resolved.facets[field];
       } else {
         const snapshot = await target.readCurrent();
         check();
@@ -161,31 +205,99 @@ export function useCredentialCopy(
           ["http", "https"].includes(persisted.protocol) &&
           ((persisted.basicAuthUsername?.length ?? 0) > 0 ||
             (persisted.basicAuthPassword?.length ?? 0) > 0);
-        value = dedicated
-          ? persisted[
-              field === "username" ? "basicAuthUsername" : "basicAuthPassword"
-            ]
-          : persisted[field];
+        if (isCode) {
+          if (
+            !("localIndex" in field) ||
+            !Number.isSafeInteger(field.localIndex) ||
+            field.localIndex < 0
+          )
+            throw new Error(failure);
+          codeConfig = persisted.totpConfigs?.[field.localIndex];
+          // Index must still describe the exact authenticator selected in the UI.
+          if (
+            !codeConfig ||
+            JSON.stringify(codeConfig) !==
+              JSON.stringify(connection!.totpConfigs?.[field.localIndex])
+          )
+            throw new Error(failure);
+        } else
+          value = dedicated
+            ? persisted[
+                field === "username" ? "basicAuthUsername" : "basicAuthPassword"
+              ]
+            : persisted[field];
+      }
+      if (isCode) {
+        if (
+          !codeConfig ||
+          !codeConfig.secret ||
+          codeConfig.secret.length > 4096 ||
+          !["sha1", "sha256", "sha512"].includes(
+            codeConfig.algorithm.toLowerCase(),
+          ) ||
+          ![6, 7, 8].includes(codeConfig.digits) ||
+          !Number.isInteger(codeConfig.period) ||
+          codeConfig.period < 1 ||
+          codeConfig.period > 3600
+        )
+          throw new Error(failure);
+        starts =
+          Math.floor(Date.now() / (codeConfig.period * 1000)) *
+          codeConfig.period *
+          1000;
+        expires = starts + codeConfig.period * 1000;
+        if (expires - Date.now() < 1000) throw new Error(failure);
+        value = await totpApi.computeCode(
+          codeConfig.secret,
+          codeConfig.algorithm.toUpperCase() as TotpAlgorithm,
+          codeConfig.digits,
+          codeConfig.period,
+        );
+        check();
+        if (!new RegExp(`^\\d{${codeConfig.digits}}$`).test(value))
+          throw new Error(failure);
+        codeConfig = undefined;
       }
       if (typeof value !== "string" || value.length === 0)
         throw new Error(failure);
       await target.verifyCurrent();
       check();
       resolved?.assertCurrent();
+      const assertDisclosure = () => {
+        check();
+        resolved?.assertCurrent();
+        if (Date.now() < starts || Date.now() >= expires)
+          throw new Error(failure);
+      };
+      assertDisclosure();
       // No asynchronous boundary between the final gates and the only disclosure.
-      const writing = navigator.clipboard.writeText(value);
+      if (action === "type") assertCredentialText(value);
+      const writing =
+        action === "copy"
+          ? navigator.clipboard.writeText(value)
+          : typingTarget!.type(
+              value,
+              assertDisclosure,
+              isCode ? { starts, expires } : undefined,
+            );
       value = undefined;
-      if (resolved) resolved.facets = {};
       await writing;
       if (current())
         setStatus({
           epoch,
           busy: false,
-          message:
-            field === "username" ? "Username copied." : "Password copied.",
+          message: `${isCode ? "Code" : field === "username" ? "Username" : "Password"} ${action === "copy" ? "copied" : "typed"}.`,
         });
     } catch {
-      if (current()) setStatus({ epoch, busy: false, message: failure });
+      if (current())
+        setStatus({
+          epoch,
+          busy: false,
+          message:
+            action === "copy"
+              ? failure
+              : "Could not type the selected value. Check database access, focus the session field and reopen Credentials & 2FA.",
+        });
     } finally {
       value = undefined;
       if (resolved) resolved.facets = {};
@@ -193,7 +305,15 @@ export function useCredentialCopy(
     }
   };
   return {
-    copy,
+    copy: (field: CredentialCopyField) => disclose(field, "copy"),
+    type: (field: CredentialCopyField) => disclose(field, "type"),
+    typeCode: (selection: CredentialCodeSelection) =>
+      disclose(selection, "type"),
+    typingAvailable:
+      available &&
+      !!typingTarget &&
+      typingTarget.sessionId === session.id &&
+      session.status === "connected",
     available,
     busy: status.epoch === epoch && status.busy,
     message: status.epoch === epoch ? status.message : "",

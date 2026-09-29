@@ -57,6 +57,62 @@ pub async fn send_ssh_input(
     redact_result(ssh.send_shell_input(&session_id, data).await)
 }
 
+/// A distinct command intentionally fails closed on older native runtimes.
+#[tauri::command]
+pub async fn send_ssh_credential_input(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    expected_shell_id: String,
+    data: String,
+    validity: Option<SshCredentialInputValidity>,
+) -> Result<(), String> {
+    let data = zeroize::Zeroizing::new(data);
+    validate_credential_input(&data)?;
+    let mut ssh = state.lock().await;
+    redact_result(ssh.send_shell_bound_secret_input(
+        &session_id,
+        &expected_shell_id,
+        data,
+        validity,
+    ))
+}
+
+fn validate_credential_input(data: &str) -> Result<(), String> {
+    if data.is_empty()
+        || data.encode_utf16().count() > 1024
+        || data
+            .chars()
+            .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}'))
+    {
+        return Err("Credential input is empty, oversized or contains control characters".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod credential_input_tests {
+    use super::validate_credential_input;
+
+    #[test]
+    fn credential_input_accepts_unicode_and_rejects_controls_and_oversize() {
+        assert!(validate_credential_input("user päss!🔒").is_ok());
+        assert!(validate_credential_input(&"a".repeat(1024)).is_ok());
+        for value in [
+            "",
+            "secret\n",
+            "secret\r",
+            "secret\t",
+            "secret\u{1b}",
+            "secret\u{85}",
+            "secret\u{2028}",
+        ] {
+            assert!(validate_credential_input(value).is_err());
+        }
+        assert!(validate_credential_input(&"a".repeat(1025)).is_err());
+        assert!(validate_credential_input(&"🔒".repeat(513)).is_err());
+    }
+}
+
 #[tauri::command]
 pub async fn resize_ssh_shell(
     state: tauri::State<'_, SshServiceState>,

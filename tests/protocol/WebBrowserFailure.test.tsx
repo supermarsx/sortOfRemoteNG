@@ -3,6 +3,13 @@ import { readFileSync } from "node:fs";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+// Credential copy/type has its own provider-backed tests. This isolated
+// toolbar fixture exercises history and MFA retry, not vault access.
+vi.mock("../../src/components/security/CredentialCopyActions", () => ({
+  default: () => null,
+  SessionCredentialCopyActions: () => null,
+}));
+
 import { ErrorPage } from "../../src/components/protocol/webBrowser/ERROR_BASE";
 import ContentArea from "../../src/components/protocol/webBrowser/ContentArea";
 import NavigationBar from "../../src/components/protocol/webBrowser/NavigationBar";

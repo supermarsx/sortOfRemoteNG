@@ -15,6 +15,147 @@
     stepNumber = 0,
     darkMode = null;
   var closed = false;
+  var credentialFocus = null;
+  var credentialWatch = null,
+    focusRevision = 0,
+    focusToken = null,
+    focusedControl = null;
+  function reportCredentialFocus() {
+    ++focusRevision;
+    focusedControl = credentialControl(document.activeElement)
+      ? document.activeElement
+      : null;
+    focusToken = focusedControl
+      ? Array.from(crypto.getRandomValues(new Uint8Array(16)), function (byte) {
+          return byte.toString(16).padStart(2, "0");
+        }).join("")
+      : null;
+    if (credentialWatch)
+      reply(
+        credentialWatch.request,
+        credentialWatch.origin,
+        "credentialFocusState",
+        {
+          focusRevision: focusRevision,
+          focusToken: focusToken,
+        },
+      );
+  }
+  function credentialControl(field) {
+    return (
+      (field instanceof HTMLInputElement ||
+        field instanceof HTMLTextAreaElement) &&
+      (!(field instanceof HTMLInputElement) ||
+        /^(text|password|email|search|tel|url|number)$/.test(field.type)) &&
+      field.isConnected &&
+      field.ownerDocument === document &&
+      !field.disabled &&
+      !field.readOnly &&
+      !field.matches(":disabled,[aria-disabled=true]") &&
+      !field.closest("[inert]") &&
+      visible(field)
+    );
+  }
+  function clearCredentialFocus() {
+    credentialFocus = null;
+  }
+  document.addEventListener(
+    "focusin",
+    function (event) {
+      if (credentialFocus && event.target !== credentialFocus.field)
+        clearCredentialFocus();
+      reportCredentialFocus();
+    },
+    true,
+  );
+  window.addEventListener("hashchange", clearCredentialFocus);
+  window.addEventListener("popstate", clearCredentialFocus);
+  function captureCredential(payload, origin) {
+    credentialFocus = null;
+    var field = document.activeElement;
+    if (
+      !payload ||
+      !/^[0-9a-f]{32}$/.test(payload.nonce) ||
+      !credentialWatch ||
+      credentialWatch.origin !== origin ||
+      payload.focusRevision !== focusRevision ||
+      payload.focusToken !== focusToken ||
+      !focusToken ||
+      field !== focusedControl ||
+      !credentialControl(field)
+    )
+      throw new Error("focus");
+    credentialFocus = {
+      field: field,
+      nonce: payload.nonce,
+      origin: origin,
+      href: location.href,
+      base: document.baseURI,
+      type: field.type,
+      form: field.form,
+      start: field.selectionStart,
+      end: field.selectionEnd,
+    };
+  }
+  function typeCredential(payload, origin) {
+    var target = credentialFocus;
+    if (
+      !target ||
+      !payload ||
+      payload.nonce !== target.nonce ||
+      origin !== target.origin ||
+      typeof payload.value !== "string" ||
+      !payload.value.length ||
+      payload.value.length > 1024 ||
+      /[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(payload.value) ||
+      location.href !== target.href ||
+      document.baseURI !== target.base ||
+      document.activeElement !== target.field ||
+      !credentialControl(target.field) ||
+      target.field.type !== target.type ||
+      target.field.form !== target.form ||
+      target.field.selectionStart !== target.start ||
+      target.field.selectionEnd !== target.end
+    )
+      throw new Error("focus");
+    // Number controls are eligible only for a current generated TOTP code.
+    // Username/password actions carry no validity window, even when all digits.
+    if (target.type === "number" && !payload.validity)
+      throw new Error("code required");
+    if (
+      payload.validity &&
+      (!Number.isFinite(payload.validity.starts) ||
+        !Number.isFinite(payload.validity.expires) ||
+        Date.now() < payload.validity.starts ||
+        Date.now() >= payload.validity.expires ||
+        !/^\d{6,8}$/.test(payload.value))
+    )
+      throw new Error("expired");
+    var field = target.field;
+    // Insert at the captured selection, exactly once. Never click, submit, or
+    // synthesize Enter. Clear the lease before page event handlers execute.
+    credentialFocus = null;
+    var start = target.start == null ? field.value.length : target.start;
+    var end = target.end == null ? start : target.end;
+    // Numeric controls expose no selection API: replace the complete OTP value.
+    var value =
+      target.type === "number"
+        ? payload.value
+        : field.value.slice(0, start) + payload.value + field.value.slice(end);
+    if (field.maxLength >= 0 && value.length > field.maxLength)
+      throw new Error("length");
+    var proto =
+      field instanceof HTMLInputElement
+        ? HTMLInputElement.prototype
+        : HTMLTextAreaElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, "value").set.call(field, value);
+    if (target.start != null)
+      field.setSelectionRange(
+        start + payload.value.length,
+        start + payload.value.length,
+      );
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  }
   var totpChallenge = null,
     totpSubmitted = false,
     totpRevision = 0,
@@ -616,6 +757,24 @@
       payload = request.payload;
     try {
       switch (request.action) {
+        case "credentialWatch":
+          credentialWatch = { request: request, origin: event.origin };
+          clearCredentialFocus();
+          reportCredentialFocus();
+          reply(request, event.origin, "ok");
+          return;
+        case "credentialFocus":
+          captureCredential(payload, event.origin);
+          reply(request, event.origin, "ok");
+          return;
+        case "credentialType":
+          typeCredential(payload, event.origin);
+          reply(request, event.origin, "ok");
+          return;
+        case "credentialCancel":
+          clearCredentialFocus();
+          reply(request, event.origin, "ok");
+          return;
         case "totpProbe":
           probeTotp(payload);
           reply(request, event.origin, "ok");
@@ -662,6 +821,11 @@
           reply(request, event.origin, "ok");
           return;
         case "cancel":
+          clearCredentialFocus();
+          // Recording/appearance and credential typing have separate parent
+          // bridges. Revoke the current lease, but keep value-free observation
+          // alive so another bridge's cancellation cannot disable future typing.
+          reportCredentialFocus();
           recording = null;
           reply(request, event.origin, "ok");
           return;
@@ -720,6 +884,8 @@
     }
   });
   window.addEventListener("pagehide", function () {
+    clearCredentialFocus();
+    credentialWatch = null;
     closed = true;
     ++totpRevision;
     totpChallenge = null;

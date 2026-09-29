@@ -14,6 +14,8 @@ type Props = {
   anchorRef: React.RefObject<HTMLElement | null>;
   footer?: React.ReactNode;
   credentialActions?: React.ReactNode;
+  typingRef?: React.RefObject<HTMLElement | null>;
+  renderTypeCode?: (id: string) => React.ReactNode;
 };
 type Code = Awaited<ReturnType<RuntimeVaultTotpController["generate"]>>;
 
@@ -22,10 +24,15 @@ function Codes({
   onClose,
   footer,
   credentialActions,
+  typingRef,
+  renderTypeCode,
 }: Omit<Props, "anchorRef">) {
   const connectionSource = controller.sourceKind === "connection";
+  const title = credentialActions
+    ? "Credentials & 2FA"
+    : `${connectionSource ? "Connection" : "Vault"} authenticator codes`;
   const [entries, setEntries] = useState<RuntimeVaultTotpEntry[]>([]);
-  const [code, setCode] = useState<Code | null>(null);
+  const [code, setCode] = useState<(Code & { entryId: string }) | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -34,6 +41,9 @@ function Codes({
   );
   const latest = useRef(controller);
   latest.current = controller;
+  const latestActive = useRef(active);
+  latestActive.current = active;
+  const pending = useRef(false);
   const epoch = useRef(0);
   useEffect(() => {
     const lifetime = epoch;
@@ -75,7 +85,7 @@ function Codes({
       } catch {
         setCode(null);
         setError(
-          "The code expired or vault access changed. Generate a fresh code.",
+          "The code expired or vault access changed. Copy or type a fresh code.",
         );
       }
     };
@@ -83,54 +93,67 @@ function Codes({
     const timer = setInterval(check, 1000);
     return () => clearInterval(timer);
   }, [active, controller.available, code]);
-  const generate = async (id: string) => {
-    if (busy || !active || !latest.current.available) return;
+  const copy = async (id: string) => {
+    if (
+      busy ||
+      pending.current ||
+      !active ||
+      document.hidden ||
+      !latest.current.available
+    )
+      return;
+    pending.current = true;
     const ticket = ++epoch.current;
+    const scope = latest.current.scopeKey;
     setCode(null);
     setError("");
     setBusy(true);
     try {
       const value = await latest.current.generate(id);
       value.assertCurrent();
+      if (
+        epoch.current !== ticket ||
+        !latestActive.current ||
+        document.hidden ||
+        !latest.current.available ||
+        latest.current.scopeKey !== scope ||
+        Date.now() >= value.expires
+      )
+        return;
+      await navigator.clipboard.writeText(value.code);
       if (epoch.current === ticket) {
         setNow(Date.now());
-        setCode(value);
+        setCode({ ...value, entryId: id });
       }
     } catch {
       if (epoch.current === ticket)
         setError(
-          "A code could not be generated safely. Check vault access and try again.",
+          "The code could not be copied safely. Check vault access and try again.",
         );
     } finally {
+      pending.current = false;
       if (epoch.current === ticket) setBusy(false);
-    }
-  };
-  const copy = async () => {
-    if (!code || !active || !latest.current.available) return;
-    try {
-      code.assertCurrent();
-      await navigator.clipboard.writeText(code.code);
-    } catch {
-      setCode(null);
-      setError(
-        "The code could not be copied safely. Generate a fresh code after checking vault access.",
-      );
     }
   };
   return (
     <section
-      className="w-80 max-w-[calc(100vw-2rem)] space-y-3 p-4"
-      aria-label={`${connectionSource ? "Connection" : "Vault"} authenticator codes`}
+      ref={typingRef}
+      className="w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto space-y-3 p-4"
+      aria-label={title}
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-medium">
           <KeyRound size={16} />
-          {connectionSource ? "Connection" : "Vault"} authenticator codes
+          {title}
         </h3>
         <button
           type="button"
           className="sor-icon-btn"
-          aria-label="Close authenticator codes"
+          aria-label={
+            credentialActions
+              ? "Close Credentials & 2FA"
+              : "Close authenticator codes"
+          }
           onClick={onClose}
         >
           <X size={16} />
@@ -138,8 +161,8 @@ function Codes({
       </div>
       {credentialActions}
       <p className="text-xs text-[var(--color-textSecondary)]">
-        Generate and copy explicitly. Codes are not pasted or submitted
-        automatically.
+        Copy generates a fresh code. Type does not press Enter or click a submit
+        button.
         {!connectionSource && " Connection-local authenticators are ignored."}
       </p>
       {error && (
@@ -161,43 +184,46 @@ function Codes({
       {!busy && !entries.length && !error && (
         <p className="text-xs">This credential has no authenticators.</p>
       )}
-      {entries.map((entry) => (
+      {entries.map((entry, index) => (
         <div key={entry.id} className="flex items-center justify-between gap-2">
-          <span className="min-w-0 truncate text-sm">{entry.label}</span>
-          <button
-            type="button"
-            className="sor-btn sor-btn-secondary"
-            disabled={busy || !active || !controller.available}
-            onClick={() => void generate(entry.id)}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm" title={entry.label}>
+              {entry.label}
+            </div>
+            {code?.entryId === entry.id && active && controller.available && (
+              <>
+                <output
+                  aria-label="Generated authenticator code"
+                  className="block break-all font-mono text-lg tracking-widest"
+                >
+                  {code.code}
+                </output>
+                <p className="text-xs text-[var(--color-textSecondary)]">
+                  Expires in{" "}
+                  {Math.max(0, Math.ceil((code.expires - now) / 1000))} seconds
+                </p>
+              </>
+            )}
+          </div>
+          <div
+            role="group"
+            aria-label={`${entry.label} (${index + 1}) actions`}
+            className="ml-auto flex shrink-0 items-center gap-1"
           >
-            Generate<span className="sr-only"> {entry.label}</span>
-          </button>
-        </div>
-      ))}
-      {code && active && controller.available && (
-        <div className="rounded border border-[var(--color-border)] p-3">
-          <div className="flex items-center justify-between">
-            <output
-              aria-label="Generated authenticator code"
-              className="font-mono text-lg tracking-widest"
-            >
-              {code.code}
-            </output>
             <button
               type="button"
-              className="sor-icon-btn"
-              aria-label="Copy authenticator code"
-              onClick={() => void copy()}
+              className="sor-icon-btn-sm"
+              aria-label={`Copy code ${entry.label} (${index + 1})`}
+              title={`Copy code ${entry.label} (${index + 1})`}
+              disabled={busy || !active || !controller.available}
+              onClick={() => void copy(entry.id)}
             >
-              <Copy size={16} />
+              <Copy size={14} aria-hidden="true" />
             </button>
+            {renderTypeCode?.(entry.id)}
           </div>
-          <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
-            Expires in {Math.max(0, Math.ceil((code.expires - now) / 1000))}{" "}
-            seconds
-          </p>
         </div>
-      )}
+      ))}
       {footer}
     </section>
   );
@@ -209,6 +235,8 @@ export default function RuntimeVaultTotpPanel({
   anchorRef,
   footer,
   credentialActions,
+  typingRef,
+  renderTypeCode,
 }: Props) {
   return (
     <PopoverSurface isOpen onClose={onClose} anchorRef={anchorRef}>
@@ -218,6 +246,8 @@ export default function RuntimeVaultTotpPanel({
         onClose={onClose}
         footer={footer}
         credentialActions={credentialActions}
+        typingRef={typingRef}
+        renderTypeCode={renderTypeCode}
       />
     </PopoverSurface>
   );

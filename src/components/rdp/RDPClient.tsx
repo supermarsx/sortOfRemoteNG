@@ -711,6 +711,7 @@ const RDPClient: React.FC<RDPClientProps> = ({
               : undefined
           }
           onUpdateTotpConfigs={mgr.handleUpdateTotpConfigs}
+          captureCredentialTarget={mgr.captureCredentialTarget}
           handleAutoTypeTOTP={mgr.handleAutoTypeTOTP}
           totpDefaultIssuer={mgr.settings.totpIssuer}
           totpDefaultDigits={mgr.settings.totpDigits}

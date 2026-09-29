@@ -49,6 +49,16 @@ describe("website automation parent-owned bridge", () => {
       ...event,
     } as MessageEvent);
   };
+  const observeFocus = async () => {
+    const watching = bridge.watchCredentialFocus();
+    response({
+      status: "credentialFocusState",
+      focusRevision: 1,
+      focusToken: "f".repeat(32),
+    });
+    response();
+    await watching;
+  };
   it("requires the actual frame, origin, session and complete current document identity", async () => {
     let settled = false;
     const pending = bridge
@@ -73,6 +83,149 @@ describe("website automation parent-owned bridge", () => {
     await pending;
     expect(settled).toBe(true);
     expect(post.mock.calls[0][1]).toBe("http://127.0.0.1:43001");
+  });
+  it("captures a value-free focused target and sends secrets only to that exact document origin", async () => {
+    await observeFocus();
+    const capture = bridge.captureCredentialTarget("tab");
+    expect(post.mock.calls[1][0].action).toBe("credentialFocus");
+    expect(post.mock.calls[1][0].payload).not.toHaveProperty("value");
+    expect(post.mock.calls[1][0].payload).toMatchObject({
+      focusRevision: 1,
+      focusToken: "f".repeat(32),
+    });
+    response();
+    const target = await capture;
+    const check = vi.fn();
+    const typing = target.type("päss!", check);
+    expect(check).toHaveBeenCalledOnce();
+    expect(post.mock.calls[2][0]).toMatchObject({
+      action: "credentialType",
+      payload: { value: "päss!" },
+    });
+    expect(post.mock.calls[2][1]).toBe("http://127.0.0.1:43001");
+    response();
+    await typing;
+  });
+  it("keeps the same focus observation and captured lease when readiness effects repeat", async () => {
+    await observeFocus();
+    const capturing = bridge.captureCredentialTarget("tab");
+    response();
+    const target = await capturing;
+    await bridge.watchCredentialFocus();
+    expect(
+      post.mock.calls.filter(
+        ([message]) => message.action === "credentialWatch",
+      ),
+    ).toHaveLength(1);
+    expect(() => target.assertCurrent()).not.toThrow();
+    const typing = target.type("secret", () => {});
+    response();
+    await typing;
+  });
+  it("shares an in-flight watch without replacing its correlation", async () => {
+    const first = bridge.watchCredentialFocus();
+    const second = bridge.watchCredentialFocus();
+    expect(post.mock.calls).toHaveLength(1);
+    response({
+      status: "credentialFocusState",
+      focusRevision: 1,
+      focusToken: "f".repeat(32),
+    });
+    response();
+    await Promise.all([first, second]);
+    const capturing = bridge.captureCredentialTarget("tab");
+    response();
+    await expect(capturing).resolves.toBeDefined();
+  });
+  it("retries failed watches and fences replacement documents", async () => {
+    const first = bridge.watchCredentialFocus();
+    response({ status: "failed" });
+    await expect(first).rejects.toThrow();
+    await observeFocus();
+    context!.document.generation++;
+    const replacement = bridge.watchCredentialFocus();
+    expect(
+      post.mock.calls.filter(
+        ([message]) => message.action === "credentialWatch",
+      ),
+    ).toHaveLength(3);
+    response();
+    await replacement;
+    await expect(bridge.captureCredentialTarget("tab")).rejects.toThrow();
+  });
+  it.each([
+    "frame",
+    "session",
+    "token",
+    "sequence",
+    "generation",
+    "navigation",
+    "url",
+    "cancel",
+    "dispose",
+  ])("rejects credential dispatch after %s changes", async (change) => {
+    await observeFocus();
+    const capture = bridge.captureCredentialTarget("tab");
+    response();
+    const target = await capture;
+    if (change === "frame") context = { ...context!, frame: window };
+    if (change === "session") context!.document.sessionId = "other";
+    if (change === "token") context!.document.token = "other";
+    if (change === "sequence") context!.document.sequence++;
+    if (change === "generation") context!.document.generation++;
+    if (change === "navigation") context!.document.navigationToken = "other";
+    if (change === "url") context!.document.url += "/next";
+    if (change === "cancel") bridge.cancel();
+    if (change === "dispose") target.dispose();
+    await expect(target.type("secret", () => {})).rejects.toThrow();
+    expect(
+      post.mock.calls.some(([message]) => message.action === "credentialType"),
+    ).toBe(false);
+  });
+  it("refuses capture without a previously authenticated focus report", async () => {
+    await expect(bridge.captureCredentialTarget("tab")).rejects.toThrow();
+    const watching = bridge.watchCredentialFocus();
+    response(
+      {
+        status: "credentialFocusState",
+        focusRevision: 1,
+        focusToken: "f".repeat(32),
+      },
+      { source: window },
+    );
+    response(
+      {
+        status: "credentialFocusState",
+        focusRevision: 1,
+        focusToken: "f".repeat(32),
+      },
+      { origin: "https://other.test" },
+    );
+    response();
+    await watching;
+    await expect(bridge.captureCredentialTarget("tab")).rejects.toThrow();
+  });
+  it("revokes a captured target when a later authenticated focus revision arrives", async () => {
+    await observeFocus();
+    const watchRequest = post.mock.calls[0][0];
+    const capturing = bridge.captureCredentialTarget("tab");
+    response();
+    const target = await capturing;
+    bridge.handleMessage({
+      source: context!.frame,
+      origin: new URL(context!.document.url).origin,
+      data: {
+        ...watchRequest,
+        type: "proxy_web_automation",
+        status: "credentialFocusState",
+        focusRevision: 2,
+        focusToken: "e".repeat(32),
+      },
+    } as MessageEvent);
+    await expect(target.type("secret", () => {})).rejects.toThrow();
+    expect(
+      post.mock.calls.some(([message]) => message.action === "credentialType"),
+    ).toBe(false);
   });
   it("rejects an old same-URL result after renderer generation changes", async () => {
     const pending = bridge.request("step", {

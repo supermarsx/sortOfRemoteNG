@@ -377,7 +377,7 @@ describe("WebTerminal", () => {
         wrapper: SessionFullscreenProvider,
       });
       const view = render(<TotpPopover mgr={hook.result.current} />);
-      const button = screen.getByRole("button", { name: "2FA Codes" });
+      const button = screen.getByRole("button", { name: "Credentials & 2FA" });
       expect(button).toBeDisabled();
       expect(button.parentElement).toHaveAttribute(
         "data-tooltip",

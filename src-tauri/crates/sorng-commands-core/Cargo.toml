@@ -41,6 +41,7 @@ sha2 = { workspace = true }
 # `mod`-included rather than imported.
 rand = { workspace = true }
 secrecy = "0.10"
+zeroize = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 regex = { workspace = true }

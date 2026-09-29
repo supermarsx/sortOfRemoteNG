@@ -4,11 +4,26 @@ import RDPTotpPanel from "../RDPTotpPanel";
 import { Shield } from "lucide-react";
 import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
 import { SessionCredentialCopyActions } from "../../security/CredentialCopyActions";
+import { useCredentialTyping } from "../../../hooks/security/useCredentialTyping";
 
 const TotpButton: React.FC<{
   mgr: Mgr;
   p: RDPClientHeaderProps;
 }> = ({ mgr, p }) => {
+  const typing = useCredentialTyping(
+    mgr.showTotpPanel,
+    p.captureCredentialTarget,
+  );
+  const actions = (
+    codeSelection?: import("../../../hooks/security/useCredentialCopy").CredentialCodeSelection,
+  ) => (
+    <SessionCredentialCopyActions
+      sessionId={p.sessionId}
+      connectionId={p.connectionId}
+      typingTarget={typing.target}
+      codeSelection={codeSelection}
+    />
+  );
   const configs =
     p.vaultTotp || p.totpUnavailableReason ? [] : (p.totpConfigs ?? []);
   return (
@@ -19,10 +34,11 @@ const TotpButton: React.FC<{
     >
       <button
         disabled={!!p.totpUnavailableReason}
-        aria-label="2FA Codes"
+        aria-label="Credentials & 2FA"
         onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
+        onPointerDown={typing.onPointerDown}
         className={`${mgr.showTotpPanel ? btnActive : btnDefault} relative`}
-        data-tooltip={p.totpUnavailableReason ? undefined : "2FA Codes"}
+        data-tooltip={p.totpUnavailableReason ? undefined : "Credentials & 2FA"}
       >
         <Shield size={14} />
         {configs.length > 0 && (
@@ -34,12 +50,9 @@ const TotpButton: React.FC<{
       {mgr.showTotpPanel && p.vaultTotp && (
         <RuntimeVaultTotpPanel
           controller={p.vaultTotp}
-          credentialActions={
-            <SessionCredentialCopyActions
-              sessionId={p.sessionId}
-              connectionId={p.connectionId}
-            />
-          }
+          typingRef={typing.popupRef}
+          renderTypeCode={(id) => actions({ vaultId: id })}
+          credentialActions={actions()}
           anchorRef={mgr.totpBtnRef}
           onClose={() => mgr.setShowTotpPanel(false)}
         />
@@ -47,15 +60,11 @@ const TotpButton: React.FC<{
       {mgr.showTotpPanel && !p.vaultTotp && !p.totpUnavailableReason && (
         <RDPTotpPanel
           configs={configs}
-          credentialActions={
-            <SessionCredentialCopyActions
-              sessionId={p.sessionId}
-              connectionId={p.connectionId}
-            />
-          }
+          typingRef={typing.popupRef}
+          renderTypeCode={(index) => actions({ localIndex: index })}
+          credentialActions={actions()}
           onUpdate={p.onUpdateTotpConfigs}
           onClose={() => mgr.setShowTotpPanel(false)}
-          onAutoType={p.handleAutoTypeTOTP}
           defaultIssuer={p.totpDefaultIssuer}
           defaultDigits={p.totpDefaultDigits}
           defaultPeriod={p.totpDefaultPeriod}

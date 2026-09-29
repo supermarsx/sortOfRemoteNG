@@ -40,6 +40,8 @@ interface RDPTotpPanelProps {
   defaultAlgorithm?: string;
   anchorRef?: React.RefObject<HTMLElement | null>;
   credentialActions?: React.ReactNode;
+  typingRef?: React.RefObject<HTMLDivElement | null>;
+  renderTypeCode?: (index: number) => React.ReactNode;
 }
 
 // ─── QR display ──────────────────────────────────────────────────────
@@ -196,12 +198,13 @@ function ImportModal({
 const PanelHeader: React.FC<{
   mgr: RDPTotpPanelMgr;
   onClose: () => void;
-}> = ({ mgr, onClose }) => (
+  title: string;
+}> = ({ mgr, onClose, title }) => (
   <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/80">
     <div className="flex items-center space-x-2">
       <Shield size={14} className="text-primary" />
       <span className="text-xs font-semibold text-[var(--color-text)]">
-        2FA Codes
+        {title}
       </span>
       {mgr.copiedSecret === "export" && (
         <span className="text-[10px] text-success">Copied!</span>
@@ -236,7 +239,11 @@ const PanelHeader: React.FC<{
       >
         <Plus size={12} />
       </button>
-      <button onClick={onClose} className="sor-icon-btn-sm">
+      <button
+        onClick={onClose}
+        className="sor-icon-btn-sm"
+        aria-label={`Close ${title}`}
+      >
         <X size={12} />
       </button>
     </div>
@@ -407,7 +414,8 @@ const TotpEntryRow: React.FC<{
   cfg: TOTPConfig;
   mgr: RDPTotpPanelMgr;
   onAutoType?: (code: string) => void;
-}> = ({ cfg, mgr, onAutoType }) => {
+  typeCodeAction?: React.ReactNode;
+}> = ({ cfg, mgr, onAutoType, typeCodeAction }) => {
   const remaining = mgr.getTimeRemaining(cfg.period);
   const progress = remaining / (cfg.period || 30);
   const isRevealed = mgr.revealedSecrets.has(cfg.secret);
@@ -424,11 +432,14 @@ const TotpEntryRow: React.FC<{
             <span className="text-[10px] text-[var(--color-textSecondary)] truncate">
               {cfg.account}
             </span>
-            <span className="text-[10px] text-[var(--color-textMuted)]">
+            <span
+              className="min-w-0 truncate text-[10px] text-[var(--color-textMuted)]"
+              title={cfg.issuer}
+            >
               ({cfg.issuer})
             </span>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-lg text-success tracking-wider">
               {mgr.codes[cfg.secret] || "------"}
             </span>
@@ -457,7 +468,20 @@ const TotpEntryRow: React.FC<{
               ` · ${new Date(cfg.createdAt).toLocaleDateString()}`}
           </div>
         </div>
-        <div className="flex items-center space-x-0.5 ml-2">
+        <div className="flex shrink-0 items-center gap-1 ml-2">
+          <button
+            onClick={() => mgr.copyCode(cfg.secret)}
+            className="sor-icon-btn-sm"
+            aria-label="Copy code"
+            title="Copy code"
+          >
+            {mgr.copiedSecret === cfg.secret ? (
+              <Check size={14} aria-hidden="true" className="text-success" />
+            ) : (
+              <Copy size={14} aria-hidden="true" />
+            )}
+          </button>
+          {typeCodeAction}
           {onAutoType && (
             <button
               onClick={() => {
@@ -465,22 +489,12 @@ const TotpEntryRow: React.FC<{
                 if (code) onAutoType(code);
               }}
               className="sor-icon-btn-sm"
+              aria-label="Type code into RDP session"
               title="Type code into RDP session"
             >
-              <Keyboard size={12} />
+              <Keyboard size={14} aria-hidden="true" />
             </button>
           )}
-          <button
-            onClick={() => mgr.copyCode(cfg.secret)}
-            className="sor-icon-btn-sm"
-            title="Copy code"
-          >
-            {mgr.copiedSecret === cfg.secret ? (
-              <Check size={12} className="text-success" />
-            ) : (
-              <Copy size={12} />
-            )}
-          </button>
           <button
             onClick={() => mgr.toggleReveal(cfg.secret)}
             className="sor-icon-btn-sm"
@@ -535,14 +549,15 @@ const TotpList: React.FC<{
   configs: TOTPConfig[];
   mgr: RDPTotpPanelMgr;
   onAutoType?: (code: string) => void;
-}> = ({ configs, mgr, onAutoType }) => (
+  renderTypeCode?: (index: number) => React.ReactNode;
+}> = ({ configs, mgr, onAutoType, renderTypeCode }) => (
   <div className="max-h-80 overflow-y-auto">
     {configs.length === 0 ? (
       <div className="p-4 text-center text-xs text-[var(--color-textMuted)]">
         No 2FA codes configured
       </div>
     ) : (
-      configs.map((cfg) =>
+      configs.map((cfg, index) =>
         mgr.editingSecret === cfg.secret ? (
           <TotpEditRow key={cfg.secret} mgr={mgr} />
         ) : (
@@ -551,6 +566,7 @@ const TotpList: React.FC<{
             cfg={cfg}
             mgr={mgr}
             onAutoType={onAutoType}
+            typeCodeAction={renderTypeCode?.(index)}
           />
         ),
       )
@@ -571,6 +587,8 @@ export default function RDPTotpPanel({
   defaultAlgorithm = "sha1",
   anchorRef,
   credentialActions,
+  typingRef,
+  renderTypeCode,
 }: RDPTotpPanelProps) {
   const mgr = useRDPTotpPanel(configs, onUpdate, {
     issuer: defaultIssuer,
@@ -580,8 +598,15 @@ export default function RDPTotpPanel({
   });
 
   const panel = (
-    <div className="sor-popover-panel w-96 overflow-hidden">
-      <PanelHeader mgr={mgr} onClose={onClose} />
+    <div
+      ref={typingRef}
+      className="sor-popover-panel w-96 max-w-[calc(100vw-1rem)] max-h-[calc(100vh-1rem)] overflow-y-auto"
+    >
+      <PanelHeader
+        mgr={mgr}
+        onClose={onClose}
+        title={credentialActions ? "Credentials & 2FA" : "2FA Codes"}
+      />
       {credentialActions}
 
       {mgr.showImport && (
@@ -608,7 +633,12 @@ export default function RDPTotpPanel({
 
       {mgr.showAdd && <AddForm mgr={mgr} />}
 
-      <TotpList configs={configs} mgr={mgr} onAutoType={onAutoType} />
+      <TotpList
+        configs={configs}
+        mgr={mgr}
+        onAutoType={renderTypeCode ? undefined : onAutoType}
+        renderTypeCode={renderTypeCode}
+      />
     </div>
   );
 

@@ -24,11 +24,27 @@ import {
 import WebTotpPanel from "./WebTotpPanel";
 import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
 import CredentialCopyActions from "../../security/CredentialCopyActions";
+import { ScopedTotpTypeAction } from "../../security/ScopedTotpTypeAction";
+import { useCredentialTyping } from "../../../hooks/security/useCredentialTyping";
 import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
 import { useCertificateTrustRecord } from "../../../hooks/security/useCertificateTrustRecord";
 import { MenuSurface } from "../../ui/overlays/MenuSurface";
 
 const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
+  const typing = useCredentialTyping(
+    mgr.showTotpPanel,
+    mgr.captureCredentialTarget,
+  );
+  const credentialActions = (
+    codeSelection?: import("../../../hooks/security/useCredentialCopy").CredentialCodeSelection,
+  ) => (
+    <CredentialCopyActions
+      session={mgr.session}
+      connection={mgr.connection}
+      typingTarget={typing.target}
+      codeSelection={codeSelection}
+    />
+  );
   const [historyMenu, setHistoryMenu] = useState<{
     direction: "back" | "forward";
     x: number;
@@ -271,9 +287,10 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
         <button
           type="button"
           onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
+          onPointerDown={typing.onPointerDown}
           className={`p-2 rounded transition-colors relative ${mgr.showTotpPanel ? "text-primary bg-primary/20" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"}`}
-          title="2FA Codes — copy credentials or authenticator codes"
-          aria-label="2FA Codes"
+          title="Credentials & 2FA — copy or type credentials and authenticator codes"
+          aria-label="Credentials & 2FA"
         >
           <Shield size={16} />
           {mgr.totpConfigs.length > 0 && (
@@ -285,12 +302,15 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
         {mgr.showTotpPanel && mgr.redirectedManualTotp && (
           <RuntimeVaultTotpPanel
             controller={mgr.redirectedManualTotp}
-            credentialActions={
-              <CredentialCopyActions
-                session={mgr.session}
-                connection={mgr.connection}
+            renderTypeCode={(id) => (
+              <ScopedTotpTypeAction
+                controller={mgr.redirectedManualTotp!}
+                id={id}
+                target={typing.target}
               />
-            }
+            )}
+            typingRef={typing.popupRef}
+            credentialActions={credentialActions()}
             anchorRef={mgr.totpBtnRef}
             onClose={() => mgr.setShowTotpPanel(false)}
             footer={
@@ -320,12 +340,9 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           mgr.connection?.credentialSource?.kind === "vault" && (
             <RuntimeVaultTotpPanel
               controller={mgr.vaultTotp}
-              credentialActions={
-                <CredentialCopyActions
-                  session={mgr.session}
-                  connection={mgr.connection}
-                />
-              }
+              typingRef={typing.popupRef}
+              renderTypeCode={(id) => credentialActions({ vaultId: id })}
+              credentialActions={credentialActions()}
               anchorRef={mgr.totpBtnRef}
               onClose={() => mgr.setShowTotpPanel(false)}
               footer={
@@ -355,12 +372,11 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
           mgr.connection?.credentialSource?.kind !== "vault" && (
             <WebTotpPanel
               configs={mgr.totpConfigs}
-              credentialActions={
-                <CredentialCopyActions
-                  session={mgr.session}
-                  connection={mgr.connection}
-                />
+              typingRef={typing.popupRef}
+              renderTypeCode={(index) =>
+                credentialActions({ localIndex: index })
               }
+              credentialActions={credentialActions()}
               autoMfa={mgr.autoMfa}
               ownerDatabaseId={mgr.session.ownerDatabaseId}
               connectionId={mgr.connection?.id}

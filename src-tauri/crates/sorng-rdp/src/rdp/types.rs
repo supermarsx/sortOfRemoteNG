@@ -15,6 +15,59 @@ use super::network::{build_credssp_http_client, build_tls_config};
 use super::session_runtime::{RdpWorkerGeneration, RdpWorkerRuntime};
 use super::stats::RdpSessionStats;
 
+/// Unix-millisecond validity checked after the input command acquires its lock.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RdpCredentialInputValidity {
+    pub starts: i64,
+    pub expires: i64,
+}
+
+impl RdpCredentialInputValidity {
+    pub fn assert_current(&self, now: i64) -> Result<(), String> {
+        if self.starts < 0 || self.starts > now || now >= self.expires {
+            return Err("Credential code is not currently valid".into());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod credential_input_tests {
+    use super::RdpCredentialInputValidity;
+
+    #[test]
+    fn credential_input_validity_rejects_expired_future_and_malformed_windows() {
+        let validity = RdpCredentialInputValidity {
+            starts: 100,
+            expires: 200,
+        };
+        assert!(validity.assert_current(99).is_err());
+        assert!(validity.assert_current(100).is_ok());
+        assert!(validity.assert_current(199).is_ok());
+        assert!(validity.assert_current(200).is_err());
+        assert!(RdpCredentialInputValidity {
+            starts: 200,
+            expires: 100
+        }
+        .assert_current(150)
+        .is_err());
+        assert!(RdpCredentialInputValidity {
+            starts: -1,
+            expires: 200
+        }
+        .assert_current(100)
+        .is_err());
+        for value in [
+            serde_json::json!({"starts": 1}),
+            serde_json::json!({"starts": 1.5, "expires": 2}),
+            serde_json::json!({"starts": "1", "expires": 2}),
+        ] {
+            assert!(serde_json::from_value::<RdpCredentialInputValidity>(value).is_err());
+        }
+    }
+}
+
 // ---- Events emitted to the frontend ----
 // Frame pixel data is pushed via FrameChannel (binary ArrayBuffer) --
 // no JSON event for frames.  Status/pointer/stats still use emit().

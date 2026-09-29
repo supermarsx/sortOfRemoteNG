@@ -9,7 +9,7 @@ pub use uuid::Uuid;
 
 pub use super::frame_delivery::NAL_MAGIC;
 pub use super::frame_store::SharedFrameStoreState;
-pub use super::input::convert_input;
+pub use super::input::{convert_input, credential_text_input};
 pub use super::session_runner::{run_rdp_session, LogSink};
 pub use super::session_runtime::{RdpWorkerGeneration, RdpWorkerRuntime};
 pub use super::settings::{RdpSettingsPayload, ResolvedSettings};

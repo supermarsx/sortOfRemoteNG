@@ -123,7 +123,9 @@ export type RuntimeVaultCredentialIntent =
   | "bindings"
   | "deviceTrust"
   | "manual-copy-username"
-  | "manual-copy-password";
+  | "manual-copy-password"
+  | "manual-type-username"
+  | "manual-type-password";
 
 /** One attempt's owner boundary: the values `useRuntimeCredentialVault` captures. */
 export interface RuntimeVaultAttempt {
@@ -212,6 +214,8 @@ export async function resolveRuntimeVaultCredential(
       "deviceTrust",
       "manual-copy-username",
       "manual-copy-password",
+      "manual-type-username",
+      "manual-type-password",
     ].includes(intent)
   )
     throw new Error("Unsupported vault disclosure purpose.");
@@ -224,9 +228,9 @@ export async function resolveRuntimeVaultCredential(
     (connection.protocol === "http" || connection.protocol === "https") &&
     connection.httpApplication?.loginMode === "manual";
   const requested: DatabaseCredentialFacet[] =
-    intent === "manual-copy-username"
+    intent === "manual-copy-username" || intent === "manual-type-username"
       ? ["username"]
-      : intent === "manual-copy-password"
+      : intent === "manual-copy-password" || intent === "manual-type-password"
         ? ["password"]
         : intent === "totp"
           ? ["totp"]

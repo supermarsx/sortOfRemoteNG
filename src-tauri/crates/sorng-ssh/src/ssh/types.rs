@@ -574,6 +574,23 @@ pub struct SshSession {
 // Shell Types
 // ===============================
 
+/// Unix-millisecond validity for an explicitly selected authenticator code.
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SshCredentialInputValidity {
+    pub starts: i64,
+    pub expires: i64,
+}
+
+impl SshCredentialInputValidity {
+    pub fn assert_current(&self, now: i64) -> Result<(), String> {
+        if self.starts < 0 || self.starts > now || now >= self.expires {
+            return Err("Credential code is not currently valid".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct SshShellHandle {
     pub id: String,

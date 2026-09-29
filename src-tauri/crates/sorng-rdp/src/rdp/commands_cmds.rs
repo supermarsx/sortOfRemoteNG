@@ -644,6 +644,28 @@ pub async fn rdp_send_input(
     }
 }
 
+/// Never fall back to ordinary input: old runtimes must reject this name.
+#[tauri::command]
+pub async fn rdp_send_credential_input(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+    data: String,
+    validity: Option<RdpCredentialInputValidity>,
+) -> Result<(), String> {
+    let data = zeroize::Zeroizing::new(data);
+    let events = credential_text_input(&data)?;
+    let service = state.lock().await;
+    let conn = service
+        .connections
+        .get(&session_id)
+        .ok_or("RDP session not found")?;
+    let fp_events = events.iter().flat_map(convert_input).collect();
+    if let Some(validity) = validity {
+        validity.assert_current(chrono::Utc::now().timestamp_millis())?;
+    }
+    enqueue_session_command(&conn.cmd_tx, RdpCommand::Input(fp_events))
+}
+
 #[tauri::command]
 pub async fn rdp_set_desktop_size(
     state: tauri::State<'_, RdpServiceState>,

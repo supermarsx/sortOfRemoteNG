@@ -1435,7 +1435,7 @@ describe("real WebBrowser iframe and website automation integration", () => {
     const view = await mount();
     view.emit("proxy_document_start");
     view.emit("proxy_dom_ready");
-    fireEvent.click(screen.getByRole("button", { name: "2FA Codes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Credentials & 2FA" }));
     expect(
       await screen.findByText(/Automatic 2FA stopped/),
     ).toBeInTheDocument();
@@ -1459,7 +1459,7 @@ describe("real WebBrowser iframe and website automation integration", () => {
   });
   it("opens the web-only 2FA panel in an anchored portal without moving the browser header or exposing seed-management actions", async () => {
     const { container } = await mount();
-    const button = screen.getByRole("button", { name: "2FA Codes" });
+    const button = screen.getByRole("button", { name: "Credentials & 2FA" });
     expect(screen.queryByTestId("web-totp-popover")).not.toBeInTheDocument();
     fireEvent.click(button);
     const popover = await screen.findByTestId("web-totp-popover");

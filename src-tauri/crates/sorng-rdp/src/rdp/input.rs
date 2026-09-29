@@ -6,6 +6,71 @@ use super::types::RdpInputAction;
 /// Inline capacity — 95%+ of input events produce exactly 1 `FastPathInputEvent`.
 pub type InputEvents = SmallVec<[FastPathInputEvent; 2]>;
 
+/// Credential input is text only: no scancodes, Enter, or clipboard events.
+pub fn credential_text_input(data: &str) -> Result<Vec<RdpInputAction>, String> {
+    if data.is_empty()
+        || data.encode_utf16().count() > 1024
+        || data
+            .chars()
+            .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}'))
+    {
+        return Err("Credential input is empty, oversized or contains control characters".into());
+    }
+    Ok(data
+        .encode_utf16()
+        .flat_map(|code| {
+            [
+                RdpInputAction::Unicode {
+                    code,
+                    pressed: true,
+                },
+                RdpInputAction::Unicode {
+                    code,
+                    pressed: false,
+                },
+            ]
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod credential_input_tests {
+    use super::*;
+
+    #[test]
+    fn credential_input_is_paired_unicode_without_submit() {
+        let events = credential_text_input("a!🔒").unwrap();
+        let expected = [97, 97, 33, 33, 0xd83d, 0xd83d, 0xdd12, 0xdd12];
+        assert_eq!(events.len(), expected.len());
+        for (index, event) in events.iter().enumerate() {
+            assert!(
+                matches!(event, RdpInputAction::Unicode { code, pressed } if *code == expected[index] && *pressed == (index % 2 == 0))
+            );
+        }
+    }
+
+    #[test]
+    fn credential_input_rejects_controls_and_oversize_before_building_batch() {
+        for value in [
+            "",
+            "secret\n",
+            "secret\r",
+            "secret\t",
+            "secret\u{1b}",
+            "secret\u{85}",
+            "secret\u{2028}",
+        ] {
+            assert!(credential_text_input(value).is_err());
+        }
+        assert_eq!(
+            credential_text_input(&"a".repeat(1024)).unwrap().len(),
+            2048
+        );
+        assert!(credential_text_input(&"a".repeat(1025)).is_err());
+        assert!(credential_text_input(&"🔒".repeat(513)).is_err());
+    }
+}
+
 // ---- Convert frontend input to IronRDP FastPathInputEvent ----
 
 pub fn convert_input(action: &RdpInputAction) -> InputEvents {

@@ -59,7 +59,7 @@ describe("RDPClientHeader", () => {
     const { props } = buildProps();
     const reason = "Vault TOTP is unavailable. Local codes are ignored.";
     render(<RDPClientHeader {...props} totpUnavailableReason={reason} />);
-    const button = screen.getByRole("button", { name: "2FA Codes" });
+    const button = screen.getByRole("button", { name: "Credentials & 2FA" });
     expect(button).toBeDisabled();
     expect(button.parentElement).toHaveAttribute("data-tooltip", reason);
     fireEvent.click(button);

@@ -18,6 +18,7 @@ disabled_commands!(
     detach_rdp_session,
     rdp_set_session_activity,
     rdp_send_input,
+    rdp_send_credential_input,
     rdp_get_frame_data,
     get_rdp_session_info,
     list_rdp_sessions,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { debugLog } from "../../utils/core/debugLogger";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
+import { captureNativeCredentialTarget } from "../../utils/security/credentialTyping";
 import {
   ConnectionSession,
   Connection,
@@ -1098,6 +1099,43 @@ export function useRDPClient(session: ConnectionSession) {
     },
     [isConnected],
   );
+
+  const credentialRuntimeRef = useRef({
+    isConnected,
+    isRenderActive,
+    keyboardEnabled,
+  });
+  credentialRuntimeRef.current = {
+    isConnected,
+    isRenderActive,
+    keyboardEnabled,
+  };
+  const captureCredentialTarget = (
+    isPopupControl: (element: Element) => boolean,
+  ) =>
+    captureNativeCredentialTarget(
+      () => {
+        const current = sessionRef.current;
+        const surface = canvasRef.current;
+        return surface && current.ownerDatabaseId && sessionIdRef.current
+          ? {
+              sessionId: current.id,
+              backendSessionId: sessionIdRef.current,
+              ownerDatabaseId: current.ownerDatabaseId,
+              generation: `${getSessionLifecycleActorGeneration(current)}:${sessionActivityGenerationRef.current}:${initGenRef.current}`,
+              protocol: "rdp" as const,
+              connected:
+                credentialRuntimeRef.current.isConnected &&
+                credentialRuntimeRef.current.isRenderActive &&
+                credentialRuntimeRef.current.keyboardEnabled &&
+                !hasSessionVpnCleanupQuarantine(current),
+              surface,
+            }
+          : null;
+      },
+      isPopupControl,
+      invoke,
+    );
 
   // ─── SSH-tunnel (imported mRemoteNG RDP-through-SSH) ────────────────
 
@@ -3792,6 +3830,7 @@ export function useRDPClient(session: ConnectionSession) {
     toggleFullscreen: handleToggleFullscreen,
     handleRenameConnection,
     handleUpdateTotpConfigs,
+    captureCredentialTarget,
     handleUpdateServerCertValidation,
     handleToggleInput,
     handleToggleRedirection,

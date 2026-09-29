@@ -47,6 +47,7 @@ export interface RDPClientHeaderProps {
   onUpdateTotpConfigs: (configs: TOTPConfig[]) => void;
   totpUnavailableReason?: string;
   handleAutoTypeTOTP?: (code: string) => void;
+  captureCredentialTarget?: import("../../../hooks/security/useCredentialTyping").CaptureCredentialTarget;
   totpDefaultIssuer?: string;
   totpDefaultDigits?: number;
   totpDefaultPeriod?: number;

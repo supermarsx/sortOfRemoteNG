@@ -60,6 +60,194 @@ function setupPage(html: string) {
     { width: 30, height: 20 },
   ] as unknown as DOMRectList);
 }
+
+describe("manual focused credential typing", () => {
+  const nonce = "b".repeat(32);
+  function capture(type = "password") {
+    setupPage(
+      `<form><input type="${type}" value="${type === "number" ? "42" : "before"}" /><input id="other" /><button>Submit</button></form>`,
+    );
+    const field = document.querySelector("input")!;
+    field.focus();
+    if (type !== "number") field.setSelectionRange(0, 6);
+    command("credentialWatch");
+    const observation = reports().find(
+      (report) => report.status === "credentialFocusState",
+    );
+    command("credentialFocus", {
+      nonce,
+      focusRevision: observation.focusRevision,
+      focusToken: observation.focusToken,
+    });
+    expect(reports().slice(-1)[0].status).toBe("ok");
+    return field;
+  }
+  it("fills only the captured selection without clicking, submitting, or echoing secrets", () => {
+    const field = capture();
+    const submit = vi.fn();
+    document.querySelector("form")!.addEventListener("submit", submit);
+    const key = vi.fn();
+    field.addEventListener("keydown", key);
+    command("credentialType", { nonce, value: "päss!" });
+    expect(field.value).toBe("päss!");
+    expect(submit).not.toHaveBeenCalled();
+    expect(key).not.toHaveBeenCalled();
+    expect(JSON.stringify(reports())).not.toContain("päss!");
+    command("credentialType", { nonce, value: "again" });
+    expect(reports().slice(-1)[0].status).toBe("failed");
+    expect(field.value).toBe("päss!");
+  });
+  it("types a current numeric OTP without invoking selection APIs or submitting", () => {
+    const field = capture("number");
+    const selection = vi.spyOn(field, "setSelectionRange");
+    const submit = vi.fn();
+    document.querySelector("form")!.addEventListener("submit", submit);
+    command("credentialType", {
+      nonce,
+      value: "012345",
+      validity: { starts: Date.now() - 1000, expires: Date.now() + 10000 },
+    });
+    expect(reports().slice(-1)[0].status).toBe("ok");
+    expect(field.value).toBe("012345");
+    expect(selection).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+  it.each([
+    "username",
+    "password",
+    "numeric-password",
+    "non-digits",
+    "expired",
+    "future",
+  ])("rejects %s in a numeric OTP control", (reason) => {
+    const field = capture("number");
+    const payload: Record<string, unknown> = {
+      nonce,
+      value:
+        reason === "username"
+          ? "user"
+          : reason === "password"
+            ? "password!"
+            : "123456",
+    };
+    if (["non-digits", "expired", "future"].includes(reason)) {
+      payload.validity = {
+        starts: Date.now() - 1000,
+        expires: Date.now() + 10000,
+      };
+      if (reason === "non-digits") payload.value = "123e45";
+      if (reason === "expired")
+        payload.validity = {
+          starts: Date.now() - 10000,
+          expires: Date.now() - 1,
+        };
+      if (reason === "future")
+        payload.validity = {
+          starts: Date.now() + 1000,
+          expires: Date.now() + 10000,
+        };
+    }
+    command("credentialType", payload);
+    expect(reports().slice(-1)[0].status).toBe("failed");
+    expect(field.value).toBe("42");
+  });
+  it.each([
+    "missing",
+    "disabled",
+    "readonly",
+    "removed",
+    "replacement",
+    "focus",
+    "selection",
+    "navigation",
+    "nonce",
+    "origin",
+    "expired",
+    "future",
+    "control",
+    "type",
+  ])("refuses %s before writing", (reason) => {
+    const field = capture();
+    let payload: Record<string, unknown> = { nonce, value: "secret" };
+    if (reason === "missing") command("credentialCancel");
+    if (reason === "disabled") field.disabled = true;
+    if (reason === "readonly") field.readOnly = true;
+    if (reason === "removed") field.remove();
+    if (reason === "replacement") {
+      const replacement = field.cloneNode() as HTMLInputElement;
+      field.replaceWith(replacement);
+      replacement.focus();
+    }
+    if (reason === "focus")
+      document.querySelector<HTMLInputElement>("#other")!.focus();
+    if (reason === "selection") field.setSelectionRange(1, 2);
+    if (reason === "navigation") history.replaceState({}, "", "/other");
+    if (reason === "nonce") payload.nonce = "c".repeat(32);
+    if (reason === "expired")
+      payload = {
+        nonce,
+        value: "123456",
+        validity: { starts: Date.now() - 30000, expires: Date.now() - 1 },
+      };
+    if (reason === "future")
+      payload = {
+        nonce,
+        value: "123456",
+        validity: { starts: Date.now() + 1e4, expires: Date.now() + 3e4 },
+      };
+    if (reason === "control") payload.value = "secret\n";
+    if (reason === "type") field.type = "text";
+    command(
+      "credentialType",
+      payload,
+      reason === "navigation"
+        ? { url: `${location.origin}/v3/signin/challenge/totp` }
+        : {},
+      reason === "origin" ? { origin: "https://other.test" } : {},
+    );
+    expect(reports().slice(-1)[0].status).toBe("failed");
+    expect(field.value).toBe("before");
+  });
+  it("refuses non-editable active elements", () => {
+    setupPage("<button>Submit</button>");
+    document.querySelector("button")!.focus();
+    command("credentialFocus", { nonce });
+    expect(reports().slice(-1)[0].status).toBe("failed");
+  });
+  it.each([false, true])(
+    "rejects focus changes between the popup gesture and asynchronous capture delivery (restore=%s)",
+    (restore) => {
+      setupPage('<input id="password" type="password" /><input id="other" />');
+      const password = document.querySelector<HTMLInputElement>("#password")!;
+      const other = document.querySelector<HTMLInputElement>("#other")!;
+      password.focus();
+      command("credentialWatch");
+      const reported = reports().find(
+        (report) => report.status === "credentialFocusState",
+      );
+      // Parent has recorded this report at pointer-down. Autofocus runs before
+      // the queued capture message is delivered to the actual page client.
+      other.focus();
+      for (const handler of documentHandlers.get("focusin") ?? [])
+        handler({ target: other } as unknown as Event);
+      if (restore) {
+        password.focus();
+        for (const handler of documentHandlers.get("focusin") ?? [])
+          handler({ target: password } as unknown as Event);
+      }
+      command("credentialFocus", {
+        nonce,
+        focusRevision: reported.focusRevision,
+        focusToken: reported.focusToken,
+      });
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      command("credentialType", { nonce, value: "secret" });
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      expect(password.value).toBe("");
+      expect(other.value).toBe("");
+    },
+  );
+});
 beforeEach(() => {
   history.replaceState({}, "", "/v3/signin/challenge/totp");
   pageHandlers = new Map();

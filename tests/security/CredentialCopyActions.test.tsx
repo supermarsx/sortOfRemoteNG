@@ -16,6 +16,8 @@ import WebTotpPanel from "../../src/components/protocol/webBrowser/WebTotpPanel"
 import TotpPopover from "../../src/components/ssh/webTerminal/TotpPopover";
 import TotpButton from "../../src/components/rdp/rdpClientHeader/TotpButton";
 import { useCredentialCopy } from "../../src/hooks/security/useCredentialCopy";
+import { totpApi } from "../../src/hooks/totp/useTOTP";
+import type { CredentialTypingTarget } from "../../src/utils/security/credentialTyping";
 import { resolveRuntimeVaultCredential } from "../../src/utils/security/runtimeCredentialVault";
 import type {
   Connection,
@@ -204,6 +206,18 @@ describe("explicit credential copies", () => {
       expect(input.api.list).not.toHaveBeenCalled();
       expect(input.target.readCurrent).not.toHaveBeenCalled();
       expect(clipboard).not.toHaveBeenCalled();
+      for (const field of ["username", "password"]) {
+        const copy = screen.getByRole("button", { name: `Copy ${field}` });
+        const type = screen.getByRole("button", { name: `Type ${field}` });
+        expect(copy).toHaveAttribute("title", `Copy ${field}`);
+        expect(type).toHaveAttribute("title", `Type ${field}`);
+        expect(copy.textContent).toBe("");
+        expect(type.textContent).toBe("");
+        expect(copy.parentElement).toBe(type.parentElement);
+        expect(copy.parentElement?.previousElementSibling).toHaveTextContent(
+          `Copy ${field}`,
+        );
+      }
       fireEvent.click(screen.getByRole("button", { name: "Copy username" }));
       await flush();
       expect(clipboard).toHaveBeenLastCalledWith(
@@ -530,6 +544,215 @@ describe("manual runtime intents", () => {
   });
 });
 
+describe("explicit credential typing", () => {
+  const typing = (): CredentialTypingTarget => ({
+    sessionId: "session",
+    assertCurrent: vi.fn(),
+    dispose: vi.fn(),
+    type: vi.fn(async (_value, check) => {
+      check();
+    }),
+  });
+  it.each([true, false])(
+    "types fresh username and password without clipboard or state secrets (vault=%s)",
+    async (vault) => {
+      const input = fixture(vault);
+      const target = typing();
+      const view = render(
+        <CredentialCopyActions {...input} typingTarget={target} />,
+      );
+      await flush();
+      expect(mock.capture).not.toHaveBeenCalled();
+      expect(input.api.resolve).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Type username" }));
+      await flush();
+      expect(target.type).toHaveBeenLastCalledWith(
+        vault ? "VAULT_USER" : "CURRENT_LOCAL_USER",
+        expect.any(Function),
+        undefined,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Type password" }));
+      await flush();
+      expect(target.type).toHaveBeenLastCalledWith(
+        vault ? "VAULT_PASSWORD" : "CURRENT_LOCAL_PASSWORD",
+        expect.any(Function),
+        undefined,
+      );
+      expect(clipboard).not.toHaveBeenCalled();
+      expect(view.container.innerHTML).not.toMatch(
+        /VAULT_PASSWORD|CURRENT_LOCAL_PASSWORD/,
+      );
+    },
+  );
+  it("offers disabled Type alternatives without a captured focus target", () => {
+    const input = fixture();
+    render(<CredentialCopyActions {...input} />);
+    expect(
+      screen.getByRole("button", { name: "Type username" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Type password" }),
+    ).toBeDisabled();
+    expect(input.api.resolve).not.toHaveBeenCalled();
+  });
+  it.each([
+    "focus",
+    "owner",
+    "source",
+    "revision",
+    "session",
+    "unmount",
+    "target",
+    "provider-before-render",
+  ])("rejects pending typing after %s changes", async (change) => {
+    const input = fixture();
+    const target = typing();
+    const pending = deferred<{ password: string }>();
+    vi.mocked(input.api.resolve).mockReturnValueOnce(pending.promise);
+    const view = render(
+      <CredentialCopyActions {...input} typingTarget={target} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Type password" }));
+    await flush();
+    if (change === "focus")
+      vi.mocked(target.assertCurrent).mockImplementation(() => {
+        throw new Error("focus changed");
+      });
+    if (change === "owner") mock.currentDatabaseId = "other";
+    if (change === "source")
+      view.rerender(
+        <CredentialCopyActions
+          {...input}
+          connection={{
+            ...input.connection,
+            credentialSource: { kind: "local" },
+          }}
+          typingTarget={target}
+        />,
+      );
+    if (change === "revision") {
+      mock.api = { ...input.api, changeRevision: 2 };
+      view.rerender(<CredentialCopyActions {...input} typingTarget={target} />);
+    }
+    if (change === "session")
+      view.rerender(
+        <CredentialCopyActions
+          {...input}
+          session={{ ...input.session, backendSessionId: "replacement" }}
+          typingTarget={target}
+        />,
+      );
+    if (change === "target")
+      view.rerender(
+        <CredentialCopyActions {...input} typingTarget={typing()} />,
+      );
+    if (change === "unmount") view.unmount();
+    if (change === "provider-before-render")
+      mock.currentConnections = [{ ...input.connection }];
+    await act(async () => pending.resolve({ password: "LATE_SECRET" }));
+    expect(target.type).not.toHaveBeenCalled();
+    expect(clipboard).not.toHaveBeenCalled();
+  });
+  it.each([true, false])(
+    "generates and types a fresh local/vault code only on click (vault=%s)",
+    async (vault) => {
+      const cfg = {
+        secret: "JBSWY3DPEHPK3PXP",
+        algorithm: "sha1" as const,
+        digits: 6,
+        period: 30,
+        account: "test",
+        issuer: "test",
+      };
+      const input = fixture(vault, { totpConfigs: [cfg] });
+      const now = 1_800_000_001_000;
+      vi.spyOn(Date, "now").mockReturnValue(now);
+      const compute = vi
+        .spyOn(totpApi, "computeCode")
+        .mockResolvedValue("123456");
+      const snapshot = await input.api.list(input.api.scope!);
+      snapshot.entries[0].availableFacets = ["totp"];
+      vi.mocked(input.api.list).mockResolvedValue(snapshot);
+      vi.mocked(input.api.resolve).mockResolvedValue({
+        totp: [{ ...cfg, digits: 6, id: "otp", label: "test" }],
+      });
+      const target = typing();
+      render(
+        <CredentialCopyActions
+          {...input}
+          typingTarget={target}
+          codeSelection={vault ? { vaultId: "otp" } : { localIndex: 0 }}
+        />,
+      );
+      expect(compute).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Type code" }));
+      await flush();
+      const status = screen.getByRole("status");
+      expect(status).not.toHaveClass("absolute");
+      expect(status).toHaveClass(
+        "max-w-full",
+        "whitespace-normal",
+        "[overflow-wrap:anywhere]",
+      );
+      expect(status.parentElement).toHaveClass(
+        "flex-col",
+        "items-end",
+        "max-w-32",
+      );
+      expect(status.previousElementSibling).toBe(
+        screen.getByRole("button", { name: "Type code" }),
+      );
+      expect(compute).toHaveBeenCalledExactlyOnceWith(
+        cfg.secret,
+        "SHA1",
+        6,
+        30,
+      );
+      expect(target.type).toHaveBeenCalledExactlyOnceWith(
+        "123456",
+        expect.any(Function),
+        { starts: now - 1000, expires: now + 29000 },
+      );
+      expect(clipboard).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["expired", "rollback", "invalid", "changed-config"])(
+    "rejects %s code before typing",
+    async (reason) => {
+      const cfg = {
+        secret: "JBSWY3DPEHPK3PXP",
+        algorithm: "sha1" as const,
+        digits: 6,
+        period: 30,
+        account: "test",
+        issuer: "test",
+      };
+      const input = fixture(false, { totpConfigs: [cfg] });
+      const now = 1_800_000_001_000;
+      const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+      vi.spyOn(totpApi, "computeCode").mockImplementation(async () => {
+        if (reason === "expired") clock.mockReturnValue(now + 30000);
+        if (reason === "rollback") clock.mockReturnValue(now - 30000);
+        return reason === "invalid" ? "123\n45" : "123456";
+      });
+      if (reason === "changed-config")
+        input.persisted.totpConfigs = [{ ...cfg, account: "changed" }];
+      const target = typing();
+      render(
+        <CredentialCopyActions
+          {...input}
+          typingTarget={target}
+          codeSelection={{ localIndex: 0 }}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Type code" }));
+      await flush();
+      expect(target.type).not.toHaveBeenCalled();
+      expect(clipboard).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("shared popover copy actions without TOTP", () => {
   const controller = () => ({
     scopeKey: "scope",
@@ -588,6 +811,10 @@ describe("shared popover copy actions without TOTP", () => {
     };
     render(<TotpPopover mgr={mgr as never} />);
     await flush();
+    expect(
+      screen.getByRole("button", { name: "Credentials & 2FA" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Credentials & 2FA")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Copy username" }));
     await flush();
     expect(clipboard).toHaveBeenCalledExactlyOnceWith(
@@ -612,6 +839,10 @@ describe("shared popover copy actions without TOTP", () => {
       };
       render(<TotpButton mgr={mgr as never} p={p as never} />);
       await flush();
+      expect(
+        screen.getByRole("button", { name: "Credentials & 2FA" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Credentials & 2FA")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
       await flush();
       expect(clipboard).toHaveBeenCalledExactlyOnceWith(
