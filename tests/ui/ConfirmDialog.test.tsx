@@ -1,8 +1,48 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { ConfirmDialog } from "../../src/components/ui/dialogs/ConfirmDialog";
 
 describe("ConfirmDialog", () => {
+  it("allows modal retry and cancel after async validation leaves it open", async () => {
+    const onConfirm = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        isOpen
+        message="Validate before closing"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("confirm-yes"));
+    await onConfirm.mock.results[0].value;
+    fireEvent.click(screen.getByTestId("confirm-yes"));
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByTestId("confirm-no"));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the modal panel and focus when validation updates its message", () => {
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <ConfirmDialog isOpen message="Validate" onConfirm={onConfirm} />,
+    );
+    const panel = screen.getByRole("dialog");
+    const button = screen.getByTestId("confirm-yes");
+    button.focus();
+    rerender(
+      <ConfirmDialog
+        isOpen
+        message="Validation failed; retry"
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.getByRole("dialog")).toBe(panel);
+    expect(button).toHaveFocus();
+  });
+
   it("renders and confirms action", () => {
     const onConfirm = vi.fn();
     render(<ConfirmDialog isOpen message="Confirm?" onConfirm={onConfirm} />);
@@ -122,7 +162,7 @@ describe("ConfirmDialog", () => {
     expect(screen.queryByText("Should not see this")).not.toBeInTheDocument();
   });
 
-  it("renders the optional confirmation toast without a modal backdrop or fade", () => {
+  it("renders the optional confirmation toast without a modal backdrop", async () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
     render(
@@ -142,7 +182,7 @@ describe("ConfirmDialog", () => {
     expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-modal");
 
     fireEvent.click(screen.getByTestId("confirm-no"));
-    expect(onCancel).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
     expect(onConfirm).not.toHaveBeenCalled();
   });
 

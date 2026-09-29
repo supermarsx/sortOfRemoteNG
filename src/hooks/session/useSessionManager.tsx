@@ -134,6 +134,7 @@ function singletonIntegrationConflictMessage(
 }
 
 type SessionDialogRequest = {
+  id: number;
   message: string;
   showCancel: boolean;
   resolve: (value: boolean) => void;
@@ -307,6 +308,7 @@ export const useSessionManager = () => {
     ) => Promise<boolean>
   >(async () => false);
   const dialogQueueRef = useRef<SessionDialogRequest[]>([]);
+  const nextDialogIdRef = useRef(0);
   const dialogStateRef = useRef<SessionDialogRequest | null>(null);
   const [dialogState, setDialogState] = useState<SessionDialogRequest | null>(
     null,
@@ -316,7 +318,12 @@ export const useSessionManager = () => {
   const showDialog = (message: string, showCancel: boolean) => {
     if (isUnmountedRef.current) return Promise.resolve(false);
     return new Promise<boolean>((resolve) => {
-      const request = { message, showCancel, resolve };
+      const request = {
+        id: nextDialogIdRef.current++,
+        message,
+        showCancel,
+        resolve,
+      };
       if (dialogStateRef.current) {
         dialogQueueRef.current.push(request);
         return;
@@ -2563,6 +2570,7 @@ export const useSessionManager = () => {
 
   const confirmDialog = dialogState ? (
     <ConfirmDialog
+      key={dialogState.id}
       isOpen={true}
       message={dialogState.message}
       onConfirm={() => settleDialog(true)}

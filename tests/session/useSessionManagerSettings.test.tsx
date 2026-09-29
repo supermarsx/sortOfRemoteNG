@@ -1,4 +1,11 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getUnsupportedDirectSessionMessage,
@@ -524,6 +531,68 @@ describe("useSessionManager settings effects", () => {
       .map(([action]) => action.payload);
     expect(removedSessionIds).toEqual([firstSession.id, secondSession.id]);
   });
+
+  it.each([false, true])(
+    "remounts duplicate-message queued confirmations (reduced motion: %s)",
+    async (reduced) => {
+      vi.useFakeTimers();
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => ({ matches: reduced })),
+      );
+      try {
+        SettingsManager.getInstance().applyInMemory({
+          confirmCloseActiveTab: false,
+          warnOnClose: true,
+        });
+        const connections = [
+          makeConnection({ id: "queue-a", warnOnClose: true }),
+          makeConnection({ id: "queue-b", warnOnClose: true }),
+        ];
+        const sessions = connections.map((connection) =>
+          makeSession({ id: connection.id, connectionId: connection.id }),
+        );
+        connectionMocks.state = { connections, sessions };
+        const { result } = renderHook(() => useSessionManager());
+        let firstClose!: Promise<boolean>;
+        let secondClose!: Promise<boolean>;
+        act(() => {
+          firstClose = result.current.handleSessionClose(sessions[0].id);
+          secondClose = result.current.handleSessionClose(sessions[1].id);
+        });
+        const firstDialog = result.current.confirmDialog!;
+        const view = render(firstDialog);
+        const firstPanel = screen.getByRole("dialog");
+        fireEvent.click(screen.getByTestId("confirm-no"));
+        // This render has not yet been replaced: repeated activation is ignored.
+        fireEvent.click(screen.getByTestId("confirm-yes"));
+        if (!reduced)
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(160);
+          });
+        expect(await firstClose).toBe(false);
+        const secondDialog = result.current.confirmDialog!;
+        expect(secondDialog.props.message).toBe(firstDialog.props.message);
+        expect(secondDialog.key).not.toBe(firstDialog.key);
+        view.rerender(secondDialog);
+        expect(screen.getByRole("dialog")).not.toBe(firstPanel);
+        expect(screen.getByTestId("confirm-no")).not.toHaveAttribute(
+          "aria-disabled",
+        );
+        fireEvent.click(screen.getByTestId("confirm-no"));
+        if (!reduced)
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(160);
+          });
+        expect(await secondClose).toBe(false);
+        expect(result.current.confirmDialog).toBeNull();
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it("resolves the active and queued confirmations false on unmount", async () => {
     SettingsManager.getInstance().applyInMemory({

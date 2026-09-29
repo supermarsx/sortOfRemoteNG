@@ -1,5 +1,6 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, ModalBody, ModalHeader } from "../overlays/Modal";
+import styles from "./ConfirmDialog.module.css";
 
 export interface ConfirmDialogProps {
   isOpen: boolean;
@@ -28,7 +29,31 @@ export interface ConfirmDialogProps {
   };
 }
 
-export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
+// A new visible prompt owns a new timer, action guard, focus lifecycle, and
+// entrance animation. Callers queueing identical prompts should also supply
+// a React key for the request; callback identity is not request identity.
+export const ConfirmDialog: React.FC<ConfirmDialogProps> = (props) => (
+  <ConfirmDialogRequest
+    key={
+      props.presentation === "toast"
+        ? JSON.stringify([
+            props.isOpen,
+            props.message,
+            props.title,
+            props.confirmText,
+            props.cancelText,
+            props.variant,
+            props.presentation,
+            Boolean(props.onCancel),
+            props.secondaryAction?.label,
+          ])
+        : "modal"
+    }
+    {...props}
+  />
+);
+
+const ConfirmDialogRequest: React.FC<ConfirmDialogProps> = ({
   isOpen,
   message,
   title = "Confirmation",
@@ -41,6 +66,50 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   secondaryAction,
   presentation = "modal",
 }) => {
+  const [exiting, setExiting] = useState(false);
+  const pendingAction = useRef(false);
+  const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (!isOpen) setExiting(false);
+    return () => {
+      clearTimeout(exitTimer.current);
+      pendingAction.current = false;
+    };
+  }, [isOpen]);
+
+  const runAction = useCallback(
+    (action: () => void) => {
+      // Modal callers may keep the prompt open after validation and retry.
+      if (presentation !== "toast") {
+        action();
+        return;
+      }
+      if (pendingAction.current) return;
+      // Latch before either path, including immediate reduced-motion actions.
+      // Only a new request may accept another action.
+      pendingAction.current = true;
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        action();
+        return;
+      }
+
+      // The session manager unmounts this dialog when an action settles. Keep
+      // focus and the selected action here until the short exit has finished.
+      setExiting(true);
+      exitTimer.current = setTimeout(() => {
+        action();
+      }, 160);
+    },
+    [presentation],
+  );
+  const confirm = useCallback(
+    () => runAction(onConfirm),
+    [runAction, onConfirm],
+  );
+  const cancel = onCancel ? () => runAction(onCancel) : undefined;
+
   useEffect(() => {
     if (!isOpen || !confirmOnEnter) return;
 
@@ -60,29 +129,30 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         // Focused controls own Enter. In particular, Cancel must never also
         // trigger the destructive action through this document shortcut.
         e.preventDefault();
-        onConfirm();
+        confirm();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onConfirm, onCancel, confirmOnEnter]);
+  }, [isOpen, confirm, confirmOnEnter]);
 
   if (!isOpen) return null;
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onCancel}
+      onClose={cancel}
       closeOnBackdrop={Boolean(onCancel)}
       closeOnEscape={Boolean(onCancel)}
-      panelClassName="max-w-md mx-4"
+      panelClassName={`max-w-md mx-4 ${presentation === "toast" ? styles.toast : ""} ${exiting ? styles.exiting : ""}`}
+      ariaLabel={title}
       dataTestId="confirm-dialog"
       presentation={presentation}
     >
       <ModalHeader
         title={title}
-        onClose={onCancel}
+        onClose={cancel}
         showCloseButton={Boolean(onCancel)}
       />
       <ModalBody className="p-6">
@@ -90,7 +160,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <div className="flex justify-end space-x-3">
           {onCancel && (
             <button
-              onClick={onCancel}
+              type="button"
+              aria-disabled={exiting || undefined}
+              onClick={cancel}
               className="sor-modal-cancel"
               data-testid="confirm-no"
             >
@@ -99,7 +171,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           )}
           {secondaryAction && (
             <button
-              onClick={secondaryAction.onClick}
+              type="button"
+              aria-disabled={exiting || undefined}
+              onClick={() => runAction(secondaryAction.onClick)}
               data-testid="confirm-secondary"
               className={`px-4 py-2 text-[var(--color-text)] rounded-md transition-colors ${
                 secondaryAction.variant === "warning"
@@ -111,7 +185,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             </button>
           )}
           <button
-            onClick={onConfirm}
+            type="button"
+            aria-disabled={exiting || undefined}
+            onClick={confirm}
             data-testid="confirm-yes"
             className={`px-4 py-2 text-[var(--color-text)] rounded-md transition-colors ${
               variant === "danger"

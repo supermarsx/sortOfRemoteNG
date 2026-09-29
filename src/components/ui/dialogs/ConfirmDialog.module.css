@@ -1,0 +1,62 @@
+/* Specificity intentionally exceeds the shared toast's animation reset.
+ * Only this compact panel moves; its transparent fixed container stays put. */
+:global(.sor-modal-toast-backdrop) :global(.sor-modal-panel).toast {
+  animation:
+    enter 180ms ease-out both,
+    attention 560ms ease-in-out 180ms 1 !important;
+}
+
+:global(.sor-modal-toast-backdrop) :global(.sor-modal-panel).toast.exiting {
+  /* Keep in sync with the action settlement delay in ConfirmDialog. */
+  animation: exit 160ms ease-in both !important;
+}
+
+.toast button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* One soft theme-colored highlight, without flashing the text or workspace. */
+@keyframes attention {
+  0%,
+  100% {
+    border-color: var(--color-border);
+    background-color: var(--color-surface);
+  }
+  45% {
+    border-color: var(--color-primary);
+    background-color: color-mix(
+      in srgb,
+      var(--color-primary) 12%,
+      var(--color-surface)
+    );
+  }
+}
+
+@keyframes exit {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.sor-modal-toast-backdrop) :global(.sor-modal-panel).toast {
+    animation: none !important;
+  }
+
+  :global(.sor-modal-toast-backdrop) :global(.sor-modal-panel).toast.exiting {
+    animation: none !important;
+  }
+}
