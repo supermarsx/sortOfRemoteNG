@@ -545,7 +545,9 @@ pub(crate) mod host_key_trust {
     /// Never include arbitrary storage errors (paths or damaged contents).
     pub(crate) fn unavailable_error(host: &str, error: &str) -> String {
         let lower = error.to_ascii_lowercase();
-        let (reason, recovery) = if lower.contains("encryption storage transition in progress") {
+        let (reason, recovery) = if lower.contains("encryption storage transition in progress")
+            || lower == "encryption key transition in progress"
+        {
             ("transition", "Encryption storage is being updated. Wait for the operation to finish, then retry trust verification.")
         } else if lower.contains("requires recovery") || lower.contains("recovery required") {
             ("recovery_required", "Storage recovery is required. Open Settings > Security and complete recovery before retrying. Do not reset or delete trust records.")
@@ -11898,6 +11900,21 @@ mod tests {
                 "encryption storage transition in progress; retry after it completes",
                 "transition",
                 "Wait for the operation",
+            ),
+            (
+                "encryption key transition in progress",
+                "transition",
+                "Wait for the operation",
+            ),
+            (
+                "encryption key transition in progress: recovery required",
+                "recovery_required",
+                "complete recovery",
+            ),
+            (
+                "encryption key transition failed",
+                "unavailable",
+                "Check Settings > Security",
             ),
             (
                 "master encryption is locked; artifact writes are blocked",
