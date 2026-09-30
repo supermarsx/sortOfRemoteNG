@@ -34,6 +34,7 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   proxmox: "proxmox",
   pfsense: "pfsense",
   cloudflare: "cloudflare",
+  porkbun: "porkbun",
   tacticalrmm: "web-application",
   meshcentral: "meshcentral",
   guacamole: "web-application",

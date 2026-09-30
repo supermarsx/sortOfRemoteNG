@@ -25,6 +25,7 @@ import ApplicationIconSuggestion from "./ApplicationIconSuggestion";
 import AutomaticMfaSection from "./AutomaticMfaSection";
 import { isSynologyFileConnection } from "../../../types/protocols/synology";
 import CredentialSourceSection from "../CredentialSourceSection";
+import { PORKBUN_LOGIN_URL } from "../../../utils/connection/porkbunProfile";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -100,7 +101,11 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
         ? new URL(googleHostedUrl)
         : undefined;
       const selectedUrl =
-        id === "cloudflare" ? new URL(CLOUDFLARE_DASHBOARD_URL) : googleUrl;
+        id === "cloudflare"
+          ? new URL(CLOUDFLARE_DASHBOARD_URL)
+          : id === "porkbun"
+            ? new URL(PORKBUN_LOGIN_URL)
+            : googleUrl;
       return {
         ...previous,
         ...(selectedUrl
@@ -460,9 +465,11 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                   {profile.hostedLoginUrl}
                 </span>
                 . This preset requires that HTTPS origin.
-                {getFirstPartyGoogleHostedApplicationUrl(profile.id)
-                  ? " Blank connections use this built-in address automatically; an existing custom address is preserved."
-                  : " Selection has not changed your address or certificate policy."}
+                {profile.id === "porkbun"
+                  ? " Selecting this preset sets HTTPS, porkbun.com and port 443; certificate policy is preserved."
+                  : getFirstPartyGoogleHostedApplicationUrl(profile.id)
+                    ? " Blank connections use this built-in address automatically; an existing custom address is preserved."
+                    : " Selection has not changed your address or certificate policy."}
               </p>
               <button
                 type="button"

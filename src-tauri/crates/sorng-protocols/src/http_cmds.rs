@@ -674,26 +674,28 @@ pub async fn start_basic_auth_proxy(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
-    let cloudflare_challenge =
-        if config.reviewed_application_profile == Some(ReviewedApplicationProfile::Cloudflare) {
-            crate::http::cloudflare_challenge::CloudflareChallenge::new(
-                config.reviewed_application_profile,
-                &validated_target,
-                &protected_endpoint.origin,
-                proxy_client_builder_with_cookies(
-                    true,
-                    None,
-                    &min_tls,
-                    upstream_proxy_url.as_deref(),
-                    false,
-                    None,
-                    None,
-                    false,
-                )?,
-            )?
-        } else {
-            None
-        };
+    let cloudflare_challenge = if matches!(
+        config.reviewed_application_profile,
+        Some(ReviewedApplicationProfile::Cloudflare | ReviewedApplicationProfile::Porkbun)
+    ) {
+        crate::http::cloudflare_challenge::CloudflareChallenge::new(
+            config.reviewed_application_profile,
+            &validated_target,
+            &protected_endpoint.origin,
+            proxy_client_builder_with_cookies(
+                true,
+                None,
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                false,
+                None,
+                None,
+                false,
+            )?,
+        )?
+    } else {
+        None
+    };
     let tactical_mesh = if config.reviewed_application_mesh_origin.is_some() {
         crate::http::tactical_mesh::TacticalMeshRoute::new(
             config.reviewed_application_profile,
@@ -1431,26 +1433,28 @@ pub async fn restart_proxy_session(
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
     let protected_endpoint = protected_proxy_endpoint(local_port);
-    let cloudflare_challenge =
-        if reviewed_application_profile == Some(ReviewedApplicationProfile::Cloudflare) {
-            crate::http::cloudflare_challenge::CloudflareChallenge::new(
-                reviewed_application_profile,
-                &validated_target,
-                &protected_endpoint.origin,
-                proxy_client_builder_with_cookies(
-                    true,
-                    None,
-                    &min_tls,
-                    upstream_proxy_url.as_deref(),
-                    false,
-                    None,
-                    None,
-                    false,
-                )?,
-            )?
-        } else {
-            None
-        };
+    let cloudflare_challenge = if matches!(
+        reviewed_application_profile,
+        Some(ReviewedApplicationProfile::Cloudflare | ReviewedApplicationProfile::Porkbun)
+    ) {
+        crate::http::cloudflare_challenge::CloudflareChallenge::new(
+            reviewed_application_profile,
+            &validated_target,
+            &protected_endpoint.origin,
+            proxy_client_builder_with_cookies(
+                true,
+                None,
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                false,
+                None,
+                None,
+                false,
+            )?,
+        )?
+    } else {
+        None
+    };
     let tactical_mesh = if reviewed_application_mesh_origin.is_some() {
         crate::http::tactical_mesh::TacticalMeshRoute::new(
             reviewed_application_profile,

@@ -113,7 +113,7 @@ describe("FreePBX Administration application mapping", () => {
 
   it("defaults to the admin pathname and existing icon with no MFA contract", () => {
     const profile = getHttpApplicationProfile("freepbx")!;
-    expect(profile.loginPath).toBe("/admin");
+    expect(profile.loginPath).toBe("/admin/");
     expect(profile.totpChallenges).toBeUndefined();
     expect(profile.loginFlow).toBeUndefined();
     expect(
@@ -132,7 +132,7 @@ describe("FreePBX Administration application mapping", () => {
       ),
     ).toEqual({
       label: "FreePBX Administration",
-      url: "https://pbx.example.test:8443/admin",
+      url: "https://pbx.example.test:8443/admin/",
     });
     expect(
       getHttpApplicationExternalTarget(
@@ -157,4 +157,20 @@ describe("FreePBX Administration application mapping", () => {
       ).toThrow(/invalid/);
     },
   );
+
+  it("uses the directory base for relative admin assets", () => {
+    const base = new URL(
+      getHttpApplicationProfile("freepbx")!.loginPath!,
+      "http://protected.localhost:9000",
+    );
+    for (const asset of [
+      "assets/css/bootstrap.css",
+      "assets/js/jquery.js",
+      "images/tango.png",
+    ]) {
+      const resolved = new URL(asset, base);
+      expect(resolved.origin).toBe(base.origin);
+      expect(resolved.pathname).toBe(`/admin/${asset}`);
+    }
+  });
 });

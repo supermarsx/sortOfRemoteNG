@@ -13,6 +13,7 @@ import {
 } from "./hostedDashboardProfiles";
 import { ANALYTICS_CMS_PROFILES } from "./analyticsCmsProfiles";
 import { FREEPBX_ADMIN_PROFILE } from "./freepbxProfile";
+import { PORKBUN_PROFILE } from "./porkbunProfile";
 
 export interface HttpApplicationProfile {
   id: string;
@@ -45,7 +46,7 @@ export interface HttpApplicationTotpChallenge {
   codeSelector: string;
   submitSelector: string;
   paths: readonly string[];
-  submission: "post" | "spa" | "synology" | "google" | "cloudflare";
+  submission: "post" | "spa" | "synology" | "google" | "cloudflare" | "porkbun";
   /** Additional reviewed identity-provider origins for this challenge. */
   origins?: readonly string[];
 }
@@ -136,6 +137,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   ...HOSTED_DASHBOARD_PROFILES,
   ...ANALYTICS_CMS_PROFILES,
   FREEPBX_ADMIN_PROFILE,
+  PORKBUN_PROFILE,
   {
     id: "generic-form",
     label: "Generic login form",

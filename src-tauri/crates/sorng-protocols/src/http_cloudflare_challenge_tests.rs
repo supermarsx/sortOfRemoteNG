@@ -183,6 +183,7 @@ impl Drop for Peer {
 async fn peer(reject_proxy: bool) -> Peer {
     let cert = rcgen::generate_simple_self_signed(vec![
         "dash.cloudflare.com".into(),
+        "porkbun.com".into(),
         "challenges.cloudflare.com".into(),
     ])
     .unwrap();
@@ -235,7 +236,7 @@ async fn peer(reject_proxy: bool) -> Peer {
             children.spawn(async move {
                 let connect = head(&mut tcp).await;
                 let mesh = connect.starts_with("CONNECT challenges.cloudflare.com:443 ");
-                assert!(mesh || connect.starts_with("CONNECT dash.cloudflare.com:443 "));
+                assert!(mesh || connect.starts_with("CONNECT dash.cloudflare.com:443 ") || connect.starts_with("CONNECT porkbun.com:443 "));
                 connects.lock().unwrap().push(connect);
                 if reject_proxy && mesh {
                     tcp.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
@@ -330,13 +331,18 @@ async fn fixture_with_profile_and_mode(
     profile: Option<ReviewedApplicationProfile>,
     mode: UpstreamAuthMode,
 ) -> FixtureProxy {
-    let seed = proxy(SOURCE.into(), peer.relaxed.clone()).await;
+    let source = if profile == Some(ReviewedApplicationProfile::Porkbun) {
+        "https://porkbun.com"
+    } else {
+        SOURCE
+    };
+    let seed = proxy(source.into(), peer.relaxed.clone()).await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let origin = format!("http://p{}.localhost:{port}", uuid::Uuid::new_v4().simple());
     let route = cloudflare_challenge::CloudflareChallenge::new(
         profile,
-        &reqwest::Url::parse(SOURCE).unwrap(),
+        &reqwest::Url::parse(source).unwrap(),
         &origin,
         challenge_client,
     )
@@ -1120,6 +1126,169 @@ fn cloudflare_challenge_requires_exact_source_and_explicit_profile() {
     ] {
         assert!(make(source, Some(ReviewedApplicationProfile::Cloudflare)).is_err());
     }
+}
+
+#[test]
+fn porkbun_challenge_requires_exact_source_profile_and_matching_manifest_owner() {
+    let make = |source: &str, profile| {
+        cloudflare_challenge::CloudflareChallenge::new(
+            profile,
+            &reqwest::Url::parse(source).unwrap(),
+            "http://p0123456789abcdef0123456789abcdef.localhost:43210",
+            client(),
+        )
+    };
+    let porkbun = Some(ReviewedApplicationProfile::Porkbun);
+    assert_eq!(
+        serde_json::to_string(&ReviewedApplicationProfile::Porkbun).unwrap(),
+        "\"porkbun\""
+    );
+    let route = make("https://porkbun.com:443/account/login", porkbun)
+        .unwrap()
+        .unwrap();
+    assert!(make("https://porkbun.com", None).unwrap().is_none());
+    assert!(make(
+        "https://porkbun.com",
+        Some(ReviewedApplicationProfile::Cloudflare)
+    )
+    .is_err());
+    for source in [
+        SOURCE,
+        "https://challenges.cloudflare.com",
+        "http://porkbun.com",
+        "https://porkbun.com:444",
+        "https://www.porkbun.com",
+        "https://api.porkbun.com",
+        "https://porkbun.com.attacker.test",
+        "https://porkbun.com@attacker.test",
+        "https://user@porkbun.com",
+    ] {
+        assert!(make(source, porkbun).is_err(), "{source}");
+    }
+    for profile in [None, Some(ReviewedApplicationProfile::Cloudflare), porkbun] {
+        let network = ProxyNetworkState::default().with_reviewed_application_profile(profile);
+        network.document_issued(1, false);
+        assert_eq!(route.manifest(1, &network).is_some(), profile == porkbun);
+    }
+}
+
+#[test]
+fn porkbun_managed_challenge_requires_exact_source_html_and_signal() {
+    let profile = Some(ReviewedApplicationProfile::Porkbun);
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("content-type", "text/html".parse().unwrap());
+    let url = reqwest::Url::parse("https://porkbun.com/account/login").unwrap();
+    assert!(!cloudflare_challenge::is_managed_challenge_response(
+        profile, &url, &headers
+    ));
+    headers.insert("cf-mitigated", "challenge".parse().unwrap());
+    assert!(cloudflare_challenge::is_managed_challenge_response(
+        profile, &url, &headers
+    ));
+    for source in [
+        SOURCE,
+        CHALLENGE,
+        "http://porkbun.com",
+        "https://porkbun.com:444",
+        "https://user@porkbun.com",
+    ] {
+        assert!(!cloudflare_challenge::is_managed_challenge_response(
+            profile,
+            &reqwest::Url::parse(source).unwrap(),
+            &headers
+        ));
+    }
+    assert!(!cloudflare_challenge::is_managed_challenge_response(
+        None, &url, &headers
+    ));
+    headers.insert("content-type", "application/json".parse().unwrap());
+    assert!(!cloudflare_challenge::is_managed_challenge_response(
+        profile, &url, &headers
+    ));
+}
+
+#[tokio::test]
+async fn porkbun_challenge_strict_tls_and_foreign_redirect_have_no_fallback() {
+    for rejected in [false, true] {
+        let peer = peer(rejected).await;
+        let challenge_client = if rejected {
+            peer.trusted.clone()
+        } else {
+            peer.untrusted.clone()
+        };
+        let fixture = fixture_with_profile(
+            &peer,
+            challenge_client,
+            Some(ReviewedApplicationProfile::Porkbun),
+        )
+        .await;
+        let alias = root(&fixture).await;
+        let before = peer.seen.lock().unwrap().len();
+        assert_eq!(
+            request(&fixture, &alias, "/frame")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            502
+        );
+        assert_eq!(peer.seen.lock().unwrap().len(), before);
+        assert_eq!(
+            peer.connects
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.starts_with("CONNECT challenges.cloudflare.com:443 "))
+                .count(),
+            1
+        );
+    }
+    let peer = peer(false).await;
+    let fixture = fixture_with_profile(
+        &peer,
+        peer.trusted.clone(),
+        Some(ReviewedApplicationProfile::Porkbun),
+    )
+    .await;
+    let alias = root(&fixture).await;
+    assert_eq!(
+        request(&fixture, &alias, "/redirect")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert!(peer.connects.lock().unwrap().iter().all(|request| {
+        request.starts_with("CONNECT porkbun.com:443 ")
+            || request.starts_with("CONNECT challenges.cloudflare.com:443 ")
+    }));
+    let before = peer.seen.lock().unwrap().len();
+    for path in [AUTOLOGIN_PATH, "/frame?__sorng_generation_v1=wrong"] {
+        assert!(request(&fixture, &alias, path)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .is_client_error());
+    }
+    assert_eq!(
+        request(&fixture, &alias, "/frame")
+            .header("Origin", SOURCE)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    fixture.state.network.revoke();
+    assert!(request(&fixture, &alias, "/frame")
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .is_client_error());
+    assert_eq!(peer.seen.lock().unwrap().len(), before);
 }
 
 #[test]

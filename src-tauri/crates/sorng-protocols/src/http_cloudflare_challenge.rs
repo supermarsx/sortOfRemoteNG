@@ -16,6 +16,15 @@ use std::{
 pub(super) const SOURCE: &str = "https://dash.cloudflare.com";
 pub(super) const UPSTREAM: &str = "https://challenges.cloudflare.com";
 
+/// Closed profile/source pairs, never inferred from a page or a redirect.
+pub(super) fn reviewed_source(profile: Option<ReviewedApplicationProfile>) -> Option<&'static str> {
+    match profile {
+        Some(ReviewedApplicationProfile::Cloudflare) => Some(SOURCE),
+        Some(ReviewedApplicationProfile::Porkbun) => Some("https://porkbun.com"),
+        _ => None,
+    }
+}
+
 /// A challenge is executable upstream HTML, not an ordinary themed error page.
 /// The owning response pipeline can use this before its HTTP-error replacement.
 /// Do not infer clearance or trust from a title, query token, or body substring.
@@ -24,8 +33,7 @@ pub(super) fn is_managed_challenge_response(
     url: &Url,
     headers: &axum::http::HeaderMap,
 ) -> bool {
-    profile == Some(ReviewedApplicationProfile::Cloudflare)
-        && url.origin().ascii_serialization() == SOURCE
+    reviewed_source(profile).is_some_and(|source| url.origin().ascii_serialization() == source)
         && url.username().is_empty()
         && url.password().is_none()
         && headers.get_all("cf-mitigated").iter().count() == 1
@@ -480,6 +488,7 @@ struct Alias {
     cookies: Mutex<cookie_store::CookieStore>,
 }
 pub struct CloudflareChallenge {
+    source_origin: &'static str,
     source_proxy: String,
     port: u16,
     client: reqwest::Client,
@@ -495,17 +504,16 @@ impl CloudflareChallenge {
         proxy_origin: &str,
         client: reqwest::Client,
     ) -> Result<Option<Self>, String> {
-        if profile != Some(ReviewedApplicationProfile::Cloudflare) {
+        let Some(source_origin) = reviewed_source(profile) else {
             return Ok(None);
-        }
-        if source.origin().ascii_serialization() != SOURCE
+        };
+        if source.origin().ascii_serialization() != source_origin
             || !source.username().is_empty()
             || source.password().is_some()
         {
-            return Err(
-                "Cloudflare challenge routing requires exact HTTPS dashboard origin on port 443"
-                    .into(),
-            );
+            return Err(format!(
+                "Cloudflare challenge routing requires exact HTTPS source {source_origin} on port 443"
+            ));
         }
         let local = Url::parse(proxy_origin).map_err(|_| "Invalid challenge proxy origin")?;
         let port = local.port().ok_or("Invalid challenge proxy port")?;
@@ -524,6 +532,7 @@ impl CloudflareChallenge {
             return Err("Invalid challenge proxy origin".into());
         }
         Ok(Some(Self {
+            source_origin,
             source_proxy: proxy_origin.into(),
             port,
             client,
@@ -548,7 +557,7 @@ impl CloudflareChallenge {
         root: u64,
         network: &ProxyNetworkState,
     ) -> Option<serde_json::Value> {
-        if !network.cloudflare_manifest_eligible(root) {
+        if !network.cloudflare_manifest_eligible(root, self.source_origin) {
             return None;
         }
         let mut aliases = self.aliases.lock().ok()?;
@@ -726,7 +735,7 @@ impl CloudflareChallenge {
             .filter(|_| !super::upstream_header_is_hop_by_hop(&parts.headers, "origin"))
             .map(|origin| {
                 if origin == self.source_proxy {
-                    SOURCE
+                    self.source_origin
                 } else {
                     UPSTREAM
                 }
@@ -752,7 +761,7 @@ impl CloudflareChallenge {
             .and_then(|value| Url::parse(value).ok())
         {
             let mapped = if referer.origin().ascii_serialization() == self.source_proxy {
-                Some(format!("{SOURCE}/"))
+                Some(format!("{}/", self.source_origin))
             } else if referer.origin().ascii_serialization() == alias.origin {
                 Some(format!("{UPSTREAM}{}", referer.path()))
             } else {

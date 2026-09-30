@@ -688,6 +688,7 @@ pub enum ReviewedApplicationProfile {
     #[serde(rename = "google-hosted")]
     GoogleHosted,
     Cloudflare,
+    Porkbun,
     Cpanel,
 }
 

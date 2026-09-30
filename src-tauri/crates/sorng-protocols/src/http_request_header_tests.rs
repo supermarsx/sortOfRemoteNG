@@ -163,6 +163,7 @@ async fn fixture(
         "analytics.google.com".into(),
         "accounts.google.com".into(),
         "dash.cloudflare.com".into(),
+        "porkbun.com".into(),
         "challenges.cloudflare.com".into(),
     ])
     .unwrap();
@@ -447,9 +448,27 @@ async fn google_handler_preserves_omit_until_consumed_and_never_restores_hop_hea
 
 #[tokio::test]
 async fn cloudflare_handler_preserves_hints_cookie_isolation_mapping_and_exact_grants() {
-    let fixture = fixture(
+    challenge_handler_header_contract(
         "https://dash.cloudflare.com",
-        Some(ReviewedApplicationProfile::Cloudflare),
+        ReviewedApplicationProfile::Cloudflare,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn porkbun_challenge_preserves_source_headers_cookie_isolation_and_exact_grants() {
+    challenge_handler_header_contract("https://porkbun.com", ReviewedApplicationProfile::Porkbun)
+        .await;
+}
+
+async fn challenge_handler_header_contract(
+    source_origin: &str,
+    profile: ReviewedApplicationProfile,
+) {
+    let source_referer = format!("{source_origin}/");
+    let fixture = fixture(
+        source_origin,
+        Some(profile),
         HashMap::from([("X-Dashboard-Secret".into(), "saved".into())]),
     )
     .await;
@@ -517,18 +536,14 @@ async fn cloudflare_handler_preserves_hints_cookie_isolation_mapping_and_exact_g
         }
         assert_eq!(
             field(head, "origin"),
-            if nominated {
-                None
-            } else {
-                Some("https://dash.cloudflare.com")
-            }
+            if nominated { None } else { Some(source_origin) }
         );
         assert_eq!(
             field(head, "referer"),
             if nominated {
                 None
             } else {
-                Some("https://dash.cloudflare.com/")
+                Some(source_referer.as_str())
             }
         );
         assert_eq!(

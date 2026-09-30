@@ -404,12 +404,115 @@
       ]),
     };
   }
+  function porkbunTotpTarget(payload, field, button) {
+    // Reviewed public /account/login DOM and skaboink.js: the app-code input
+    // remains in loginForm, but the AJAX Login button is outside that form.
+    // Never native-submit its /blank iframe action or fill email/recovery codes.
+    var root = document.getElementById("accountLoginContainer");
+    var form = field.form;
+    var panel = field.closest("#twoFactorLoginContainer");
+    var user =
+      form && form.querySelector('input#loginUsername[name="loginUsername"]');
+    var password =
+      form &&
+      form.querySelector(
+        'input#loginPassword[name="loginPassword"][type="password"]',
+      );
+    var action = new URL(
+      form ? form.getAttribute("action") || "" : "",
+      document.baseURI,
+    );
+    if (
+      payload.codeSelector !==
+        'form#loginForm #twoFactorLoginContainer input#twoFactorLoginCode[autocomplete="one-time-code"]' ||
+      payload.submitSelector !==
+        "#accountLoginButtonContainer button#accountLoginButton" ||
+      location.pathname !== "/account/login" ||
+      !root ||
+      !root.isConnected ||
+      document.querySelectorAll("#accountLoginContainer").length !== 1 ||
+      !(form instanceof HTMLFormElement) ||
+      form.id !== "loginForm" ||
+      document.querySelectorAll("#loginForm").length !== 1 ||
+      !root.contains(form) ||
+      !root.contains(button) ||
+      !panel ||
+      !form.contains(panel) ||
+      !visible(panel) ||
+      !(field instanceof HTMLInputElement) ||
+      field.type !== "text" ||
+      field.disabled ||
+      field.readOnly ||
+      field.matches(":disabled") ||
+      !visible(field) ||
+      !(button instanceof HTMLButtonElement) ||
+      button.form !== null ||
+      button.disabled ||
+      button.matches(":disabled,[aria-disabled=true]") ||
+      !visible(button) ||
+      !button.closest("#accountLoginButtonContainer") ||
+      button.getAttribute("onclick")?.trim() !== "logInExec();" ||
+      typeof button.onclick !== "function" ||
+      typeof window.logInExec !== "function" ||
+      typeof window.logIn !== "function" ||
+      button.hasAttribute("formaction") ||
+      button.hasAttribute("formtarget") ||
+      button.hasAttribute("formmethod") ||
+      button.hasAttribute("form") ||
+      form.method.toLowerCase() !== "post" ||
+      form.target !== "lame_login_iframe" ||
+      action.origin !== location.origin ||
+      action.pathname !== "/blank" ||
+      action.username ||
+      action.password ||
+      !user ||
+      !password ||
+      !user.value ||
+      !password.value ||
+      user.form !== form ||
+      password.form !== form ||
+      Array.prototype.some.call(
+        document.querySelectorAll(
+          '#twoFactorLoginContainerEmail, #twoFactorLoginContainerEmailNoCookie, #noCookieSmsContainer, #modal_forceCcaptcha, #modal_bypassTwoFactor, input[id^="bypassTwoFactor"], input#twoFactorLoginCode2',
+        ),
+        visible,
+      )
+    )
+      throw new Error("challenge");
+    return {
+      field: field,
+      button: button,
+      form: form,
+      root: root,
+      panel: panel,
+      handlers: [button.onclick, window.logInExec, window.logIn],
+      // Private, short-lived challenge state only. Pin the account that the
+      // site's handler will re-send; never include this fingerprint in reports.
+      fingerprint: JSON.stringify([
+        location.href,
+        document.baseURI,
+        action.href,
+        form.target,
+        button.getAttribute("onclick"),
+        user.value,
+        password.value,
+      ]),
+    };
+  }
+  function sameTotpHandlers(target, original) {
+    return original.handlers
+      ? !!target.handlers &&
+          original.handlers.every(function (handler, index) {
+            return target.handlers[index] === handler;
+          })
+      : !target.handlers;
+  }
   function totpTarget(payload, requireReady) {
     if (
       !payload ||
       typeof payload.nonce !== "string" ||
       !/^[0-9a-f]{32}$/.test(payload.nonce) ||
-      !["post", "spa", "synology", "google", "cloudflare"].includes(
+      !["post", "spa", "synology", "google", "cloudflare", "porkbun"].includes(
         payload.submission,
       )
     )
@@ -436,6 +539,8 @@
     var field = fields[0],
       button = buttons[0],
       form = field.form;
+    if (payload.submission === "porkbun")
+      return porkbunTotpTarget(payload, field, button);
     if (payload.submission === "synology")
       return synologyTotpTarget(payload, field, button, requireReady !== false);
     if (payload.submission === "cloudflare")
@@ -598,6 +703,7 @@
       target.root !== original.root ||
       target.panel !== original.panel ||
       target.fingerprint !== original.fingerprint ||
+      !sameTotpHandlers(target, original) ||
       target.field.value
     )
       throw new Error("challenge");
@@ -617,6 +723,7 @@
         checked.root !== original.root ||
         checked.panel !== original.panel ||
         checked.fingerprint !== original.fingerprint ||
+        !sameTotpHandlers(checked, original) ||
         checked.field.value !== payload.code ||
         Date.now() >= payload.expires
       )
@@ -641,6 +748,7 @@
     }
     if (
       challenge.payload.submission === "spa" ||
+      challenge.payload.submission === "porkbun" ||
       challenge.payload.submission === "cloudflare" ||
       (challenge.payload.submission === "synology" &&
         !synologyButtonReady(target.button))
@@ -689,6 +797,7 @@
               checked.root !== original.root ||
               checked.panel !== original.panel ||
               checked.fingerprint !== original.fingerprint ||
+              !sameTotpHandlers(checked, original) ||
               checked.field.value !== payload.code
             )
               return clearAndReject();

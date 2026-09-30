@@ -54,6 +54,7 @@
   var stopped = false;
   var cancelActive = null;
   var fetchController = null;
+  var freepbxLaunchAttempted = false;
   function cancelRun() {
     stopped = true;
     if (window.__sorng_bitwarden_login) window.__sorng_bitwarden_login.cancel();
@@ -235,6 +236,211 @@
     };
   }
 
+  function freepbxLauncherProofIsCurrent(destination) {
+    if (!destination.search) return true;
+    if (typeof window.__sorng_map_navigation !== "function") return false;
+    try {
+      // Ask the existing router to stamp a CLEAN URL. Never let it replace a
+      // stale candidate proof and then mistake the replacement for validation.
+      // The native bootstrap uses its navigation token as requestGeneration.
+      var clean = destination.origin + "/admin/";
+      var routed = new URL(window.__sorng_map_navigation(clean));
+      var current = /^\?__sorng_generation_v1=([0-9a-f]{32})$/.exec(
+        routed.search,
+      );
+      if (
+        !current ||
+        routed.origin !== destination.origin ||
+        routed.pathname !== "/admin/" ||
+        routed.username ||
+        routed.password ||
+        routed.hash
+      )
+        return false;
+      var seen = {};
+      return destination.search
+        .slice(1)
+        .split("&")
+        .every(function (pair) {
+          // Exact raw spelling rejects encoded names/values, duplicate proofs,
+          // empty pairs, application queries and unsupported private markers.
+          var proof =
+            /^(__sorng_generation_v1|__sorng_navigation_v1)=([0-9a-f]{32})$/.exec(
+              pair,
+            );
+          if (!proof || seen[proof[1]] || proof[2] !== current[1]) return false;
+          seen[proof[1]] = true;
+          return true;
+        });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // FreePBX's admin launcher opens a modal from its hidden form template.
+  // Keep this exception bound to the complete reviewed profile, never generic
+  // login-looking links. No credentials are needed to activate the launcher.
+  function openFreepbxAdmin(ov) {
+    if (
+      freepbxLaunchAttempted ||
+      stopped ||
+      !ov ||
+      ov.username !==
+        '.ui-dialog form[id="loginform"] input[name="username"][type="text"]' ||
+      ov.password !==
+        '.ui-dialog form[id="loginform"] input[name="password"][type="password"]' ||
+      ov.submit !==
+        '.ui-dialog form[id="loginform"] button[id="customContinue"][type="button"]' ||
+      document.readyState !== "complete" ||
+      !/^\/admin\/?$/.test(location.pathname)
+    )
+      return;
+    // A partially mounted or disabled dialog must settle, not be opened twice.
+    if (
+      document.querySelector(ov.username) ||
+      document.querySelector(ov.password)
+    )
+      return;
+    var links = document.querySelectorAll("#login_admin");
+    var launcher = links.length === 1 ? links[0] : null;
+    if (
+      !launcher ||
+      !launcher.matches("a.login_item") ||
+      !isVisible(launcher) ||
+      launcher.hasAttribute("download") ||
+      (launcher.getAttribute("target") &&
+        launcher.getAttribute("target") !== "_self") ||
+      launcher.closest('[inert], [aria-busy="true"], [aria-disabled="true"]')
+    )
+      return;
+    var destination;
+    try {
+      destination = new URL(launcher.getAttribute("href"), document.baseURI);
+    } catch (_) {
+      return;
+    }
+    if (
+      destination.origin !== location.origin ||
+      destination.username ||
+      destination.password ||
+      destination.pathname !== "/admin/" ||
+      destination.hash ||
+      !freepbxLauncherProofIsCurrent(destination)
+    )
+      return;
+    freepbxLaunchAttempted = true;
+    // Invoke the site's click handlers, but don't reload the landing page if
+    // its modal handler has not loaded. Poll for fields within the same bound.
+    var preventNavigation = function (event) {
+      event.preventDefault();
+    };
+    launcher.addEventListener("click", preventNavigation);
+    try {
+      launcher.click();
+    } finally {
+      launcher.removeEventListener("click", preventNavigation);
+    }
+  }
+
+  function porkbunSelectors(ov) {
+    return !!(
+      ov &&
+      ov.username ===
+        'form#loginForm input#loginUsername[name="loginUsername"][autocomplete="username"]' &&
+      ov.password ===
+        'form#loginForm input#loginPassword[name="loginPassword"][type="password"]' &&
+      ov.submit === "#accountLoginButtonContainer button#accountLoginButton"
+    );
+  }
+
+  // Public /account/login + skaboink.js reviewed 2026-09-30. The button is a
+  // sibling of the form, not a form-associated submitter. Its website handler
+  // owns CAPTCHA, AJAX and subsequent challenges; /blank is only a dummy target.
+  // This exception requires the complete reviewed selectors, never heuristics.
+  function porkbunTarget(root, ov, user, pw) {
+    if (!porkbunSelectors(ov) || root !== document) return null;
+    var form = pw.form;
+    var container = document.querySelector("#accountLoginContainer");
+    var buttons = document.querySelectorAll(ov.submit);
+    var button = buttons.length === 1 ? buttons[0] : null;
+    var view = document.defaultView;
+    if (
+      location.pathname !== "/account/login" ||
+      !form ||
+      form.id !== "loginForm" ||
+      !user ||
+      user.form !== form ||
+      document.querySelectorAll("form#loginForm").length !== 1 ||
+      document.querySelectorAll(ov.username).length !== 1 ||
+      document.querySelectorAll(ov.password).length !== 1 ||
+      document.querySelectorAll("#accountLoginContainer").length !== 1 ||
+      !container ||
+      form.parentElement !== container ||
+      !button ||
+      button.parentElement.parentElement !== container ||
+      button.parentElement.previousElementSibling !== form ||
+      button.form !== null ||
+      button.hasAttribute("form") ||
+      button.hasAttribute("formaction") ||
+      button.hasAttribute("formmethod") ||
+      button.hasAttribute("formtarget") ||
+      button.hasAttribute("data-login-action") ||
+      button.getAttribute("onclick") !== "logInExec();" ||
+      button.getAttribute("aria-disabled") === "true" ||
+      button.matches(":disabled") ||
+      !isVisible(button) ||
+      form.getAttribute("action") !== "/blank" ||
+      (form.getAttribute("method") || "").toLowerCase() !== "post" ||
+      form.getAttribute("target") !== "lame_login_iframe" ||
+      !form.hasAttribute("data-pbrf") ||
+      new URL("/blank", document.baseURI).origin !== location.origin ||
+      typeof button.onclick !== "function" ||
+      typeof view.logInExec !== "function" ||
+      typeof view.logIn !== "function" ||
+      [user, pw, button].some(function (element) {
+        return !!element.closest(
+          '[inert], [aria-busy="true"], [aria-disabled="true"]',
+        );
+      })
+    )
+      return null;
+    // A resumed MFA/error page is not a fresh password-login stage. Never
+    // activate recovery controls or retry rejected credentials automatically.
+    var blockers = document.querySelectorAll(
+      "#twoFactorLoginContainer, #twoFactorLoginContainerEmail, " +
+        "#twoFactorLoginContainerEmailNoCookie, #modal_forceCcaptcha, " +
+        '#accountLoginErrorAlert, [id^="bypassTwoFactor"][id$="Container"]',
+    );
+    if (
+      Array.prototype.some.call(blockers, function (element) {
+        if (!isVisible(element)) return false;
+        for (var parent = element; parent; parent = parent.parentElement) {
+          var style = view.getComputedStyle(parent);
+          if (
+            parent.hidden ||
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.opacity === "0"
+          )
+            return false;
+        }
+        return true;
+      })
+    )
+      return null;
+    return {
+      user: user,
+      pw: pw,
+      form: form,
+      submit: button,
+      porkbun: {
+        click: button.onclick,
+        exec: view.logInExec,
+        login: view.logIn,
+      },
+    };
+  }
+
   function findInRoot(root, ov, options) {
     var selectedForm = null;
     if (options && options.formSelector) {
@@ -313,12 +519,14 @@
         user = before.length ? before[before.length - 1] : candidates[0];
       }
     }
+    if (porkbunSelectors(ov)) return porkbunTarget(root, ov, user, pw);
     var submit = null;
     if (ov && ov.submit) {
       var scope = pw.form || nearestScope(pw, user);
       submit = scope.querySelector(ov.submit);
       if (
         !submit ||
+        !scope.contains(submit) ||
         !isVisible(submit) ||
         (submit.form && submit.form !== pw.form) ||
         !(
@@ -636,6 +844,22 @@
     var pw = target.pw;
     var user = target.user;
 
+    if (target.porkbun) {
+      // Never requestSubmit/form.submit/Enter: the real action is AJAX, while
+      // the form's native POST goes to a hidden dummy iframe.
+      var current = porkbunTarget(document, ov, user, pw);
+      if (
+        !current ||
+        current.submit !== target.submit ||
+        current.porkbun.click !== target.porkbun.click ||
+        current.porkbun.exec !== target.porkbun.exec ||
+        current.porkbun.login !== target.porkbun.login
+      )
+        throw new Error("form-changed-or-unsafe");
+      target.submit.click();
+      return "porkbun-button-click";
+    }
+
     if (readinessProfile === "cpanel") {
       var cpanelSubmit = submitCpanelForm(target);
       if (cpanelSubmit) return cpanelSubmit;
@@ -763,7 +987,7 @@
     var joomlaCapture = null;
     var joomlaOptions = { fields: [] };
     var validate;
-    if (isJoomlaPasswordForm(target)) {
+    if (isJoomlaPasswordForm(target) || target.porkbun) {
       try {
         joomlaCapture = captureTarget(target, joomlaOptions);
         validate = function () {
@@ -798,7 +1022,7 @@
         ? fillField(target.user, creds.username, validate)
         : true;
       pwOk = fillField(target.pw, creds.password, validate);
-      if (!pwOk) {
+      if (!pwOk && !target.porkbun) {
         // Event-dispatch fill didn't stick — try keystroke fallback once.
         typeField(target.pw, creds.password, validate);
         if (target.user) typeField(target.user, creds.username, validate);
@@ -963,6 +1187,12 @@
       submit && submit.getAttribute("formaction"),
       submit && submit.getAttribute("href"),
       joomlaSubmissionTarget(target),
+      target.porkbun && [
+        form.getAttribute("target"),
+        submit.getAttribute("formtarget"),
+        submit.getAttribute("type"),
+        submit.getAttribute("onclick"),
+      ],
       target.user && [
         target.user.id,
         target.user.name,
@@ -1082,6 +1312,14 @@
       found.pw !== target.pw ||
       found.form !== target.form ||
       (ov && ov.submit && found.submit !== target.submit)
+    )
+      return false;
+    if (
+      target.porkbun &&
+      (!found.porkbun ||
+        found.porkbun.click !== target.porkbun.click ||
+        found.porkbun.exec !== target.porkbun.exec ||
+        found.porkbun.login !== target.porkbun.login)
     )
       return false;
     if (targetFingerprint(target) !== captured.fingerprint) return false;
@@ -1259,7 +1497,8 @@
           }
           if (
             target.pw.value !== creds.password &&
-            readinessProfile !== "cpanel"
+            readinessProfile !== "cpanel" &&
+            !target.porkbun
           )
             typeField(target.pw, creds.password, validate);
           if (
@@ -1507,6 +1746,7 @@
         }
         try {
           var target = findLoginForm(ov, options);
+          if (!target) openFreepbxAdmin(ov);
           if (target && target.pw) {
             // No retries after an attempted submit, including thrown handlers.
             var captured = captureTarget(target, options);
@@ -1649,6 +1889,9 @@
         resolve(invalid);
         return;
       }
+      // Porkbun's own verification can precede enabling Login. Wait at most
+      // one minute with no credential in page JS; keep generic timing intact.
+      if (porkbunSelectors(ov)) options.detectionTimeoutMs = 60000;
       var deadline = Date.now() + options.detectionTimeoutMs;
       var origin = window.location.origin;
       var finished = false;
@@ -1678,6 +1921,7 @@
         try {
           if (document.readyState !== "loading") {
             var target = findLoginForm(ov, options);
+            if (!target) openFreepbxAdmin(ov);
             if (target) {
               targetFingerprint(target);
               finish({ ok: true, deadline: deadline });

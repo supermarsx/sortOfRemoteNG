@@ -185,6 +185,26 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("explicit origin-bound automatic website 2FA", () => {
+  it("waits for Porkbun verification without generating a code before its late app challenge", async () => {
+    conn.hostname = "porkbun.com";
+    conn.httpApplication = { version: 1, id: "porkbun", loginMode: "form" };
+    conn.httpAutoMfa!.origin = "https://porkbun.com";
+    conn.httpAutoMfa!.challengeId = "porkbun-totp";
+    currentUrl = "https://porkbun.com/account/login";
+    doc!.url = "http://127.0.0.1:41000/account/login";
+    saved = structuredClone(conn);
+    await mount();
+    await act(async () => vi.advanceTimersByTimeAsync(45_000));
+    expect(api.canRetry).toBe(false);
+    expect(mock.compute).not.toHaveBeenCalled();
+    expect(requests("totpSubmit")).toHaveLength(0);
+    const latest = requests("totpProbe").length - 1;
+    expect(requests("totpProbe")[latest].payload.submission).toBe("porkbun");
+    await acceptChallenge(latest);
+    expect(mock.compute).toHaveBeenCalledOnce();
+    expect(requests("totpSubmit")).toHaveLength(1);
+    expect(requests("totpSubmit")[0].payload.code).toBe("123456");
+  });
   it("uses Cloudflare's authenticator-specific probe and saved local consent", async () => {
     conn.hostname = "dash.cloudflare.com";
     conn.httpApplication = { version: 1, id: "cloudflare", loginMode: "form" };

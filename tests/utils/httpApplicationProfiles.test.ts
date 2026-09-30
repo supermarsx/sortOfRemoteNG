@@ -31,10 +31,10 @@ const connection = (
 
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(95);
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(97);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(95);
+    ).toBe(97);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -61,6 +61,8 @@ describe("HTTP application profile policy", () => {
       "plausible",
       "odoo",
       "phpmyadmin",
+      "freepbx",
+      "porkbun",
       "synology-dsm",
       "portainer",
       "nginxProxyMgr",

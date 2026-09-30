@@ -438,7 +438,7 @@ impl ProxyNetworkState {
         self
     }
 
-    pub(super) fn cloudflare_manifest_eligible(&self, sequence: u64) -> bool {
+    pub(super) fn cloudflare_manifest_eligible(&self, sequence: u64, source_origin: &str) -> bool {
         let current = *self.document.borrow();
         self.is_active()
             && sequence > 0
@@ -447,8 +447,8 @@ impl ProxyNetworkState {
                 .issued
                 .lock()
                 .is_ok_and(|issued| issued.contains(&sequence))
-            && self.reviewed_application_profile
-                == Some(super::ReviewedApplicationProfile::Cloudflare)
+            && super::cloudflare_challenge::reviewed_source(self.reviewed_application_profile)
+                == Some(source_origin)
     }
 
     pub(super) fn mesh_manifest_eligible(&self, sequence: u64) -> bool {

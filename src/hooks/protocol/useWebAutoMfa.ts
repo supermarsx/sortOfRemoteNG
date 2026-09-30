@@ -320,7 +320,11 @@ export function useWebAutoMfa(options: Options) {
     };
     cancelPending.current = cancelAttempt;
     window.addEventListener("message", onMessage);
-    const deadline = Date.now() + (synologyMfa ? 90000 : 30000);
+    // Porkbun may first finish its site-owned verification and password step
+    // in this same document. Waiting does not compute or disclose any code.
+    const deadline =
+      Date.now() +
+      (synologyMfa || challenge.submission === "porkbun" ? 90000 : 30000);
     const challengePayload = (nonce: string) => ({
       nonce,
       codeSelector: challenge.codeSelector,

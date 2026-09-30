@@ -296,6 +296,8 @@ afterEach(() => {
   if (originalParent) Object.defineProperty(window, "parent", originalParent);
   Reflect.deleteProperty(window, "DarkReader");
   Reflect.deleteProperty(window, "automationFixture");
+  Reflect.deleteProperty(window, "logInExec");
+  Reflect.deleteProperty(window, "logIn");
   document.body.innerHTML = "";
   document.head.querySelectorAll("script").forEach((script) => script.remove());
   vi.restoreAllMocks();
@@ -303,6 +305,166 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("actual injected page-only automation client", () => {
+  describe("Porkbun public login authenticator contract", () => {
+    const probe = {
+      nonce: "b".repeat(32),
+      codeSelector:
+        'form#loginForm #twoFactorLoginContainer input#twoFactorLoginCode[autocomplete="one-time-code"]',
+      submitSelector: "#accountLoginButtonContainer button#accountLoginButton",
+      submission: "porkbun",
+    };
+    const code = () => ({
+      nonce: probe.nonce,
+      code: "123456",
+      expires: Date.now() + 20_000,
+    });
+    function fixture(path = "/account/login") {
+      vi.useFakeTimers();
+      history.replaceState({}, "", path);
+      pageHandlers.clear();
+      documentHandlers.clear();
+      window.eval(
+        `(function(){var p=${JSON.stringify(identity)},u=new URL(location.href);${darkSource}\n${source}\n})();`,
+      );
+      // Sanitized from the public page; real AJAX keeps credentials in this
+      // form and uses the external button for both password and app-code steps.
+      setupPage(`<div id="accountLoginContainer">
+        <form id="loginForm" action="/blank" target="lame_login_iframe" method="POST">
+          <input id="loginUsername" name="loginUsername" value="fixture-user">
+          <input id="loginPassword" name="loginPassword" type="password" value="fixture-password">
+          <div id="twoFactorLoginContainer"><input id="twoFactorLoginCode" autocomplete="one-time-code"></div>
+          <div id="twoFactorLoginContainerEmail" hidden><input id="twoFactorLoginCodeEmail" autocomplete="one-time-code"></div>
+        </form>
+        <div id="modal_forceCcaptcha" hidden>Complete verification</div>
+        <div id="accountLoginButtonContainer"><button id="accountLoginButton" onclick="logInExec();">Continue</button></div>
+      </div>`);
+      const field = document.querySelector<HTMLInputElement>(
+        "#twoFactorLoginCode",
+      )!;
+      const button = document.querySelector<HTMLButtonElement>(
+        "#accountLoginButton",
+      )!;
+      const form = document.querySelector<HTMLFormElement>("#loginForm")!;
+      const submitted = vi.fn();
+      const nativeSubmit = vi.fn();
+      form.addEventListener("submit", nativeSubmit);
+      const site = window as unknown as {
+        logInExec: () => void;
+        logIn: () => void;
+      };
+      site.logIn = () => {
+        submitted(field.value);
+      };
+      site.logInExec = () => site.logIn();
+      button.onclick = () => site.logInExec();
+      const send = (action: string, payload?: unknown) =>
+        command(action, payload);
+      return { field, button, form, submitted, nativeSubmit, send };
+    }
+    it("fills one app code and clicks the outside AJAX button without native submission", async () => {
+      const { field, submitted, nativeSubmit, send } = fixture();
+      send("totpProbe", probe);
+      expect(reports().slice(-1)[0].status).toBe("ok");
+      send("totpSubmit", code());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(field.value).toBe("123456");
+      expect(submitted).toHaveBeenCalledExactlyOnceWith("123456");
+      expect(nativeSubmit).not.toHaveBeenCalled();
+      expect(JSON.stringify(reports())).not.toMatch(
+        /123456|fixture-password|fixture-user/,
+      );
+      send("totpSubmit", code());
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      expect(submitted).toHaveBeenCalledOnce();
+    });
+    it("uses the catalog's exact authenticator challenge", () => {
+      const challenge =
+        getHttpApplicationProfile("porkbun")!.totpChallenges![0];
+      expect(challenge).toMatchObject({
+        codeSelector: probe.codeSelector,
+        submitSelector: probe.submitSelector,
+        submission: "porkbun",
+        paths: ["/account/login"],
+      });
+    });
+    it.each([
+      "hidden",
+      "disabled",
+      "email",
+      "recovery",
+      "captcha",
+      "external-action",
+      "form-button",
+      "missing-handler",
+      "wrong-path",
+    ])("does not arm the %s challenge", (variant) => {
+      const { field, button, form, send, submitted } = fixture(
+        variant === "wrong-path" ? "/account/recovery" : "/account/login",
+      );
+      if (variant === "hidden") field.parentElement!.hidden = true;
+      if (variant === "disabled") button.disabled = true;
+      if (variant === "captcha")
+        document.getElementById("modal_forceCcaptcha")!.hidden = false;
+      if (variant === "email")
+        document.getElementById("twoFactorLoginContainerEmail")!.hidden = false;
+      if (variant === "recovery") {
+        const input = document.createElement("input");
+        input.id = "bypassTwoFactor2FACode";
+        form.append(input);
+      }
+      if (variant === "external-action")
+        form.action = "https://unapproved.example/blank";
+      if (variant === "form-button") button.setAttribute("form", "loginForm");
+      if (variant === "missing-handler") button.onclick = null;
+      send("totpProbe", probe);
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      expect(field.value).toBe("");
+      expect(submitted).not.toHaveBeenCalled();
+    });
+    it.each([
+      "account",
+      "password",
+      "button",
+      "email",
+      "callback",
+      "login-handler",
+      "captcha",
+    ])("revokes the captured challenge when %s changes", async (variant) => {
+      const { field, button, submitted, send } = fixture();
+      send("totpProbe", probe);
+      if (variant === "account")
+        document.querySelector<HTMLInputElement>("#loginUsername")!.value =
+          "another-account";
+      if (variant === "password")
+        document.querySelector<HTMLInputElement>("#loginPassword")!.value =
+          "another-password";
+      if (variant === "button") button.replaceWith(button.cloneNode(true));
+      if (variant === "callback") button.onclick = () => {};
+      if (variant === "login-handler")
+        Object.assign(window, { logIn: () => {} });
+      if (variant === "captcha")
+        document.getElementById("modal_forceCcaptcha")!.hidden = false;
+      if (variant === "email")
+        document.getElementById("twoFactorLoginContainerEmail")!.hidden = false;
+      send("totpSubmit", code());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      expect(field.value).toBe("");
+      expect(submitted).not.toHaveBeenCalled();
+    });
+    it("clears a code if its handler switches to another verification step during input", async () => {
+      const { field, send, submitted } = fixture();
+      field.addEventListener("input", () => {
+        document.getElementById("twoFactorLoginContainerEmail")!.hidden = false;
+      });
+      send("totpProbe", probe);
+      send("totpSubmit", code());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(field.value).toBe("");
+      expect(reports().slice(-1)[0].status).toBe("failed");
+      expect(submitted).not.toHaveBeenCalled();
+    });
+  });
   describe("Cloudflare synthetic authenticator contract (not live DOM)", () => {
     const probe = {
       nonce: "b".repeat(32),
