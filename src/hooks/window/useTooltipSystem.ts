@@ -60,14 +60,32 @@ export function useTooltipSystem(): void {
       tooltipEl.style.display = "none";
     };
 
+    // Watch only the active control, not the whole application. Its action can
+    // change without another pointer event (for example Refresh / Stop loading).
+    const activeObserver = new MutationObserver(() => {
+      if (activeTarget?.getAttribute("data-tooltip")) {
+        showTooltip(activeTarget);
+      } else {
+        hideTooltip();
+      }
+    });
+    const activateTarget = (target: HTMLElement) => {
+      activeObserver.disconnect();
+      activeTarget = target;
+      activeObserver.observe(target, {
+        attributes: true,
+        attributeFilter: ["data-tooltip"],
+      });
+      showTooltip(target);
+    };
+
     const handlePointerOver = (event: MouseEvent) => {
       const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
         "[data-tooltip]",
       );
       if (!target) return;
       if (activeTarget === target) return;
-      activeTarget = target;
-      showTooltip(target);
+      activateTarget(target);
     };
 
     const handlePointerOut = (event: MouseEvent) => {
@@ -77,6 +95,7 @@ export function useTooltipSystem(): void {
         return;
       }
       activeTarget = null;
+      activeObserver.disconnect();
       hideTooltip();
     };
 
@@ -85,12 +104,12 @@ export function useTooltipSystem(): void {
         "[data-tooltip]",
       );
       if (!target) return;
-      activeTarget = target;
-      showTooltip(target);
+      activateTarget(target);
     };
 
     const handleFocusOut = () => {
       activeTarget = null;
+      activeObserver.disconnect();
       hideTooltip();
     };
 
@@ -108,6 +127,7 @@ export function useTooltipSystem(): void {
     window.addEventListener("scroll", handleWindowChange, true);
 
     return () => {
+      activeObserver.disconnect();
       document.removeEventListener("mouseover", handlePointerOver);
       document.removeEventListener("mouseout", handlePointerOut);
       document.removeEventListener("focusin", handleFocusIn);

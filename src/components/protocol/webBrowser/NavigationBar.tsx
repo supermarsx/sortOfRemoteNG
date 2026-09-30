@@ -133,7 +133,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => {
         <button
           onClick={mgr.isLoading ? mgr.handleCancelLoading : mgr.handleRefresh}
           className="sor-icon-btn-sm"
-          title={mgr.isLoading ? "Stop loading" : "Refresh"}
+          data-tooltip={mgr.isLoading ? "Stop loading" : "Refresh"}
           aria-label={mgr.isLoading ? "Stop loading" : "Refresh"}
           type="button"
         >

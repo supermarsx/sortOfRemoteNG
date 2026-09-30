@@ -52,6 +52,7 @@ function manager(overrides: Partial<WebBrowserMgr> = {}): WebBrowserMgr {
     proxyAlive: true,
     proxyRestarting: false,
     shouldMountIframe: true,
+    iframeRef: createRef<HTMLIFrameElement>(),
     handleRestartProxy: vi.fn(),
     ...overrides,
   } as unknown as WebBrowserMgr;
@@ -392,8 +393,17 @@ describe("embedded web failure recovery screen", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Close appearance settings" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Stop loading" }));
+    const loadControl = screen.getByRole("button", { name: "Stop loading" });
+    expect(loadControl).toHaveAttribute("data-tooltip", "Stop loading");
+    expect(loadControl).not.toHaveAttribute("title");
+    fireEvent.click(loadControl);
     expect(stop).toHaveBeenCalledOnce();
+    view.rerender(<NavigationBar mgr={{ ...mgr, isLoading: false }} />);
+    expect(loadControl).toHaveAttribute("data-tooltip", "Refresh");
+    expect(loadControl).toHaveAccessibleName("Refresh");
+    expect(loadControl).not.toHaveAttribute("title");
+    fireEvent.click(loadControl);
+    expect(mgr.handleRefresh).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "Back history" }));
     const menu = screen.getByRole("menu", { name: "Back history" });
     expect(menu).toHaveClass("overflow-y-auto");
