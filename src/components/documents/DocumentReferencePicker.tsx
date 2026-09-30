@@ -119,7 +119,7 @@ export default function DocumentReferencePicker({
       ariaLabel="Link to a record"
     >
       <ModalHeader title="Link to a record" onClose={() => onClose(null)} />
-      <ModalBody className="space-y-3">
+      <ModalBody className="space-y-3 px-5 py-4">
         <p className="text-sm text-[var(--color-textSecondary)]">
           Links keep their owning database. Following a connection link is an
           explicit action; adding a link never connects or runs a command.
