@@ -57,6 +57,8 @@ export interface ModalProps {
   dataTestId?: string;
   /** Accessible name for the dialog without changing its visible header. */
   ariaLabel?: string;
+  /** Preferred initial focus target inside the dialog. */
+  initialFocusRef?: React.RefObject<HTMLElement | null>;
   /** Size hint (mapped to max-width). */
   size?: string;
   /**
@@ -77,6 +79,7 @@ export const Modal: React.FC<ModalProps> = ({
   contentClassName,
   dataTestId,
   ariaLabel,
+  initialFocusRef,
   size: _size,
   presentation = "modal",
 }) => {
@@ -96,7 +99,11 @@ export const Modal: React.FC<ModalProps> = ({
       if (!panel) return;
 
       const focusable = getFocusableElements(panel);
-      const nextFocus = focusable[0] ?? panel;
+      const preferredFocus = initialFocusRef?.current;
+      const nextFocus =
+        preferredFocus && focusable.includes(preferredFocus)
+          ? preferredFocus
+          : (focusable[0] ?? panel);
       focusInsidePanel(nextFocus, panel);
     };
 
@@ -106,7 +113,7 @@ export const Modal: React.FC<ModalProps> = ({
       cancelAnimationFrame(frame);
       previousFocusRef.current?.focus({ preventScroll: true });
     };
-  }, [isOpen]);
+  }, [isOpen, initialFocusRef]);
 
   useEffect(() => {
     if (!isOpen) return;

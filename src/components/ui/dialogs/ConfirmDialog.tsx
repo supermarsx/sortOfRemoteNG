@@ -13,6 +13,8 @@ export interface ConfirmDialogProps {
   onCancel?: () => void;
   /** Disable the global Enter shortcut when focused buttons must own keyboard activation. */
   confirmOnEnter?: boolean;
+  /** Focus OK on opening so native Enter activation confirms the request. */
+  autoFocusConfirm?: boolean;
   /** Use a compact bottom-right confirmation toast instead of a centered modal. */
   presentation?: "modal" | "toast";
   /**
@@ -44,6 +46,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = (props) => (
             props.cancelText,
             props.variant,
             props.presentation,
+            props.autoFocusConfirm,
             Boolean(props.onCancel),
             props.secondaryAction?.label,
           ])
@@ -63,10 +66,12 @@ const ConfirmDialogRequest: React.FC<ConfirmDialogProps> = ({
   onConfirm,
   onCancel,
   confirmOnEnter = true,
+  autoFocusConfirm = false,
   secondaryAction,
   presentation = "modal",
 }) => {
   const [exiting, setExiting] = useState(false);
+  const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
   const pendingAction = useRef(false);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -149,6 +154,7 @@ const ConfirmDialogRequest: React.FC<ConfirmDialogProps> = ({
       ariaLabel={title}
       dataTestId="confirm-dialog"
       presentation={presentation}
+      initialFocusRef={autoFocusConfirm ? confirmButtonRef : undefined}
     >
       <ModalHeader
         title={title}
@@ -188,6 +194,7 @@ const ConfirmDialogRequest: React.FC<ConfirmDialogProps> = ({
             type="button"
             aria-disabled={exiting || undefined}
             onClick={confirm}
+            ref={confirmButtonRef}
             data-testid="confirm-yes"
             className={`px-4 py-2 text-[var(--color-text)] rounded-md transition-colors ${
               variant === "danger"

@@ -511,6 +511,7 @@ describe("useSessionManager settings effects", () => {
       "First session",
     );
     expect(result.current.confirmDialog?.props.presentation).toBe("toast");
+    expect(result.current.confirmDialog?.props.autoFocusConfirm).toBe(true);
     let firstResult = false;
     await act(async () => {
       result.current.confirmDialog?.props.onConfirm();
@@ -563,6 +564,8 @@ describe("useSessionManager settings effects", () => {
         const firstDialog = result.current.confirmDialog!;
         const view = render(firstDialog);
         const firstPanel = screen.getByRole("dialog");
+        act(() => vi.advanceTimersByTime(20));
+        expect(screen.getByTestId("confirm-yes")).toHaveFocus();
         fireEvent.click(screen.getByTestId("confirm-no"));
         // This render has not yet been replaced: repeated activation is ignored.
         fireEvent.click(screen.getByTestId("confirm-yes"));
@@ -575,6 +578,8 @@ describe("useSessionManager settings effects", () => {
         expect(secondDialog.props.message).toBe(firstDialog.props.message);
         expect(secondDialog.key).not.toBe(firstDialog.key);
         view.rerender(secondDialog);
+        act(() => vi.advanceTimersByTime(20));
+        expect(screen.getByTestId("confirm-yes")).toHaveFocus();
         expect(screen.getByRole("dialog")).not.toBe(firstPanel);
         expect(screen.getByTestId("confirm-no")).not.toHaveAttribute(
           "aria-disabled",

@@ -86,12 +86,14 @@ describe("session confirmation toast motion", () => {
       <ConfirmDialog
         isOpen
         presentation="toast"
+        autoFocusConfirm
         message="Close?"
         onConfirm={onConfirm}
         onCancel={onCancel}
       />,
     );
     act(() => vi.advanceTimersByTime(20));
+    expect(screen.getByTestId("confirm-yes")).toHaveFocus();
     const cancel = screen.getByTestId("confirm-no");
     cancel.focus();
     fireEvent.keyDown(cancel, { key: "Enter" });
@@ -105,6 +107,52 @@ describe("session confirmation toast motion", () => {
     unmount();
     expect(opener).toHaveFocus();
     opener.remove();
+  });
+
+  it("focuses OK by default and confirms once through native Enter activation", () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        isOpen
+        presentation="toast"
+        autoFocusConfirm
+        message="Close tab?"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(20));
+    const confirm = screen.getByTestId("confirm-yes");
+    expect(confirm).toHaveFocus();
+    fireEvent.keyDown(confirm, { key: "Enter" });
+    // JSDOM does not synthesize the browser's native keyboard click.
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    act(() => vi.advanceTimersByTime(160));
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("still cancels with Escape when OK has default focus", () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        isOpen
+        presentation="toast"
+        autoFocusConfirm
+        message="Close tab?"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(20));
+    expect(screen.getByTestId("confirm-yes")).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    act(() => vi.advanceTimersByTime(160));
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it("settles immediately when reduced motion is requested", () => {
