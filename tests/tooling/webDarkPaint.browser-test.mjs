@@ -62,6 +62,53 @@ function nativeShield(source) {
   return html;
 }
 
+// Render the actual Rust templates for this fixture's fixed palette. The
+// extractor deliberately rejects argument/template drift rather than silently
+// testing an unrelated copy of the native bootstrap.
+function nativeBootstrap(source) {
+  const template = (name) => {
+    const match = new RegExp(
+      `fn ${name}\\([^]*?format!\\(\\s*("(?:\\\\.|[^"\\\\])*")`,
+      "u",
+    ).exec(source);
+    assert.ok(match, `Rust ${name} format template changed`);
+    return JSON.parse(match[1]);
+  };
+  const render = (value, args = [], named = {}) => {
+    let slots = 0;
+    const result = value.replace(/\{\{|\}\}|\{([^{}]*)\}/gu, (part, name) => {
+      if (part === "{{" || part === "}}") return part[0];
+      if (name === "") return args[slots++];
+      assert.ok(Object.hasOwn(named, name), `unknown Rust field: ${name}`);
+      return named[name];
+    });
+    assert.equal(slots, args.length);
+    return result;
+  };
+  const background = "#181a1b",
+    text = "#e8e6e3";
+  const selector = /let selector = "([^"]+)";/u.exec(source)?.[1];
+  const root = /let root = "([^"]+)";/u.exec(source)?.[1];
+  assert.ok(selector && root);
+  return render(template("style"), [
+    background,
+    text,
+    background,
+    text,
+    render(template("force_surface_coverage"), [], { background, text }),
+    render(template("cpanel_coverage"), [], {
+      background,
+      text,
+      root,
+      surface: "#292a2b",
+      header: "#313233",
+      border: "#464747",
+    }),
+    render(template("generic_surface_coverage"), [], { selector, text }),
+    text,
+  ]);
+}
+
 async function until(check, label, timeout = 5000) {
   const end = Date.now() + timeout;
   do {
@@ -88,6 +135,7 @@ test(
       readSource(SANDBOX_SOURCE_PATH),
     ]);
     const shield = nativeShield(rust);
+    const bootstrap = nativeBootstrap(rust);
     const sandbox = parseSandboxTokens(sandboxSource).proxy;
     t.diagnostic(
       `Synthetic fixture; runtime SHA-256 ${createHash("sha256").update(runtime).digest("hex")}`,
@@ -98,9 +146,8 @@ test(
     let hostOrigin;
     let pageOrigin;
     const fixture = (run) => `<!doctype html><html><head>${shield}
-    <!-- Metadata seed only: production JS installs its own bootstrap palette.
-         This does not test Rust's separate bootstrap style() generator. -->
-    <style id="__sorng_dark_bootstrap_v1" class="darkreader" data-background-color="#181a1b" data-text-color="#e8e6e3"></style>
+    ${bootstrap}
+    ${run.csp ? `<meta http-equiv="Content-Security-Policy" content="style-src 'self'; script-src 'unsafe-inline'"><link rel="stylesheet" href="/fixture.css">` : ""}
     <script>(function(){
       const identity = ${JSON.stringify(run.identity)};
       const state = window.__paint = {events:[], outcome:null, error:null};
@@ -115,15 +162,22 @@ test(
         .then(value => state.outcome = value, error => state.error = String(error));
     })();</script>
     <style>html,body{margin:0;width:100%;height:100%;overflow:hidden}
-      .panel{position:fixed;inset:0}canvas{position:fixed;left:40px;top:40px;z-index:2}</style>
+      .custom-app-shell{position:fixed;inset:0}canvas{position:fixed;left:40px;top:40px;z-index:2}</style>
     </head><body style="background:white!important;color:black!important">
-    <main class="panel" style="background:white!important;color:black!important">Synthetic content ${run.id}</main>
+    <div class="custom-app-shell" style="background:white!important;color:black!important">Synthetic content ${run.id}</div>
     <canvas id="marker" width="32" height="32" aria-label="visible content marker"></canvas>
     <script>const ctx = document.getElementById('marker').getContext('2d');
       ctx.fillStyle = ${JSON.stringify(run.color)};ctx.fillRect(0,0,32,32);</script>
     </body></html>`;
     const pageServer = createServer((req, res) => {
       res.setHeader("Cache-Control", "no-store");
+      if (req.url === "/fixture.css") {
+        res.setHeader("Content-Type", "text/css");
+        res.end(
+          "html,body{margin:0;width:100%;height:100%;overflow:hidden}.custom-app-shell{position:fixed;inset:0;background:white!important;color:black!important}canvas{position:fixed;left:40px;top:40px;z-index:2}",
+        );
+        return;
+      }
       if (req.url === DARKREADER_URL_PATH) {
         engineRequests++;
         res.setHeader("Content-Type", "text/javascript");
@@ -447,11 +501,94 @@ test(
             "fresh engine request after navigation",
           );
           if (hosted)
-            assert.equal(await evaluate("__host.accepted.length"), navigation);
+            assert.equal(
+              await evaluate(
+                `__host.accepted.filter(event => event.documentToken === ${JSON.stringify(run.identity.documentToken)}).length`,
+              ),
+              1,
+            );
           for (let sample = 0; sample < 3; sample++) {
             await shot(`${label}/presented-${sample}`, "dark", color);
             await delay(60);
           }
+          // Generic custom-app UI, with no framework or product marker. Late
+          // sheets, pseudo-elements and inline-important mutations must never
+          // expose a light surface after the initial readiness handshake.
+          await evaluate(
+            `(() => {
+            const sheet = document.createElement('style');
+            sheet.textContent = '.custom-app-shell,.custom-app-shell::before{background:white!important;color:black!important}.custom-app-shell::before{content:"";position:fixed;inset:0}';
+            document.head.append(sheet);
+            document.querySelector('.custom-app-shell').style.setProperty('background-color','white','important');
+          })()`,
+            contextId,
+          );
+          await shot(`${label}/late-custom-app-style`, "dark", color);
+          await evaluate(
+            `(() => {
+            const sheet = document.getElementById('__sorng_dark_bootstrap_v1');
+            sheet.setAttribute('media', 'print');
+            sheet.textContent = 'html,body{background:white!important}';
+          })()`,
+            contextId,
+          );
+          await shot(`${label}/repaired-custom-app-preload`, "dark", color);
+          // CSS-only components must receive the same protection without the
+          // vendor's shadow support concealing a missing controller path.
+          await evaluate(
+            `void __sorngWebDarkModeDocument_v1.set({enabled:true,cssOnly:true})`,
+            contextId,
+          );
+          await until(
+            () =>
+              evaluate(
+                "document.documentElement.hasAttribute('data-sorng-dark-presented')",
+                contextId,
+              ),
+            "CSS fallback presented",
+          );
+          await evaluate(
+            `(() => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            window.__component = host.attachShadow({mode:'open'});
+            __component.innerHTML += '<style>.unknown-login-shell,.unknown-login-shell::before{background:white!important}.unknown-login-shell{position:fixed;inset:0;z-index:1}.unknown-login-shell::before{content:"";position:fixed;inset:0}</style><div class="unknown-login-shell" style="background:white!important">Login</div>';
+          })()`,
+            contextId,
+          );
+          await shot(`${label}/generic-shadow-repair`, "dark");
+          await until(
+            () =>
+              evaluate(
+                "document.documentElement.hasAttribute('data-sorng-dark-presented')",
+                contextId,
+              ),
+            "shadow repair presented",
+          );
+          await shot(`${label}/generic-shadow`, "dark", color);
+          await evaluate(
+            `__component.querySelector('.unknown-login-shell').style.setProperty('background-color','#fafafa','important')`,
+            contextId,
+          );
+          await shot(`${label}/late-shadow-inline`, "dark", color);
+          await evaluate(
+            `(() => {
+              const sheet = __component.querySelector('.sorng-cpanel-shadow-dark');
+              window.__shadowCss = sheet.textContent;
+              sheet.firstChild.data = '*::before{background:white!important}';
+            })()`,
+            contextId,
+          );
+          await shot(`${label}/shadow-text-damage-repair`, "dark");
+          await until(
+            () =>
+              evaluate(
+                "__component.querySelector('.sorng-cpanel-shadow-dark').textContent === __shadowCss && document.documentElement.hasAttribute('data-sorng-dark-presented')",
+                contextId,
+              ),
+            "shadow text damage repaired and presented",
+          );
+          await shot(`${label}/shadow-text-damage-recovered`, "dark", color);
           if (!hosted && navigation === 2) {
             // Sensitivity control and disable coverage: the same fixture must
             // actually paint white once production removes its protections.
@@ -470,6 +607,54 @@ test(
           }
         }
       }
+      // A meta policy can take effect after the native preload but before a
+      // delayed controller. Its static sheet must survive adoption and an
+      // engine refusal, without adding script permissions to the policy.
+      const cspRun = {
+        id: randomUUID(),
+        color: "rgb(220, 40, 60)",
+        identity: {},
+        csp: true,
+      };
+      runs.set(cspRun.id, cspRun);
+      const cspUrl = `${pageOrigin}/${cspRun.id}`;
+      await send("Page.navigate", { url: cspUrl });
+      const cspContext = await until(async () => {
+        for (const context of contexts.values()) {
+          if (
+            context.origin === pageOrigin &&
+            (await evaluate(
+              `location.href === ${JSON.stringify(cspUrl)} && !!window.__paint && !!document.getElementById('marker')`,
+              context.id,
+            ).catch(() => false))
+          )
+            return context.id;
+        }
+        return false;
+      }, "CSP fixture context");
+      await evaluate("void __paint.start()", cspContext);
+      await until(
+        () =>
+          evaluate(
+            "__paint.outcome === 'cssOnly' && document.documentElement.hasAttribute('data-sorng-dark-presented')",
+            cspContext,
+          ),
+        "CSP fallback visible",
+      );
+      await shot("csp/native-preload-retained", "dark", cspRun.color);
+      assert.equal(
+        await evaluate(
+          "!!document.getElementById('__sorng_dark_bootstrap_v1').sheet",
+          cspContext,
+        ),
+        true,
+        "CSP must not invalidate the adopted preload",
+      );
+      await evaluate(
+        "void __sorngWebDarkModeDocument_v1.set({enabled:false})",
+        cspContext,
+      );
+      await shot("csp/disabled-negative-control", "light", cspRun.color);
       assert.deepEqual(errors, [], "no renderer exceptions");
       t.diagnostic(
         `${samples.length} PNG samples; ${engineRequests} delayed local bundle requests; both navigation markers visible`,

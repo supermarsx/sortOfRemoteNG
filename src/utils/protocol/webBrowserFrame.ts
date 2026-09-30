@@ -3,6 +3,12 @@ export const EMPTY_WEB_FRAME_SANDBOX = "";
 export const PROXY_WEB_FRAME_SANDBOX =
   "allow-same-origin allow-scripts allow-forms";
 
+/** Attribute state only: never reads a cross-origin document's location. */
+export function isEmptyWebBrowserFrame(iframe: HTMLIFrameElement) {
+  const src = iframe.getAttribute("src")?.trim();
+  return !src || src === "about:blank";
+}
+
 export function clearWebBrowserFrame(iframe: HTMLIFrameElement | null) {
   if (!iframe) return;
   const alreadyRestricted =
@@ -12,7 +18,7 @@ export function clearWebBrowserFrame(iframe: HTMLIFrameElement | null) {
   iframe.setAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);
   // Already-idle frames need no second document navigation (which also asks
   // WebView2 to run its document-start scripts again in the blocked sandbox).
-  if (!alreadyRestricted || iframe.getAttribute("src") !== "about:blank")
+  if (!alreadyRestricted || !isEmptyWebBrowserFrame(iframe))
     iframe.src = "about:blank";
 }
 
@@ -63,8 +69,12 @@ export function navigateWebBrowserFrame(
     protectedProxyUrls,
     iframe.ownerDocument.location.origin,
   );
+  const alreadyEnabled =
+    iframe.getAttribute("sandbox") === PROXY_WEB_FRAME_SANDBOX;
   // The already-active opaque blank stays opaque. These flags take effect on
   // the next cross-origin proxy document, preserving cookies and form scripts.
   iframe.setAttribute("sandbox", PROXY_WEB_FRAME_SANDBOX);
-  if (iframe.getAttribute("src") !== url) iframe.src = url;
+  // A matching URL in a restricted frame still needs a new document for the
+  // changed sandbox flags to apply. Ordinary approved rerenders remain idle.
+  if (!alreadyEnabled || iframe.getAttribute("src") !== url) iframe.src = url;
 }

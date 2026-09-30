@@ -48,6 +48,18 @@ fn force_surface_coverage(background: &str, text: &str) -> String {
     )
 }
 
+fn generic_surface_coverage(text: &str) -> String {
+    // Persistent structural floor for arbitrary HTML (including pseudo surfaces),
+    // independent of site markers and engine readiness. Keep this contract in
+    // sync with web_dark_mode_client.js. The root paint shield is not selected.
+    // Bootstrap only knows the palette: CSS background images are cleared, with
+    // no image analysis/fetching; actual media and the SVG subtree are untouched.
+    let selector = "html:root body *:not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *)";
+    format!(
+        "{selector},{selector}::before,{selector}::after,html:root body::before,html:root body::after{{background-color:transparent!important;background-image:none!important;color:{text}!important;transition:none!important}}"
+    )
+}
+
 fn cpanel_coverage(background: &str, text: &str) -> String {
     let surface = blend(background, text, 8);
     let header = blend(background, text, 12);
@@ -70,19 +82,20 @@ impl WebsiteDarkModeBootstrap {
         self.validate().ok()?;
         // Start the temporary loading palette in the response itself, before
         // the readiness bridge or host command can run. Important declarations
-        // reverse layer order: persistent canvas/surface/cPanel colors win over
-        // loading transparency, and both must precede the site's own layers.
+        // reverse layer order: explicit forced surfaces win over the permanent
+        // generic floor, then loading protection, then the site's own layers.
         // The runtime adopts this node and retires loading protection when the
         // engine (or CSS fallback) is ready. With scripts blocked it stays a
         // static CSS fallback. DarkReader must not convert its own preload.
         Some(format!(
-            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;transition:none!important}}{}{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;background-image:none!important;transition:none!important}}}}</style>",
+            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;background-image:none!important;transition:none!important}}{}{}}}@layer sorng-dark-surface{{{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body *:not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;background-image:none!important;transition:none!important}}}}</style>",
             self.background_color,
             self.text_color,
             self.background_color,
             self.text_color,
             force_surface_coverage(&self.background_color, &self.text_color),
             cpanel_coverage(&self.background_color, &self.text_color),
+            generic_surface_coverage(&self.text_color),
             self.text_color,
         ))
     }
@@ -162,8 +175,8 @@ mod tests {
         .unwrap();
 
         assert!(style.contains("class=\"darkreader\""));
-        assert!(style.contains("@layer sorng-force-dark,sorng-dark-loading;"));
-        assert!(style.contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;background-image:none!important;transition:none!important}}"));
+        assert!(style.contains("@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;"));
+        assert!(style.contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body *:not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;background-image:none!important;transition:none!important}}"));
         assert!(!style.contains("<script"));
         assert!(!style.contains("visibility:"));
         assert!(!style.contains("display:"));
@@ -181,11 +194,12 @@ mod tests {
             .split_once("@layer sorng-force-dark{")
             .unwrap()
             .1
-            .split_once("}@layer sorng-dark-loading{")
+            .split_once("}@layer sorng-dark-surface{")
             .unwrap()
             .0;
         let baseline = "html:root body :is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']){background-color:#102030!important;color:#d0e0f0!important;background-image:none!important;transition:none!important}";
         assert!(force.contains(baseline));
+        assert!(force.contains("html:root,html:root body,html:root frameset{background-color:#102030!important;color:#d0e0f0!important;background-image:none!important;transition:none!important}"));
         assert!(!force.contains("data-sorng-dark-ready"));
         let baseline_end = force.find(baseline).unwrap() + baseline.len();
         assert!(force[baseline_end..].starts_with("html:root:has(:is(#cpanel_body,"));
@@ -193,6 +207,62 @@ mod tests {
         let selectors = baseline.split_once('{').unwrap().0;
         for media in ["iframe", "img", "video", "canvas", "svg"] {
             assert!(!selectors.contains(media));
+        }
+    }
+
+    #[test]
+    fn generic_surface_floor_is_permanent_marker_free_and_below_explicit_force() {
+        let style = WebsiteDarkModeBootstrap {
+            background_color: "#102030".into(),
+            text_color: "#d0e0f0".into(),
+        }
+        .style()
+        .unwrap();
+        assert!(style.contains("@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;"));
+        let force = style.find("@layer sorng-force-dark{").unwrap();
+        let generic = style.find("@layer sorng-dark-surface{").unwrap();
+        let loading = style.find("@layer sorng-dark-loading{").unwrap();
+        assert!(force < generic && generic < loading);
+        let floor = &style[generic..loading];
+        for marker in [
+            "data-sorng-dark-ready",
+            "data-sorng-dark-presented",
+            "cpanel",
+            ":has(",
+            ".panel",
+            ".container",
+        ] {
+            assert!(!floor.contains(marker), "unexpected marker: {marker}");
+        }
+        assert!(floor.contains("background-color:transparent!important;background-image:none!important;color:#d0e0f0!important;transition:none!important"));
+        assert!(!floor.contains("url("));
+        assert!(!floor.contains("@import"));
+        assert!(!floor.contains("html:root::after"));
+    }
+
+    #[test]
+    fn generic_floor_covers_arbitrary_descendants_and_pseudos_but_excludes_media() {
+        let floor = generic_surface_coverage("#d0e0f0");
+        let (selectors, _) = floor.split_once('{').unwrap();
+        let selectors: Vec<_> = selectors.split(',').collect();
+        assert_eq!(selectors.len(), 5);
+        assert_eq!(selectors[1], format!("{}::before", selectors[0]));
+        assert_eq!(selectors[2], format!("{}::after", selectors[0]));
+        assert_eq!(selectors[3], "html:root body::before");
+        assert_eq!(selectors[4], "html:root body::after");
+        assert!(!selectors
+            .iter()
+            .any(|selector| selector.starts_with("html:root::")));
+        for selector in &selectors[..3] {
+            assert!(selector.starts_with("html:root body *"));
+            for media in [
+                "iframe", "frame", "img", "picture", "video", "audio", "canvas", "svg", "svg *",
+            ] {
+                assert!(
+                    selector.contains(&format!(":not({media})")),
+                    "{selector} must exclude {media}"
+                );
+            }
         }
     }
 }

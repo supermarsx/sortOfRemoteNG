@@ -209,6 +209,58 @@ pub(super) fn insertion_position(html: &str) -> Option<usize> {
     (templates == 0 && foreign.is_empty()).then_some(html.len())
 }
 
+/// Called only for a lowercased meta tag validated by delimited_tag. Inspect
+/// actual attributes, not http-equiv/CSP text inside another attribute's value.
+fn meta_may_set_csp(tag: &str) -> bool {
+    let bytes = tag.as_bytes();
+    let mut cursor = 5; // <meta
+    while cursor < bytes.len() {
+        while bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if matches!(bytes[cursor], b'/' | b'>') {
+            return false;
+        }
+        let start = cursor;
+        while !bytes[cursor].is_ascii_whitespace() && !matches!(bytes[cursor], b'=' | b'/' | b'>') {
+            cursor += 1;
+        }
+        let name = &tag[start..cursor];
+        while bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        let mut value = "";
+        if bytes[cursor] == b'=' {
+            cursor += 1;
+            while bytes[cursor].is_ascii_whitespace() {
+                cursor += 1;
+            }
+            if matches!(bytes[cursor], b'\'' | b'"') {
+                let quote = bytes[cursor];
+                cursor += 1;
+                let start = cursor;
+                while bytes[cursor] != quote {
+                    cursor += 1;
+                }
+                value = &tag[start..cursor];
+                cursor += 1;
+            } else {
+                let start = cursor;
+                while !bytes[cursor].is_ascii_whitespace() && bytes[cursor] != b'>' {
+                    cursor += 1;
+                }
+                value = &tag[start..cursor];
+            }
+        }
+        if name == "http-equiv" {
+            // The first duplicate wins in HTML. Entity decoding is deliberately
+            // not reimplemented: stop conservatively for any encoded value.
+            return value == "content-security-policy" || value.contains('&');
+        }
+    }
+    false
+}
+
 /// Only traverse a document's inert preamble, never search for a head inside
 /// raw text, templates, attributes or foreign content. Keeping leading meta
 /// elements in place preserves charset sniffing. Stop before an upstream meta
@@ -247,11 +299,8 @@ pub(super) fn early_insertion_position(html: &str) -> usize {
         let Some((name, false, end)) = delimited_tag(&lower, cursor) else {
             return cursor;
         };
-        if name == "meta" {
-            let tag = &lower[cursor..end];
-            if tag.contains("http-equiv") && tag.contains("content-security-policy") {
-                return cursor;
-            }
+        if name == "meta" && meta_may_set_csp(&lower[cursor..end]) {
+            return cursor;
         }
         phase = match (name, phase) {
             ("", 0) => 1, // Valid doctype (checked by delimited_tag).
@@ -307,6 +356,59 @@ mod tests {
                 fixture["name"]
             );
         }
+    }
+
+    #[test]
+    fn early_meta_csp_detection_uses_attributes_and_stops_on_encoded_values() {
+        let prefix = "<!doctype html><html><head><meta charset=utf-8>";
+        for meta in [
+            "<meta http-equiv=Content-Security-Policy content=\"style-src 'none'\">",
+            "<meta content=\"style-src 'none'\" HTTP-EQUIV = 'Content-Security-Policy'>",
+            "<meta http-equiv='content-security-&#112;olicy' content=\"style-src 'none'\">",
+            "<meta http-equiv='content-security-policy' http-equiv='refresh'>",
+        ] {
+            let html = format!("{prefix}{meta}<style>body{{background:white}}</style>");
+            assert_eq!(early_insertion_position(&html), prefix.len(), "{meta}");
+        }
+        for meta in [
+            "<meta name=description content='http-equiv content-security-policy'>",
+            "<meta data-http-equiv='content-security-policy'>",
+            "<meta http-equiv=refresh content='content-security-policy'>",
+            "<meta http-equiv=refresh http-equiv=content-security-policy>",
+            "<meta http-equiv content='content-security-policy'>",
+        ] {
+            let html = format!("{prefix}{meta}<style>body{{background:white}}</style>");
+            assert_eq!(
+                early_insertion_position(&html),
+                prefix.len() + meta.len(),
+                "{meta}"
+            );
+        }
+    }
+
+    #[test]
+    fn generic_floor_preempts_site_layers_on_marker_free_ready_documents() {
+        let prefix = "<!doctype html><html data-sorng-dark-ready><head><meta charset=utf-8>";
+        let rest = "<style>@layer site{.siifArbitrary{background:white!important}.siifArbitrary::before{content:'';background:white!important}}</style></head><body><div class=siifArbitrary>SIIF</div></body></html>";
+        let palette = crate::http::WebsiteDarkModeBootstrap {
+            background_color: "#181a1b".into(),
+            text_color: "#e8e6e3".into(),
+        };
+        let injected =
+            super::super::inject_dark_mode_bootstrap(&format!("{prefix}{rest}"), &palette, false);
+        assert_eq!(
+            injected,
+            format!("{prefix}{}{rest}", palette.style().unwrap())
+        );
+        let floor = injected.find("@layer sorng-dark-surface{").unwrap();
+        assert!(floor < injected.find("@layer site{").unwrap());
+        let rule = injected[floor..]
+            .split_once("}@layer sorng-dark-loading{")
+            .unwrap()
+            .0;
+        assert!(rule.contains("html:root body *:not(iframe)"));
+        assert!(rule.contains("::before"));
+        assert!(!rule.contains("data-sorng-dark-ready"));
     }
 
     #[test]

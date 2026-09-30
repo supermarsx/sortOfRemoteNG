@@ -91,7 +91,22 @@ async fn dark_bootstrap_survives_redirects_gzip_and_child_documents_without_chan
             assert!(body[start..].starts_with(&palette().style().unwrap()));
             assert!(bootstrap.contains("data-background-color=\"#181a1b\""));
             assert!(bootstrap.contains("class=\"darkreader\""));
-            assert!(bootstrap.contains("@layer sorng-force-dark,sorng-dark-loading;"));
+            assert!(bootstrap
+                .contains("@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;"));
+            let generic = bootstrap
+                .split_once("@layer sorng-dark-surface{")
+                .unwrap()
+                .1
+                .split_once("}@layer sorng-dark-loading{")
+                .unwrap()
+                .0;
+            assert!(generic.contains("html:root body *:not(iframe):not(frame)"));
+            assert!(generic.contains("::before"));
+            assert!(generic.contains("::after"));
+            assert!(generic.contains("html:root body::before,html:root body::after{"));
+            assert!(bootstrap.contains("html:root,html:root body,html:root frameset{background-color:#181a1b!important;color:#e8e6e3!important;background-image:none!important;transition:none!important}"));
+            assert!(!generic.contains("data-sorng-dark-ready"));
+            assert!(!generic.contains("cpanel"));
             assert!(bootstrap
                 .contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready])"));
             assert!(bootstrap.contains("background-color:transparent!important"));

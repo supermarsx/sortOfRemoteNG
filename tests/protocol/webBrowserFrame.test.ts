@@ -4,10 +4,46 @@ import {
   navigateWebBrowserFrame,
   EMPTY_WEB_FRAME_SANDBOX,
   PROXY_WEB_FRAME_SANDBOX,
+  isEmptyWebBrowserFrame,
 } from "../../src/utils/protocol/webBrowserFrame";
 
 const proxy = "http://p0123456789abcdef0123456789abcdef.localhost:43081/";
 describe("website iframe navigation sandbox boundary", () => {
+  it("does not navigate an already restricted implicit initial document", () => {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);
+    const navigation = vi.fn();
+    Object.defineProperty(iframe, "src", { set: navigation });
+    clearWebBrowserFrame(iframe);
+    expect(isEmptyWebBrowserFrame(iframe)).toBe(true);
+    expect(navigation).not.toHaveBeenCalled();
+    expect(iframe).not.toHaveAttribute("src");
+  });
+  it("revokes a permissive implicit initial document by navigating with restrictive flags", () => {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", PROXY_WEB_FRAME_SANDBOX);
+    const navigation = vi.fn();
+    Object.defineProperty(iframe, "src", {
+      set: (value) => navigation(value, iframe.getAttribute("sandbox")),
+    });
+    clearWebBrowserFrame(iframe);
+    expect(navigation).toHaveBeenCalledExactlyOnceWith("about:blank", "");
+  });
+  it("renavigates a matching restricted target so the proxy document gets script permissions", () => {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);
+    iframe.setAttribute("src", proxy);
+    const navigation = vi.fn();
+    Object.defineProperty(iframe, "src", {
+      set: (value) => navigation(value, iframe.getAttribute("sandbox")),
+    });
+    navigateWebBrowserFrame(iframe, proxy, proxy);
+    navigateWebBrowserFrame(iframe, proxy, proxy);
+    expect(navigation).toHaveBeenCalledExactlyOnceWith(
+      proxy,
+      PROXY_WEB_FRAME_SANDBOX,
+    );
+  });
   it("does not navigate an already restricted blank document again", () => {
     const iframe = document.createElement("iframe");
     iframe.setAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);

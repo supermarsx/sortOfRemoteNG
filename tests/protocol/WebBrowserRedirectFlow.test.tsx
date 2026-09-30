@@ -45,6 +45,7 @@ const h = vi.hoisted(() => ({
   verify: vi.fn(),
   activate: vi.fn(),
   readCurrent: vi.fn(),
+  verifyCurrent: vi.fn(),
   flushPendingSave: vi.fn(),
   dispatchAndFlush: vi.fn(),
   connections: [] as Connection[],
@@ -136,9 +137,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
           if (h.locked) throw new Error("locked");
         },
         readCurrent: h.readCurrent,
-        verifyCurrent: async () => {
-          if (h.locked) throw new Error("locked");
-        },
+        verifyCurrent: h.verifyCurrent,
       }),
     }),
   },
@@ -258,6 +257,9 @@ beforeEach(() => {
   h.readCurrent.mockReset().mockImplementation(async () => ({
     connections: structuredClone(h.persistedConnections),
   }));
+  h.verifyCurrent.mockReset().mockImplementation(async () => {
+    if (h.locked) throw new Error("locked");
+  });
   h.flushPendingSave.mockReset().mockImplementation(async () => {
     if (h.failSave) throw new Error("Synthetic save refused");
     h.persistedConnections = structuredClone(h.connections);
@@ -2941,11 +2943,225 @@ describe("page readiness deadline after the document starts", () => {
 
   const darkShield = () => screen.queryByTestId("web-dark-paint-shield");
   function forceDark() {
+    h.connections[0].name = "SIIF custom website";
+    h.connections[0].hostname = "siif.example.test";
+    h.connections[0].httpApplication = {
+      version: 1,
+      id: "custom",
+      loginMode: "manual",
+    };
     h.connections[0].httpAutomation = normalizeHttpAutomation({
       ...normalizeHttpAutomation(undefined),
       forceDark: true,
     });
   }
+
+  it.each(["synology-dsm", "cpanel", "custom"] as const)(
+    "starts %s with dark preemption despite an unrelated database baseline conflict",
+    async (id) => {
+      forceDark();
+      h.connections[0].httpApplication = {
+        version: 1,
+        id,
+        loginMode: "manual",
+      };
+      h.connections[0].hostname =
+        id === "synology-dsm"
+          ? "s--0-1.quickconnect.to"
+          : "website.example.test";
+      h.connections[0].port = id === "cpanel" ? 2083 : 443;
+      // A captured write/CAS baseline can change due to another connection,
+      // bookmark or session-metadata save. It is not a theme read permission.
+      h.verifyCurrent.mockRejectedValue(
+        new Error(
+          "Database contents changed in another window. Reload and review the library before running an action.",
+        ),
+      );
+      const { iframe } = await mountedOnFakeClock();
+      expect(iframe.src).toContain(proxies[0].proxy_url);
+      expect(errorScreen()).toBeNull();
+      const start = h.invoke.mock.calls.find(
+        ([name]) => name === "start_basic_auth_proxy",
+      );
+      expect(start?.[1]?.config.website_dark_mode).toMatchObject({
+        backgroundColor: expect.stringMatching(/^#[0-9a-f]{6}$/i),
+      });
+      expect(h.readCurrent).toHaveBeenCalled();
+    },
+  );
+
+  it("preempts hosted Google pages with an automatic address and port", async () => {
+    forceDark();
+    h.connections = [
+      {
+        ...googleAnalyticsConnection(),
+        httpAutomation: h.connections[0].httpAutomation,
+      },
+    ];
+    h.persistedConnections = structuredClone(h.connections);
+    const view = render(<Harness />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    const iframe = view.container.querySelector("iframe")!;
+    expect(new URL(iframe.src).origin).toBe(
+      proxies[0].google_routes?.find(
+        (route) => route.upstreamOrigin === "https://accounts.google.com",
+      )?.proxyOrigin,
+    );
+    expect(errorScreen()).toBeNull();
+    expect(darkShield()).not.toBeNull();
+    const start = h.invoke.mock.calls.find(
+      ([name]) => name === "start_basic_auth_proxy",
+    );
+    expect(start?.[1]?.config.website_dark_mode).toBeTruthy();
+  });
+
+  it.each([false, true])(
+    "waits for initial theme settings and starts once without opening a light page (StrictMode: %s)",
+    async (strict) => {
+      const harness = () =>
+        strict ? (
+          <React.StrictMode>
+            <Harness />
+          </React.StrictMode>
+        ) : (
+          <Harness />
+        );
+      forceDark();
+      h.persistedConnections = structuredClone(h.connections);
+      h.settingsReady = false;
+      const view = render(harness());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(proxies).toHaveLength(0);
+      expect(view.container.querySelector("iframe")).toBeNull();
+      expect(errorScreen()).toBeNull();
+      h.settingsReady = true;
+      view.rerender(harness());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(proxies).toHaveLength(1);
+      expect(darkShield()).not.toBeNull();
+      expect(errorScreen()).toBeNull();
+      h.settingsReady = false;
+      view.rerender(harness());
+      h.settingsReady = true;
+      view.rerender(harness());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(proxies).toHaveLength(1);
+    },
+  );
+
+  it("does not start after Stop while initial dark settings are still pending", async () => {
+    forceDark();
+    h.persistedConnections = structuredClone(h.connections);
+    h.settingsReady = false;
+    const view = render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "Stop loading" }));
+    h.settingsReady = true;
+    view.rerender(<Harness />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(proxies).toHaveLength(0);
+    expect(view.container.querySelector("iframe")).toBeNull();
+  });
+
+  it.each(["read failed", "saved preference missing"])(
+    "never starts a light proxy when requested dark preemption cannot be verified (%s)",
+    async (failure) => {
+      forceDark();
+      if (failure === "read failed")
+        h.readCurrent.mockRejectedValue(
+          new Error("Synthetic storage unavailable"),
+        );
+      else
+        h.readCurrent.mockResolvedValue({
+          connections: structuredClone(h.persistedConnections),
+        });
+      const view = render(<Harness />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(proxies).toHaveLength(0);
+      expect(view.container.querySelector("iframe")).toBeNull();
+      expect(errorScreen()).toHaveTextContent(
+        "Dark theme could not be prepared",
+      );
+      expect(errorScreen()!.parentElement).toHaveStyle({ colorScheme: "dark" });
+      expect(h.connections[0].httpAutomation!.forceDark).toBe(true);
+
+      // Retry only after the owning database can verify the saved preference.
+      h.persistedConnections = structuredClone(h.connections);
+      h.readCurrent.mockResolvedValue({ connections: h.persistedConnections });
+      fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(proxies).toHaveLength(1);
+      expect(darkShield()).not.toBeNull();
+      const start = h.invoke.mock.calls.find(
+        ([name]) => name === "start_basic_auth_proxy",
+      );
+      expect(start?.[1]?.config.website_dark_mode).toMatchObject({
+        backgroundColor: expect.stringMatching(/^#[0-9a-f]{6}$/i),
+      });
+    },
+  );
+
+  it.each(["reject", "missing"])(
+    "ignores an older dark-setting read after a newer navigation succeeds (%s)",
+    async (outcome) => {
+      forceDark();
+      h.persistedConnections = structuredClone(h.connections);
+      const oldReads: Array<{
+        resolve: (value: { connections: Connection[] }) => void;
+        reject: (error: Error) => void;
+      }> = [];
+      h.readCurrent.mockImplementation(
+        () =>
+          new Promise((resolve, reject) => {
+            oldReads.push({ resolve, reject });
+          }),
+      );
+      const view = render(<Harness />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(oldReads.length).toBeGreaterThan(0);
+      expect(proxies).toHaveLength(0);
+      h.readCurrent.mockResolvedValue({ connections: h.persistedConnections });
+      fireEvent.click(screen.getByRole("button", { name: "Stop loading" }));
+      fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(proxies).toHaveLength(1);
+      const iframe = view.container.querySelector("iframe")!;
+      const currentSrc = iframe.src;
+      expect(darkShield()).not.toBeNull();
+      await act(async () => {
+        for (const read of oldReads) {
+          if (outcome === "reject") read.reject(new Error("Stale failed read"));
+          else read.resolve({ connections: [] });
+        }
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(errorScreen()).toBeNull();
+      expect(view.container.querySelector("iframe")).toBe(iframe);
+      expect(iframe.src).toBe(currentSrc);
+      expect(proxies).toHaveLength(1);
+      expect(darkShield()).not.toBeNull();
+      expect(h.invoke).not.toHaveBeenCalledWith("stop_basic_auth_proxy", {
+        sessionId: "proxy-1",
+      });
+    },
+  );
 
   it("keeps the dark shield through DOM/load completion until an exact document paint acknowledgement", async () => {
     forceDark();
@@ -3046,19 +3262,221 @@ describe("page readiness deadline after the document starts", () => {
     expect(errorScreen()).not.toBeNull();
   });
 
-  it("preserves noninjected PDF/text/CSP load completion and clears its exemption on navigation", async () => {
+  it("keeps unknown loaded content covered and offers recovery without a paint acknowledgement", async () => {
     forceDark();
     const { iframe, advance } = await mountedOnFakeClock();
     document.removeEventListener("load", holdFrameLoad, true);
     fireEvent.load(iframe);
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "false");
     expect(darkShield()).not.toBeNull();
     await advance(0);
-    expect(darkShield()).toBeNull();
-    expect(iframe).not.toHaveAttribute("inert");
+    expect(darkShield()).not.toBeNull();
+    expect(iframe).toHaveAttribute("inert");
+    await advance(119_000);
+    expect(errorScreen()).toBeNull();
+    expect(darkShield()).not.toBeNull();
+    await advance(1_000);
+    expect(errorScreen()).toHaveTextContent("Dark theme could not be prepared");
+    // Recovery inherits the verified palette even if the application's own
+    // UI theme is light; it must not replace the dark cover with white UI.
+    expect(
+      errorScreen()!.parentElement!.style.getPropertyValue(
+        "--color-background",
+      ),
+    ).not.toBe("");
+    expect(errorScreen()!.parentElement).toHaveStyle({ colorScheme: "dark" });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await advance(1);
+    expect(darkShield()).not.toBeNull();
+  });
+
+  it("rearms only for an exact current pending identity and accepts repeated ready cycles", async () => {
+    forceDark();
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    for (const changed of [
+      { sessionId: "stale" },
+      { documentToken: "e".repeat(32) },
+      { documentSequence: 2 },
+      { navigationToken: null },
+      { url: `${new URL(identity.url).origin}/other` },
+      { version: 2 },
+    ]) {
+      send({ ...identity, ...changed, type: "proxy_dark_pending" });
+      expect(darkShield()).toBeNull();
+    }
+    for (const changed of [
+      { source: window },
+      { origin: "http://untrusted.invalid" },
+    ]) {
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: new URL(identity.url).origin,
+            data: { ...identity, type: "proxy_dark_pending" },
+            ...changed,
+          }),
+        ),
+      );
+      expect(darkShield()).toBeNull();
+    }
+    for (let cycle = 0; cycle < 2; cycle++) {
+      send({ ...identity, type: "proxy_dark_pending" });
+      expect(darkShield()).not.toBeNull();
+      expect(iframe).toHaveStyle({ visibility: "hidden" });
+      send({ ...identity, type: "proxy_dark_ready" });
+      expect(darkShield()).toBeNull();
+      expect(iframe.style.visibility).toBe("");
+    }
     await advance(120_000);
     expect(errorScreen()).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  });
+
+  it("retains the verified palette through settings reload without sending a proxy off update", async () => {
+    forceDark();
+    const { view, iframe, identity, send, advance } =
+      await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    const background = iframe.parentElement!.style.backgroundColor;
+    h.invoke.mockClear();
+    h.settingsReady = false;
+    view.rerender(<Harness />);
+    await advance(1);
     expect(darkShield()).not.toBeNull();
+    expect(iframe.parentElement!.style.backgroundColor).toBe(background);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command]) => command === "update_proxy_website_dark_mode",
+      ),
+    ).toEqual([]);
+    send({ ...identity, type: "proxy_dark_ready" });
+    h.settingsReady = true;
+    view.rerender(<Harness />);
+    await advance(1);
+    expect(darkShield()).not.toBeNull();
+    send({ ...identity, type: "proxy_dark_ready" });
+    expect(darkShield()).toBeNull();
+    expect(iframe.style.visibility).toBe("");
+  });
+
+  it("does not send a proxy off update when a requested appearance refresh cannot be verified", async () => {
+    forceDark();
+    const { view, iframe, identity, send, advance } =
+      await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    const background = iframe.parentElement!.style.backgroundColor;
+    h.invoke.mockClear();
+    h.readCurrent.mockResolvedValue({ connections: [] });
+    h.connections = [{ ...h.connections[0], name: "Renamed SIIF" }];
+    view.rerender(<Harness />);
+    await advance(1);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command]) => command === "update_proxy_website_dark_mode",
+      ),
+    ).toEqual([]);
+    expect(iframe.parentElement!.style.backgroundColor).toBe(background);
+    expect(proxies).toHaveLength(1);
+    expect(darkShield()).toBeNull();
+  });
+
+  it("bounds perpetual pending after ready even when loading has already finished", async () => {
+    forceDark();
+    const { iframe, identity, send, advance } = await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    document.removeEventListener("load", holdFrameLoad, true);
+    fireEvent.load(iframe);
+    expect(iframe.parentElement).toHaveAttribute("aria-busy", "false");
+    expect(darkShield()).toBeNull();
+    await advance(120_000);
+    expect(errorScreen()).toBeNull();
+    send({ ...identity, type: "proxy_dark_pending" });
+    for (let tick = 0; tick < 11; tick++) {
+      await advance(10_000);
+      send({ ...identity, type: "proxy_dark_pending" });
+      expect(darkShield()).not.toBeNull();
+      expect(errorScreen()).toBeNull();
+    }
+    await advance(10_000);
+    expect(errorScreen()).toHaveTextContent("Dark theme could not be prepared");
+    expect(errorScreen()).toHaveTextContent("turn off the dark-mode extension");
+    expect(h.connections[0].httpAutomation!.forceDark).toBe(true);
+    expect(iframe).toHaveClass("invisible");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await advance(1);
+    expect(errorScreen()).toBeNull();
+    expect(darkShield()).not.toBeNull();
+  });
+
+  it("does not let an old document's pending watchdog fail a newer ready document", async () => {
+    forceDark();
+    const { identity, send, advance } = await mountedOnFakeClock();
+    send({ ...identity, type: "proxy_document_start" });
+    send({ ...identity, type: "proxy_dom_ready" });
+    send({ ...identity, type: "proxy_dark_ready" });
+    send({ ...identity, type: "proxy_dark_pending" });
+    await advance(110_000);
+    send({ ...identity, type: "proxy_navigation_start" });
+    const next = {
+      ...identity,
+      documentToken: "e".repeat(32),
+      documentSequence: 2,
+      navigationToken: null,
+    };
+    send({ ...next, type: "proxy_document_start" });
+    send({ ...next, type: "proxy_dom_ready" });
+    send({ ...next, type: "proxy_dark_ready" });
+    send({ ...identity, type: "proxy_dark_pending" });
+    await advance(120_000);
+    expect(errorScreen()).toBeNull();
+    expect(darkShield()).toBeNull();
+  });
+
+  it("clears retained presentation on explicit off even during settings reload", async () => {
+    forceDark();
+    const { view, iframe, advance } = await mountedOnFakeClock();
+    h.settingsReady = false;
+    h.connections = [
+      {
+        ...h.connections[0],
+        httpAutomation: normalizeHttpAutomation(undefined),
+      },
+    ];
+    view.rerender(<Harness />);
+    await advance(1);
+    expect(darkShield()).toBeNull();
+    expect(iframe.parentElement!.style.backgroundColor).toBe("");
+    expect(iframe.style.visibility).toBe("");
+    expect(h.invoke).toHaveBeenCalledWith("update_proxy_website_dark_mode", {
+      sessionId: "proxy-1",
+      palette: null,
+    });
+    h.connections[0].httpAutomation!.forceDark = true;
+    view.rerender(<Harness />);
+    expect(iframe.parentElement!.style.backgroundColor).toBe("");
+  });
+
+  it("does not carry the verified palette across an owner lease change during settings reload", async () => {
+    forceDark();
+    const { view, iframe, advance } = await mountedOnFakeClock();
+    expect(iframe.parentElement!.style.backgroundColor).not.toBe("");
+    h.settingsReady = false;
+    h.availabilityGeneration++;
+    view.rerender(<Harness />);
+    await advance(1);
+    expect(
+      view.container.querySelector('[style*="color-scheme: dark"]'),
+    ).toBeNull();
+    expect(darkShield()).toBeNull();
   });
 
   it("does not let deferred load bypass a document-start message or a newer navigation", async () => {
@@ -3089,9 +3507,57 @@ describe("page readiness deadline after the document starts", () => {
       }
       const { iframe, advance } = await mountedOnFakeClock();
       expect(darkShield()).toBeNull();
+      expect(iframe.style.visibility).toBe("");
       document.removeEventListener("load", holdFrameLoad, true);
       fireEvent.load(iframe);
       await advance(120_000);
+      expect(errorScreen()).toBeNull();
+    },
+  );
+
+  it.each([false, true])(
+    "restores iframe visibility after repeated app navigation without a paint gate (blocked=%s)",
+    async (blocked) => {
+      if (blocked) {
+        forceDark();
+        h.connections[0].httpProxyPolicy = {
+          ...DEFAULT_HTTP_PROXY_POLICY,
+          pageScripts: "block",
+        };
+      }
+      const { view, iframe, advance } = await mountedOnFakeClock();
+      const src = Object.getOwnPropertyDescriptor(
+        HTMLIFrameElement.prototype,
+        "src",
+      )!;
+      const visibilityAtNavigation: string[] = [];
+      Object.defineProperty(iframe, "src", {
+        configurable: true,
+        get() {
+          return src.get!.call(this);
+        },
+        set(value: string) {
+          visibilityAtNavigation.push(this.style.visibility);
+          src.set!.call(this, value);
+        },
+      });
+      // Remain loading throughout: no load/ready event or boolean transition
+      // can be relied on to commit recovery after these src writes.
+      for (let navigation = 0; navigation < 2; navigation++) {
+        const previousUrl = iframe.src;
+        fireEvent.submit(view.container.querySelector("form")!);
+        await advance(1);
+        expect(iframe.src).not.toBe(previousUrl);
+        expect(view.container.querySelector("iframe")).toBe(iframe);
+        expect(iframe.style.visibility).toBe("");
+        expect(iframe).not.toHaveAttribute("inert");
+        expect(darkShield()).toBeNull();
+      }
+      expect(visibilityAtNavigation).toEqual(["hidden", "hidden"]);
+      document.removeEventListener("load", holdFrameLoad, true);
+      fireEvent.load(iframe);
+      await advance(120_000);
+      expect(iframe.style.visibility).toBe("");
       expect(errorScreen()).toBeNull();
     },
   );
@@ -3104,7 +3570,24 @@ describe("page readiness deadline after the document starts", () => {
     send({ ...identity, type: "proxy_dom_ready" });
     send({ ...identity, type: "proxy_dark_ready" });
     expect(darkShield()).toBeNull();
+    const src = Object.getOwnPropertyDescriptor(
+      HTMLIFrameElement.prototype,
+      "src",
+    )!;
+    const visibilityAtNavigation: string[] = [];
+    Object.defineProperty(iframe, "src", {
+      configurable: true,
+      get() {
+        return src.get!.call(this);
+      },
+      set(value: string) {
+        visibilityAtNavigation.push(this.style.visibility);
+        src.set!.call(this, value);
+      },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await advance(1);
+    expect(visibilityAtNavigation).toEqual(["hidden"]);
     expect(darkShield()).not.toBeNull();
     expect(view.container.querySelector("iframe")).toBe(iframe);
     view.unmount();

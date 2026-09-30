@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+} from "react";
 import {
   captureCredentialFocus,
   typingUnavailable,
@@ -121,6 +128,7 @@ import {
   normalizeWebsiteDarkModeSettings,
 } from "../../utils/connection/websiteDarkMode";
 import { httpRedirectTrustIdentity } from "../../utils/protocol/httpRedirectTrustIdentity";
+import { websiteDarkModeSourceIdentity } from "../../utils/protocol/websiteDarkModeIdentity";
 import { resolveHttpBookmarkUrl } from "../../utils/protocol/httpBookmarkUrl";
 import {
   HTTP_BOOKMARK_DRAG_TYPE,
@@ -549,6 +557,8 @@ export function useWebBrowser(
   const sessionsRef = useRef(state.sessions);
   sessionsRef.current = state.sessions;
   const { settings, settingsReady } = useSettings();
+  const settingsReadyRef = useRef(settingsReady);
+  settingsReadyRef.current = settingsReady;
   const { toast } = useToastContext();
   const connection = resolveRuntimeConnection(
     state.connections,
@@ -565,12 +575,6 @@ export function useWebBrowser(
   );
   const websiteDarkBootstrapCandidate = useMemo(() => {
     try {
-      if (
-        settingsReady !== true ||
-        !normalizeSessionQuickActions(settings.sessionQuickActions)
-          .allowWebForceDark
-      )
-        return null;
       const navigation = getRuntimeWebNavigation(runtimeNavigationKey);
       const provenance =
         navigation?.trustedRedirectSource ?? navigation?.synologyRedirectSource;
@@ -600,6 +604,14 @@ export function useWebBrowser(
         appearanceSource.httpAutomation,
       );
       if (!automation.forceDark) return null;
+      // Undefined is indeterminate, not an instruction to remove a verified
+      // palette. Source/owner checks and explicit connection off still win.
+      if (settingsReady !== true) return undefined;
+      if (
+        !normalizeSessionQuickActions(settings.sessionQuickActions)
+          .allowWebForceDark
+      )
+        return null;
       const config = normalizeWebsiteDarkModeConfig(automation.darkMode);
       const global = normalizeWebsiteDarkModeSettings(settings.websiteDarkMode);
       const theme = config.useGlobalDefaults ? global.defaults : config.theme;
@@ -620,10 +632,56 @@ export function useWebBrowser(
     settingsReady,
     state.connections,
   ]);
-  const [websiteDarkBootstrap, setWebsiteDarkBootstrap] = useState<{
+  const websiteDarkPresentationScope = JSON.stringify([
+    session.id,
+    session.connectionId,
+    session.ownerDatabaseId,
+    databaseAvailability?.status,
+    databaseAvailability?.databaseId,
+    databaseAvailability?.generation,
+  ]);
+  type DarkPalette = {
     backgroundColor: string;
     textColor: string;
+  };
+  const [verifiedDarkPresentation, setVerifiedDarkPresentation] = useState<{
+    scope: string;
+    palette: DarkPalette | null;
   } | null>(null);
+  const setWebsiteDarkBootstrap = useCallback(
+    (palette: DarkPalette | null) => {
+      setVerifiedDarkPresentation({
+        scope: websiteDarkPresentationScope,
+        palette,
+      });
+    },
+    [websiteDarkPresentationScope],
+  );
+  // Presentation only: never use this value as script/auth consent. A requested
+  // palette may color our own cover while persistence is being verified; it
+  // must not become a light error/loading screen when that verification fails.
+  const websiteDarkBootstrap =
+    websiteDarkBootstrapCandidate === null
+      ? null
+      : verifiedDarkPresentation?.scope === websiteDarkPresentationScope
+        ? (verifiedDarkPresentation.palette ??
+          websiteDarkBootstrapCandidate ??
+          null)
+        : (websiteDarkBootstrapCandidate ?? null);
+  const verifiedPresentationScope = verifiedDarkPresentation?.scope;
+  useEffect(() => {
+    if (
+      websiteDarkBootstrapCandidate === null ||
+      (verifiedPresentationScope &&
+        verifiedPresentationScope !== websiteDarkPresentationScope)
+    )
+      setWebsiteDarkBootstrap(null);
+  }, [
+    websiteDarkBootstrapCandidate,
+    websiteDarkPresentationScope,
+    verifiedPresentationScope,
+    setWebsiteDarkBootstrap,
+  ]);
   const resolveWebsiteDarkBootstrap = useCallback(
     async (assertAttempt: () => void) => {
       assertAttempt();
@@ -645,14 +703,15 @@ export function useWebBrowser(
         databaseAvailability.databaseId !== session.ownerDatabaseId ||
         target?.databaseId !== session.ownerDatabaseId ||
         !target.assertAccessible ||
-        !target.verifyCurrent ||
         !target.readCurrent
       )
         return null;
       target.assertAccessible();
-      await target.verifyCurrent();
-      assertAttempt();
-      target.assertAccessible();
+      // Appearance is a read, not a write/action-library transaction. A whole
+      // database CAS check here rejects unrelated autosaves (including session
+      // bookkeeping) and prevents otherwise valid sites from ever opening.
+      // Read the current saved row once under the captured database lease;
+      // source identity, saved preference and navigation are checked below.
       const snapshot = await target.readCurrent();
       assertAttempt();
       target.assertAccessible();
@@ -666,8 +725,8 @@ export function useWebBrowser(
         provenance.assertIdentity(persisted);
       } else if (
         !connection ||
-        httpRedirectTrustIdentity(persisted) !==
-          httpRedirectTrustIdentity(connection)
+        websiteDarkModeSourceIdentity(persisted) !==
+          websiteDarkModeSourceIdentity(connection)
       )
         return null;
       const automation = normalizeHttpAutomation(persisted.httpAutomation);
@@ -1132,6 +1191,7 @@ export function useWebBrowser(
   const googleRoutesRef = useRef<GoogleProxyRoute[]>([]);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
+  const initialNavigationStarted = useRef(false);
   /** Start of the current navigation attempt: epoch for display, monotonic for elapsed. */
   const attemptStartRef = useRef<{
     epoch: number;
@@ -1170,22 +1230,14 @@ export function useWebBrowser(
   // of DOM/load completion and authentication state.
   const [darkPaintDocument, setDarkPaintDocument] =
     useState<typeof currentDocumentRef.current>(null);
-  const [nonInjectedLoad, setNonInjectedLoad] = useState<{
-    generation: number;
-    sessionId: string;
-    ownerScope: string;
-  } | null>(null);
-  const nonInjectedLoadTimer = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const resetDarkPaint = useCallback(() => {
     setDarkPaintDocument(null);
-    setNonInjectedLoad(null);
-    if (nonInjectedLoadTimer.current !== null) {
-      clearTimeout(nonInjectedLoadTimer.current);
-      nonInjectedLoadTimer.current = null;
-    }
   }, []);
+  useLayoutEffect(() => {
+    // A settings reload may cancel the runtime theme. Require another paint
+    // acknowledgement before revealing the document after settings return.
+    if (!settingsReady) resetDarkPaint();
+  }, [settingsReady, resetDarkPaint]);
   const [automationDocumentRevision, setAutomationDocumentRevision] =
     useState(0);
   const publishAutomationDocument = useCallback(
@@ -1305,13 +1357,17 @@ export function useWebBrowser(
     token: string | null;
     sessionId: string;
   } | null>(null);
-  const [shouldMountIframe, setShouldMountIframe] = useState(false);
+  // Retain the mount request, not just a boolean: navigating an already-mounted
+  // frame must still commit ContentArea's visibility reconciliation.
+  const [mountedFrameNavigation, setMountedFrameNavigation] =
+    useState<typeof pendingFrameRef.current>(null);
+  const shouldMountIframe = mountedFrameNavigation !== null;
   const clearFrame = useCallback(() => {
     resetDarkPaint();
     // Restrict and abort a live document before React removes its browsing
     // context. No inactive iframe is retained behind trust/recovery screens.
     clearWebBrowserFrame(iframeRef.current);
-    setShouldMountIframe(false);
+    setMountedFrameNavigation(null);
   }, [resetDarkPaint]);
   const attachIframe = useCallback(
     (iframe: HTMLIFrameElement | null) => {
@@ -1336,6 +1392,9 @@ export function useWebBrowser(
         const documentAliases = googleRoutesRef.current
           .filter((route) => route.documents)
           .map((route) => route.proxyOrigin);
+        // This mutation precedes src even when React batches the paint reset.
+        // ContentArea reconciles visibility on every commit, including off.
+        iframe.style.visibility = "hidden";
         navigateWebBrowserFrame(
           iframe,
           pending.url,
@@ -1371,7 +1430,7 @@ export function useWebBrowser(
         token,
         sessionId,
       };
-      setShouldMountIframe(true);
+      setMountedFrameNavigation(pendingFrameRef.current);
       if (iframeRef.current) attachIframe(iframeRef.current);
     },
     [attachIframe, resetDarkPaint],
@@ -2160,7 +2219,7 @@ export function useWebBrowser(
         setIsSecure(destination.protocol === "https:");
         appendHistory(destination.toString());
         deferredLoginRef.current.receive(response);
-        setShouldMountIframe(true);
+        setMountedFrameNavigation(pendingFrameRef.current);
         if (iframeRef.current) attachIframe(iframeRef.current);
         markSessionConnected();
       } catch (error) {
@@ -2281,6 +2340,7 @@ export function useWebBrowser(
   // ── Navigation ─────────────────────────────────────────────
   const navigateToUrl = useCallback(
     async (url: string, addToHistory = true) => {
+      initialNavigationStarted.current = true;
       const gen = ++navGenRef.current;
       attemptStartRef.current = {
         epoch: Date.now(),
@@ -2320,7 +2380,7 @@ export function useWebBrowser(
           proxyUrlRef.current = popup.proxyUrl;
           pendingInternalNavigationRef.current = true;
           setWaitingForTrust(false);
-          setWebsiteDarkBootstrap(websiteDarkBootstrapCandidate);
+          setWebsiteDarkBootstrap(websiteDarkBootstrapCandidate ?? null);
           setProxyAlive(true);
           armNavigationDeadline(gen, url);
           // Register before notifying subscribers to avoid a second navigation.
@@ -2334,7 +2394,7 @@ export function useWebBrowser(
             token: null,
             sessionId: popup.document.sessionId,
           };
-          setShouldMountIframe(true);
+          setMountedFrameNavigation(pendingFrameRef.current);
           if (iframeRef.current) {
             const reloading = iframeRef.current.getAttribute("src") === mapped;
             attachIframe(iframeRef.current);
@@ -2462,7 +2522,11 @@ export function useWebBrowser(
         // Retain this attempt's lease: a later render changing to manual must
         // not replace its post-await guard with a no-op.
         const assertFormLease = assertFormLoginCurrentRef.current;
-        let assertReviewedFlow = () => assertFormLease?.();
+        let assertReviewedFlow = () => {
+          if (gen !== navGenRef.current)
+            throw new Error("The website navigation was cancelled.");
+          assertFormLease?.();
+        };
         const unsupportedVault =
           connection && getVaultRuntimeUnsupportedMessage(connection);
         if (unsupportedVault) throw new Error(unsupportedVault);
@@ -2542,11 +2606,29 @@ export function useWebBrowser(
             await resolveWebsiteDarkBootstrap(assertReviewedFlow);
         } catch (error) {
           assertReviewedFlow();
-          debugLog("WebBrowser", "Skipped unverified dark bootstrap", {
+          debugLog("WebBrowser", "Could not verify dark bootstrap", {
             error,
           });
         }
         assertReviewedFlow();
+        if (
+          websiteDarkBootstrapCandidate !== null &&
+          !durableWebsiteDarkBootstrap
+        ) {
+          // Explicit force-dark is a presentation requirement, not best effort.
+          // Never fetch/display an unthemed document after a storage failure or
+          // when the saved preference disagrees with the requested appearance.
+          applyNavigationFailure(
+            localNavigationFailure(
+              "proxy_start_failed",
+              "Dark theme could not be prepared",
+              url,
+              "The saved dark-mode setting could not be verified.",
+              "No light page was opened. Keep the owning database open and retry, or explicitly turn off this website's dark-mode extension and reload.",
+            ),
+          );
+          return;
+        }
         setWebsiteDarkBootstrap(durableWebsiteDarkBootstrap);
         // ── Universal proxy mediation (P1) ──
         // Every http/https tab now routes through `start_basic_auth_proxy`
@@ -2835,6 +2917,7 @@ export function useWebBrowser(
       sessionNavigationKey,
       sharedPopupId,
       websiteDarkBootstrapCandidate,
+      setWebsiteDarkBootstrap,
       attachIframe,
     ],
   );
@@ -2901,17 +2984,26 @@ export function useWebBrowser(
     cancelPendingContinuation,
   ]);
 
-  // Initial load. Deferring one microtask lets React StrictMode cancel its
-  // development-only probe mount before native proxy allocation begins.
+  // Wait for the initial theme decision instead of turning settings startup
+  // into a permanent navigation error. Once started, later settings refreshes
+  // must not reopen the session or replay authentication.
   useEffect(() => {
+    if (
+      initialNavigationStarted.current ||
+      websiteDarkBootstrapCandidate === undefined
+    )
+      return;
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) void navigateToUrl(currentUrl);
+      // Deferring one microtask still cancels StrictMode's probe mount. An
+      // explicit navigation/stop while settings load owns the tab thereafter.
+      if (!cancelled && !initialNavigationStarted.current)
+        void navigateToUrl(currentUrl);
     });
     return () => {
       cancelled = true;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: initial navigation
+  }, [currentUrl, navigateToUrl, websiteDarkBootstrapCandidate]);
 
   // window.open(..., existingName) may retarget the same tool tab. Its registry
   // URL is runtime-only; do not persist token-bearing control links in sessions.
@@ -2950,8 +3042,6 @@ export function useWebBrowser(
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (nonInjectedLoadTimer.current !== null)
-        clearTimeout(nonInjectedLoadTimer.current);
       navGenRef.current += 1;
       cancelTrustRead();
       trustResolveRef.current?.(false);
@@ -3339,6 +3429,7 @@ export function useWebBrowser(
           "proxy_document_start",
           "proxy_navigation_start",
           "proxy_dom_ready",
+          "proxy_dark_pending",
           "proxy_dark_ready",
         ].includes(event.data?.type)
       ) {
@@ -3390,15 +3481,21 @@ export function useWebBrowser(
           current.sequence === report.documentSequence &&
           current.navigationToken === report.navigationToken &&
           current.url === url;
-        if (report.type === "proxy_dark_ready") {
+        if (
+          report.type === "proxy_dark_ready" ||
+          report.type === "proxy_dark_pending"
+        ) {
           if (
             !sameDocument ||
             !current ||
             current.generation !== navGenRef.current ||
-            current.ownerScope !== trustOwnerScopeRef.current
+            current.ownerScope !== trustOwnerScopeRef.current ||
+            (report.type === "proxy_dark_ready" && !settingsReadyRef.current)
           )
             return;
-          setDarkPaintDocument(current);
+          setDarkPaintDocument(
+            report.type === "proxy_dark_ready" ? current : null,
+          );
           return;
         }
         const startInternalNavigation = () => {
@@ -3715,34 +3812,8 @@ export function useWebBrowser(
       // Cross-origin
     }
     setLoadError("");
-    // PDF/text and CSP-suppressed bridges completed on load before the paint
-    // gate existed. Give queued document-start messages a task to arrive; an
-    // accepted HTML document must still acknowledge its own dark paint.
-    const loaded = {
-      generation: navGenRef.current,
-      sessionId: proxySessionIdRef.current,
-      ownerScope: trustOwnerScopeRef.current,
-    };
-    const src = iframe.src;
-    if (nonInjectedLoadTimer.current !== null)
-      clearTimeout(nonInjectedLoadTimer.current);
-    nonInjectedLoadTimer.current = setTimeout(() => {
-      nonInjectedLoadTimer.current = null;
-      const document = currentDocumentRef.current;
-      if (
-        !mountedRef.current ||
-        navigationFailureRef.current ||
-        iframeRef.current !== iframe ||
-        iframe.src !== src ||
-        loaded.generation !== navGenRef.current ||
-        loaded.sessionId !== proxySessionIdRef.current ||
-        loaded.ownerScope !== trustOwnerScopeRef.current ||
-        (document?.generation === loaded.generation &&
-          document.sessionId === loaded.sessionId)
-      )
-        return;
-      setNonInjectedLoad(loaded);
-    }, 0);
+    // Load alone cannot distinguish non-HTML from HTML with a suppressed
+    // bridge. Keep forced-dark content covered until paint or recoverable UI.
   }, [applyNavigationFailure, clearLoadingIndicator, currentUrl]);
 
   const handleRefresh = useCallback(() => {
@@ -4257,32 +4328,31 @@ export function useWebBrowser(
 
   const paintDocument = currentDocumentRef.current;
   const paintGeneration = navGenRef.current;
+  const paintSessionId = proxySessionIdRef.current;
   const waitingForDarkPaint =
     shouldMountIframe &&
     !!websiteDarkBootstrap &&
-    !!websiteDarkBootstrapCandidate &&
     proxyOptions.policy?.pageScripts !== "block" &&
     !loadError &&
     !redirectReview.review &&
     !redirectReview.error &&
-    !(
-      nonInjectedLoad?.generation === paintGeneration &&
-      nonInjectedLoad.sessionId === proxySessionIdRef.current &&
-      nonInjectedLoad.ownerScope === trustOwnerScope
-    ) &&
-    (!paintDocument ||
+    (!settingsReady ||
+      !paintDocument ||
       darkPaintDocument !== paintDocument ||
       paintDocument.generation !== paintGeneration ||
       paintDocument.ownerScope !== trustOwnerScope);
 
-  // Accepted HTML must acknowledge paint even after DOM-ready/load. Missing
-  // paint acknowledgement ends in the normal recoverable error UI.
+  // Both accepted HTML and unknown loaded content must acknowledge paint.
+  // This deadline is independent of loadTimeoutRef / the loading indicator:
+  // handleIframeLoad must not cancel it, even when no bridge ever starts.
   useEffect(() => {
     if (!waitingForDarkPaint) return;
     const timeout = setTimeout(() => {
       if (
         !mountedRef.current ||
         navGenRef.current !== paintGeneration ||
+        proxySessionIdRef.current !== paintSessionId ||
+        trustOwnerScopeRef.current !== trustOwnerScope ||
         currentDocumentRef.current !== paintDocument
       )
         return;
@@ -4292,7 +4362,7 @@ export function useWebBrowser(
           "Dark theme could not be prepared",
           activeNavigationUrlRef.current,
           "The website took too long to prepare its dark theme.",
-          "Retry the page to try again.",
+          "The page remains covered because its dark appearance could not be confirmed. Retry the page, or turn off the dark-mode extension in this website's settings and reload.",
         ),
       );
     }, DOCUMENT_READY_TIMEOUT_MS);
@@ -4300,6 +4370,8 @@ export function useWebBrowser(
   }, [
     waitingForDarkPaint,
     paintGeneration,
+    paintSessionId,
+    trustOwnerScope,
     paintDocument,
     applyNavigationFailure,
   ]);
@@ -4715,6 +4787,7 @@ export function useWebBrowser(
   }, [editingBmIdx]);
 
   const handleCancelLoading = useCallback(() => {
+    initialNavigationStarted.current = true;
     navGenRef.current += 1;
     pendingFrameRef.current = null;
     trustResolveRef.current?.(false);
@@ -4822,9 +4895,13 @@ export function useWebBrowser(
   });
 
   const websiteDarkBootstrapKey = stableJsonStringify(
-    websiteDarkBootstrapCandidate,
+    websiteDarkBootstrapCandidate ?? null,
   );
   useEffect(() => {
+    // Do not send null to the proxy while settings are indeterminate. No
+    // permissions are retained: the automation hooks still gate execution.
+    if (settingsReady !== true && websiteDarkBootstrapCandidate !== null)
+      return;
     if (sharedPopupId) {
       setWebsiteDarkBootstrap(JSON.parse(websiteDarkBootstrapKey));
       return;
@@ -4840,9 +4917,17 @@ export function useWebBrowser(
       )
         throw new Error("The website dark-mode update was cancelled.");
     };
-    void resolveWebsiteDarkBootstrap(assertCurrent)
+    const paletteUpdate =
+      websiteDarkBootstrapCandidate === null
+        ? Promise.resolve(null)
+        : resolveWebsiteDarkBootstrap(assertCurrent);
+    void paletteUpdate
       .then(async (palette) => {
         assertCurrent();
+        if (websiteDarkBootstrapCandidate !== null && !palette)
+          throw new Error(
+            "The requested dark-mode setting could not be verified.",
+          );
         await invoke("update_proxy_website_dark_mode", {
           sessionId,
           palette,
@@ -4859,7 +4944,14 @@ export function useWebBrowser(
     return () => {
       cancelled = true;
     };
-  }, [resolveWebsiteDarkBootstrap, websiteDarkBootstrapKey, sharedPopupId]);
+  }, [
+    resolveWebsiteDarkBootstrap,
+    websiteDarkBootstrapKey,
+    websiteDarkBootstrapCandidate,
+    sharedPopupId,
+    settingsReady,
+    setWebsiteDarkBootstrap,
+  ]);
 
   return {
     sharedSession: !!sharedPopupId,
@@ -4915,7 +5007,7 @@ export function useWebBrowser(
     shouldMountIframe,
     waitingForDarkPaint,
     redirectHandoffPending,
-    websiteDarkBootstrap: websiteDarkBootstrapCandidate,
+    websiteDarkBootstrap,
     pageInteractionBlocked:
       waitingForDarkPaint ||
       redirectHandoffPending ||

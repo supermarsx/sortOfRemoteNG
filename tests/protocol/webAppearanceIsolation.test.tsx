@@ -139,6 +139,28 @@ it("rearms only verified appearance after owner unlock even when macro storage k
     ).length;
   await waitFor(() => expect(enabledSent()).toBeGreaterThan(0));
   expect(hook.result.current.error).toMatch(/could not be validated/);
+  // Exercise the real parent and both bridges, not just the appearance hook:
+  // macro-library/settings cancellation must not send a competing dark-off.
+  for (const change of [{ settingsReady: false }, { scopeKey: "" }]) {
+    const beforeReload = sent.length;
+    hook.rerender({ ...options, ...change });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(
+      sent.slice(beforeReload).filter((entry) => entry.action === "dark"),
+    ).not.toContainEqual(
+      expect.objectContaining({ payload: { enabled: false } }),
+    );
+    if ("settingsReady" in change)
+      expect(
+        sent.slice(beforeReload).filter((entry) => entry.action === "dark"),
+      ).toHaveLength(0);
+    hook.rerender(options);
+    await waitFor(() =>
+      expect(hook.result.current.darkMode.enabled).toBe(true),
+    );
+  }
   act(() => {
     h.locked = true;
     h.lease++;

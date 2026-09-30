@@ -1,14 +1,26 @@
 import type { SectionProps } from "./types";
 import { ErrorPage } from "./ERROR_BASE";
-import React from "react";
+import React, { useLayoutEffect } from "react";
 import { WifiOff, RefreshCw } from "lucide-react";
 import progressStyles from "./NavigationProgress.module.css";
-import { EMPTY_WEB_FRAME_SANDBOX } from "../../../utils/protocol/webBrowserFrame";
+import {
+  EMPTY_WEB_FRAME_SANDBOX,
+  isEmptyWebBrowserFrame,
+} from "../../../utils/protocol/webBrowserFrame";
 import RedirectReviewPanel from "./RedirectReviewPanel";
 import TrustCheckStatus from "./TrustCheckStatus";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
   const reviewing = !!(mgr.redirectReview?.review || mgr.redirectReview?.error);
+  useLayoutEffect(() => {
+    // attachIframe hides synchronously before changing src. Reconcile after
+    // every commit so a batched navigation, explicit off, or recovery cannot
+    // leave that imperative visibility behind indefinitely.
+    if (mgr.iframeRef.current)
+      mgr.iframeRef.current.style.visibility = mgr.waitingForDarkPaint
+        ? "hidden"
+        : "";
+  });
   return (
     <div
       className="flex-1 min-h-0 relative"
@@ -77,7 +89,6 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
       {mgr.shouldMountIframe && (
         <iframe
           ref={mgr.attachIframe ?? mgr.iframeRef}
-          src="about:blank"
           className={`h-full w-full border-0 ${
             mgr.loadError || reviewing ? "invisible pointer-events-none" : ""
           }`}
@@ -105,9 +116,16 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
                 }
               : undefined
           }
-          onLoad={mgr.handleIframeLoad}
-          // Start with an opaque, fully sandboxed blank. attachIframe owns the
-          // subsequent sandbox/src transition and only enables the existing
+          onLoad={(event) => {
+            // Current target only; queued load events still need the
+            // controller's document-message/readiness identity checks.
+            if (!isEmptyWebBrowserFrame(event.currentTarget))
+              mgr.handleIframeLoad();
+          }}
+          // Omit src: retain the implicit, script-denied initial document
+          // without requesting an explicit about:blank navigation. Native
+          // document-start injection can still warn on that initial document.
+          // attachIframe owns the sandbox/src transition and only enables the
           // website flags for a validated, isolated proxy origin. React leaves
           // this unchanged initial prop alone on ordinary component rerenders.
           sandbox={EMPTY_WEB_FRAME_SANDBOX}
@@ -142,7 +160,22 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
         </div>
       )}
       {mgr.loadError && !reviewing && (
-        <div className="absolute inset-0 z-20">
+        <div
+          className="absolute inset-0 z-20"
+          style={
+            mgr.websiteDarkBootstrap
+              ? ({
+                  "--color-background":
+                    mgr.websiteDarkBootstrap.backgroundColor,
+                  "--color-surface": mgr.websiteDarkBootstrap.backgroundColor,
+                  "--color-text": mgr.websiteDarkBootstrap.textColor,
+                  "--color-textSecondary": mgr.websiteDarkBootstrap.textColor,
+                  "--color-textMuted": mgr.websiteDarkBootstrap.textColor,
+                  colorScheme: "dark",
+                } as React.CSSProperties)
+              : undefined
+          }
+        >
           <ErrorPage mgr={mgr} />
         </div>
       )}

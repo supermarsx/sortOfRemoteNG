@@ -30,6 +30,7 @@ import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy
 import { normalizeAdvancedProtocolConnection } from "../../utils/connection/normalizeAdvancedProtocolConnection";
 import { getRuntimeWebNavigation } from "../../utils/session/runtimeConnectionRegistry";
 import { httpRedirectConnectionOrigin } from "../../utils/protocol/httpRedirectTrustIdentity";
+import { websiteDarkModeSourceIdentity as sourceIdentity } from "../../utils/protocol/websiteDarkModeIdentity";
 
 /**
  * What the open page actually got, and why. `engine` and `cssOnly` both mean
@@ -121,47 +122,6 @@ function pageScriptsPolicy(connection: Connection | undefined) {
     // An unusable policy blocks the whole session upstream of this hook.
     return "allow" as const;
   }
-}
-
-/** Private identity: retain target/auth/policy fields; never expose this key. */
-function sourceIdentity(connection: Connection): string {
-  const normalized = normalizeAdvancedProtocolConnection(connection);
-  const source: Record<string, unknown> = { ...normalized };
-  // Match the trust identity's presentation/bookkeeping exclusions, while
-  // retaining the trusted destination list as part of this consent scope.
-  // Optimistic metadata edits must not reset consent or a failed-save fence.
-  for (const key of [
-    "name",
-    "httpBookmarks",
-    "description",
-    "tags",
-    "order",
-    "color",
-    "icon",
-    "expanded",
-    "lastConnected",
-    "connectionCount",
-    "updatedAt",
-    "lastAccessed",
-    "lastUsed",
-  ])
-    delete source[key];
-  const {
-    forceDark: _enabled,
-    darkMode: _theme,
-    // Favorites are references for the bar, not consent to execute. The runner
-    // checks the retained permission flags and resolves the exact library item.
-    items: _favorites,
-    ...automation
-  } = normalizeHttpAutomation(normalized.httpAutomation);
-  const timestamp = new Date(normalized.createdAt).getTime();
-  return stableJsonStringify({
-    ...source,
-    createdAt: Number.isFinite(timestamp)
-      ? new Date(timestamp).toISOString()
-      : source.createdAt,
-    httpAutomation: automation,
-  });
 }
 
 function appearance(connection: Connection) {
@@ -271,21 +231,21 @@ export function useWebsiteDarkMode(
     runtimeSource = runtimeConnection
       ? sourceIdentity(runtimeConnection)
       : "absent";
-    if (!options.settingsReady) problem = "Wait for global settings to load.";
-    else if (
-      !normalizeSessionQuickActions(options.settings.sessionQuickActions)
-        .allowWebForceDark
-    )
-      problem =
-        "The dark-mode extension is unavailable in global website settings.";
-    else if (!options.scopeKey || !options.ownerDatabaseId)
-      problem = UNAVAILABLE;
+    if (!options.scopeKey || !options.ownerDatabaseId) problem = UNAVAILABLE;
     else if (
       context &&
       (context.databaseAvailability?.status !== "ready" ||
         context.databaseAvailability.databaseId !== options.ownerDatabaseId)
     )
       problem = UNAVAILABLE;
+    else if (!options.settingsReady)
+      problem = "Wait for global settings to load.";
+    else if (
+      !normalizeSessionQuickActions(options.settings.sessionQuickActions)
+        .allowWebForceDark
+    )
+      problem =
+        "The dark-mode extension is unavailable in global website settings.";
   } catch (failure) {
     problem =
       failure instanceof Error
@@ -440,14 +400,35 @@ export function useWebsiteDarkMode(
   }, [options.bridge]);
 
   const previousAuthority = useRef(scope);
+  const retainVerifiedAppearance =
+    problem === "Wait for global settings to load." &&
+    requestedEnabled &&
+    verified?.scope === scope &&
+    verified.appearance === appearanceKey &&
+    verified.enabled &&
+    !failures.current.has(scope);
   useEffect(() => {
     // Pending verification must never preserve appearance across an actual
     // source/owner change or a revoked global/database gate. cancel(true) also
     // reaches the last document when current access is already unavailable.
-    if (previousAuthority.current !== scope || problem)
+    if (
+      previousAuthority.current !== scope ||
+      (problem && !retainVerifiedAppearance) ||
+      !requestedEnabled
+    )
       options.bridge.cancel(true);
+    else if (retainVerifiedAppearance)
+      // Cancel pending work without granting any new injection permission or
+      // stripping the same owner's already-verified presentation.
+      options.bridge.cancel(false);
     previousAuthority.current = scope;
-  }, [scope, problem, options.bridge]);
+  }, [
+    scope,
+    problem,
+    retainVerifiedAppearance,
+    requestedEnabled,
+    options.bridge,
+  ]);
 
   useEffect(() => {
     if (problem || writing.current) return;

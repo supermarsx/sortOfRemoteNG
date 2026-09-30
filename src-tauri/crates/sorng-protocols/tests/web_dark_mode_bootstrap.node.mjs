@@ -8,6 +8,30 @@ const source = readFileSync(
   "utf8",
 );
 const marker = "__sorng_dark_bootstrap_v1";
+function readyReader(win, doc, onEnable = () => {}) {
+  const owned = [];
+  return {
+    setFetchMethod() {},
+    disable() {
+      owned.splice(0).forEach((node) => node.remove());
+      doc.documentElement.removeAttribute("data-darkreader-mode");
+    },
+    enable() {
+      onEnable();
+      for (const [name, css] of [
+        ["user-agent", "html{background:#181a1b}"],
+        ["fallback", ""],
+      ]) {
+        const node = doc.createElement("style");
+        node.className = `darkreader darkreader--${name}`;
+        node.textContent = css;
+        doc.head.append(node);
+        owned.push(node);
+      }
+      doc.documentElement.setAttribute("data-darkreader-mode", "dynamic");
+    },
+  };
+}
 function page() {
   const dom = new JSDOM(
     `<html><head><style id="${marker}">html{background:#181a1b}</style></head><body></body></html>`,
@@ -38,7 +62,7 @@ function cpanelPage() {
   return { dom, win: dom.window, doc: dom.window.document, controller };
 }
 
-test("first-paint palette remains while the engine loads and is released on takeover", async () => {
+test("first-paint palette remains through engine loading and takeover", async () => {
   const { dom, win, doc, controller } = page();
   try {
     const original = doc.getElementById(marker);
@@ -50,32 +74,30 @@ test("first-paint palette remains while the engine loads and is released on take
       /html:root body.*background-color:#181a1b!important/,
     );
     let enabled = false;
-    win.DarkReader = {
-      setFetchMethod() {},
-      disable() {},
-      enable() {
-        assert.equal(doc.getElementById(marker), original);
-        enabled = true;
-      },
-    };
+    win.DarkReader = readyReader(win, doc, () => {
+      assert.equal(doc.getElementById(marker), original);
+      enabled = true;
+    });
     doc.querySelector("script").dispatchEvent(new win.Event("load"));
     assert.equal(await pending, "engine");
     assert.ok(enabled);
-    assert.equal(doc.getElementById(marker), null);
+    assert.equal(doc.getElementById(marker), original);
+    assert.match(original.textContent, /@layer sorng-dark-surface\{/);
+    assert.ok(doc.documentElement.hasAttribute("data-sorng-dark-ready"));
   } finally {
     controller.dispose();
     dom.window.close();
   }
 });
 
-test("a refused engine replaces the bootstrap with CSS and disable removes both", async () => {
+test("a refused engine retains the bootstrap with CSS and disable removes both", async () => {
   const { dom, win, doc, controller } = page();
   try {
     const pending = controller.set({ enabled: true });
     assert.ok(doc.getElementById(marker));
     doc.querySelector("script").dispatchEvent(new win.Event("error"));
     assert.equal(await pending, "cssOnly");
-    assert.equal(doc.getElementById(marker), null);
+    assert.ok(doc.getElementById(marker));
     assert.match(
       doc.querySelector(".sorng-website-dark-mode").textContent,
       /background-color:#181a1b/,
@@ -134,6 +156,9 @@ test("an engine error keeps the explicit dark background until disable", async (
 test("cPanel surfaces stay covered from bootstrap through dynamic takeover", async () => {
   const { dom, win, doc, controller } = cpanelPage();
   try {
+    doc
+      .querySelector(".panel-body")
+      .style.setProperty("background-color", "white", "important");
     const pending = controller.set({ enabled: true });
     const bootstrap = doc.getElementById(marker);
     assert.match(bootstrap.textContent, /frontend\/jupiter/);
@@ -144,14 +169,10 @@ test("cPanel surfaces stay covered from bootstrap through dynamic takeover", asy
       "rgb(41, 42, 43)",
     );
 
-    win.DarkReader = {
-      setFetchMethod() {},
-      disable() {},
-      enable() {},
-    };
+    win.DarkReader = readyReader(win, doc);
     doc.querySelector("script").dispatchEvent(new win.Event("load"));
     assert.equal(await pending, "engine");
-    assert.equal(doc.getElementById(marker), null);
+    assert.equal(doc.getElementById(marker), bootstrap);
 
     const runtime = doc.querySelector(".sorng-website-dark-mode");
     assert.ok(runtime);
@@ -161,8 +182,10 @@ test("cPanel surfaces stay covered from bootstrap through dynamic takeover", asy
 
     const replacement = doc.createElement("section");
     replacement.className = "panel";
-    replacement.innerHTML = '<div class="panel-body">Late panel</div>';
+    replacement.innerHTML =
+      '<div class="panel-body" style="background-color:white!important">Late panel</div>';
     doc.getElementById("content").replaceChildren(replacement);
+    await new Promise((resolve) => win.setTimeout(resolve, 30));
     assert.ok(runtime.isConnected);
     assert.match(runtime.textContent, /\.panel-body/);
     assert.equal(

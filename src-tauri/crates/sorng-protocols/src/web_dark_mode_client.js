@@ -26,6 +26,15 @@ function createWebDarkModeController() {
     bootstrap = document.getElementById("__sorng_dark_bootstrap_v1"),
     paintShield = document.getElementById("__sorng_dark_paint_shield_v1"),
     bootstrapText = bootstrap ? bootstrap.textContent : "",
+    nativeBootstrap =
+      bootstrap && bootstrapText.indexOf("@layer sorng-dark-surface{") >= 0
+        ? {
+            node: bootstrap,
+            text: bootstrapText,
+            background: bootstrap.getAttribute("data-background-color"),
+            foreground: bootstrap.getAttribute("data-text-color"),
+          }
+        : null,
     forcedInline = [],
     forcedInlineByElement = new WeakMap(),
     loading = null,
@@ -50,6 +59,11 @@ function createWebDarkModeController() {
     paintFrame = null,
     paintTimer = null,
     paintRevision = -1,
+    paintGuarded = false,
+    paintRepairPending = false,
+    genericPaintBudget = 64,
+    genericPaintSeen = new WeakSet(),
+    genericPaintResetTimer = null,
     cpanelPaintBudget = 64,
     cpanelPaintSeen = new WeakSet(),
     cpanelPaintResetTimer = null,
@@ -122,6 +136,7 @@ function createWebDarkModeController() {
     }
   }
   function removeStyles() {
+    resetGenericPaintBudget();
     resetCpanelPaintBudget();
     releaseShadows(false);
     if (style) style.remove();
@@ -141,6 +156,8 @@ function createWebDarkModeController() {
     loadingPalette = false;
     if (paintShield) paintShield.remove();
     paintShield = null;
+    paintGuarded = false;
+    paintRepairPending = false;
     document.documentElement.removeAttribute("data-sorng-dark-presented");
     document.documentElement.removeAttribute("data-sorng-dark-ready");
     restoreInline();
@@ -158,28 +175,45 @@ function createWebDarkModeController() {
       bootstrap.classList.add("darkreader");
     // Important declarations in the first layer beat later site layers and
     // unlayered !important rules, independently of their specificity/order.
-    // Keep the canvas and cPanel protection for the entire forced-mode session.
+    // Keep protection for arbitrary applications for the entire forced session,
+    // including after engine readiness and SPA route/style changes.
     bootstrapText =
-      (loadingPalette
-        ? "@layer sorng-force-dark,sorng-dark-loading;"
-        : "@layer sorng-force-dark;") +
+      "@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;" +
       "@layer sorng-force-dark{" +
       "html:root{color-scheme:dark!important}" +
       "html:root,html:root body,html:root frameset{background-color:" +
       theme.backgroundColor +
       "!important;color:" +
       theme.textColor +
-      "!important;transition:none!important}" +
+      "!important;background-image:none!important;transition:none!important}" +
       forceSurfaceCss(theme) +
       cpanelCss(theme) +
       "}" +
+      genericSurfaceCss(theme) +
       (loadingPalette
-        ? "@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:" +
+        ? "@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body *" +
+          genericSurface +
+          "{background-color:transparent!important;color:" +
           theme.textColor +
           "!important;background-image:none!important;transition:none!important}}"
         : "");
+    // A native sheet parsed before a meta CSP is already authorized. Replacing
+    // even equivalent CSS text rechecks the later policy and can discard that
+    // only working palette. Adopt its exact bytes while the palette matches;
+    // edits/removal and a different requested palette still take the repair path.
+    if (
+      nativeBootstrap &&
+      bootstrap === nativeBootstrap.node &&
+      theme.backgroundColor === nativeBootstrap.background &&
+      theme.textColor === nativeBootstrap.foreground
+    )
+      bootstrapText = nativeBootstrap.text;
     if (bootstrap.textContent !== bootstrapText)
       bootstrap.textContent = bootstrapText;
+    if (bootstrap.disabled) bootstrap.disabled = false;
+    if (bootstrap.hasAttribute("media")) bootstrap.removeAttribute("media");
+    if (bootstrap.hasAttribute("disabled"))
+      bootstrap.removeAttribute("disabled");
   }
   function restoreInline() {
     forcedInline.forEach(function (entry) {
@@ -195,6 +229,164 @@ function createWebDarkModeController() {
   }
   var forceSurfaces =
     "main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']";
+  // Site-independent: a custom application need not use one of our known
+  // framework selectors to receive persistent forced-dark protection.
+  var genericSurface =
+    ":not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *)";
+  function genericSurfaceCss(theme, shadow) {
+    var selector = (shadow ? "*" : "html:root body *") + genericSurface;
+    return (
+      "@layer sorng-dark-surface{" +
+      (shadow ? "" : "html:root body::before,html:root body::after,") +
+      selector +
+      "," +
+      selector +
+      "::before," +
+      selector +
+      "::after{background-color:transparent!important;background-image:none!important;color:" +
+      theme.textColor +
+      "!important;transition:none!important}}"
+    );
+  }
+  function protectGenericSurface(element, theme) {
+    if (!element.matches(genericSurface)) return;
+    protectInline(element, "background-color", theme.backgroundColor);
+    protectInline(element, "background-image", "none");
+    protectInline(element, "color", theme.textColor);
+    protectInline(element, "color-scheme", "dark");
+    protectInline(element, "transition", "none");
+  }
+  function protectGenericSurfaces(root, theme, subtree) {
+    if (root.nodeType === 1) protectGenericSurface(root, theme);
+    if (subtree !== false)
+      root.querySelectorAll("[style]").forEach(function (element) {
+        protectGenericSurface(element, theme);
+      });
+  }
+  function installPaintShield(theme) {
+    if (!paintShield || !paintShield.isConnected) {
+      paintShield = document.createElement("style");
+      paintShield.id = "__sorng_dark_paint_shield_v1";
+      paintShield.className = "darkreader";
+      var parent = document.head || document.documentElement;
+      parent.insertBefore(paintShield, parent.firstChild);
+    }
+    var css =
+      "@layer sorng-force-dark{html:root:not([data-sorng-dark-presented])::after{" +
+      'content:""!important;display:block!important;position:fixed!important;inset:0!important;' +
+      "width:100vw!important;height:100vh!important;background:" +
+      theme.backgroundColor +
+      "!important;opacity:1!important;visibility:visible!important;z-index:2147483647!important;" +
+      "pointer-events:none!important;transition:none!important;animation:none!important;filter:none!important;transform:none!important}}";
+    if (paintShield.textContent !== css) paintShield.textContent = css;
+    if (paintShield.disabled) paintShield.disabled = false;
+    if (paintShield.hasAttribute("media")) paintShield.removeAttribute("media");
+    if (paintShield.hasAttribute("disabled"))
+      paintShield.removeAttribute("disabled");
+  }
+  function guardDarkPaint() {
+    if (disposed || !desired || desired.mode === "filter") return;
+    installPaintShield(desired);
+    paintRepairPending = true;
+    cancelDarkPaint();
+    if (paintGuarded) return;
+    paintGuarded = true;
+    paintRevision = -1;
+    var presented = document.documentElement.hasAttribute(
+      "data-sorng-dark-presented",
+    );
+    document.documentElement.removeAttribute("data-sorng-dark-presented");
+    if (presented && typeof emit === "function") emit("proxy_dark_pending");
+  }
+  function resetGenericPaintBudget() {
+    if (genericPaintResetTimer !== null)
+      window.clearTimeout(genericPaintResetTimer);
+    genericPaintResetTimer = null;
+    genericPaintBudget = 64;
+    genericPaintSeen = new WeakSet();
+  }
+  function repairGenericBeforePaint(records, watcher, reconnect) {
+    if (
+      disposed ||
+      !desired ||
+      desired.mode === "filter" ||
+      cpanelDetected ||
+      !watcher
+    )
+      return;
+    if (genericPaintResetTimer === null)
+      genericPaintResetTimer = window.setTimeout(resetGenericPaintBudget, 16);
+    watcher.disconnect();
+    try {
+      // Replacing a head or disabling the preload must not leave a task-sized
+      // hole in the persistent palette. These are small, idempotent repairs.
+      installBootstrap(desired);
+      if (paintShield) installPaintShield(desired);
+      var exhausted = false;
+      function visit(node) {
+        if (
+          node.nodeType !== 1 ||
+          !node.isConnected ||
+          engineMutation({ target: node })
+        )
+          return;
+        if (!genericPaintBudget) {
+          exhausted = true;
+          return;
+        }
+        genericPaintBudget--;
+        if (genericPaintSeen.has(node)) {
+          // A site's own observer can rewrite our inline correction. Cover
+          // that interval instead of feeding an unbounded microtask loop.
+          if (
+            node.matches(genericSurface) &&
+            [
+              "background-color",
+              "background-image",
+              "color",
+              "color-scheme",
+              "transition",
+            ].some(function (property) {
+              var owned = forcedInlineByElement.get(node);
+              return (
+                node.style.getPropertyPriority(property) === "important" &&
+                (!owned ||
+                  !owned[property] ||
+                  node.style.getPropertyValue(property) !==
+                    owned[property].owned)
+              );
+            })
+          )
+            guardDarkPaint();
+          return;
+        }
+        genericPaintSeen.add(node);
+        protectGenericSurface(node, desired);
+      }
+      for (var index = 0; index < records.length; index++) {
+        var record = records[index];
+        if (engineMutation(record)) continue;
+        if (record.type === "attributes") visit(record.target);
+        else if (record.type === "childList") {
+          for (var added = 0; added < record.addedNodes.length; added++) {
+            var node = record.addedNodes[added];
+            visit(node);
+            if (node.nodeType === 1 && node.isConnected) {
+              var walker = node.ownerDocument.createTreeWalker(node, 1);
+              while (genericPaintBudget && (node = walker.nextNode()))
+                visit(node);
+              if (!genericPaintBudget && walker.nextNode()) exhausted = true;
+            }
+            if (exhausted) break;
+          }
+        }
+        if (exhausted) break;
+      }
+      if (exhausted) guardDarkPaint();
+    } finally {
+      reconnect();
+    }
+  }
   function forceSurfaceCss(theme, shadow) {
     // Persistent proxy palette: a late stylesheet or SPA panel must not paint
     // white while the dynamic engine catches up. Media descendants retain
@@ -210,16 +402,6 @@ function createWebDarkModeController() {
       "!important;background-image:none!important;transition:none!important}"
     );
   }
-  function protectForceSurfaces(root, theme, subtree) {
-    function protect(element) {
-      protectInline(element, "background-color", theme.backgroundColor);
-      protectInline(element, "background-image", "none");
-      protectInline(element, "color", theme.textColor);
-    }
-    if (root.nodeType === 1 && root.matches(forceSurfaces)) protect(root);
-    if (subtree !== false)
-      root.querySelectorAll(forceSurfaces).forEach(protect);
-  }
   function protectInline(element, property, value) {
     // Inline !important outranks even our first cascade layer. Reapply only
     // properties which explicitly compete with that layer, and restore the
@@ -229,7 +411,15 @@ function createWebDarkModeController() {
     var properties = forcedInlineByElement.get(element);
     var entry = properties && properties[property];
     var current = inline.getPropertyValue(property);
-    if (entry && current === entry.owned) return;
+    if (entry && current === entry.owned) {
+      if (entry.requested === value) return;
+      // A newly discovered component may refine the generic palette. Keep the
+      // real upstream value for disable, not our previous dark correction.
+      inline.setProperty(property, value, "important");
+      entry.owned = inline.getPropertyValue(property);
+      entry.requested = value;
+      return;
+    }
     if (!entry) {
       entry = { element: element, property: property };
       forcedInline.push(entry);
@@ -243,6 +433,7 @@ function createWebDarkModeController() {
     entry.priority = "important";
     inline.setProperty(property, value, "important");
     entry.owned = inline.getPropertyValue(property);
+    entry.requested = value;
   }
   function protectPalette(theme, changes) {
     if (!bootstrap) return;
@@ -251,14 +442,16 @@ function createWebDarkModeController() {
       protectInline(nodes[index], "background-color", theme.backgroundColor);
       protectInline(nodes[index], "color", theme.textColor);
       protectInline(nodes[index], "color-scheme", "dark");
+      protectInline(nodes[index], "background-image", "none");
+      protectInline(nodes[index], "transition", "none");
     }
     var isCpanel = !!document.querySelector(cpanelMarker);
     if (!isCpanel) {
       if (changes)
         changes.forEach(function (subtree, node) {
-          if (node.isConnected) protectForceSurfaces(node, theme, subtree);
+          if (node.isConnected) protectGenericSurfaces(node, theme, subtree);
         });
-      else protectForceSurfaces(document, theme, true);
+      else protectGenericSurfaces(document, theme, true);
     }
     if (isCpanel) {
       if (changes && cpanelDetected)
@@ -267,6 +460,10 @@ function createWebDarkModeController() {
         });
       else protectCpanelSurfaces(document, theme);
     }
+    if (cpanelDetected !== isCpanel)
+      shadowStyles.forEach(function (entry) {
+        entry.fullRepair = true;
+      });
     cpanelDetected = isCpanel;
     protectShadows(theme, changes);
     // enable() may return before the engine is active (hidden document, missing
@@ -349,6 +546,7 @@ function createWebDarkModeController() {
       paintTimer !== null
     )
       return;
+    if (paintRepairPending) return;
     var ticket = revision;
     function complete() {
       cancelDarkPaint();
@@ -357,6 +555,7 @@ function createWebDarkModeController() {
         !desired ||
         ticket !== revision ||
         !runtimeInstalled ||
+        paintRepairPending ||
         (desired.mode !== "filter" &&
           !document.documentElement.hasAttribute("data-sorng-dark-ready"))
       )
@@ -364,6 +563,7 @@ function createWebDarkModeController() {
       // Flush the applied sheet before telling the outer frame to uncover it.
       window.getComputedStyle(document.documentElement).backgroundColor;
       document.documentElement.setAttribute("data-sorng-dark-presented", "");
+      paintGuarded = false;
       paintRevision = ticket;
       if (typeof emit === "function") emit("proxy_dark_ready");
     }
@@ -375,6 +575,20 @@ function createWebDarkModeController() {
       });
     // Hidden tabs can suspend rAF; they still need a bounded readiness result.
     paintTimer = window.setTimeout(complete, 100);
+  }
+  function finishPaintRepairs() {
+    if (
+      paintRepairPending &&
+      !pendingChanges.size &&
+      !shadowStyles.some(function (entry) {
+        return (
+          entry.repairQueued || entry.fullRepair || entry.pendingNodes.length
+        );
+      })
+    ) {
+      paintRepairPending = false;
+      reportDarkPaint();
+    }
   }
   function protectCpanelSurfaces(root, theme, subtree) {
     function protect(element) {
@@ -583,6 +797,7 @@ function createWebDarkModeController() {
         repairQueued: false,
         repairTimer: null,
         pendingNodes: [],
+        discoveryNodes: new Set(),
         fullRepair: false,
       };
       entry.style.className = "sorng-cpanel-shadow-dark darkreader";
@@ -593,21 +808,30 @@ function createWebDarkModeController() {
           // frames and every other shadow tree. One timer bounds continuously
           // animated dashboards without delaying the first synchronous theme.
           function queueNode(node) {
-            if (
-              node.nodeType === 1 &&
-              node !== entry.style &&
-              entry.pendingNodes.length < 256
-            )
-              entry.pendingNodes.push(node);
+            if (node.nodeType !== 1 || node === entry.style) return;
+            if (entry.pendingNodes.length < 256) entry.pendingNodes.push(node);
+            // Never silently drop the tail of a large component update.
+            else entry.fullRepair = true;
           }
           records.forEach(function (record) {
             if (engineMutation(record)) return;
-            if (record.target === entry.style) entry.fullRepair = true;
+            // Text.data writes target the text node, not its owning style.
+            var target =
+              record.type === "characterData"
+                ? record.target.parentNode
+                : record.target;
+            if (target === entry.style) entry.fullRepair = true;
             if (record.type === "attributes") queueNode(record.target);
             Array.prototype.forEach.call(
               record.addedNodes || [],
               function (node) {
                 queueNode(node);
+                if (
+                  node.nodeType === 1 &&
+                  node !== entry.style &&
+                  entry.discoveryNodes.size < 256
+                )
+                  entry.discoveryNodes.add(node);
               },
             );
             Array.prototype.forEach.call(
@@ -617,9 +841,14 @@ function createWebDarkModeController() {
               },
             );
           });
+          repairGenericBeforePaint(records, entry.observer, function () {
+            observeShadow(entry);
+          });
           repairCpanelBeforePaint(records, entry.observer, function () {
             observeShadow(entry);
           });
+          if (entry.fullRepair || entry.style.parentNode !== root)
+            guardDarkPaint();
           if (
             entry.repairQueued ||
             (!entry.fullRepair && entry.pendingNodes.length === 0) ||
@@ -641,12 +870,15 @@ function createWebDarkModeController() {
               )
                 return;
               var nodes = entry.pendingNodes.splice(0);
+              var discoveryNodes = entry.discoveryNodes;
+              entry.discoveryNodes = new Set();
               var fullRepair = entry.fullRepair;
               entry.fullRepair = false;
               try {
-                if (fullRepair || entry.style.parentNode !== root)
+                if (fullRepair || entry.style.parentNode !== root) {
                   themeShadow(root, desired);
-                else {
+                  scanShadows(root, desired);
+                } else {
                   entry.observer.disconnect();
                   nodes
                     .filter(function (node, index, all) {
@@ -660,10 +892,13 @@ function createWebDarkModeController() {
                       );
                     })
                     .forEach(function (node) {
-                      protectCpanelSurfaces(node, desired);
+                      if (cpanelDetected) protectCpanelSurfaces(node, desired);
+                      else protectGenericSurfaces(node, desired);
+                      if (discoveryNodes.has(node)) scanShadows(node, desired);
                     });
                   observeShadow(entry);
                 }
+                finishPaintRepairs();
               } catch (_) {
                 // A page-owned root may disappear while its repair is queued.
                 observeShadow(entry);
@@ -681,17 +916,17 @@ function createWebDarkModeController() {
     if (entry.observer) entry.observer.disconnect();
     try {
       var css =
-        "@layer sorng-force-dark;@layer sorng-force-dark{" +
+        "@layer sorng-force-dark,sorng-dark-surface;@layer sorng-force-dark{" +
         forceSurfaceCss(theme, true) +
-        cpanelCss(theme, true);
-      if (headerHost(root.host))
+        (cpanelDetected ? cpanelCss(theme, true) : "");
+      if (cpanelDetected && headerHost(root.host))
         css +=
           ":host{color-scheme:dark!important;background-color:" +
           mixColor(theme.backgroundColor, theme.textColor, 12) +
           "!important;color:" +
           theme.textColor +
           "!important;transition:none!important}";
-      css += "}";
+      css += "}" + genericSurfaceCss(theme, true);
       if (entry.style.textContent !== css) entry.style.textContent = css;
       if (entry.style.parentNode !== root)
         root.insertBefore(entry.style, root.firstChild);
@@ -700,7 +935,8 @@ function createWebDarkModeController() {
         entry.style.removeAttribute("media");
       if (entry.style.hasAttribute("disabled"))
         entry.style.removeAttribute("disabled");
-      protectCpanelSurfaces(root, theme);
+      if (cpanelDetected) protectCpanelSurfaces(root, theme);
+      else protectGenericSurfaces(root, theme);
     } finally {
       observeShadow(entry);
     }
@@ -735,8 +971,7 @@ function createWebDarkModeController() {
     });
   }
   function protectShadows(theme, changes) {
-    if (theme.mode === "filter" || !document.querySelector(cpanelMarker))
-      return;
+    if (theme.mode === "filter") return;
     // A root attached to an existing element creates no document mutation.
     // Install its first sheet before attachShadow returns to page code.
     var firstScan = !attachShadowHook;
@@ -753,8 +988,7 @@ function createWebDarkModeController() {
           !disposed &&
           desired &&
           desired.mode !== "filter" &&
-          root.mode === "open" &&
-          document.querySelector(cpanelMarker)
+          root.mode === "open"
         ) {
           try {
             themeShadow(root, desired);
@@ -1050,6 +1284,7 @@ function createWebDarkModeController() {
         element &&
         element.classList.contains("darkreader") &&
         element !== bootstrap &&
+        element !== paintShield &&
         element !== style &&
         !element.classList.contains("sorng-cpanel-shadow-dark") &&
         !element.classList.contains("darkreader--fallback") &&
@@ -1094,6 +1329,7 @@ function createWebDarkModeController() {
       });
     });
     if (!relevant) return;
+    repairGenericBeforePaint(records, observer, observe);
     repairCpanelBeforePaint(records, observer, observe);
     scheduleScan();
   }
@@ -1168,6 +1404,7 @@ function createWebDarkModeController() {
       // edits and disabling of our sheets in the coalesced update.
       if (!(runtimeInstalled && theme.mode === "filter"))
         installBootstrap(theme);
+      if (paintShield && theme.mode !== "filter") installPaintShield(theme);
       if (runtimeInstalled && style && !style.isConnected) {
         style = null;
         installStyles(theme);
@@ -1194,6 +1431,10 @@ function createWebDarkModeController() {
       }
       paintBorders(theme);
       if (!changes || Array.from(changes.values()).some(Boolean)) rescan();
+      // Routine text/class traffic may continue forever in a live dashboard.
+      // Only unfinished unsafe repairs hold the cover, not the general scan
+      // timer. A new competing write re-arms this flag before the next paint.
+      finishPaintRepairs();
     } finally {
       observe();
     }
@@ -1421,6 +1662,7 @@ function createWebDarkModeController() {
     },
     dispose: function (keepAppearance) {
       disposed = true;
+      resetGenericPaintBudget();
       resetCpanelPaintBudget();
       completeReadiness(undefined);
       cancelDarkPaint();

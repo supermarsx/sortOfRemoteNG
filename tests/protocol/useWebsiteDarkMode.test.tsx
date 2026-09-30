@@ -357,6 +357,77 @@ describe("durable website appearance lifecycle", () => {
     );
   });
 
+  it("retains verified appearance but grants no execution or save during a settings reload", async () => {
+    connection.httpAutomation!.forceDark = true;
+    db.rows = [structuredClone(connection)];
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    request.mockClear();
+    cancel.mockClear();
+    hook.change({ settingsReady: false });
+    expect(cancel).not.toHaveBeenCalledWith(true);
+    expect(cancel).toHaveBeenCalledWith(false);
+    expect(request).not.toHaveBeenCalled();
+    expect(hook.result.current.enabled).toBe(false);
+    expect(hook.result.current.available).toBe(false);
+    hook.change({ settingsReady: true });
+    await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+    expect(request.mock.calls.every(([, payload]) => payload.enabled)).toBe(
+      true,
+    );
+    expect(cancel).not.toHaveBeenCalledWith(true);
+  });
+
+  it.each(["off", "owner", "access", "scripts", "suspended"])(
+    "does not retain appearance for %s during a settings reload",
+    async (change) => {
+      connection.httpAutomation!.forceDark = true;
+      db.rows = [structuredClone(connection)];
+      const hook = mount();
+      await waitFor(() => expect(hook.result.current.enabled).toBe(true));
+      hook.change({ settingsReady: false });
+      cancel.mockClear();
+      request.mockClear();
+      if (change === "off")
+        hook.change({
+          connection: {
+            ...connection,
+            httpAutomation: { ...connection.httpAutomation!, forceDark: false },
+          },
+        });
+      if (change === "owner")
+        hook.change({ ownerDatabaseId: "other", scopeKey: "other:1" });
+      if (change === "access") hook.change({ accessRevision: 1 });
+      if (change === "scripts")
+        hook.change({
+          connection: {
+            ...connection,
+            httpProxyPolicy: {
+              ...DEFAULT_HTTP_PROXY_POLICY,
+              pageScripts: "block",
+            },
+          },
+        });
+      if (change === "suspended") {
+        db.locked = true;
+        hook.change({});
+      }
+      expect(cancel).toHaveBeenCalledWith(true);
+      expect(hook.result.current.enabled).toBe(false);
+      expect(request).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not retain an unverified appearance during a settings reload", () => {
+    connection.httpAutomation!.forceDark = true;
+    db.read.mockImplementation(() => new Promise(() => {}));
+    const hook = mount();
+    hook.change({ settingsReady: false });
+    expect(cancel).toHaveBeenCalledWith(true);
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it("reapplies verified appearance on document resets without a new database read or disable", async () => {
     connection.httpAutomation!.forceDark = true;
     db.rows = [structuredClone(connection)];

@@ -521,8 +521,12 @@ export function useWebAutomation(options: Options) {
   useEffect(() => {
     if (!options.settingsReady || !options.scopeKey) {
       cancel();
-      bridge.cancel(true);
-      appearanceBridge.cancel(true);
+      // Macro-library readiness does not own the separately verified website
+      // appearance. Cancel work without sending dark-off; useWebsiteDarkMode
+      // handles explicit off/owner changes and the revocation listener above
+      // still disables both capabilities when storage access is actually lost.
+      bridge.cancel(false);
+      appearanceBridge.cancel(false);
       setOpen(false);
       setLibrary(EMPTY_WEB_AUTOMATION_LIBRARY);
       setDatabaseLibrary(null);

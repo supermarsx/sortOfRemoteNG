@@ -335,17 +335,20 @@ describe("injected dark-mode extension runtime", () => {
       "important",
     );
   });
-  it("does not force generic site div.header colors without a cPanel marker", async () => {
+  it("protects generic site surfaces without applying a cPanel-specific palette", async () => {
     document.body.innerHTML =
       '<div class="header" style="background-color:white!important;color:black!important">Header</div>';
     const header = document.querySelector<HTMLElement>("div.header")!;
-    const original = header.getAttribute("style");
     await controller.set({ enabled: true, cssOnly: true, theme: theme() });
     const rules = Array.from(node()!.sheet!.cssRules).filter(
       (entry): entry is CSSStyleRule => entry instanceof CSSStyleRule,
     );
     expect(rules.some((rule) => header.matches(rule.selectorText))).toBe(false);
-    expect(header.getAttribute("style")).toBe(original);
+    expect(header.style.backgroundColor).toBe("rgb(24, 26, 27)");
+    expect(header.style.color).toBe("rgb(232, 230, 227)");
+    await controller.set({ enabled: false });
+    expect(header.style.backgroundColor).toBe("white");
+    expect(header.style.color).toBe("black");
   });
   it("repairs the palette when an SPA replaces the document head", async () => {
     reader();
@@ -654,7 +657,7 @@ describe("injected dark-mode extension runtime", () => {
       '<div class="header" style="background-color:white!important">Header</div>';
     await controller.set({ enabled: true, cssOnly: true, theme: theme() });
     const header = document.querySelector<HTMLElement>(".header")!;
-    expect(header.style.backgroundColor).toBe("white");
+    expect(header.style.backgroundColor).toBe("rgb(24, 26, 27)");
     document.body.id = "cpanel_body";
     try {
       await vi.waitFor(() =>
@@ -696,7 +699,7 @@ describe("injected dark-mode extension runtime", () => {
       expect(root.querySelector("style")!.textContent).toContain(":host{"),
     );
   });
-  it("leaves unrelated and closed shadow roots alone and removes overrides for filter mode", async () => {
+  it("protects generic open roots, leaves closed roots alone and restores filter mode", async () => {
     document.body.innerHTML = '<div id="host"></div><div id="closed"></div>';
     const root = document
       .getElementById("host")!
@@ -704,7 +707,10 @@ describe("injected dark-mode extension runtime", () => {
     root.innerHTML =
       '<header style="background-color:white!important">Header</header>';
     await controller.set({ enabled: true, cssOnly: true, theme: theme() });
-    expect(root.querySelector("style")).toBeNull();
+    expect(root.querySelector("style")).not.toBeNull();
+    expect(
+      root.querySelector<HTMLElement>("header")!.style.backgroundColor,
+    ).toBe("rgb(24, 26, 27)");
     document.body.id = "cpanel_body";
     try {
       const closed = document

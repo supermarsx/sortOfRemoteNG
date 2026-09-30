@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ContentArea from "../../src/components/protocol/webBrowser/ContentArea";
 import type { WebBrowserMgr } from "../../src/components/protocol/webBrowser/types";
@@ -7,6 +7,7 @@ import {
   EMPTY_WEB_FRAME_SANDBOX,
   PROXY_WEB_FRAME_SANDBOX,
   navigateWebBrowserFrame,
+  clearWebBrowserFrame,
 } from "../../src/utils/protocol/webBrowserFrame";
 
 const proxy = "http://p0123456789abcdef0123456789abcdef.localhost:43081/";
@@ -37,7 +38,7 @@ describe("ContentArea frame mounting boundary", () => {
     expect(attachIframe).not.toHaveBeenCalled();
   });
 
-  it("has a connected, script-denied blank before the controller receives the frame", () => {
+  it("has a connected, script-denied initial document without explicit blank navigation", () => {
     const snapshots: unknown[] = [];
     const attachIframe = (frame: HTMLIFrameElement | null) => {
       if (!frame) return;
@@ -54,7 +55,7 @@ describe("ContentArea frame mounting boundary", () => {
     // This proves React's insertion/ref order, not WebView2 script execution:
     // jsdom does not enforce the browser's iframe sandbox.
     expect(snapshots).toEqual([
-      { connected: true, src: "about:blank", sandbox: EMPTY_WEB_FRAME_SANDBOX },
+      { connected: true, src: null, sandbox: EMPTY_WEB_FRAME_SANDBOX },
     ]);
   });
 
@@ -69,8 +70,24 @@ describe("ContentArea frame mounting boundary", () => {
       <ContentArea mgr={manager({ shouldMountIframe: true, attachIframe })} />,
     );
 
-    expect(getByTitle("Popup browser")).toHaveAttribute("src", "about:blank");
+    expect(getByTitle("Popup browser")).not.toHaveAttribute("src");
     expect(getByTitle("Popup browser")).toHaveAttribute("sandbox", "");
+  });
+
+  it("ignores initial and recovery blank loads but delivers the validated proxy load", () => {
+    const mgr = manager({ shouldMountIframe: true });
+    const { getByTitle } = render(<ContentArea mgr={mgr} />);
+    const frame = getByTitle("Popup browser") as HTMLIFrameElement;
+
+    fireEvent.load(frame);
+    expect(mgr.handleIframeLoad).not.toHaveBeenCalled();
+    navigateWebBrowserFrame(frame, `${proxy}control`, proxy);
+    fireEvent.load(frame);
+    expect(mgr.handleIframeLoad).toHaveBeenCalledTimes(1);
+    clearWebBrowserFrame(frame);
+    fireEvent.load(frame);
+    expect(mgr.handleIframeLoad).toHaveBeenCalledTimes(1);
+    expect(frame).toHaveAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);
   });
 
   it("does not reset an approved proxy document or reattach it on ordinary rerenders", () => {
