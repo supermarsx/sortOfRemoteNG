@@ -58,7 +58,11 @@ describe("collection folder variants", () => {
     expect(COLLECTION_FOLDER_ICONS.map(({ key }) => key)).toEqual(
       REQUESTED_KEYS,
     );
-    expect(FOLDER_ICONS).toHaveLength(86);
+    // Other folder modules may grow without changing this collection's keys.
+    expect(FOLDER_ICONS.filter(({ key }) => key === "folder")).toHaveLength(1);
+    for (const key of REQUESTED_KEYS) {
+      expect(FOLDER_ICONS.filter((entry) => entry.key === key)).toHaveLength(1);
+    }
     expect(Object.keys(FOLDER_OPEN_ICONS).sort()).toEqual(
       FOLDER_ICONS.map(({ key }) => key).sort(),
     );

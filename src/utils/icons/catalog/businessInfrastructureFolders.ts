@@ -1,0 +1,350 @@
+import {
+  AppWindow,
+  Blocks,
+  BookUser,
+  Calculator,
+  CaseUpper,
+  ChartNoAxesCombined,
+  CloudCog,
+  Computer,
+  Database,
+  Earth,
+  EthernetPort,
+  Files,
+  Gauge,
+  Headset,
+  LayoutDashboard,
+  MonitorCheck,
+  MonitorCog,
+  PanelsTopLeft,
+  PhoneForwarded,
+  Route,
+  ServerCog,
+  SlidersHorizontal,
+  SquareCode,
+  Vault,
+  Waypoints,
+  createLucideIcon,
+  type LucideIcon,
+} from "lucide-react";
+import { createRoleIcon } from "../createRoleIcon";
+import { defineIcon } from "./types";
+
+// Path-only numerals remain independent of installed fonts and SVG text support.
+const Numbers = createLucideIcon("FolderNumbersEmblem", [
+  ["path", { d: "m2 8 2-2v12M2 18h4", key: "one" }],
+  ["path", { d: "M9 8a2.5 2.5 0 0 1 5 0c0 3-5 5-5 10h5", key: "two" }],
+  [
+    "path",
+    {
+      d: "M18 6h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1m1 0a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2",
+      key: "three",
+    },
+  ],
+]);
+const DnsHierarchy = createLucideIcon("FolderDnsEmblem", [
+  [
+    "rect",
+    { x: "6", y: "2", width: "12", height: "6", rx: "1", key: "domain" },
+  ],
+  ["path", { d: "M12 8v4M4 16v-4h16v4M12 12v4", key: "delegation" }],
+  ["circle", { cx: "4", cy: "19", r: "2", key: "record-a" }],
+  ["circle", { cx: "12", cy: "19", r: "2", key: "record-b" }],
+  ["circle", { cx: "20", cy: "19", r: "2", key: "record-c" }],
+]);
+
+// One emblem source drives both states; saved keys never change on expansion.
+const VARIANTS = [
+  [
+    "folder-accounting",
+    "Accounting folder",
+    Calculator,
+    ["accounting", "accounts", "bookkeeping", "ledger", "invoices", "finance"],
+  ],
+  [
+    "folder-assorted-documents",
+    "Assorted documents folder",
+    Files,
+    [
+      "assorted documents",
+      "documents",
+      "mixed documents",
+      "miscellaneous",
+      "files",
+      "paperwork",
+    ],
+  ],
+  [
+    "folder-controllers",
+    "Controllers folder",
+    SlidersHorizontal,
+    [
+      "controllers",
+      "controller",
+      "control systems",
+      "management",
+      "plc",
+      "sdn",
+    ],
+  ],
+  [
+    "folder-internal-apps",
+    "Internal apps folder",
+    LayoutDashboard,
+    [
+      "internal apps",
+      "internal applications",
+      "intranet",
+      "private apps",
+      "business apps",
+    ],
+  ],
+  [
+    "folder-management-apps",
+    "Management apps folder",
+    MonitorCog,
+    [
+      "management apps",
+      "management applications",
+      "administration",
+      "admin tools",
+      "management console",
+    ],
+  ],
+  [
+    "folder-vaults",
+    "Vaults folder",
+    Vault,
+    ["vault", "vaults", "password manager", "credentials", "secrets", "safe"],
+  ],
+  [
+    "folder-generic-machines",
+    "Generic machines folder",
+    Computer,
+    [
+      "generic machines",
+      "machine",
+      "machines",
+      "computers",
+      "hosts",
+      "devices",
+      "hardware",
+    ],
+  ],
+  [
+    "folder-webhosts",
+    "Webhosts folder",
+    ServerCog,
+    ["webhosts", "web hosts", "web hosting", "hosting", "hosting servers"],
+  ],
+  [
+    "folder-providers",
+    "Providers folder",
+    CloudCog,
+    ["providers", "provider", "service providers", "cloud providers", "isp"],
+  ],
+  [
+    "folder-gateways",
+    "Gateways folder",
+    Waypoints,
+    ["gateways", "gateway", "network gateway", "bastion", "entry point"],
+  ],
+  [
+    "folder-tunnels",
+    "Tunnels folder",
+    Route,
+    ["tunnels", "tunnel", "ssh tunnels", "port forwarding", "vpn tunnels"],
+  ],
+  [
+    "folder-pbx",
+    "PBX folder",
+    PhoneForwarded,
+    [
+      "pbx",
+      "ip pbx",
+      "private branch exchange",
+      "extensions",
+      "asterisk",
+      "freepbx",
+      "3cx",
+    ],
+  ],
+  [
+    "folder-telephony",
+    "Telephony folder",
+    Headset,
+    ["telephony", "telephone", "voice", "voip", "sip", "call center", "calls"],
+  ],
+  [
+    "folder-analytics",
+    "Analytics folder",
+    ChartNoAxesCombined,
+    [
+      "analytics",
+      "reports",
+      "statistics",
+      "business intelligence",
+      "data analysis",
+      "charts",
+    ],
+  ],
+  [
+    "folder-cms",
+    "CMS folder",
+    PanelsTopLeft,
+    [
+      "cms",
+      "content management",
+      "publishing",
+      "wordpress",
+      "joomla",
+      "drupal",
+    ],
+  ],
+  [
+    "folder-crm",
+    "CRM folder",
+    BookUser,
+    [
+      "crm",
+      "customer relationship management",
+      "customers",
+      "contacts",
+      "sales",
+    ],
+  ],
+  [
+    "folder-numbers",
+    "Numbers folder",
+    Numbers,
+    ["numbers", "numeric", "digits", "123", "numbered"],
+  ],
+  [
+    "folder-letters",
+    "Letters folder",
+    CaseUpper,
+    ["letters", "alphabet", "alphabetical", "abc", "characters", "text"],
+  ],
+  [
+    "folder-dns",
+    "DNS folder",
+    DnsHierarchy,
+    [
+      "dns",
+      "domain name system",
+      "domains",
+      "nameservers",
+      "zones",
+      "records",
+      "resolver",
+    ],
+  ],
+  [
+    "folder-network-equipment",
+    "Network equipment folder",
+    EthernetPort,
+    [
+      "network equipment",
+      "network equipments",
+      "network devices",
+      "networking",
+      "switches",
+      "routers",
+      "ethernet",
+    ],
+  ],
+  [
+    "folder-databases",
+    "Databases folder",
+    Database,
+    ["database", "databases", "db", "sql", "nosql", "data stores"],
+  ],
+  [
+    "folder-services",
+    "Services folder",
+    Blocks,
+    ["services", "service", "daemons", "microservices", "background services"],
+  ],
+  [
+    "folder-monitoring-gauge",
+    "Monitoring gauge folder",
+    Gauge,
+    [
+      "monitoring",
+      "alternative",
+      "gauge",
+      "performance",
+      "capacity",
+      "metrics",
+    ],
+  ],
+  [
+    "folder-monitoring-status",
+    "Monitoring status folder",
+    MonitorCheck,
+    [
+      "monitoring",
+      "alternative",
+      "status",
+      "uptime",
+      "availability",
+      "health checks",
+    ],
+  ],
+  [
+    "folder-web-browser",
+    "Web browser folder",
+    AppWindow,
+    ["web", "alternative", "browser", "websites", "http", "https", "window"],
+  ],
+  [
+    "folder-web-world",
+    "World wide web folder",
+    Earth,
+    [
+      "web",
+      "alternative",
+      "world wide web",
+      "www",
+      "internet",
+      "websites",
+      "http",
+      "https",
+    ],
+  ],
+  [
+    "folder-web-code",
+    "Web code folder",
+    SquareCode,
+    [
+      "web",
+      "alternative",
+      "code",
+      "html",
+      "web applications",
+      "web development",
+      "http",
+      "https",
+    ],
+  ],
+] as const;
+
+export const BUSINESS_INFRASTRUCTURE_FOLDER_ICONS = VARIANTS.map(
+  ([key, label, glyph, keywords]) =>
+    defineIcon(key, label, "folders", createRoleIcon(key, "folder", glyph), [
+      ...keywords,
+      "folder",
+      "folders",
+      "collection",
+      "collections",
+    ]),
+);
+
+export const BUSINESS_INFRASTRUCTURE_FOLDER_OPEN_ICONS = Object.freeze(
+  Object.fromEntries(
+    VARIANTS.map(([key, , glyph]) => [
+      key,
+      createRoleIcon(`${key}-open`, "folder-open", glyph),
+    ]),
+  ),
+) as Readonly<Record<(typeof VARIANTS)[number][0], LucideIcon>>;

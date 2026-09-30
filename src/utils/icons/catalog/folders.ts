@@ -57,6 +57,14 @@ import {
   SERVICE_COLLECTION_FOLDER_ICONS,
   SERVICE_COLLECTION_FOLDER_OPEN_ICONS,
 } from "./serviceCollectionFolders";
+import {
+  BUSINESS_INFRASTRUCTURE_FOLDER_ICONS,
+  BUSINESS_INFRASTRUCTURE_FOLDER_OPEN_ICONS,
+} from "./businessInfrastructureFolders";
+import {
+  PLATFORM_COLLECTION_FOLDER_ICONS,
+  PLATFORM_COLLECTION_FOLDER_OPEN_ICONS,
+} from "./platformCollectionFolders";
 
 const SwitchPorts = createLucideIcon("FolderSwitchPorts", [
   [
@@ -424,6 +432,8 @@ export const FOLDER_ICONS = [
   ...COLLECTION_FOLDER_ICONS,
   ...PHYSICAL_SERVICE_FOLDER_ICONS,
   ...SERVICE_COLLECTION_FOLDER_ICONS,
+  ...BUSINESS_INFRASTRUCTURE_FOLDER_ICONS,
+  ...PLATFORM_COLLECTION_FOLDER_ICONS,
 ] as const;
 
 /** Presentation-only counterparts. Keep saved keys and picker entries unchanged. */
@@ -434,6 +444,8 @@ export const FOLDER_OPEN_ICONS: Readonly<
   ...COLLECTION_FOLDER_OPEN_ICONS,
   ...PHYSICAL_SERVICE_FOLDER_OPEN_ICONS,
   ...SERVICE_COLLECTION_FOLDER_OPEN_ICONS,
+  ...BUSINESS_INFRASTRUCTURE_FOLDER_OPEN_ICONS,
+  ...PLATFORM_COLLECTION_FOLDER_OPEN_ICONS,
   "folder-building": createRoleIcon(
     "OpenBuildingFolder",
     "folder-open",

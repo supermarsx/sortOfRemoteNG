@@ -291,9 +291,10 @@ describe("ConnectionIconPicker", () => {
     );
 
     const listbox = screen.getByRole("listbox", { name: "Databases icons" });
-    const options = Array.from(
-      listbox.querySelectorAll<HTMLElement>('[role="option"]'),
-    );
+    // Search can also match database folders. Roving keys traverse all visible
+    // results, including matches in other catalog categories.
+    const options = screen.getAllByRole("option");
+    expect(listbox).toContainElement(options[0]);
     expect(options.length).toBeGreaterThan(2);
 
     await waitFor(() => expect(options[0]).toHaveAttribute("tabindex", "0"));
