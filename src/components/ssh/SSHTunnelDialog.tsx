@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { SSHTunnelCreateParams } from "../../utils/ssh/sshTunnelService";
 import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
@@ -7,12 +7,17 @@ import { Checkbox, NumberInput, Select, type SelectOption } from "../ui/forms";
 interface SSHTunnelDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (params: SSHTunnelCreateParams) => void;
+  onSave: (params: SSHTunnelCreateParams) => void | Promise<void>;
   sshConnections: Connection[];
+  requireBaseReselection?: boolean;
   editingTunnel?: {
     id: string;
     name: string;
-    sshConnectionId: string;
+    sshConnectionId?: string;
+    host?: string;
+    port?: number;
+    username?: string;
+    credentialRef?: string;
     localPort: number;
     remoteHost?: string;
     remotePort?: number;
@@ -57,6 +62,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
   onSave,
   sshConnections: sshConnectionsProp,
   editingTunnel,
+  requireBaseReselection = false,
 }) => {
   const { state } = useConnections();
   // Use prop if provided, otherwise pull SSH connections from global state
@@ -64,7 +70,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
     () =>
       sshConnectionsProp.length > 0
         ? sshConnectionsProp
-        : state.connections.filter((c) => c.protocol === "ssh"),
+        : state.connections.filter((c) => c.protocol === "ssh" && !c.isGroup),
     [sshConnectionsProp, state.connections],
   );
   const connectionOptions = useMemo<SelectOption[]>(() => {
@@ -90,13 +96,31 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
   }, [sshConnections, state.connections]);
   const connectionSelectId = useId();
   const [form, setForm] = useState<SSHTunnelCreateParams>(defaultForm);
+  const [standalone, setStandalone] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Choose the initial mode on opening, without resetting a draft when the
+  // saved connection list changes in the background.
+  const defaultStandaloneRef = useRef(sshConnections.length === 0);
+  defaultStandaloneRef.current = sshConnections.length === 0;
 
   useEffect(() => {
     if (isOpen) {
+      setSaveError(null);
+      setStandalone(
+        editingTunnel
+          ? !editingTunnel.sshConnectionId
+          : defaultStandaloneRef.current,
+      );
       if (editingTunnel) {
         setForm({
           name: editingTunnel.name,
-          sshConnectionId: editingTunnel.sshConnectionId,
+          sshConnectionId: requireBaseReselection
+            ? ""
+            : editingTunnel.sshConnectionId,
+          host: editingTunnel.host,
+          port: editingTunnel.port ?? 22,
+          username: editingTunnel.username,
           localPort: editingTunnel.localPort,
           remoteHost: editingTunnel.remoteHost || "localhost",
           remotePort: editingTunnel.remotePort || 22,
@@ -107,13 +131,43 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
       } else {
         setForm(defaultForm);
       }
+    } else {
+      setForm(defaultForm);
     }
-  }, [isOpen, editingTunnel]);
+  }, [isOpen, editingTunnel, requireBaseReselection]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const valid =
+    !!form.name.trim() &&
+    (standalone
+      ? !!form.host?.trim() &&
+        !!form.username?.trim() &&
+        !!(form.password || editingTunnel?.credentialRef)
+      : !!form.sshConnectionId);
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.sshConnectionId) return;
-    onSave(form);
+    if (!valid || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave({
+        ...form,
+        sshConnectionId: standalone ? "" : form.sshConnectionId,
+        host: standalone ? form.host : undefined,
+        port: standalone ? (form.port ?? 22) : undefined,
+        username: standalone ? form.username : undefined,
+        password: standalone ? form.password || undefined : undefined,
+      });
+      setForm((current) => ({ ...current, password: undefined }));
+    } catch (error) {
+      // Service errors deliberately exclude raw credential-provider errors.
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Could not save the SSH tunnel. Check its configuration and credential vault.",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -125,6 +179,35 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
       <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-lg mx-auto w-full p-4 space-y-4">
+            {saveError && (
+              <p role="alert" className="text-error">
+                {saveError}
+              </p>
+            )}
+            <fieldset disabled={saving} className="space-y-2">
+              <legend className="text-sm font-medium">SSH base</legend>
+              <label className="mr-4">
+                <input
+                  type="radio"
+                  name={`${connectionSelectId}-base`}
+                  checked={!standalone}
+                  onChange={() => {
+                    setStandalone(false);
+                    setForm({ ...form, password: undefined });
+                  }}
+                />{" "}
+                Saved SSH connection
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name={`${connectionSelectId}-base`}
+                  checked={standalone}
+                  onChange={() => setStandalone(true)}
+                />{" "}
+                Standalone SSH server
+              </label>
+            </fieldset>
             <div>
               <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
                 Tunnel Name <span className="text-error">*</span>
@@ -139,32 +222,106 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
               />
             </div>
 
-            <div>
-              <label
-                htmlFor={connectionSelectId}
-                className="block text-sm font-medium text-[var(--color-text)] mb-1.5"
-              >
-                SSH Connection <span className="text-error">*</span>
-              </label>
-              <Select
-                id={connectionSelectId}
-                label="SSH connection"
-                data-testid="ssh-tunnel-connection-select"
-                value={form.sshConnectionId}
-                onChange={(v: string) =>
-                  setForm({ ...form, sshConnectionId: v })
-                }
-                options={connectionOptions}
-                searchable
-                searchPlaceholder="Search by name, host, user or folder…"
-                className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-              />
-              {sshConnections.length === 0 && (
-                <p className="text-xs text-warning mt-1">
-                  No SSH connections available. Create an SSH connection first.
+            {!standalone ? (
+              <div>
+                <label
+                  htmlFor={connectionSelectId}
+                  className="block text-sm font-medium text-[var(--color-text)] mb-1.5"
+                >
+                  SSH Connection <span className="text-error">*</span>
+                </label>
+                <Select
+                  id={connectionSelectId}
+                  label="SSH connection"
+                  data-testid="ssh-tunnel-connection-select"
+                  value={form.sshConnectionId ?? ""}
+                  onChange={(v: string) =>
+                    setForm({ ...form, sshConnectionId: v })
+                  }
+                  options={connectionOptions}
+                  searchable
+                  searchPlaceholder="Search by name, host, user or folder…"
+                  className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                />
+                {sshConnections.length === 0 && (
+                  <p className="text-xs text-warning mt-1">
+                    No SSH connections available. Choose Standalone SSH server
+                    or save an SSH connection.
+                  </p>
+                )}
+                <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+                  Uses the saved connection's credentials, host-key policy and
+                  network path.
                 </p>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <label className="block text-sm">
+                  SSH host
+                  <input
+                    aria-label="SSH host"
+                    required
+                    value={form.host ?? ""}
+                    onChange={(e) => setForm({ ...form, host: e.target.value })}
+                    className="sor-input w-full"
+                    placeholder="bastion.example.com"
+                  />
+                </label>
+                <label className="block text-sm">
+                  SSH port
+                  <input
+                    aria-label="SSH port"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    required
+                    value={form.port ?? 22}
+                    onChange={(e) =>
+                      setForm({ ...form, port: Number(e.target.value) })
+                    }
+                    className="sor-input w-full"
+                  />
+                </label>
+                <label className="block text-sm">
+                  SSH username
+                  <input
+                    aria-label="SSH username"
+                    required
+                    autoComplete="off"
+                    value={form.username ?? ""}
+                    onChange={(e) =>
+                      setForm({ ...form, username: e.target.value })
+                    }
+                    className="sor-input w-full"
+                  />
+                </label>
+                <label className="block text-sm">
+                  SSH password
+                  <input
+                    aria-label="SSH password"
+                    type="password"
+                    autoComplete="new-password"
+                    required={!editingTunnel?.credentialRef}
+                    value={form.password ?? ""}
+                    onChange={(e) =>
+                      setForm({ ...form, password: e.target.value })
+                    }
+                    className="sor-input w-full"
+                    placeholder={
+                      editingTunnel?.credentialRef
+                        ? "Leave blank to keep stored password"
+                        : "Password"
+                    }
+                  />
+                </label>
+                <p className="text-xs text-[var(--color-textSecondary)]">
+                  Passwords are saved in the OS credential vault. Enter the
+                  password again when changing the SSH host, port or username.
+                  Host keys are verified through Trust Center in the open
+                  database.
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
@@ -312,7 +469,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
           </button>
           <button
             type="submit"
-            disabled={!form.name || !form.sshConnectionId}
+            disabled={!valid || saving}
             className="sor-btn sor-btn-primary"
           >
             {isEditing ? "Save Changes" : "Create Tunnel"}

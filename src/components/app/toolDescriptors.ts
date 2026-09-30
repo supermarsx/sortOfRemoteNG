@@ -80,7 +80,9 @@ export const TOOL_DESCRIPTORS = Object.freeze({
   connectionEditor: defineTool("connectionEditor", Pencil),
   proxyProfileEditor: defineTool("proxyProfileEditor", Network),
   proxyChainEditor: defineTool("proxyChainEditor", Waypoints),
-  sshTunnelEditor: defineTool("sshTunnelEditor", Route),
+  // Standalone tunnels do not depend on a saved connection database. The
+  // editor separately checks database access when a saved SSH base is chosen.
+  sshTunnelEditor: defineTool("sshTunnelEditor", Route, "app"),
   shortcutCreator: defineTool("shortcutCreator", Keyboard),
   vpnEditor: defineTool("vpnEditor", Shield),
   tunnelChainEditor: defineTool("tunnelChainEditor", Waypoints),

@@ -7,6 +7,9 @@ vi.mock("@tauri-apps/api/core", () => ({
   transformCallback: vi.fn(),
   Channel: vi.fn(),
 }));
+vi.mock("../../src/utils/ssh/sshTunnelTrust", () => ({
+  listenForTunnelTrust: vi.fn(async () => vi.fn()),
+}));
 
 import { sshTunnelService } from "../../src/utils/ssh/sshTunnelService";
 import type { Connection } from "../../src/types/connection/connection";
@@ -18,6 +21,7 @@ const sshConnection = {
   port: 22,
   protocol: "ssh",
   username: "user",
+  password: "test-password",
 } as unknown as Connection;
 
 function setupInvoke() {

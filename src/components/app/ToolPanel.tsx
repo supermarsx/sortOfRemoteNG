@@ -161,8 +161,8 @@ const ProxyProfileEditor = dynamic(
     import("../network/ProxyProfileEditor").then((m) => m.ProxyProfileEditor),
   { ssr: false },
 );
-const SSHTunnelDialog = dynamic(
-  () => import("../ssh/SSHTunnelDialog").then((m) => m.SSHTunnelDialog),
+const SSHTunnelEditor = dynamic(
+  () => import("../ssh/SSHTunnelEditor").then((m) => m.SSHTunnelEditor),
   { ssr: false },
 );
 const ProxyChainEditor = dynamic(
@@ -730,11 +730,13 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           );
         })()}
       {toolKey === "sshTunnelEditor" && (
-        <SSHTunnelDialog
-          isOpen
+        <SSHTunnelEditor
           onClose={onClose}
-          onSave={() => onClose()}
-          sshConnections={state.connections.filter((c) => c.protocol === "ssh")}
+          tunnelId={
+            session.connectionId?.startsWith("tool-")
+              ? undefined
+              : session.connectionId
+          }
         />
       )}
       {toolKey === "vpnEditor" && (

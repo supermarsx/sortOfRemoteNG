@@ -61,6 +61,30 @@ describe("SSHTunnelDialog", () => {
   const renderWithProvider = (ui: React.ReactElement) =>
     render(<ConnectionProvider>{ui}</ConnectionProvider>);
 
+  it("does not reset a standalone draft when saved SSH connections become available", () => {
+    const props = { isOpen: true, onClose: vi.fn(), onSave: vi.fn() };
+    const view = renderWithProvider(
+      <SSHTunnelDialog {...props} sshConnections={[]} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("My SSH Tunnel"), {
+      target: { value: "Draft tunnel" },
+    });
+    expect(
+      screen.getByRole("radio", { name: "Standalone SSH server" }),
+    ).toBeChecked();
+    view.rerender(
+      <ConnectionProvider>
+        <SSHTunnelDialog {...props} sshConnections={sshConnections} />
+      </ConnectionProvider>,
+    );
+    expect(screen.getByPlaceholderText("My SSH Tunnel")).toHaveValue(
+      "Draft tunnel",
+    );
+    expect(
+      screen.getByRole("radio", { name: "Standalone SSH server" }),
+    ).toBeChecked();
+  });
+
   it("does not render when closed", () => {
     renderWithProvider(
       <SSHTunnelDialog
@@ -72,6 +96,100 @@ describe("SSHTunnelDialog", () => {
     );
 
     expect(screen.queryByText("Tunnel Name")).not.toBeInTheDocument();
+  });
+
+  it("creates a standalone tunnel without saved connections", async () => {
+    const onSave = vi.fn();
+    renderWithProvider(
+      <SSHTunnelDialog
+        isOpen
+        onClose={() => {}}
+        onSave={onSave}
+        sshConnections={[]}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("My SSH Tunnel"), {
+      target: { value: "Standalone" },
+    });
+    fireEvent.change(screen.getByLabelText("SSH host"), {
+      target: { value: "ssh.example" },
+    });
+    fireEvent.change(screen.getByLabelText("SSH username"), {
+      target: { value: "alice" },
+    });
+    fireEvent.change(screen.getByLabelText("SSH password"), {
+      target: { value: "secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Tunnel" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sshConnectionId: "",
+          host: "ssh.example",
+          port: 22,
+          username: "alice",
+          password: "secret",
+        }),
+      ),
+    );
+  });
+
+  it("keeps a stored standalone password out of the edit form and preserves it when blank", async () => {
+    const onSave = vi.fn();
+    renderWithProvider(
+      <SSHTunnelDialog
+        isOpen
+        onClose={() => {}}
+        onSave={onSave}
+        sshConnections={[]}
+        editingTunnel={{
+          id: "t",
+          name: "Existing",
+          host: "ssh.example",
+          port: 22,
+          username: "alice",
+          credentialRef: "t:opaque",
+          localPort: 12000,
+          type: "dynamic",
+          autoConnect: false,
+        }}
+      />,
+    );
+    expect(screen.getByLabelText("SSH password")).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ password: undefined, host: "ssh.example" }),
+      ),
+    );
+  });
+
+  it("shows persistence errors and keeps the form open for retry", async () => {
+    const onClose = vi.fn();
+    renderWithProvider(
+      <SSHTunnelDialog
+        isOpen
+        onClose={onClose}
+        onSave={async () => {
+          throw new Error("Unlock the OS credential vault");
+        }}
+        sshConnections={sshConnections}
+        editingTunnel={{
+          id: "t",
+          name: "Existing",
+          sshConnectionId: "conn-1",
+          localPort: 12000,
+          type: "dynamic",
+          autoConnect: false,
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Unlock the OS credential vault",
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save Changes" })).toBeEnabled();
   });
 
   it("closes when Cancel button is clicked", async () => {

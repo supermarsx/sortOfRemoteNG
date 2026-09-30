@@ -19,7 +19,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
       <div className="text-sm text-[var(--color-textSecondary)]">
         {t(
           "proxyChainMenu.tunnels.description",
-          "Create SSH tunnels using existing SSH connections to forward ports securely.",
+          "Create SSH tunnels using a saved SSH connection or a standalone SSH server.",
         )}
       </div>
 
@@ -135,6 +135,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                       {t("proxyChainMenu.tunnels.via", "via")}
                     </span>{" "}
                     {sshConn?.name ||
+                      tunnel.host ||
                       t("proxyChainMenu.tunnels.unknownSsh", "Unknown SSH")}
                   </div>
                   <div className="text-xs text-[var(--color-textSecondary)] mt-0.5 font-mono">
@@ -147,7 +148,10 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {tunnel.status === "connected" ? (
+                  {tunnel.status === "connected" ||
+                  tunnel.status === "connecting" ||
+                  tunnel.needsCleanup ||
+                  tunnel.sshSessionId ? (
                     <button
                       onClick={() => mgr.handleDisconnectTunnel(tunnel.id)}
                       className="p-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded-md"
@@ -161,7 +165,6 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                   ) : (
                     <button
                       onClick={() => mgr.handleConnectTunnel(tunnel.id)}
-                      disabled={tunnel.status === "connecting"}
                       className="p-2 text-[var(--color-textSecondary)] hover:text-success hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
                       title={t("proxyChainMenu.common.connect", "Connect")}
                     >

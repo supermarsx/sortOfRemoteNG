@@ -18,6 +18,7 @@ import {
   SavedProxyChain,
 } from "../../types/settings/settings";
 import { createToolSession } from "../../components/app/toolSession";
+import { resolveSavedTunnelBase } from "../../utils/ssh/sshTunnelRuntime";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -48,7 +49,10 @@ export type ProxyTab =
 // ─── Hook ──────────────────────────────────────────────────────────
 
 export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
-  const { state, dispatch } = useConnections();
+  const context = useConnections();
+  const { state, dispatch } = context;
+  const contextRef = useRef(context);
+  contextRef.current = context;
   const proxyManager = ProxyOpenVPNManager.getInstance();
 
   const [activeTab, setActiveTab] = useState<ProxyTab>("profiles");
@@ -233,22 +237,34 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
   // ─── SSH Tunnel handlers ───────────────────────────────────────
 
   const handleSaveTunnel = async (params: SSHTunnelCreateParams) => {
-    try {
-      if (editingTunnel) {
-        await sshTunnelService.updateTunnel(editingTunnel.id, params);
-      } else {
-        await sshTunnelService.createTunnel(params);
-      }
-      setShowTunnelDialog(false);
-      setEditingTunnel(null);
-    } catch (error) {
-      console.error("Failed to create/update SSH tunnel:", error);
+    const ownerDatabaseId = params.sshConnectionId
+      ? context.databaseAvailability?.databaseId
+      : undefined;
+    if (
+      params.sshConnectionId &&
+      context.databaseAvailability?.status !== "ready"
+    )
+      throw new Error(
+        "Open and unlock the saved SSH connection's database before saving this tunnel.",
+      );
+    const owned = { ...params, ownerDatabaseId };
+    if (editingTunnel) {
+      await sshTunnelService.updateTunnel(editingTunnel.id, owned);
+    } else {
+      await sshTunnelService.createTunnel(owned);
     }
+    setShowTunnelDialog(false);
+    setEditingTunnel(null);
   };
 
   const handleEditTunnel = (tunnel: SSHTunnelConfig) => {
-    setEditingTunnel(tunnel);
-    setShowTunnelDialog(true);
+    dispatch({
+      type: "ADD_SESSION",
+      payload: createToolSession("sshTunnelEditor", {
+        connectionId: tunnel.id,
+        name: `SSH Tunnel — ${tunnel.name}`,
+      }),
+    });
   };
 
   const handleNewTunnel = () => {
@@ -260,29 +276,55 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
 
   const handleDeleteTunnel = async (tunnelId: string) => {
     if (confirm("Are you sure you want to delete this SSH tunnel?")) {
-      await sshTunnelService.deleteTunnel(tunnelId);
+      try {
+        await sshTunnelService.deleteTunnel(tunnelId);
+      } catch (error) {
+        alert(
+          error instanceof Error
+            ? error.message
+            : "Could not delete the SSH tunnel. Retry after unlocking the credential vault.",
+        );
+      }
     }
   };
 
   const handleConnectTunnel = async (tunnelId: string) => {
     const tunnel = sshTunnelService.getTunnel(tunnelId);
     if (!tunnel) return;
-    const sshConnection = state.connections.find(
-      (c) => c.id === tunnel.sshConnectionId,
-    );
-    if (!sshConnection) {
-      alert("SSH connection not found for this tunnel");
-      return;
-    }
     try {
-      await sshTunnelService.connectTunnel(tunnelId, sshConnection);
+      if (tunnel.sshConnectionId) {
+        const base = await resolveSavedTunnelBase(
+          tunnel.sshConnectionId,
+          tunnel.ownerDatabaseId,
+          () => contextRef.current,
+        );
+        await sshTunnelService.connectTunnel(
+          tunnelId,
+          base.connection,
+          base.options,
+        );
+      } else {
+        await sshTunnelService.connectTunnel(tunnelId);
+      }
     } catch (error) {
-      console.error("Failed to connect SSH tunnel:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Could not connect the SSH tunnel. Check its saved base and credential vault.",
+      );
     }
   };
 
   const handleDisconnectTunnel = async (tunnelId: string) => {
-    await sshTunnelService.disconnectTunnel(tunnelId);
+    try {
+      await sshTunnelService.disconnectTunnel(tunnelId);
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Could not disconnect the SSH tunnel. Retry its Disconnect action.",
+      );
+    }
   };
 
   // ─── Proxy Profile handlers ────────────────────────────────────

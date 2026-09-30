@@ -1,6 +1,28 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Connection } from "../../types/connection/connection";
 import {
+  readTunnelPassword,
+  writeTunnelPassword,
+  deleteTunnelPassword,
+} from "./sshTunnelCredentials";
+import type { TunnelRuntimeOptions } from "./sshTunnelRuntime";
+import { resolveRuntimeNetworkPath } from "../network/resolveRuntimeNetworkPath";
+import {
+  acquireSessionVpnLeases,
+  createVpnLeaseAttemptOwnerId,
+  releaseSessionVpnLeases,
+} from "../network/vpnSessionLeases";
+import { normalizeConnectionCredentialSource } from "../security/databaseCredentialVault";
+import { SettingsManager } from "../settings/settingsManager";
+import {
+  defaultSSHConnectionConfig,
+  mergeSSHConnectionConfig,
+} from "../../types/ssh/sshSettings";
+import { resolveEffectiveTrustPolicy } from "../auth/trustStore";
+import { redactSecrets } from "../errors/redact";
+import { listenForTunnelTrust } from "./sshTunnelTrust";
+import { SecureStorage } from "../storage/storage";
+import {
   AppDataJsonStore,
   type SanitizedValue,
 } from "../storage/appDataJsonStore";
@@ -9,7 +31,18 @@ export interface SSHTunnelConfig {
   id: string;
   name: string;
   // The SSH connection to use as the tunnel host
-  sshConnectionId: string;
+  sshConnectionId?: string;
+  ownerDatabaseId?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  /** Opaque OS vault reference; never contains a password. */
+  credentialRef?: string;
+  /** Durable retry list for retired OS-vault entries. Contains references only. */
+  pendingCredentialRefs?: string[];
+  /** Persisted before deleting secrets; only deletion retries are allowed. */
+  pendingDeletion?: boolean;
+  needsCleanup?: boolean;
   // Local port to bind (0 = auto-assign)
   localPort: number;
   // Remote host to forward to (from the SSH server's perspective)
@@ -43,7 +76,13 @@ export interface SSHTunnelConfig {
 
 export interface SSHTunnelCreateParams {
   name: string;
-  sshConnectionId: string;
+  sshConnectionId?: string;
+  ownerDatabaseId?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  /** Write-only: undefined retains the existing standalone password. */
+  password?: string;
   localPort?: number;
   // Remote host/port - required for local/remote, not used for dynamic
   remoteHost?: string;
@@ -68,7 +107,14 @@ interface PortForwardConfig {
 interface PersistedSSHTunnel {
   id: string;
   name: string;
-  sshConnectionId: string;
+  sshConnectionId?: string;
+  ownerDatabaseId?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  credentialRef?: string;
+  pendingCredentialRefs?: string[];
+  pendingDeletion?: boolean;
   localPort: number;
   remoteHost?: string;
   remotePort?: number;
@@ -92,7 +138,8 @@ const sanitizePersistedTunnels = (
     if (
       typeof tunnel.id !== "string" ||
       typeof tunnel.name !== "string" ||
-      typeof tunnel.sshConnectionId !== "string" ||
+      (typeof tunnel.sshConnectionId !== "string" &&
+        typeof tunnel.host !== "string") ||
       typeof tunnel.localPort !== "number" ||
       !["local", "remote", "dynamic"].includes(String(tunnel.type)) ||
       typeof tunnel.autoConnect !== "boolean" ||
@@ -106,14 +153,38 @@ const sanitizePersistedTunnels = (
       "actualLocalPort" in tunnel ||
       "sshSessionId" in tunnel ||
       "portForwardId" in tunnel ||
+      "needsCleanup" in tunnel ||
       "password" in tunnel ||
       "privateKey" in tunnel ||
       "passphrase" in tunnel;
     return {
       id: tunnel.id,
       name: tunnel.name,
-      sshConnectionId: tunnel.sshConnectionId,
+      sshConnectionId:
+        typeof tunnel.sshConnectionId === "string"
+          ? tunnel.sshConnectionId
+          : undefined,
+      ownerDatabaseId:
+        typeof tunnel.ownerDatabaseId === "string"
+          ? tunnel.ownerDatabaseId
+          : undefined,
+      host: typeof tunnel.host === "string" ? tunnel.host : undefined,
+      port: typeof tunnel.port === "number" ? tunnel.port : undefined,
+      username:
+        typeof tunnel.username === "string" ? tunnel.username : undefined,
+      credentialRef:
+        typeof tunnel.credentialRef === "string" &&
+        tunnel.credentialRef.startsWith(`${tunnel.id}:`)
+          ? tunnel.credentialRef
+          : undefined,
       localPort: tunnel.localPort,
+      pendingDeletion: tunnel.pendingDeletion === true || undefined,
+      pendingCredentialRefs: Array.isArray(tunnel.pendingCredentialRefs)
+        ? tunnel.pendingCredentialRefs.filter(
+            (ref): ref is string =>
+              typeof ref === "string" && ref.startsWith(`${tunnel.id}:`),
+          )
+        : undefined,
       ...(typeof tunnel.remoteHost === "string"
         ? { remoteHost: tunnel.remoteHost }
         : {}),
@@ -145,6 +216,12 @@ class SSHTunnelService {
   private mutationQueue: Promise<void> = Promise.resolve();
   private persistenceError: Error | null = null;
   private migrationWarning: string | null = null;
+  private vpnOwners = new Map<string, string>();
+  private deleting = new Set<string>();
+  private attempts = new Map<
+    string,
+    { cancelled: boolean; done: Promise<void> }
+  >();
 
   private constructor() {
     this.loadPromise = this.loadTunnels().catch((error) => {
@@ -199,6 +276,13 @@ class SSHTunnelService {
         id: tunnel.id,
         name: tunnel.name,
         sshConnectionId: tunnel.sshConnectionId,
+        ownerDatabaseId: tunnel.ownerDatabaseId,
+        host: tunnel.host,
+        port: tunnel.port,
+        username: tunnel.username,
+        credentialRef: tunnel.credentialRef,
+        pendingCredentialRefs: tunnel.pendingCredentialRefs,
+        pendingDeletion: tunnel.pendingDeletion,
         localPort: tunnel.localPort,
         remoteHost: tunnel.remoteHost,
         remotePort: tunnel.remotePort,
@@ -213,6 +297,10 @@ class SSHTunnelService {
 
   getPersistenceError(): string | null {
     return this.persistenceError?.message ?? null;
+  }
+
+  async ready(): Promise<void> {
+    await this.ensureLoaded();
   }
 
   getMigrationWarning(): string | null {
@@ -251,6 +339,12 @@ class SSHTunnelService {
         id,
         name: params.name,
         sshConnectionId: params.sshConnectionId,
+        ownerDatabaseId: params.sshConnectionId
+          ? params.ownerDatabaseId
+          : undefined,
+        host: params.sshConnectionId ? undefined : params.host?.trim(),
+        port: params.sshConnectionId ? undefined : (params.port ?? 22),
+        username: params.sshConnectionId ? undefined : params.username?.trim(),
         localPort: params.localPort || 0,
         remoteHost: params.remoteHost,
         remotePort: params.remotePort,
@@ -261,9 +355,25 @@ class SSHTunnelService {
         createdAt: new Date(),
       };
 
+      this.validateTunnel(tunnel);
+      if (!tunnel.sshConnectionId) {
+        if (!params.password)
+          throw new Error("Enter a password for the standalone SSH tunnel.");
+        tunnel.credentialRef = await writeTunnelPassword(
+          id,
+          this.endpoint(tunnel),
+          params.password,
+        );
+      }
+
       const next = new Map(this.tunnels);
       next.set(id, tunnel);
-      await this.saveTunnels(next);
+      try {
+        await this.saveTunnels(next);
+      } catch (error) {
+        await this.rollbackCredential(tunnel, tunnel.credentialRef, true);
+        throw error;
+      }
       this.tunnels = next;
       this.notifyListeners();
       return tunnel;
@@ -278,9 +388,17 @@ class SSHTunnelService {
       await this.ensureLoaded();
       const tunnel = this.tunnels.get(id);
       if (!tunnel) return null;
+      if (tunnel.pendingDeletion)
+        throw new Error(
+          "SSH tunnel deletion is pending. Retry deleting it before creating a replacement.",
+        );
+      if (tunnel.status === "connecting")
+        throw new Error(
+          "Wait for the SSH tunnel connection attempt before editing it.",
+        );
 
       // If tunnel is connected, disconnect first
-      if (tunnel.status === "connected") {
+      if (tunnel.sshSessionId || this.vpnOwners.has(id)) {
         await this.disconnectTunnel(id);
       }
 
@@ -288,6 +406,10 @@ class SSHTunnelService {
         ...tunnel,
         name: updates.name ?? tunnel.name,
         sshConnectionId: updates.sshConnectionId ?? tunnel.sshConnectionId,
+        ownerDatabaseId: updates.ownerDatabaseId ?? tunnel.ownerDatabaseId,
+        host: updates.host?.trim() ?? tunnel.host,
+        port: updates.port ?? tunnel.port ?? 22,
+        username: updates.username?.trim() ?? tunnel.username,
         localPort: updates.localPort ?? tunnel.localPort,
         remoteHost: updates.remoteHost ?? tunnel.remoteHost,
         remotePort: updates.remotePort ?? tunnel.remotePort,
@@ -296,12 +418,52 @@ class SSHTunnelService {
         allowNonLoopbackBind:
           updates.allowNonLoopbackBind ?? tunnel.allowNonLoopbackBind,
       };
+      this.validateTunnel(updated);
+      if (updated.sshConnectionId) {
+        updated.host = undefined;
+        updated.port = undefined;
+        updated.username = undefined;
+        updated.credentialRef = undefined;
+      } else {
+        updated.ownerDatabaseId = undefined;
+        if (updates.password !== undefined) {
+          if (!updates.password)
+            throw new Error("Enter a non-empty SSH tunnel password.");
+          updated.credentialRef = await writeTunnelPassword(
+            id,
+            this.endpoint(updated),
+            updates.password,
+          );
+        } else {
+          // Also verifies that destination/user edits did not silently redirect a retained secret.
+          await readTunnelPassword(
+            id,
+            updated.credentialRef,
+            this.endpoint(updated),
+          );
+        }
+      }
 
       const next = new Map(this.tunnels);
       next.set(id, updated);
-      await this.saveTunnels(next);
+      if (
+        updated.credentialRef !== tunnel.credentialRef &&
+        tunnel.credentialRef
+      )
+        updated.pendingCredentialRefs = [
+          ...(tunnel.pendingCredentialRefs ?? []),
+          tunnel.credentialRef,
+        ];
+      try {
+        await this.saveTunnels(next);
+      } catch (error) {
+        if (updated.credentialRef !== tunnel.credentialRef)
+          await this.rollbackCredential(tunnel, updated.credentialRef, false);
+        throw error;
+      }
       this.tunnels = next;
       this.notifyListeners();
+      await this.cleanupRetiredCredentials(updated);
       return updated;
     });
   }
@@ -311,28 +473,63 @@ class SSHTunnelService {
       await this.ensureLoaded();
       const tunnel = this.tunnels.get(id);
       if (!tunnel) return false;
+      if (tunnel.status === "connecting")
+        throw new Error(
+          "Wait for the SSH tunnel connection attempt before deleting it.",
+        );
 
-      // Disconnect if connected
-      if (tunnel.status === "connected") {
-        await this.disconnectTunnel(id);
+      this.deleting.add(id);
+      try {
+        // Disconnect if connected
+        if (tunnel.sshSessionId || this.vpnOwners.has(id)) {
+          await this.disconnectTunnel(id);
+        }
+
+        // Commit intent before touching secrets. A failed final save leaves a
+        // durable, non-connectable record whose cleanup can safely be retried.
+        const deleting = { ...tunnel, pendingDeletion: true };
+        const marked = new Map(this.tunnels);
+        marked.set(id, deleting);
+        await this.saveTunnels(marked);
+        this.tunnels = marked;
+        this.notifyListeners();
+        await this.cleanupRetiredCredentials(deleting);
+        await this.deleteCredential(id, deleting.credentialRef);
+        const next = new Map(this.tunnels);
+        next.delete(id);
+        await this.saveTunnels(next);
+        this.tunnels = next;
+        this.notifyListeners();
+        return true;
+      } finally {
+        this.deleting.delete(id);
       }
-
-      const next = new Map(this.tunnels);
-      next.delete(id);
-      await this.saveTunnels(next);
-      this.tunnels = next;
-      this.notifyListeners();
-      return true;
     });
   }
 
   async connectTunnel(
     id: string,
-    sshConnection: Connection,
+    sshConnection?: Connection,
+    options: TunnelRuntimeOptions = {},
   ): Promise<SSHTunnelConfig> {
+    await this.ensureLoaded();
     const tunnel = this.tunnels.get(id);
     if (!tunnel) {
       throw new Error(`Tunnel ${id} not found`);
+    }
+    if (tunnel.pendingDeletion || this.deleting.has(id))
+      throw new Error(
+        "SSH tunnel deletion is pending. Retry deleting it before connecting.",
+      );
+    if (tunnel.status === "connected") return tunnel;
+    if (
+      tunnel.status === "connecting" ||
+      tunnel.sshSessionId ||
+      this.vpnOwners.has(id)
+    ) {
+      throw new Error(
+        "This tunnel is connecting or needs cleanup. Disconnect it before retrying.",
+      );
     }
 
     // Update status to connecting
@@ -341,22 +538,169 @@ class SSHTunnelService {
     this.tunnels.set(id, tunnel);
     this.notifyListeners();
 
+    const secrets: string[] = [];
+    let unlistenTrust: (() => void) | undefined;
+    let finishAttempt!: () => void;
+    const attempt = {
+      cancelled: false,
+      done: new Promise<void>((resolve) => {
+        finishAttempt = resolve;
+      }),
+    };
+    this.attempts.set(id, attempt);
+    const assertCurrent = () => {
+      if (attempt.cancelled)
+        throw new Error("SSH tunnel connection cancelled.");
+      options.assertCurrent?.();
+    };
     try {
+      this.validateTunnel(tunnel);
+      if (tunnel.sshConnectionId) {
+        if (
+          !sshConnection ||
+          sshConnection.id !== tunnel.sshConnectionId ||
+          sshConnection.protocol !== "ssh" ||
+          sshConnection.isGroup
+        )
+          throw new Error(
+            "The saved SSH base is unavailable. Open its owning database and select the connection again.",
+          );
+      } else {
+        const endpoint = this.endpoint(tunnel);
+        const password = await readTunnelPassword(
+          id,
+          tunnel.credentialRef,
+          endpoint,
+        );
+        sshConnection = {
+          id,
+          name: tunnel.name,
+          protocol: "ssh",
+          hostname: endpoint.host,
+          port: endpoint.port,
+          username: endpoint.username,
+          password,
+          authType: "password",
+        } as Connection;
+      }
+      if (!sshConnection) throw new Error("Select an SSH base connection.");
+      assertCurrent();
+      const vaultSource =
+        normalizeConnectionCredentialSource(sshConnection.credentialSource)
+          ?.kind === "vault";
+      if (vaultSource && !options.vault)
+        throw new Error(
+          "Resolve the saved SSH base from its unlocked database vault before connecting. No local credential fallback was used.",
+        );
+      const auth = vaultSource ? options.vault!.facets : sshConnection;
+      const username = auth.username ?? "";
+      const password = auth.password ?? null;
+      const privateKey = auth.privateKey ?? null;
+      const passphrase = auth.passphrase ?? null;
+      const totpId =
+        vaultSource && sshConnection.credentialSource?.kind === "vault"
+          ? sshConnection.credentialSource.totpId
+          : undefined;
+      const totp = totpId
+        ? options.vault?.facets.totp?.find((t) => t.id === totpId)
+        : undefined;
+      const totpSecret = vaultSource ? totp?.secret : sshConnection.totpSecret;
+      secrets.push(
+        ...[password, privateKey, passphrase, totpSecret].filter(
+          (s): s is string => typeof s === "string",
+        ),
+      );
+      const authType =
+        sshConnection.authType ?? (privateKey ? "key" : "password");
+      if (!["password", "key", "totp"].includes(authType))
+        throw new Error(
+          "This SSH tunnel authentication mode is unsupported. Select password, key or TOTP on the saved base.",
+        );
+      if (
+        !username ||
+        (authType === "key" ? !privateKey : !password) ||
+        (authType === "totp" && !totpSecret)
+      )
+        throw new Error(
+          "The SSH base is missing its required username or authentication material. Edit and save its credentials before retrying.",
+        );
+      const path = await resolveRuntimeNetworkPath(
+        sshConnection,
+        options.connections ?? [sshConnection],
+        "ssh",
+      );
+      secrets.push(...path.redactionSecrets);
+      assertCurrent();
+      options.vault?.assertCurrent();
+      if (path.transport.vpnPreSteps.length) {
+        const owner = createVpnLeaseAttemptOwnerId(id, "ssh");
+        this.vpnOwners.set(id, owner);
+        await acquireSessionVpnLeases(owner, path.transport.vpnPreSteps);
+      }
       // Get SSH connection overrides from the connection
-      const override = sshConnection.sshConnectionConfigOverride;
+      const settings = SettingsManager.getInstance().getSettings();
+      const override = mergeSSHConnectionConfig(
+        settings.sshConnection ?? defaultSSHConnectionConfig,
+        sshConnection.sshConnectionConfigOverride,
+      );
+      const trust = resolveEffectiveTrustPolicy(
+        sshConnection.sshTrustPolicy,
+        settings.sshTrustPolicy,
+        settings.trustPolicy,
+      );
+      // The tunnel manager has no interactive ProxyCommand review surface.
+      if (override.proxyCommand || override.proxyCommandTemplate)
+        throw new Error(
+          "This SSH base uses ProxyCommand. Configure a supported proxy/jump-host network path before using it as a tunnel base.",
+        );
+      if (override.enableJumpHost || override.mixedChain?.hops.length)
+        throw new Error(
+          "This SSH base uses legacy SSH transport overrides. Move its jump hosts or mixed chain into the connection's network path before opening a tunnel; the configured route was not bypassed.",
+        );
+      assertCurrent();
+      options.vault?.assertCurrent();
+
+      unlistenTrust = await listenForTunnelTrust(
+        sshConnection.hostname,
+        sshConnection.port || 22,
+        username,
+        tunnel.sshConnectionId,
+        trust,
+        () => {
+          assertCurrent();
+          options.vault?.assertCurrent();
+        },
+      );
+      assertCurrent();
+      options.vault?.assertCurrent();
 
       // First, connect to the SSH server
       const sessionId = await invoke<string>("connect_ssh", {
         config: {
           host: sshConnection.hostname,
           port: sshConnection.port || 22,
-          username: sshConnection.username || "",
-          password: sshConnection.password || null,
-          private_key_path: sshConnection.privateKey || null,
-          private_key_passphrase: sshConnection.passphrase || null,
-          jump_hosts: [],
-          proxy_config: null,
-          openvpn_config: null,
+          username,
+          password: authType === "key" && !vaultSource ? null : password,
+          private_key_path:
+            authType === "key" && !vaultSource ? privateKey : null,
+          private_key_content:
+            authType === "key" && vaultSource ? privateKey : null,
+          private_key_passphrase: authType === "key" ? passphrase : null,
+          allow_agent_auth: false,
+          totp_secret: totpSecret ?? null,
+          totp_options: totp
+            ? {
+                algorithm: totp.algorithm,
+                digits: totp.digits,
+                period: totp.period,
+              }
+            : null,
+          agent_forwarding: override.agentForwarding,
+          jump_hosts: path.transport.jump_hosts,
+          proxy_config: path.transport.proxy_config,
+          proxy_chain: path.transport.proxy_chain,
+          mixed_chain: path.transport.mixed_chain,
+          openvpn_config: path.transport.openvpn_config,
           connect_timeout:
             override?.connectTimeout ?? sshConnection.sshConnectTimeout ?? 30,
           keep_alive_interval:
@@ -364,8 +708,9 @@ class SSHTunnelService {
             sshConnection.sshKeepAliveInterval ??
             60,
           strict_host_key_checking:
-            override?.strictHostKeyChecking ??
-            !(sshConnection.ignoreSshSecurityErrors ?? false),
+            override.strictHostKeyChecking &&
+            !sshConnection.ignoreSshSecurityErrors &&
+            trust !== "always-trust",
           known_hosts_path:
             override?.knownHostsPath ?? sshConnection.sshKnownHostsPath ?? null,
           tcp_no_delay: override?.tcpNoDelay ?? true,
@@ -378,9 +723,13 @@ class SSHTunnelService {
           preferred_ciphers: override?.preferredCiphers ?? [],
           preferred_macs: override?.preferredMACs ?? [],
           preferred_kex: override?.preferredKeyExchanges ?? [],
-          preferred_host_keys: override?.preferredHostKeyAlgorithms ?? [],
+          preferred_host_key_algorithms:
+            override?.preferredHostKeyAlgorithms ?? [],
         },
       });
+      tunnel.sshSessionId = sessionId;
+      assertCurrent();
+      options.vault?.assertCurrent();
 
       // Determine the local port (use requested or find available)
       const localPort = tunnel.localPort || (await this.findAvailablePort());
@@ -419,6 +768,8 @@ class SSHTunnelService {
         sessionId,
         config: portForwardConfig,
       });
+      assertCurrent();
+      options.vault?.assertCurrent();
 
       tunnel.status = "connected";
       tunnel.actualLocalPort = localPort;
@@ -430,34 +781,181 @@ class SSHTunnelService {
 
       return tunnel;
     } catch (error) {
+      let cleanupFailed = false;
+      try {
+        await this.cleanupTransport(tunnel);
+      } catch {
+        cleanupFailed = true;
+      }
       tunnel.status = "error";
-      tunnel.error = error instanceof Error ? error.message : String(error);
+      tunnel.needsCleanup = cleanupFailed;
+      tunnel.error =
+        redactSecrets(
+          error instanceof Error ? error.message : String(error),
+          secrets,
+        ) +
+        (cleanupFailed
+          ? " Tunnel cleanup is pending; disconnect before retrying."
+          : "");
       this.tunnels.set(id, tunnel);
       this.notifyListeners();
-      throw error;
+      throw new Error(tunnel.error);
+    } finally {
+      unlistenTrust?.();
+      if (options.vault) options.vault.facets = {};
+      this.attempts.delete(id);
+      finishAttempt();
     }
   }
 
   async disconnectTunnel(id: string): Promise<void> {
     const tunnel = this.tunnels.get(id);
     if (!tunnel) return;
+    const attempt = this.attempts.get(id);
+    if (attempt) {
+      attempt.cancelled = true;
+      await attempt.done;
+    }
 
     try {
-      // Disconnect the SSH session if we have one
-      if (tunnel.sshSessionId) {
-        await invoke("disconnect_ssh", { sessionId: tunnel.sshSessionId });
-      }
-    } catch (error) {
-      console.error("Failed to close SSH tunnel:", error);
+      await this.cleanupTransport(tunnel);
+    } catch {
+      tunnel.status = "error";
+      tunnel.needsCleanup = true;
+      tunnel.error =
+        "Could not close the SSH tunnel or release its VPN lease. Retry disconnecting.";
+      this.notifyListeners();
+      throw new Error(tunnel.error);
     }
 
     tunnel.status = "disconnected";
+    tunnel.needsCleanup = false;
     tunnel.actualLocalPort = undefined;
     tunnel.sshSessionId = undefined;
     tunnel.portForwardId = undefined;
     tunnel.error = undefined;
     this.tunnels.set(id, tunnel);
     this.notifyListeners();
+  }
+
+  private endpoint(tunnel: SSHTunnelConfig) {
+    return {
+      host: tunnel.host ?? "",
+      port: tunnel.port ?? 22,
+      username: tunnel.username ?? "",
+    };
+  }
+
+  private async cleanupRetiredCredentials(
+    tunnel: SSHTunnelConfig,
+  ): Promise<void> {
+    for (const reference of [...(tunnel.pendingCredentialRefs ?? [])]) {
+      await this.deleteCredential(tunnel.id, reference);
+      tunnel.pendingCredentialRefs = tunnel.pendingCredentialRefs!.filter(
+        (ref) => ref !== reference,
+      );
+      await this.saveTunnels(this.tunnels);
+    }
+  }
+
+  private async rollbackCredential(
+    original: SSHTunnelConfig,
+    reference: string | undefined,
+    creating: boolean,
+  ): Promise<void> {
+    if (!reference) return;
+    try {
+      await this.deleteCredential(original.id, reference);
+    } catch {
+      // Preserve the old active credential on updates. Failed creates become
+      // deletion-only records, never silently successful, connectable tunnels.
+      const recovery = {
+        ...original,
+        credentialRef: creating ? undefined : original.credentialRef,
+        pendingDeletion: creating || original.pendingDeletion,
+        pendingCredentialRefs: [
+          ...new Set([...(original.pendingCredentialRefs ?? []), reference]),
+        ],
+      };
+      this.tunnels.set(original.id, recovery);
+      this.notifyListeners();
+      try {
+        await this.saveTunnels(this.tunnels);
+      } catch {
+        // Both stores failed: retain the reference in memory and expose only
+        // the opaque account id needed for manual recovery, never the secret.
+        throw new Error(
+          `SSH tunnel credential cleanup is pending and could not be saved. Keep the app open and retry deleting or saving the tunnel. OS vault account: sortofremoteng.ssh-tunnels / ${reference}`,
+        );
+      }
+      throw new Error(
+        "SSH tunnel credential cleanup is pending. Its recovery reference was saved; retry deleting or saving the tunnel after unlocking the OS vault.",
+      );
+    }
+  }
+
+  private async deleteCredential(
+    id: string,
+    reference?: string,
+  ): Promise<void> {
+    try {
+      await deleteTunnelPassword(id, reference);
+    } catch (failure) {
+      if (reference?.startsWith(`${id}:`)) {
+        // Windows/macOS deletion need not be idempotent. Confirm absence via
+        // the read API's native VaultError kind, never by interpreting generic
+        // deletion failures (which may mean a locked or denied vault).
+        try {
+          await SecureStorage.vaultReadSecret(
+            "sortofremoteng.ssh-tunnels",
+            reference,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : error;
+          if (typeof message === "string" && message.startsWith("[NotFound] "))
+            return;
+        }
+      }
+      throw failure;
+    }
+  }
+
+  private validateTunnel(tunnel: SSHTunnelConfig): void {
+    const port = (n: number | undefined, min = 1) =>
+      Number.isInteger(n) && n! >= min && n! <= 65535;
+    if (!tunnel.name.trim() || !port(tunnel.localPort, 0))
+      throw new Error(
+        "Enter a tunnel name and a local port between 0 and 65535.",
+      );
+    if (!["local", "remote", "dynamic"].includes(tunnel.type))
+      throw new Error("Select a valid SSH tunnel type.");
+    if (
+      tunnel.type !== "dynamic" &&
+      (!tunnel.remoteHost?.trim() || !port(tunnel.remotePort))
+    )
+      throw new Error("Enter a destination host and port between 1 and 65535.");
+    if (
+      !tunnel.sshConnectionId &&
+      (!tunnel.host?.trim() || !tunnel.username?.trim() || !port(tunnel.port))
+    )
+      throw new Error(
+        "Select a saved SSH connection or enter a standalone SSH host, port and username.",
+      );
+  }
+
+  private async cleanupTransport(tunnel: SSHTunnelConfig): Promise<void> {
+    if (tunnel.sshSessionId) {
+      await invoke("disconnect_ssh", { sessionId: tunnel.sshSessionId });
+      tunnel.sshSessionId = undefined;
+      tunnel.portForwardId = undefined;
+      tunnel.actualLocalPort = undefined;
+    }
+    const owner = this.vpnOwners.get(tunnel.id);
+    if (owner) {
+      const result = await releaseSessionVpnLeases(owner);
+      if (result.errors.length) throw new Error("VPN cleanup pending");
+      this.vpnOwners.delete(tunnel.id);
+    }
   }
 
   private async findAvailablePort(): Promise<number> {
@@ -468,11 +966,24 @@ class SSHTunnelService {
   }
 
   async disconnectAllTunnels(): Promise<void> {
+    let failed = false;
     for (const tunnel of this.tunnels.values()) {
-      if (tunnel.status === "connected") {
-        await this.disconnectTunnel(tunnel.id);
+      if (
+        this.attempts.has(tunnel.id) ||
+        tunnel.sshSessionId ||
+        this.vpnOwners.has(tunnel.id)
+      ) {
+        try {
+          await this.disconnectTunnel(tunnel.id);
+        } catch {
+          failed = true;
+        }
       }
     }
+    if (failed)
+      throw new Error(
+        "Some SSH tunnels could not be disconnected. Retry their Disconnect actions in the tunnel manager.",
+      );
   }
 
   // Get available tunnels that can be used for a target connection
