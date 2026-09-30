@@ -56,6 +56,41 @@ describe("website failure diagnostics address", () => {
 });
 
 describe("website failure diagnostics text", () => {
+  it("copies possible application and gateway causes for an HTTP 502", () => {
+    const text = websiteFailureDiagnosticsText({
+      ...upstreamFailure,
+      status: 502,
+      upstream: { ...upstreamFailure.upstream!, reasonPhrase: "Bad Gateway" },
+    });
+    expect(text).toContain("Result: HTTP 502 Bad Gateway");
+    expect(text).toContain("may be stopped, unhealthy, or unreachable");
+    expect(text).toContain("Gateway routing");
+    expect(text).toContain("TLS failures, timeouts");
+    expect(text).toContain("service or container health");
+    expect(text).toContain(
+      "does not establish a credential or browser failure",
+    );
+  });
+
+  it.each([
+    ["http_status", 401],
+    ["http_status", 403],
+    ["http_status", 500],
+    ["connection_refused", 502],
+    ["tls_failure", 502],
+  ])(
+    "does not infer a gateway response from %s with status %i",
+    (kind, status) => {
+      const text = websiteFailureDiagnosticsText({
+        ...upstreamFailure,
+        kind,
+        status,
+        upstream: undefined,
+      });
+      expect(text).not.toContain("Guidance:");
+    },
+  );
+
   it("reports every upstream fact the page shows", () => {
     const text = websiteFailureDiagnosticsText(upstreamFailure, context);
     expect(text.split("\n")).toEqual([

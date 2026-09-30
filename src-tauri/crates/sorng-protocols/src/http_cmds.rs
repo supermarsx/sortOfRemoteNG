@@ -4,6 +4,20 @@ use super::http::*;
 #[path = "http_quickconnect_live_diagnostic_tests.rs"]
 mod quickconnect_live_diagnostic_tests;
 
+/// Status-only guidance: never copy request paths, credentials, or response text.
+fn upstream_application_diagnostic(status_code: u16) -> Option<DiagnosticStep> {
+    if status_code != 502 {
+        return None;
+    }
+    Some(DiagnosticStep {
+        name: "Upstream application".into(),
+        status: "warn".into(),
+        message: crate::themed_status::presentation_for(502).hint.into(),
+        duration_ms: 0,
+        detail: None,
+    })
+}
+
 /// Fetch a URL with credentials and custom configuration
 #[tauri::command]
 pub async fn http_fetch(
@@ -1959,6 +1973,10 @@ pub async fn diagnose_http_connection(
                 )),
             });
 
+            if let Some(warning) = upstream_application_diagnostic(status_code) {
+                steps.push(warning);
+            }
+
             if status_code == 401 {
                 let values: Vec<&str> = headers
                     .get_all(reqwest::header::WWW_AUTHENTICATE)
@@ -2523,6 +2541,37 @@ mod http_authentication_diagnostic_tests {
                     proxy_client_builder(verify, Some(&valid), "1.2", None, false, None).is_ok()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn diagnostic_502_reports_possible_upstream_failure_without_request_data() {
+        let warning = upstream_application_diagnostic(502).expect("502 warning");
+        assert_eq!(warning.name, "Upstream application");
+        assert_eq!(warning.status, "warn");
+        assert_eq!(warning.duration_ms, 0);
+        assert!(warning.detail.is_none());
+        assert_eq!(
+            warning.message,
+            crate::themed_status::presentation_for(502).hint
+        );
+        assert!(warning
+            .message
+            .contains("may be stopped, unhealthy, or unreachable"));
+        assert!(warning.message.contains("TLS failures, timeouts"));
+        assert!(warning
+            .message
+            .contains("does not establish a credential or browser failure"));
+    }
+
+    #[test]
+    fn diagnostic_upstream_warning_is_exclusive_to_502() {
+        for status_code in 100..=599 {
+            assert_eq!(
+                upstream_application_diagnostic(status_code).is_some(),
+                status_code == 502,
+                "unexpected upstream application guidance for HTTP {status_code}"
+            );
         }
     }
 

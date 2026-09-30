@@ -51,6 +51,12 @@ export interface WebsiteFailureDiagnosticsContext {
 const UNKNOWN = "not reported";
 const MAX_QUERY_KEYS = 16;
 
+export const BAD_GATEWAY_SUGGESTIONS = [
+  "The upstream application may be stopped, unhealthy, or unreachable from the gateway.",
+  "Gateway routing, an incorrect upstream address or port, TLS failures, timeouts, or an invalid upstream response can also cause HTTP 502.",
+  "Check the application's service or container health and the gateway's upstream settings and logs. HTTP 502 alone does not establish a credential or browser failure.",
+];
+
 /** Single-line, control-free text, so no field can forge a line of its own. */
 function printable(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null;
@@ -106,6 +112,8 @@ export function websiteFailureDiagnosticsText(
     `Result: ${status}`,
     `Address: ${target?.address ?? UNKNOWN}`,
   ];
+  if (failure.kind === "http_status" && failure.status === 502)
+    lines.push(...BAD_GATEWAY_SUGGESTIONS.map((hint) => `Guidance: ${hint}`));
   if (target?.queryKeys.length)
     lines.push(`Query keys (values omitted): ${target.queryKeys.join(", ")}`);
   if (upstream) {

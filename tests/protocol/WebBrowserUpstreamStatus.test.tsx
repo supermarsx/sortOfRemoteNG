@@ -234,6 +234,41 @@ describe("upstream status failure binding", () => {
 });
 
 describe("upstream status error screen", () => {
+  it("explains possible upstream downtime for 502 on screen and in copied diagnostics", async () => {
+    render(
+      <ErrorPage
+        mgr={manager({
+          navigationFailure: {
+            ...failure,
+            status: 502,
+            title: "Bad gateway",
+            upstream: { ...upstream, reasonPhrase: "Bad Gateway" },
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByText(/may be stopped, unhealthy, or unreachable/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Gateway routing,.*TLS failures, timeouts/),
+    ).toBeVisible();
+    expect(screen.getByText(/service or container health/)).toHaveTextContent(
+      "HTTP 502 alone does not establish a credential or browser failure",
+    );
+    expect(
+      screen.queryByText(
+        "Confirm the address and saved credentials are correct.",
+      ),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(writeText.mock.calls[0]![0]).toContain(
+      "may be stopped, unhealthy, or unreachable",
+    );
+  });
+
   it.each([
     [404, "Not Found", "Server returned HTTP 404"],
     [403, "Forbidden", "Server returned HTTP 403"],

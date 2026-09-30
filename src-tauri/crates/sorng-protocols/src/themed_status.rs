@@ -268,7 +268,7 @@ pub fn presentation_for(code: u16) -> StatusPresentation {
         },
         502 => StatusPresentation {
             title: "Bad gateway",
-            hint: "The server (acting as a gateway) got an invalid response from an upstream service.",
+            hint: "The gateway could not get a valid response from the upstream application. The application may be stopped, unhealthy, or unreachable. Gateway routing, upstream address or port settings, TLS failures, timeouts, or an invalid response can also cause this. Check the application and gateway logs; HTTP 502 alone does not establish a credential or browser failure.",
             tone: StatusTone::Error,
             icon_inner: ICON_SERVER_CRASH,
         },
@@ -648,6 +648,16 @@ mod tests {
         let p = presentation_for(499);
         assert_eq!(p.title, "Client error");
         assert!(matches!(p.tone, StatusTone::Error));
+    }
+
+    #[test]
+    fn bad_gateway_explains_possible_application_and_gateway_failures() {
+        let html = render_status_page(502, "https://example.test/", b"", &theme());
+        assert!(html.contains("Bad gateway"));
+        assert!(html.contains("may be stopped, unhealthy, or unreachable"));
+        assert!(html.contains("Gateway routing"));
+        assert!(html.contains("TLS failures, timeouts"));
+        assert!(html.contains("does not establish a credential or browser failure"));
     }
 
     #[test]

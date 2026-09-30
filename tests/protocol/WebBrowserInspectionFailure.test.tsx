@@ -178,7 +178,7 @@ describe("inspection failure presentation by failing layer", () => {
       tone: "error",
       tips: [
         "Check the global HTTP(S) proxy address and credentials in Settings.",
-        "HTTP 502 or 504 from the proxy means the proxy could not reach the website.",
+        "HTTP 502 or 504 can indicate an upstream application or gateway problem, including routing, TLS, or timeouts.",
         "The configured proxy is never bypassed; correct or disable it to connect directly.",
       ],
     },

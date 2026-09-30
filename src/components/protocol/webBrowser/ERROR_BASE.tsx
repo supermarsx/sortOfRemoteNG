@@ -10,7 +10,10 @@ import progressStyles from "./NavigationProgress.module.css";
 import NavigationFailureTimeline from "./NavigationFailureTimeline";
 import { ElapsedSeconds } from "./TrustCheckStatus";
 import { WebsiteDiagnosticsCopyButton } from "./WebsiteDiagnosticsCopyButton";
-import { websiteFailureDiagnosticsText } from "../../../utils/protocol/websiteFailureDiagnostics";
+import {
+  BAD_GATEWAY_SUGGESTIONS,
+  websiteFailureDiagnosticsText,
+} from "../../../utils/protocol/websiteFailureDiagnostics";
 import { APP_VERSION } from "../../../generated/version";
 import {
   AlertTriangle,
@@ -99,7 +102,7 @@ function presentationFor(
         tone: "error",
         suggestions: [
           "Check the global HTTP(S) proxy address and credentials in Settings.",
-          "HTTP 502 or 504 from the proxy means the proxy could not reach the website.",
+          "HTTP 502 or 504 can indicate an upstream application or gateway problem, including routing, TLS, or timeouts.",
           "The configured proxy is never bypassed; correct or disable it to connect directly.",
         ],
       };
@@ -224,11 +227,14 @@ function presentationFor(
           : "Server rejected the request",
         icon: AlertTriangle,
         tone: "warning",
-        suggestions: [
-          "Confirm the address and saved credentials are correct.",
-          "The server may require permission, authentication, or a later retry.",
-          "Use diagnostics to inspect the status and redirect chain.",
-        ],
+        suggestions:
+          status === 502
+            ? BAD_GATEWAY_SUGGESTIONS
+            : [
+                "Confirm the address and saved credentials are correct.",
+                "The server may require permission, authentication, or a later retry.",
+                "Use diagnostics to inspect the status and redirect chain.",
+              ],
       };
     case "bad_request":
     case "invalid_navigation":
