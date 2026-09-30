@@ -4,6 +4,7 @@ import type {
   TunnelChainLayer,
 } from "../../src/types/connection/connection";
 import type { NetworkPathCatalog } from "../../src/utils/network/resolveNetworkPath";
+import { hasConfiguredNetworkPath } from "../../src/utils/network/networkPathConfig";
 import {
   RuntimeNetworkPathError,
   buildRuntimeNetworkPath,
@@ -49,6 +50,80 @@ const EMPTY_CATALOG: NetworkPathCatalog = {
 };
 
 describe("buildRuntimeNetworkPath", () => {
+  it("executes direct saved proxy/tunnel profiles and records IDs without copying secrets", () => {
+    const timestamp = "2026-09-30T00:00:00Z";
+    const catalog: NetworkPathCatalog = {
+      ...EMPTY_CATALOG,
+      proxyCollection: {
+        chains: [],
+        tunnelChains: [],
+        profiles: [
+          {
+            id: "proxy",
+            name: "Proxy",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            config: {
+              type: "socks5",
+              host: "proxy.test",
+              port: 1080,
+              enabled: true,
+              password: "proxy-secret",
+            },
+          },
+        ],
+        tunnelProfiles: [
+          {
+            id: "tunnel",
+            name: "Tunnel",
+            type: "ssh-tunnel",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            config: layer("ssh", {
+              type: "ssh-tunnel",
+              sshTunnel: {
+                forwardType: "local",
+                host: "ssh.test",
+                username: "alice",
+                password: "ssh-secret",
+                authMethod: "password",
+              },
+            }),
+          },
+        ],
+      },
+    };
+    const target = connection("ssh", {
+      proxyProfileId: "proxy",
+      tunnelProfileId: "tunnel",
+    });
+    const result = buildRuntimeNetworkPath(target, catalog, "ssh");
+    expect(result.transport.mixed_chain?.hops.map((hop) => hop.type)).toEqual([
+      "proxy",
+      "ssh_jump",
+    ]);
+    expect(result.snapshot).toMatchObject({
+      proxyProfileIds: ["proxy"],
+      tunnelProfileIds: ["tunnel"],
+    });
+    expect(JSON.stringify(result.snapshot)).not.toMatch(/secret|alice|\.test/);
+    expect(hasConfiguredNetworkPath(target)).toBe(true);
+    expect(() => buildRuntimeNetworkPath(target, catalog, "http")).toThrow(
+      /HTTP proxy backend/,
+    );
+  });
+
+  it.each(["proxyProfileId", "tunnelProfileId"] as const)(
+    "classifies %s as configured even when its reference is empty",
+    (field) => {
+      const target = connection("ssh", { [field]: "" });
+      expect(hasConfiguredNetworkPath(target)).toBe(true);
+      expect(() =>
+        buildRuntimeNetworkPath(target, EMPTY_CATALOG, "http"),
+      ).toThrow(/empty or malformed/);
+    },
+  );
+
   it("keeps a connection direct only when no path is configured", () => {
     const result = buildRuntimeNetworkPath(
       connection("ssh"),

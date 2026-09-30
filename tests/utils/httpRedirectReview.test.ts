@@ -110,6 +110,8 @@ describe("redirect review boundary", () => {
       httpApplication: { id: "synology", loginMode: "form" },
       httpVerifySsl: false,
       proxyChainId: "route",
+      proxyProfileId: "direct-proxy",
+      tunnelProfileId: "direct-tunnel",
       httpProxyPolicy: {
         pageScripts: "block",
         sameOriginOnly: true,
@@ -126,6 +128,8 @@ describe("redirect review boundary", () => {
       httpsTrustPolicy: "inherit",
       httpAutoLogin: false,
       proxyChainId: "route",
+      proxyProfileId: "direct-proxy",
+      tunnelProfileId: "direct-tunnel",
       httpProxyPolicy: {
         allowCrossOriginRedirects: false,
         queryParameters: [],

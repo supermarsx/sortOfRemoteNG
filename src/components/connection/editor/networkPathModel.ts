@@ -30,6 +30,7 @@ import { getDefaultPort } from "../../../utils/discovery/defaultPorts";
 
 export interface NetworkPathRuntimeStatus {
   supported: boolean;
+  needsCredentials?: boolean;
   code?: RuntimeNetworkPathError["code"];
   message: string;
 }
@@ -43,12 +44,17 @@ export interface NetworkPathEditorModel {
 export type NetworkPathReferenceField =
   | "connectionChainId"
   | "proxyChainId"
+  | "proxyProfileId"
+  | "tunnelProfileId"
   | "tunnelChainId";
 
 export function getRuntimeNetworkPathProtocol(
   formData: Readonly<Partial<Connection>>,
 ): RuntimeNetworkPathProtocol {
   switch (formData.protocol) {
+    case "http":
+    case "https":
+      return "http";
     case "rdp":
       return "rdp";
     case "raw":
@@ -115,11 +121,22 @@ export function getNetworkPathEditorModel(
 ): NetworkPathEditorModel {
   const connection = asNetworkPathConnection(formData);
   const currentCatalog = catalogWithDraft(connection, catalog);
-  const resolution = resolveNetworkPath(connection, currentCatalog);
+  // Inspect route structure without disclosing vault credentials in the editor.
+  const inspection = { allowUnresolvedVaultHops: true };
+  const resolution = resolveNetworkPath(connection, currentCatalog, inspection);
+  const needsCredentials = resolution.layers.some(
+    (layer) =>
+      layer.kind === "ssh" &&
+      currentCatalog.connections?.some(
+        (candidate) =>
+          candidate.id === layer.config.connectionId &&
+          candidate.credentialSource?.kind === "vault",
+      ),
+  );
   const protocolLabel = getRuntimeNetworkPathProtocolLabel(protocol);
 
   try {
-    buildRuntimeNetworkPath(connection, currentCatalog, protocol);
+    buildRuntimeNetworkPath(connection, currentCatalog, protocol, inspection);
     if (
       protocol === "powershell" &&
       formData.powerShellRemoting &&
@@ -136,8 +153,10 @@ export function getNetworkPathEditorModel(
       validation: resolution.validation,
       runtime: {
         supported: true,
-        message:
-          resolution.summary.status === "direct"
+        needsCredentials,
+        message: needsCredentials
+          ? "Route structure supported. Linked SSH credentials require the owning database and vault at connection time; availability has not been verified."
+          : resolution.summary.status === "direct"
             ? protocol === "raw-tcp"
               ? "Direct Raw TCP is supported by the native socket runtime."
               : protocol === "raw-udp"
@@ -229,10 +248,47 @@ export function setNetworkPathReference(
     ...formData,
     [field]: value || undefined,
   };
-  if (field === "tunnelChainId" && value) {
+  if ((field === "tunnelChainId" || field === "tunnelProfileId") && value) {
+    next[field === "tunnelChainId" ? "tunnelProfileId" : "tunnelChainId"] =
+      undefined;
     next.security = { ...formData.security, tunnelChain: undefined };
   }
+  if ((field === "proxyChainId" || field === "proxyProfileId") && value) {
+    next[field === "proxyChainId" ? "proxyProfileId" : "proxyChainId"] =
+      undefined;
+  }
   return next;
+}
+
+export const INLINE_SSH_LAYER_ID = "connection-inline-ssh";
+
+export function setInlineSsh(
+  formData: Readonly<Partial<Connection>>,
+  sshTunnel?: NonNullable<TunnelChainLayer["sshTunnel"]>,
+): Partial<Connection> {
+  const layers = [...(formData.security?.tunnelChain ?? [])];
+  const index = layers.findIndex((layer) => layer.id === INLINE_SSH_LAYER_ID);
+  if (sshTunnel) {
+    const layer: TunnelChainLayer = {
+      ...(index >= 0 ? layers[index] : {}),
+      id: INLINE_SSH_LAYER_ID,
+      type: "ssh-jump",
+      enabled: true,
+      name: "Per-connection SSH",
+      sshTunnel,
+    };
+    if (index >= 0) layers[index] = layer;
+    else layers.push(layer);
+  } else if (index >= 0) layers.splice(index, 1);
+  return {
+    ...formData,
+    tunnelChainId: sshTunnel ? undefined : formData.tunnelChainId,
+    tunnelProfileId: sshTunnel ? undefined : formData.tunnelProfileId,
+    security: {
+      ...formData.security,
+      tunnelChain: layers.length ? layers : undefined,
+    },
+  };
 }
 
 export function setInlineVpn(
@@ -263,6 +319,7 @@ export function setInlineVpn(
   return {
     ...formData,
     tunnelChainId: vpn ? undefined : formData.tunnelChainId,
+    tunnelProfileId: vpn ? undefined : formData.tunnelProfileId,
     security: {
       ...formData.security,
       openvpn: undefined,
@@ -288,6 +345,8 @@ export function resetNetworkPath(
     ...formData,
     connectionChainId: undefined,
     proxyChainId: undefined,
+    proxyProfileId: undefined,
+    tunnelProfileId: undefined,
     tunnelChainId: undefined,
     security: {
       ...formData.security,
@@ -301,7 +360,7 @@ export function resetNetworkPath(
 export function selectedInlineVpnId(
   formData: Readonly<Partial<Connection>>,
 ): string {
-  if (formData.tunnelChainId) return "";
+  if (formData.tunnelChainId || formData.tunnelProfileId) return "";
   const layer = formData.security?.tunnelChain?.find((candidate) =>
     isExecutableVpnType(candidate.type),
   );

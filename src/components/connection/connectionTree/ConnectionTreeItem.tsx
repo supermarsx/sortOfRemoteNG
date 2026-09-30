@@ -323,6 +323,9 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
           {!connection.isGroup &&
             ((connection.security?.tunnelChain?.length ?? 0) > 0 ||
               connection.proxyChainId ||
+              connection.proxyProfileId ||
+              connection.tunnelProfileId ||
+              connection.tunnelChainId ||
               connection.connectionChainId) && (
               <span
                 className="ml-1 flex-shrink-0 text-[var(--color-textMuted)]"

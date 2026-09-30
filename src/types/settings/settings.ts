@@ -1103,6 +1103,9 @@ export interface ProxyConfig {
   enabled: boolean;
 
   // SSH-specific options
+  sshConnectionId?: string;
+  sshConnectionDatabaseId?: string;
+  sshAuthMethod?: "password" | "key";
   sshKeyFile?: string;
   sshKeyPassphrase?: string;
   sshHostKeyVerification?: boolean;

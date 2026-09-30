@@ -65,6 +65,7 @@ import {
   resolveRuntimeNetworkPath,
   type RuntimeNetworkPath,
 } from "../../utils/network/resolveRuntimeNetworkPath";
+import { connectSshTunnelTransport } from "../../utils/ssh/sshTunnelRuntime";
 import {
   acquireSessionVpnLeases,
   createVpnLeaseAttemptOwnerId,
@@ -207,7 +208,10 @@ const persistTrackedVpnLeaseOwners = (
 
 export function useRDPClient(session: ConnectionSession) {
   const { isActive: isRenderActive } = useSessionRenderActivity();
-  const { state, dispatch } = useConnections();
+  const connectionContext = useConnections();
+  const connectionContextRef = useRef(connectionContext);
+  connectionContextRef.current = connectionContext;
+  const { state, dispatch } = connectionContext;
   const { settings } = useSettings();
   const { toast } = useToastContext();
 
@@ -1187,23 +1191,35 @@ export function useRDPClient(session: ConnectionSession) {
       const bastion = runtimePath.rdpTunnel.bastion;
       const resolved = runtimePath.transport;
 
-      const sshConfig: Record<string, unknown> = {
-        host: bastion.host,
-        port: bastion.port || 22,
-        username: bastion.username || "",
-        password: bastion.password ?? null,
-        private_key_path: bastion.private_key_path ?? null,
-        private_key_passphrase: bastion.private_key_passphrase ?? null,
-        agent_forwarding: bastion.agent_forwarding ?? false,
-        jump_hosts: resolved.jump_hosts,
-        proxy_config: resolved.proxy_config,
-        proxy_chain: resolved.proxy_chain,
-        mixed_chain: resolved.mixed_chain,
-        openvpn_config: resolved.openvpn_config,
-      };
-
-      const sshSessionId = await invoke<string>("connect_ssh", {
-        config: sshConfig,
+      const currentSettings = settingsRef.current;
+      const referencedSources = connectionsRef.current.filter(
+        (source) =>
+          source.protocol === "ssh" &&
+          runtimePath.snapshot.connectionIds.includes(source.id) &&
+          source.hostname === bastion.host &&
+          (source.port || 22) === (bastion.port || 22),
+      );
+      const effectivePolicies = [conn, ...referencedSources].map((source) =>
+        resolveEffectiveTrustPolicy(
+          source.sshTrustPolicy,
+          currentSettings.sshTrustPolicy,
+          currentSettings.trustPolicy,
+        ),
+      );
+      // The resolved hop has no unique saved-source identity. Never infer a
+      // host-key bypass from an RDP target or an ambiguous saved SSH source.
+      const trustPolicy = effectivePolicies.includes("strict")
+        ? "strict"
+        : "always-ask";
+      const sshSessionId = await connectSshTunnelTransport(bastion, resolved, {
+        trustPolicy,
+        sshConfig: {
+          ...currentSettings.sshConnection,
+          strictHostKeyChecking: true,
+        },
+        connectionId:
+          referencedSources.length === 1 ? referencedSources[0].id : undefined,
+        assertCurrent: runtimePath.assertCurrent,
       });
       try {
         const status = await invoke<{ tunnel_id?: string; local_port: number }>(
@@ -1541,6 +1557,7 @@ export function useRDPClient(session: ConnectionSession) {
           conn,
           connectionsRef.current,
           "rdp",
+          () => connectionContextRef.current,
         );
         if (await stopIfStale()) return;
 
@@ -1816,6 +1833,7 @@ export function useRDPClient(session: ConnectionSession) {
       );
 
       assertVaultAccess?.();
+      runtimePath.assertCurrent?.();
       const sessionId = (await invoke(
         "connect_rdp",
         connectionDetails,

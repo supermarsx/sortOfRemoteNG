@@ -33,6 +33,7 @@ import {
   type VpnProviderSnapshotStatus,
 } from "../../../utils/network/vpnProviderCatalog";
 import { Checkbox, NumberInput, Select, TextInput } from "../../ui/forms";
+import { SshSourceFields } from "../../network/proxyChainMenu/SshSourceFields";
 import RawSocketOptions from "../../connectionEditor/rawSocket/RawSocketOptions";
 import RloginOptions from "../../connectionEditor/RloginOptions";
 import { PowerShellRemotingEditor } from "../../connectionEditor/powerShellRemoting/PowerShellRemotingEditor";
@@ -50,6 +51,9 @@ import {
   setInlineVpn,
   setLegacyProxy,
   setNetworkPathReference,
+  INLINE_SSH_LAYER_ID,
+  setInlineSsh,
+  type NetworkPathReferenceField,
   withCurrentOrphanOption,
 } from "./networkPathModel";
 
@@ -87,6 +91,8 @@ const PROXY_TYPES: Array<{ value: ProxyConfig["type"]; label: string }> = [
 const SOURCE_LABELS: Record<NetworkPathSourceKind, string> = {
   "connection-chain": "Connection chain",
   "proxy-chain": "Proxy chain",
+  "proxy-profile": "Saved proxy",
+  "tunnel-profile": "Saved tunnel",
   "tunnel-chain": "Tunnel chain",
   "inline-tunnel": "Inline VPN / tunnel",
   "legacy-vpn": "Legacy OpenVPN",
@@ -147,6 +153,25 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
   const protocolLabel = getRuntimeNetworkPathProtocolLabel(protocol);
 
   const proxyCollection = catalog.proxyCollection ?? EMPTY_COLLECTION;
+  const inlineSsh = formData.security?.tunnelChain?.find(
+    (layer) => layer.id === INLINE_SSH_LAYER_ID,
+  );
+  const profileSelectors = [
+    {
+      field: "proxyProfileId" as const,
+      label: "Saved proxy",
+      noun: "proxy profile",
+      profiles: proxyCollection.profiles,
+      hint: "Use one saved proxy by reference. Replaces the proxy-chain selection; credentials are not copied.",
+    },
+    {
+      field: "tunnelProfileId" as const,
+      label: "Saved tunnel",
+      noun: "tunnel profile",
+      profiles: proxyCollection.tunnelProfiles,
+      hint: "Use one saved tunnel by reference. Replaces the saved chain and all inline VPN/tunnel layers; credentials are not copied.",
+    },
+  ];
   const connectionChainOptions = withCurrentOrphanOption(
     [
       { value: "", label: "None" },
@@ -203,10 +228,7 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
         )
       : withPendingVpnOption(availableVpnOptions, inlineVpnId, providerStatus);
 
-  const updateReference = (
-    field: "connectionChainId" | "proxyChainId" | "tunnelChainId",
-    value: string,
-  ) =>
+  const updateReference = (field: NetworkPathReferenceField, value: string) =>
     setFormData((previous) => setNetworkPathReference(previous, field, value));
 
   const handleVpnChange = (vpnId: string) => {
@@ -239,9 +261,9 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
             </p>
           </div>
           <p className="mt-1 break-words text-[11px] leading-4 text-[var(--color-textMuted)]">
-            Connection chain → Proxy chain → Tunnel source → Legacy VPN →
-            Per-connection proxy. Sources compose in that order. A saved tunnel
-            chain replaces inline VPN/tunnel layers automatically.
+            Connection chain → Saved proxy or proxy chain → Tunnel source →
+            Legacy VPN → Per-connection proxy. Sources compose in that order.
+            Saved tunnel profiles and chains replace inline VPN/tunnel layers.
           </p>
         </div>
         <button
@@ -266,6 +288,39 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
       )}
 
       <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
+        {profileSelectors.map(({ field, label, noun, profiles, hint }) => (
+          <SelectionCard
+            key={field}
+            label={label}
+            hint={hint}
+            selected={Boolean(formData[field])}
+            onClear={() => updateReference(field, "")}
+          >
+            <Select
+              id={`network-path-${field}`}
+              data-testid={`network-path-${field}`}
+              label={label}
+              value={formData[field] ?? ""}
+              onChange={(value) => updateReference(field, value)}
+              options={withCurrentOrphanOption(
+                [
+                  { value: "", label: "None" },
+                  ...profiles.map((profile) => ({
+                    value: profile.id,
+                    label: profile.name,
+                  })),
+                ],
+                formData[field],
+                noun,
+              )}
+              variant="form-sm"
+              searchable
+              searchPlaceholder={`Search ${label.toLowerCase()} profiles…`}
+              disabled={loading}
+              className="w-full min-w-0"
+            />
+          </SelectionCard>
+        ))}
         <SelectionCard
           label="Connection chain"
           hint="Backend-managed VPN/proxy connection layers. Composes first."
@@ -350,6 +405,58 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
           />
         </SelectionCard>
       </div>
+
+      <section
+        className={cardClass}
+        aria-labelledby="inline-ssh-heading"
+        data-editor-search-field="network-path-inline-ssh"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h4
+              id="inline-ssh-heading"
+              className="text-xs font-semibold text-[var(--color-text)]"
+            >
+              Per-connection SSH
+            </h4>
+            <p className="mt-1 text-[11px] text-[var(--color-textMuted)]">
+              Add a single SSH hop with standalone password/key credentials or
+              link a saved SSH connection. Replaces a saved tunnel selection;
+              keeps other inline layers.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+            onClick={() =>
+              setFormData((previous) =>
+                setInlineSsh(
+                  previous,
+                  inlineSsh
+                    ? undefined
+                    : {
+                        forwardType: "local",
+                        port: 22,
+                        authMethod: "password",
+                      },
+                ),
+              )
+            }
+          >
+            {inlineSsh ? "Remove per-connection SSH" : "Add SSH hop"}
+          </button>
+        </div>
+        {inlineSsh && (
+          <div className="mt-3">
+            <SshSourceFields
+              value={inlineSsh.sshTunnel ?? { forwardType: "local" }}
+              onChange={(value) =>
+                setFormData((previous) => setInlineSsh(previous, value))
+              }
+            />
+          </div>
+        )}
+      </section>
 
       <section className={cardClass} aria-labelledby="legacy-proxy-heading">
         <div className="flex items-center justify-between gap-3">
@@ -496,17 +603,25 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
           </div>
           <span
             className={`inline-flex w-fit shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium ${
-              model.runtime.supported
-                ? "border-success/30 bg-success/10 text-success"
-                : "border-danger/30 bg-danger/10 text-danger"
+              model.runtime.needsCredentials
+                ? "border-warning/30 bg-warning/10 text-warning"
+                : model.runtime.supported
+                  ? "border-success/30 bg-success/10 text-success"
+                  : "border-danger/30 bg-danger/10 text-danger"
             }`}
           >
-            {model.runtime.supported ? (
+            {model.runtime.needsCredentials ? (
+              <AlertTriangle size={11} aria-hidden />
+            ) : model.runtime.supported ? (
               <CheckCircle2 size={11} aria-hidden />
             ) : (
               <CircleOff size={11} aria-hidden />
             )}
-            {model.runtime.supported ? "Runtime supported" : "Connect blocked"}
+            {model.runtime.needsCredentials
+              ? "Needs owning vault"
+              : model.runtime.supported
+                ? "Runtime supported"
+                : "Connect blocked"}
           </span>
         </div>
 
@@ -616,9 +731,11 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
             ? "RDP supports a VPN prefix and socket paths whose final hop is an SSH bastion. A proxy-only path is blocked because it cannot create the required local forward."
             : protocol === "ssh"
               ? "SSH supports a VPN prefix, strict HTTP/HTTPS/SOCKS4/SOCKS5 proxy hops, and SSH jump or tunnel hops. Dynamic routing, ProxyCommand, stdio, and unsupported tunnel transports fail closed."
-              : protocol === "powershell"
-                ? "Direct PowerShell Remoting is available. Every configured shared route is blocked until the backend exposes a network-path adapter; the editor never bypasses it."
-                : `${protocolLabel} supports direct connections now. Every configured VPN, proxy, tunnel, or jump-host layer is blocked until a compatible transport adapter is available.`}
+              : protocol === "http"
+                ? "HTTP/HTTPS uses its web proxy runtime. Unsupported SSH and tunnel routes are blocked; credentials remain with the selected source."
+                : protocol === "powershell"
+                  ? "Direct PowerShell Remoting is available. Every configured shared route is blocked until the backend exposes a network-path adapter; the editor never bypasses it."
+                  : `${protocolLabel} supports direct connections now. Every configured VPN, proxy, tunnel, or jump-host layer is blocked until a compatible transport adapter is available.`}
         </p>
       </section>
 
@@ -735,7 +852,7 @@ export default NetworkPathSection;
 function selectedVpnType(
   formData: Readonly<Partial<Connection>>,
 ): ExecutableVpnType | undefined {
-  if (formData.tunnelChainId) return undefined;
+  if (formData.tunnelChainId || formData.tunnelProfileId) return undefined;
   const inline = formData.security?.tunnelChain?.find((layer) =>
     normalizeExecutableVpnType(layer.type),
   );

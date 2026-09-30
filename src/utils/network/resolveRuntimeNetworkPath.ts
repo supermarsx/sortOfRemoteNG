@@ -1,4 +1,11 @@
 import type { Connection } from "../../types/connection/connection";
+import type { ConnectionContextType } from "../../contexts/ConnectionContextTypes";
+import {
+  resolveSavedTunnelBase,
+  tunnelSourceIdentity,
+} from "../ssh/sshTunnelRuntime";
+import { normalizeConnectionCredentialSource } from "../security/databaseCredentialVault";
+import { stableJsonStringify } from "../core/stableJsonStringify";
 import type { ProxyCollectionData } from "../../types/settings/settings";
 import { proxyCollectionManager } from "../connection/proxyCollectionManager";
 import { formatErrorForDisplay } from "../errors/formatError";
@@ -12,39 +19,23 @@ import type {
 import { ProxyOpenVPNManager } from "./proxyOpenVPNManager";
 import { normalizeSessionVpnType } from "./vpnProviderCatalog";
 import { loadVpnProfileCatalog } from "./vpnProfiles";
+import { httpProxyUrl } from "./httpProxyRoute";
 import {
   resolveNetworkPath,
   type CanonicalNetworkPathLayer,
   type NetworkPathCatalog,
   type NetworkPathResolution,
+  type SshPathResolutionOptions,
 } from "./resolveNetworkPath";
 
 export type RuntimeNetworkPathProtocol =
-  | "ssh"
-  | "rdp"
-  | "raw-tcp"
-  | "raw-udp"
-  | "rlogin"
-  | "powershell";
+  "ssh" | "http" | "rdp" | "raw-tcp" | "raw-udp" | "rlogin" | "powershell";
 
-export type RuntimeNetworkPathErrorCode =
-  | "invalid-path"
-  | "snapshot-unavailable"
-  | "unsupported-layer";
-
-/**
- * A fail-closed runtime resolution error. Messages deliberately contain only
- * source metadata and transport labels, never layer configuration values.
- */
-export class RuntimeNetworkPathError extends Error {
-  constructor(
-    readonly code: RuntimeNetworkPathErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = "RuntimeNetworkPathError";
-  }
-}
+import { RuntimeNetworkPathError } from "./networkPathError";
+export {
+  RuntimeNetworkPathError,
+  type RuntimeNetworkPathErrorCode,
+} from "./networkPathError";
 
 /**
  * The only path material allowed on ConnectionSession or persistence payloads.
@@ -55,6 +46,8 @@ export interface SessionNetworkPathSnapshot {
   version: 1;
   transports: string[];
   connectionIds: string[];
+  proxyProfileIds?: string[];
+  tunnelProfileIds?: string[];
 }
 
 export interface RuntimeRdpTunnel {
@@ -62,6 +55,10 @@ export interface RuntimeRdpTunnel {
 }
 
 export interface RuntimeNetworkPath {
+  /** Single HTTP upstream, kept only for this attempt; may contain credentials. */
+  httpUpstreamProxyUrl?: string;
+  /** Recheck linked sources immediately before handing credentials to transport. */
+  assertCurrent?: () => void;
   protocol: RuntimeNetworkPathProtocol;
   /** Secret-bearing transport material. Keep local to connection setup. */
   transport: ResolvedChainConfig;
@@ -99,6 +96,8 @@ function emptyTransport(): ResolvedChainConfig {
 
 function needsSavedCatalog(connection: Connection): boolean {
   return Boolean(
+    connection.proxyProfileId !== undefined ||
+    connection.tunnelProfileId !== undefined ||
     connection.proxyChainId ||
     connection.tunnelChainId ||
     connection.connectionChainId ||
@@ -162,7 +161,9 @@ export async function captureNetworkPathCatalog(
     proxyCollection: snapshotProxyCollection(),
     connectionChains,
   };
-  const unresolved = resolveNetworkPath(connection, catalog);
+  const unresolved = resolveNetworkPath(connection, catalog, {
+    allowUnresolvedVaultHops: true,
+  });
   if (
     unresolved.layers.some(
       (layer) =>
@@ -362,6 +363,26 @@ function buildSnapshot(
     version: 1,
     transports: resolution.layers.map((layer) => layer.transport),
     connectionIds,
+    ...directProfileSnapshot(resolution),
+  };
+}
+
+function directProfileSnapshot(
+  resolution: NetworkPathResolution,
+): Pick<SessionNetworkPathSnapshot, "proxyProfileIds" | "tunnelProfileIds"> {
+  const ids = (kind: "proxy-profile" | "tunnel-profile") => [
+    ...new Set(
+      resolution.layers
+        .filter((layer) => layer.source.kind === kind)
+        .map((layer) => layer.source.referenceId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const proxyProfileIds = ids("proxy-profile");
+  const tunnelProfileIds = ids("tunnel-profile");
+  return {
+    ...(proxyProfileIds.length ? { proxyProfileIds } : {}),
+    ...(tunnelProfileIds.length ? { tunnelProfileIds } : {}),
   };
 }
 
@@ -389,8 +410,9 @@ export function buildRuntimeNetworkPath(
   connection: Connection,
   catalog: NetworkPathCatalog,
   protocol: RuntimeNetworkPathProtocol,
+  sshOptions: SshPathResolutionOptions = {},
 ): RuntimeNetworkPath {
-  const resolution = resolveNetworkPath(connection, catalog);
+  const resolution = resolveNetworkPath(connection, catalog, sshOptions);
   if (!resolution.validation.valid) {
     const issue = resolution.validation.issues.find(
       (candidate) => candidate.severity === "error",
@@ -406,6 +428,33 @@ export function buildRuntimeNetworkPath(
     );
   }
   assertStrictSavedChains(resolution, catalog);
+
+  let httpUpstreamProxyUrl: string | undefined;
+  if (protocol === "http") {
+    const layer = resolution.layers[0];
+    if (
+      connection.security?.sshTunnel?.enabled ||
+      resolution.layers.length > 1 ||
+      (layer &&
+        (layer.kind !== "proxy" ||
+          !["http", "https", "http-connect"].includes(layer.config.type)))
+    ) {
+      throw new RuntimeNetworkPathError(
+        "unsupported-layer",
+        "The HTTP proxy backend supports only one HTTP, HTTPS or HTTP-CONNECT proxy. SSH, SOCKS, VPN and multi-hop paths cannot be executed; the configured path will not be bypassed.",
+      );
+    }
+    if (layer?.kind === "proxy") {
+      try {
+        httpUpstreamProxyUrl = httpProxyUrl(layer.config);
+      } catch {
+        throw new RuntimeNetworkPathError(
+          "invalid-path",
+          "The configured HTTP upstream proxy is invalid. The configured path will not be bypassed.",
+        );
+      }
+    }
+  }
 
   if (DIRECT_ONLY_PROTOCOLS.has(protocol) && resolution.layers.length > 0) {
     const firstLayer = resolution.layers[0];
@@ -486,6 +535,7 @@ export function buildRuntimeNetworkPath(
 
   return {
     protocol,
+    ...(httpUpstreamProxyUrl ? { httpUpstreamProxyUrl } : {}),
     transport,
     rdpTunnel,
     snapshot: buildSnapshot(connection, resolution),
@@ -498,9 +548,157 @@ export async function resolveRuntimeNetworkPath(
   connection: Connection,
   connections: readonly Connection[],
   protocol: RuntimeNetworkPathProtocol,
+  currentContext?: () => ConnectionContextType,
 ): Promise<RuntimeNetworkPath> {
+  // These private comparison keys can contain inline secrets. Never expose them.
+  const pathKey = (value: Connection) =>
+    stableJsonStringify([
+      value.id,
+      value.protocol,
+      value.hostname,
+      value.port,
+      value.proxyChainId,
+      value.tunnelChainId,
+      value.connectionChainId,
+      value.proxyProfileId,
+      value.tunnelProfileId,
+      value.security?.proxy,
+      value.security?.tunnelChain,
+      value.security?.openvpn,
+      value.security?.sshTunnel,
+    ]);
+  // Capture the input identity before catalog I/O yields to connection edits.
+  const inputKey = pathKey(connection);
+  const capturedContext = currentContext?.();
+  const availability = capturedContext?.databaseAvailability
+    ? { ...capturedContext.databaseAvailability }
+    : undefined;
+  const liveConnections = (context: ConnectionContextType) =>
+    availability?.databaseId && context.getCurrentConnections
+      ? context.getCurrentConnections({
+          databaseId: availability.databaseId,
+          generation: availability.generation,
+        })
+      : context.state.connections;
+  const tracksSavedTarget = capturedContext
+    ? liveConnections(capturedContext).some((c) => c.id === connection.id)
+    : false;
+  const assertInputCurrent = () => {
+    if (pathKey(connection) !== inputKey) {
+      throw new Error(
+        "The connection's network path changed. Retry the connection.",
+      );
+    }
+    if (tracksSavedTarget && currentContext) {
+      const latest = currentContext();
+      const target = liveConnections(latest).find(
+        (c) => c.id === connection.id,
+      );
+      if (
+        !target ||
+        pathKey(target) !== inputKey ||
+        latest.databaseAvailability?.databaseId !== availability?.databaseId ||
+        latest.databaseAvailability?.generation !== availability?.generation ||
+        latest.databaseAvailability?.status !== availability?.status
+      ) {
+        throw new Error(
+          "The connection's network path or owning database changed. Retry the connection.",
+        );
+      }
+    }
+  };
+  assertInputCurrent();
   const catalog = await captureNetworkPathCatalog(connection, connections);
-  return buildRuntimeNetworkPath(connection, catalog, protocol);
+  assertInputCurrent();
+  const collectionKey = stableJsonStringify(catalog.proxyCollection);
+  const unresolved = resolveNetworkPath(connection, catalog, {
+    allowUnresolvedVaultHops: true,
+  });
+  // Validate the whole graph before disclosing any credentials.
+  if (!unresolved.validation.valid) {
+    return buildRuntimeNetworkPath(connection, catalog, protocol, {
+      allowUnresolvedVaultHops: true,
+    });
+  }
+  // Reject unsupported transports before opening any linked credential source.
+  buildRuntimeNetworkPath(connection, catalog, protocol, {
+    allowUnresolvedVaultHops: true,
+  });
+  const credentials = new Map<
+    string,
+    Pick<Connection, "username" | "password" | "privateKey" | "passphrase">
+  >();
+  const checks: Array<() => void> = [];
+  for (const layer of unresolved.layers) {
+    if (layer.kind !== "ssh" || !layer.config.connectionId) continue;
+    const id = layer.config.connectionId;
+    const linked = catalog.connections?.find(
+      (candidate) => candidate.id === id,
+    );
+    if (!linked) throw new Error("The saved SSH source is unavailable.");
+    const source = normalizeConnectionCredentialSource(linked.credentialSource);
+    const vault = source?.kind === "vault";
+    if (
+      vault &&
+      ((linked.authType ?? "password") !== "password" || source.totpId)
+    ) {
+      throw new Error(
+        "SSH proxy hops support vault password authentication only. Vault private keys and interactive/TOTP authentication are not supported by the hop backend.",
+      );
+    }
+    if (
+      typeof layer.config.ownerDatabaseId !== "string" ||
+      !layer.config.ownerDatabaseId.trim()
+    ) {
+      throw new Error(
+        "This SSH proxy link has no owning database. Edit it and reselect the saved SSH connection before connecting.",
+      );
+    }
+    if (!currentContext)
+      throw new Error(
+        "Open the owning database to resolve this saved SSH proxy source.",
+      );
+    const base = await resolveSavedTunnelBase(
+      id,
+      layer.config.ownerDatabaseId,
+      currentContext,
+    );
+    assertInputCurrent();
+    if (
+      tunnelSourceIdentity(base.connection) !== tunnelSourceIdentity(linked)
+    ) {
+      throw new Error(
+        "The saved SSH proxy source changed during path resolution. Retry the connection.",
+      );
+    }
+    const auth = vault ? base.options.vault?.facets : base.connection;
+    if (!auth?.username || (vault && !auth.password))
+      throw new Error(
+        "The saved SSH proxy source is missing its required credentials.",
+      );
+    credentials.set(id, {
+      username: auth.username,
+      password: auth.password,
+      privateKey: vault ? undefined : auth.privateKey,
+      passphrase: vault ? undefined : auth.passphrase,
+    });
+    if (base.options.assertCurrent) checks.push(base.options.assertCurrent);
+    if (base.options.vault) checks.push(base.options.vault.assertCurrent);
+  }
+  const assertCurrent = () => {
+    assertInputCurrent();
+    checks.forEach((check) => check());
+    if (stableJsonStringify(snapshotProxyCollection()) !== collectionKey) {
+      throw new Error(
+        "The saved network-path profiles changed. Retry the connection.",
+      );
+    }
+  };
+  assertCurrent();
+  const runtime = buildRuntimeNetworkPath(connection, catalog, protocol, {
+    credentials,
+  });
+  return { ...runtime, assertCurrent };
 }
 
 /** Render arbitrary backend errors without leaking target or path secrets. */

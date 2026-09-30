@@ -123,6 +123,8 @@ export function anonymousRedirectConnection(
     },
     // Route credentials, if present, remain confined to the existing transport.
     proxyChainId: source.proxyChainId,
+    proxyProfileId: source.proxyProfileId,
+    tunnelProfileId: source.tunnelProfileId,
     connectionChainId: source.connectionChainId,
     tunnelChainId: source.tunnelChainId,
     security: source.security

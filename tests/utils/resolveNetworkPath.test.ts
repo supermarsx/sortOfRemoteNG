@@ -176,12 +176,152 @@ function comparableLayers(result: ReturnType<typeof resolveNetworkPath>) {
 }
 
 describe("resolveNetworkPath", () => {
+  it("selects direct profiles over chains and inline tunnels while retaining the final legacy proxy", () => {
+    const target = connection("target", {
+      proxyProfileId: "direct-proxy",
+      proxyChainId: "ignored-proxy-chain",
+      tunnelProfileId: "direct-tunnel",
+      tunnelChainId: "ignored-tunnel-chain",
+      security: {
+        tunnelChain: [tunnelLayer("ignored-inline")],
+        proxy: proxyConfig({ host: "legacy.test" }),
+      },
+    });
+    const snapshots = catalog({
+      profiles: [proxyProfile("direct-proxy")],
+      tunnelProfiles: [
+        tunnelProfile(
+          "direct-tunnel",
+          tunnelLayer("saved-layer", {
+            type: "ssh-tunnel",
+            proxy: undefined,
+            sshTunnel: {
+              host: "bastion.test",
+              username: "alice",
+              password: "secret",
+              forwardType: "local",
+            },
+          }),
+        ),
+      ],
+    });
+    const before = JSON.stringify({ target, snapshots });
+    const result = resolveNetworkPath(target, snapshots);
+    expect(result.validation.valid).toBe(true);
+    expect(result.validation.warningCount).toBe(3);
+    expect(
+      result.validation.issues.every(
+        (issue) => issue.code === "shadowed-source",
+      ),
+    ).toBe(true);
+    expect(result.layers.map((layer) => layer.source.kind)).toEqual([
+      "proxy-profile",
+      "tunnel-profile",
+      "legacy-proxy",
+    ]);
+    expect(result.layers[0].source).toMatchObject({
+      kind: "proxy-profile",
+      referenceId: "direct-proxy",
+      profileId: "direct-proxy",
+    });
+    expect(result.layers[1].source).toMatchObject({
+      kind: "tunnel-profile",
+      referenceId: "direct-tunnel",
+      profileId: "direct-tunnel",
+    });
+    expect(result.layers[2].config).toMatchObject({ host: "legacy.test" });
+    expect(JSON.stringify({ target, snapshots })).toBe(before);
+  });
+
+  it.each(["proxyProfileId", "tunnelProfileId"] as const)(
+    "fails missing %s without falling back to its chain",
+    (field) => {
+      const result = resolveNetworkPath(
+        connection("target", {
+          [field]: "deleted",
+          proxyChainId: field === "proxyProfileId" ? "chain" : undefined,
+          tunnelChainId:
+            field === "tunnelProfileId" ? "tunnel-chain" : undefined,
+        }),
+        catalog({
+          profiles: [proxyProfile("p")],
+          chains: [
+            proxyChain("chain", {
+              layers: [{ type: "proxy", proxyProfileId: "p", position: 0 }],
+            }),
+          ],
+          tunnelChains: [
+            savedTunnelChain("tunnel-chain", [tunnelLayer("fallback")]),
+          ],
+        }),
+      );
+      expect(result.layers).toEqual([]);
+      expect(result.validation.issues).toContainEqual(
+        expect.objectContaining({
+          code: "missing-reference",
+          severity: "error",
+        }),
+      );
+      expect(result.validation.issues).toContainEqual(
+        expect.objectContaining({
+          code: "shadowed-source",
+          severity: "warning",
+        }),
+      );
+    },
+  );
+
+  it.each(["proxyProfileId", "tunnelProfileId"] as const)(
+    "rejects an empty or malformed %s",
+    (field) => {
+      for (const id of ["", null, 4]) {
+        const result = resolveNetworkPath(
+          connection("target", { [field]: id } as Partial<Connection>),
+        );
+        expect(result.validation.valid).toBe(false);
+        expect(result.layers).toEqual([]);
+      }
+    },
+  );
+
+  it("detects direct tunnel-profile inheritance cycles and disabled profiles", () => {
+    const cyclic = resolveNetworkPath(
+      connection("target", { tunnelProfileId: "a" }),
+      catalog({
+        tunnelProfiles: [
+          tunnelProfile("a", tunnelLayer("a", { tunnelProfileId: "b" })),
+          tunnelProfile("b", tunnelLayer("b", { tunnelProfileId: "a" })),
+        ],
+      }),
+    );
+    expect(cyclic.validation.issues).toContainEqual(
+      expect.objectContaining({ code: "cycle", severity: "error" }),
+    );
+    const disabled = resolveNetworkPath(
+      connection("target", { tunnelProfileId: "off" }),
+      catalog({
+        tunnelProfiles: [
+          tunnelProfile("off", tunnelLayer("off", { enabled: false })),
+        ],
+      }),
+    );
+    expect(disabled.layers).toEqual([]);
+    expect(disabled.validation.issues).toContainEqual(
+      expect.objectContaining({
+        code: "disabled-reference",
+        severity: "error",
+      }),
+    );
+  });
+
   it("documents and returns a direct, valid path when nothing is configured", () => {
     const result = resolveNetworkPath(connection("target"));
 
     expect(NETWORK_PATH_POLICY.sourceOrder).toEqual([
       "connection-chain",
+      "proxy-profile",
       "proxy-chain",
+      "tunnel-profile",
       "tunnel-chain",
       "inline-tunnel",
       "legacy-vpn",

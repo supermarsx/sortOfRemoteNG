@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   render,
+  renderHook,
   screen,
   fireEvent,
   waitFor,
@@ -11,6 +12,7 @@ import {
 } from "@testing-library/react";
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
+import type { Connection } from "../../src/types/connection/connection";
 import type {
   SavedProxyChain,
   SavedTunnelChain,
@@ -31,6 +33,7 @@ const h = vi.hoisted(() => {
     // chain tabs read genuinely different collections.
     useRealChildren: false,
     dispatch: vi.fn(),
+    connections: [] as Connection[],
     store: {
       profiles: [] as unknown[],
       chains: [] as unknown[],
@@ -81,7 +84,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("../../src/contexts/useConnections", () => ({
-  useConnections: () => ({ state: { connections: [] }, dispatch: h.dispatch }),
+  useConnections: () => ({
+    state: { connections: h.connections },
+    dispatch: h.dispatch,
+  }),
 }));
 
 vi.mock("../../src/utils/connection/proxyCollectionManager", () => {
@@ -150,6 +156,7 @@ vi.mock(
 import { ProxyChainMenu } from "../../src/components/network/ProxyChainMenu";
 import { SessionRenderActivityContext } from "../../src/contexts/SessionRenderActivityContext";
 import { invoke } from "@tauri-apps/api/core";
+import { useProxyChainManager } from "../../src/hooks/network/useProxyChainManager";
 
 // ── i18next ───────────────────────────────────────────────────────
 //
@@ -240,6 +247,7 @@ const openTab = async (id: string) => {
 };
 
 beforeEach(() => {
+  h.connections = [];
   h.dispatch.mockClear();
   h.store.profiles = [];
   h.store.chains = [];
@@ -249,6 +257,55 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+});
+
+describe("Network path association replacement", () => {
+  it.each(["proxy", "tunnel", "inline", "clear"] as const)(
+    "%s selection does not leave a direct profile shadowing the requested route",
+    (mode) => {
+      h.connections = [
+        {
+          id: "target",
+          name: "Target",
+          protocol: "ssh",
+          hostname: "target.test",
+          port: 22,
+          isGroup: false,
+          createdAt: "",
+          updatedAt: "",
+          proxyProfileId: "direct-proxy",
+          tunnelProfileId: "direct-tunnel",
+          tunnelChainId: "old-tunnel",
+          security: { encryptionAlgorithm: "aes-256" },
+        },
+      ];
+      const { result } = renderHook(() =>
+        useProxyChainManager(false, () => {}),
+      );
+      act(() => {
+        if (mode === "proxy")
+          result.current.updateProxyChain("target", "new-proxy-chain");
+        if (mode === "tunnel")
+          result.current.updateTunnelChainRef("target", "new-tunnel-chain");
+        if (mode === "inline") result.current.applyTunnelChain("target", []);
+        if (mode === "clear") result.current.clearTunnelChain("target");
+      });
+      const payload = h.dispatch.mock.calls.slice(-1)[0][0]
+        .payload as Connection;
+      expect(payload.security?.encryptionAlgorithm).toBe("aes-256");
+      if (mode === "proxy") {
+        expect(payload.proxyProfileId).toBeUndefined();
+        expect(payload.proxyChainId).toBe("new-proxy-chain");
+        expect(payload.tunnelProfileId).toBe("direct-tunnel");
+      } else {
+        expect(payload.tunnelProfileId).toBeUndefined();
+        expect(payload.tunnelChainId).toBe(
+          mode === "tunnel" ? "new-tunnel-chain" : undefined,
+        );
+        expect(payload.proxyProfileId).toBe("direct-proxy");
+      }
+    },
+  );
 });
 
 // ══════════════════════════════════════════════════════════════════

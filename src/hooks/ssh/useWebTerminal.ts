@@ -254,7 +254,10 @@ export function useWebTerminal(
   onResize?: (cols: number, rows: number) => void,
   isTerminalActive = true,
 ) {
-  const { state, dispatch } = useConnections();
+  const connectionContext = useConnections();
+  const connectionContextRef = useRef(connectionContext);
+  connectionContextRef.current = connectionContext;
+  const { state, dispatch } = connectionContext;
   const { settings } = useSettings();
   const { toast } = useToastContext();
   const toastRef = useRef(toast);
@@ -1665,6 +1668,7 @@ export function useWebTerminal(
           currentConnection,
           connectionsRef.current,
           "ssh",
+          () => connectionContextRef.current,
         );
         if (stale()) return resolvedPath;
         const steps = resolvedPath.transport.vpnPreSteps;
@@ -2073,6 +2077,7 @@ export function useWebTerminal(
 
         armAttemptWatchdog(Number(sshConfig.connect_timeout) || 30);
         assertVaultAccess?.();
+        runtimePath.assertCurrent?.();
         const sessionId = await invoke<string>("connect_ssh", {
           config: sshConfig,
         });

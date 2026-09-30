@@ -18,9 +18,12 @@ import {
 import { ConnectionSession } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
+import { hasConfiguredNetworkPath } from "../../utils/network/networkPathConfig";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
-import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
+import { captureHttpNetworkRoute } from "../integration/httpNetworkRoute";
+import { HttpNetworkRouteError } from "../../utils/network/httpProxyRoute";
+import { RuntimeNetworkPathError } from "../../utils/network/networkPathError";
 import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
 import { validateProtectedProxyUrl } from "./useWebBrowser";
 import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
@@ -40,11 +43,16 @@ interface ProxyMediatorResponse {
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
 
 export function useHTTPViewer(session: ConnectionSession) {
-  const { state, dispatch } = useConnections();
+  const networkPathContext = useConnections();
+  const networkPathContextRef = useRef(networkPathContext);
+  networkPathContextRef.current = networkPathContext;
+  const { state, dispatch } = networkPathContext;
   const { settings } = useSettings();
   const connection = state.connections.find(
     (c) => c.id === session.connectionId,
   );
+  const httpConnectionRef = useRef(connection);
+  httpConnectionRef.current = connection;
   const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -175,6 +183,21 @@ export function useHTTPViewer(session: ConnectionSession) {
       setCurrentUrl(targetUrl);
       setIsSecure(targetUrl.startsWith("https"));
 
+      const networkPath = hasConfiguredNetworkPath(connection)
+        ? await (
+            await import("../../utils/network/resolveRuntimeNetworkPath")
+          ).resolveRuntimeNetworkPath(
+            connection,
+            networkPathContextRef.current.state.connections,
+            "http",
+            () => networkPathContextRef.current,
+          )
+        : null;
+      if (generation !== proxyGenerationRef.current) return;
+      const httpRoute = captureHttpNetworkRoute(
+        networkPath,
+        () => httpConnectionRef.current,
+      );
       const initialLogin = resolveHttpApplicationLogin(connection);
       const vault =
         connection.credentialSource?.kind === "vault" &&
@@ -210,7 +233,7 @@ export function useHTTPViewer(session: ConnectionSession) {
         local_port: 0,
         verify_ssl: connection.httpVerifySsl ?? true,
         connection_id: connection.id,
-        upstream_proxy_url: getGlobalHttpProxyUrl(),
+        upstream_proxy_url: httpRoute.upstreamProxyUrl,
         ...(reviewedApplicationProfile
           ? { reviewed_application_profile: reviewedApplicationProfile }
           : {}),
@@ -229,6 +252,8 @@ export function useHTTPViewer(session: ConnectionSession) {
             }
           : undefined,
       };
+      vault?.assertCurrent();
+      httpRoute.assertCurrent();
       const response = await invoke<ProxyMediatorResponse>(
         "start_basic_auth_proxy",
         { config: proxyConfig },
@@ -238,6 +263,7 @@ export function useHTTPViewer(session: ConnectionSession) {
         return;
       }
       startedSession = response.session_id;
+      httpRoute.assertCurrent();
       vault?.assertCurrent();
       const protectedProxyUrl = validateProtectedProxyUrl(response);
       proxySessionIdRef.current = response.session_id;
@@ -278,8 +304,10 @@ export function useHTTPViewer(session: ConnectionSession) {
       proxySessionIdRef.current = "";
       const safeMessage =
         err instanceof Error &&
-        (err.message ===
-          "Connection host or port is not a valid HTTP authority" ||
+        (err instanceof RuntimeNetworkPathError ||
+          err instanceof HttpNetworkRouteError ||
+          err.message ===
+            "Connection host or port is not a valid HTTP authority" ||
           err.message === TACTICAL_MESH_ORIGIN_CONFLICT_MESSAGE)
           ? err.message
           : connection.httpApplication !== undefined

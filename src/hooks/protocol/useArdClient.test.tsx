@@ -609,6 +609,8 @@ describe("useArdClient cross-platform Apple Account fallback", () => {
 
   it.each([
     ["saved proxy chain", { proxyChainId: "must-not-be-bypassed" }],
+    ["direct proxy profile", { proxyProfileId: "must-not-be-bypassed" }],
+    ["direct tunnel profile", { tunnelProfileId: "must-not-be-bypassed" }],
     ["saved connection chain", { connectionChainId: "must-not-be-bypassed" }],
     ["saved tunnel chain", { tunnelChainId: "must-not-be-bypassed" }],
     [

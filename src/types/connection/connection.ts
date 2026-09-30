@@ -437,8 +437,10 @@ export interface Connection
 
   // Proxy/VPN chaining
   proxyChainId?: string;
+  proxyProfileId?: string; // Direct SavedProxyProfile reference; replaces proxyChainId
   connectionChainId?: string;
   tunnelChainId?: string; // Reference to SavedTunnelChain (resolved at connect time)
+  tunnelProfileId?: string; // Direct SavedTunnelProfile reference; replaces chain/inline tunnels
 
   // SSH Terminal Config Override (inherits from global settings)
   sshTerminalConfigOverride?: Partial<SSHTerminalConfig>;
@@ -1430,6 +1432,8 @@ export interface TunnelChainLayer {
   sshTunnel?: {
     // Reference to an existing SSH connection, or inline config
     connectionId?: string;
+    ownerDatabaseId?: string;
+    authMethod?: "password" | "key";
     // Inline SSH config (used if connectionId not set)
     host?: string;
     port?: number;
@@ -1450,6 +1454,7 @@ export interface TunnelChainLayer {
       port?: number;
       username?: string;
       connectionId?: string;
+      ownerDatabaseId?: string;
     }>;
     // ProxyCommand configuration (old-school chaining)
     proxyCommand?: {

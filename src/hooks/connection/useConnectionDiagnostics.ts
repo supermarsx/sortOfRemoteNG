@@ -552,6 +552,9 @@ export function useConnectionDiagnostics(connection: Connection) {
       const usesProxyPath = Boolean(
         connection.security?.proxy?.enabled ||
         connection.proxyChainId ||
+        connection.proxyProfileId ||
+        connection.tunnelProfileId ||
+        connection.tunnelChainId ||
         connection.connectionChainId,
       );
 

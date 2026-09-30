@@ -538,7 +538,11 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
     if (!connection) return;
     dispatch({
       type: "UPDATE_CONNECTION",
-      payload: { ...connection, proxyChainId: value || undefined },
+      payload: {
+        ...connection,
+        proxyChainId: value || undefined,
+        proxyProfileId: value ? undefined : connection.proxyProfileId,
+      },
     });
   };
 
@@ -551,6 +555,8 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
       type: "UPDATE_CONNECTION",
       payload: {
         ...connection,
+        tunnelChainId: undefined,
+        tunnelProfileId: undefined,
         security: { ...connection.security, tunnelChain: [] },
       },
     });
@@ -566,6 +572,7 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
       payload: {
         ...connection,
         tunnelChainId: chainId || undefined,
+        tunnelProfileId: chainId ? undefined : connection.tunnelProfileId,
         // Clear inline tunnelChain when linking by reference
         security: { ...connection.security, tunnelChain: undefined },
       },
@@ -584,6 +591,8 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
       type: "UPDATE_CONNECTION",
       payload: {
         ...connection,
+        tunnelChainId: undefined,
+        tunnelProfileId: undefined,
         security: { ...connection.security, tunnelChain: layers },
       },
     });

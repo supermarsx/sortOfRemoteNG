@@ -80,6 +80,8 @@ export function getUnsupportedNxRouteReason(
     connection.security?.sshTunnel?.enabled === true ||
     connection.security?.tunnelChain?.some((layer) => layer.enabled !== false);
   if (
+    connection.proxyProfileId !== undefined ||
+    connection.tunnelProfileId !== undefined ||
     connection.proxyChainId ||
     connection.connectionChainId ||
     connection.tunnelChainId ||

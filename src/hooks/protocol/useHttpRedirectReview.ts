@@ -42,6 +42,8 @@ interface Options {
   sourceOrigin: string;
   accessKey: string;
   route: string | undefined;
+  /** Attempt-local effective route, including the per-connection proxy and its guards. */
+  currentRoute?: () => string | undefined;
   enabled: boolean;
   /** Runtime-only exact defaults; never copied onto a saved connection. */
   effectivePolicy?: EffectiveHttpProxyPolicy;
@@ -254,7 +256,9 @@ export function useHttpRedirectReview(options: Options) {
           captured.generation() !== generation ||
           captured.proxySessionId() !== id ||
           captured.navigationToken() !== navigationToken ||
-          getGlobalHttpProxyUrl({ failClosed: true }) !== captured.route
+          (captured.currentRoute
+            ? captured.currentRoute()
+            : getGlobalHttpProxyUrl({ failClosed: true })) !== captured.route
         )
           throw new Error(
             "Redirect review expired. Reopen the owning database and retry the navigation.",
@@ -272,7 +276,9 @@ export function useHttpRedirectReview(options: Options) {
         // The canonical launcher may close the source in single-connection
         // mode. A mount flag is not database authority after explicit acceptance.
         if (
-          getGlobalHttpProxyUrl({ failClosed: true }) !== captured.route ||
+          (captured.currentRoute
+            ? captured.currentRoute()
+            : getGlobalHttpProxyUrl({ failClosed: true })) !== captured.route ||
           (live.current &&
             (latest.current.signature !== current.signature ||
               captured.generation() !== generation))

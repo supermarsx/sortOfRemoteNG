@@ -118,6 +118,7 @@ export interface SSHJumpConfig {
   privateKey?: string;
   passphrase?: string;
   connectionId?: string; // Or reference existing connection
+  ownerDatabaseId?: string;
 
   // For ProxyCommand style
   proxyCommand?: string;
@@ -132,6 +133,7 @@ export interface SSHJumpConfig {
     port?: number;
     username?: string;
     connectionId?: string;
+    ownerDatabaseId?: string;
   }>;
 }
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput, Textarea} from '../ui/forms';
+import { PasswordInput, Textarea } from "../ui/forms";
 import {
   X,
   Save,
@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import { SavedProxyProfile, ProxyConfig } from "../../types/settings/settings";
 import { useProxyProfileEditor } from "../../hooks/network/useProxyProfileEditor";
-import { Checkbox, NumberInput, Select } from '../ui/forms';
+import { Checkbox, NumberInput, Select } from "../ui/forms";
+import { SshSourceFields } from "./proxyChainMenu/SshSourceFields";
 
 type Mgr = ReturnType<typeof useProxyProfileEditor>;
 
@@ -30,18 +31,78 @@ const PROXY_TYPES: Array<{
   description: string;
   icon: LucideIcon;
 }> = [
-  { value: "http", label: "HTTP", description: "Standard HTTP proxy", icon: Globe },
-  { value: "https", label: "HTTPS", description: "HTTP proxy with SSL/TLS", icon: Lock },
-  { value: "socks4", label: "SOCKS4", description: "SOCKS version 4 proxy", icon: Server },
-  { value: "socks5", label: "SOCKS5", description: "SOCKS version 5 with authentication", icon: Shield },
-  { value: "ssh", label: "SSH Tunnel", description: "SSH dynamic port forwarding", icon: Terminal },
-  { value: "shadowsocks", label: "Shadowsocks", description: "Encrypted proxy protocol", icon: Zap },
-  { value: "http-connect", label: "HTTP CONNECT", description: "HTTP tunnel via CONNECT method", icon: Cable },
-  { value: "websocket", label: "WebSocket", description: "WebSocket-based tunnel", icon: Radio },
-  { value: "quic", label: "QUIC", description: "QUIC protocol tunnel", icon: Zap },
-  { value: "dns-tunnel", label: "DNS Tunnel", description: "Traffic over DNS queries", icon: Network },
-  { value: "icmp-tunnel", label: "ICMP Tunnel", description: "Traffic over ICMP packets", icon: Wifi },
-  { value: "tcp-over-dns", label: "TCP over DNS", description: "TCP traffic encapsulated in DNS", icon: Network },
+  {
+    value: "http",
+    label: "HTTP",
+    description: "Standard HTTP proxy",
+    icon: Globe,
+  },
+  {
+    value: "https",
+    label: "HTTPS",
+    description: "HTTP proxy with SSL/TLS",
+    icon: Lock,
+  },
+  {
+    value: "socks4",
+    label: "SOCKS4",
+    description: "SOCKS version 4 proxy",
+    icon: Server,
+  },
+  {
+    value: "socks5",
+    label: "SOCKS5",
+    description: "SOCKS version 5 with authentication",
+    icon: Shield,
+  },
+  {
+    value: "ssh",
+    label: "SSH Tunnel",
+    description: "SSH dynamic port forwarding",
+    icon: Terminal,
+  },
+  {
+    value: "shadowsocks",
+    label: "Shadowsocks",
+    description: "Encrypted proxy protocol",
+    icon: Zap,
+  },
+  {
+    value: "http-connect",
+    label: "HTTP CONNECT",
+    description: "HTTP tunnel via CONNECT method",
+    icon: Cable,
+  },
+  {
+    value: "websocket",
+    label: "WebSocket",
+    description: "WebSocket-based tunnel",
+    icon: Radio,
+  },
+  {
+    value: "quic",
+    label: "QUIC",
+    description: "QUIC protocol tunnel",
+    icon: Zap,
+  },
+  {
+    value: "dns-tunnel",
+    label: "DNS Tunnel",
+    description: "Traffic over DNS queries",
+    icon: Network,
+  },
+  {
+    value: "icmp-tunnel",
+    label: "ICMP Tunnel",
+    description: "Traffic over ICMP packets",
+    icon: Wifi,
+  },
+  {
+    value: "tcp-over-dns",
+    label: "TCP over DNS",
+    description: "TCP traffic encapsulated in DNS",
+    icon: Network,
+  },
 ];
 
 /* ── sub-components ── */
@@ -76,7 +137,9 @@ const BasicInfoSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 );
 
 const ProxyTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  const selectedProxyType = PROXY_TYPES.find((t) => t.value === mgr.config.type);
+  const selectedProxyType = PROXY_TYPES.find(
+    (t) => t.value === mgr.config.type,
+  );
   return (
     <div>
       <label className="sor-form-label">
@@ -118,22 +181,29 @@ const ConnectionDetailsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <Globe className="w-4 h-4" />
       Connection Details
     </div>
-    <div className="grid grid-cols-2 gap-4">
-      <div>
-        <label className="sor-form-label-xs">Host *</label>
-        <input
-          type="text"
-          value={mgr.config.host}
-          onChange={(e) => mgr.updateConfig({ host: e.target.value })}
-          placeholder="proxy.example.com"
-          className="sor-form-input"
-        />
+    {mgr.config.type !== "ssh" && (
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="sor-form-label-xs">Host *</label>
+          <input
+            type="text"
+            value={mgr.config.host}
+            onChange={(e) => mgr.updateConfig({ host: e.target.value })}
+            placeholder="proxy.example.com"
+            className="sor-form-input"
+          />
+        </div>
+        <div>
+          <label className="sor-form-label-xs">Port *</label>
+          <NumberInput
+            value={mgr.config.port}
+            onChange={(v: number) => mgr.updateConfig({ port: v })}
+            variant="form"
+            placeholder="1080"
+          />
+        </div>
       </div>
-      <div>
-        <label className="sor-form-label-xs">Port *</label>
-        <NumberInput value={mgr.config.port} onChange={(v: number) => mgr.updateConfig({ port: v })} variant="form" placeholder="1080" />
-      </div>
-    </div>
+    )}
     {["socks5", "http", "https", "http-connect", "shadowsocks"].includes(
       mgr.config.type,
     ) && (
@@ -173,7 +243,25 @@ const ConnectionDetailsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="sor-form-label-xs">Encryption Method</label>
-          <Select value={mgr.config.shadowsocksMethod || "aes-256-gcm"} onChange={(v: string) => mgr.updateConfig({ shadowsocksMethod: v })} options={[{ value: "aes-256-gcm", label: "AES-256-GCM" }, { value: "aes-128-gcm", label: "AES-128-GCM" }, { value: "chacha20-ietf-poly1305", label: "ChaCha20-IETF-Poly1305" }, { value: "xchacha20-ietf-poly1305", label: "XChaCha20-IETF-Poly1305" }, { value: "aes-256-cfb", label: "AES-256-CFB" }, { value: "aes-128-cfb", label: "AES-128-CFB" }]} variant="form" />
+          <Select
+            value={mgr.config.shadowsocksMethod || "aes-256-gcm"}
+            onChange={(v: string) => mgr.updateConfig({ shadowsocksMethod: v })}
+            options={[
+              { value: "aes-256-gcm", label: "AES-256-GCM" },
+              { value: "aes-128-gcm", label: "AES-128-GCM" },
+              {
+                value: "chacha20-ietf-poly1305",
+                label: "ChaCha20-IETF-Poly1305",
+              },
+              {
+                value: "xchacha20-ietf-poly1305",
+                label: "XChaCha20-IETF-Poly1305",
+              },
+              { value: "aes-256-cfb", label: "AES-256-CFB" },
+              { value: "aes-128-cfb", label: "AES-128-CFB" },
+            ]}
+            variant="form"
+          />
         </div>
         <div>
           <label className="sor-form-label-xs">Plugin (Optional)</label>
@@ -192,35 +280,33 @@ const ConnectionDetailsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </div>
     )}
     {mgr.config.type === "ssh" && (
-      <div className="space-y-4">
-        <div>
-          <label className="sor-form-label-xs">SSH Key File (Optional)</label>
-          <input
-            type="text"
-            value={mgr.config.sshKeyFile || ""}
-            onChange={(e) =>
-              mgr.updateConfig({ sshKeyFile: e.target.value || undefined })
-            }
-            placeholder="/path/to/private/key"
-            className="sor-form-input"
-          />
-        </div>
-        <div>
-          <label className="sor-form-label-xs">
-            Key Passphrase (if encrypted)
-          </label>
-          <PasswordInput
-            value={mgr.config.sshKeyPassphrase || ""}
-            onChange={(e) =>
-              mgr.updateConfig({
-                sshKeyPassphrase: e.target.value || undefined,
-              })
-            }
-            placeholder="••••••••"
-            className="sor-form-input"
-          />
-        </div>
-      </div>
+      <SshSourceFields
+        value={{
+          connectionId: mgr.config.sshConnectionId,
+          ownerDatabaseId: mgr.config.sshConnectionDatabaseId,
+          authMethod: mgr.config.sshAuthMethod,
+          host: mgr.config.host,
+          port: mgr.config.port,
+          username: mgr.config.username,
+          password: mgr.config.password,
+          privateKey: mgr.config.sshKeyFile,
+          passphrase: mgr.config.sshKeyPassphrase,
+          forwardType: "dynamic",
+        }}
+        onChange={(value) =>
+          mgr.updateConfig({
+            sshConnectionId: value.connectionId,
+            sshConnectionDatabaseId: value.ownerDatabaseId,
+            sshAuthMethod: value.authMethod,
+            host: value.host ?? "",
+            port: value.port ?? 22,
+            username: value.username,
+            password: value.password,
+            sshKeyFile: value.privateKey,
+            sshKeyPassphrase: value.passphrase,
+          })
+        }
+      />
     )}
     {mgr.config.type === "websocket" && (
       <div>
@@ -282,10 +368,16 @@ const TagsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 );
 
 const DefaultProfileToggle: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  const selectedProxyType = PROXY_TYPES.find((t) => t.value === mgr.config.type);
+  const selectedProxyType = PROXY_TYPES.find(
+    (t) => t.value === mgr.config.type,
+  );
   return (
     <label className="flex items-center gap-3 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
-      <Checkbox checked={mgr.isDefault} onChange={(v: boolean) => mgr.setIsDefault(v)} className="sor-form-checkbox w-4 h-4" />
+      <Checkbox
+        checked={mgr.isDefault}
+        onChange={(v: boolean) => mgr.setIsDefault(v)}
+        className="sor-form-checkbox w-4 h-4"
+      />
       <div>
         <div className="text-sm font-medium text-[var(--color-text)] flex items-center gap-1">
           <Shield className="w-4 h-4 text-warning" />
@@ -334,8 +426,14 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
       </div>
 
       <div className="px-4 py-3 border-t border-[var(--color-border)] flex justify-end gap-3 flex-shrink-0">
-        <button onClick={onClose} className="sor-btn sor-btn-secondary">Cancel</button>
-        <button onClick={mgr.handleSave} disabled={!mgr.canSave} className="sor-btn sor-btn-primary">
+        <button onClick={onClose} className="sor-btn sor-btn-secondary">
+          Cancel
+        </button>
+        <button
+          onClick={mgr.handleSave}
+          disabled={!mgr.canSave}
+          className="sor-btn sor-btn-primary"
+        >
           <Save size={14} />
           {mgr.editingProfile ? "Update Profile" : "Create Profile"}
         </button>

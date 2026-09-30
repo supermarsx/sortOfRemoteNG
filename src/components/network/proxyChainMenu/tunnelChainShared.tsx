@@ -11,6 +11,7 @@ import {
   type VpnProfileCatalogSnapshot,
 } from "../../../utils/network/vpnProviderCatalog";
 import { getTypeIcon, getTypeLabel } from "./tunnelChainShared.helpers";
+import { SshSourceFields } from "./SshSourceFields";
 
 // ── Per-layer config forms ──────────────────────────────────────
 
@@ -73,40 +74,11 @@ export function SshJumpLayerConfig({
     port: 22,
     username: "",
   };
-  const up = (updates: Partial<typeof ssh>) =>
-    onUpdate({ sshTunnel: { ...ssh, ...updates } });
-
   return (
-    <div className="grid grid-cols-4 gap-2 mt-2">
-      <input
-        type="text"
-        placeholder="Host"
-        value={ssh.host ?? ""}
-        onChange={(e) => up({ host: e.target.value })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      />
-      <input
-        type="number"
-        placeholder="Port"
-        value={ssh.port ?? 22}
-        onChange={(e) => up({ port: parseInt(e.target.value) || 22 })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      />
-      <input
-        type="text"
-        placeholder="Username"
-        value={ssh.username ?? ""}
-        onChange={(e) => up({ username: e.target.value })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={ssh.password ?? ""}
-        onChange={(e) => up({ password: e.target.value })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      />
-    </div>
+    <SshSourceFields
+      value={ssh}
+      onChange={(value) => onUpdate({ sshTunnel: value })}
+    />
   );
 }
 

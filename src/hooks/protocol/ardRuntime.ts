@@ -57,6 +57,8 @@ export function ardUnsupportedNetworkPath(
     security?.sshTunnel?.enabled === true ||
     (security?.tunnelChain?.length ?? 0) > 0;
   if (
+    connection.proxyProfileId !== undefined ||
+    connection.tunnelProfileId !== undefined ||
     connection.proxyChainId ||
     connection.connectionChainId ||
     connection.tunnelChainId ||

@@ -469,21 +469,24 @@ describe("useFTPSession", () => {
     expect(result.current.lastTransfer).toBeNull();
   });
 
-  it("fails closed instead of bypassing a saved proxy or tunnel route", async () => {
-    mocks.connections = [{ ...connection, proxyChainId: "proxy-chain-1" }];
-    const { result } = renderHook(() => useFTPSession(createSession()));
+  it.each(["proxyChainId", "proxyProfileId", "tunnelProfileId"] as const)(
+    "fails closed instead of bypassing %s",
+    async (field) => {
+      mocks.connections = [{ ...connection, [field]: "saved-route" }];
+      const { result } = renderHook(() => useFTPSession(createSession()));
 
-    await waitFor(() => expect(result.current.status).toBe("error"));
-    expect(result.current.error).toContain("direct connections only");
-    expect(mocks.invoke).not.toHaveBeenCalledWith(
-      "ftp_connect",
-      expect.anything(),
-    );
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: "UPDATE_SESSION",
-      payload: expect.objectContaining({
-        status: "error",
-      }),
-    });
-  });
+      await waitFor(() => expect(result.current.status).toBe("error"));
+      expect(result.current.error).toContain("direct connections only");
+      expect(mocks.invoke).not.toHaveBeenCalledWith(
+        "ftp_connect",
+        expect.anything(),
+      );
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          status: "error",
+        }),
+      });
+    },
+  );
 });

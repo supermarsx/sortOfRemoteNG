@@ -5,7 +5,10 @@ import {
   writeTunnelPassword,
   deleteTunnelPassword,
 } from "./sshTunnelCredentials";
-import type { TunnelRuntimeOptions } from "./sshTunnelRuntime";
+import {
+  buildSshTunnelNativeConfig,
+  type TunnelRuntimeOptions,
+} from "./sshTunnelRuntime";
 import { resolveRuntimeNetworkPath } from "../network/resolveRuntimeNetworkPath";
 import {
   acquireSessionVpnLeases,
@@ -628,6 +631,7 @@ class SSHTunnelService {
         sshConnection,
         options.connections ?? [sshConnection],
         "ssh",
+        options.networkPathContext,
       );
       secrets.push(...path.redactionSecrets);
       assertCurrent();
@@ -675,57 +679,46 @@ class SSHTunnelService {
       options.vault?.assertCurrent();
 
       // First, connect to the SSH server
+      path.assertCurrent?.();
       const sessionId = await invoke<string>("connect_ssh", {
-        config: {
-          host: sshConnection.hostname,
-          port: sshConnection.port || 22,
-          username,
-          password: authType === "key" && !vaultSource ? null : password,
-          private_key_path:
-            authType === "key" && !vaultSource ? privateKey : null,
-          private_key_content:
-            authType === "key" && vaultSource ? privateKey : null,
-          private_key_passphrase: authType === "key" ? passphrase : null,
-          allow_agent_auth: false,
-          totp_secret: totpSecret ?? null,
-          totp_options: totp
-            ? {
-                algorithm: totp.algorithm,
-                digits: totp.digits,
-                period: totp.period,
-              }
-            : null,
-          agent_forwarding: override.agentForwarding,
-          jump_hosts: path.transport.jump_hosts,
-          proxy_config: path.transport.proxy_config,
-          proxy_chain: path.transport.proxy_chain,
-          mixed_chain: path.transport.mixed_chain,
-          openvpn_config: path.transport.openvpn_config,
-          connect_timeout:
-            override?.connectTimeout ?? sshConnection.sshConnectTimeout ?? 30,
-          keep_alive_interval:
-            override?.keepAliveInterval ??
-            sshConnection.sshKeepAliveInterval ??
-            60,
-          strict_host_key_checking:
-            override.strictHostKeyChecking &&
-            !sshConnection.ignoreSshSecurityErrors &&
-            trust !== "always-trust",
-          known_hosts_path:
-            override?.knownHostsPath ?? sshConnection.sshKnownHostsPath ?? null,
-          tcp_no_delay: override?.tcpNoDelay ?? true,
-          tcp_keepalive: override?.tcpKeepAlive ?? true,
-          keepalive_probes: override?.keepAliveProbes ?? 3,
-          ip_protocol: override?.ipProtocol ?? "any",
-          compression: override?.enableCompression ?? false,
-          compression_level: override?.compressionLevel ?? 6,
-          ssh_version: override?.sshVersion ?? "2",
-          preferred_ciphers: override?.preferredCiphers ?? [],
-          preferred_macs: override?.preferredMACs ?? [],
-          preferred_kex: override?.preferredKeyExchanges ?? [],
-          preferred_host_key_algorithms:
-            override?.preferredHostKeyAlgorithms ?? [],
-        },
+        config: buildSshTunnelNativeConfig(
+          {
+            host: sshConnection.hostname,
+            port: sshConnection.port || 22,
+            username,
+            allow_agent_auth: false,
+            password: authType === "key" && !vaultSource ? null : password,
+            private_key_path:
+              authType === "key" && !vaultSource ? privateKey : null,
+            private_key_content:
+              authType === "key" && vaultSource ? privateKey : null,
+            private_key_passphrase: authType === "key" ? passphrase : null,
+            totp_secret: totpSecret ?? null,
+            totp_options: totp
+              ? {
+                  algorithm: totp.algorithm,
+                  digits: totp.digits,
+                  period: totp.period,
+                }
+              : null,
+            agent_forwarding: override.agentForwarding,
+          },
+          path.transport,
+          {
+            sshConfig: {
+              ...override,
+              connectTimeout:
+                override.connectTimeout ?? sshConnection.sshConnectTimeout,
+              keepAliveInterval:
+                override.keepAliveInterval ??
+                sshConnection.sshKeepAliveInterval,
+              knownHostsPath:
+                override.knownHostsPath ?? sshConnection.sshKnownHostsPath,
+            },
+            trustPolicy: trust,
+            ignoreSshSecurityErrors: sshConnection.ignoreSshSecurityErrors,
+          },
+        ),
       });
       tunnel.sshSessionId = sessionId;
       assertCurrent();

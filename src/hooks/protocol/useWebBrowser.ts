@@ -45,6 +45,7 @@ import {
   HttpBookmarkItem,
 } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
+import { hasConfiguredNetworkPath } from "../../utils/network/networkPathConfig";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
 import { generateId } from "../../utils/core/id";
@@ -99,6 +100,11 @@ import {
 } from "../../utils/session/runtimeConnectionRegistry";
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
+import {
+  captureHttpNetworkRoute,
+  httpNetworkPathIdentity,
+  type HttpNetworkRoute,
+} from "../integration/httpNetworkRoute";
 import {
   getReviewedApplicationApiOrigin,
   getReviewedApplicationMeshOrigin,
@@ -546,6 +552,9 @@ export function useWebBrowser(
   onActivateSession?: (id: string) => void,
   sharedPopupId?: string,
 ) {
+  const networkPathContext = useConnections();
+  const networkPathContextRef = useRef(networkPathContext);
+  networkPathContextRef.current = networkPathContext;
   const {
     state,
     dispatch,
@@ -553,7 +562,7 @@ export function useWebBrowser(
     recycleBin,
     databaseAvailability,
     credentialVault,
-  } = useConnections();
+  } = networkPathContext;
   const sessionsRef = useRef(state.sessions);
   sessionsRef.current = state.sessions;
   const { settings, settingsReady } = useSettings();
@@ -564,6 +573,25 @@ export function useWebBrowser(
     state.connections,
     session.connectionId,
   );
+  const httpConnectionRef = useRef(connection);
+  httpConnectionRef.current = connection;
+  const httpRouteRef = useRef<HttpNetworkRoute | null>(null);
+  const retiringHttpProxyRef = useRef<string | null>(null);
+  const currentHttpProxyUrl = useCallback(() => {
+    const route = httpRouteRef.current;
+    if (route) {
+      route.assertCurrent();
+      return route.upstreamProxyUrl;
+    }
+    if (
+      httpConnectionRef.current &&
+      hasConfiguredNetworkPath(httpConnectionRef.current)
+    )
+      throw new Error(
+        "The HTTP network route has not been resolved. Reload the connection.",
+      );
+    return getGlobalHttpProxyUrl({ failClosed: true });
+  }, []);
   const sessionNavigationKey = runtimeWebNavigationSessionKey(session.id);
   const runtimeNavigationKey = getRuntimeWebNavigation(sessionNavigationKey)
     ? sessionNavigationKey
@@ -1002,6 +1030,8 @@ export function useWebBrowser(
   const httpsPolicyKeyRef = useRef(httpsPolicyKey);
   httpsPolicyKeyRef.current = httpsPolicyKey;
   const proxyInputs = stableJsonStringify([
+    httpNetworkPathIdentity(connection),
+    settings.globalProxy,
     session.protocol === "https" ? httpsPolicyKey : null,
     connection?.httpProxyPolicy,
     redirectTrust.defaults,
@@ -1713,7 +1743,7 @@ export function useWebBrowser(
           policyKey !== httpsPolicyKeyRef.current
         )
           throw new DOMException("Trust verification cancelled", "AbortError");
-        if (getGlobalHttpProxyUrl({ failClosed: true }) !== proxyUrl)
+        if (currentHttpProxyUrl() !== proxyUrl)
           throw new HttpsRouteChangedError();
         // Bind known owners before the first read, not after a transition may
         // already have replaced their lease. Older ownerless tabs may perform
@@ -1734,6 +1764,7 @@ export function useWebBrowser(
       setTrustCheck(check);
 
       try {
+        assertCurrent(0);
         const info = await invoke<NativeTlsCertificateInfo>(
           "get_tls_certificate_info",
           {
@@ -1853,7 +1884,13 @@ export function useWebBrowser(
       } catch (err) {
         if (abort.signal.aborted || genBefore !== navGenRef.current)
           return false;
-        debugLog("WebBrowser", "HTTPS trust pipeline failed", { stage, err });
+        const safeError =
+          httpRouteRef.current?.redactError(err) ??
+          (err instanceof Error ? err.message : String(err));
+        debugLog("WebBrowser", "HTTPS trust pipeline failed", {
+          stage,
+          error: safeError,
+        });
         acceptedCertFingerprintRef.current = null;
         if (err instanceof HttpsRouteChangedError) {
           applyNavigationFailure(
@@ -1871,7 +1908,7 @@ export function useWebBrowser(
           // Classify by the failing network layer; every class stays blocked.
           applyNavigationFailure(
             describeCertificateInspectionFailure({
-              error: err,
+              error: safeError,
               hookStage: stage,
               host: targetHostname,
               port,
@@ -1892,7 +1929,7 @@ export function useWebBrowser(
             isTransientTrustStoreError(err)
               ? "The Trust Center is still busy after two retries. Wait for its storage transition or refresh to finish, then reload. TLS verification was not bypassed."
               : "The certificate was inspected, but the database Trust Center could not complete its decision. Open or unlock the correct database and inspect its Trust Center; TLS verification was not bypassed.",
-            err instanceof Error ? err.message : String(err),
+            safeError,
           ),
         );
         return false;
@@ -1911,6 +1948,7 @@ export function useWebBrowser(
       httpsPolicy,
       httpsPolicyKey,
       httpsCaTrustMode,
+      currentHttpProxyUrl,
       applyNavigationFailure,
       certificateScope,
       cancelTrustRead,
@@ -2087,7 +2125,10 @@ export function useWebBrowser(
       }
     })(),
     accessKey: reviewedFlowScope,
-    route: getGlobalHttpProxyUrl(),
+    route: httpRouteRef.current
+      ? httpRouteRef.current.upstreamProxyUrl
+      : getGlobalHttpProxyUrl(),
+    currentRoute: currentHttpProxyUrl,
     enabled:
       !sharedPopupId &&
       (proxyOptions.policy?.allowCrossOriginRedirects === true ||
@@ -2115,15 +2156,13 @@ export function useWebBrowser(
       const destinationUsesTls = destination.protocol === "https:";
       if (
         destinationUsesTls &&
-        !(await fetchAndVerifyCert(
-          getGlobalHttpProxyUrl({ failClosed: true }),
-          destination,
-        ))
+        !(await fetchAndVerifyCert(currentHttpProxyUrl(), destination))
       )
         throw new Error(
           "The Synology redirect destination certificate was not approved.",
         );
       request.assertCurrent();
+      currentHttpProxyUrl();
       const response = await invoke<SynologyProxyContinuationResponse>(
         "continue_synology_proxy_session",
         {
@@ -2421,6 +2460,46 @@ export function useWebBrowser(
         }
         return;
       }
+      // A saved profile can change without its ID (or this hook's inputs)
+      // changing. Explicit navigation/reload must retire the old listener before
+      // resolving a new route; never install new guards over an old native route.
+      try {
+        if (proxySessionIdRef.current && !retiringHttpProxyRef.current) {
+          try {
+            currentHttpProxyUrl();
+          } catch {
+            retiringHttpProxyRef.current = proxySessionIdRef.current;
+            clearFrame();
+            publishAutomationDocument(null);
+            webPopupTabs.revokeSource(session.id);
+            proxySessionIdRef.current = "";
+            proxyUrlRef.current = "";
+            googleRoutesRef.current = [];
+            httpRouteRef.current = null;
+            releaseRuntimeWebNavigation(sessionNavigationKey);
+            continuationOwnerKeyRef.current = null;
+            setProxyAlive(false);
+          }
+        }
+        const retiring = retiringHttpProxyRef.current;
+        if (retiring) {
+          // Retain the ID on failure so a later reload must retry the stop.
+          await invoke("stop_basic_auth_proxy", { sessionId: retiring });
+          if (retiringHttpProxyRef.current === retiring)
+            retiringHttpProxyRef.current = null;
+          if (gen !== navGenRef.current) return;
+        }
+      } catch {
+        applyNavigationFailure(
+          localNavigationFailure(
+            "proxy_start_failed",
+            "Unable to replace the web route",
+            url,
+            "The previous proxy could not be stopped. Reload to retry; no request was sent on a new route.",
+          ),
+        );
+        return;
+      }
       if (applicationAuth.error || proxyOptions.error) {
         applyNavigationFailure(
           localNavigationFailure(
@@ -2556,8 +2635,26 @@ export function useWebBrowser(
           };
           assertReviewedFlow();
         }
-        const upstreamProxyUrl = getGlobalHttpProxyUrl({ failClosed: true });
+        const networkPath =
+          connection && hasConfiguredNetworkPath(connection)
+            ? await (
+                await import("../../utils/network/resolveRuntimeNetworkPath")
+              ).resolveRuntimeNetworkPath(
+                connection,
+                networkPathContextRef.current.state.connections,
+                "http",
+                () => networkPathContextRef.current,
+              )
+            : null;
+        if (gen !== navGenRef.current) return;
         const existingProxy = proxySessionIdRef.current;
+        if (existingProxy) currentHttpProxyUrl();
+        const httpRoute = captureHttpNetworkRoute(
+          networkPath,
+          () => httpConnectionRef.current,
+        );
+        httpRouteRef.current = httpRoute;
+        const upstreamProxyUrl = httpRoute.upstreamProxyUrl;
         const reusingContinuedProxy =
           continuedNavigationActive &&
           existingProxy.length > 0 &&
@@ -2579,6 +2676,7 @@ export function useWebBrowser(
         assertReviewedFlow = () => {
           assertPriorFlow();
           vault?.assertCurrent();
+          httpRoute.assertCurrent();
         };
         assertReviewedFlow();
         let attemptLogin =
@@ -2674,6 +2772,7 @@ export function useWebBrowser(
             getReviewedApplicationApiOrigin(connection);
           const reviewedApplicationMeshOrigin =
             getReviewedApplicationMeshOrigin(connection);
+          httpRoute.assertCurrent();
           const response = await invoke<ProxyMediatorResponse>(
             "start_basic_auth_proxy",
             {
@@ -2855,7 +2954,8 @@ export function useWebBrowser(
       } catch (error) {
         if (gen !== navGenRef.current) return;
         const rawMessage =
-          error instanceof Error ? error.message : String(error);
+          httpRouteRef.current?.redactError(error) ??
+          (error instanceof Error ? error.message : String(error));
         const msg = [attemptPassword, attemptUsername]
           .filter(Boolean)
           .reduce(
@@ -2898,6 +2998,7 @@ export function useWebBrowser(
       readThemeTokens,
       appendHistory,
       fetchAndVerifyCert,
+      currentHttpProxyUrl,
       settings.webRecording,
       webRecorder,
       markSessionConnected,
@@ -2919,6 +3020,8 @@ export function useWebBrowser(
       websiteDarkBootstrapCandidate,
       setWebsiteDarkBootstrap,
       attachIframe,
+      clearFrame,
+      publishAutomationDocument,
     ],
   );
 
@@ -3144,6 +3247,7 @@ export function useWebBrowser(
       vault?.assertCurrent();
       clearWebBrowserFrame(iframeRef.current);
       publishAutomationDocument(null);
+      currentHttpProxyUrl();
       const resp = await invoke<ProxyMediatorResponse>(
         "restart_proxy_session",
         { sessionId: sid },
@@ -3196,6 +3300,7 @@ export function useWebBrowser(
     [
       connection,
       clearNavigationFailure,
+      currentHttpProxyUrl,
       stopProxy,
       armNavigationDeadline,
       navigateFrame,
@@ -4033,6 +4138,27 @@ export function useWebBrowser(
       const verifySsl =
         ((connection as unknown as Record<string, unknown>)?.httpVerifySsl ??
           true) !== false;
+      let route = httpRouteRef.current;
+      if (!route) {
+        const networkPath =
+          connection && hasConfiguredNetworkPath(connection)
+            ? await (
+                await import("../../utils/network/resolveRuntimeNetworkPath")
+              ).resolveRuntimeNetworkPath(
+                connection,
+                networkPathContextRef.current.state.connections,
+                "http",
+                () => networkPathContextRef.current,
+              )
+            : null;
+        route = captureHttpNetworkRoute(
+          networkPath,
+          () => httpConnectionRef.current,
+        );
+        if (!current()) return;
+        httpRouteRef.current = route;
+      }
+      route.assertCurrent();
       const report = await invoke<ProtocolDiagnosticReport>(
         "diagnose_http_connection",
         {
@@ -4045,14 +4171,16 @@ export function useWebBrowser(
           connectTimeoutSecs:
             settings.diagnostics?.protocolDiagTimeoutSecs ?? 15,
           verifySsl,
-          proxyUrl: getGlobalHttpProxyUrl({ failClosed: true }),
+          proxyUrl: route.upstreamProxyUrl,
         },
       );
+      route.assertCurrent();
       if (current()) setDiagnosticReport(report);
     } catch (error) {
       if (current())
         setDiagnosticError(
-          error instanceof Error ? error.message : String(error),
+          httpRouteRef.current?.redactError(error) ??
+            (error instanceof Error ? error.message : String(error)),
         );
     } finally {
       // Page changes already reset the running state; a newer run owns it.

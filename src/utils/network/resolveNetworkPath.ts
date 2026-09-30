@@ -31,23 +31,27 @@ export const NETWORK_PATH_REDACTED = "[REDACTED]" as const;
  *
  * Layers are always expressed outermost-to-target. Independent source
  * categories compose in the order below so no configured source silently
- * disappears. A saved tunnel-chain reference and an inline tunnel chain are
- * two representations of the same category: the reference wins and the
- * inline value is reported as shadowed. Missing references never fall back to
+ * disappears. A direct profile replaces its chain; a tunnel chain replaces
+ * inline tunnel layers. Lower-precedence selections are reported as shadowed.
+ * Missing references never fall back to
  * a lower-precedence representation because that could silently change the
  * route used for a connection.
  */
 export const NETWORK_PATH_POLICY = Object.freeze({
   sourceOrder: [
     "connection-chain",
+    "proxy-profile",
     "proxy-chain",
+    "tunnel-profile",
     "tunnel-chain",
     "inline-tunnel",
     "legacy-vpn",
     "legacy-proxy",
   ] as const,
+  proxySelection:
+    "proxyProfileId replaces proxyChainId; legacy security.proxy remains independent",
   tunnelSelection:
-    "tunnelChainId replaces security.tunnelChain; inline layers are used only when no reference is configured",
+    "tunnelProfileId replaces tunnelChainId and security.tunnelChain; tunnelChainId replaces inline layers when no direct profile is selected",
   layerOrder:
     "source order first; array order for tunnel layers; stable position order for saved/backend chains",
   invalidReference:
@@ -56,7 +60,9 @@ export const NETWORK_PATH_POLICY = Object.freeze({
 
 export type NetworkPathSourceKind =
   | "connection-chain"
+  | "proxy-profile"
   | "proxy-chain"
+  | "tunnel-profile"
   | "tunnel-chain"
   | "inline-tunnel"
   | "legacy-vpn"
@@ -207,12 +213,22 @@ export interface NetworkPathCatalog {
   vpnProfiles?: Readonly<VpnProfileCatalogSnapshot>;
 }
 
+/** Attempt-local credentials only; never put these in a saved catalog. */
+export interface SshPathResolutionOptions {
+  allowUnresolvedVaultHops?: boolean;
+  credentials?: ReadonlyMap<
+    string,
+    Pick<Connection, "username" | "password" | "privateKey" | "passphrase">
+  >;
+}
+
 interface ResolutionScope {
   connectionStack: string[];
   tunnelChainStack: string[];
 }
 
 interface ResolutionState {
+  sshOptions: SshPathResolutionOptions;
   layers: CanonicalNetworkPathLayer[];
   issues: NetworkPathIssue[];
   keyCounts: Map<string, number>;
@@ -247,9 +263,11 @@ const EMPTY_PROXY_COLLECTION: NetworkPathCatalog["proxyCollection"] = {
 export function resolveNetworkPath(
   connection: Connection,
   catalog: NetworkPathCatalog = {},
+  sshOptions: SshPathResolutionOptions = {},
 ): NetworkPathResolution {
   const proxyCollection = catalog.proxyCollection ?? EMPTY_PROXY_COLLECTION;
   const state: ResolutionState = {
+    sshOptions,
     layers: [],
     issues: [],
     keyCounts: new Map(),
@@ -303,15 +321,68 @@ function appendConnectionSources(
       connection.connectionChainId,
       ownerConnectionId,
       state,
+      scope,
     );
   }
 
-  if (connection.proxyChainId) {
+  if (connection.proxyProfileId !== undefined) {
+    const source: NetworkPathLayerSource = {
+      kind: "proxy-profile",
+      ownerConnectionId,
+      referenceId: connection.proxyProfileId,
+      profileId: connection.proxyProfileId,
+    };
+    if (connection.proxyChainId) {
+      addIssue(
+        state,
+        "shadowed-source",
+        "warning",
+        "The proxy chain is shadowed by the selected direct proxy profile.",
+        source,
+      );
+    }
+    if (validateDirectProfileId(connection.proxyProfileId, source, state)) {
+      appendProxyProfile(connection.proxyProfileId, source, state, scope);
+    }
+  } else if (connection.proxyChainId) {
     appendProxyChain(connection.proxyChainId, ownerConnectionId, state, scope);
   }
 
   const inlineTunnelLayers = connection.security?.tunnelChain ?? [];
-  if (connection.tunnelChainId) {
+  if (connection.tunnelProfileId !== undefined) {
+    const source: NetworkPathLayerSource = {
+      kind: "tunnel-profile",
+      ownerConnectionId,
+      referenceId: connection.tunnelProfileId,
+      profileId: connection.tunnelProfileId,
+    };
+    if (connection.tunnelChainId) {
+      addIssue(
+        state,
+        "shadowed-source",
+        "warning",
+        "The tunnel chain is shadowed by the selected direct tunnel profile.",
+        source,
+      );
+    }
+    if (inlineTunnelLayers.length > 0) {
+      addIssue(
+        state,
+        "shadowed-source",
+        "warning",
+        "Inline tunnel layers are shadowed by the selected direct tunnel profile.",
+        source,
+      );
+    }
+    if (validateDirectProfileId(connection.tunnelProfileId, source, state)) {
+      appendDirectTunnelProfile(
+        connection.tunnelProfileId,
+        source,
+        state,
+        scope,
+      );
+    }
+  } else if (connection.tunnelChainId) {
     if (inlineTunnelLayers.length > 0) {
       addIssue(
         state,
@@ -346,7 +417,11 @@ function appendConnectionSources(
 
   const legacyOpenVpn = connection.security?.openvpn;
   if (legacyOpenVpn?.enabled) {
-    if (connection.tunnelChainId || inlineTunnelLayers.length > 0) {
+    if (
+      connection.tunnelProfileId !== undefined ||
+      connection.tunnelChainId ||
+      inlineTunnelLayers.length > 0
+    ) {
       addIssue(
         state,
         "shadowed-source",
@@ -386,7 +461,12 @@ function appendConnectionSources(
   }
 
   if (connection.security?.proxy) {
-    appendLegacyProxy(connection.security.proxy, ownerConnectionId, state);
+    appendLegacyProxy(
+      connection.security.proxy,
+      ownerConnectionId,
+      state,
+      scope,
+    );
   }
 }
 
@@ -394,6 +474,7 @@ function appendConnectionChain(
   chainId: string,
   ownerConnectionId: string,
   state: ResolutionState,
+  scope: ResolutionScope,
 ): void {
   const source: NetworkPathLayerSource = {
     kind: "connection-chain",
@@ -441,7 +522,7 @@ function appendConnectionChain(
     }
 
     if (String(layer.connection_type) === "Proxy") {
-      appendProxyProfile(layer.connection_id, layerSource, state);
+      appendProxyProfile(layer.connection_id, layerSource, state, scope);
       return;
     }
 
@@ -605,7 +686,7 @@ function appendSavedChainLayer(
           { ...source, profileId: layer.proxyProfileId },
         );
       }
-      appendProxyProfile(layer.proxyProfileId, source, state);
+      appendProxyProfile(layer.proxyProfileId, source, state, scope);
       return;
     }
     if (!isProxyConfig(layer.inlineConfig)) {
@@ -618,7 +699,7 @@ function appendSavedChainLayer(
       );
       return;
     }
-    appendProxyConfig(layer.inlineConfig, source, state);
+    appendProxyConfig(layer.inlineConfig, source, state, scope);
     return;
   }
 
@@ -676,10 +757,69 @@ function appendSavedChainLayer(
   });
 }
 
+function validateDirectProfileId(
+  id: unknown,
+  source: NetworkPathLayerSource,
+  state: ResolutionState,
+): id is string {
+  if (typeof id === "string" && id.trim()) return true;
+  addIssue(
+    state,
+    "invalid-layer",
+    "error",
+    "The selected direct network profile reference is empty or malformed; no chain or inline fallback was used.",
+    source,
+  );
+  return false;
+}
+
+function appendDirectTunnelProfile(
+  profileId: string,
+  source: NetworkPathLayerSource,
+  state: ResolutionState,
+  scope: ResolutionScope,
+): void {
+  const profile = state.tunnelProfiles.get(profileId);
+  if (!profile) {
+    addIssue(
+      state,
+      "missing-reference",
+      "error",
+      `Tunnel profile "${profileId}" does not exist in the supplied collection.`,
+      source,
+    );
+    return;
+  }
+  const materialized = materializeTunnelProfile(
+    {
+      id: `profile:${profileId}`,
+      type: profile.type,
+      enabled: profile.config.enabled,
+      tunnelProfileId: profileId,
+    },
+    source,
+    state,
+    [],
+  );
+  if (!materialized) return;
+  if (!materialized.enabled) {
+    addIssue(
+      state,
+      "disabled-reference",
+      "error",
+      `Tunnel profile "${profileId}" is disabled.`,
+      source,
+    );
+    return;
+  }
+  appendTunnelLayer(materialized, source, state, scope);
+}
+
 function appendProxyProfile(
   profileId: string,
   source: NetworkPathLayerSource,
   state: ResolutionState,
+  scope: ResolutionScope,
 ): void {
   const profileSource = { ...source, profileId };
   const profile = state.proxyProfiles.get(profileId);
@@ -703,7 +843,7 @@ function appendProxyProfile(
     );
     return;
   }
-  appendProxyConfig(profile.config, profileSource, state);
+  appendProxyConfig(profile.config, profileSource, state, scope);
 }
 
 function appendTunnelChainReference(
@@ -894,6 +1034,7 @@ function appendTunnelLayer(
       },
       source,
       state,
+      scope,
     );
     return;
   }
@@ -1059,7 +1200,7 @@ function appendSshConfig(
   state: ResolutionState,
   scope: ResolutionScope,
 ): void {
-  if (sshConfig.jumpHosts?.length) {
+  if (sshConfig.connectionId === undefined && sshConfig.jumpHosts?.length) {
     sshConfig.jumpHosts.forEach((jumpHost, index) => {
       appendSingleSshConfig(
         transport,
@@ -1067,6 +1208,7 @@ function appendSshConfig(
           ...sshConfig,
           jumpHosts: undefined,
           connectionId: jumpHost.connectionId,
+          ownerDatabaseId: jumpHost.ownerDatabaseId,
           host: jumpHost.host,
           port: jumpHost.port,
           username: jumpHost.username,
@@ -1089,7 +1231,20 @@ function appendSingleSshConfig(
   scope: ResolutionScope,
 ): void {
   const config = cloneValue(sshConfig);
-  if (config.connectionId) {
+  if (config.connectionId !== undefined) {
+    if (
+      typeof config.connectionId !== "string" ||
+      !config.connectionId.trim()
+    ) {
+      addIssue(
+        state,
+        "invalid-layer",
+        "error",
+        "Select a valid saved SSH connection. An empty or malformed link cannot use inline credentials.",
+        source,
+      );
+      return;
+    }
     if (scope.connectionStack.includes(config.connectionId)) {
       addIssue(
         state,
@@ -1114,24 +1269,59 @@ function appendSingleSshConfig(
       );
       return;
     }
-    // A referenced transport is a separate authentication boundary. Until a
-    // scoped hop-vault adapter exists, neither inherited local secrets nor
-    // inline overrides may substitute for its selected vault credential.
-    let localCredentialSource = false;
-    try {
-      localCredentialSource =
-        normalizeConnectionCredentialSource(
-          referencedConnection.credentialSource,
-        )?.kind !== "vault";
-    } catch {
-      // Malformed source data may contain secrets; use a fixed diagnostic.
-    }
-    if (!localCredentialSource) {
+    if (
+      referencedConnection.protocol !== "ssh" ||
+      referencedConnection.isGroup
+    ) {
       addIssue(
         state,
         "invalid-layer",
         "error",
-        "Referenced SSH transport hops require local credentials. Vault-backed or invalid credential sources are not supported for hops; no local or inline fallback was used.",
+        "The referenced source must be a saved SSH connection, not a group or another protocol.",
+        source,
+      );
+      return;
+    }
+    const override = referencedConnection.sshConnectionConfigOverride;
+    if (
+      override?.proxyCommand ||
+      override?.proxyCommandTemplate ||
+      override?.enableJumpHost ||
+      override?.mixedChain?.hops.length
+    ) {
+      addIssue(
+        state,
+        "unsupported-layer",
+        "error",
+        "The saved SSH source uses unsupported transport overrides. Move ProxyCommand, jump hosts or mixed-chain overrides into its network path before connecting; the configured route was not bypassed.",
+        source,
+      );
+      return;
+    }
+    // Only an explicit attempt-local vault disclosure may supply hop secrets.
+    let credentialKind: "local" | "vault" | undefined;
+    try {
+      credentialKind =
+        normalizeConnectionCredentialSource(
+          referencedConnection.credentialSource,
+        )?.kind ?? "local";
+    } catch {
+      // Malformed source data may contain secrets; use a fixed diagnostic.
+    }
+    const resolvedAuth = state.sshOptions.credentials?.get(config.connectionId);
+    const vaultSource = credentialKind === "vault";
+    if (
+      credentialKind !== "local" &&
+      !(
+        vaultSource &&
+        (resolvedAuth || state.sshOptions.allowUnresolvedVaultHops)
+      )
+    ) {
+      addIssue(
+        state,
+        "invalid-layer",
+        "error",
+        "Referenced SSH transport hops have unresolved vault or invalid credential sources; no local or inline fallback was used.",
         source,
       );
       return;
@@ -1146,12 +1336,37 @@ function appendSingleSshConfig(
       state.layers.splice(layerCountBeforeReference);
       return;
     }
-    config.host ||= referencedConnection.hostname;
-    config.port ??= referencedConnection.port;
-    config.username ??= referencedConnection.username;
-    config.password ??= referencedConnection.password;
-    config.privateKey ??= referencedConnection.privateKey;
-    config.passphrase ??= referencedConnection.passphrase;
+    // A link owns both destination and authentication; stale inline fields
+    // must never redirect a linked credential or override its vault source.
+    const auth = resolvedAuth ?? (vaultSource ? {} : referencedConnection);
+    config.host = referencedConnection.hostname;
+    config.port = referencedConnection.port;
+    config.username = auth.username;
+    config.password = auth.password;
+    config.privateKey = auth.privateKey;
+    config.passphrase = auth.passphrase;
+    if (
+      referencedConnection.authType &&
+      !["password", "key"].includes(referencedConnection.authType)
+    ) {
+      addIssue(
+        state,
+        "unsupported-layer",
+        "error",
+        "SSH proxy hops support password or key-file authentication only; interactive/TOTP modes are unavailable.",
+        source,
+      );
+      return;
+    }
+    config.authMethod = referencedConnection.authType as
+      "password" | "key" | undefined;
+  }
+
+  if (config.authMethod === "password") {
+    config.privateKey = undefined;
+    config.passphrase = undefined;
+  } else if (config.authMethod === "key") {
+    config.password = undefined;
   }
 
   if (!config.host) {
@@ -1165,6 +1380,20 @@ function appendSingleSshConfig(
     return;
   }
   config.port ??= 22;
+  if (
+    !Number.isInteger(config.port) ||
+    config.port < 1 ||
+    config.port > 65535
+  ) {
+    addIssue(
+      state,
+      "invalid-layer",
+      "error",
+      "SSH port must be an integer from 1 to 65535.",
+      source,
+    );
+    return;
+  }
   appendLayer(state, {
     kind: "ssh",
     transport,
@@ -1184,6 +1413,7 @@ function appendLegacyProxy(
   proxy: ProxyConfig,
   ownerConnectionId: string,
   state: ResolutionState,
+  scope: ResolutionScope,
 ): void {
   const source: NetworkPathLayerSource = {
     kind: "legacy-proxy",
@@ -1200,13 +1430,14 @@ function appendLegacyProxy(
     );
     return;
   }
-  appendProxyConfig(proxy, source, state);
+  appendProxyConfig(proxy, source, state, scope);
 }
 
 function appendProxyConfig(
   proxy: ProxyConfig,
   source: NetworkPathLayerSource,
   state: ResolutionState,
+  scope: ResolutionScope,
 ): void {
   if (!proxy.enabled) {
     addIssue(
@@ -1217,6 +1448,27 @@ function appendProxyConfig(
         ? `Proxy profile "${source.profileId}" is disabled.`
         : "Disabled proxy configuration was omitted.",
       source,
+    );
+    return;
+  }
+  if (proxy.type === "ssh") {
+    appendSshConfig(
+      "ssh-tunnel",
+      {
+        connectionId: proxy.sshConnectionId,
+        ownerDatabaseId: proxy.sshConnectionDatabaseId,
+        authMethod: proxy.sshAuthMethod,
+        host: proxy.host,
+        port: proxy.port,
+        username: proxy.username,
+        password: proxy.password,
+        privateKey: proxy.sshKeyFile,
+        passphrase: proxy.sshKeyPassphrase,
+        forwardType: "dynamic",
+      },
+      source,
+      state,
+      scope,
     );
     return;
   }
@@ -1367,6 +1619,7 @@ function sshJumpToTunnelConfig(
 ): NonNullable<TunnelChainLayer["sshTunnel"]> {
   return {
     connectionId: config.connectionId,
+    ownerDatabaseId: config.ownerDatabaseId,
     host: config.host,
     port: config.port,
     username: config.username,

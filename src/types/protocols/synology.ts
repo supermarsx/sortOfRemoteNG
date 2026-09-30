@@ -109,6 +109,8 @@ export function assertSynologyNativeRoute(
   connection: Partial<Connection>,
 ): void {
   if (
+    connection.proxyProfileId !== undefined ||
+    connection.tunnelProfileId !== undefined ||
     connection.proxyChainId ||
     connection.connectionChainId ||
     connection.tunnelChainId ||
