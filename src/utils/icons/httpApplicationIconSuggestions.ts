@@ -57,6 +57,7 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   vmware: "vmware",
   cpanel: "cpanel",
   webmin: "webmin",
+  freepbx: "freepbx",
   draytek: "draytek",
   grafana: "grafana",
   budibase: "budibase",

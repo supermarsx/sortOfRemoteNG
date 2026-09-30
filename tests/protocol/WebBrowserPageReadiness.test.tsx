@@ -99,6 +99,13 @@ const profiles = [
     protocol: "https",
     port: 443,
   },
+  {
+    id: "freepbx",
+    name: "FreePBX fixture",
+    hostname: "pbx.example.test",
+    protocol: "https",
+    port: 8443,
+  },
 ] as const;
 
 let documentSequence = 0;
@@ -245,6 +252,20 @@ describe("mounted website page readiness", () => {
     );
     // Accepting this session alone does not silently create a remembered decision.
     expect(mocks.trust).not.toHaveBeenCalled();
+  });
+
+  it("starts the FreePBX portal at /admin through the usual isolated proxy", async () => {
+    const { iframe } = await mounted(profiles[2]);
+    const config = mocks.invoke.mock.calls.find(
+      ([command]) => command === "start_basic_auth_proxy",
+    )?.[1].config;
+    expect(config).toMatchObject({
+      target_url: "https://pbx.example.test:8443/",
+      upstream_auth_mode: "none",
+      http_auto_login: true,
+    });
+    expect(new URL(iframe.src).origin).toBe(new URL(proxy.proxy_url).origin);
+    expect(new URL(iframe.src).pathname).toBe("/admin");
   });
 
   it("does not wait for optional recording startup before mounting the target document", async () => {

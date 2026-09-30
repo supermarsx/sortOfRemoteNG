@@ -11,6 +11,8 @@ type Client = {
   fetchCredsAndRun(
     nonce: string,
     selectors?: object,
+    loginFlow?: string | null,
+    readiness?: unknown,
   ): Promise<Result | undefined>;
   bootstrap(creds: Credentials, selectors?: object): Promise<Result>;
   cancel(): void;
@@ -73,17 +75,18 @@ describe("actual injected auto-login client lifecycle", () => {
     vi.useRealTimers();
   });
 
-  it("retains the private copy for delayed SPA forms, then submits once and clears the transport object", async () => {
+  it("waits for selected SPA controls before redeeming credentials, then submits once and clears the transport object", async () => {
     const pending = client.fetchCredsAndRun("fixture-nonce", selectors);
     await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+    const submit = form();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).toMatchObject({ ok: true, reason: "submitted" });
     expect(response).toEqual({
       username: null,
       password: null,
       continuation: null,
     });
-    const submit = form();
-    await vi.advanceTimersByTimeAsync(200);
-    expect(await pending).toMatchObject({ ok: true, reason: "submitted" });
     expect(input("user").value).toBe("fixture-admin");
     expect(input("pass").value).toBe("fixture-secret");
     expect(submit).toHaveBeenCalledOnce();
@@ -172,9 +175,10 @@ describe("actual injected auto-login client lifecycle", () => {
           resolve = done;
         }),
     );
-    const pending = client.fetchCredsAndRun("fixture", selectors);
-    dom.window.dispatchEvent(new dom.window.Event("pagehide"));
     const submit = form();
+    const pending = client.fetchCredsAndRun("fixture", selectors);
+    await flush();
+    dom.window.dispatchEvent(new dom.window.Event("pagehide"));
     resolve({ ok: true, json: async () => response });
     await pending;
     expect(response.password).toBeNull();
@@ -190,6 +194,7 @@ describe("actual injected auto-login client lifecycle", () => {
       });
       await vi.advanceTimersByTimeAsync(8000);
       expect(await pending).toMatchObject({ reason: "form-not-found-timeout" });
+      expect(fetchMock).not.toHaveBeenCalled();
       expect(submit).not.toHaveBeenCalled();
       expect(input("pass").value).toBe("");
     },
@@ -198,6 +203,7 @@ describe("actual injected auto-login client lifecycle", () => {
     form('action="https://other.example.test/collect"');
     const pending = client.fetchCredsAndRun("fixture", selectors);
     expect(await pending).toMatchObject({ reason: "unsafe-form-action" });
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(input("pass").value).toBe("");
     expect(
       JSON.stringify(
@@ -222,6 +228,7 @@ describe("actual injected auto-login client lifecycle", () => {
     expect(await hidden).toMatchObject({ reason: "form-not-found-timeout" });
   });
   it("sanitizes failed/malformed responses and never retries the nonce", async () => {
+    form();
     fetchMock.mockRejectedValue(new Error("fixture-secret"));
     await client.fetchCredsAndRun("fixture", selectors);
     client.fetchCredsAndRun("again", selectors);
@@ -275,7 +282,116 @@ describe("actual injected auto-login client lifecycle", () => {
     ).toEqual({ ok: false, reason: "invalid-credential-response" });
     expect(submit).not.toHaveBeenCalled();
   });
+  it("does not redeem a selected-form grant while the document is still loading", async () => {
+    Object.defineProperty(document, "readyState", {
+      configurable: true,
+      value: "loading",
+    });
+    const submit = form();
+    const pending = client.fetchCredsAndRun("fixture", selectors);
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(await pending).toMatchObject({ reason: "form-not-found-timeout" });
+    Object.defineProperty(document, "readyState", {
+      configurable: true,
+      value: "complete",
+    });
+    document.dispatchEvent(new Event("DOMContentLoaded"));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+  it("honors a longer configured readiness timeout and form selector before consuming the grant", async () => {
+    const pending = client.fetchCredsAndRun("fixture", selectors, null, {
+      detectionTimeoutMs: 30000,
+      formSelector: "form#selected",
+    });
+    const submit = form();
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(fetchMock).not.toHaveBeenCalled();
+    document.querySelector("form")!.id = "selected";
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).toMatchObject({ reason: "submitted" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(submit).toHaveBeenCalledOnce();
+  });
+  it.each([
+    null,
+    { detectionTimeoutMs: 60001 },
+    { detectionTimeoutMs: 8000, fields: [{ selector: "#x", value: "secret" }] },
+    { detectionTimeoutMs: 8000, formSelector: "[" },
+  ])(
+    "rejects invalid public readiness %j without requesting credentials",
+    async (readiness) => {
+      form();
+      expect(
+        await client.fetchCredsAndRun("fixture", selectors, null, readiness),
+      ).toMatchObject({
+        reason: "invalid-form-options",
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+  it("shares one timeout across form readiness and delayed filling", async () => {
+    Object.assign(response, {
+      formAutomation: {
+        version: 1,
+        detectionTimeoutMs: 1000,
+        fillDelayMs: 500,
+        submitDelayMs: 0,
+        submit: true,
+        fields: [],
+      },
+    });
+    const pending = client.fetchCredsAndRun("fixture", selectors, null, {
+      detectionTimeoutMs: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(600);
+    const submit = form();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).toMatchObject({ reason: "form-not-found-timeout" });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(input("user").value).toBe("");
+    expect(input("pass").value).toBe("");
+    expect(submit).not.toHaveBeenCalled();
+    expect(response.password).toBeNull();
+  });
+  it("does not consume credentials when controls appear at the deadline", async () => {
+    const pending = client.fetchCredsAndRun("fixture", selectors, null, {
+      detectionTimeoutMs: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    const submit = form();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await pending).toMatchObject({ reason: "form-not-found-timeout" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+  it("discards credentials returned after the readiness deadline without filling", async () => {
+    let resolve!: (value: unknown) => void;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const submit = form();
+    const pending = client.fetchCredsAndRun("fixture", selectors, null, {
+      detectionTimeoutMs: 1000,
+    });
+    await flush();
+    await vi.advanceTimersByTimeAsync(1200);
+    resolve({ ok: true, json: async () => response });
+    await flush();
+    expect(await pending).toMatchObject({ reason: "form-not-found-timeout" });
+    expect(input("user").value).toBe("");
+    expect(input("pass").value).toBe("");
+    expect(response.password).toBeNull();
+    expect(submit).not.toHaveBeenCalled();
+  });
   it("does not retry a spent nonce after a non-200 response", async () => {
+    form();
     fetchMock.mockResolvedValue({ ok: false, status: 403 });
     await client.fetchCredsAndRun("fixture", selectors);
     client.fetchCredsAndRun("again", selectors);

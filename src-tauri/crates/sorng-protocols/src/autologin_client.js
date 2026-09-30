@@ -59,7 +59,8 @@
     if (window.__sorng_bitwarden_login) window.__sorng_bitwarden_login.cancel();
     if (window.__sorng_synology_login) window.__sorng_synology_login.cancel();
     if (window.__sorng_yealink_login) window.__sorng_yealink_login.cancel();
-    if (window.__sorng_cloudflare_login) window.__sorng_cloudflare_login.cancel();
+    if (window.__sorng_cloudflare_login)
+      window.__sorng_cloudflare_login.cancel();
     if (fetchController) fetchController.abort();
     fetchController = null;
     if (cancelActive) cancelActive();
@@ -1136,7 +1137,13 @@
     }
   }
 
-  function bootstrapFill(creds, ov, rawOptions, readinessProfile) {
+  function bootstrapFill(
+    creds,
+    ov,
+    rawOptions,
+    readinessProfile,
+    readinessDeadline,
+  ) {
     // This promise OWNS the secret until detection finishes. Clearing it in
     // the fetch caller before a delayed SPA render used to submit null values.
     return new Promise(function (resolve) {
@@ -1189,6 +1196,14 @@
         finish({ ok: false, reason: "cancelled" });
       }
       function guarded(captured) {
+        if (
+          !finished &&
+          readinessDeadline !== undefined &&
+          Date.now() >= readinessDeadline
+        ) {
+          finish({ ok: false, reason: "form-not-found-timeout" });
+          return false;
+        }
         return (
           !finished &&
           !stopped &&
@@ -1556,9 +1571,17 @@
         function () {
           finish({ ok: false, reason: "form-not-found-timeout" });
         },
-        readinessProfile === "cpanel"
-          ? Math.max(options.detectionTimeoutMs, cpanelDetectionFloorMs)
-          : options.detectionTimeoutMs,
+        readinessDeadline !== undefined
+          ? Math.max(
+              0,
+              Math.min(
+                options.detectionTimeoutMs,
+                readinessDeadline - Date.now(),
+              ),
+            )
+          : readinessProfile === "cpanel"
+            ? Math.max(options.detectionTimeoutMs, cpanelDetectionFloorMs)
+            : options.detectionTimeoutMs,
       );
       if (stopped) {
         cancel();
@@ -1595,7 +1618,96 @@
   // ------------------------------------------------------------------------
   var AUTOLOGIN_PATH = "/__sortofremoteng_autologin";
 
-  function fetchCredsAndRun(nonce, selectors, loginFlow) {
+  function waitForSelectedLoginForm(ov, readiness) {
+    // A selector-configured application may first serve a dashboard shell and
+    // then navigate to /login (legacy Nginx Proxy Manager does exactly this).
+    // Redeeming the nonce on that shell disarms the entire session. Wait with
+    // no credentials in JS until its selected, safe form actually exists.
+    return new Promise(function (resolve) {
+      var timer = null;
+      var options;
+      try {
+        options = normalizeFormOptions();
+        if (readiness !== undefined) {
+          if (
+            !readiness ||
+            typeof readiness !== "object" ||
+            Array.isArray(readiness) ||
+            Object.keys(readiness).some(function (key) {
+              return key !== "formSelector" && key !== "detectionTimeoutMs";
+            })
+          )
+            throw new Error("invalid-form-options");
+          options.detectionTimeoutMs = readiness.detectionTimeoutMs;
+          if (readiness.formSelector !== undefined)
+            options.formSelector = readiness.formSelector;
+          options = normalizeFormOptions(options);
+        }
+      } catch (_) {
+        var invalid = { ok: false, reason: "invalid-form-options" };
+        report(invalid);
+        resolve(invalid);
+        return;
+      }
+      var deadline = Date.now() + options.detectionTimeoutMs;
+      var origin = window.location.origin;
+      var finished = false;
+      function finish(result) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        document.removeEventListener("DOMContentLoaded", tick);
+        if (cancelActive === cancel) cancelActive = null;
+        if (!result.ok) report(result);
+        resolve(result);
+      }
+      function cancel() {
+        finish({ ok: false, reason: "cancelled" });
+      }
+      function tick() {
+        if (finished) return;
+        clearTimeout(timer);
+        if (stopped || window.location.origin !== origin) {
+          cancel();
+          return;
+        }
+        if (Date.now() >= deadline) {
+          finish({ ok: false, reason: "form-not-found-timeout" });
+          return;
+        }
+        try {
+          if (document.readyState !== "loading") {
+            var target = findLoginForm(ov, options);
+            if (target) {
+              targetFingerprint(target);
+              finish({ ok: true, deadline: deadline });
+              return;
+            }
+          }
+        } catch (error) {
+          finish({
+            ok: false,
+            reason:
+              error &&
+              [
+                "unsafe-form-action",
+                "unsafe-form-method",
+                "unsafe-form-target",
+              ].indexOf(error.message) >= 0
+                ? error.message
+                : "form-fill-failed",
+          });
+          return;
+        }
+        timer = setTimeout(tick, 200);
+      }
+      cancelActive = cancel;
+      document.addEventListener("DOMContentLoaded", tick, { once: true });
+      tick();
+    });
+  }
+
+  function fetchCredsAndRun(nonce, selectors, loginFlow, readiness) {
     // Client single-shot: never fetch/fill/submit more than once per page.
     if (hasRun || stopped) return;
     hasRun = true;
@@ -1662,6 +1774,41 @@
 
     var injectedOv = normSel(selectors);
 
+    // Staged login clients and cPanel retain their reviewed lifecycle. This
+    // gate requires explicit selectors, so it never mistakes a password-less
+    // Bitwarden first step for a missing generic login form.
+    if (
+      !readinessProfile &&
+      injectedOv &&
+      (injectedOv.username || injectedOv.password || injectedOv.submit)
+    )
+      return waitForSelectedLoginForm(injectedOv, readiness).then(
+        function (result) {
+          if (!result.ok) return result;
+          if (stopped) return { ok: false, reason: "cancelled" };
+          return redeemCredentials(
+            nonce,
+            injectedOv,
+            readinessProfile,
+            result.deadline,
+          );
+        },
+      );
+
+    return redeemCredentials(nonce, injectedOv, readinessProfile);
+  }
+
+  function redeemCredentials(
+    nonce,
+    injectedOv,
+    readinessProfile,
+    readinessDeadline,
+  ) {
+    if (readinessDeadline !== undefined && Date.now() >= readinessDeadline) {
+      var expired = { ok: false, reason: "form-not-found-timeout" };
+      report(expired);
+      return expired;
+    }
     fetchController =
       typeof AbortController === "function" ? new AbortController() : null;
     return fetch(AUTOLOGIN_PATH + "?nonce=" + encodeURIComponent(nonce), {
@@ -1714,6 +1861,7 @@
             ov,
             data.formAutomation,
             readinessProfile,
+            readinessDeadline,
           );
         } finally {
           // Drop the transport object now; bootstrap owns its private copy.

@@ -116,6 +116,96 @@ describe("reviewed Google staged auto-login client", () => {
     });
   });
 
+  it.each([
+    ["pending", "pagehide"],
+    ["pending", "cancel"],
+    ["pending", "deadline"],
+    ["pending", "timeout"],
+    ["focus", "pagehide"],
+    ["focus", "cancel"],
+    ["focus", "deadline"],
+    ["input", "pagehide"],
+    ["input", "cancel"],
+    ["input", "deadline"],
+    ["focus", "button replacement"],
+    ["input", "button replacement"],
+  ])(
+    "stops identifier writes and submission on %s / %s and discards the reply",
+    async (timing, change) => {
+      install(
+        "/v3/signin/identifier",
+        '<input id="identifierId" name="identifier" type="email"><div id="identifierNext"><button type="button">Next</button></div>',
+      );
+      const field = document.querySelector<HTMLInputElement>("#identifierId")!;
+      const button = document.querySelector<HTMLButtonElement>(
+        "#identifierNext button",
+      )!;
+      const click = vi.spyOn(button, "click");
+      const replacementClick = vi.fn();
+      const reply = {
+        loginFlow: "google",
+        username: "person@example.test",
+        continuation: "a".repeat(32),
+      };
+      let resolveIdentifier!: (value: typeof reply) => void;
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: () =>
+          new Promise<typeof reply>((resolve) => {
+            resolveIdentifier = resolve;
+          }),
+      });
+      client.fetchCredsAndRun("b".repeat(32), undefined, "google");
+      await vi.advanceTimersByTimeAsync(0);
+      const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+      const changeTarget = () => {
+        if (change === "pagehide") window.dispatchEvent(new Event("pagehide"));
+        if (change === "cancel") {
+          const google = Reflect.get(window, "__sorng_google_login") as {
+            cancel(): void;
+          };
+          google.cancel();
+        }
+        // Move the clock without running the timeout poll: guards must check
+        // the deadline themselves, including inside synchronous DOM events.
+        if (change === "deadline") vi.setSystemTime(Date.now() + 30_000);
+        if (change === "button replacement") {
+          const replacement = button.cloneNode(true) as HTMLButtonElement;
+          button.replaceWith(replacement);
+          makeVisible(replacement);
+          replacement.addEventListener("click", replacementClick);
+        }
+      };
+      if (timing === "pending") {
+        if (change === "timeout") await vi.advanceTimersByTimeAsync(30_000);
+        else changeTarget();
+      } else field.addEventListener(timing, changeTarget, { once: true });
+
+      // A queued response may finish even after its request was aborted.
+      resolveIdentifier(reply);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(field.value).toBe(timing === "input" ? "person@example.test" : "");
+      expect(click).not.toHaveBeenCalled();
+      expect(replacementClick).not.toHaveBeenCalled();
+      expect(signal.aborted).toBe(true);
+      expect(reply).toEqual({
+        loginFlow: "google",
+        username: null,
+        continuation: null,
+      });
+      expect(Reflect.get(window, "__autologin_last")).toMatchObject({
+        ok: false,
+      });
+
+      history.replaceState({}, "", "/v3/signin/challenge/pwd");
+      const password = mountPassword();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(password.field.value).toBe("");
+      expect(password.click).not.toHaveBeenCalled();
+    },
+  );
+
   it("releases only the password on the exact password continuation page", async () => {
     install(
       "/v3/signin/challenge/pwd",

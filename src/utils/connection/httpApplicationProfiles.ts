@@ -12,6 +12,7 @@ import {
   googleHosted,
 } from "./hostedDashboardProfiles";
 import { ANALYTICS_CMS_PROFILES } from "./analyticsCmsProfiles";
+import { FREEPBX_ADMIN_PROFILE } from "./freepbxProfile";
 
 export interface HttpApplicationProfile {
   id: string;
@@ -134,6 +135,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   ...SELF_HOSTED_VAULT_PROFILES,
   ...HOSTED_DASHBOARD_PROFILES,
   ...ANALYTICS_CMS_PROFILES,
+  FREEPBX_ADMIN_PROFILE,
   {
     id: "generic-form",
     label: "Generic login form",

@@ -28,6 +28,8 @@ not automatically retried. Custom forms can require reviewed selector overrides.
 | MeshCentral                 | Web account login, not account reset                                       | Manual: authenticator/email/SMS challenges share controls                                                                                    |
 | Apache Guacamole            | Username/password login, reviewed against 1.6.0                            | Installed TOTP extension, already-enrolled challenge only, at `/guacamole/` or `/`                                                           |
 | First-party Google websites | Exact Google Account identifier then password pages; one-use staged grants | Exact enrolled authenticator-code page on `accounts.google.com`; account chooser, recovery, SMS, passkeys and unknown challenges stay manual |
+| Nginx Proxy Manager         | Legacy Backbone `identity`/`secret` and current React `email`/`password`   | Manual                                                                                                                                       |
+| FreePBX Administration      | FreePBX 16/17 Administration dialog at `/admin`                            | Manual: MFA, SSO, password changes and UCP are separate flows                                                                                |
 
 These are source-reviewed templates and synthetic regression fixtures, not a
 claim that every deployed version, custom theme, authentication extension, or
@@ -42,6 +44,24 @@ connection's credential or its selected application-vault credential. The
 email, password and optional TOTP code are each released only at their exact
 reviewed stage; navigation, expiry, replay or an unknown challenge closes the
 grant. Google may still refuse an embedded browser.
+
+For Nginx Proxy Manager, the login helper waits for the selected form before
+redeeming its one-use credential grant. This leaves the grant available when the
+legacy dashboard shell redirects to `/login`. It clicks the page's own Sign in
+button once; it does not bypass the website's login handler or retry a rejected
+password. Source: [legacy dashboard startup](https://github.com/NginxProxyManager/nginx-proxy-manager/blob/v2.12.4/frontend/js/app/main.js)
+and [login redirect](https://github.com/NginxProxyManager/nginx-proxy-manager/blob/v2.12.4/frontend/js/app/controller.js).
+
+For FreePBX, choose **FreePBX Administration** under **Networking / proxies**.
+The default entry is `/admin`; open the Administration login dialog to expose its
+controls. With Automatic form login enabled, the helper fills that live dialog
+and clicks **Continue**, leaving the hidden template and separate UCP user portal
+untouched. Both connection-local and selected vault credentials use the existing
+protected credential flow. MFA, SSO, password changes, UCP (`/ucp`), and older or
+customized layouts remain interactive. Source-reviewed fixtures use the
+[FreePBX admin form](https://github.com/FreePBX/framework/blob/90929231b801d865556a57875ddd25a74d283f8d/amp_conf/htdocs/admin/views/login.php)
+and [dialog handlers](https://github.com/FreePBX/framework/blob/90929231b801d865556a57875ddd25a74d283f8d/amp_conf/htdocs/admin/assets/js/script.legacy.js);
+these are not live deployment acceptance tests.
 
 For Joomla, choose the version and optional custom administrator entry path in
 Application settings; these choices never enable login or MFA. A legacy

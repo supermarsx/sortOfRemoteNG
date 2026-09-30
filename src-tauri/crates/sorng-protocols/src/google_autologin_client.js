@@ -161,6 +161,35 @@
         });
     }
 
+    function submitIdentifier(target) {
+      function checkedTarget(expectedValue) {
+        var checked = identifierTarget(helpers, expectedValue);
+        if (
+          finished ||
+          stopped ||
+          Date.now() >= deadline ||
+          !checked ||
+          checked.field !== target.field ||
+          checked.button !== target.button
+        )
+          throw new Error("changed");
+        return true;
+      }
+      helpers.fillField(
+        target.field,
+        username,
+        function () {
+          return checkedTarget();
+        },
+        function () {
+          return checkedTarget(username);
+        },
+      );
+      checkedTarget(username);
+      phase = "password";
+      target.button.click();
+    }
+
     function submitPassword(target) {
       function checkedTarget(expectedValue) {
         var checked = passwordTarget(helpers, expectedValue);
@@ -203,6 +232,9 @@
           read(nonce, false, controller)
             .then(function (reply) {
               try {
+                if (finished || stopped) return;
+                if (Date.now() >= deadline)
+                  return finish(false, "reviewed-login-timeout");
                 var current = identifierTarget(helpers);
                 if (
                   !current ||
@@ -218,26 +250,7 @@
                   throw new Error("changed");
                 username = reply.username;
                 continuation = reply.continuation;
-                helpers.fillField(
-                  identifier.field,
-                  username,
-                  function () {
-                    var checked = identifierTarget(helpers);
-                    if (!checked || checked.field !== identifier.field)
-                      throw new Error("changed");
-                    return true;
-                  },
-                  function () {
-                    var checked = identifierTarget(helpers, username);
-                    if (!checked || checked.field !== identifier.field)
-                      throw new Error("changed");
-                    return true;
-                  },
-                );
-                if (identifier.field.value !== username)
-                  throw new Error("changed");
-                phase = "password";
-                identifier.button.click();
+                submitIdentifier(identifier);
               } finally {
                 if (reply && typeof reply === "object") {
                   reply.username = null;

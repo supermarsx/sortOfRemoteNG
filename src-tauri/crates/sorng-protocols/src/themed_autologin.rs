@@ -15,9 +15,9 @@
 //!
 //! ## Why the proxy and not page-templated creds
 //!
-//! The injected HTML carries ONLY a per-page nonce (+ optional non-secret CSS
-//! selector overrides) — never the secret in served HTML. The bootstrap calls
-//! the endpoint below, which returns this session's saved `{username, password}`
+//! The injected HTML carries ONLY a per-page nonce, optional non-secret CSS
+//! selectors, and form-readiness metadata — never the secret in served HTML.
+//! The bootstrap calls the endpoint below, which returns this session's saved `{username, password}`
 //! exactly once. The secret stays in the backend session
 //! ([`crate::http::AxumProxyState`]'s `username`/`password` RwLocks) until the
 //! instant of fill.
@@ -210,6 +210,16 @@ fn build_autologin_injection_from_slots_with_flow(
     selectors: &Option<HttpAutoLoginSelectors>,
     login_flow: Option<&str>,
 ) -> Option<String> {
+    build_autologin_injection_with_readiness(armed, nonce_slot, selectors, login_flow, None)
+}
+
+fn build_autologin_injection_with_readiness(
+    armed: &AtomicBool,
+    nonce_slot: &RwLock<Option<String>>,
+    selectors: &Option<HttpAutoLoginSelectors>,
+    login_flow: Option<&str>,
+    form_options: Option<&HttpFormAutomation>,
+) -> Option<String> {
     if !armed.load(Ordering::Relaxed) {
         return None;
     }
@@ -234,7 +244,12 @@ fn build_autologin_injection_from_slots_with_flow(
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029");
 
-    Some(autologin_client_script(&nonce, &selectors_json, login_flow))
+    Some(autologin_client_script_with_readiness(
+        &nonce,
+        &selectors_json,
+        login_flow,
+        form_options,
+    ))
 }
 
 /// `&AxumProxyState` wrapper over [`build_autologin_injection_from_slots`] for
@@ -283,11 +298,12 @@ pub fn build_autologin_injection(
         .network
         .has_cpanel_login_readiness()
         .then_some("cpanel");
-    let injection = build_autologin_injection_from_slots_with_flow(
+    let injection = build_autologin_injection_with_readiness(
         &state.auto_login_armed,
         &state.auto_login_nonce,
         &state.auto_login_selectors,
         login_flow,
+        state.http_form_automation.as_ref(),
     )?;
     if state.upstream_auth_mode == crate::http::UpstreamAuthMode::BitwardenForm {
         bitwarden::bind_document(state, document_sequence)?;
@@ -311,12 +327,47 @@ pub fn build_autologin_injection(
 /// - fill + submit exactly once; never re-submit.
 ///
 /// The separately bundled full client defines
-/// `window.__sorng_autologin.fetchCredsAndRun(nonce, selectors, flow?)` (the
+/// `window.__sorng_autologin.fetchCredsAndRun(nonce, selectors, flow?, readiness?)` (the
 /// validated client routine), which this bootstrap auto-detects and defers to.
-/// Only native Synology authorization emits the fixed third argument; it asks
-/// that client to wait for reviewed account controls before reading a credential.
-/// Generic and Bitwarden dispatch remain unchanged. There is no inline fallback.
+/// Native reviewed profiles emit the fixed flow argument; generic selected-form
+/// clients receive only the public form selector and readiness timeout. There is
+/// no inline fallback that could bypass these checks.
 fn autologin_client_script(nonce: &str, selectors_json: &str, login_flow: Option<&str>) -> String {
+    autologin_client_script_with_readiness(nonce, selectors_json, login_flow, None)
+}
+
+fn autologin_client_script_with_readiness(
+    nonce: &str,
+    selectors_json: &str,
+    login_flow: Option<&str>,
+    form_options: Option<&HttpFormAutomation>,
+) -> String {
+    let flow_hint = match login_flow {
+        Some("synology") => ", 'synology'".to_string(),
+        Some("google") => ", 'google'".to_string(),
+        Some("cloudflare") => ", 'cloudflare'".to_string(),
+        Some("google-password") => ", 'google-password'".to_string(),
+        Some("cpanel") => ", 'cpanel'".to_string(),
+        Some("yealink-t20p") => ", 'yealink-t20p'".to_string(),
+        _ => form_options.map_or_else(String::new, |options| {
+            // Public readiness metadata only. Additional field VALUES and all
+            // credentials must remain in the one-use response, never in HTML.
+            let mut readiness = serde_json::json!({
+                "detectionTimeoutMs": options.detection_timeout_ms,
+            });
+            if let Some(selector) = &options.form_selector {
+                readiness["formSelector"] = selector.clone().into();
+            }
+            let json = readiness
+                .to_string()
+                .replace('&', "\\u0026")
+                .replace('<', "\\u003c")
+                .replace('>', "\\u003e")
+                .replace('\u{2028}', "\\u2028")
+                .replace('\u{2029}', "\\u2029");
+            format!(", null, {json}")
+        }),
+    };
     format!(
         r#"<script>(function(){{
 'use strict';
@@ -333,15 +384,7 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
 }})();</script>"#,
         nonce = nonce,
         selectors_json = selectors_json,
-        flow_hint = match login_flow {
-            Some("synology") => ", 'synology'",
-            Some("google") => ", 'google'",
-            Some("cloudflare") => ", 'cloudflare'",
-            Some("google-password") => ", 'google-password'",
-            Some("cpanel") => ", 'cpanel'",
-            Some("yealink-t20p") => ", 'yealink-t20p'",
-            _ => "",
-        },
+        flow_hint = flow_hint,
     )
 }
 
@@ -664,6 +707,38 @@ mod tests {
         .expect("armed cPanel form injects");
         assert!(script.contains("fetchCredsAndRun(NONCE,SEL, 'cpanel')"));
         assert!(!script.contains("password\":\""));
+    }
+
+    #[test]
+    fn selected_form_readiness_exposes_only_escaped_public_options() {
+        let options = HttpFormAutomation {
+            version: 1,
+            form_selector: Some("form[data-note=\"</script>&\"]".into()),
+            fill_delay_ms: 500,
+            submit_delay_ms: 500,
+            detection_timeout_ms: 30_000,
+            submit: true,
+            fields: vec![HttpFormField {
+                selector: "#tenant".into(),
+                value: "private-extra-field-value".into(),
+            }],
+        };
+        let script = build_autologin_injection_with_readiness(
+            &AtomicBool::new(true),
+            &RwLock::new(None),
+            &Some(selectors()),
+            None,
+            Some(&options),
+        )
+        .unwrap();
+        assert!(script.contains("fetchCredsAndRun(NONCE,SEL, null, {"));
+        assert!(script.contains("\"detectionTimeoutMs\":30000"));
+        assert!(script.contains("\"formSelector\":"));
+        assert!(script.contains("\\u003c/script\\u003e\\u0026"));
+        assert_eq!(script.matches("</script>").count(), 1);
+        assert!(!script.contains("private-extra-field-value"));
+        assert!(!script.contains("tenant"));
+        assert!(!script.contains("fillDelayMs"));
     }
 
     #[test]
