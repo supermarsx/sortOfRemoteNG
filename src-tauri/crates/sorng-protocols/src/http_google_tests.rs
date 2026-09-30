@@ -8,6 +8,221 @@ use tokio::net::TcpListener;
 
 const PRIMARY_PROXY: &str = "http://p11111111111111111111111111111111.localhost:43123";
 
+// Representative engine identities are test inputs, never production defaults.
+// Exercise the real Google sender against a loopback CONNECT/TLS peer: the
+// accounts.google.com authority below is never resolved or contacted publicly.
+async fn assert_native_accounts_identity(user_agent: &str, hints: &[(&str, &str)]) {
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+
+    async fn read_head(stream: &mut (impl AsyncRead + Unpin)) -> String {
+        let mut bytes = Vec::new();
+        while !bytes.ends_with(b"\r\n\r\n") {
+            assert!(
+                bytes.len() < 16_384,
+                "fixture request headers exceeded limit"
+            );
+            bytes.push(stream.read_u8().await.unwrap());
+        }
+        String::from_utf8(bytes).unwrap()
+    }
+
+    let cert = rcgen::generate_simple_self_signed(vec!["accounts.google.com".into()]).unwrap();
+    let der = cert.serialize_der().unwrap();
+    let tls = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(
+        vec![rustls::pki_types::CertificateDer::from(der.clone())],
+        rustls::pki_types::PrivatePkcs8KeyDer::from(cert.serialize_private_key_der()).into(),
+    )
+    .unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = reqwest::Client::builder()
+        .no_proxy()
+        .proxy(reqwest::Proxy::all(format!("http://{}", listener.local_addr().unwrap())).unwrap())
+        .add_root_certificate(reqwest::Certificate::from_der(&der).unwrap())
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let peer = tokio::spawn(async move {
+        let mut captured = Vec::new();
+        for _ in 0..2 {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            let connect = read_head(&mut tcp).await;
+            assert!(connect.starts_with("CONNECT accounts.google.com:443 HTTP/1.1\r\n"));
+            tcp.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+            let mut socket = acceptor.accept(tcp).await.unwrap();
+            let head = read_head(&mut socket).await;
+            let length = head
+                .lines()
+                .filter_map(|line| line.split_once(':'))
+                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                .map_or(0, |(_, value)| value.trim().parse::<usize>().unwrap());
+            assert!(length < 1024);
+            let mut body = vec![0; length];
+            socket.read_exact(&mut body).await.unwrap();
+            captured.push((head, body));
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK")
+                .await
+                .unwrap();
+        }
+        captured
+    });
+    let session = google::GoogleSession::new(
+        Some(ReviewedApplicationProfile::GoogleHosted),
+        &Url::parse("https://analytics.google.com/").unwrap(),
+        PRIMARY_PROXY,
+        upstream.clone(),
+        upstream,
+    )
+    .unwrap()
+    .unwrap();
+    let account = session
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == "https://accounts.google.com")
+        .unwrap();
+    let mut base = state("https://analytics.google.com");
+    Arc::get_mut(&mut base)
+        .unwrap()
+        .custom_headers
+        .insert("User-Agent".into(), "stale-custom-override/1".into());
+    let stages = [
+        (reqwest::Method::GET, "/ServiceLogin", &b""[..]),
+        (
+            reqwest::Method::POST,
+            "/v3/signin/challenge/pwd",
+            &b"fixture=password-stage-no-credentials"[..],
+        ),
+    ];
+    for (method, path, body) in &stages {
+        let mut request = Request::builder()
+            .method(method.as_str())
+            .uri(*path)
+            .header(
+                header::HOST,
+                account.proxy_origin.trim_start_matches("http://"),
+            )
+            .header(header::USER_AGENT, user_agent)
+            .header(
+                "sec-fetch-dest",
+                if *method == reqwest::Method::GET {
+                    "iframe"
+                } else {
+                    "empty"
+                },
+            )
+            .header(
+                "sec-fetch-mode",
+                if *method == reqwest::Method::GET {
+                    "navigate"
+                } else {
+                    "cors"
+                },
+            );
+        if *method == reqwest::Method::POST {
+            request = request
+                .header(header::ORIGIN, &account.proxy_origin)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+        }
+        for &(name, value) in hints {
+            request = request.header(name, value);
+        }
+        let request = request.body(Body::empty()).unwrap();
+        let scoped = session.request_state(&base, &request).unwrap();
+        assert!(
+            scoped.custom_headers.is_empty(),
+            "saved identity overrides must not reach Google"
+        );
+        let forwarded = session.request_headers(request.headers(), &scoped.target_origin);
+        let url = Url::parse(&format!("{}{path}", scoped.target_origin)).unwrap();
+        let response = session
+            .send(method, &url, &forwarded, body, true)
+            .await
+            .unwrap_or_else(|_| panic!("local native-identity request failed"));
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "OK");
+    }
+    let captured = tokio::time::timeout(std::time::Duration::from_secs(5), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    for ((head, body), (method, path, expected_body)) in captured.iter().zip(&stages) {
+        assert!(head.starts_with(&format!("{method} {path} HTTP/1.1\r\n")));
+        let fields: Vec<_> = head
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .collect();
+        let agents: Vec<_> = fields
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+            .map(|(_, value)| value.trim())
+            .collect();
+        assert_eq!(
+            agents,
+            [user_agent],
+            "native identity changed between login stages"
+        );
+        let actual_hints: BTreeMap<_, _> = fields
+            .iter()
+            .filter(|(name, _)| name.to_ascii_lowercase().starts_with("sec-ch-ua"))
+            .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_string()))
+            .collect();
+        let expected_hints: BTreeMap<_, _> = hints
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        assert_eq!(
+            actual_hints, expected_hints,
+            "do not invent or alter engine client hints"
+        );
+        assert!(!head.contains("stale-custom-override"));
+        assert!(!fields.iter().any(|(name, _)| matches!(
+            name.to_ascii_lowercase().as_str(),
+            "authorization" | "proxy-authorization" | "cookie"
+        )));
+        assert_eq!(body.as_slice(), *expected_body);
+    }
+}
+
+#[tokio::test]
+async fn accounts_native_identity_windows_webview2_navigation_and_password_post() {
+    assert_native_accounts_identity(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+        &[
+            ("sec-ch-ua", "\"Microsoft Edge\";v=\"146\", \"Chromium\";v=\"146\", \"Not_A Brand\";v=\"99\""),
+            ("sec-ch-ua-mobile", "?0"),
+            ("sec-ch-ua-platform", "\"Windows\""),
+            ("sec-ch-ua-full-version-list", "\"Microsoft Edge\";v=\"146.0.3856.59\", \"Chromium\";v=\"146.0.7680.80\", \"Not_A Brand\";v=\"99.0.0.0\""),
+        ],
+    ).await;
+}
+
+#[tokio::test]
+async fn accounts_native_identity_linux_webkitgtk_navigation_and_password_post() {
+    assert_native_accounts_identity(
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+        &[],
+    ).await;
+}
+
+#[tokio::test]
+async fn accounts_native_identity_macos_wkwebview_navigation_and_password_post() {
+    assert_native_accounts_identity(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        &[],
+    )
+    .await;
+}
+
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .no_proxy()
