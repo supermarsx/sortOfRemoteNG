@@ -12,6 +12,7 @@ import {
   EthernetPort,
   Files,
   Gauge,
+  GlobeLock,
   Headset,
   LayoutDashboard,
   MonitorCheck,
@@ -142,6 +143,19 @@ const VARIANTS = [
     "Providers folder",
     CloudCog,
     ["providers", "provider", "service providers", "cloud providers", "isp"],
+  ],
+  [
+    "folder-registrars",
+    "Registrars folder",
+    GlobeLock,
+    [
+      "registrar",
+      "registrars",
+      "domain registrar",
+      "domain registrars",
+      "domain registration",
+      "domains",
+    ],
   ],
   [
     "folder-gateways",

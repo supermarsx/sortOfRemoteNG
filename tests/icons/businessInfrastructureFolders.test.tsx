@@ -29,6 +29,7 @@ const REQUESTED = [
   ["generic machines", "folder-generic-machines"],
   ["webhosts", "folder-webhosts"],
   ["providers", "folder-providers"],
+  ["registrars", "folder-registrars"],
   ["gateways", "folder-gateways"],
   ["tunnels", "folder-tunnels"],
   ["windows", "folder-windows"],
@@ -69,12 +70,23 @@ function svg(
 
 describe("business, platform and infrastructure folder additions", () => {
   it("covers every requested collection without duplicating existing iLO", () => {
-    expect(BUSINESS_INFRASTRUCTURE_FOLDER_ICONS).toHaveLength(27);
-    expect(REQUESTED).toHaveLength(35);
+    expect(BUSINESS_INFRASTRUCTURE_FOLDER_ICONS).toHaveLength(28);
+    expect(REQUESTED).toHaveLength(36);
     for (const [, key] of REQUESTED) {
       expect(FOLDER_ICONS.filter((entry) => entry.key === key)).toHaveLength(1);
       expect(FOLDER_OPEN_ICONS[key]).toBeDefined();
     }
+  });
+
+  it.each([
+    "registrar",
+    "domain registrar",
+    "domain registrars",
+    "domain registration",
+  ])("finds the registrars folder by %s", (query) => {
+    expect(filterConnectionIcons(query).map((entry) => entry.key)).toContain(
+      "folder-registrars",
+    );
   });
 
   it.each(REQUESTED)("finds and selects the %s folder", (query, key) => {
