@@ -1,0 +1,161 @@
+import { readFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getReviewedApplicationProfile } from "../../src/utils/auth/httpApplicationLogin";
+
+const bridge = readFileSync(
+  "src-tauri/crates/sorng-protocols/src/freepbx_cookie_compat.js",
+  "utf8",
+);
+const library = readFileSync(
+  "tests/protocol/fixtures/freepbx-js-cookie-2.1.3.js",
+  "utf8",
+);
+type CookieOptions = { path?: string; domain?: string; secure?: boolean };
+type JQueryFixture = {
+  fn: { jquery: string };
+  removeCookie?: (key: string, options?: CookieOptions) => boolean;
+};
+const page = window as unknown as {
+  jQuery?: JQueryFixture;
+  Cookies?: {
+    get(key: string): string | undefined;
+    set(key: string, value: string, options?: CookieOptions): void;
+    remove(key: string, options?: CookieOptions): void;
+  };
+};
+afterEach(() => {
+  window.dispatchEvent(new Event("pagehide"));
+  delete page.jQuery;
+  delete page.Cookies;
+  document.cookie = "fixture=;path=/;max-age=0";
+  vi.restoreAllMocks();
+});
+function installLibraries(reverse = false) {
+  if (reverse) window.eval(library);
+  page.jQuery = { fn: { jquery: "3.1.1" } };
+  if (!reverse) window.eval(library);
+  return page.jQuery;
+}
+describe("reviewed FreePBX cookie API adapter", () => {
+  it.each([false, true])(
+    "installs synchronously as libraries load (Cookies first: %s)",
+    (reverse) => {
+      window.eval(bridge);
+      const jq = installLibraries(reverse);
+      expect(jq.removeCookie).toBeTypeOf("function");
+      expect(
+        Object.getOwnPropertyDescriptor(window, "jQuery")?.get,
+      ).toBeUndefined();
+      expect(
+        Object.getOwnPropertyDescriptor(window, "Cookies")?.get,
+      ).toBeUndefined();
+      expect(jq.removeCookie!("fixture", { path: "/" })).toBe(false);
+      page.Cookies!.set("fixture", "value", { path: "/" });
+      expect(jq.removeCookie!("fixture", { path: "/" })).toBe(true);
+      expect(page.Cookies!.get("fixture")).toBeUndefined();
+    },
+  );
+  it("preserves options and returns false if the cookie remains", () => {
+    const jq = installLibraries();
+    window.eval(bridge);
+    page.Cookies!.set("fixture", "value");
+    const remove = vi
+      .spyOn(page.Cookies!, "remove")
+      .mockImplementation(() => {});
+    const options = { path: "/admin", domain: "pbx.example", secure: true };
+    expect(jq.removeCookie!("fixture", options)).toBe(false);
+    expect(remove).toHaveBeenCalledExactlyOnceWith("fixture", options);
+    expect(options).toEqual({
+      path: "/admin",
+      domain: "pbx.example",
+      secure: true,
+    });
+  });
+  it("does not overwrite an existing helper", () => {
+    const jq = installLibraries();
+    const existing = vi.fn(() => false);
+    jq.removeCookie = existing;
+    window.eval(bridge);
+    expect(jq.removeCookie).toBe(existing);
+  });
+  it("releases pending global watchers on pagehide when Cookies never loads", () => {
+    window.eval(bridge);
+    const jq = { fn: { jquery: "3.1.1" } };
+    page.jQuery = jq;
+    expect(Object.getOwnPropertyDescriptor(window, "Cookies")?.get).toBeTypeOf(
+      "function",
+    );
+    window.dispatchEvent(new Event("pagehide"));
+    expect(page.jQuery).toBe(jq);
+    expect(
+      Object.getOwnPropertyDescriptor(window, "jQuery")?.get,
+    ).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(window, "Cookies")).toBeUndefined();
+    window.eval(library);
+    expect(page.jQuery?.removeCookie).toBeUndefined();
+  });
+  it("does not create cookies, fetch credentials, or perform logout on installation", () => {
+    const jq = installLibraries();
+    const remove = vi.spyOn(page.Cookies!, "remove");
+    const set = vi.spyOn(page.Cookies!, "set");
+    window.eval(bridge);
+    expect(remove).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+    expect(jq.removeCookie!("missing")).toBe(false);
+    expect(remove).not.toHaveBeenCalled();
+  });
+  it("allows the upstream 401 -> logout callback to finish without swallowing 401", () => {
+    window.eval(bridge);
+    const jq = installLibraries();
+    const getCookie = vi
+      .spyOn(page.Cookies!, "get")
+      .mockReturnValueOnce("session")
+      .mockReturnValue(undefined);
+    const remove = vi
+      .spyOn(page.Cookies!, "remove")
+      .mockImplementation(() => {});
+    const navigate = vi.fn();
+    const get = vi.fn((_url: string, callback: () => void) => callback());
+    // Reduced script.legacy.js ajaxError branch from pinned FreePBX16;
+    // only navigation is recorded instead of reloading the test document.
+    const status = 401;
+    if (status === 401) {
+      const url = "/admin/";
+      get(url + "?logout=true", () => {
+        jq.removeCookie!("PHPSESSID", { path: "/" });
+        navigate(url);
+      });
+    }
+    expect(get).toHaveBeenCalledWith(
+      "/admin/?logout=true",
+      expect.any(Function),
+    );
+    expect(remove).toHaveBeenCalledExactlyOnceWith("PHPSESSID", { path: "/" });
+    expect(getCookie).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/admin/");
+  });
+  it.each(["manual", "form"] as const)(
+    "derives the reviewed marker independently of login mode: %s",
+    (loginMode) => {
+      expect(
+        getReviewedApplicationProfile({
+          httpApplication: { version: 1, id: "freepbx", loginMode },
+        }),
+      ).toBe("freepbx");
+    },
+  );
+  it.each([undefined, "generic", "porkbun", "cpanel"])(
+    "does not select the FreePBX adapter for %s",
+    (id) => {
+      expect(
+        getReviewedApplicationProfile(
+          id
+            ? { httpApplication: { version: 1, id, loginMode: "manual" } }
+            : {},
+        ),
+      ).not.toBe("freepbx");
+      const jq = installLibraries();
+      expect(jq.removeCookie).toBeUndefined();
+    },
+  );
+});

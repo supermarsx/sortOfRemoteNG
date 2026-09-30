@@ -441,6 +441,95 @@ async fn referrer_transport_preserves_sources_across_document_redirects_and_csrf
     task.abort();
 }
 
+#[tokio::test]
+async fn freepbx_cookie_compatibility_is_early_profile_scoped_and_respects_script_policy() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = format!("http://{}/", listener.local_addr().unwrap());
+    let upstream = axum::Router::new().fallback(|| async {
+        axum::response::Html("<!doctype html><html><head><script>window.originalPageScript=true;</script></head><body>FreePBX fixture</body></html>")
+    });
+    let task = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    for (profile, armed, scripts, expected) in [
+        (
+            Some(ReviewedApplicationProfile::Freepbx),
+            false,
+            PageScripts::Allow,
+            true,
+        ),
+        (
+            Some(ReviewedApplicationProfile::Freepbx),
+            true,
+            PageScripts::Allow,
+            true,
+        ),
+        (
+            Some(ReviewedApplicationProfile::Freepbx),
+            false,
+            PageScripts::InlineOnly,
+            true,
+        ),
+        (
+            Some(ReviewedApplicationProfile::Freepbx),
+            true,
+            PageScripts::Block,
+            false,
+        ),
+        (
+            Some(ReviewedApplicationProfile::Porkbun),
+            false,
+            PageScripts::Allow,
+            false,
+        ),
+        (
+            Some(ReviewedApplicationProfile::Cpanel),
+            true,
+            PageScripts::Allow,
+            false,
+        ),
+        (None, false, PageScripts::Allow, false),
+    ] {
+        let fixture = proxy_with_policy_and_network(
+            target.clone(),
+            client(),
+            UpstreamAuthMode::None,
+            HttpProxyPolicy {
+                page_scripts: scripts,
+                ..HttpProxyPolicy::default()
+            },
+            HashMap::new(),
+            Arc::new(ProxyNetworkState::default().with_reviewed_application_profile(profile)),
+        )
+        .await;
+        fixture
+            .state
+            .auto_login_armed
+            .store(armed, Ordering::SeqCst);
+        *fixture.state.username.write().unwrap() = "fixture-user".into();
+        *fixture.state.password.write().unwrap() = "fixture-secret".into();
+        let response = fetch(&fixture, "/admin/").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let csp = response.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .to_string();
+        let body = response.text().await.unwrap();
+        assert_eq!(
+            body.contains("jq.removeCookie = function"),
+            expected,
+            "profile={profile:?}, armed={armed}"
+        );
+        assert!(!body.contains("fixture-secret"));
+        if expected {
+            assert!(
+                body.find("jq.removeCookie = function").unwrap()
+                    < body.find("window.originalPageScript").unwrap()
+            );
+            assert!(csp.contains("'unsafe-inline'"));
+        }
+    }
+    task.abort();
+}
+
 fn gzip(bytes: &[u8]) -> Vec<u8> {
     let mut writer = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     writer.write_all(bytes).unwrap();

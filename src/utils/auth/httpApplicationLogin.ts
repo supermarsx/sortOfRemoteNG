@@ -29,6 +29,7 @@ export function getReviewedApplicationProfile(
   | "cpanel"
   | "cloudflare"
   | "porkbun"
+  | "freepbx"
   | undefined {
   const settings = normalizeHttpApplicationSettings(
     connection?.httpApplication,
@@ -38,6 +39,7 @@ export function getReviewedApplicationProfile(
   if (settings.id === "cpanel") return "cpanel";
   if (settings.id === "cloudflare") return "cloudflare";
   if (settings.id === "porkbun") return "porkbun";
+  if (settings.id === "freepbx") return "freepbx";
   return getFirstPartyGoogleHostedApplicationUrl(settings.id)
     ? "google-hosted"
     : undefined;

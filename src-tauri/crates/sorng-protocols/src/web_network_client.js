@@ -1287,20 +1287,28 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
         single,
         plain,
       ) {
+        var reference = imported
+          ? (importDouble ??
+            importSingle ??
+            importPlain ??
+            quotedDouble ??
+            quotedSingle)
+          : (double ?? single ?? plain);
+        // Modernizr's multiple-background/font-face tests use url(https://).
+        // This is valid CSS syntax but an unresolvable, hostless network URL.
+        // Leave only these exact inert probes to the native CSS parser; do not
+        // exempt malformed real URLs, imports, or any network API from routing.
+        if (!imported && /^(?:https?):\/\/$/i.test(reference)) {
+          if (!active) throw blocked(kind, "document-closed");
+          return _;
+        }
         return (
           (imported || "") +
           'url("' +
-          mapUrl(
-            imported
-              ? (importDouble ??
-                  importSingle ??
-                  importPlain ??
-                  quotedDouble ??
-                  quotedSingle)
-              : (double ?? single ?? plain),
-            imported ? "stylesheet" : kind,
-            true,
-          ).replace(/"/g, "%22") +
+          mapUrl(reference, imported ? "stylesheet" : kind, true).replace(
+            /"/g,
+            "%22",
+          ) +
           '")'
         );
       },

@@ -690,6 +690,7 @@ pub enum ReviewedApplicationProfile {
     Cloudflare,
     Porkbun,
     Cpanel,
+    Freepbx,
 }
 
 pub fn same_origin_redirect_limit(profile: Option<BrowserRedirectProfile>) -> usize {
@@ -3236,6 +3237,17 @@ async fn axum_proxy_handler_inner(
                     },
                 );
                 if let Some(readiness_script) = readiness_script {
+                    // Profile-scoped API compatibility, independent of auto-login.
+                    // Install before page libraries/ready handlers; never changes auth.
+                    let freepbx_compat = if state.network.has_freepbx_cookie_compatibility() {
+                        concat!(
+                            "<script>",
+                            include_str!("freepbx_cookie_compat.js"),
+                            "</script>"
+                        )
+                    } else {
+                        ""
+                    };
                     if is_cloudflare_managed_challenge {
                         if let Some(body) =
                             proxy_response::inline_element_body(&readiness_script, "script")
@@ -3246,9 +3258,10 @@ async fn axum_proxy_handler_inner(
                     let body_str = String::from_utf8_lossy(&final_body);
                     let insertion = proxy_response::early_script_insertion(&body_str);
                     final_body = format!(
-                        "{}{}{}",
+                        "{}{}{}{}",
                         &body_str[..insertion],
                         readiness_script,
+                        freepbx_compat,
                         &body_str[insertion..]
                     )
                     .into_bytes();

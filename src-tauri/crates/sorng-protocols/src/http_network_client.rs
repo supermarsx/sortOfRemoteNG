@@ -476,6 +476,10 @@ impl ProxyNetworkState {
         self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::Cpanel)
     }
 
+    pub(crate) fn has_freepbx_cookie_compatibility(&self) -> bool {
+        self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::Freepbx)
+    }
+
     pub(super) fn permits_tactical_popup_parent(&self, sequence: u64) -> bool {
         self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::TacticalRmm)
             && self.document_is_current(sequence)
@@ -776,6 +780,29 @@ pub(super) fn content_security_policy(policy: &HttpProxyPolicy, authority: &str)
          form-action 'self'; frame-src 'self'; child-src 'self'; \
          worker-src 'none'; object-src 'none'; base-uri 'self'"
     )
+}
+
+#[cfg(test)]
+mod freepbx_cookie_compat_tests {
+    use super::ProxyNetworkState;
+    use crate::http::ReviewedApplicationProfile;
+
+    #[test]
+    fn freepbx_cookie_compatibility_requires_exact_reviewed_profile() {
+        let profile: ReviewedApplicationProfile = serde_json::from_str("\"freepbx\"").unwrap();
+        assert!(ProxyNetworkState::default()
+            .with_reviewed_application_profile(Some(profile))
+            .has_freepbx_cookie_compatibility());
+        for other in [
+            None,
+            Some(ReviewedApplicationProfile::Porkbun),
+            Some(ReviewedApplicationProfile::Cpanel),
+        ] {
+            assert!(!ProxyNetworkState::default()
+                .with_reviewed_application_profile(other)
+                .has_freepbx_cookie_compatibility());
+        }
+    }
 }
 
 /// Only non-secret immutable routing identity enters page code. Foreign
