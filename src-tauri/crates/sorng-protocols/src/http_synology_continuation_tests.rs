@@ -3,6 +3,168 @@ use reqwest::{cookie::CookieStore, Url};
 use std::sync::Mutex;
 use tokio::net::TcpListener;
 
+#[tokio::test]
+async fn directory_redirect_production_router_preserves_navigation_and_generation_proof() {
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef";
+    const STALE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    for fenced in [false, true] {
+        let fixture = fixture().await;
+        let upstream = RecordingUpstream::start_with_directory(true).await;
+        let mut state = (*fixture.state()).clone();
+        state.attempt = None;
+        state.target_origin = upstream.route.clone();
+        // Match production state: origin here, full pathname in the request.
+        state.target_url = format!("{}/", upstream.route);
+        state.redirect_profile = None;
+        state.proxy_policy = HttpProxyPolicy::default();
+        state.client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let entry =
+            format!("/sites/pbx/admin?display=index&raw=%2f+%20&__sorng_navigation_v1={TOKEN}");
+        {
+            let mut snapshot = fixture.runtime.0.write().unwrap();
+            snapshot.state = Arc::new(state);
+            snapshot.entry = fenced.then(|| entry.clone());
+            snapshot.generation = fenced.then(|| TOKEN.to_string());
+        }
+        if fenced {
+            let stale_entry = entry.replace(TOKEN, STALE);
+            assert_eq!(
+                local_request(&fixture, reqwest::Method::GET, &stale_entry)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                410
+            );
+            assert!(upstream.requests.lock().unwrap().is_empty());
+            assert!(fixture.runtime.0.read().unwrap().entry.is_some());
+        }
+        let redirect = local_request(&fixture, reqwest::Method::GET, &entry)
+            .header("Sec-Fetch-Dest", "iframe")
+            .header("Sec-Fetch-Mode", "navigate")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(redirect.status(), 301);
+        let location = redirect.headers()["location"].to_str().unwrap().to_string();
+        let url = Url::parse(&location).unwrap();
+        assert_eq!(
+            url.origin().ascii_serialization(),
+            fixture.state().proxy_origin
+        );
+        assert_eq!(url.path(), "/sites/pbx/admin/");
+        assert!(url
+            .query()
+            .unwrap()
+            .starts_with("display=index&raw=%2f+%20&"));
+        assert_eq!(
+            proxy_response::navigation_request(&format!("{}?{}", url.path(), url.query().unwrap()))
+                .1
+                .as_deref(),
+            Some(TOKEN)
+        );
+        assert_eq!(
+            generation_query(url.query()).unwrap(),
+            fenced.then_some(TOKEN)
+        );
+        assert!(redirect.headers()["set-cookie"]
+            .to_str()
+            .unwrap()
+            .contains("directory=ready"));
+        assert_eq!(redirect.headers()["cache-control"], "no-store");
+        assert_eq!(
+            redirect.headers()["referrer-policy"],
+            if fenced { "same-origin" } else { "no-referrer" }
+        );
+
+        if fenced {
+            // No source Referer is required for the valid redirect. Conversely,
+            // current referrer/query proof cannot rescue an explicitly stale one.
+            for path in [
+                "/sites/pbx/admin/?display=index".to_string(),
+                location.replace(
+                    &format!("__sorng_generation_v1={TOKEN}"),
+                    &format!("__sorng_generation_v1={STALE}"),
+                ),
+                location.replace(
+                    &format!("__sorng_navigation_v1={TOKEN}"),
+                    &format!("__sorng_navigation_v1={STALE}"),
+                ),
+            ] {
+                let response = local_request(&fixture, reqwest::Method::GET, &path)
+                    .header("Sec-Fetch-Dest", "iframe")
+                    .header("Sec-Fetch-Mode", "navigate")
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 410);
+            }
+            let stale = location.replace(
+                &format!("__sorng_generation_v1={TOKEN}"),
+                &format!("__sorng_generation_v1={STALE}"),
+            );
+            assert_eq!(
+                local_request(&fixture, reqwest::Method::GET, &stale)
+                    .header("referer", &location)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                410
+            );
+            assert_eq!(upstream.requests.lock().unwrap().len(), 1);
+        }
+
+        let page = local_request(&fixture, reqwest::Method::GET, &location)
+            .header("Sec-Fetch-Dest", "iframe")
+            .header("Sec-Fetch-Mode", "navigate")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(page.status(), 200);
+        let html = page.text().await.unwrap();
+        assert!(
+            html.contains(&format!(r#""navigationToken":"{TOKEN}""#)),
+            "{html}"
+        );
+        let requests = upstream.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            assert!(!request.uri.contains("__sorng"), "{}", request.uri);
+            assert!(request.uri.contains("display=index&raw=%2f+%20"));
+        }
+    }
+}
+
+#[test]
+fn directory_redirect_proof_never_stamps_foreign_or_noncanonical_locations() {
+    let origin = "http://protected.localhost:9000";
+    let source = "/sites/pbx/admin?__sorng_navigation_v1=0123456789abcdef0123456789abcdef";
+    for destination in [
+        "http://unapproved.invalid/sites/pbx/admin/",
+        "//unapproved.invalid/sites/pbx/admin/",
+        "http://protected.localhost:9000/other/",
+        "http://protected.localhost:9000/sites/pbx/admin/?changed=1",
+    ] {
+        let mut response = axum::http::Response::builder()
+            .status(301)
+            .header("location", destination)
+            .body(axum::body::Body::empty())
+            .unwrap();
+        preserve_directory_redirect_proof(
+            &mut response,
+            source,
+            origin,
+            Some("0123456789abcdef0123456789abcdef"),
+        );
+        assert_eq!(response.headers()["location"], destination);
+    }
+}
+
 const ORIGINAL: &str = "https://example.fr3.quickconnect.to/";
 const HTTP: &str = "http://example.quickconnect.to/";
 const HTTPS: &str = "https://example.quickconnect.to/";
@@ -635,6 +797,10 @@ impl Drop for RecordingUpstream {
 
 impl RecordingUpstream {
     async fn start() -> Self {
+        Self::start_with_directory(false).await
+    }
+
+    async fn start_with_directory(directory: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let route = format!("http://{}", listener.local_addr().unwrap());
         let requests = Arc::new(Mutex::new(Vec::new()));
@@ -644,6 +810,8 @@ impl RecordingUpstream {
             async move {
                 let (parts, body) = request.into_parts();
                 let body = axum::body::to_bytes(body, 65536).await.unwrap();
+                let canonical = directory && parts.uri.path() == "/sites/pbx/admin";
+                let directory_query = parts.uri.query().map(|value| value.to_string());
                 let (content_type, body_text) = match parts.uri.path() {
                     "/site.css" => ("text/css", "body{background:url('/image.png')}"),
                     "/image.png" => ("image/png", "synthetic image"),
@@ -654,6 +822,14 @@ impl RecordingUpstream {
                 records.lock().unwrap().push(UpstreamRequest {
                     method: parts.method, uri: parts.uri.to_string(), headers: parts.headers, body: body.to_vec(),
                 });
+                if canonical {
+                    let location = format!("/sites/pbx/admin/{}", directory_query.map_or(String::new(), |query| format!("?{query}")));
+                    return axum::http::Response::builder().status(301)
+                        .header("location", location)
+                        .header("set-cookie", "directory=ready; Path=/sites/pbx/; HttpOnly")
+                        .header("referrer-policy", "no-referrer")
+                        .body(axum::body::Body::empty()).unwrap();
+                }
                 axum::http::Response::builder().header("content-type", content_type)
                     .body(axum::body::Body::from(body_text)).unwrap()
             }

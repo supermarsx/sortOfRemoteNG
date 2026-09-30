@@ -8,6 +8,8 @@ mod cloudflare_tests;
 mod cpanel_post_tests;
 #[path = "http_dark_mode_tests.rs"]
 mod dark_mode_tests;
+#[path = "http_directory_redirect_tests.rs"]
+mod directory_redirect_tests;
 #[path = "http_external_font_tests.rs"]
 mod external_font_tests;
 #[path = "http_font_asset_tests.rs"]

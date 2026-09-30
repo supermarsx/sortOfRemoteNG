@@ -608,6 +608,30 @@ async fn send_inner(
             // bypass native redirect deadlines with a browser-follow loop.
             return Err(UpstreamError::Policy("The server changed cookies with ambiguous browser path scopes. Clear session cookies and retry. No further request was sent."));
         }
+        // A directory redirect changes the browser's relative-URL base. If we
+        // consume it here, /admin serves /admin/ HTML while assets/x still
+        // resolves to /assets/x. Preserve only this monotonic, first-hop
+        // canonicalization; other redirects retain the native hop budget.
+        if redirect == 0
+            && !tactical_api_request
+            && matches!(method, reqwest::Method::GET | reqwest::Method::HEAD)
+            && !url.path().ends_with('/')
+            && next.path() == format!("{}/", url.path())
+            && next.query() == url.query()
+            && next.fragment().is_none()
+        {
+            let mut local = reqwest::Url::parse(&state.proxy_origin)
+                .map_err(|_| UpstreamError::Policy("Invalid proxy origin."))?;
+            local.set_path(next.path());
+            local.set_query(next.query());
+            let location = reqwest::header::HeaderValue::from_str(local.as_str())
+                .map_err(|_| UpstreamError::Policy("Invalid local redirect."))?;
+            cookie_overlay.synchronize_browser(&mut response)?;
+            response
+                .headers_mut()
+                .insert(reqwest::header::LOCATION, location);
+            return Ok(response);
+        }
         if (status == reqwest::StatusCode::SEE_OTHER && method != reqwest::Method::HEAD)
             || (matches!(status.as_u16(), 301 | 302) && method == reqwest::Method::POST)
         {

@@ -161,6 +161,15 @@ fn admits_generation(request: &Request, state: &AxumProxyState, token: &str) -> 
     if query.is_some_and(|value| value != token) {
         return false;
     }
+    let (_, navigation) = proxy_response::navigation_request(
+        request
+            .uri()
+            .path_and_query()
+            .map_or("/", |value| value.as_str()),
+    );
+    if navigation.as_deref().is_some_and(|value| value != token) {
+        return false;
+    }
     let mut proved = query == Some(token);
     let mut referrers = request.headers().get_all("referer").iter();
     if let Some(value) = referrers.next() {
@@ -287,6 +296,67 @@ history.replaceState(history.state,'',stamp(location.href));
     axum::http::Response::from_parts(parts, axum::body::Body::from(stamped))
 }
 
+/// Carry only already-admitted local proof across the upstream's directory
+/// canonicalization. Never stamp foreign redirects or infer proof from Location.
+fn preserve_directory_redirect_proof(
+    response: &mut axum::response::Response,
+    source: &str,
+    proxy_origin: &str,
+    generation: Option<&str>,
+) {
+    if !matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
+        return;
+    }
+    let (clean_source, navigation) = proxy_response::navigation_request(source);
+    if generation.is_none() && navigation.is_none() {
+        return;
+    }
+    let Ok(source) = reqwest::Url::parse(&format!("{proxy_origin}{clean_source}")) else {
+        return;
+    };
+    let Some(mut destination) = response
+        .headers()
+        .get("location")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| reqwest::Url::parse(value).ok())
+    else {
+        return;
+    };
+    if destination.origin() != source.origin()
+        || !destination.username().is_empty()
+        || destination.password().is_some()
+        || source.path().ends_with('/')
+        || destination.path() != format!("{}/", source.path())
+        || destination.query() != source.query()
+        || destination.fragment().is_some()
+    {
+        return;
+    }
+    // Keep application query encoding/order intact, just append local markers.
+    let mut query = destination.query().unwrap_or_default().to_string();
+    for (name, value) in [
+        (GENERATION_MARKER, generation),
+        ("__sorng_navigation_v1", navigation.as_deref()),
+    ] {
+        if let Some(value) = value {
+            if !query.is_empty() {
+                query.push('&');
+            }
+            query.push_str(name);
+            query.push('=');
+            query.push_str(value);
+        }
+    }
+    destination.set_query(Some(&query));
+    if let Ok(value) = axum::http::HeaderValue::from_str(destination.as_str()) {
+        response.headers_mut().insert("location", value);
+        response.headers_mut().insert(
+            "cache-control",
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+    }
+}
+
 async fn dispatch(
     State(runtime): State<Arc<ProxySessionRuntime>>,
     mut request: Request,
@@ -389,6 +459,17 @@ async fn dispatch(
         (state, None)
     };
     request.extensions_mut().insert(state.clone());
+    let directory_source = matches!(
+        *request.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD
+    )
+    .then(|| {
+        request
+            .uri()
+            .path_and_query()
+            .map_or("/", |value| value.as_str())
+            .to_string()
+    });
     // Explicit stops cancel in-flight work immediately. Listener replacement
     // first closes admission and gives already-dispatched requests a bounded
     // opportunity to apply response cookies before retiring the network.
@@ -405,7 +486,15 @@ async fn dispatch(
                     .await
                     .unwrap_or_else(|_| gone());
             }
-            let response = enforce_proxy_access(State(state.clone()), request, next).await;
+            let mut response = enforce_proxy_access(State(state.clone()), request, next).await;
+            if let Some(source) = directory_source {
+                preserve_directory_redirect_proof(
+                    &mut response,
+                    &source,
+                    &state.proxy_origin,
+                    generation.as_deref(),
+                );
+            }
             match generation {
                 Some(token) => fence_response(response, &token).await,
                 None => response,
