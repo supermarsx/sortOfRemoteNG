@@ -95,7 +95,21 @@ function archive(): DatabaseVaultArchive {
 beforeEach(() => vi.stubGlobal("crypto", webcrypto));
 afterEach(() => vi.unstubAllGlobals());
 describe("encrypted credential vault archives", () => {
+  it.each(["", null, false, 0, [], {}])(
+    "rejects malformed direct profile declarations %j",
+    (id) => {
+      for (const key of ["proxyProfileId", "tunnelProfileId"]) {
+        const source = archive();
+        Object.assign(source.connections[0], { [key]: id });
+        expect(() => normalizeDatabaseVaultArchive(source)).toThrow(
+          "external route",
+        );
+      }
+    },
+  );
   it.each([
+    "sshConnectionDatabaseId",
+    "ownerDatabaseId",
     "tunnelProfileId",
     "credentialRefId",
     "credentialRefIds",
@@ -108,6 +122,41 @@ describe("encrypted credential vault archives", () => {
     Object.assign(source.connections[0], {
       [key]: key === "credentialRefIds" ? { password: "foreign" } : "foreign",
     });
+    expect(() => normalizeDatabaseVaultArchive(source)).toThrow(
+      "external route",
+    );
+  });
+  it("remaps bundle-local SSH references and rejects missing or database-owned sources", () => {
+    const source = archive();
+    source.connections.push({
+      ...source.connections[0],
+      id: "ssh-source",
+      protocol: "ssh",
+    });
+    const proxy = {
+      type: "ssh" as const,
+      enabled: true,
+      host: "",
+      port: 22,
+      sshConnectionId: "ssh-source",
+      sshConnectionDatabaseId: undefined as string | undefined,
+    };
+    source.connections[0].security = { proxy };
+    const imported = prepareVaultArchiveImport(
+      [],
+      { version: 1, revision: 0, entries: [] },
+      source,
+    );
+    expect(imported.connections[0].security?.proxy?.sshConnectionId).toBe(
+      imported.connections[1].id,
+    );
+    expect(imported.connections[1].id).not.toBe("ssh-source");
+    proxy.sshConnectionDatabaseId = "foreign-db";
+    expect(() => normalizeDatabaseVaultArchive(source)).toThrow(
+      "external route",
+    );
+    proxy.sshConnectionDatabaseId = undefined;
+    source.connections.pop();
     expect(() => normalizeDatabaseVaultArchive(source)).toThrow(
       "external route",
     );

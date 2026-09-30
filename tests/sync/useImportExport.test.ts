@@ -242,6 +242,10 @@ const mockGetTunnelChains = vi.fn().mockReturnValue([]);
 const mockGetTunnelChain = vi.fn();
 const mockCreateTunnelChain = vi.fn().mockResolvedValue({ id: "tc-1" });
 const mockGetProfiles = vi.fn().mockReturnValue([]);
+const mockGetTunnelProfiles = vi.fn().mockReturnValue([]);
+const mockCreateTunnelProfile = vi
+  .fn()
+  .mockResolvedValue({ id: "tunnel-profile-new" });
 const mockGetProfile = vi.fn();
 const mockCreateProfile = vi.fn().mockResolvedValue({ id: "profile-cloned" });
 const mockGetChains = vi.fn().mockReturnValue([]);
@@ -253,6 +257,9 @@ vi.mock("../../src/utils/connection/proxyCollectionManager", () => ({
     getTunnelChains: (...args: unknown[]) => mockGetTunnelChains(...args),
     getTunnelChain: (...args: unknown[]) => mockGetTunnelChain(...args),
     getProfiles: (...args: unknown[]) => mockGetProfiles(...args),
+    getTunnelProfiles: (...args: unknown[]) => mockGetTunnelProfiles(...args),
+    createTunnelProfile: (...args: unknown[]) =>
+      mockCreateTunnelProfile(...args),
     getProfile: (...args: unknown[]) => mockGetProfile(...args),
     createProfile: (...args: unknown[]) => mockCreateProfile(...args),
     getChains: (...args: unknown[]) => mockGetChains(...args),
@@ -347,6 +354,559 @@ async function getLastDownloadedText() {
 }
 
 // Stub downloadFile's DOM interactions
+const directProxy = {
+  id: "direct-proxy",
+  name: "Direct proxy",
+  config: {
+    type: "socks5",
+    enabled: true,
+    host: "proxy.example",
+    port: 1080,
+    password: "PROFILE_SECRET",
+  },
+};
+const directTunnel = {
+  id: "direct-tunnel",
+  name: "Direct tunnel",
+  type: "proxy",
+  config: {
+    id: "layer",
+    type: "proxy",
+    enabled: true,
+    proxy: {
+      proxyType: "socks5",
+      host: "tunnel.example",
+      port: 1080,
+      password: "TUNNEL_SECRET",
+    },
+  },
+};
+
+describe("direct network profile portability", () => {
+  const importDirectFixture = async (
+    connection: Connection,
+    sidecars: Record<string, unknown>,
+    includeCredentials = false,
+  ) => {
+    mockImportConnections.mockReset().mockResolvedValue([connection]);
+    const view = renderImportExport();
+    await act(async () => {
+      await view.result.current.handleFileSelect({
+        target: {
+          files: [
+            new File(
+              [JSON.stringify({ connections: [connection], ...sidecars })],
+              "direct.json",
+            ),
+          ],
+        },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    act(() =>
+      view.result.current.updateImportOptions({
+        includeTunnelChains: true,
+        includeCredentials,
+      }),
+    );
+    await act(async () => {
+      await view.result.current.confirmImport();
+    });
+    mockImportConnections.mockReset().mockResolvedValue([]);
+    return view;
+  };
+  const expectNoDirectWrites = () => {
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockAppendConnectionsToDatabase).not.toHaveBeenCalled();
+    expect(mockCreateProfile).not.toHaveBeenCalled();
+    expect(mockCreateTunnelProfile).not.toHaveBeenCalled();
+  };
+
+  it.each([
+    "",
+    "   ",
+    null,
+    false,
+    0,
+    [],
+    {},
+    "https://u:synthetic@example.invalid",
+  ])(
+    "rejects malformed/redactable direct references before import normalization: %j",
+    async (id) => {
+      for (const key of ["proxyProfileId", "tunnelProfileId"] as const) {
+        for (const includeCredentials of [false, true]) {
+          const connection = {
+            ...mockConnections[1],
+            [key]: id,
+          } as unknown as Connection;
+          const { result, unmount } = await importDirectFixture(
+            connection,
+            {},
+            includeCredentials,
+          );
+          expect(result.current.importResult?.success).toBe(false);
+          expect(result.current.importResult?.errors.join(" ")).toContain(
+            "direct network profile",
+          );
+          expectNoDirectWrites();
+          unmount();
+        }
+      }
+    },
+  );
+
+  it.each([
+    ["array", []],
+    ["empty", {}],
+    ["type", { ...directProxy.config, type: "foreign" }],
+    ["enabled", { ...directProxy.config, enabled: "yes" }],
+    ["host", { ...directProxy.config, host: " " }],
+    ["port-string", { ...directProxy.config, port: "1080" }],
+    ["port-zero", { ...directProxy.config, port: 0 }],
+    ["port-range", { ...directProxy.config, port: 65536 }],
+    ["port-fraction", { ...directProxy.config, port: 1.5 }],
+    [
+      "ssh-auth",
+      { ...directProxy.config, type: "ssh", sshAuthMethod: "agent" },
+    ],
+    [
+      "empty-ssh-ref",
+      { ...directProxy.config, type: "ssh", sshConnectionId: "" },
+    ],
+    [
+      "redacted-host",
+      { ...directProxy.config, host: "https://u:synthetic@example.invalid" },
+    ],
+  ])(
+    "rejects malformed proxy config (%s) before creating profiles",
+    async (_kind, config) => {
+      await importDirectFixture(
+        { ...mockConnections[1], proxyProfileId: directProxy.id },
+        { proxyProfiles: [{ ...directProxy, config }] },
+      );
+      expectNoDirectWrites();
+      expect(mockToast.error).toHaveBeenCalledWith(
+        expect.stringContaining("direct network profile"),
+      );
+    },
+  );
+
+  it.each([
+    ["array", []],
+    ["empty", {}],
+    ["layer-id", { ...directTunnel.config, id: "" }],
+    ["enabled", { ...directTunnel.config, enabled: null }],
+    ["mismatched-type", { ...directTunnel.config, type: "ssh-tunnel" }],
+    ["missing-proxy", { ...directTunnel.config, proxy: undefined }],
+    [
+      "proxy-type",
+      {
+        ...directTunnel.config,
+        proxy: { ...directTunnel.config.proxy, proxyType: "foreign" },
+      },
+    ],
+    [
+      "proxy-port",
+      {
+        ...directTunnel.config,
+        proxy: { ...directTunnel.config.proxy, port: -1 },
+      },
+    ],
+    [
+      "redacted-host",
+      {
+        ...directTunnel.config,
+        proxy: {
+          ...directTunnel.config.proxy,
+          host: "https://u:synthetic@example.invalid",
+        },
+      },
+    ],
+    [
+      "redacted-layer-id",
+      { ...directTunnel.config, id: "https://u:synthetic@example.invalid" },
+    ],
+  ])(
+    "rejects malformed tunnel config (%s) before any profile writes",
+    async (_kind, config) => {
+      await importDirectFixture(
+        {
+          ...mockConnections[1],
+          proxyProfileId: directProxy.id,
+          tunnelProfileId: directTunnel.id,
+        },
+        {
+          proxyProfiles: [directProxy],
+          tunnelProfiles: [{ ...directTunnel, config }],
+        },
+      );
+      expectNoDirectWrites();
+      expect(mockToast.error).toHaveBeenCalledWith(
+        expect.stringContaining("direct network profile"),
+      );
+    },
+  );
+
+  it.each(["ssh", "ssh-tunnel", "stunnel"])(
+    "keeps valid standalone %s routes with secret-free configs",
+    async (type) => {
+      const proxy = type === "ssh";
+      const profile = proxy
+        ? {
+            ...directProxy,
+            config: { ...directProxy.config, type, sshAuthMethod: "password" },
+          }
+        : {
+            ...directTunnel,
+            type,
+            config: {
+              id: "layer",
+              type,
+              enabled: true,
+              ...(type === "ssh-tunnel"
+                ? {
+                    sshTunnel: {
+                      host: "ssh.example",
+                      port: 22,
+                      forwardType: "dynamic",
+                      password: "SSH_SECRET",
+                    },
+                  }
+                : { tunnel: { serverUrl: "https://tunnel.example" } }),
+            },
+          };
+      await importDirectFixture(
+        {
+          ...mockConnections[1],
+          [proxy ? "proxyProfileId" : "tunnelProfileId"]: profile.id,
+        },
+        { [proxy ? "proxyProfiles" : "tunnelProfiles"]: [profile] },
+      );
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: "ADD_CONNECTION",
+        payload: expect.objectContaining({
+          [proxy ? "proxyProfileId" : "tunnelProfileId"]: proxy
+            ? "profile-cloned"
+            : "tunnel-profile-new",
+        }),
+      });
+      expect(
+        JSON.stringify([
+          ...mockCreateProfile.mock.calls,
+          ...mockCreateTunnelProfile.mock.calls,
+        ]),
+      ).not.toMatch(/PROFILE_SECRET|SSH_SECRET/);
+    },
+  );
+
+  it.each([null, "", "https://u:synthetic@example.invalid"])(
+    "blocks malformed/redactable export refs without saving: %j",
+    async (id) => {
+      for (const key of ["proxyProfileId", "tunnelProfileId"] as const) {
+        Object.assign(mockConnections[0], { [key]: id });
+        try {
+          const { result, unmount } = renderImportExport();
+          act(() =>
+            result.current.updateExportInclusion({
+              includeCredentials: false,
+              includeTunnelChains: true,
+            }),
+          );
+          await act(async () => {
+            await result.current.handleExport();
+          });
+          expect(fileMocks.save).not.toHaveBeenCalled();
+          expect(mockToast.error).toHaveBeenCalledWith(
+            expect.stringContaining("direct network profile"),
+          );
+          unmount();
+        } finally {
+          delete mockConnections[0][key];
+        }
+      }
+    },
+  );
+
+  it("blocks export if sidecar destination is removed by redaction", async () => {
+    mockConnections[0].proxyProfileId = directProxy.id;
+    mockGetProfiles.mockReturnValue([
+      {
+        ...directProxy,
+        config: {
+          ...directProxy.config,
+          host: "https://u:synthetic@example.invalid",
+        },
+      },
+    ]);
+    try {
+      const { result } = renderImportExport();
+      act(() =>
+        result.current.updateExportInclusion({
+          includeCredentials: false,
+          includeTunnelChains: true,
+        }),
+      );
+      await act(async () => {
+        await result.current.handleExport();
+      });
+      expect(fileMocks.save).not.toHaveBeenCalled();
+      expect(mockToast.error).toHaveBeenCalledWith(
+        expect.stringContaining("direct network profile"),
+      );
+    } finally {
+      delete mockConnections[0].proxyProfileId;
+    }
+  });
+
+  it.each([
+    "mapped",
+    "missing",
+    "failed-create",
+    "malformed-ref",
+    "redacted-id",
+    "redacted-host",
+  ])(
+    "clones direct profiles with fresh IDs or stops safely (%s)",
+    async (kind) => {
+      mockGetExportableDatabases.mockResolvedValue([
+        {
+          id: "col-1",
+          name: "Source",
+          isEncrypted: false,
+          isCurrent: true,
+          isUnlocked: true,
+          isExportable: true,
+        },
+        {
+          id: "col-2",
+          name: "Target",
+          isEncrypted: false,
+          isCurrent: false,
+          isUnlocked: true,
+          isExportable: true,
+        },
+      ]);
+      mockConnections[0].proxyProfileId = directProxy.id;
+      mockConnections[0].tunnelProfileId = directTunnel.id;
+      if (kind === "malformed-ref")
+        Object.assign(mockConnections[0], { proxyProfileId: null });
+      if (kind === "redacted-id")
+        mockConnections[0].proxyProfileId =
+          "https://u:synthetic@example.invalid";
+      mockGetProfiles.mockReturnValue(kind === "missing" ? [] : [directProxy]);
+      if (kind === "redacted-host")
+        mockGetProfiles.mockReturnValue([
+          {
+            ...directProxy,
+            config: {
+              ...directProxy.config,
+              host: "https://u:synthetic@example.invalid",
+            },
+          },
+        ]);
+      mockGetTunnelProfiles.mockReturnValue([directTunnel]);
+      if (kind === "failed-create")
+        mockCreateProfile.mockRejectedValueOnce(new Error("Fixture failure"));
+      try {
+        const { result } = renderImportExport({ initialTab: "clone" });
+        await act(async () => {});
+        act(() => {
+          result.current.setCloneTargetDatabaseIds(["col-2"]);
+          result.current.setCloneIncludeCredentials(false);
+          result.current.updateCloneInclusion({ includeTunnelChains: true });
+        });
+        await act(async () => {
+          await result.current.handleClone();
+        });
+        if (kind === "mapped") {
+          expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
+            "col-2",
+            expect.arrayContaining([
+              expect.objectContaining({
+                proxyProfileId: "profile-cloned",
+                tunnelProfileId: "tunnel-profile-new",
+              }),
+            ]),
+            expect.anything(),
+          );
+          expect(JSON.stringify(mockCreateProfile.mock.calls)).not.toContain(
+            "PROFILE_SECRET",
+          );
+          expect(
+            JSON.stringify(mockCreateTunnelProfile.mock.calls),
+          ).not.toContain("TUNNEL_SECRET");
+        } else {
+          expect(mockAppendConnectionsToDatabase).not.toHaveBeenCalled();
+          expect(mockDispatch).not.toHaveBeenCalled();
+          expect(mockToast.error).toHaveBeenCalledWith(
+            expect.stringContaining("direct network profile"),
+          );
+        }
+      } finally {
+        delete mockConnections[0].proxyProfileId;
+        delete mockConnections[0].tunnelProfileId;
+      }
+    },
+  );
+
+  it("exports referenced catalogs without secrets, then imports fresh IDs", async () => {
+    const restoreBlob = stubReadableBlob();
+    mockConnections[0].proxyProfileId = directProxy.id;
+    mockConnections[0].tunnelProfileId = directTunnel.id;
+    mockGetProfiles.mockReturnValue([directProxy]);
+    mockGetTunnelProfiles.mockReturnValue([directTunnel]);
+    try {
+      const { result } = renderImportExport();
+      act(() =>
+        result.current.updateExportInclusion({
+          includeTunnelChains: true,
+          includeCredentials: false,
+        }),
+      );
+      await act(async () => {
+        await result.current.handleExport();
+      });
+      const { text } = await getLastDownloadedText();
+      const payload = JSON.parse(text);
+      expect(payload.proxyProfiles[0].id).toBe(directProxy.id);
+      expect(payload.tunnelProfiles[0].id).toBe(directTunnel.id);
+      expect(payload.connections[0]).toMatchObject({
+        proxyProfileId: directProxy.id,
+        tunnelProfileId: directTunnel.id,
+      });
+      expect(text).not.toMatch(/PROFILE_SECRET|TUNNEL_SECRET/);
+      mockImportConnections.mockResolvedValueOnce(payload.connections);
+      restoreBlob();
+      await act(async () => {
+        await result.current.handleFileSelect({
+          target: { files: [new File([text], "profiles.json")] },
+        } as unknown as React.ChangeEvent<HTMLInputElement>);
+      });
+      act(() =>
+        result.current.updateImportOptions({
+          includeTunnelChains: true,
+          includeCredentials: false,
+        }),
+      );
+      await act(async () => {
+        await result.current.confirmImport();
+      });
+      expect(mockCreateProfile).toHaveBeenCalledTimes(1);
+      expect(mockCreateTunnelProfile).toHaveBeenCalledTimes(1);
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: "ADD_CONNECTION",
+        payload: expect.objectContaining({
+          proxyProfileId: "profile-cloned",
+          tunnelProfileId: "tunnel-profile-new",
+        }),
+      });
+      expect(JSON.stringify(mockCreateProfile.mock.calls)).not.toContain(
+        "PROFILE_SECRET",
+      );
+      expect(JSON.stringify(mockCreateTunnelProfile.mock.calls)).not.toContain(
+        "TUNNEL_SECRET",
+      );
+    } finally {
+      delete mockConnections[0].proxyProfileId;
+      delete mockConnections[0].tunnelProfileId;
+      restoreBlob();
+    }
+  });
+
+  it.each(["missing", "excluded", "duplicate", "owned-ssh", "tunnel-missing"])(
+    "blocks %s direct profile import before any writes",
+    async (kind) => {
+      const connection = {
+        ...mockConnections[1],
+        proxyProfileId: directProxy.id,
+        ...(kind === "tunnel-missing"
+          ? { tunnelProfileId: directTunnel.id }
+          : {}),
+      };
+      const profiles =
+        kind === "missing"
+          ? []
+          : kind === "duplicate"
+            ? [directProxy, directProxy]
+            : [
+                {
+                  ...directProxy,
+                  config: {
+                    ...directProxy.config,
+                    ...(kind === "owned-ssh"
+                      ? {
+                          sshConnectionId: "same-id",
+                          sshConnectionDatabaseId: "other-db",
+                        }
+                      : {}),
+                  },
+                },
+              ];
+      mockGetProfiles.mockReturnValue([directProxy]); // Same destination ID must not be reused.
+      mockImportConnections.mockResolvedValueOnce([connection]);
+      const { result } = renderImportExport();
+      await act(async () => {
+        await result.current.handleFileSelect({
+          target: {
+            files: [
+              new File(
+                [
+                  JSON.stringify({
+                    connections: [connection],
+                    proxyProfiles: profiles,
+                  }),
+                ],
+                "profiles.json",
+              ),
+            ],
+          },
+        } as unknown as React.ChangeEvent<HTMLInputElement>);
+      });
+      act(() =>
+        result.current.updateImportOptions({
+          includeTunnelChains: kind !== "excluded",
+        }),
+      );
+      await act(async () => {
+        await result.current.confirmImport();
+      });
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(mockAppendConnectionsToDatabase).not.toHaveBeenCalled();
+      expect(mockCreateProfile).not.toHaveBeenCalled();
+      expect(mockCreateTunnelProfile).not.toHaveBeenCalled();
+      expect(mockToast.error).toHaveBeenCalledWith(
+        expect.stringContaining("direct network profile"),
+      );
+    },
+  );
+
+  it.each(["missing", "excluded", "format"])(
+    "blocks %s direct profile export rather than losing the route",
+    async (kind) => {
+      mockConnections[0].proxyProfileId = directProxy.id;
+      mockGetProfiles.mockReturnValue(kind === "missing" ? [] : [directProxy]);
+      try {
+        const { result } = renderImportExport();
+        act(() => {
+          result.current.updateExportInclusion({
+            includeTunnelChains: true,
+            includedProxyProfileIds:
+              kind === "excluded" ? ["other-profile"] : [],
+          });
+          if (kind === "format") result.current.setExportFormat("xml");
+        });
+        await act(async () => {
+          await result.current.handleExport();
+        });
+        expect(fileMocks.save).not.toHaveBeenCalled();
+        expect(mockToast.error).toHaveBeenCalled();
+      } finally {
+        delete mockConnections[0].proxyProfileId;
+      }
+    },
+  );
+});
+
 beforeEach(() => {
   mockAccessGeneration = 1;
   mockAccessEpoch = 1;
@@ -419,6 +979,10 @@ beforeEach(() => {
   mockCreateTunnelChain.mockReset();
   mockCreateTunnelChain.mockResolvedValue({ id: "tc-1" });
   mockGetProfiles.mockReset();
+  mockGetTunnelProfiles.mockReset().mockReturnValue([]);
+  mockCreateTunnelProfile
+    .mockReset()
+    .mockResolvedValue({ id: "tunnel-profile-new" });
   mockGetProfiles.mockReturnValue([]);
   mockGetProfile.mockReset();
   mockGetProfile.mockReturnValue(undefined);

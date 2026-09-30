@@ -55,6 +55,9 @@ const LOCAL_CREDENTIAL_FIELDS = [
   "httpFormAutomation",
 ] as const;
 const SIDECAR_KEYS = new Set([
+  // This credential bundle has no source database identity to rebind safely.
+  "sshConnectionDatabaseId",
+  "ownerDatabaseId",
   "proxyChainId",
   "connectionChainId",
   "tunnelChainId",
@@ -172,6 +175,11 @@ function mapReferences(
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
     if (
+      (key === "proxyProfileId" || key === "tunnelProfileId") &&
+      item !== undefined
+    )
+      throw new VaultArchiveError("dependencies");
+    if (
       SIDECAR_KEYS.has(key) &&
       item !== undefined &&
       item !== null &&
@@ -185,7 +193,7 @@ function mapReferences(
     )
       throw new VaultArchiveError("dependencies");
     if (
-      key === "connectionId" &&
+      (key === "connectionId" || key === "sshConnectionId") &&
       item !== undefined &&
       item !== null &&
       item !== ""

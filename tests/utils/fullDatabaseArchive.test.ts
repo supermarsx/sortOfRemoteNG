@@ -16,6 +16,45 @@ vi.mock("../../src/utils/security/passwordPolicy", () => ({
 }));
 
 describe("full database portable archive", () => {
+  it.each(["", null, false, 0, [], {}])(
+    "rejects malformed direct profile declarations %j",
+    async (id) => {
+      for (const key of ["proxyProfileId", "tunnelProfileId"]) {
+        const data = await fullData();
+        Object.assign(data.connections[2], { [key]: id });
+        await expect(
+          buildFullDatabaseArchive(collection, data, trust),
+        ).rejects.toMatchObject({ code: "dependencies" });
+      }
+    },
+  );
+  it.each([
+    "proxyProfileId",
+    "tunnelProfileId",
+    "sshConnectionId",
+    "sshConnectionDatabaseId",
+    "ownerDatabaseId",
+  ])("rejects external %s in active and recycled routes", async (key) => {
+    for (const recycled of [false, true]) {
+      const data = await fullData();
+      const row = recycled
+        ? data.recycleBin!.entries[0].connection
+        : data.connections[2];
+      Object.assign(row, { [key]: "outside-owner" });
+      await expect(
+        buildFullDatabaseArchive(collection, data, trust),
+      ).rejects.toMatchObject({ code: "dependencies" });
+    }
+    const archive = await buildFullDatabaseArchive(
+      collection,
+      await fullData(),
+      trust,
+    );
+    Object.assign(archive.connections[2], { [key]: "outside-owner" });
+    await expect(normalizeFullDatabaseArchive(archive)).rejects.toMatchObject({
+      code: "dependencies",
+    });
+  });
   it("round trips all private sections, connections and recycle references without copying device/session trust", async () => {
     const data = await fullData();
     const original = structuredClone(data);

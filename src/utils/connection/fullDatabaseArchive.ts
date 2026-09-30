@@ -184,6 +184,10 @@ function normalizeTrust(value: unknown): TrustExportDocument {
 // These IDs name app/OS stores, not StorageData. Keeping them would silently
 // bind the archive to whatever happens to have that ID on another computer.
 const EXTERNAL_REFERENCES = new Set([
+  // The restore format cannot rebind app-local SSH source database ownership.
+  "sshConnectionId",
+  "sshConnectionDatabaseId",
+  "ownerDatabaseId",
   "proxyChainId",
   "connectionChainId",
   "tunnelChainId",
@@ -236,6 +240,13 @@ function validateClosure(archive: FullDatabaseArchive): void {
     }
     if (!value || typeof value !== "object") return;
     for (const [key, item] of Object.entries(value)) {
+      // This format carries no profile catalog; even malformed declarations
+      // must not be treated as absent and later become an unconfigured route.
+      if (
+        (key === "proxyProfileId" || key === "tunnelProfileId") &&
+        item !== undefined
+      )
+        fail("dependencies");
       // Connection/inline-route privateKey is a file path, while vault facet
       // privateKey is material (and is outside this route traversal). Keep an
       // ignored local value only when an explicit vault reference remains.

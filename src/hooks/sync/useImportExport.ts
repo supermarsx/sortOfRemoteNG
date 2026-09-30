@@ -219,8 +219,270 @@ interface ExportSidecars {
   vpnWarnings?: string[];
   tunnelChainTemplates?: ImportResult["tunnelChainTemplates"];
   proxyProfiles?: ReturnType<typeof proxyCollectionManager.getProfiles>;
+  tunnelProfiles?: ReturnType<typeof proxyCollectionManager.getTunnelProfiles>;
   proxyChains?: ReturnType<typeof proxyCollectionManager.getChains>;
 }
+
+type ProfileImportResult = ImportResult &
+  Pick<ExportSidecars, "proxyProfiles" | "tunnelProfiles">;
+
+class NetworkProfilePortabilityError extends Error {
+  constructor() {
+    super(
+      "A direct network profile is missing, excluded, ambiguous or has unsupported linked dependencies. Include its profile catalog or recreate the route explicitly; no connections were transferred.",
+    );
+  }
+}
+
+const DIRECT_PROFILE_FIELDS = ["proxyProfileId", "tunnelProfileId"] as const;
+const profileRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const profileText = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+const profilePort = (value: unknown): value is number =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= 1 &&
+  value <= 65535;
+
+const assertDirectProfileReferences = (connection: Connection): void => {
+  for (const key of DIRECT_PROFILE_FIELDS) {
+    const id = connection[key];
+    if (id !== undefined && (!profileText(id) || stripExportSecrets(id) !== id))
+      throw new NetworkProfilePortabilityError();
+  }
+};
+
+// Redaction must never change an explicit route into a direct connection.
+const preserveDirectProfileIntent = (
+  source: Connection,
+  prepared: Connection,
+): Connection => {
+  assertDirectProfileReferences(source);
+  assertDirectProfileReferences(prepared);
+  if (DIRECT_PROFILE_FIELDS.some((key) => source[key] !== prepared[key]))
+    throw new NetworkProfilePortabilityError();
+  return prepared;
+};
+
+const PROXY_PROFILE_TYPES = new Set([
+  "http",
+  "https",
+  "socks4",
+  "socks5",
+  "ssh",
+  "dns-tunnel",
+  "icmp-tunnel",
+  "websocket",
+  "quic",
+  "tcp-over-dns",
+  "http-connect",
+  "shadowsocks",
+]);
+const TUNNEL_PROXY_TYPES = new Set([
+  "http",
+  "https",
+  "socks4",
+  "socks5",
+  "http-connect",
+]);
+const SSH_PROFILE_TYPES = new Set([
+  "ssh-tunnel",
+  "ssh-jump",
+  "ssh-proxycmd",
+  "ssh-stdio",
+]);
+const GENERIC_TUNNEL_TYPES = new Set([
+  "tor",
+  "i2p",
+  "stunnel",
+  "chisel",
+  "ngrok",
+  "cloudflared",
+]);
+
+const assertNetworkProfileShape = (
+  profile: { config: unknown; type?: unknown },
+  tunnel: boolean,
+): void => {
+  const config = profile.config;
+  if (
+    !profileRecord(config) ||
+    typeof config.enabled !== "boolean" ||
+    !profileText(config.type)
+  )
+    throw new NetworkProfilePortabilityError();
+  if (!tunnel) {
+    if (
+      !PROXY_PROFILE_TYPES.has(config.type) ||
+      !profileText(config.host) ||
+      !profilePort(config.port) ||
+      (config.sshAuthMethod !== undefined &&
+        (typeof config.sshAuthMethod !== "string" ||
+          !["password", "key"].includes(config.sshAuthMethod)))
+    )
+      throw new NetworkProfilePortabilityError();
+    return;
+  }
+  if (!profileText(config.id) || profile.type !== config.type)
+    throw new NetworkProfilePortabilityError();
+  if (config.type === "proxy" || config.type === "shadowsocks") {
+    const proxy = config.proxy;
+    if (
+      !profileRecord(proxy) ||
+      typeof proxy.proxyType !== "string" ||
+      !TUNNEL_PROXY_TYPES.has(proxy.proxyType) ||
+      !profileText(proxy.host) ||
+      !profilePort(proxy.port)
+    )
+      throw new NetworkProfilePortabilityError();
+  } else if (SSH_PROFILE_TYPES.has(config.type)) {
+    const ssh = config.sshTunnel;
+    if (
+      !profileRecord(ssh) ||
+      !profileText(ssh.host) ||
+      (ssh.port !== undefined && !profilePort(ssh.port)) ||
+      typeof ssh.forwardType !== "string" ||
+      !["local", "remote", "dynamic"].includes(ssh.forwardType) ||
+      (ssh.authMethod !== undefined &&
+        (typeof ssh.authMethod !== "string" ||
+          !["password", "key"].includes(ssh.authMethod)))
+    )
+      throw new NetworkProfilePortabilityError();
+    for (const [host, port] of [
+      ["remoteHost", "remotePort"],
+      ["jumpTargetHost", "jumpTargetPort"],
+    ]) {
+      if (
+        (ssh[host] !== undefined || ssh[port] !== undefined) &&
+        (!profileText(ssh[host]) || !profilePort(ssh[port]))
+      )
+        throw new NetworkProfilePortabilityError();
+    }
+    if (
+      ssh.jumpHosts !== undefined &&
+      (!Array.isArray(ssh.jumpHosts) ||
+        ssh.jumpHosts.some(
+          (hop) =>
+            !profileRecord(hop) ||
+            !profileText(hop.host) ||
+            (hop.port !== undefined && !profilePort(hop.port)),
+        ))
+    )
+      throw new NetworkProfilePortabilityError();
+  } else if (GENERIC_TUNNEL_TYPES.has(config.type)) {
+    if (
+      !profileRecord(config.tunnel) ||
+      (!profileText(config.tunnel.configPath) &&
+        !profileText(config.tunnel.serverUrl))
+    )
+      throw new NetworkProfilePortabilityError();
+  } else {
+    // VPN and mesh profiles need provider catalogs/ownership migration.
+    throw new NetworkProfilePortabilityError();
+  }
+};
+
+// Profile catalogs are app-local. Never reuse a destination ID or erase a
+// missing route. Database-owned SSH/VPN dependencies need a separate migration.
+const assertStandaloneNetworkProfile = (value: unknown): void => {
+  if (!value || typeof value !== "object") return;
+  for (const [key, item] of Object.entries(value)) {
+    if (
+      [
+        "connectionId",
+        "sshConnectionId",
+        "sshConnectionDatabaseId",
+        "ownerDatabaseId",
+        "vpnProfileId",
+        "configId",
+        "proxyProfileId",
+        "tunnelProfileId",
+        "credentialRef",
+        "credentialRefId",
+        "credentialRefIds",
+        "vaultRef",
+        "savedCredentialId",
+        "privateKeyCredentialRef",
+        "clientCertificateRef",
+      ].includes(key) &&
+      item !== undefined
+    ) {
+      throw new NetworkProfilePortabilityError();
+    }
+    assertStandaloneNetworkProfile(item);
+  }
+};
+
+const selectDirectNetworkProfiles = (
+  connections: Connection[],
+  sidecars: ExportSidecars,
+) => {
+  connections.forEach(assertDirectProfileReferences);
+  const select = <T extends { id: string; name: string; config: object }>(
+    ids: (string | undefined)[],
+    catalog: T[] | undefined,
+    tunnel: boolean,
+  ): T[] =>
+    [...new Set(ids.filter((id): id is string => id !== undefined))].map(
+      (id) => {
+        const matches = (catalog ?? []).filter(
+          (profile) => profile && profile.id === id,
+        );
+        if (matches.length !== 1 || !profileText(matches[0].name))
+          throw new NetworkProfilePortabilityError();
+        assertStandaloneNetworkProfile(matches[0].config);
+        assertNetworkProfileShape(matches[0], tunnel);
+        return matches[0];
+      },
+    );
+  return {
+    proxyProfiles: select(
+      connections.map((row) => row.proxyProfileId),
+      sidecars.proxyProfiles,
+      false,
+    ),
+    tunnelProfiles: select(
+      connections.map((row) => row.tunnelProfileId),
+      sidecars.tunnelProfiles,
+      true,
+    ),
+  };
+};
+
+const remapDirectNetworkProfiles = (
+  connection: Connection,
+  proxyIds: Map<string, string>,
+  tunnelIds: Map<string, string>,
+): Connection => {
+  assertDirectProfileReferences(connection);
+  const next = { ...connection };
+  for (const [key, ids] of [
+    ["proxyProfileId", proxyIds],
+    ["tunnelProfileId", tunnelIds],
+  ] as const) {
+    const source = connection[key];
+    if (source === undefined) continue;
+    const mapped = ids.get(source);
+    if (!mapped) throw new NetworkProfilePortabilityError();
+    next[key] = mapped;
+  }
+  return next;
+};
+
+const prepareDirectProfileSidecars = (
+  connections: Connection[],
+  sidecars: ExportSidecars,
+  includeCredentials: boolean,
+): ExportSidecars => {
+  selectDirectNetworkProfiles(connections, sidecars);
+  const prepared = includeCredentials
+    ? sidecars
+    : (stripExportSecrets(sidecars) ?? {});
+  // Revalidate IDs and required destinations after string-pattern redaction.
+  selectDirectNetworkProfiles(connections, prepared);
+  return prepared;
+};
 
 type ExportProxyChain = NonNullable<ExportSidecars["proxyChains"]>[number];
 type ExportTunnelChain = NonNullable<
@@ -230,6 +492,7 @@ type ExportTunnelChain = NonNullable<
 interface CloneSidecarCounts {
   total: number;
   proxyProfiles: number;
+  tunnelProfiles: number;
   proxyChains: number;
   tunnelChains: number;
   vpnConnections: number;
@@ -239,6 +502,7 @@ interface CloneSidecarResult {
   connections: Connection[];
   idMaps: {
     proxyProfileIds: Map<string, string>;
+    tunnelProfileIds: Map<string, string>;
     proxyChainIds: Map<string, string>;
     tunnelChainIds: Map<string, string>;
     vpnConnectionIds: Map<string, string>;
@@ -426,10 +690,15 @@ const stripConnectionSshTunnels = (connection: Connection): Connection => {
   };
 };
 
-const stripConnectionCredentials = (connection: Connection): Connection =>
-  stripArdAppleAccountCredentials(
-    stripExportSecrets(connection) ?? ({} as Connection),
+const stripConnectionCredentials = (connection: Connection): Connection => {
+  assertDirectProfileReferences(connection);
+  return preserveDirectProfileIntent(
+    connection,
+    stripArdAppleAccountCredentials(
+      stripExportSecrets(connection) ?? ({} as Connection),
+    ),
   );
+};
 
 const connectionEndpointKey = (connection: Connection): string =>
   [
@@ -610,9 +879,13 @@ const prepareConnectionsForExport = (
     connections,
     inclusion,
   );
-  const portableConnections = filteredConnections.map((connection) =>
-    prepareConnectionForExport(connection, true),
-  );
+  const portableConnections = filteredConnections.map((connection) => {
+    assertDirectProfileReferences(connection);
+    return preserveDirectProfileIntent(
+      connection,
+      prepareConnectionForExport(connection, true),
+    );
+  });
   return inclusion.includeCredentials
     ? portableConnections
     : portableConnections.map(stripConnectionCredentials);
@@ -621,6 +894,7 @@ const prepareConnectionsForExport = (
 const createEmptyCloneSidecarCounts = (): CloneSidecarCounts => ({
   total: 0,
   proxyProfiles: 0,
+  tunnelProfiles: 0,
   proxyChains: 0,
   tunnelChains: 0,
   vpnConnections: 0,
@@ -790,7 +1064,11 @@ const remapConnectionSidecars = (
     next = withoutTunnelChain as Connection;
   }
 
-  return next;
+  return remapDirectNetworkProfiles(
+    next,
+    result.idMaps.proxyProfileIds,
+    result.idMaps.tunnelProfileIds,
+  );
 };
 
 const remapProxyChain = (
@@ -1423,7 +1701,9 @@ export function useImportExport({
   );
   const [exportKeyDerivationIterations, setExportKeyDerivationIterations] =
     useState(exportSecuritySettings.keyDerivationIterations);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importResult, setImportResult] = useState<ProfileImportResult | null>(
+    null,
+  );
   const [importFilename, setImportFilename] = useState<string>("");
   const [importAnalysis, setImportAnalysis] =
     useState<ImportSourceMetadata | null>(null);
@@ -2328,6 +2608,7 @@ export function useImportExport({
     options?: {
       includeProxyCollectionsWhenAll?: boolean;
       includeCredentials?: boolean;
+      connections?: Connection[];
     },
   ): Promise<ExportSidecars> => {
     const sidecars: ExportSidecars = {};
@@ -2400,7 +2681,8 @@ export function useImportExport({
       inclusion.includeTunnelChains &&
       (includedProxyProfileIds ||
         includedProxyChainIds ||
-        options?.includeProxyCollectionsWhenAll)
+        options?.includeProxyCollectionsWhenAll ||
+        options?.connections?.some((row) => row.proxyProfileId))
     ) {
       // Stash proxy collections in the sidecar payload so the exporter
       // picks them up alongside everything else.
@@ -2414,13 +2696,25 @@ export function useImportExport({
         : allChains;
     }
 
-    return includeSidecarCredentials
-      ? sidecars
-      : (stripExportSecrets(sidecars) ?? {});
+    const directTunnelIds = new Set(
+      options?.connections?.map((row) => row.tunnelProfileId).filter(Boolean),
+    );
+    if (inclusion.includeTunnelChains && directTunnelIds.size > 0) {
+      sidecars.tunnelProfiles = proxyCollectionManager
+        .getTunnelProfiles()
+        .filter((profile) => directTunnelIds.has(profile.id));
+    }
+    return prepareDirectProfileSidecars(
+      options?.connections ?? [],
+      sidecars,
+      includeSidecarCredentials,
+    );
   };
 
-  const loadExportSidecars = async (): Promise<ExportSidecars> =>
-    loadSidecarsForInclusion(exportInclusion);
+  const loadExportSidecars = async (
+    connections: Connection[],
+  ): Promise<ExportSidecars> =>
+    loadSidecarsForInclusion(exportInclusion, { connections });
 
   const cloneSidecarsForConnections = async (
     connections: Connection[],
@@ -2429,11 +2723,13 @@ export function useImportExport({
     const sidecars = await loadSidecarsForInclusion(inclusion, {
       includeProxyCollectionsWhenAll: true,
       includeCredentials: cloneIncludeCredentials,
+      connections,
     });
     const result: CloneSidecarResult = {
       connections,
       idMaps: {
         proxyProfileIds: new Map(),
+        tunnelProfileIds: new Map(),
         proxyChainIds: new Map(),
         tunnelChainIds: new Map(),
         vpnConnectionIds: new Map(),
@@ -2444,6 +2740,7 @@ export function useImportExport({
     };
 
     const references = collectConnectionSidecarReferences(connections);
+    const directProfiles = selectDirectNetworkProfiles(connections, sidecars);
     const profileById = new Map(
       (sidecars.proxyProfiles ?? []).map((profile) => [profile.id, profile]),
     );
@@ -2562,9 +2859,13 @@ export function useImportExport({
 
     for (const profile of profileById.values()) {
       try {
+        const config = cloneIncludeCredentials
+          ? profile.config
+          : stripExportSecrets(profile.config);
+        if (!config) throw new NetworkProfilePortabilityError();
         const created = await proxyCollectionManager.createProfile(
           profile.name,
-          { ...profile.config },
+          { ...config },
           {
             description: profile.description,
             tags: profile.tags ? [...profile.tags] : undefined,
@@ -2578,6 +2879,17 @@ export function useImportExport({
           `Proxy profile "${profile.name}": ${e instanceof Error ? e.message : String(e)}`,
         );
       }
+    }
+
+    for (const profile of directProfiles.tunnelProfiles) {
+      const created = await proxyCollectionManager.createTunnelProfile(
+        profile.name,
+        profile.type,
+        { ...profile.config },
+        { description: profile.description, tags: profile.tags },
+      );
+      result.idMaps.tunnelProfileIds.set(profile.id, created.id);
+      result.counts.tunnelProfiles++;
     }
 
     const proxyMgr = ProxyOpenVPNManager.getInstance();
@@ -2709,6 +3021,7 @@ export function useImportExport({
 
     result.counts.total =
       result.counts.proxyProfiles +
+      result.counts.tunnelProfiles +
       result.counts.proxyChains +
       result.counts.tunnelChains +
       result.counts.vpnConnections;
@@ -2930,6 +3243,12 @@ export function useImportExport({
       exportDate: new Date().toISOString(),
     },
     connections: dataset.connections,
+    ...(sidecars.proxyProfiles
+      ? { proxyProfiles: sidecars.proxyProfiles }
+      : {}),
+    ...(sidecars.tunnelProfiles
+      ? { tunnelProfiles: sidecars.tunnelProfiles }
+      : {}),
     ...(exportInclusion.includeSettings ? { settings: dataset.settings } : {}),
     ...(includeTabGroups ? { tabGroups: dataset.tabGroups ?? [] } : {}),
     ...(includeColorTags ? { colorTags: dataset.colorTags ?? {} } : {}),
@@ -2954,6 +3273,12 @@ export function useImportExport({
     exportMetadata?: ReturnType<typeof buildExportMetadata>,
   ) => ({
     schema: EXPORT_PACKAGE_SCHEMA,
+    ...(sidecars.proxyProfiles
+      ? { proxyProfiles: sidecars.proxyProfiles }
+      : {}),
+    ...(sidecars.tunnelProfiles
+      ? { tunnelProfiles: sidecars.tunnelProfiles }
+      : {}),
     version: EXPORT_PACKAGE_VERSION,
     exportDate: new Date().toISOString(),
     ...(exportMetadata ? { exportMetadata } : {}),
@@ -3317,6 +3642,19 @@ ${tableRows}
         return;
       }
 
+      if (
+        exportFormat !== "json" &&
+        datasets.some((dataset) =>
+          dataset.connections.some(
+            (row) => row.proxyProfileId || row.tunnelProfileId,
+          ),
+        )
+      ) {
+        toast.error(
+          "Direct network profiles require JSON export with their profile catalogs included.",
+        );
+        return;
+      }
       switch (exportFormat) {
         case "json": {
           const sidecars =
@@ -3327,7 +3665,9 @@ ${tableRows}
                   includeSettings: false,
                   includeTrust: false,
                 })
-              : await loadExportSidecars();
+              : await loadExportSidecars(
+                  datasets.flatMap((dataset) => dataset.connections),
+                );
           const warnings = buildExportWarnings(datasets, options, sidecars);
           const exportMetadata = exportInclusion.includeExportMetadata
             ? buildExportMetadata({
@@ -3367,6 +3707,24 @@ ${tableRows}
             );
             return;
           }
+          const sourceGroups =
+            "databases" in payload ? payload.databases : [payload];
+          const safeGroups =
+            "databases" in protectedPayload
+              ? protectedPayload.databases
+              : [protectedPayload];
+          sourceGroups.forEach((group, index) =>
+            group.connections.forEach((connection, row) => {
+              preserveDirectProfileIntent(
+                connection,
+                safeGroups[index]?.connections[row] ?? ({} as Connection),
+              );
+            }),
+          );
+          selectDirectNetworkProfiles(
+            safeGroups.flatMap((group) => group.connections),
+            protectedPayload,
+          );
           if (
             !shouldUsePasswordEncryption &&
             containsExportSecrets(protectedPayload)
@@ -3503,7 +3861,11 @@ ${tableRows}
       );
     } catch (error) {
       console.error("Export failed:", error);
-      toast.error("Export failed. Check the console for details.");
+      toast.error(
+        error instanceof NetworkProfilePortabilityError
+          ? error.message
+          : "Export failed. Check the console for details.",
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -3583,7 +3945,7 @@ ${tableRows}
     formatSelection: "auto" | ImportFormat = importFormatSelection,
     targetMode: ImportTargetMode = importTargetModeRef.current,
     targetDatabaseId: string = selectedImportDatabaseIdRef.current,
-  ): Promise<ImportResult> => {
+  ): Promise<ProfileImportResult> => {
     const errors: string[] = [];
     try {
       let processedContent = content;
@@ -3719,14 +4081,37 @@ ${tableRows}
       let vpnConnections: ImportVpnData | undefined;
       let tunnelChainTemplates: ImportResult["tunnelChainTemplates"];
       let importedTrustRecords: TrustExportDocument | undefined;
+      let proxyProfiles: ExportSidecars["proxyProfiles"];
+      let tunnelProfiles: ExportSidecars["tunnelProfiles"];
       if (detectedFormat === "json") {
         try {
           const parsed = JSON.parse(processedContent);
           assertNoVaultImport(parsed);
+          const rawGroups = Array.isArray(parsed)
+            ? [{ connections: parsed }]
+            : [
+                parsed,
+                ...(Array.isArray(parsed?.databases) ? parsed.databases : []),
+              ];
+          rawGroups.forEach((group) => {
+            if (Array.isArray(group?.connections))
+              group.connections.forEach((connection: Connection) => {
+                if (profileRecord(connection))
+                  assertDirectProfileReferences(connection);
+              });
+          });
           const legacySidecars =
             parsed && typeof parsed.sidecars === "object"
               ? parsed.sidecars
               : undefined;
+          proxyProfiles = parsed.proxyProfiles ?? legacySidecars?.proxyProfiles;
+          tunnelProfiles =
+            parsed.tunnelProfiles ?? legacySidecars?.tunnelProfiles;
+          if (
+            (proxyProfiles !== undefined && !Array.isArray(proxyProfiles)) ||
+            (tunnelProfiles !== undefined && !Array.isArray(tunnelProfiles))
+          )
+            throw new NetworkProfilePortabilityError();
           vpnConnections = normalizeVpnImportData(
             parsed.vpnConnections ??
               parsed.vpn_connections ??
@@ -3757,7 +4142,11 @@ ${tableRows}
               trustCandidates.filter(isTrustExportDocument),
             ) ?? undefined;
         } catch (error) {
-          if (error instanceof VaultPortabilityError) throw error;
+          if (
+            error instanceof VaultPortabilityError ||
+            error instanceof NetworkProfilePortabilityError
+          )
+            throw error;
           // Not a JSON file or no VPN data -- ignore
         }
       }
@@ -3919,6 +4308,8 @@ ${tableRows}
       return {
         success: true,
         imported: connections.length,
+        proxyProfiles,
+        tunnelProfiles,
         errors,
         connections,
         vpnConnections,
@@ -4174,8 +4565,11 @@ ${tableRows}
         const preparedItems: ApplyConnectionsItem[] = selectedItems
           .filter((item) => Boolean(item.connection))
           .map((item) => {
-            const connection = normalizeImportedAdvancedProtocolConnection(
-              item.connection as Connection,
+            const source = item.connection as Connection;
+            assertDirectProfileReferences(source);
+            const connection = preserveDirectProfileIntent(
+              source,
+              normalizeImportedAdvancedProtocolConnection(source),
             );
             const keepSshTunnels =
               !hasConnectionSshTunnel(connection) ||
@@ -4249,6 +4643,47 @@ ${tableRows}
         }
 
         // Restore selected VPN connections
+        const directProfiles = selectDirectNetworkProfiles(
+          baseConnectionsToImport,
+          prepareDirectProfileSidecars(
+            baseConnectionsToImport,
+            importOptions.includeTunnelChains ? importResult : {},
+            importOptions.includeCredentials,
+          ),
+        );
+        const importedProxyProfileIds = new Map<string, string>();
+        const importedTunnelProfileIds = new Map<string, string>();
+        for (const profile of directProfiles.proxyProfiles) {
+          operation.assertCurrent();
+          const config = importOptions.includeCredentials
+            ? profile.config
+            : stripExportSecrets(profile.config);
+          if (!config) throw new NetworkProfilePortabilityError();
+          const created = await proxyCollectionManager.createProfile(
+            profile.name,
+            { ...config },
+            {
+              description: profile.description,
+              tags: profile.tags,
+              isDefault: false,
+            },
+          );
+          importedProxyProfileIds.set(profile.id, created.id);
+        }
+        for (const profile of directProfiles.tunnelProfiles) {
+          operation.assertCurrent();
+          const config = importOptions.includeCredentials
+            ? profile.config
+            : stripExportSecrets(profile.config);
+          if (!config) throw new NetworkProfilePortabilityError();
+          const created = await proxyCollectionManager.createTunnelProfile(
+            profile.name,
+            profile.type,
+            { ...config },
+            { description: profile.description, tags: profile.tags },
+          );
+          importedTunnelProfileIds.set(profile.id, created.id);
+        }
         let vpnImportedCount = 0;
         const importedVpnIds = new Map<string, string>();
         const vpnImportWarnings: string[] = [];
@@ -4364,7 +4799,11 @@ ${tableRows}
         const connectionsToImport = baseConnectionsToImport.map(
           (connection) => {
             const remapped = remapConnectionVpnReferencesStrict(
-              connection,
+              remapDirectNetworkProfiles(
+                connection,
+                importedProxyProfileIds,
+                importedTunnelProfileIds,
+              ),
               importedVpnIds,
               (profileId) => {
                 vpnImportWarnings.push(
@@ -4475,9 +4914,11 @@ ${tableRows}
         setImportFilters(DEFAULT_IMPORT_FILTERS);
         onClose();
       }
-    } catch {
+    } catch (error) {
       toast.error(
-        "Import stopped because database access changed or the operation failed. Review the target before retrying; any global definitions already restored remain available.",
+        error instanceof NetworkProfilePortabilityError
+          ? error.message
+          : "Import stopped because database access changed or the operation failed. Review the target before retrying; any global definitions already restored remain available.",
       );
     }
   };
@@ -4712,9 +5153,13 @@ ${tableRows}
             existing = snapshot?.connections ?? [];
           }
           const items = buildApplyItems(
-            filteredForApply.map((connection) =>
-              prepareConnectionForClone(connection, cloneIncludeCredentials),
-            ),
+            filteredForApply.map((connection) => {
+              assertDirectProfileReferences(connection);
+              return preserveDirectProfileIntent(
+                connection,
+                prepareConnectionForClone(connection, cloneIncludeCredentials),
+              );
+            }),
             existing,
           );
           const applied = remapConnectionsForApply(items, {
@@ -4824,7 +5269,8 @@ ${tableRows}
       return result;
     } catch (error) {
       toast.error(
-        error instanceof VaultPortabilityError
+        error instanceof VaultPortabilityError ||
+          error instanceof NetworkProfilePortabilityError
           ? error.message
           : "Clone stopped because database access changed or the operation failed. Review the source and targets before retrying.",
       );
