@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -17,6 +18,121 @@ import {
   meanColor,
   relativeLuminance,
 } from "../../scripts/test-website-dark-mode-browser.mjs";
+
+const browserExited = (child) =>
+  child.exitCode !== null || child.signalCode !== null;
+
+async function waitForBrowserExit(child, timeout) {
+  if (browserExited(child)) return true;
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      child.off("exit", finish);
+      resolve(browserExited(child));
+    };
+    const timer = setTimeout(finish, timeout);
+    child.once("exit", finish);
+  });
+}
+
+async function requestBrowserClose(profile) {
+  const [port, endpoint] = (
+    await readFile(path.join(profile, "DevToolsActivePort"), "utf8")
+  )
+    .trim()
+    .split(/\r?\n/u);
+  assert.match(port, /^\d+$/u);
+  assert.match(endpoint, /^\/devtools\/browser\/[\w-]+$/u);
+  // This endpoint belongs to the unique temporary profile, never an existing
+  // user browser. Bound both connection establishment and the close command.
+  await new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}${endpoint}`);
+    const timer = setTimeout(
+      () => finish(new Error("Browser.close timed out")),
+      1500,
+    );
+    function finish(error) {
+      clearTimeout(timer);
+      socket.close();
+      if (error) reject(error);
+      else resolve();
+    }
+    socket.addEventListener(
+      "open",
+      () => socket.send(JSON.stringify({ id: 1, method: "Browser.close" })),
+      { once: true },
+    );
+    socket.addEventListener("close", () => finish(), { once: true });
+    socket.addEventListener(
+      "error",
+      () => finish(new Error("Browser.close connection failed")),
+      { once: true },
+    );
+  });
+}
+
+async function closeOwnedBrowser(child, graceful, force, timeout = 2000) {
+  if (!child?.pid || browserExited(child)) return;
+  // A close command can disconnect before its acknowledgement arrives.
+  await graceful().catch(() => {});
+  if (await waitForBrowserExit(child, timeout)) return;
+  let killError;
+  try {
+    await force();
+  } catch (error) {
+    killError = error;
+  }
+  // taskkill can fail on an already-exiting renderer although it successfully
+  // terminated our root. Trust the owned ChildProcess exit event, not its text.
+  if (await waitForBrowserExit(child, timeout)) return;
+  throw killError || new Error(`Owned browser ${child.pid} did not exit`);
+}
+
+test("browser cleanup prefers graceful exit and accepts an exited-root taskkill race", async () => {
+  const child = Object.assign(new EventEmitter(), {
+    pid: 123,
+    exitCode: null,
+    signalCode: null,
+  });
+  const exit = () => {
+    child.exitCode = 0;
+    child.emit("exit", 0, null);
+  };
+  let forced = false;
+  await closeOwnedBrowser(
+    child,
+    async () => {
+      exit();
+    },
+    async () => {
+      forced = true;
+    },
+    1,
+  );
+  assert.equal(forced, false);
+  child.exitCode = null;
+  await closeOwnedBrowser(
+    child,
+    async () => {},
+    async () => {
+      setTimeout(exit, 0);
+      throw new Error("child process operation unsupported");
+    },
+    20,
+  );
+  child.exitCode = null;
+  await assert.rejects(
+    closeOwnedBrowser(
+      child,
+      async () => {},
+      async () => {
+        throw new Error("root still alive");
+      },
+      1,
+    ),
+    /root still alive/u,
+  );
+});
 
 // Record compositor frames, not a computed-style read inside an rAF callback.
 // Keep a failing PNG and its measurements outside the disposable profile.
@@ -415,6 +531,7 @@ async function dynamicBrowser(t, checks, capturePaint = false) {
   let child;
   let deadline;
   let stderr = "";
+  let primaryError;
   try {
     await new Promise((resolve, reject) => {
       server.once("error", reject);
@@ -430,13 +547,10 @@ async function dynamicBrowser(t, checks, capturePaint = false) {
         "--disable-background-networking",
         "--disable-background-timer-throttling",
         "--disable-renderer-backgrounding",
+        "--remote-debugging-address=127.0.0.1",
+        "--remote-debugging-port=0",
         ...(capturePaint
-          ? [
-              "--remote-debugging-address=127.0.0.1",
-              "--remote-debugging-port=0",
-              "--force-device-scale-factor=1",
-              "--window-size=800,800",
-            ]
+          ? ["--force-device-scale-factor=1", "--window-size=800,800"]
           : []),
         `--user-data-dir=${profile}`,
         `http://127.0.0.1:${server.address().port}/`,
@@ -466,21 +580,32 @@ async function dynamicBrowser(t, checks, capturePaint = false) {
     );
     t.diagnostic(JSON.stringify({ engineRequests, ...outcome.metrics }));
     return { engineRequests, ...outcome.metrics };
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
     clearTimeout(deadline);
     camera?.close();
     try {
-      if (child?.pid && child.exitCode === null && child.signalCode === null) {
-        // Only this test's fresh browser process tree, including hung renderers.
-        if (process.platform === "win32")
-          await promisify(execFile)(
-            "taskkill",
-            ["/PID", String(child.pid), "/T", "/F"],
-            { windowsHide: true },
-          );
-        else process.kill(-child.pid, "SIGKILL");
-      }
-    } finally {
+      await closeOwnedBrowser(
+        child,
+        () => requestBrowserClose(profile),
+        async () => {
+          // Only this test's fresh browser process tree, including hung renderers.
+          if (process.platform === "win32")
+            await promisify(execFile)(
+              "taskkill",
+              ["/PID", String(child.pid), "/T", "/F"],
+              { windowsHide: true, timeout: 5000 },
+            );
+          else process.kill(-child.pid, "SIGKILL");
+        },
+      );
+    } catch (error) {
+      if (!primaryError) primaryError = error;
+      else t.diagnostic(`Browser cleanup also failed: ${error.message}`);
+    }
+    try {
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
       assert.equal(path.dirname(profile), path.resolve(tmpdir()));
@@ -491,7 +616,11 @@ async function dynamicBrowser(t, checks, capturePaint = false) {
         maxRetries: 10,
         retryDelay: 100,
       });
+    } catch (error) {
+      if (!primaryError) primaryError = error;
+      else t.diagnostic(`Fixture cleanup also failed: ${error.message}`);
     }
+    if (primaryError) throw primaryError;
   }
 }
 
@@ -664,6 +793,138 @@ test(
       },
       true,
     );
+  },
+);
+
+test(
+  "dark icons preserve sprite paints and SVG geometry, settle and restore on disable",
+  dynamicOptions,
+  async (t) => {
+    await dynamicBrowser(t, async ({ assert, delay, eventually }) => {
+      const controller = window.__sorngWebDarkModeDocument_v1;
+      await controller.set({ enabled: false });
+      const fixture = document.createElement("section");
+      fixture.innerHTML = `<style>
+        .icon-sprite,.icon-sprite::before{background-image:linear-gradient(red,blue)!important}
+        .icon-font::before{content:'X';-webkit-text-fill-color:black!important;color:black}
+        .not-an-icon{background:white!important;background-image:linear-gradient(white,white)!important}
+        svg{width:24px;height:24px}
+      </style>
+      <span class="icon-sprite" style="background-image:linear-gradient(red,blue)!important">sprite</span>
+      <i class="icon-font"></i><div class="not-an-icon">panel</div>
+      <svg id="fixed"><path fill="black" d="M3 3h18v18H3z"/></svg>
+      <svg id="default"><path d="M3 3h18v18H3z"/></svg>
+      <svg id="current"><path fill="currentColor" d="M3 3h18v18H3z"/></svg>
+      <svg id="stroke" fill="none" stroke="black"><path d="M3 3L21 21"/></svg>
+      <svg id="brand"><path fill="red" d="M3 3h9v18H3z"/><path fill="blue" d="M12 3h9v18h-9z"/></svg>
+      <svg id="media"><image href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"/></svg>
+      <img id="photo" alt="unchanged" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">`;
+      document.body.append(fixture);
+      const element = (id) => fixture.querySelector(`#${id}`);
+      const sprite = fixture.querySelector(".icon-sprite");
+      const font = fixture.querySelector(".icon-font");
+      const originalSprite = getComputedStyle(sprite).backgroundImage;
+      await controller.set({
+        enabled: true,
+        cssOnly: true,
+      });
+      await eventually(
+        () => element("fixed").style.filter.includes("drop-shadow"),
+        "fixed dark glyph outlined",
+      );
+      for (const id of ["fixed", "default", "stroke"])
+        assert(
+          element(id).style.filter.includes("drop-shadow"),
+          `${id} low-contrast icon outlined`,
+        );
+      assert(
+        getComputedStyle(element("stroke")).fill === "none",
+        "fill=none preserved",
+      );
+      assert(
+        getComputedStyle(element("fixed").firstElementChild).fill ===
+          "rgb(0, 0, 0)",
+        "fixed fill untouched",
+      );
+      assert(
+        getComputedStyle(element("current").firstElementChild).fill ===
+          "rgb(232, 230, 227)",
+        "currentColor follows theme",
+      );
+      for (const id of ["brand", "media", "photo", "current"])
+        assert(!element(id).style.filter, `${id} not altered`);
+      assert(
+        getComputedStyle(sprite).backgroundImage === originalSprite,
+        "inline sprite retained",
+      );
+      assert(
+        getComputedStyle(sprite, "::before").backgroundImage !== "none",
+        "pseudo sprite retained",
+      );
+      assert(
+        getComputedStyle(font, "::before").webkitTextFillColor ===
+          "rgb(232, 230, 227)",
+        "icon font fill follows theme",
+      );
+      assert(
+        getComputedStyle(fixture.querySelector(".not-an-icon"))
+          .backgroundImage === "none",
+        "panel background still protected",
+      );
+      let writes = 0;
+      const observer = new MutationObserver((records) => {
+        writes += records.length;
+      });
+      observer.observe(element("fixed"), {
+        attributes: true,
+        attributeFilter: ["style"],
+      });
+      element("fixed").firstElementChild.setAttribute("fill", "#010101");
+      await delay(200);
+      assert(writes < 3, "owned filters do not loop");
+      observer.disconnect();
+      element("fixed").firstElementChild.setAttribute("fill", "white");
+      await eventually(
+        () => !element("fixed").style.filter,
+        "now-visible glyph releases outline",
+      );
+      await controller.set({ enabled: false });
+      for (const id of ["default", "stroke"])
+        assert(!element(id).style.filter, "disable restores filter");
+      assert(
+        getComputedStyle(font, "::before").webkitTextFillColor ===
+          "rgb(0, 0, 0)",
+        "disable restores font",
+      );
+      assert(
+        getComputedStyle(sprite).backgroundImage === originalSprite,
+        "disable preserves sprite",
+      );
+      const many = document.createElement("div");
+      many.innerHTML = '<svg><path d="M3 3h18v18H3z"/></svg>'.repeat(320);
+      fixture.append(many);
+      let beats = 0;
+      const heartbeat = setInterval(() => {
+        beats++;
+      }, 10);
+      try {
+        await controller.set({ enabled: true, cssOnly: true });
+        await eventually(
+          () => many.lastElementChild.style.filter.includes("drop-shadow"),
+          "large icon collection processed without starvation",
+          4000,
+        );
+        assert(beats > 5, "icon discovery yields to other tasks");
+        await controller.set({ enabled: false });
+        assert(
+          Array.from(many.children).every((svg) => !svg.style.filter),
+          "all batched icons restore",
+        );
+      } finally {
+        clearInterval(heartbeat);
+      }
+      return { iconsRestored: true, writes };
+    });
   },
 );
 

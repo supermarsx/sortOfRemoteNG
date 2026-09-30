@@ -195,7 +195,7 @@ function createWebDarkModeController() {
           genericSurface +
           "{background-color:transparent!important;color:" +
           theme.textColor +
-          "!important;background-image:none!important;transition:none!important}}"
+          "!important;transition:none!important}}"
         : "");
     // A native sheet parsed before a meta CSP is already authorized. Replacing
     // even equivalent CSS text rechecks the later policy and can discard that
@@ -216,6 +216,13 @@ function createWebDarkModeController() {
       bootstrap.removeAttribute("disabled");
   }
   function restoreInline() {
+    if (iconScanTimer !== null) window.clearTimeout(iconScanTimer);
+    iconScanTimer = null;
+    iconScans.clear();
+    iconDiscoveryStarted = false;
+    iconFilters.forEach(function (_, element) {
+      restoreIconFilter(element);
+    });
     forcedInline.forEach(function (entry) {
       if (entry.element.style.getPropertyValue(entry.property) === entry.owned)
         entry.element.style.setProperty(
@@ -233,8 +240,18 @@ function createWebDarkModeController() {
   // framework selectors to receive persistent forced-dark protection.
   var genericSurface =
     ":not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *)";
+  // Explicit icon conventions only: do not exempt arbitrary panels or logos
+  // from the structural palette. Keep this list identical in the native preload.
+  var iconSurface =
+    ":is(i,span):is(.icon,.fa,.fas,.far,.fab,.glyphicon,.material-icons,.material-symbols-outlined,[class^='icon-'],[class*=' icon-'],[class^='fa-'],[class*=' fa-'])";
+  var iconFilters = new Map();
+  var iconScans = new Map();
+  var iconScanTimer = null;
+  var iconDiscoveryStarted = false;
   function genericSurfaceCss(theme, shadow) {
     var selector = (shadow ? "*" : "html:root body *") + genericSurface;
+    var noSprite = selector + ":not(" + iconSurface + ")";
+    var icons = (shadow ? "" : "html:root body ") + iconSurface;
     return (
       "@layer sorng-dark-surface{" +
       (shadow ? "" : "html:root body::before,html:root body::after,") +
@@ -243,15 +260,31 @@ function createWebDarkModeController() {
       selector +
       "::before," +
       selector +
-      "::after{background-color:transparent!important;background-image:none!important;color:" +
+      "::after{background-color:transparent!important;color:" +
       theme.textColor +
-      "!important;transition:none!important}}"
+      "!important;transition:none!important}" +
+      noSprite +
+      "," +
+      noSprite +
+      "::before," +
+      noSprite +
+      "::after" +
+      (shadow ? "" : ",html:root body::before,html:root body::after") +
+      "{background-image:none!important}" +
+      icons +
+      "," +
+      icons +
+      "::before," +
+      icons +
+      "::after" +
+      "{-webkit-text-fill-color:currentColor!important}}"
     );
   }
   function protectGenericSurface(element, theme) {
     if (!element.matches(genericSurface)) return;
     protectInline(element, "background-color", theme.backgroundColor);
-    protectInline(element, "background-image", "none");
+    if (!element.matches(iconSurface))
+      protectInline(element, "background-image", "none");
     protectInline(element, "color", theme.textColor);
     protectInline(element, "color-scheme", "dark");
     protectInline(element, "transition", "none");
@@ -262,6 +295,181 @@ function createWebDarkModeController() {
       root.querySelectorAll("[style]").forEach(function (element) {
         protectGenericSurface(element, theme);
       });
+  }
+  function restoreIconFilter(element) {
+    var entry = iconFilters.get(element);
+    if (!entry) return;
+    if (element.style.filter === entry.owned)
+      element.style.setProperty("filter", entry.value, entry.priority);
+    iconFilters.delete(element);
+  }
+  function protectIcon(svg, theme) {
+    if (!svg.isConnected) return;
+    var bounds = svg.getBoundingClientRect();
+    var shapes = [];
+    var walker = document.createTreeWalker(svg, 1);
+    var child;
+    var visited = 0;
+    var complex = false;
+    while ((child = walker.nextNode())) {
+      if (
+        ++visited > 64 ||
+        child.matches(
+          "image,foreignObject,linearGradient,radialGradient,pattern,svg,use,text",
+        )
+      ) {
+        complex = true;
+        break;
+      }
+      if (child.matches("path,circle,ellipse,rect,line,polyline,polygon"))
+        shapes.push(child);
+    }
+    // Small monochrome glyphs only. Never flatten paints, invert artwork, or
+    // replace a site's filter. Limit work for complex charts/sprite sheets.
+    if (
+      !bounds.width ||
+      !bounds.height ||
+      bounds.width > 64 ||
+      bounds.height > 64 ||
+      shapes.length > 32 ||
+      complex
+    ) {
+      restoreIconFilter(svg);
+      return;
+    }
+    var paints = new Set();
+    var unsafe = false;
+    shapes.forEach(function (shape) {
+      var computed = getComputedStyle(shape);
+      [computed.fill, computed.stroke].forEach(function (paint) {
+        if (!paint || paint === "none" || paint === "rgba(0, 0, 0, 0)") return;
+        if (!/^rgb\(\d+, \d+, \d+\)$/.test(paint)) unsafe = true;
+        else paints.add(paint);
+      });
+    });
+    function luminance(channels) {
+      return channels.reduce(function (sum, value, index) {
+        value = Number(value) / 255;
+        return (
+          sum +
+          (value <= 0.04045
+            ? value / 12.92
+            : Math.pow((value + 0.055) / 1.055, 2.4)) *
+            [0.2126, 0.7152, 0.0722][index]
+        );
+      }, 0);
+    }
+    var paint = paints.values().next().value;
+    var foreground = paint && luminance(paint.match(/\d+/g));
+    var background = luminance(
+      theme.backgroundColor
+        .slice(1)
+        .match(/../g)
+        .map(function (value) {
+          return parseInt(value, 16);
+        }),
+    );
+    var contrast =
+      (Math.max(foreground, background) + 0.05) /
+      (Math.min(foreground, background) + 0.05);
+    if (unsafe || paints.size !== 1 || contrast >= 3) {
+      restoreIconFilter(svg);
+      return;
+    }
+    var entry = iconFilters.get(svg);
+    var filter = getComputedStyle(svg).filter;
+    if (!entry && filter && filter !== "none") return;
+    if (entry && svg.style.filter !== entry.owned) {
+      // The page took ownership: do not fight its observer or animation.
+      iconFilters.delete(svg);
+      return;
+    }
+    var outline =
+      "drop-shadow(0.6px 0 0 " +
+      theme.textColor +
+      ") drop-shadow(-0.6px 0 0 " +
+      theme.textColor +
+      ")";
+    if (!entry) {
+      entry = {
+        value: svg.style.filter,
+        priority: svg.style.getPropertyPriority("filter"),
+      };
+      iconFilters.set(svg, entry);
+    }
+    if (svg.style.filter !== outline)
+      svg.style.setProperty("filter", outline, "important");
+    entry.owned = svg.style.filter;
+  }
+  function protectIcons(theme, changes) {
+    if (theme.mode === "filter") return;
+    function enqueue(root, subtree) {
+      // Engine/style traffic cannot change icon geometry or paint. Never scan
+      // the document again in response to those records.
+      if (root.nodeType === 1 && root.matches("head,style,script,link")) return;
+      if (root.nodeType === 1) {
+        var svg = root.closest("svg");
+        if (svg) root = svg;
+      }
+      if (!iconScans.has(root))
+        iconScans.set(root, {
+          first: root,
+          walker: subtree ? document.createTreeWalker(root, 1) : null,
+        });
+    }
+    // Initial discovery once; subsequent work is restricted to changed roots.
+    if (!iconDiscoveryStarted) {
+      iconDiscoveryStarted = true;
+      enqueue(document, true);
+    } else if (changes)
+      changes.forEach(function (subtree, root) {
+        if (root.isConnected) enqueue(root, subtree);
+      });
+    scheduleIcons();
+  }
+  function scheduleIcons() {
+    if (iconScanTimer !== null || !iconScans.size || !desired || disposed)
+      return;
+    iconScanTimer = window.setTimeout(function () {
+      iconScanTimer = null;
+      if (!desired || disposed) return;
+      if (observer) observer.disconnect();
+      try {
+        var budget = 256,
+          iconBudget = 16;
+        for (var entry of iconScans) {
+          var root = entry[0],
+            scan = entry[1];
+          if (!root.isConnected) {
+            iconScans.delete(root);
+            continue;
+          }
+          var node;
+          while (
+            budget &&
+            iconBudget &&
+            (node = scan.first || (scan.walker && scan.walker.nextNode()))
+          ) {
+            scan.first = null;
+            budget--;
+            if (node.nodeType === 1 && node.localName === "svg") {
+              iconBudget--;
+              protectIcon(node, desired);
+            } else if (node.nodeType === 1 && node.matches(iconSurface)) {
+              protectInline(node, "-webkit-text-fill-color", "currentColor");
+            }
+          }
+          if (budget && iconBudget) iconScans.delete(root);
+          else break;
+        }
+        iconFilters.forEach(function (_, svg) {
+          if (!svg.isConnected) restoreIconFilter(svg);
+        });
+      } finally {
+        observe();
+      }
+      scheduleIcons();
+    }, 16);
   }
   function installPaintShield(theme) {
     if (!paintShield || !paintShield.isConnected) {
@@ -349,6 +557,9 @@ function createWebDarkModeController() {
             ].some(function (property) {
               var owned = forcedInlineByElement.get(node);
               return (
+                !(
+                  property === "background-image" && node.matches(iconSurface)
+                ) &&
                 node.style.getPropertyPriority(property) === "important" &&
                 (!owned ||
                   !owned[property] ||
@@ -465,6 +676,7 @@ function createWebDarkModeController() {
         entry.fullRepair = true;
       });
     cpanelDetected = isCpanel;
+    protectIcons(theme, changes);
     protectShadows(theme, changes);
     // enable() may return before the engine is active (hidden document, missing
     // head or loading CSS). Its own fallback is cleared after conversion. The
@@ -1384,6 +1596,8 @@ function createWebDarkModeController() {
           "id",
           "media",
           "disabled",
+          "fill",
+          "stroke",
           "data-sorng-dark-ready",
           "data-darkreader-mode",
         ],

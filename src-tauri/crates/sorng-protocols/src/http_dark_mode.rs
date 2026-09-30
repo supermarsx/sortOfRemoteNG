@@ -52,11 +52,14 @@ fn generic_surface_coverage(text: &str) -> String {
     // Persistent structural floor for arbitrary HTML (including pseudo surfaces),
     // independent of site markers and engine readiness. Keep this contract in
     // sync with web_dark_mode_client.js. The root paint shield is not selected.
-    // Bootstrap only knows the palette: CSS background images are cleared, with
-    // no image analysis/fetching; actual media and the SVG subtree are untouched.
+    // Preserve sprites on explicit icon surfaces, never arbitrary panels. No
+    // image analysis/fetching; actual media and the SVG subtree are untouched.
     let selector = "html:root body *:not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *)";
+    let icons = ":is(i,span):is(.icon,.fa,.fas,.far,.fab,.glyphicon,.material-icons,.material-symbols-outlined,[class^='icon-'],[class*=' icon-'],[class^='fa-'],[class*=' fa-'])";
+    let no_sprite = format!("{selector}:not({icons})");
+    let icons = format!("html:root body {icons}");
     format!(
-        "{selector},{selector}::before,{selector}::after,html:root body::before,html:root body::after{{background-color:transparent!important;background-image:none!important;color:{text}!important;transition:none!important}}"
+        "{selector},{selector}::before,{selector}::after,html:root body::before,html:root body::after{{background-color:transparent!important;color:{text}!important;transition:none!important}}{no_sprite},{no_sprite}::before,{no_sprite}::after,html:root body::before,html:root body::after{{background-image:none!important}}{icons},{icons}::before,{icons}::after{{-webkit-text-fill-color:currentColor!important}}"
     )
 }
 
@@ -88,7 +91,7 @@ impl WebsiteDarkModeBootstrap {
         // engine (or CSS fallback) is ready. With scripts blocked it stays a
         // static CSS fallback. DarkReader must not convert its own preload.
         Some(format!(
-            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;background-image:none!important;transition:none!important}}{}{}}}@layer sorng-dark-surface{{{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body *:not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;background-image:none!important;transition:none!important}}}}</style>",
+            "<style id=\"__sorng_dark_bootstrap_v1\" class=\"darkreader\" data-background-color=\"{}\" data-text-color=\"{}\">@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;@layer sorng-force-dark{{html:root{{color-scheme:dark!important}}html:root,html:root body,html:root frameset{{background-color:{}!important;color:{}!important;background-image:none!important;transition:none!important}}{}{}}}@layer sorng-dark-surface{{{}}}@layer sorng-dark-loading{{html:root:not([data-sorng-dark-ready]) body *:not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *){{background-color:transparent!important;color:{}!important;transition:none!important}}}}</style>",
             self.background_color,
             self.text_color,
             self.background_color,
@@ -234,7 +237,9 @@ mod tests {
         ] {
             assert!(!floor.contains(marker), "unexpected marker: {marker}");
         }
-        assert!(floor.contains("background-color:transparent!important;background-image:none!important;color:#d0e0f0!important;transition:none!important"));
+        assert!(floor.contains("background-color:transparent!important;color:#d0e0f0!important;transition:none!important"));
+        assert!(floor.contains(":not(:is(i,span):is(.icon,"));
+        assert!(floor.contains("{-webkit-text-fill-color:currentColor!important}"));
         assert!(!floor.contains("url("));
         assert!(!floor.contains("@import"));
         assert!(!floor.contains("html:root::after"));

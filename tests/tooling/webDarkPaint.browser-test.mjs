@@ -68,8 +68,8 @@ function nativeShield(source) {
 function nativeBootstrap(source) {
   const template = (name) => {
     const match = new RegExp(
-      `fn ${name}\\([^]*?format!\\(\\s*("(?:\\\\.|[^"\\\\])*")`,
-      "u",
+      `fn ${name}\\([^]*?^\\s*(?:Some\\()?format!\\(\\s*("(?:\\\\.|[^"\\\\])*")`,
+      "mu",
     ).exec(source);
     assert.ok(match, `Rust ${name} format template changed`);
     return JSON.parse(match[1]);
@@ -89,7 +89,8 @@ function nativeBootstrap(source) {
     text = "#e8e6e3";
   const selector = /let selector = "([^"]+)";/u.exec(source)?.[1];
   const root = /let root = "([^"]+)";/u.exec(source)?.[1];
-  assert.ok(selector && root);
+  const iconSelector = /let icons = "([^"]+)";/u.exec(source)?.[1];
+  assert.ok(selector && root && iconSelector);
   return render(template("style"), [
     background,
     text,
@@ -104,7 +105,12 @@ function nativeBootstrap(source) {
       header: "#313233",
       border: "#464747",
     }),
-    render(template("generic_surface_coverage"), [], { selector, text }),
+    render(template("generic_surface_coverage"), [], {
+      selector,
+      text,
+      no_sprite: `${selector}:not(${iconSelector})`,
+      icons: `html:root body ${iconSelector}`,
+    }),
     text,
   ]);
 }

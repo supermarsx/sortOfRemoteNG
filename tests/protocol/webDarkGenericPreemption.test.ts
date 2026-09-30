@@ -206,12 +206,29 @@ describe("site-independent dark preemption", () => {
       "@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;",
     );
     expect(css).toContain(
-      `@layer sorng-dark-surface{html:root body::before,html:root body::after,${selector},${selector}::before,${selector}::after{background-color:transparent!important;background-image:none!important;color:#e8e6e3!important;transition:none!important}}`,
+      `@layer sorng-dark-surface{html:root body::before,html:root body::after,${selector},${selector}::before,${selector}::after{background-color:transparent!important;color:#e8e6e3!important;transition:none!important}`,
     );
     // This is permanent, not tied to a site marker or a loading-only attribute.
     expect(
       css.split("@layer sorng-dark-surface{")[1].split("}")[0],
     ).not.toMatch(/cpanel|data-sorng-dark-ready|data-sorng-dark-presented/);
+  });
+
+  it("keeps native and runtime icon selectors and loading background policy in parity", async () => {
+    const nativeIcons = /let icons = "([^"]+)";/.exec(proxySource)![1];
+    await enable();
+    const css = bootstrap().textContent!;
+    expect(css).toContain(`${selector}:not(${nativeIcons})::before`);
+    expect(css).toContain(
+      `${nativeIcons}::after{-webkit-text-fill-color:currentColor!important}`,
+    );
+    expect(css.split("@layer sorng-dark-loading{")[1]).not.toContain(
+      "background-image",
+    );
+    const nativeLoading = proxySource
+      .split("@layer sorng-dark-loading{{html:")[1]
+      .split("</style>")[0];
+    expect(nativeLoading).not.toContain("background-image");
   });
 
   it("repairs late arbitrary inline-important surfaces before yielding to a timer", async () => {
