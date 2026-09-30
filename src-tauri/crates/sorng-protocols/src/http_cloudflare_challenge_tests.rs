@@ -1,5 +1,6 @@
 //! Cloudflare challenge acceptance is entirely loopback TLS behind a synthetic CONNECT proxy.
 use super::*;
+use base64::engine::general_purpose::STANDARD as BASE64;
 
 const SOURCE: &str = "https://dash.cloudflare.com";
 const CHALLENGE: &str = "https://challenges.cloudflare.com";
@@ -7,6 +8,162 @@ const CHALLENGE: &str = "https://challenges.cloudflare.com";
 const OPAQUE_QUERY: &str =
     "__cf_chl_tk=fixture%2Bopaque%2fvalue+space&repeat=one&repeat=two&empty=";
 const MANAGED_HTML: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-fixture-nonce' 'unsafe-eval' https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com"><title>Just a moment...</title></head><body><div id="challenge-stage">Checking your browser</div><script nonce="fixture-nonce">window._cf_chl_opt={cType:'managed',cUPMDTk:'/login?__cf_chl_tk=fixture%2Bopaque%2fvalue+space&repeat=one&repeat=two&empty='};var s=document.createElement('script');s.nonce='fixture-nonce';s.src='/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1?ray=fixture';document.head.appendChild(s);</script><iframe src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/fixture"></iframe></body></html>"#;
+
+fn csp_hash_source(body: &str) -> String {
+    let normalized = body.replace("\r\n", "\n").replace('\r', "\n");
+    format!(
+        "'sha256-{}'",
+        BASE64.encode(Sha256::digest(normalized.as_bytes()))
+    )
+}
+
+fn csp_meta_content(html: &str) -> &str {
+    html.split_once("http-equiv=\"Content-Security-Policy\" content=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0
+}
+
+fn inline_script_bodies(html: &str) -> Vec<&str> {
+    let mut bodies = Vec::new();
+    let mut rest = html;
+    while let Some((_, after)) = rest.split_once("<script") {
+        let Some((opening, after_open)) = after.split_once('>') else {
+            break;
+        };
+        let Some((body, after_close)) = after_open.split_once("</script>") else {
+            break;
+        };
+        if !opening.to_ascii_lowercase().contains(" src") {
+            bodies.push(body);
+        }
+        rest = after_close;
+    }
+    bodies
+}
+
+#[test]
+fn cloudflare_csp_rewrite_hashes_only_trusted_injected_inline_blocks() {
+    let trusted_script =
+        "try{window.parent.postMessage({type:'proxy_navigate',url:location.href},'*')}catch(e){}";
+    let unknown_script = "alert('upstream-inline-without-nonce')";
+    let trusted_style = "@layer sorng-force-dark{html:root{color-scheme:dark!important}}";
+    let html = format!(
+        "<!doctype html><html><head><meta http-equiv='Content-Security-Policy' content='default-src &#39;none&#39;; script-src &#39;nonce-upstream&#39; https://challenges.cloudflare.com; style-src &#39;self&#39;'></head><body><script>{trusted_script}</script><script>{unknown_script}</script><style id=\"__sorng_dark_bootstrap_v1\">{trusted_style}</style></body></html>"
+    );
+    let spoofed_marker = "window.__sorng_autologin={fetchCredsAndRun:function(){}}";
+    let html = html.replace(
+        "</body>",
+        &format!("<script>{spoofed_marker}</script></body>"),
+    );
+    let rewritten = cloudflare_challenge::authorize_injected_csp(
+        &html,
+        &[trusted_script.to_string()],
+        &[trusted_style.to_string()],
+    );
+    assert!(
+        rewritten.contains("script-src &#39;nonce-upstream&#39; https://challenges.cloudflare.com")
+    );
+    assert!(rewritten.contains(&csp_hash_source(trusted_script).replace('\'', "&#39;")));
+    assert!(rewritten.contains(&csp_hash_source(trusted_style).replace('\'', "&#39;")));
+    assert!(!rewritten.contains(&csp_hash_source(unknown_script).replace('\'', "&#39;")));
+    assert!(!rewritten.contains(&csp_hash_source(spoofed_marker).replace('\'', "&#39;")));
+    assert!(!rewritten.contains("unsafe-inline"));
+}
+
+#[test]
+fn cloudflare_csp_rewrite_preserves_entities_and_default_fallbacks() {
+    let trusted_script = "try{window.parent.postMessage({type:'proxy_navigate'},'*')}catch(e){}";
+    let html = format!(
+        "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' data:; img-src 'self'\"><meta http-equiv=\"content-security-&#112;olicy\" content=\"default-src 'self' https:; img-src 'self'\"></head><body><script>{trusted_script}</script></body></html>"
+    );
+    let rewritten =
+        cloudflare_challenge::authorize_injected_csp(&html, &[trusted_script.to_string()], &[]);
+    assert!(rewritten.contains(&format!(
+        "script-src 'self' data: {}",
+        csp_hash_source(trusted_script)
+    )));
+    assert!(rewritten.contains(&format!(
+        "script-src 'self' https: {}",
+        csp_hash_source(trusted_script)
+    )));
+    assert!(rewritten.contains("content-security-&#112;olicy"));
+}
+
+#[test]
+fn cloudflare_csp_rewrite_does_not_break_upstream_style_unsafe_inline() {
+    let trusted_style = "@layer sorng-force-dark{html:root{color-scheme:dark!important}}";
+    let html = format!(
+        "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\"></head><body><style>{trusted_style}</style></body></html>"
+    );
+    let rewritten =
+        cloudflare_challenge::authorize_injected_csp(&html, &[], &[trusted_style.to_string()]);
+    assert!(rewritten.contains("style-src 'unsafe-inline'"));
+    assert!(!rewritten.contains(&csp_hash_source(trusted_style)));
+}
+
+#[test]
+fn cloudflare_csp_hash_uses_browser_line_ending_normalization() {
+    let trusted_script =
+        "try{\r\nwindow.parent.postMessage({type:'proxy_navigate'},'*')\r}catch(e){}";
+    let html = format!(
+        "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'\"></head><body><script>{trusted_script}</script></body></html>"
+    );
+    let rewritten =
+        cloudflare_challenge::authorize_injected_csp(&html, &[trusted_script.to_string()], &[]);
+    let expected = csp_hash_source(
+        "try{\nwindow.parent.postMessage({type:'proxy_navigate'},'*')\n}catch(e){}",
+    );
+    assert!(rewritten.contains(&expected), "{rewritten}");
+    assert!(!rewritten.contains(&format!(
+        "'sha256-{}'",
+        BASE64.encode(Sha256::digest(trusted_script.as_bytes()))
+    )));
+}
+
+#[test]
+fn cloudflare_csp_rewrite_preserves_script_unsafe_inline_and_absent_fallbacks() {
+    let trusted_script = "try{window.parent.postMessage({type:'proxy_navigate'},'*')}catch(e){}";
+    let unsafe_inline = format!(
+        "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'\"></head><body><script>{trusted_script}</script></body></html>"
+    );
+    let rewritten = cloudflare_challenge::authorize_injected_csp(
+        &unsafe_inline,
+        &[trusted_script.to_string()],
+        &[],
+    );
+    assert!(rewritten.contains("script-src 'unsafe-inline' 'unsafe-eval'"));
+    assert!(!rewritten.contains(&csp_hash_source(trusted_script)));
+
+    let no_script_or_default = format!(
+        "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"img-src 'self'\"></head><body><script>{trusted_script}</script></body></html>"
+    );
+    assert_eq!(
+        cloudflare_challenge::authorize_injected_csp(
+            &no_script_or_default,
+            &[trusted_script.to_string()],
+            &[],
+        ),
+        no_script_or_default
+    );
+}
+
+#[test]
+fn cloudflare_csp_rewrite_ignores_meta_text_inside_comments_and_scripts() {
+    let trusted_script = "try{window.parent.postMessage({type:'proxy_navigate'},'*')}catch(e){}";
+    let html = format!(
+        "<html><head><!-- <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'\"> --><script>const fake = '<meta http-equiv=\"Content-Security-Policy\" content=\"default-src \\'none\\'\">';</script><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'\"></head><body><script>{trusted_script}</script></body></html>"
+    );
+    let rewritten =
+        cloudflare_challenge::authorize_injected_csp(&html, &[trusted_script.to_string()], &[]);
+    assert_eq!(
+        rewritten.matches(&csp_hash_source(trusted_script)).count(),
+        1
+    );
+    assert!(rewritten.contains("const fake = '<meta http-equiv=\"Content-Security-Policy\" content=\"default-src \\'none\\'\">';"));
+}
 
 struct Peer {
     trusted: reqwest::Client,
@@ -120,6 +277,11 @@ async fn peer(reject_proxy: bool) -> Peer {
                 }
                 if request.starts_with("GET /ordinary-error ") || request.starts_with("GET /ordinary-error?") {
                     socket.write_all(format!("HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{MANAGED_HTML}", MANAGED_HTML.len()).as_bytes()).await.unwrap();
+                    return;
+                }
+                if mesh && request.starts_with("GET /strict-meta ") {
+                    let body = "<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'nonce-upstream'; connect-src 'self'; frame-src 'self'\"><title>Challenge frame</title></head><body><script nonce=\"upstream\">window.challengeFrame=true</script></body></html>";
+                    socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
                     return;
                 }
                 let body = if mesh { "<!doctype html><html><head></head><body><script src=\"https://challenges.cloudflare.com/a%20b.js\"></script>control</body></html>" } else { "<!doctype html><html><head><script src=\"https://challenges.cloudflare.com/turnstile/v0/api.js\"></script></head><body><iframe src=\"//challenges.cloudflare.com/frame\"></iframe></body></html>" };
@@ -531,6 +693,31 @@ async fn cloudflare_managed_dashboard_document_preserves_nonce_meta_csp_and_loca
         "<iframe src=\"{alias}/cdn-cgi/challenge-platform/"
     )));
     assert!(html.contains("script-src 'nonce-fixture-nonce' 'unsafe-eval'"));
+    let meta_csp = csp_meta_content(&html);
+    assert!(meta_csp.contains(&format!(
+        "script-src 'nonce-fixture-nonce' 'unsafe-eval' {alias}"
+    )));
+    let scripts = inline_script_bodies(&html);
+    let readiness = scripts
+        .iter()
+        .find(|body| body.contains("installWebNetworkClient("))
+        .unwrap();
+    let navigate = scripts
+        .iter()
+        .find(|body| body.contains("type:'proxy_navigate'"))
+        .unwrap();
+    let upstream_nonce_script = scripts
+        .iter()
+        .find(|body| body.contains("window._cf_chl_opt={cType:'managed'"))
+        .unwrap();
+    assert!(
+        meta_csp.contains(&csp_hash_source(readiness)),
+        "meta CSP missing readiness hash: {meta_csp}"
+    );
+    assert!(meta_csp.contains(&csp_hash_source(navigate)));
+    assert!(!meta_csp.contains(&csp_hash_source(upstream_nonce_script)));
+    assert!(!meta_csp.contains("script-src 'unsafe-inline'"));
+    assert!(html.contains("<script nonce=\"fixture-nonce\">window._cf_chl_opt"));
     assert!(html.contains(&format!("cUPMDTk:'/login?{OPAQUE_QUERY}'")));
     let seen = peer.seen.lock().unwrap();
     assert!(seen[0].starts_with(&format!(
@@ -624,6 +811,33 @@ async fn cloudflare_challenge_source_static_urls_frame_cookies_and_headers_are_i
         .unwrap()
         .iter()
         .any(|request| request.starts_with("CONNECT challenges.cloudflare.com:443 ")));
+}
+
+#[tokio::test]
+async fn cloudflare_challenge_alias_html_authorizes_only_its_bootstrap_against_meta_csp() {
+    let peer = peer(false).await;
+    let fixture = fixture(&peer, peer.trusted.clone()).await;
+    let alias = root(&fixture).await;
+    let response = request(&fixture, &alias, "/strict-meta")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let html = response.text().await.unwrap();
+    let meta_csp = csp_meta_content(&html);
+    let scripts = inline_script_bodies(&html);
+    let bootstrap = scripts
+        .iter()
+        .find(|body| body.contains("installWebNetworkClient("))
+        .unwrap();
+    let upstream_nonce_script = scripts
+        .iter()
+        .find(|body| body.contains("window.challengeFrame=true"))
+        .unwrap();
+    assert!(meta_csp.contains("script-src 'nonce-upstream'"));
+    assert!(meta_csp.contains(&csp_hash_source(bootstrap)));
+    assert!(!meta_csp.contains(&csp_hash_source(upstream_nonce_script)));
+    assert!(html.contains("<script nonce=\"upstream\">window.challengeFrame=true</script>"));
 }
 
 #[tokio::test]

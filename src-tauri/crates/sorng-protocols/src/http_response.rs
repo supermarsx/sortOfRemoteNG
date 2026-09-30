@@ -518,8 +518,21 @@ pub(super) fn inject_readiness(
     sequence: u64,
     network: ReadinessNetworkContext<'_>,
 ) -> String {
-    if sequence == 0 || sequence > 9_007_199_254_740_991 {
+    let Some(script) = readiness_script(session_id, token, sequence, network) else {
         return html.to_string();
+    };
+    let insertion = early_script_insertion(html);
+    format!("{}{}{}", &html[..insertion], script, &html[insertion..])
+}
+
+pub(super) fn readiness_script(
+    session_id: &str,
+    token: Option<&str>,
+    sequence: u64,
+    network: ReadinessNetworkContext<'_>,
+) -> Option<String> {
+    if sequence == 0 || sequence > 9_007_199_254_740_991 {
+        return None;
     }
     let payload = serde_json::json!({"version":1,
         "sessionId":session_id, "navigationToken":token,
@@ -574,8 +587,16 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
             network.cloudflare_challenge,
         ),
     );
-    let insertion = early_script_insertion(html);
-    format!("{}{}{}", &html[..insertion], script, &html[insertion..])
+    Some(script)
+}
+
+pub(super) fn inline_element_body<'a>(fragment: &'a str, tag: &str) -> Option<&'a str> {
+    let prefix = format!("<{tag}");
+    let suffix = format!("</{tag}>");
+    let (_, after_open) = fragment.split_once(&prefix)?;
+    let (_, body) = after_open.split_once('>')?;
+    let (body, rest) = body.rsplit_once(&suffix)?;
+    rest.trim().is_empty().then_some(body)
 }
 
 pub(super) fn early_script_insertion(html: &str) -> usize {

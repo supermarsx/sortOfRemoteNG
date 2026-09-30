@@ -35,6 +35,11 @@ mod proxy_response_tests;
 mod quickconnect;
 #[path = "http_quickconnect_control.rs"]
 mod quickconnect_control;
+#[cfg(test)]
+#[path = "http_request_header_tests.rs"]
+mod request_header_tests;
+#[path = "http_request_headers.rs"]
+mod request_headers;
 pub use log_diagnostics::ProxyLogDiagnostic;
 #[path = "http_attempt.rs"]
 #[doc(hidden)]
@@ -1725,15 +1730,8 @@ fn collect_upstream_headers(
                         | UpstreamAuthMode::BitwardenForm
                         | UpstreamAuthMode::SynologyForm
                 ))
-            || matches!(
-                name,
-                "host"
-                    | "connection"
-                    | "proxy-authorization"
-                    | "transfer-encoding"
-                    | "content-length"
-                    | "accept-encoding"
-            )
+            || upstream_header_is_hop_by_hop(incoming, name)
+            || matches!(name, "host" | "content-length" | "accept-encoding")
         {
             continue;
         }
@@ -1757,6 +1755,16 @@ fn collect_upstream_headers(
         proxy_response::ACCEPT_ENCODING.into(),
     ));
     forwarded
+}
+
+fn upstream_header_is_hop_by_hop(incoming: &axum::http::HeaderMap, name: &str) -> bool {
+    request_headers::is_hop_by_hop(
+        name,
+        incoming
+            .get_all("connection")
+            .iter()
+            .map(|value| value.as_bytes()),
+    )
 }
 
 fn retain_tactical_api_headers(headers: &mut Vec<(String, String)>) {
@@ -2929,6 +2937,17 @@ async fn axum_proxy_handler_inner(
                 }
             }
 
+            let is_cloudflare_managed_challenge =
+                cloudflare_challenge::is_managed_challenge_response(
+                    state
+                        .network
+                        .cloudflare_challenge
+                        .as_ref()
+                        .map(|_| ReviewedApplicationProfile::Cloudflare),
+                    &response_url,
+                    &resp_hdrs,
+                );
+
             // ── P5: theme every other upstream 4xx/5xx ──
             //
             // P3 already short-circuited 401 + WWW-Authenticate: Basic
@@ -2942,18 +2961,7 @@ async fn axum_proxy_handler_inner(
             // even on HTTP 403. Keep it in the normal bounded rewrite/injection
             // pipeline. The route exists only for the exact reviewed profile;
             // the classifier also checks the final response origin and signal.
-            if document_request
-                && status_u16 >= 400
-                && !cloudflare_challenge::is_managed_challenge_response(
-                    state
-                        .network
-                        .cloudflare_challenge
-                        .as_ref()
-                        .map(|_| ReviewedApplicationProfile::Cloudflare),
-                    &response_url,
-                    &resp_hdrs,
-                )
-            {
+            if document_request && status_u16 >= 400 && !is_cloudflare_managed_challenge {
                 let is_html_or_empty = content_type
                     .as_deref()
                     .map(|ct| {
@@ -3118,6 +3126,8 @@ async fn axum_proxy_handler_inner(
             // Inject navigation reporter into HTML.
             let is_html =
                 document_request && has_body && proxy_response::is_html(content_type.as_deref());
+            let mut trusted_script_bodies = Vec::new();
+            let mut trusted_style_bodies = Vec::new();
             if is_html && state.proxy_policy.page_scripts != PageScripts::Block {
                 // Subresource requests must never replace the page identity or
                 // consume/mint the page's automatic-login nonce.
@@ -3128,6 +3138,11 @@ async fn axum_proxy_handler_inner(
                 let nav_script = "<script>try{window.parent.postMessage(\
                     {type:'proxy_navigate',url:location.href},'*')\
                     }catch(e){}</script>";
+                if is_cloudflare_managed_challenge {
+                    if let Some(body) = proxy_response::inline_element_body(nav_script, "script") {
+                        trusted_script_bodies.push(body.to_string());
+                    }
+                }
                 // t20: when auto-login is armed for this session, also inject
                 // the bootstrap that fetches the saved credential over the
                 // nonce-guarded same-origin endpoint and fills + submits the
@@ -3155,6 +3170,14 @@ async fn axum_proxy_handler_inner(
                 } else {
                     crate::autologin_asset::autologin_client_asset_script()
                 };
+                if is_cloudflare_managed_challenge {
+                    for fragment in [&autologin_asset, &autologin_script] {
+                        if let Some(body) = proxy_response::inline_element_body(fragment, "script")
+                        {
+                            trusted_script_bodies.push(body.to_string());
+                        }
+                    }
+                }
                 let injected_scripts =
                     format!("{}{}{}", nav_script, autologin_asset, autologin_script);
                 let body_str = String::from_utf8_lossy(&final_body);
@@ -3162,13 +3185,12 @@ async fn axum_proxy_handler_inner(
                     proxy_response::inject_page_scripts(&body_str, &injected_scripts).into_bytes();
                 // Install before application scripts, independently of optional
                 // auto-login. Readiness means DOM available, never authenticated.
-                final_body = proxy_response::inject_readiness(
-                    &String::from_utf8_lossy(&final_body),
+                let readiness_script = proxy_response::readiness_script(
                     &state.session_id,
                     navigation_token.as_deref(),
                     document_sequence,
                     proxy_response::ReadinessNetworkContext {
-                        cloudflare_challenge,
+                        cloudflare_challenge: cloudflare_challenge.clone(),
                         source_origin: &state.target_origin,
                         proxy_origin: &state.proxy_origin,
                         policy: &state.proxy_policy,
@@ -3186,8 +3208,25 @@ async fn axum_proxy_handler_inner(
                                 .flatten()
                         }),
                     },
-                )
-                .into_bytes();
+                );
+                if let Some(readiness_script) = readiness_script {
+                    if is_cloudflare_managed_challenge {
+                        if let Some(body) =
+                            proxy_response::inline_element_body(&readiness_script, "script")
+                        {
+                            trusted_script_bodies.push(body.to_string());
+                        }
+                    }
+                    let body_str = String::from_utf8_lossy(&final_body);
+                    let insertion = proxy_response::early_script_insertion(&body_str);
+                    final_body = format!(
+                        "{}{}{}",
+                        &body_str[..insertion],
+                        readiness_script,
+                        &body_str[insertion..]
+                    )
+                    .into_bytes();
+                }
             }
 
             // Insert last so the static palette precedes even the readiness
@@ -3200,10 +3239,35 @@ async fn axum_proxy_handler_inner(
                     .ok()
                     .and_then(|slot| slot.clone());
                 if let Some(palette) = palette {
+                    if is_cloudflare_managed_challenge {
+                        if let Some(style) = palette.style() {
+                            if let Some(body) = proxy_response::inline_element_body(&style, "style")
+                            {
+                                trusted_style_bodies.push(body.to_string());
+                            }
+                        }
+                        if state.proxy_policy.page_scripts != PageScripts::Block {
+                            if let Some(shield) = palette.paint_shield() {
+                                if let Some(body) =
+                                    proxy_response::inline_element_body(&shield, "style")
+                                {
+                                    trusted_style_bodies.push(body.to_string());
+                                }
+                            }
+                        }
+                    }
                     final_body = proxy_response::inject_dark_mode_bootstrap(
                         &String::from_utf8_lossy(&final_body),
                         &palette,
                         state.proxy_policy.page_scripts != PageScripts::Block,
+                    )
+                    .into_bytes();
+                }
+                if is_cloudflare_managed_challenge {
+                    final_body = cloudflare_challenge::authorize_injected_csp(
+                        &String::from_utf8_lossy(&final_body),
+                        &trusted_script_bodies,
+                        &trusted_style_bodies,
                     )
                     .into_bytes();
                 }

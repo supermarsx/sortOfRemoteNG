@@ -5,7 +5,9 @@ use axum::{
     body::Body,
     http::{Response, StatusCode},
 };
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use reqwest::Url;
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
@@ -48,6 +50,429 @@ pub(super) fn rewrite(text: &str, alias: &str) -> String {
         text = super::proxy_response::rewrite_target_origin(&text, origin, alias);
     }
     text
+}
+
+/// Cloudflare's managed page can carry a nonce-only CSP in a meta element. The
+/// proxy must keep that policy, while permitting only the inline blocks it has
+/// inserted into this response. Upstream scripts keep their original nonce.
+pub(super) fn authorize_injected_csp(
+    html: &str,
+    trusted_script_bodies: &[String],
+    trusted_style_bodies: &[String],
+) -> String {
+    let trust = TrustedInlineHashes::from_bodies(trusted_script_bodies, trusted_style_bodies);
+    if trust.scripts.is_empty() && trust.styles.is_empty() {
+        return html.to_string();
+    }
+    rewrite_meta_csp(html, &trust)
+}
+
+struct TrustedInlineHashes {
+    scripts: Vec<String>,
+    styles: Vec<String>,
+}
+
+impl TrustedInlineHashes {
+    fn from_bodies(scripts: &[String], styles: &[String]) -> Self {
+        let mut script_hashes = Vec::new();
+        let mut style_hashes = Vec::new();
+        for body in scripts {
+            push_unique(&mut script_hashes, csp_hash(body));
+        }
+        for body in styles {
+            push_unique(&mut style_hashes, csp_hash(body));
+        }
+        Self {
+            scripts: script_hashes,
+            styles: style_hashes,
+        }
+    }
+}
+
+fn csp_hash(body: &str) -> String {
+    let normalized = body.replace("\r\n", "\n").replace('\r', "\n");
+    format!(
+        "'sha256-{}'",
+        BASE64.encode(Sha256::digest(normalized.as_bytes()))
+    )
+}
+
+fn push_unique(values: &mut Vec<String>, value: String) {
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Attribute<'a> {
+    name: &'a str,
+    value: &'a str,
+    value_start: usize,
+    value_end: usize,
+    quote: Option<u8>,
+}
+
+fn rewrite_meta_csp(html: &str, trust: &TrustedInlineHashes) -> String {
+    let lower = html.to_ascii_lowercase();
+    let mut output = String::with_capacity(html.len());
+    let mut copied = 0;
+    let mut cursor = 0;
+    let raw_text = [
+        "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "noscript",
+        "template",
+    ];
+    while let Some(offset) = lower[cursor..].find('<') {
+        let start = cursor + offset;
+        if lower[start..].starts_with("<!--") {
+            let Some(end) = lower[start + 4..].find("-->") else {
+                break;
+            };
+            cursor = start + 4 + end + 3;
+            continue;
+        }
+        let Some((name, closing, end)) = super::proxy_response::html_tag(&lower, start) else {
+            cursor = start + 1;
+            continue;
+        };
+        cursor = end;
+        if !closing && raw_text.contains(&name) {
+            let closing_prefix = format!("</{name}");
+            let mut search = cursor;
+            loop {
+                let Some(offset) = lower[search..].find(&closing_prefix) else {
+                    cursor = lower.len();
+                    break;
+                };
+                let close = search + offset;
+                if let Some((closed, true, close_end)) =
+                    super::proxy_response::html_tag(&lower, close)
+                {
+                    if closed == name {
+                        cursor = close_end;
+                        break;
+                    }
+                }
+                search = close + closing_prefix.len();
+            }
+            continue;
+        }
+        if closing || name != "meta" {
+            continue;
+        }
+        let tag = &html[start..end];
+        let attrs = attributes(tag);
+        let is_csp = attrs.iter().any(|attr| {
+            attr.name.eq_ignore_ascii_case("http-equiv")
+                && decode_entities(attr.value).eq_ignore_ascii_case("content-security-policy")
+        });
+        if !is_csp {
+            continue;
+        }
+        let Some(content) = attrs
+            .iter()
+            .find(|attr| attr.name.eq_ignore_ascii_case("content"))
+        else {
+            continue;
+        };
+        let Some(rewritten) = authorize_policy(content.value, content.quote, trust) else {
+            continue;
+        };
+        output.push_str(&html[copied..start + content.value_start]);
+        output.push_str(&rewritten);
+        copied = start + content.value_end;
+    }
+    if copied == 0 {
+        return html.to_string();
+    }
+    output.push_str(&html[copied..]);
+    output
+}
+
+fn attributes(tag: &str) -> Vec<Attribute<'_>> {
+    let bytes = tag.as_bytes();
+    let mut cursor = 1;
+    while cursor < bytes.len() && bytes[cursor].is_ascii_alphanumeric() {
+        cursor += 1;
+    }
+    let mut attrs = Vec::new();
+    while cursor < bytes.len() {
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if cursor >= bytes.len() || matches!(bytes[cursor], b'/' | b'>') {
+            break;
+        }
+        let name_start = cursor;
+        while cursor < bytes.len()
+            && !bytes[cursor].is_ascii_whitespace()
+            && !matches!(bytes[cursor], b'=' | b'/' | b'>')
+        {
+            cursor += 1;
+        }
+        let name = &tag[name_start..cursor];
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if cursor >= bytes.len() || bytes[cursor] != b'=' {
+            continue;
+        }
+        cursor += 1;
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if cursor >= bytes.len() {
+            break;
+        }
+        let quote = matches!(bytes[cursor], b'\'' | b'"').then_some(bytes[cursor]);
+        if quote.is_some() {
+            cursor += 1;
+        }
+        let value_start = cursor;
+        if let Some(quote) = quote {
+            while cursor < bytes.len() && bytes[cursor] != quote {
+                cursor += 1;
+            }
+        } else {
+            while cursor < bytes.len()
+                && !bytes[cursor].is_ascii_whitespace()
+                && !matches!(bytes[cursor], b'/' | b'>')
+            {
+                cursor += 1;
+            }
+        }
+        let value_end = cursor;
+        attrs.push(Attribute {
+            name,
+            value: &tag[value_start..value_end],
+            value_start,
+            value_end,
+            quote,
+        });
+        if quote.is_some() && cursor < bytes.len() {
+            cursor += 1;
+        }
+    }
+    attrs
+}
+
+fn authorize_policy(
+    policy: &str,
+    quote: Option<u8>,
+    trust: &TrustedInlineHashes,
+) -> Option<String> {
+    if quote.is_none() {
+        return None;
+    }
+    let script_tokens = quote_tokens(&trust.scripts, quote);
+    let mut directives = split_directives(policy)
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let mut changed = append_script_directive(&mut directives, "script-src", &script_tokens);
+    changed |= append_script_directive(&mut directives, "script-src-elem", &script_tokens);
+    if !script_tokens.is_empty()
+        && !contains_directive(&directives, "script-src")
+        && !contains_directive(&directives, "script-src-elem")
+    {
+        if let Some(mut values) = fallback_source_list(&directives) {
+            append_missing_tokens(&mut values, &script_tokens);
+            directives.push(format!("script-src {}", values.trim()));
+            changed = true;
+        }
+    }
+
+    let style_tokens = quote_tokens(&trust.styles, quote);
+    changed |= append_style_directive(&mut directives, "style-src", &style_tokens);
+    changed |= append_style_directive(&mut directives, "style-src-elem", &style_tokens);
+    if !style_tokens.is_empty()
+        && !contains_directive(&directives, "style-src")
+        && !contains_directive(&directives, "style-src-elem")
+    {
+        if let Some(mut values) = fallback_source_list(&directives) {
+            if !unsafe_inline_without_nonce_or_hash(&values) {
+                append_missing_tokens(&mut values, &style_tokens);
+                directives.push(format!("style-src {}", values.trim()));
+                changed = true;
+            }
+        }
+    }
+    changed.then(|| directives.join("; "))
+}
+
+fn quote_tokens(tokens: &[String], quote: Option<u8>) -> Vec<String> {
+    match quote {
+        Some(b'\'') => tokens
+            .iter()
+            .map(|token| token.replace('\'', "&#39;"))
+            .collect(),
+        _ => tokens.to_vec(),
+    }
+}
+
+fn split_directives(policy: &str) -> Vec<&str> {
+    let mut directives = Vec::new();
+    let mut start = 0;
+    let mut entity = false;
+    for (index, ch) in policy.char_indices() {
+        match ch {
+            '&' => entity = true,
+            ';' if entity => entity = false,
+            ';' => {
+                directives.push(policy[start..index].trim());
+                start = index + 1;
+            }
+            c if entity && c.is_ascii_whitespace() => entity = false,
+            _ => {}
+        }
+    }
+    directives.push(policy[start..].trim());
+    directives.retain(|directive| !directive.is_empty());
+    directives
+}
+
+fn directive_name(directive: &str) -> &str {
+    directive.split_whitespace().next().unwrap_or("")
+}
+
+fn contains_directive(directives: &[String], name: &str) -> bool {
+    directives
+        .iter()
+        .any(|directive| directive_name(directive).eq_ignore_ascii_case(name))
+}
+
+fn directive_value(directive: &str) -> &str {
+    directive[directive_name(directive).len()..].trim()
+}
+
+fn fallback_source_list(directives: &[String]) -> Option<String> {
+    let Some(default) = directives
+        .iter()
+        .find(|directive| directive_name(directive).eq_ignore_ascii_case("default-src"))
+    else {
+        return None;
+    };
+    if unsafe_inline_without_nonce_or_hash(default) {
+        return None;
+    }
+    Some(directive_value(default).to_string())
+}
+
+fn append_script_directive(directives: &mut [String], name: &str, tokens: &[String]) -> bool {
+    if tokens.is_empty() {
+        return false;
+    }
+    let Some(directive) = directives
+        .iter_mut()
+        .find(|directive| directive_name(directive).eq_ignore_ascii_case(name))
+    else {
+        return false;
+    };
+    if unsafe_inline_without_nonce_or_hash(directive) {
+        return false;
+    }
+    let mut changed = false;
+    for token in tokens {
+        changed |= append_missing_token(directive, token);
+    }
+    changed
+}
+
+fn append_style_directive(directives: &mut [String], name: &str, tokens: &[String]) -> bool {
+    if tokens.is_empty() {
+        return false;
+    }
+    let Some(directive) = directives
+        .iter_mut()
+        .find(|directive| directive_name(directive).eq_ignore_ascii_case(name))
+    else {
+        return false;
+    };
+    if unsafe_inline_without_nonce_or_hash(directive) {
+        return false;
+    }
+    let mut changed = false;
+    for token in tokens {
+        changed |= append_missing_token(directive, token);
+    }
+    changed
+}
+
+fn append_missing_tokens(directive: &mut String, tokens: &[String]) -> bool {
+    let mut changed = false;
+    for token in tokens {
+        changed |= append_missing_token(directive, token);
+    }
+    changed
+}
+
+fn append_missing_token(directive: &mut String, token: &str) -> bool {
+    if directive.split_whitespace().any(|part| part == token) {
+        return false;
+    }
+    if !directive.is_empty() {
+        directive.push(' ');
+    }
+    directive.push_str(token);
+    true
+}
+
+fn unsafe_inline_without_nonce_or_hash(source_list: &str) -> bool {
+    let decoded = decode_entities(source_list);
+    decoded
+        .split_whitespace()
+        .any(|part| part.eq_ignore_ascii_case("'unsafe-inline'"))
+        && !source_list_has_nonce_or_hash(&decoded)
+}
+
+fn source_list_has_nonce_or_hash(source_list: &str) -> bool {
+    source_list.split_whitespace().any(|part| {
+        let part = part.to_ascii_lowercase();
+        part.starts_with("'nonce-")
+            || part.starts_with("'sha256-")
+            || part.starts_with("'sha384-")
+            || part.starts_with("'sha512-")
+    })
+}
+
+fn decode_entities(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(index) = rest.find('&') {
+        output.push_str(&rest[..index]);
+        rest = &rest[index + 1..];
+        let Some(end) = rest.find(';') else {
+            output.push('&');
+            output.push_str(rest);
+            return output;
+        };
+        let entity = &rest[..end];
+        let decoded = match entity {
+            "amp" => Some('&'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            _ if entity.starts_with("#x") || entity.starts_with("#X") => {
+                u32::from_str_radix(&entity[2..], 16)
+                    .ok()
+                    .and_then(char::from_u32)
+            }
+            _ if entity.starts_with('#') => {
+                entity[1..].parse::<u32>().ok().and_then(char::from_u32)
+            }
+            _ => None,
+        };
+        if let Some(decoded) = decoded {
+            output.push(decoded);
+        } else {
+            output.push('&');
+            output.push_str(entity);
+            output.push(';');
+        }
+        rest = &rest[end + 1..];
+    }
+    output.push_str(rest);
+    output
 }
 struct Alias {
     origin: String,
@@ -297,29 +722,22 @@ impl CloudflareChallenge {
             .headers
             .get("origin")
             .and_then(|value| value.to_str().ok());
-        let upstream_origin = browser_origin.map(|origin| {
-            if origin == self.source_proxy {
-                SOURCE
-            } else {
-                UPSTREAM
-            }
-        });
+        let upstream_origin = browser_origin
+            .filter(|_| !super::upstream_header_is_hop_by_hop(&parts.headers, "origin"))
+            .map(|origin| {
+                if origin == self.source_proxy {
+                    SOURCE
+                } else {
+                    UPSTREAM
+                }
+            });
         let mut outgoing = self.client.request(method, url.clone()).body(body);
         // Closed forwarding set: no Cookie, Authorization, dashboard custom
         // headers, proxy credentials, conditional cache, or connection headers.
         for (name, value) in &parts.headers {
-            if matches!(
-                name.as_str(),
-                "accept"
-                    | "accept-language"
-                    | "content-type"
-                    | "user-agent"
-                    | "sec-ch-ua"
-                    | "sec-ch-ua-mobile"
-                    | "sec-ch-ua-platform"
-                    | "access-control-request-method"
-                    | "access-control-request-headers"
-            ) {
+            if super::request_headers::is_cloudflare_browser_header(name.as_str())
+                && !super::upstream_header_is_hop_by_hop(&parts.headers, name.as_str())
+            {
                 outgoing = outgoing.header(name, value);
             }
         }
@@ -329,6 +747,7 @@ impl CloudflareChallenge {
         if let Some(referer) = parts
             .headers
             .get("referer")
+            .filter(|_| !super::upstream_header_is_hop_by_hop(&parts.headers, "referer"))
             .and_then(|value| value.to_str().ok())
             .and_then(|value| Url::parse(value).ok())
         {
@@ -459,9 +878,13 @@ impl CloudflareChallenge {
                     serde_json::json!({"sessionId":state.session_id,"documentSequence":root})
                         .to_string()
                         .replace('<', "\\u003c");
-                let script = format!("<script>(function(){{var p={identity};var u=new URL(location.href);{bootstrap}}})();</script>");
+                let script_body = format!(
+                    "(function(){{var p={identity};var u=new URL(location.href);{bootstrap}}})();"
+                );
+                let script = format!("<script>{script_body}</script>");
                 let index = super::proxy_response::early_script_insertion(&text);
                 text.insert_str(index, &script);
+                text = authorize_injected_csp(&text, &[script_body], &[]);
             }
             bytes = text.into_bytes();
         }

@@ -251,6 +251,16 @@ impl GoogleSession {
     ) -> Vec<(String, String)> {
         let mut headers =
             super::collect_upstream_headers(incoming, super::UpstreamAuthMode::None, "", target);
+        // This is an internal cookie-mode signal, consumed by upstream::send
+        // and removed by GoogleSession::send before any network request. Even
+        // Connection nomination must not turn an explicit omit into include.
+        headers.retain(|(name, _)| name != "x-sorng-google-credentials");
+        if let Some(value) = incoming
+            .get("x-sorng-google-credentials")
+            .and_then(|value| value.to_str().ok())
+        {
+            headers.push(("x-sorng-google-credentials".into(), value.into()));
+        }
         // Use the same document classification as the proxy handler. WebViews
         // can send partial Fetch Metadata (or the legacy `frame` destination);
         // requiring both mode and destination leaks localhost topology to
@@ -282,6 +292,9 @@ impl GoogleSession {
         headers
             .retain(|(name, value)| name != "access-control-request-headers" || !value.is_empty());
         for name in ["origin", "referer"] {
+            if super::upstream_header_is_hop_by_hop(incoming, name) {
+                continue;
+            }
             let Some(value) = incoming.get(name).and_then(|v| v.to_str().ok()) else {
                 continue;
             };
