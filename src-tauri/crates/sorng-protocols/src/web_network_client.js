@@ -1150,7 +1150,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       // it against this page recursively nests SPA popup/status/control UI
       // while the application is still waiting for its real frame address.
       return "about:blank";
-    return mapUrl(
+    var mapped = mapUrl(
       value,
       /^(A|AREA)$/.test(element.tagName)
         ? "navigation"
@@ -1171,6 +1171,18 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       undefined,
       /^(A|AREA)$/.test(element.tagName),
     );
+    if (/^(A|AREA)$/.test(element.tagName)) {
+      var literal = String(value);
+      // Legacy SPA routers read getAttribute('href'), not the resolved href.
+      // Keep local root-relative routes literal; assignment is not navigation.
+      // A foreign <base> or a protocol-relative URL must still be rewritten.
+      if (/^\/(?!\/)/.test(literal)) {
+        var resolved = new NativeURL(literal, document.baseURI || rootLocation);
+        if (resolved.origin === proxyOrigin && resolved.href === mapped)
+          return literal;
+      }
+    }
+    return mapped;
   }
   var nativeSetAttribute = Element.prototype.setAttribute,
     nativeRemoveAttribute = Element.prototype.removeAttribute,
@@ -1576,8 +1588,9 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       event.preventDefault();
     }
   }
-  var preparedAnchors = new WeakMap();
-  function prepareAnchor(anchor, event) {
+  var preparedAnchors = new WeakMap(),
+    deferredAnchors = new WeakMap();
+  function prepareAnchor(anchor, event, allowApplicationHandler) {
     var target =
       originalTarget(anchor, "target") ||
       document.querySelector("base[target]")?.getAttribute("target") ||
@@ -1606,6 +1619,29 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       false,
       sameContext,
     );
+    if (
+      allowApplicationHandler &&
+      sameContext &&
+      event.type === "click" &&
+      event.bubbles
+    ) {
+      var resolved = new NativeURL(original, document.baseURI || rootLocation);
+      if (
+        resolved.origin === proxyOrigin &&
+        !resolved.pathname.startsWith("/__sortofremoteng_")
+      ) {
+        // Validate in capture, but don't turn /nginx/proxy into an absolute
+        // capability URL before Backbone/Marionette reads its route. Only an
+        // unhandled browser navigation needs a document proof. Native request
+        // admission remains authoritative if the page stops propagation.
+        if (previous && href === previous.mapped) {
+          Reflect.apply(nativeSetAttribute, anchor, ["href", original]);
+          preparedAnchors.delete(anchor);
+        }
+        deferredAnchors.set(event, anchor);
+        return;
+      }
+    }
     Reflect.apply(nativeSetAttribute, anchor, ["href", mapped]);
     preparedAnchors.set(anchor, { original: original, mapped: mapped });
     if (
@@ -1643,7 +1679,19 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     var anchor = event.target?.closest?.("a[href],area[href]");
     if (!anchor) return;
     try {
-      prepareAnchor(anchor, event);
+      prepareAnchor(anchor, event, true);
+    } catch (_) {
+      event.preventDefault();
+    }
+  }
+  function finishClick(event) {
+    var anchor = deferredAnchors.get(event);
+    deferredAnchors.delete(event);
+    if (!anchor || event.defaultPrevented || !anchor.hasAttribute("href"))
+      return;
+    try {
+      // Re-read URL/target: application handlers may have changed either.
+      prepareAnchor(anchor, event, false);
     } catch (_) {
       event.preventDefault();
     }
@@ -1652,6 +1700,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
   document.addEventListener("click", click, true);
   document.addEventListener("auxclick", click, true);
   document.addEventListener("contextmenu", click, true);
+  window.addEventListener("click", finishClick);
   [window.HTMLAnchorElement, window.HTMLAreaElement].forEach(function (Native) {
     var nativeClick = Native && Native.prototype.click;
     if (typeof nativeClick !== "function") return;
@@ -1712,6 +1761,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     document.removeEventListener("click", click, true);
     document.removeEventListener("auxclick", click, true);
     document.removeEventListener("contextmenu", click, true);
+    window.removeEventListener("click", finishClick);
     document.removeEventListener("securitypolicyviolation", policyViolation);
     window.removeEventListener("pagehide", revoke);
     window.removeEventListener("pageshow", restored);

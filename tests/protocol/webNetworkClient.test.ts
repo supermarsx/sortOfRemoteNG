@@ -199,6 +199,13 @@ afterEach(() => {
 function start(value: ClientConfiguration = config()) {
   return (controller = install(value, report));
 }
+function cancelBrowserDefaultAfterRouting() {
+  // Run after the network client's window-bubble finalizer, not as a site
+  // handler that intentionally consumes the link as an in-document SPA route.
+  window.addEventListener("click", (event) => event.preventDefault(), {
+    once: true,
+  });
+}
 
 describe("proxy routing compatibility client (not native egress proof)", () => {
   const controlUrl = "https://global.quickconnect.to/Serv.php";
@@ -519,7 +526,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     anchor.href = "/other-page?return=%2Fhome+page";
     expect(anchor.search).toBe("?return=%2Fhome+page");
     document.body.append(anchor);
-    anchor.addEventListener("click", (event) => event.preventDefault());
+    cancelBrowserDefaultAfterRouting();
     anchor.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
@@ -535,7 +542,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     const anchor = document.createElement("a");
     anchor.href = "/portal/page?changed=1#!/home";
     document.body.append(anchor);
-    anchor.addEventListener("click", (event) => event.preventDefault());
+    cancelBrowserDefaultAfterRouting();
     anchor.click();
     expect(anchor.search).toBe(
       "?changed=1&__sorng_generation_v1=0123456789abcdef0123456789abcdef",
@@ -569,19 +576,20 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       anchor.href = "#!/home";
       document.body.append(anchor);
       anchor.addEventListener(type, (event) => event.preventDefault());
-      anchor.addEventListener("click", (event) => event.preventDefault());
       anchor.dispatchEvent(
         new MouseEvent(type, { bubbles: true, cancelable: true, button: 2 }),
       );
       expect(anchor.search).toBe(
         "?__sorng_generation_v1=0123456789abcdef0123456789abcdef",
       );
+      cancelBrowserDefaultAfterRouting();
       anchor.click();
       expect(anchor.href).toBe(`${proxy}/portal/page#!/home`);
       anchor.dispatchEvent(
         new MouseEvent(type, { bubbles: true, cancelable: true, button: 2 }),
       );
       anchor.href = "/changed-by-app#!/home";
+      cancelBrowserDefaultAfterRouting();
       anchor.click();
       expect(anchor.pathname).toBe("/changed-by-app");
       expect(anchor.search).toBe(
