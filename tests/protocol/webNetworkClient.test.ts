@@ -48,6 +48,11 @@ interface ClientConfiguration extends ReturnType<typeof config> {
   };
   popupParentDocument?: number;
   fontAssets?: Array<{ upstreamUrl: string; proxyUrl: string }>;
+  externalFonts?: null | {
+    version: number;
+    origins: string[];
+    proxyEndpoint: string;
+  };
   synologyQuickConnect?: {
     version: number;
     navigationOrigins: string[];
@@ -109,8 +114,24 @@ let xhrHeader: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let xhrSend: ReturnType<typeof vi.fn<(...args: unknown[]) => unknown>>;
 let constructed: Array<{ kind: string; args: unknown[] }>;
 const RealRequest = globalThis.Request;
+const nativeLinkAs = Object.getOwnPropertyDescriptor(
+  HTMLLinkElement.prototype,
+  "as",
+);
 
 beforeEach(() => {
+  // jsdom omits this browser IDL attribute. Supply its native reflection so the
+  // property interceptor is tested as well as the real setAttribute path.
+  if (!nativeLinkAs)
+    Object.defineProperty(HTMLLinkElement.prototype, "as", {
+      configurable: true,
+      get() {
+        return this.getAttribute("as") || "";
+      },
+      set(value) {
+        this.setAttribute("as", String(value));
+      },
+    });
   vi.stubGlobal("location", new URL(`${proxy}/portal/page`));
   vi.spyOn(document, "baseURI", "get").mockReturnValue(`${proxy}/portal/page`);
   report = vi.fn();
@@ -169,6 +190,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   controller?.dispose();
+  if (!nativeLinkAs) Reflect.deleteProperty(HTMLLinkElement.prototype, "as");
   controller = undefined;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -1775,6 +1797,410 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   const withFonts = () => ({
     ...config(),
     fontAssets: [{ upstreamUrl: fontUrl, proxyUrl: proxy + fontPath }],
+  });
+  describe("native external font manifest", () => {
+    const fontOrigin = "https://fonts.example";
+    const stylesheetOrigin = "https://styles.example:8443";
+    const externalFont = `${fontOrigin}/face.woff?v=a%2Fb+one&v=two`;
+    const stylesheet = `${stylesheetOrigin}/css?family=Example:wght@400;700`;
+    const endpoint = proxy + "/__sortofremoteng_assets_v1/external-font";
+    const generation = "0123456789abcdef0123456789abcdef";
+    const manifest = () => ({
+      version: 1,
+      origins: [fontOrigin, stylesheetOrigin],
+      proxyEndpoint: endpoint,
+    });
+    const options = () => ({ ...config(), externalFonts: manifest() });
+    function routed(destination: string, kind = "font", proof?: string) {
+      const url = new URL(endpoint);
+      url.searchParams.set("destination", destination);
+      url.searchParams.set("kind", kind);
+      if (proof) url.searchParams.set("__sorng_generation_v1", proof);
+      return url.href;
+    }
+    it("preserves all 28 built-in Synology font paths alongside the external manifest and generation", () => {
+      const fontAssets = [400, 500, 600, 700].flatMap((weight) =>
+        Array.from({ length: 7 }, (_, index) => {
+          const name = `inter-w${weight}-${index + 1}.woff2`;
+          return {
+            upstreamUrl: `https://synostatic.synology.com/font/inter/${name}`,
+            proxyUrl: `${proxy}/__sortofremoteng_assets_v1/synology-inter/${name}`,
+          };
+        }),
+      );
+      start({ ...options(), fontAssets, requestGeneration: generation });
+      for (const asset of fontAssets) {
+        const expected = `${asset.proxyUrl}?__sorng_generation_v1=${generation}`;
+        expect(controller!.mapUrl(asset.upstreamUrl, "font")).toBe(expected);
+        expect(controller!.mapUrl(asset.proxyUrl, "font")).toBe(expected);
+      }
+      expect(controller!.mapUrl(externalFont, "font")).toBe(
+        routed(externalFont, "font", generation),
+      );
+    });
+    it.each([undefined, null, { ...manifest(), origins: [] }])(
+      "keeps omitted, off/null and empty manifests closed: %j",
+      (externalFonts) => {
+        start({ ...withFonts(), externalFonts });
+        expect(
+          () => new FontFace("Denied", `url('${externalFont}')`),
+        ).toThrow();
+        expect(() => controller!.mapUrl(stylesheet, "stylesheet")).toThrow();
+        expect(() =>
+          controller!.mapUrl(routed(externalFont), "font"),
+        ).toThrow();
+        // The closed built-in table remains available independently of opt-in.
+        new FontFace("Inter", `url('${fontUrl}')`);
+        expect(constructed[constructed.length - 1]?.args[1]).toBe(
+          `url("${proxy + fontPath}")`,
+        );
+      },
+    );
+    it.each([
+      false,
+      "on",
+      [],
+      {},
+      { ...manifest(), version: 2 },
+      { ...manifest(), unknown: true },
+      { ...manifest(), origins: null },
+      { ...manifest(), origins: [fontOrigin, fontOrigin] },
+      {
+        ...manifest(),
+        origins: Array.from({ length: 17 }, (_, i) => `https://f${i}.example`),
+      },
+      { ...manifest(), origins: new Array(1) },
+      ...[
+        "http://fonts.example",
+        "//fonts.example",
+        "https://*.example",
+        "https://fonts.example/",
+        "https://FONTS.example",
+        "https://fonts.example:443",
+        "https://fonts.example/path",
+        "https://fonts.example?",
+        "https://fonts.example#",
+        "https://user:password@fonts.example",
+        "https://@fonts.example",
+        "https://fonts.example\n",
+        "data:font/woff;base64,eA==",
+        null,
+      ].map((value) => ({ ...manifest(), origins: [value] })),
+      ...[
+        otherProxy + "/__sortofremoteng_assets_v1/external-font",
+        endpoint + "?kind=font",
+        endpoint + "#",
+        endpoint + "/",
+        proxy + "/api",
+        fontOrigin + "/__sortofremoteng_assets_v1/external-font",
+      ].map((proxyEndpoint) => ({ ...manifest(), proxyEndpoint })),
+    ])(
+      "rejects malformed/unknown manifest fields before installing hooks: %j",
+      (externalFonts) => {
+        const originalFontFace = window.FontFace;
+        expect(() => install({ ...config(), externalFonts }, report)).toThrow();
+        expect(window.fetch).toBe(fetch);
+        expect(window.FontFace).toBe(originalFontFace);
+      },
+    );
+    it("copies grants, accepts 16 exact origins and never widens generic routes", async () => {
+      const input = options();
+      input.externalFonts.origins = Array.from(
+        { length: 15 },
+        (_, i) => `https://f${i}.example`,
+      );
+      input.externalFonts.origins.push(fontOrigin);
+      start(input);
+      input.externalFonts.origins[15] = "https://evil.example";
+      input.externalFonts.origins.push("https://another.example");
+      input.externalFonts.proxyEndpoint = "https://evil.example/";
+      input.externalFonts.version = 2;
+      expect(controller!.mapUrl(externalFont, "font")).toBe(
+        routed(externalFont),
+      );
+      expect(controller!.mapUrl("https://f14.example/font", "font")).toBe(
+        routed("https://f14.example/font"),
+      );
+      expect(() =>
+        controller!.mapUrl("https://evil.example/font", "font"),
+      ).toThrow();
+      await expect(window.fetch(externalFont)).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it("routes FontFace, binary-free descriptors, extensionless URLs and document generations", () => {
+      start({ ...options(), requestGeneration: generation });
+      const descriptors = { weight: "400", display: "swap" as const };
+      new FontFace(
+        "Example",
+        `local(Example), url('${externalFont}') format('woff')`,
+        descriptors,
+      );
+      expect(constructed[constructed.length - 1]?.args).toEqual([
+        "Example",
+        `local(Example), url("${routed(externalFont, "font", generation)}") format('woff')`,
+        descriptors,
+      ]);
+      const extensionless = `${fontOrigin}/download?id=1`;
+      const mapped = controller!.mapUrl(extensionless, "font");
+      expect(mapped).toBe(routed(extensionless, "font", generation));
+      expect(controller!.mapUrl(mapped, "font")).toBe(mapped);
+      expect(
+        new URL(mapped).searchParams.getAll("__sorng_generation_v1"),
+      ).toEqual([generation]);
+      expect(xhrHeader).not.toHaveBeenCalled();
+    });
+    it.each(["https:", "http:"])(
+      "resolves protocol-relative fonts using source scheme %s",
+      (scheme) => {
+        start({ ...options(), sourceOrigin: `${scheme}//device.example` });
+        const relative = "//fonts.example/face.woff";
+        if (scheme === "https:")
+          expect(controller!.mapUrl(relative, "font")).toBe(
+            routed(`${fontOrigin}/face.woff`),
+          );
+        else expect(() => controller!.mapUrl(relative, "font")).toThrow();
+        expect(controller!.mapUrl(externalFont, "font")).toBe(
+          routed(externalFont),
+        );
+      },
+    );
+    it.each([
+      "https://fonts.example.evil/face.woff",
+      "https://sub.fonts.example/face.woff",
+      "https://fonts.example:444/face.woff",
+      "http://fonts.example/face.woff",
+      "https://user:password@fonts.example/face.woff",
+      externalFont + "#part",
+      externalFont + "#",
+      "file:///font.woff",
+      "javascript:alert(1)",
+      "wss://fonts.example/face.woff",
+    ])("denies unapproved or malformed font destination %s", (url) => {
+      start(options());
+      expect(() => new FontFace("Denied", `url('${url}')`)).toThrow();
+      expect(constructed).toHaveLength(0);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it("routes imports once as stylesheets before font URLs and preserves CSS modifiers", () => {
+      const insertRule = vi
+        .spyOn(CSSStyleSheet.prototype, "insertRule")
+        .mockReturnValue(0);
+      start(options());
+      const sheet = new CSSStyleSheet();
+      for (const source of [
+        `url('${stylesheet}')`,
+        `url(${stylesheet})`,
+        `"${stylesheet}"`,
+        `'${stylesheet}'`,
+      ]) {
+        sheet.insertRule(
+          `@import ${source} layer(theme) supports(display: grid) screen;`,
+        );
+        expect(insertRule).toHaveBeenLastCalledWith(
+          `@import url("${routed(stylesheet, "stylesheet")}") layer(theme) supports(display: grid) screen;`,
+        );
+      }
+      sheet.insertRule(
+        `@import "${stylesheet}"; @font-face {src: url('${externalFont}') format('woff')}`,
+      );
+      expect(insertRule).toHaveBeenLastCalledWith(
+        `@import url("${routed(stylesheet, "stylesheet")}"); @font-face {src: url("${routed(externalFont)}") format('woff')}`,
+      );
+      sheet.insertRule(`@import url("${routed(stylesheet, "stylesheet")}");`);
+      expect(insertRule).toHaveBeenLastCalledWith(
+        `@import url("${routed(stylesheet, "stylesheet")}");`,
+      );
+      expect(() =>
+        sheet.insertRule('@import "https://unapproved.example/style.css";'),
+      ).toThrow();
+      expect(() =>
+        sheet.insertRule('@import/**/"https://styles.example/style.css";'),
+      ).toThrow();
+      expect(() =>
+        sheet.insertRule('a{src:url("https://fonts.example/\\66ont")}'),
+      ).toThrow();
+    });
+    it("routes CSS src, setProperty, cssText, style attributes and all stylesheet mutation APIs", async () => {
+      const setProperty = vi
+        .spyOn(CSSStyleDeclaration.prototype, "setProperty")
+        .mockImplementation(() => {});
+      const cssText = vi
+        .spyOn(CSSStyleDeclaration.prototype, "cssText", "set")
+        .mockImplementation(() => {});
+      const insertRule = vi.fn(),
+        replaceSync = vi.fn(),
+        replace = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal("CSSStyleSheet", class {});
+      Object.assign(CSSStyleSheet.prototype, {
+        insertRule,
+        replaceSync,
+        replace,
+      });
+      start(options());
+      const source = `url('${externalFont}')`;
+      const mapped = `url("${routed(externalFont)}")`;
+      const element = document.createElement("div");
+      (element.style as CSSStyleDeclaration & { src: string }).src = source;
+      expect(setProperty).toHaveBeenLastCalledWith("src", mapped);
+      element.style.setProperty("src", source, "important");
+      expect(setProperty).toHaveBeenLastCalledWith("src", mapped, "important");
+      element.style.setProperty("background-image", source);
+      expect(setProperty).toHaveBeenLastCalledWith(
+        "background-image",
+        mapped,
+        undefined,
+      );
+      element.style.cssText = `src: ${source}`;
+      expect(cssText).toHaveBeenLastCalledWith(`src: ${mapped}`);
+      element.setAttribute("style", `src: ${source}`);
+      expect(element.getAttribute("style")).toBe(`src: ${mapped}`);
+      // Call the captured prototype methods: the client wraps all three sinks.
+      const sheet = Object.create(CSSStyleSheet.prototype) as CSSStyleSheet;
+      const rule = `@font-face {src: ${source}}`;
+      sheet.insertRule(rule, 0);
+      sheet.replaceSync(rule);
+      await sheet.replace(rule);
+      expect(insertRule).toHaveBeenCalledWith(`@font-face {src: ${mapped}}`, 0);
+      expect(replaceSync).toHaveBeenCalledWith(`@font-face {src: ${mapped}}`);
+      expect(replace).toHaveBeenCalledWith(`@font-face {src: ${mapped}}`);
+      await expect(
+        sheet.replace('a{src:url("https://unapproved.example/font")}'),
+      ).rejects.toThrow();
+      expect(replace).toHaveBeenCalledTimes(1);
+    });
+    it.each(["attributes", "properties"])(
+      "routes stylesheet and preload links through %s, including href-first ordering",
+      (api) => {
+        start({ ...options(), requestGeneration: generation });
+        const set = (
+          link: HTMLLinkElement,
+          name: "href" | "rel" | "as",
+          value: string,
+        ) => {
+          if (api === "attributes") link.setAttribute(name, value);
+          else link[name] = value;
+        };
+        for (const hrefFirst of [false, true]) {
+          const link = document.createElement("link");
+          if (hrefFirst) {
+            set(link, "href", stylesheet);
+            expect(link.getAttribute("href")).toBeNull();
+          }
+          set(link, "rel", "alternate STYLESHEET");
+          if (!hrefFirst) set(link, "href", stylesheet);
+          expect(link.getAttribute("href")).toBe(
+            routed(stylesheet, "stylesheet", generation),
+          );
+          set(link, "rel", "preload");
+          expect(link.getAttribute("href")).toBeNull();
+          set(link, "as", "font");
+          expect(link.getAttribute("href")).toBe(
+            routed(stylesheet, "font", generation),
+          );
+          set(link, "href", externalFont);
+          expect(link.getAttribute("href")).toBe(
+            routed(externalFont, "font", generation),
+          );
+          expect(() => set(link, "as", "script")).toThrow();
+          expect(() => set(link, "rel", "modulepreload")).toThrow();
+          expect(link.getAttribute("as")).toBe("font");
+          link.removeAttribute("as");
+          expect(link.getAttribute("href")).toBeNull();
+          set(link, "as", "font");
+          expect(link.getAttribute("href")).toBe(
+            routed(externalFont, "font", generation),
+          );
+          link.removeAttribute("href");
+          set(link, "rel", "stylesheet");
+          expect(link.getAttribute("href")).toBeNull();
+        }
+      },
+    );
+    it("denies other network/load contexts, including reused local endpoints", async () => {
+      start(options());
+      for (const url of [externalFont, routed(externalFont)]) {
+        for (const kind of [
+          "fetch",
+          "xhr",
+          "websocket",
+          "eventsource",
+          "beacon",
+          "resource",
+          "script",
+          "document",
+          "form",
+          "navigation",
+        ])
+          expect(() => controller!.mapUrl(url, kind)).toThrow();
+        await expect(window.fetch(url)).rejects.toThrow();
+        expect(() => new XMLHttpRequest().open("GET", url)).toThrow();
+        expect(() => new WebSocket(url)).toThrow();
+        expect(() => new EventSource(url)).toThrow();
+        expect(navigator.sendBeacon(url)).toBe(false);
+        for (const tag of ["script", "iframe", "img"] as const)
+          expect(() => {
+            document.createElement(tag).src = url;
+          }).toThrow();
+        expect(() => {
+          document.createElement("form").action = url;
+        }).toThrow();
+        const link = document.createElement("link");
+        link.rel = "preload";
+        link.setAttribute("as", "script");
+        expect(() => {
+          link.href = url;
+        }).toThrow();
+      }
+      expect(fetch).not.toHaveBeenCalled();
+      expect(xhrOpen).not.toHaveBeenCalled();
+      expect(constructed).toHaveLength(0);
+    });
+    it("rejects malformed, mismatched and stale local endpoint queries", () => {
+      start({ ...options(), requestGeneration: generation });
+      for (const url of [
+        endpoint,
+        routed(externalFont) + "&unknown=1",
+        routed(externalFont) + "&kind=font",
+        routed(externalFont) +
+          "&destination=" +
+          encodeURIComponent(externalFont),
+        routed(externalFont, "script"),
+        routed(externalFont, "stylesheet"),
+        routed("https://unapproved.example/font"),
+        routed(externalFont) + "#",
+        routed(externalFont, "font", "a".repeat(32)),
+        routed(externalFont, "font", generation) +
+          "&__sorng_generation_v1=" +
+          generation,
+      ])
+        expect(() => controller!.mapUrl(url, "font")).toThrow();
+    });
+    it("revokes retained FontFace, CSS and pending links on pagehide", () => {
+      const insertRule = vi
+        .spyOn(CSSStyleSheet.prototype, "insertRule")
+        .mockReturnValue(0);
+      start(options());
+      const Face = window.FontFace;
+      const sheet = new CSSStyleSheet();
+      const link = document.createElement("link");
+      link.href = externalFont;
+      window.dispatchEvent(new Event("pagehide"));
+      expect(() => new Face("Expired", `url('${externalFont}')`)).toThrow(
+        "document-closed",
+      );
+      expect(() => sheet.insertRule(`@import "${stylesheet}";`)).toThrow(
+        "document-closed",
+      );
+      expect(() => {
+        link.rel = "stylesheet";
+      }).toThrow("document-closed");
+      expect(() => controller!.mapUrl(routed(externalFont), "font")).toThrow(
+        "document-closed",
+      );
+      expect(insertRule).not.toHaveBeenCalled();
+      expect(constructed).toHaveLength(0);
+      expect(link.getAttribute("href")).toBeNull();
+    });
   });
   it("routes FontFace string sources only and preserves native binary/descriptors/subclasses", () => {
     const original = window.FontFace;

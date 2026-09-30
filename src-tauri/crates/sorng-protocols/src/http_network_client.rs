@@ -805,6 +805,9 @@ pub(super) fn bootstrap(
         "sourceOrigin": source_origin, "proxyOrigin": proxy_origin, "mappings": [],
         "fontAssets": super::font_assets::manifest(proxy_origin)
     });
+    if let Some(capability) = super::external_fonts::manifest(policy, proxy_origin) {
+        config["externalFonts"] = capability;
+    }
     if let Some(capability) =
         super::quickconnect_control::manifest(policy, source_origin, proxy_origin)
     {

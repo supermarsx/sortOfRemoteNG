@@ -25,6 +25,119 @@ function Fixture({
 const draft = () => JSON.parse(screen.getByTestId("draft").textContent!);
 
 describe("Internal proxy controls", () => {
+  it("opts in to fonts, adds both Google destinations idempotently and reopens saved settings", () => {
+    const view = render(<Fixture />);
+    const toggle = screen.getByRole("checkbox", {
+      name: /Load external fonts through proxy/,
+    });
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByLabelText("External font origin")).toBeDisabled();
+    expect(draft().httpProxyPolicy).toBeUndefined();
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "Add Google Fonts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Google Fonts" }));
+    expect(draft().httpProxyPolicy.externalFontOrigins).toEqual([
+      "https://fonts.googleapis.com",
+      "https://fonts.gstatic.com",
+    ]);
+    expect(
+      screen.getByText(/No cookies or saved credentials/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Configure both font stylesheet and font binary/),
+    ).toBeInTheDocument();
+    const saved = draft();
+    view.unmount();
+    render(<Fixture initial={saved} />);
+    expect(
+      screen.getByRole("checkbox", {
+        name: /Load external fonts through proxy/,
+      }),
+    ).toBeChecked();
+    expect(draft().httpProxyPolicy).toEqual(saved.httpProxyPolicy);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove font origin https://fonts.gstatic.com",
+      }),
+    );
+    expect(draft().httpProxyPolicy.externalFontOrigins).toEqual([
+      "https://fonts.googleapis.com",
+    ]);
+  });
+  it("keeps invalid and duplicate font drafts visible until corrected", () => {
+    render(<Fixture />);
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Load external fonts through proxy/,
+      }),
+    );
+    const input = screen.getByLabelText("External font origin");
+    const add = screen.getByRole("button", { name: "Add font origin" });
+    fireEvent.change(input, {
+      target: { value: "https://fonts.example.com/path" },
+    });
+    fireEvent.click(add);
+    expect(input).toHaveValue("https://fonts.example.com/path");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "unique exact HTTPS origins",
+    );
+    expect(draft().httpProxyPolicy.externalFontOrigins).toEqual([]);
+    fireEvent.change(input, {
+      target: { value: " HTTPS://Fonts.Example.com:443/ " },
+    });
+    fireEvent.click(add);
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.change(input, {
+      target: { value: "https://fonts.example.com/" },
+    });
+    fireEvent.click(add);
+    expect(input).toHaveValue("https://fonts.example.com/");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Duplicate origins are rejected",
+    );
+    expect(draft().httpProxyPolicy.externalFontOrigins).toEqual([
+      "https://fonts.example.com",
+    ]);
+  });
+  it("disables effective font controls under same-origin restrictions and preserves drafts", () => {
+    render(<Fixture />);
+    const fonts = screen.getByRole("checkbox", {
+      name: /Load external fonts through proxy/,
+    });
+    fireEvent.click(fonts);
+    fireEvent.click(screen.getByRole("button", { name: "Add Google Fonts" }));
+    const input = screen.getByLabelText("External font origin");
+    fireEvent.change(input, {
+      target: { value: "https://pending.example.com" },
+    });
+    const sameOrigin = screen.getByRole("checkbox", {
+      name: /Same-origin resources and forms/,
+    });
+    fireEvent.click(sameOrigin);
+    expect(fonts).toBeDisabled();
+    expect(fonts).not.toBeChecked();
+    expect(input).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Add Google Fonts" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Add font origin" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", {
+        name: "Remove font origin https://fonts.gstatic.com",
+      }),
+    ).toBeDisabled();
+    expect(screen.getByText(/overrides external fonts/)).toBeInTheDocument();
+    expect(draft().httpProxyPolicy.allowExternalFonts).toBe(true);
+    expect(draft().httpProxyPolicy.externalFontOrigins).toHaveLength(2);
+    fireEvent.click(sameOrigin);
+    expect(fonts).toBeChecked();
+    expect(input).toBeEnabled();
+    expect(input).toHaveValue("https://pending.example.com");
+  });
   it("saves default-off redirect authentication separately and preserves it on remount", () => {
     const view = render(<Fixture initial={{ protocol: "https" }} />);
     const carry = screen.getByRole("checkbox", {

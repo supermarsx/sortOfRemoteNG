@@ -5,7 +5,10 @@ import {
   DEFAULT_HTTP_PROXY_POLICY,
   type HttpProxyPolicy,
 } from "../../../types/connection/httpProxyPolicy";
-import { normalizeHttpProxyPolicy } from "../../../utils/connection/httpProxyPolicy";
+import {
+  normalizeHttpProxyPolicy,
+  normalizeExternalFontOrigins,
+} from "../../../utils/connection/httpProxyPolicy";
 import type { Mgr } from "./types";
 import RedirectAuthenticationOptions from "./RedirectAuthenticationOptions";
 import TrustedRedirectDestinationsSection from "./TrustedRedirectDestinationsSection";
@@ -17,6 +20,8 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
+  const [fontOrigin, setFontOrigin] = useState("");
+  const [fontError, setFontError] = useState("");
   let policy: HttpProxyPolicy;
   try {
     policy = normalizeHttpProxyPolicy(mgr.formData.httpProxyPolicy);
@@ -37,6 +42,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
               httpProxyPolicy: {
                 ...DEFAULT_HTTP_PROXY_POLICY,
                 queryParameters: [],
+                externalFontOrigins: [],
               },
             }))
           }
@@ -55,6 +61,21 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
     } catch {
       setError(
         "Use unique parameter names (letters, numbers, dot, dash, underscore or tilde). Up to 16 parameters, 4 KB per value, and 16 KB total are allowed; reserved internal names are not allowed.",
+      );
+      return false;
+    }
+  };
+  const fontOrigins = policy.externalFontOrigins ?? [];
+  const fontsDisabled = policy.sameOriginOnly || !policy.allowExternalFonts;
+  const updateFontOrigins = (origins: string[]) => {
+    try {
+      const normalized = normalizeExternalFontOrigins(origins);
+      if (!update({ externalFontOrigins: normalized })) return false;
+      setFontError("");
+      return true;
+    } catch {
+      setFontError(
+        "Use up to 16 unique exact HTTPS origins, at most 2048 bytes each. Paths, queries, fragments, credentials, control characters, backslashes and wildcards are not allowed. Duplicate origins are rejected.",
       );
       return false;
     }
@@ -134,6 +155,103 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
         description="Restrict page resources and form submissions to this origin. The proxy never forwards credentials to another origin. This is not a complete browser navigation sandbox and may break SSO or CDN-based apps."
         variant="form"
       />
+      <div className="space-y-2">
+        <CheckboxField
+          checked={policy.allowExternalFonts === true && !policy.sameOriginOnly}
+          disabled={policy.sameOriginOnly}
+          onChange={(allowExternalFonts) => update({ allowExternalFonts })}
+          label="Load external fonts through proxy"
+          description="Opt in to anonymous font requests to the exact HTTPS origins below. No cookies or saved credentials are sent; certificate checks stay enabled."
+          variant="form"
+        />
+        <p className="text-xs text-[var(--color-textMuted)]">
+          Configure both font stylesheet and font binary destinations. Save the
+          connection and reopen the session to apply changes.
+        </p>
+        {policy.sameOriginOnly && (
+          <p role="status" className="text-xs text-warning">
+            Same-origin resources and forms overrides external fonts. Your font
+            settings are preserved but inactive while this restriction is
+            enabled.
+          </p>
+        )}
+        {fontOrigins.map((origin) => (
+          <div key={origin} className="flex items-center gap-2 max-w-2xl">
+            <span className="font-mono text-xs break-all">{origin}</span>
+            <button
+              type="button"
+              className="sor-icon-btn-sm"
+              disabled={fontsDisabled}
+              aria-label={`Remove font origin ${origin}`}
+              onClick={() =>
+                updateFontOrigins(fontOrigins.filter((item) => item !== origin))
+              }
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-80 max-w-full">
+            <label htmlFor={`${id}-font-origin`} className="block text-xs mb-1">
+              External font origin
+            </label>
+            <input
+              id={`${id}-font-origin`}
+              value={fontOrigin}
+              disabled={fontsDisabled}
+              onChange={(event) => setFontOrigin(event.target.value)}
+              className="sor-form-input w-full"
+              placeholder="https://fonts.example.com"
+              aria-invalid={!!fontError}
+              aria-describedby={`${id}-font-help${fontError ? ` ${id}-font-error` : ""}`}
+            />
+          </div>
+          <button
+            type="button"
+            className="sor-btn-secondary"
+            disabled={fontsDisabled || !fontOrigin}
+            onClick={() => {
+              if (updateFontOrigins([...fontOrigins, fontOrigin]))
+                setFontOrigin("");
+            }}
+          >
+            Add font origin
+          </button>
+          <button
+            type="button"
+            className="sor-btn-secondary"
+            disabled={fontsDisabled}
+            onClick={() =>
+              updateFontOrigins([
+                ...fontOrigins,
+                ...[
+                  "https://fonts.googleapis.com",
+                  "https://fonts.gstatic.com",
+                ].filter((origin) => !fontOrigins.includes(origin)),
+              ])
+            }
+          >
+            Add Google Fonts
+          </button>
+        </div>
+        <p
+          id={`${id}-font-help`}
+          className="text-xs text-[var(--color-textMuted)]"
+        >
+          Up to 16 exact HTTPS origins. Add each origin to the list before
+          saving. A trailing slash is allowed; paths and wildcards are not.
+        </p>
+        {fontError && (
+          <p
+            id={`${id}-font-error`}
+            role="alert"
+            className="text-sm text-error"
+          >
+            {fontError}
+          </p>
+        )}
+      </div>
       <CheckboxField
         checked={policy.allowCrossOriginRedirects === true}
         onChange={(allowCrossOriginRedirects) =>

@@ -40,6 +40,10 @@ pub struct HttpProxyPolicy {
     /// Separate opt-in to review (never automatically follow) an HTTP handoff.
     #[serde(default)]
     pub allow_http_downgrade_redirects: bool,
+    #[serde(default)]
+    pub allow_external_fonts: bool,
+    #[serde(default)]
+    pub external_font_origins: Vec<String>,
     /// Renderer-derived, reference-fenced navigation context. This must never
     /// be persisted/imported as an ordinary saved connection policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,6 +69,11 @@ impl std::fmt::Debug for HttpProxyPolicy {
                 &self.allow_http_downgrade_redirects,
             )
             .field("cache_mode", &self.cache_mode)
+            .field("allow_external_fonts", &self.allow_external_fonts)
+            .field(
+                "external_font_origin_count",
+                &self.external_font_origins.len(),
+            )
             .field("query_parameter_count", &self.query_parameters.len())
             .finish_non_exhaustive()
     }
@@ -79,6 +88,8 @@ impl Default for HttpProxyPolicy {
             same_origin_only: false,
             allow_cross_origin_redirects: false,
             allow_http_downgrade_redirects: false,
+            allow_external_fonts: false,
+            external_font_origins: Vec::new(),
             synology_quick_connect_defaults: None,
             cache_mode: CacheMode::Normal,
             query_parameters: Vec::new(),
@@ -93,6 +104,8 @@ impl HttpProxyPolicy {
         if self.version != 1 || self.query_parameters.len() > 16 {
             return Err(invalid());
         }
+        super::external_fonts::canonical_origins(&self.external_font_origins)
+            .map_err(|_| invalid())?;
         if self.https_only && target.scheme() != "https" {
             return Err("HTTPS-only policy requires an HTTPS connection; no automatic upgrade or insecure fallback was attempted.".into());
         }

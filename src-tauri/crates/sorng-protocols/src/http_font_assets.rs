@@ -12,9 +12,9 @@ const UPSTREAM: &str = "https://synostatic.synology.com/font/inter/";
 pub(super) const MAX_BYTES: usize = 512 * 1024;
 
 pub(super) struct ReviewedFontAssets {
-    client: reqwest::Client,
-    downloads: Semaphore,
-    requests: Semaphore,
+    pub(super) client: reqwest::Client,
+    pub(super) downloads: Semaphore,
+    pub(super) requests: Semaphore,
 }
 
 impl ReviewedFontAssets {
@@ -145,7 +145,7 @@ fn refusal(status: StatusCode, message: &'static str) -> Response<Body> {
         .expect("static font refusal")
 }
 
-fn valid_woff2(bytes: &[u8]) -> bool {
+pub(super) fn valid_woff2(bytes: &[u8]) -> bool {
     if bytes.len() < 48 || bytes.len() > MAX_BYTES || &bytes[..4] != b"wOF2" {
         return false;
     }

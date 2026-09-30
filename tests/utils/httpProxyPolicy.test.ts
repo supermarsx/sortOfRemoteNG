@@ -5,6 +5,98 @@ import {
 } from "../../src/utils/connection/httpProxyPolicy";
 
 describe("HTTP proxy policy validation", () => {
+  it("defaults external fonts off for legacy policies and clones origin arrays", () => {
+    const legacy = normalizeHttpProxyPolicy(undefined);
+    delete legacy.allowExternalFonts;
+    delete legacy.externalFontOrigins;
+    expect(normalizeHttpProxyPolicy(legacy)).toMatchObject({
+      allowExternalFonts: false,
+      externalFontOrigins: [],
+    });
+    const first = normalizeHttpProxyPolicy(undefined);
+    first.externalFontOrigins!.push("https://fonts.example.com");
+    expect(normalizeHttpProxyPolicy(undefined).externalFontOrigins).toEqual([]);
+    const copy = normalizeHttpProxyPolicy(first);
+    expect(copy.externalFontOrigins).toEqual(first.externalFontOrigins);
+    expect(copy.externalFontOrigins).not.toBe(first.externalFontOrigins);
+  });
+  it("canonicalizes and roundtrips font origins while retaining overridden settings", () => {
+    const policy = normalizeHttpProxyPolicy({
+      ...normalizeHttpProxyPolicy(undefined),
+      allowExternalFonts: true,
+      sameOriginOnly: true,
+      externalFontOrigins: [
+        " HTTPS://Fonts.GoogleApis.COM:443/ ",
+        "https://fonts.gstatic.com",
+        "https://fonts.example.com:8443/",
+      ],
+    });
+    expect(policy.externalFontOrigins).toEqual([
+      "https://fonts.googleapis.com",
+      "https://fonts.gstatic.com",
+      "https://fonts.example.com:8443",
+    ]);
+    expect(policy.allowExternalFonts).toBe(true);
+    expect(
+      normalizeHttpProxyPolicy(JSON.parse(JSON.stringify(policy))),
+    ).toEqual(policy);
+  });
+  it.each(
+    [
+      null,
+      "https://fonts.example.com",
+      [null],
+      [42],
+      [""],
+      ["http://fonts.example.com"],
+      ["//fonts.example.com"],
+      ["https://fonts.example.com/path"],
+      ["https://fonts.example.com/.."],
+      ["https://fonts.example.com?"],
+      ["https://fonts.example.com/#"],
+      ["https://user:password@fonts.example.com"],
+      ["https://@fonts.example.com"],
+      ["https://*.example.com"],
+      ["https://%2a.example.com"],
+      ["https://fonts.example.com\\"],
+      ["https://fonts.example.com\n"],
+      ["https://fonts.\texample.com"],
+      ["https:///fonts.example.com"],
+      ["https://fonts.example.com:99999"],
+      ["https://fonts.example.com", " HTTPS://FONTS.EXAMPLE.COM:443/ "],
+      ["https://" + "a".repeat(2049)],
+      Array.from(
+        { length: 17 },
+        (_, index) => `https://fonts${index}.example.com`,
+      ),
+    ].map((externalFontOrigins) => ({ externalFontOrigins })),
+  )(
+    "rejects invalid external font origins case %# even when disabled",
+    ({ externalFontOrigins }) => {
+      expect(() =>
+        normalizeHttpProxyPolicy({
+          ...normalizeHttpProxyPolicy(undefined),
+          externalFontOrigins,
+        }),
+      ).toThrow("Invalid HTTP proxy policy");
+    },
+  );
+  it("accepts 16 font origins and rejects malformed opt-in values", () => {
+    const base = normalizeHttpProxyPolicy(undefined);
+    const externalFontOrigins = Array.from(
+      { length: 16 },
+      (_, index) => `https://fonts${index}.example.com`,
+    );
+    expect(
+      normalizeHttpProxyPolicy({ ...base, externalFontOrigins })
+        .externalFontOrigins,
+    ).toEqual(externalFontOrigins);
+    for (const allowExternalFonts of [null, 1, "true", {}, []]) {
+      expect(() =>
+        normalizeHttpProxyPolicy({ ...base, allowExternalFonts }),
+      ).toThrow("Invalid HTTP proxy policy");
+    }
+  });
   it("defaults reviewed redirects off for absent/legacy policies and rejects malformed opt-ins", () => {
     const legacy = { ...normalizeHttpProxyPolicy(undefined) };
     delete legacy.allowCrossOriginRedirects;

@@ -61,6 +61,8 @@ pub use dark_mode::WebsiteDarkModeBootstrap;
 pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
 #[path = "http_cloudflare_challenge.rs"]
 pub mod cloudflare_challenge;
+#[path = "http_external_fonts.rs"]
+mod external_fonts;
 #[path = "http_font_assets.rs"]
 mod font_assets;
 #[path = "http_google.rs"]
@@ -1911,6 +1913,7 @@ mod proxy_access_guard_tests {
 #[derive(Clone, Copy)]
 enum ObservedLocalRoute {
     Font,
+    ExternalFont,
     QuickConnectDiscovery,
     QuickConnectDiscovered,
     QuickConnectRedirect,
@@ -1999,6 +2002,7 @@ fn observe_local_response(
 ) -> axum::response::Response {
     let path = match route {
         ObservedLocalRoute::Font => font_assets::PREFIX,
+        ObservedLocalRoute::ExternalFont => external_fonts::PATH,
         ObservedLocalRoute::QuickConnectDiscovery => quickconnect_control::PATH,
         ObservedLocalRoute::QuickConnectDiscovered => quickconnect_control::DISCOVERED_PATH,
         ObservedLocalRoute::QuickConnectRedirect => quickconnect::PATH,
@@ -2024,7 +2028,7 @@ fn observe_local_response(
         }
     });
     let phase = match route {
-        ObservedLocalRoute::Font => "font",
+        ObservedLocalRoute::Font | ObservedLocalRoute::ExternalFont => "font",
         ObservedLocalRoute::QuickConnectRedirect => "quickconnect_redirect",
         _ => "quickconnect_request",
     };
@@ -2032,17 +2036,22 @@ fn observe_local_response(
         .extensions()
         .get::<quickconnect_control::Diagnostic>()
         .map(|value| value.code())
-        .unwrap_or(if matches!(route, ObservedLocalRoute::Font) {
-            "font_response"
-        } else if review_pending && status >= 400 {
-            "http_redirect_review"
-        } else if review_pending {
-            "quickconnect_redirect_pending"
-        } else if status >= 400 {
-            "http_policy_refused"
-        } else {
-            "http_response"
-        });
+        .unwrap_or(
+            if matches!(
+                route,
+                ObservedLocalRoute::Font | ObservedLocalRoute::ExternalFont
+            ) {
+                "font_response"
+            } else if review_pending && status >= 400 {
+                "http_redirect_review"
+            } else if review_pending {
+                "quickconnect_redirect_pending"
+            } else if status >= 400 {
+                "http_policy_refused"
+            } else {
+                "http_response"
+            },
+        );
     let mut diagnostic = ProxyLogDiagnostic::new(
         phase,
         if review_pending {
@@ -2291,11 +2300,20 @@ async fn axum_proxy_handler_inner(
     if req.uri().path().starts_with("/__sortofremoteng_assets_v1/") {
         // Closed public binary capability: never send this reserved path,
         // browser credentials or source query policies to the NAS.
-        let response = font_assets::handle(state.clone(), req).await;
+        let external = req.uri().path() == external_fonts::PATH;
+        let response = if external {
+            external_fonts::handle(state.clone(), req).await
+        } else {
+            font_assets::handle(state.clone(), req).await
+        };
         return observe_local_response(
             &state,
             &method,
-            ObservedLocalRoute::Font,
+            if external {
+                ObservedLocalRoute::ExternalFont
+            } else {
+                ObservedLocalRoute::Font
+            },
             response,
             req_start,
         );
@@ -3091,6 +3109,13 @@ async fn axum_proxy_handler_inner(
                 && !state.target_origin.is_empty()
             {
                 let text = String::from_utf8_lossy(&raw_bytes);
+                let text = external_fonts::rewrite(
+                    &text,
+                    content_type.as_deref(),
+                    &response_url,
+                    &state.proxy_origin,
+                    &state.proxy_policy,
+                );
                 let text = if let Some(google) = &state.network.google {
                     google.rewrite(&text)
                 } else {

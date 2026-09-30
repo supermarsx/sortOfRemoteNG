@@ -17,10 +17,52 @@ const invalid = (): never => {
   );
 };
 
+/** Validate before URL parsing so URL repairs cannot broaden an origin grant. */
+export function normalizeExternalFontOrigins(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 16) return invalid();
+  const seen = new Set<string>();
+  return value.map((entry) => {
+    if (
+      typeof entry !== "string" ||
+      bytes(entry) > 2048 ||
+      hasControl(entry) ||
+      /[\\*]/.test(entry)
+    )
+      return invalid();
+    const trimmed = entry.trim();
+    if (!/^https:\/\/[^/?#@\s]+\/?$/i.test(trimmed)) return invalid();
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return invalid();
+    }
+    if (
+      url.protocol !== "https:" ||
+      !url.hostname ||
+      url.hostname.includes("*") ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash ||
+      seen.has(url.origin)
+    )
+      return invalid();
+    seen.add(url.origin);
+    return url.origin;
+  });
+}
+
 /** Absent legacy policy uses defaults; present malformed state is never repaired silently. */
 export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
   if (value === undefined)
-    return { ...DEFAULT_HTTP_PROXY_POLICY, queryParameters: [] };
+    return {
+      ...DEFAULT_HTTP_PROXY_POLICY,
+      queryParameters: [],
+      externalFontOrigins: [],
+    };
   if (
     !object(value) ||
     Object.keys(value).some(
@@ -30,6 +72,8 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
           "pageScripts",
           "httpsOnly",
           "sameOriginOnly",
+          "allowExternalFonts",
+          "externalFontOrigins",
           "allowCrossOriginRedirects",
           "allowHttpDowngradeRedirects",
           "cacheMode",
@@ -44,6 +88,8 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
     !["allow", "inline-only", "block"].includes(value.pageScripts) ||
     typeof value.httpsOnly !== "boolean" ||
     typeof value.sameOriginOnly !== "boolean" ||
+    (value.allowExternalFonts !== undefined &&
+      typeof value.allowExternalFonts !== "boolean") ||
     (value.allowCrossOriginRedirects !== undefined &&
       typeof value.allowCrossOriginRedirects !== "boolean") ||
     (value.allowHttpDowngradeRedirects !== undefined &&
@@ -80,6 +126,10 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
     pageScripts: value.pageScripts as HttpProxyPolicy["pageScripts"],
     httpsOnly: value.httpsOnly,
     sameOriginOnly: value.sameOriginOnly,
+    allowExternalFonts: value.allowExternalFonts === true,
+    externalFontOrigins: normalizeExternalFontOrigins(
+      value.externalFontOrigins,
+    ),
     allowCrossOriginRedirects: value.allowCrossOriginRedirects === true,
     allowHttpDowngradeRedirects: value.allowHttpDowngradeRedirects === true,
     cacheMode: value.cacheMode as HttpProxyPolicy["cacheMode"],
