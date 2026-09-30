@@ -1,15 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import React from "react";
-import {
-  Cloud,
-  CloudOff,
-  Server,
-  Terminal,
-  Check,
-  X,
-  AlertTriangle,
-  RefreshCw,
-} from "lucide-react";
+import { CloudOff, Check, X, AlertTriangle, RefreshCw } from "lucide-react";
 import {
   GlobalSettings,
   CloudSyncConfig,
@@ -23,9 +14,28 @@ import {
   ProviderSyncStatus,
 } from "../../types/settings/settings";
 import {
-  aggregateCloudSyncResults,
+  cloudSyncStatusUpdate,
+  cloudSyncProviderStatus,
   syncCloudTargets,
 } from "../../utils/services/cloudSyncService";
+import { useCloudSyncActivity } from "../sync/useCloudSyncActivity";
+import { CloudSyncProviderIcon } from "../../components/sync/CloudSyncProviderIcon";
+import {
+  cloudSyncTargetIdentity,
+  invalidateCloudSyncTarget,
+  type CloudSyncActivity,
+} from "../../utils/services/cloudSyncActivity";
+
+function sameDestination(a: CloudSyncTarget, b: CloudSyncTarget): boolean {
+  if (a.provider !== b.provider) return false;
+  if (a.provider === "none" || b.provider === "none") return true;
+  const before = a[a.provider];
+  const after = b[b.provider];
+  // Compare in place: never put credentials into an identity or activity record.
+  return Object.keys({ ...before, ...after }).every(
+    (key) => Reflect.get(before ?? {}, key) === Reflect.get(after ?? {}, key),
+  );
+}
 
 // ─── Static data ───────────────────────────────────────────────────
 
@@ -48,24 +58,18 @@ export const providerDescriptions: Record<CloudSyncProvider, string> = {
 };
 
 export const providerIcons: Record<CloudSyncProvider, React.ReactNode> = {
-  none: React.createElement(CloudOff, {
-    className: "w-5 h-5 text-[var(--color-textSecondary)]",
+  none: React.createElement(CloudSyncProviderIcon, { provider: "none" }),
+  googleDrive: React.createElement(CloudSyncProviderIcon, {
+    provider: "googleDrive",
   }),
-  googleDrive: React.createElement(Cloud, {
-    className: "w-5 h-5 text-green-400",
+  oneDrive: React.createElement(CloudSyncProviderIcon, {
+    provider: "oneDrive",
   }),
-  oneDrive: React.createElement(Cloud, {
-    className: "w-5 h-5 text-blue-500",
+  nextcloud: React.createElement(CloudSyncProviderIcon, {
+    provider: "nextcloud",
   }),
-  nextcloud: React.createElement(Cloud, {
-    className: "w-5 h-5 text-cyan-400",
-  }),
-  webdav: React.createElement(Server, {
-    className: "w-5 h-5 text-orange-400",
-  }),
-  sftp: React.createElement(Terminal, {
-    className: "w-5 h-5 text-purple-400",
-  }),
+  webdav: React.createElement(CloudSyncProviderIcon, { provider: "webdav" }),
+  sftp: React.createElement(CloudSyncProviderIcon, { provider: "sftp" }),
 };
 
 export const frequencyLabels: Record<CloudSyncFrequency, string> = {
@@ -104,6 +108,8 @@ export function useCloudSyncSettings(
 ) {
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const activity = useCloudSyncActivity();
+  const startedTargets = useRef<CloudSyncActivity[]>([]);
   const [syncingTargetId, setSyncingTargetId] = useState<string | null>(null);
   const [authTargetId, setAuthTargetId] = useState<string | null>(null);
   const [authForm, setAuthForm] = useState({
@@ -115,6 +121,8 @@ export function useCloudSyncSettings(
 
   // Derived / backward-compat
   const cloudSync = settings.cloudSync ?? defaultCloudSyncConfig;
+  const cloudSyncRef = useRef(cloudSync);
+  cloudSyncRef.current = cloudSync;
   const providerStatus = cloudSync.providerStatus ?? {};
   // Legacy callers (sync status badges, etc.) still ask which
   // providers are "active". Derive from the new per-target list:
@@ -129,8 +137,9 @@ export function useCloudSyncSettings(
   );
 
   const updateCloudSync = (updates: Partial<CloudSyncConfig>) => {
+    cloudSyncRef.current = { ...cloudSyncRef.current, ...updates };
     updateSettings({
-      cloudSync: { ...cloudSync, ...updates },
+      cloudSync: cloudSyncRef.current,
     });
   };
 
@@ -219,35 +228,30 @@ export function useCloudSyncSettings(
   };
 
   const applySyncStatusUpdate = async (targetsToRun: CloudSyncTarget[]) => {
-    const nowSeconds = Math.floor(Date.now() / 1000);
+    const identities = new Map(
+      targetsToRun.map((target) => [
+        target.id,
+        cloudSyncTargetIdentity(target.id),
+      ]),
+    );
     const results = await syncCloudTargets(targetsToRun);
-    const providers = Array.from(new Set(targetsToRun.map((t) => t.provider)));
-    const newStatus = { ...providerStatus };
-
-    providers.forEach((provider) => {
-      const providerResults = results.filter(
-        (result) => result.provider === provider,
-      );
-      const aggregate = aggregateCloudSyncResults(providerResults);
-      newStatus[provider] = {
-        ...newStatus[provider],
-        enabled: true,
-        lastSyncTime: nowSeconds,
-        lastSyncStatus: aggregate.status,
-        lastSyncError:
-          aggregate.status === "success" ? undefined : aggregate.message,
-      };
-    });
-
-    const aggregate = aggregateCloudSyncResults(results);
-    updateCloudSync({
-      enabledProviders: providers,
-      providerStatus: newStatus,
-      lastSyncTime: nowSeconds,
-      lastSyncStatus: aggregate.status,
-      lastSyncError:
-        aggregate.status === "success" ? undefined : aggregate.message,
-    });
+    const current = cloudSyncRef.current;
+    const applicable = results
+      .filter((result) => {
+        const original = targetsToRun.find(
+          (target) => target.id === result.targetId,
+        );
+        const latest = current.syncTargets?.find(
+          (target) => target.id === result.targetId,
+        );
+        return original && latest && sameDestination(original, latest);
+      })
+      .map((result) => ({
+        ...result,
+        requestIdentity:
+          result.requestIdentity ?? identities.get(result.targetId ?? ""),
+      }));
+    updateCloudSync(cloudSyncStatusUpdate(current, applicable));
   };
 
   /* ═══════════════════════════════════════════════════════════════
@@ -256,8 +260,54 @@ export function useCloudSyncSettings(
 
   const syncTargets: CloudSyncTarget[] = cloudSync.syncTargets ?? [];
 
+  const getTargetStatus = (id: string) => {
+    const target = syncTargets.find((item) => item.id === id);
+    const status = cloudSync.targetStatus?.[id];
+    return status?.provider === target?.provider ? status : undefined;
+  };
+  const isTargetSyncing = (id: string) => {
+    const target = syncTargets.find((item) => item.id === id);
+    if (!target?.enabled) return false;
+    const matches = (item: CloudSyncActivity) =>
+      item.id === id &&
+      item.provider === target.provider &&
+      (!item.requestIdentity ||
+        item.requestIdentity === cloudSyncTargetIdentity(id));
+    return (
+      activity.some(matches) ||
+      (isSyncing && startedTargets.current.some(matches))
+    );
+  };
+  const anySyncing = isSyncing || activity.length > 0;
+
   const writeSyncTargets = (next: CloudSyncTarget[]) => {
-    updateCloudSync({ syncTargets: next });
+    const current = cloudSyncRef.current;
+    const invalidated = new Set<string>();
+    for (const old of current.syncTargets ?? []) {
+      const target = next.find((item) => item.id === old.id);
+      if (!target || !sameDestination(old, target)) {
+        invalidated.add(old.id);
+        invalidateCloudSyncTarget(old.id);
+      } else if (old.enabled !== target.enabled) {
+        invalidateCloudSyncTarget(old.id);
+      }
+    }
+    const targetStatus = Object.fromEntries(
+      Object.entries(current.targetStatus ?? {}).filter(
+        ([id, status]) =>
+          !invalidated.has(id) &&
+          next.some(
+            (target) => target.id === id && target.provider === status.provider,
+          ),
+      ),
+    );
+    const nextProviderStatus = cloudSyncProviderStatus(next, targetStatus);
+    updateCloudSync({
+      syncTargets: next,
+      targetStatus,
+      providerStatus: nextProviderStatus,
+      enabledProviders: Object.keys(nextProviderStatus) as CloudSyncProvider[],
+    });
   };
 
   /** Append a new sync target row pointing at the chosen provider. */
@@ -317,20 +367,28 @@ export function useCloudSyncSettings(
 
   const handleSyncNow = async (targetId?: string) => {
     if (!cloudSync.enabled || syncTargets.length === 0) return;
-    if (isSyncing) return;
+    if (anySyncing) return;
 
     const targetsToRun = targetId
-      ? syncTargets.filter((t) => t.id === targetId && t.enabled)
-      : syncTargets.filter((t) => t.enabled);
+      ? syncTargets.filter(
+          (t) => t.id === targetId && t.enabled && t.provider !== "none",
+        )
+      : syncTargets.filter((t) => t.enabled && t.provider !== "none");
 
     if (targetsToRun.length === 0) return;
 
     setIsSyncing(true);
+    startedTargets.current = targetsToRun.map((target) => ({
+      id: target.id,
+      provider: target.provider,
+      requestIdentity: cloudSyncTargetIdentity(target.id),
+    }));
     setSyncingTargetId(targetId ?? null);
     try {
       await applySyncStatusUpdate(targetsToRun);
     } finally {
       setIsSyncing(false);
+      startedTargets.current = [];
       setSyncingTargetId(null);
     }
   };
@@ -375,7 +433,7 @@ export function useCloudSyncSettings(
     // State
     expandedTargetId,
     setExpandedTargetId,
-    isSyncing,
+    isSyncing: anySyncing,
     syncingTargetId,
     authTargetId,
     authForm,
@@ -393,6 +451,8 @@ export function useCloudSyncSettings(
     saveTokenDialog,
     closeTokenDialog,
     getProviderStatus,
+    getTargetStatus,
+    isTargetSyncing,
     getSyncTimestampMs,
     handleSyncNow,
     handleSyncTarget,

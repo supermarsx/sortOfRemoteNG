@@ -34,7 +34,7 @@ import {
   defaultCloudSyncConfig,
 } from "./types/settings/settings";
 import {
-  aggregateCloudSyncResults,
+  cloudSyncStatusUpdate,
   providersFromCloudSyncConfig,
   syncCloudTargets,
   syncTargetsFromCloudSyncConfig,
@@ -1233,40 +1233,11 @@ const AppContent: React.FC = () => {
       }
 
       const results = await syncCloudTargets(targetsToRun);
-      const nowSeconds = Math.floor(Date.now() / 1000);
-      const nextProviderStatus: GlobalSettings["cloudSync"]["providerStatus"] =
-        {
-          ...currentConfig.providerStatus,
-        };
-
-      const targetProviders = Array.from(
-        new Set(targetsToRun.map((target) => target.provider)),
-      );
-
-      targetProviders.forEach((targetProvider) => {
-        const providerResults = results.filter(
-          (result) => result.provider === targetProvider,
-        );
-        const aggregate = aggregateCloudSyncResults(providerResults);
-        nextProviderStatus[targetProvider] = {
-          ...nextProviderStatus[targetProvider],
-          enabled: true,
-          lastSyncTime: nowSeconds,
-          lastSyncStatus: aggregate.status,
-          lastSyncError:
-            aggregate.status === "success" ? undefined : aggregate.message,
-        };
-      });
-
-      const aggregate = aggregateCloudSyncResults(results);
+      const latestConfig =
+        settingsManager.getSettings().cloudSync ?? defaultCloudSyncConfig;
       const updatedCloudSync: GlobalSettings["cloudSync"] = {
-        ...currentConfig,
-        enabledProviders,
-        providerStatus: nextProviderStatus,
-        lastSyncTime: nowSeconds,
-        lastSyncStatus: aggregate.status,
-        lastSyncError:
-          aggregate.status === "success" ? undefined : aggregate.message,
+        ...latestConfig,
+        ...cloudSyncStatusUpdate(latestConfig, results),
       };
 
       setAppSettings((prev) => ({ ...prev, cloudSync: updatedCloudSync }));

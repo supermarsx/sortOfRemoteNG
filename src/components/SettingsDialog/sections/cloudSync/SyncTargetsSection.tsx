@@ -27,6 +27,7 @@ import {
   SettingsSectionHeader as SectionHeader,
 } from "../../../ui/settings/SettingsPrimitives";
 import ProviderConfig from "./ProviderConfig";
+import { CloudSyncStatusIcon } from "../../../sync/CloudSyncStatusIcon";
 
 const providerOptions = CloudSyncProviders.filter((p) => p !== "none").map(
   (provider) => ({
@@ -49,7 +50,7 @@ const SyncTargetRow: React.FC<SyncTargetRowProps> = ({
   total,
 }) => {
   const isExpanded = mgr.expandedTargetId === target.id;
-  const isSyncing = mgr.syncingTargetId === target.id;
+  const isSyncing = mgr.isTargetSyncing(target.id);
   return (
     <div
       className={`rounded-lg border ${
@@ -87,14 +88,24 @@ const SyncTargetRow: React.FC<SyncTargetRowProps> = ({
         <button
           type="button"
           onClick={() => mgr.handleSyncTarget(target.id)}
-          disabled={!target.enabled || mgr.isSyncing}
+          disabled={
+            !mgr.cloudSync.enabled ||
+            !target.enabled ||
+            mgr.isSyncing ||
+            isSyncing
+          }
           className="p-1.5 rounded hover:bg-[var(--color-surfaceHover)] disabled:opacity-30 disabled:cursor-not-allowed text-[var(--color-textSecondary)]"
           aria-label={`Sync ${target.label} now`}
           title={`Sync ${target.label} now`}
         >
-          <RefreshCw
-            className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`}
-          />
+          {isSyncing ? (
+            <CloudSyncStatusIcon
+              state="syncing"
+              label={`Syncing ${target.label}`}
+            />
+          ) : (
+            <RefreshCw aria-hidden="true" className="w-4 h-4" />
+          )}
         </button>
         <button
           type="button"
@@ -127,13 +138,9 @@ const SyncTargetRow: React.FC<SyncTargetRowProps> = ({
         </label>
         <button
           type="button"
-          onClick={() =>
-            mgr.setExpandedTargetId(isExpanded ? null : target.id)
-          }
+          onClick={() => mgr.setExpandedTargetId(isExpanded ? null : target.id)}
           className="p-1.5 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
-          aria-label={
-            isExpanded ? "Collapse credentials" : "Edit credentials"
-          }
+          aria-label={isExpanded ? "Collapse credentials" : "Edit credentials"}
           title={isExpanded ? "Collapse credentials" : "Edit credentials"}
         >
           {isExpanded ? (
@@ -232,8 +239,8 @@ const SyncTargetsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1">
         <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
         <span>
-          Each target carries its own tokens / server URLs / keys —
-          expand a row to edit them.
+          Each target carries its own tokens / server URLs / keys — expand a row
+          to edit them.
         </span>
       </p>
     </Card>

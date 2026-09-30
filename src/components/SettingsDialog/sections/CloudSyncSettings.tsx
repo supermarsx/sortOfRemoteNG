@@ -33,7 +33,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         onClick={() => mgr.handleSyncNow()}
         disabled={
           !mgr.cloudSync.enabled ||
-          mgr.syncTargets.length === 0 ||
+          !mgr.syncTargets.some((target) => target.enabled) ||
           mgr.isSyncing
         }
         className="absolute top-0 right-0 !mt-0 flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
@@ -43,9 +43,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
       </button>
 
       {/* Multi-Target Sync Status Overview */}
-      {mgr.cloudSync.enabled && mgr.syncTargets.length > 0 && (
-        <SyncStatusOverview mgr={mgr} />
-      )}
+      {mgr.syncTargets.length > 0 && <SyncStatusOverview mgr={mgr} />}
 
       <EnableSyncToggle mgr={mgr} />
       <SyncTargetsSection mgr={mgr} />

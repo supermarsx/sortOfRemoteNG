@@ -1,43 +1,53 @@
 // Cloud Sync Provider Types
 export const CloudSyncProviders = [
-  'none',
-  'googleDrive',
-  'oneDrive',
-  'nextcloud',
-  'webdav',
-  'sftp',
+  "none",
+  "googleDrive",
+  "oneDrive",
+  "nextcloud",
+  "webdav",
+  "sftp",
 ] as const;
 export type CloudSyncProvider = (typeof CloudSyncProviders)[number];
 
 // Cloud Sync Frequency
 export const CloudSyncFrequencies = [
-  'manual',
-  'realtime',
-  'onSave',
-  'every5Minutes',
-  'every15Minutes',
-  'every30Minutes',
-  'hourly',
-  'daily',
+  "manual",
+  "realtime",
+  "onSave",
+  "every5Minutes",
+  "every15Minutes",
+  "every30Minutes",
+  "hourly",
+  "daily",
 ] as const;
 export type CloudSyncFrequency = (typeof CloudSyncFrequencies)[number];
 
 // Conflict Resolution Strategy
 export const ConflictResolutionStrategies = [
-  'askEveryTime',
-  'keepLocal',
-  'keepRemote',
-  'keepNewer',
-  'merge',
+  "askEveryTime",
+  "keepLocal",
+  "keepRemote",
+  "keepNewer",
+  "merge",
 ] as const;
-export type ConflictResolutionStrategy = (typeof ConflictResolutionStrategies)[number];
+export type ConflictResolutionStrategy =
+  (typeof ConflictResolutionStrategies)[number];
 
 // Per-provider sync status
 export interface ProviderSyncStatus {
   enabled: boolean;
   lastSyncTime?: number;
-  lastSyncStatus?: 'success' | 'failed' | 'partial' | 'conflict';
+  lastSyncStatus?: "success" | "failed" | "partial" | "conflict";
   lastSyncError?: string;
+}
+
+/** Results belong to a destination, not every account using its provider. */
+export interface TargetSyncStatus {
+  provider: CloudSyncProvider;
+  lastSyncTime: number;
+  lastSyncStatus: "success" | "failed" | "partial" | "conflict";
+  lastSyncError?: string;
+  lastSuccessTime?: number;
 }
 
 // ── Per-provider configuration shapes (now stored per-target) ──────────
@@ -74,7 +84,7 @@ export interface WebDavProviderConfig {
   username: string;
   password?: string;
   folderPath: string;
-  authMethod: 'basic' | 'digest' | 'bearer';
+  authMethod: "basic" | "digest" | "bearer";
   bearerToken?: string;
 }
 
@@ -86,7 +96,7 @@ export interface SftpProviderConfig {
   privateKey?: string;
   passphrase?: string;
   folderPath: string;
-  authMethod: 'password' | 'key';
+  authMethod: "password" | "key";
 }
 
 // ── Multi-target sync destinations ────────────────────────────────────
@@ -126,36 +136,36 @@ export function defaultProviderConfigFor(
   provider: CloudSyncProvider,
 ): Partial<CloudSyncTarget> {
   switch (provider) {
-    case 'googleDrive':
-      return { googleDrive: { folderPath: '/sortOfRemoteNG' } };
-    case 'oneDrive':
-      return { oneDrive: { folderPath: '/sortOfRemoteNG' } };
-    case 'nextcloud':
+    case "googleDrive":
+      return { googleDrive: { folderPath: "/sortOfRemoteNG" } };
+    case "oneDrive":
+      return { oneDrive: { folderPath: "/sortOfRemoteNG" } };
+    case "nextcloud":
       return {
         nextcloud: {
-          serverUrl: '',
-          username: '',
-          folderPath: '/sortOfRemoteNG',
+          serverUrl: "",
+          username: "",
+          folderPath: "/sortOfRemoteNG",
           useAppPassword: true,
         },
       };
-    case 'webdav':
+    case "webdav":
       return {
         webdav: {
-          serverUrl: '',
-          username: '',
-          folderPath: '/sortOfRemoteNG',
-          authMethod: 'basic',
+          serverUrl: "",
+          username: "",
+          folderPath: "/sortOfRemoteNG",
+          authMethod: "basic",
         },
       };
-    case 'sftp':
+    case "sftp":
       return {
         sftp: {
-          host: '',
+          host: "",
           port: 22,
-          username: '',
-          folderPath: '/sortOfRemoteNG',
-          authMethod: 'password',
+          username: "",
+          folderPath: "/sortOfRemoteNG",
+          authMethod: "password",
         },
       };
     default:
@@ -188,6 +198,9 @@ export interface CloudSyncConfig {
   // Per-provider sync status
   providerStatus: Partial<Record<CloudSyncProvider, ProviderSyncStatus>>;
 
+  /** Keyed by stable target id; absent for legacy provider-only results. */
+  targetStatus?: Record<string, TargetSyncStatus>;
+
   // Sync frequency
   frequency: CloudSyncFrequency;
 
@@ -218,7 +231,7 @@ export interface CloudSyncConfig {
 
   // Last sync timestamps
   lastSyncTime?: number;
-  lastSyncStatus?: 'success' | 'failed' | 'partial' | 'conflict';
+  lastSyncStatus?: "success" | "failed" | "partial" | "conflict";
   lastSyncError?: string;
 
   // Sync on startup/shutdown
@@ -241,35 +254,35 @@ export interface CloudSyncConfig {
 
 export const defaultCloudSyncConfig: CloudSyncConfig = {
   enabled: false,
-  provider: 'none',
+  provider: "none",
   enabledProviders: [],
   syncTargets: [],
   providerStatus: {},
-  frequency: 'manual',
+  frequency: "manual",
   googleDrive: {
-    folderPath: '/sortOfRemoteNG',
+    folderPath: "/sortOfRemoteNG",
   },
   oneDrive: {
-    folderPath: '/sortOfRemoteNG',
+    folderPath: "/sortOfRemoteNG",
   },
   nextcloud: {
-    serverUrl: '',
-    username: '',
-    folderPath: '/sortOfRemoteNG',
+    serverUrl: "",
+    username: "",
+    folderPath: "/sortOfRemoteNG",
     useAppPassword: true,
   },
   webdav: {
-    serverUrl: '',
-    username: '',
-    folderPath: '/sortOfRemoteNG',
-    authMethod: 'basic',
+    serverUrl: "",
+    username: "",
+    folderPath: "/sortOfRemoteNG",
+    authMethod: "basic",
   },
   sftp: {
-    host: '',
+    host: "",
     port: 22,
-    username: '',
-    folderPath: '/sortOfRemoteNG',
-    authMethod: 'password',
+    username: "",
+    folderPath: "/sortOfRemoteNG",
+    authMethod: "password",
   },
   syncConnections: true,
   syncSettings: true,
@@ -278,7 +291,7 @@ export const defaultCloudSyncConfig: CloudSyncConfig = {
   syncColorTags: true,
   syncShortcuts: true,
   encryptBeforeSync: true,
-  conflictResolution: 'askEveryTime',
+  conflictResolution: "askEveryTime",
   syncOnStartup: false,
   syncOnShutdown: false,
   notifyOnSync: true,
@@ -296,19 +309,22 @@ export const defaultCloudSyncConfig: CloudSyncConfig = {
  * new target row.
  */
 export function generateCloudSyncTargetId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return `sync-target-${crypto.randomUUID()}`;
   }
   return `sync-target-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
 }
 
 const providerDefaultLabels: Record<CloudSyncProvider, string> = {
-  none: 'Sync Target',
-  googleDrive: 'Google Drive',
-  oneDrive: 'OneDrive',
-  nextcloud: 'Nextcloud',
-  webdav: 'WebDAV',
-  sftp: 'SFTP',
+  none: "Sync Target",
+  googleDrive: "Google Drive",
+  oneDrive: "OneDrive",
+  nextcloud: "Nextcloud",
+  webdav: "WebDAV",
+  sftp: "SFTP",
 };
 
 /**
@@ -321,17 +337,17 @@ function liftLegacyProviderConfig(
   config: CloudSyncConfig,
 ): Partial<CloudSyncTarget> {
   switch (provider) {
-    case 'googleDrive':
+    case "googleDrive":
       return config.googleDrive
         ? { googleDrive: { ...config.googleDrive } }
         : {};
-    case 'oneDrive':
+    case "oneDrive":
       return config.oneDrive ? { oneDrive: { ...config.oneDrive } } : {};
-    case 'nextcloud':
+    case "nextcloud":
       return config.nextcloud ? { nextcloud: { ...config.nextcloud } } : {};
-    case 'webdav':
+    case "webdav":
       return config.webdav ? { webdav: { ...config.webdav } } : {};
-    case 'sftp':
+    case "sftp":
       return config.sftp ? { sftp: { ...config.sftp } } : {};
     default:
       return {};
@@ -350,12 +366,14 @@ function liftLegacyProviderConfig(
  * per provider they had previously enabled, ready to edit / clone
  * in the new list UI.
  */
-export function migrateCloudSyncConfig(config: CloudSyncConfig): CloudSyncConfig {
+export function migrateCloudSyncConfig(
+  config: CloudSyncConfig,
+): CloudSyncConfig {
   if (config.syncTargets && config.syncTargets.length > 0) {
     return config;
   }
   const legacyProviders = (config.enabledProviders ?? []).filter(
-    (p) => p !== 'none',
+    (p) => p !== "none",
   );
   if (legacyProviders.length === 0) {
     return { ...config, syncTargets: [] };

@@ -1,4 +1,6 @@
 import React from "react";
+import { CloudSyncStatusIcon } from "./CloudSyncStatusIcon";
+import { CloudSyncProviderIcon } from "./CloudSyncProviderIcon";
 import {
   Cloud,
   CloudOff,
@@ -21,7 +23,6 @@ import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import {
   useCloudSyncStatus,
   PROVIDER_NAMES,
-  PROVIDER_ICONS,
   formatRelativeTime,
   SyncTestResult,
 } from "../../hooks/sync/useCloudSyncStatus";
@@ -55,14 +56,24 @@ type Mgr = ReturnType<typeof useCloudSyncStatus>;
 
 const OverallStatusIcon: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.isSyncing)
-    return <Loader2 className="w-4 h-4 animate-spin text-primary" />;
+    return (
+      <CloudSyncStatusIcon
+        state="syncing"
+        label={mgr.t("sync.syncing", "Syncing")}
+      />
+    );
   if (!mgr.hasSync)
     return <CloudOff className="w-4 h-4 text-[var(--color-textMuted)]" />;
   const statuses = mgr.enabledProviders.map(
     (p) => mgr.config.providerStatus[p]?.lastSyncStatus,
   );
   if (statuses.some((s) => s === "failed"))
-    return <AlertCircle className="w-4 h-4 text-error" />;
+    return (
+      <CloudSyncStatusIcon
+        state="failed"
+        label={mgr.t("sync.syncFailed", "Sync failed")}
+      />
+    );
   if (statuses.some((s) => s === "conflict" || s === "partial"))
     return <AlertTriangle className="w-4 h-4 text-warning" />;
   if (statuses.every((s) => s === "success"))
@@ -75,15 +86,27 @@ const ProviderStatusIcon: React.FC<{
   provider: CloudSyncProvider;
 }> = ({ mgr, provider }) => {
   const status = mgr.config.providerStatus[provider];
-  if (mgr.syncingProvider === provider)
-    return <Loader2 className="w-3 h-3 animate-spin text-primary" />;
+  if (mgr.isProviderSyncing(provider))
+    return (
+      <CloudSyncStatusIcon
+        state="syncing"
+        label={`${PROVIDER_NAMES[provider]}: ${mgr.t("sync.syncing", "Syncing")}`}
+        className="w-3 h-3"
+      />
+    );
   if (!status?.lastSyncStatus)
     return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
   switch (status.lastSyncStatus) {
     case "success":
       return <CheckCircle className="w-3 h-3 text-success" />;
     case "failed":
-      return <AlertCircle className="w-3 h-3 text-error" />;
+      return (
+        <CloudSyncStatusIcon
+          state="failed"
+          label={`${PROVIDER_NAMES[provider]}: ${mgr.t("sync.syncFailed", "Sync failed")}`}
+          className="w-3 h-3"
+        />
+      );
     case "conflict":
       return <AlertTriangle className="w-3 h-3 text-warning" />;
     case "partial":
@@ -142,8 +165,13 @@ const OverallStatusBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         disabled={mgr.isSyncing}
         className="flex items-center gap-1.5 px-2 py-1 text-xs bg-success hover:bg-success/90 disabled:opacity-50 rounded transition-colors"
       >
-        {mgr.isSyncing && !mgr.syncingProvider ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
+        {mgr.isSyncing ? (
+          <CloudSyncStatusIcon
+            state="syncing"
+            label={mgr.t("sync.syncing", "Syncing")}
+            className="w-3 h-3"
+            inheritColor
+          />
         ) : (
           <RefreshCw className="w-3 h-3" />
         )}
@@ -189,7 +217,7 @@ const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({
     <div className="sor-status-item p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className="text-lg">{PROVIDER_ICONS[provider]}</span>
+          <CloudSyncProviderIcon provider={provider} />
           <span className="text-sm font-medium text-[var(--color-textSecondary)]">
             {PROVIDER_NAMES[provider]}
           </span>
@@ -210,12 +238,16 @@ const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({
           </button>
           <button
             onClick={() => mgr.handleSyncProvider(provider)}
-            disabled={mgr.syncingProvider === provider}
+            disabled={mgr.isSyncing}
             className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-success disabled:opacity-50"
             title={mgr.t("sync.syncProvider", "Sync Now")}
           >
-            {mgr.syncingProvider === provider ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            {mgr.isProviderSyncing(provider) ? (
+              <CloudSyncStatusIcon
+                state="syncing"
+                label={mgr.t("sync.syncing", "Syncing")}
+                className="w-3.5 h-3.5"
+              />
             ) : (
               <RefreshCw className="w-3.5 h-3.5" />
             )}

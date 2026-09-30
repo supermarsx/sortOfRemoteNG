@@ -1,19 +1,23 @@
 import type {
+  CloudSyncConfig,
   CloudSyncProvider,
   CloudSyncTarget,
 } from "../../types/settings/settings";
 import { getInvoke } from "../tauri/invoke";
+import {
+  beginCloudSyncActivity,
+  cloudSyncTargetIdentity,
+} from "./cloudSyncActivity";
 
 export type CloudSyncResultStatus =
-  | "success"
-  | "failed"
-  | "partial"
-  | "conflict";
+  "success" | "failed" | "partial" | "conflict";
 
 export interface CloudSyncOperationResult {
   provider: CloudSyncProvider;
   targetId?: string;
   targetLabel?: string;
+  /** Transient revision; excluded from persisted target/provider status. */
+  requestIdentity?: symbol;
   status: CloudSyncResultStatus;
   message: string;
   latencyMs?: number;
@@ -40,6 +44,9 @@ function errorMessage(error: unknown): string {
 }
 
 function unsupportedProvider(provider: CloudSyncProvider): string {
+  if (provider === "nextcloud") {
+    return "Nextcloud cloud sync is not implemented for application data in this build. The Nextcloud file-sync backend is not connected to these settings; no data was transferred.";
+  }
   return `${PROVIDER_LABELS[provider]} cloud sync does not have a registered sync backend in this build.`;
 }
 
@@ -130,7 +137,11 @@ export function aggregateCloudSyncResults(
         .join("; "),
     };
   }
-  if (results.some((result) => result.status === "success")) {
+  if (
+    results.some(
+      (result) => result.status === "success" || result.status === "partial",
+    )
+  ) {
     return {
       status: "partial",
       message: results
@@ -142,6 +153,121 @@ export function aggregateCloudSyncResults(
   return {
     status: "failed",
     message: results.map((result) => result.message).join("; "),
+  };
+}
+
+/** Rebuild summaries from enabled destinations, without retaining removed failures. */
+export function cloudSyncProviderStatus(
+  targets: CloudSyncTarget[],
+  targetStatus: CloudSyncConfig["targetStatus"],
+): CloudSyncConfig["providerStatus"] {
+  const providerStatus: CloudSyncConfig["providerStatus"] = {};
+  for (const provider of new Set(
+    targets
+      .filter((t) => t.enabled && t.provider !== "none")
+      .map((t) => t.provider),
+  )) {
+    const providerTargets = targets.filter(
+      (t) => t.enabled && t.provider === provider,
+    );
+    const statuses = providerTargets.flatMap((target) => {
+      const status = targetStatus?.[target.id];
+      return status?.provider === provider ? [status] : [];
+    });
+    if (!statuses.length) {
+      providerStatus[provider] = { enabled: true };
+      continue;
+    }
+    const aggregate = aggregateCloudSyncResults(
+      statuses.map((status) => ({
+        provider,
+        status: status.lastSyncStatus,
+        message: status.lastSyncError ?? "",
+      })),
+    );
+    if (
+      statuses.length < providerTargets.length &&
+      aggregate.status === "success"
+    ) {
+      aggregate.status = "partial";
+      aggregate.message = "Some targets have not synced yet.";
+    }
+    providerStatus[provider] = {
+      enabled: true,
+      lastSyncTime: Math.max(...statuses.map((status) => status.lastSyncTime)),
+      lastSyncStatus: aggregate.status,
+      lastSyncError: aggregate.message,
+    };
+  }
+  return providerStatus;
+}
+
+/** Shared by Settings and toolbar runs so they persist the same target results. */
+export function cloudSyncStatusUpdate(
+  config: CloudSyncConfig,
+  results: CloudSyncOperationResult[],
+  completedAt = Math.floor(Date.now() / 1000),
+): Partial<CloudSyncConfig> {
+  const targets = config.syncTargets ?? [];
+  const targetStatus = { ...config.targetStatus };
+  const applicable = results.filter((result) => {
+    if (
+      result.requestIdentity &&
+      (!result.targetId ||
+        result.requestIdentity !== cloudSyncTargetIdentity(result.targetId))
+    )
+      return false;
+    // Do not resurrect a removed target or attach an old provider's result to
+    // a destination reconfigured while its request was in flight.
+    if (!targets.length && result.targetId?.startsWith("legacy-")) return true;
+    return targets.some(
+      (target) =>
+        target.enabled &&
+        target.id === result.targetId &&
+        target.provider === result.provider,
+    );
+  });
+  if (!applicable.length) return {};
+  for (const result of applicable) {
+    if (!result.targetId) continue;
+    const previous = targetStatus[result.targetId];
+    targetStatus[result.targetId] = {
+      provider: result.provider,
+      lastSyncTime: completedAt,
+      lastSyncStatus: result.status,
+      lastSyncError: result.status === "success" ? undefined : result.message,
+      lastSuccessTime:
+        result.status === "success"
+          ? completedAt
+          : previous?.provider === result.provider
+            ? previous.lastSuccessTime
+            : undefined,
+    };
+  }
+  const providerStatus = targets.length
+    ? cloudSyncProviderStatus(targets, targetStatus)
+    : { ...config.providerStatus };
+  for (const provider of targets.length
+    ? []
+    : new Set(applicable.map((result) => result.provider))) {
+    const aggregate = aggregateCloudSyncResults(
+      applicable.filter((result) => result.provider === provider),
+    );
+    providerStatus[provider] = {
+      enabled: true,
+      lastSyncTime: completedAt,
+      lastSyncStatus: aggregate.status,
+      lastSyncError: aggregate.message,
+    };
+  }
+  const aggregate = aggregateCloudSyncResults(applicable);
+  return {
+    enabledProviders: providersFromCloudSyncConfig(config),
+    targetStatus,
+    providerStatus,
+    lastSyncTime: completedAt,
+    lastSyncStatus: aggregate.status,
+    lastSyncError: aggregate.message,
   };
 }
 
@@ -198,11 +324,30 @@ export async function syncCloudTarget(
   return failed(target.provider, unsupportedProvider(target.provider), {
     targetId: target.id,
     targetLabel: target.label,
+    requestIdentity: cloudSyncTargetIdentity(target.id),
   });
 }
 
 export async function syncCloudTargets(
   targets: CloudSyncTargetLike[],
 ): Promise<CloudSyncOperationResult[]> {
-  return Promise.all(targets.map((target) => syncCloudTarget(target)));
+  return Promise.all(
+    targets
+      .filter((target) => target.enabled && target.provider !== "none")
+      .map(async (target) => {
+        const requestIdentity = cloudSyncTargetIdentity(target.id);
+        const finish = beginCloudSyncActivity({ ...target, requestIdentity });
+        try {
+          return { ...(await syncCloudTarget(target)), requestIdentity };
+        } catch (error) {
+          return failed(target.provider, errorMessage(error), {
+            targetId: target.id,
+            targetLabel: target.label,
+            requestIdentity,
+          });
+        } finally {
+          finish();
+        }
+      }),
+  );
 }

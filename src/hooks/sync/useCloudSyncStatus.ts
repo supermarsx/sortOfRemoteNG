@@ -8,6 +8,7 @@ import {
   providersFromCloudSyncConfig,
   testCloudSyncProvider,
 } from "../../utils/services/cloudSyncService";
+import { useCloudSyncActivity } from "./useCloudSyncActivity";
 
 interface ProviderStatus {
   enabled: boolean;
@@ -45,14 +46,7 @@ export const PROVIDER_NAMES: Record<CloudSyncProvider, string> = {
   sftp: "SFTP",
 };
 
-export const PROVIDER_ICONS: Record<CloudSyncProvider, string> = {
-  none: "❌",
-  googleDrive: "🔵",
-  oneDrive: "☁️",
-  nextcloud: "🟢",
-  webdav: "🌐",
-  sftp: "🔒",
-};
+export { CLOUD_SYNC_PROVIDER_ICONS as PROVIDER_ICONS } from "../../utils/icons/cloudSyncProviderIcons";
 
 export const formatRelativeTime = (timestamp?: number): string => {
   if (!timestamp) return "Never";
@@ -72,6 +66,7 @@ export function useCloudSyncStatus({
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const activity = useCloudSyncActivity();
   const [syncingProvider, setSyncingProvider] =
     useState<CloudSyncProvider | null>(null);
   const [isTesting, setIsTesting] = useState(false);
@@ -90,9 +85,13 @@ export function useCloudSyncStatus({
 
   const enabledProviders = providersFromCloudSyncConfig(config);
   const hasSync = config.enabled && enabledProviders.length > 0;
+  const anySyncing = isSyncing || activity.length > 0;
+  const isProviderSyncing = (provider: CloudSyncProvider) =>
+    activity.some((item) => item.provider === provider) ||
+    (isSyncing && (syncingProvider === null || syncingProvider === provider));
 
   const handleSyncAll = async () => {
-    if (!onSyncNow) return;
+    if (!onSyncNow || anySyncing) return;
     setIsSyncing(true);
     try {
       await onSyncNow();
@@ -102,7 +101,7 @@ export function useCloudSyncStatus({
   };
 
   const handleSyncProvider = async (provider: CloudSyncProvider) => {
-    if (!onSyncNow) return;
+    if (!onSyncNow || anySyncing) return;
     setSyncingProvider(provider);
     setIsSyncing(true);
     try {
@@ -174,7 +173,8 @@ export function useCloudSyncStatus({
     t,
     isOpen,
     setIsOpen,
-    isSyncing,
+    isSyncing: anySyncing,
+    isProviderSyncing,
     syncingProvider,
     isTesting,
     testingProvider,

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { CloudSyncProvider } from "../../types/settings/settings";
 import { providersFromCloudSyncConfig } from "../../utils/services/cloudSyncService";
+import { useCloudSyncActivity } from "./useCloudSyncActivity";
 
 export interface BackupStatus {
   isRunning: boolean;
@@ -78,6 +79,9 @@ export function useSyncBackupStatusBar(
   const [isExpanded, setIsExpanded] = useState(false);
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncingProvider, setSyncingProvider] =
+    useState<CloudSyncProvider | null>(null);
+  const activity = useCloudSyncActivity();
   const [isBackingUp, setIsBackingUp] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -106,28 +110,34 @@ export function useSyncBackupStatusBar(
 
   const enabledProviders = providersFromCloudSyncConfig(config);
   const hasSync = config.enabled && enabledProviders.length > 0;
+  const anySyncing = isSyncing || activity.length > 0;
+  const isProviderSyncing = (provider: CloudSyncProvider) =>
+    activity.some((item) => item.provider === provider) ||
+    (isSyncing && (syncingProvider === null || syncingProvider === provider));
 
   const handleSyncAll = useCallback(async () => {
-    if (!onSyncNow) return;
+    if (!onSyncNow || anySyncing) return;
     setIsSyncing(true);
     try {
       await onSyncNow();
     } finally {
       setIsSyncing(false);
     }
-  }, [onSyncNow]);
+  }, [onSyncNow, anySyncing]);
 
   const handleSyncProvider = useCallback(
     async (provider: CloudSyncProvider) => {
-      if (!onSyncNow) return;
+      if (!onSyncNow || anySyncing) return;
+      setSyncingProvider(provider);
       setIsSyncing(true);
       try {
         await onSyncNow(provider);
       } finally {
         setIsSyncing(false);
+        setSyncingProvider(null);
       }
     },
-    [onSyncNow],
+    [onSyncNow, anySyncing],
   );
 
   const handleBackupNow = useCallback(async () => {
@@ -154,7 +164,8 @@ export function useSyncBackupStatusBar(
     isExpanded,
     setIsExpanded,
     backupStatus,
-    isSyncing,
+    isSyncing: anySyncing,
+    isProviderSyncing,
     isBackingUp,
     dropdownRef,
     config,

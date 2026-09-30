@@ -1,50 +1,160 @@
-import { FolderSync, Check, X, AlertTriangle } from "lucide-react";
-import { providerIcons } from "../../../../hooks/settings/useCloudSyncSettings";
+import { FolderSync, Check, AlertTriangle, RefreshCw } from "lucide-react";
+import {
+  providerIcons,
+  providerLabels,
+} from "../../../../hooks/settings/useCloudSyncSettings";
+import { CloudSyncStatusIcon } from "../../../sync/CloudSyncStatusIcon";
 import { Card } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+
 function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
-  const enabledTargets = mgr.syncTargets.filter((t) => t.enabled);
-  if (enabledTargets.length === 0) return null;
+  if (mgr.syncTargets.length === 0) return null;
+
+  const renderTime = (timestamp?: number) => {
+    const ms = mgr.getSyncTimestampMs(timestamp);
+    if (ms === undefined || !Number.isFinite(ms)) return "Never";
+    const date = new Date(ms);
+    if (!Number.isFinite(date.getTime())) return "Unknown";
+    return <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>;
+  };
+
   return (
     <Card>
-      <div className="flex items-center gap-2 mb-3">
-        <FolderSync className="w-4 h-4 text-primary" />
-        <span className="text-sm font-medium text-[var(--color-text)]">
-          Syncing to {enabledTargets.length} target
-          {enabledTargets.length > 1 ? "s" : ""}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <FolderSync aria-hidden="true" className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-medium text-[var(--color-text)]">
+          Target sync status
+        </h3>
+        <span className="text-xs text-[var(--color-textSecondary)]">
+          {mgr.syncTargets.length} configured ·{" "}
+          {mgr.syncTargets.filter((t) => t.enabled).length} enabled
         </span>
       </div>
-      <div className="flex flex-wrap gap-2">
-        {enabledTargets.map((target) => {
-          const status = mgr.getProviderStatus(target.provider);
+      <ul aria-label="Target sync status" className="space-y-2">
+        {mgr.syncTargets.map((target) => {
+          const status = mgr.getTargetStatus(target.id);
+          const syncing = mgr.isTargetSyncing(target.id);
+          const result = status?.lastSyncStatus;
+          const retry = result === "failed" || result === "partial";
+          const resultLabel =
+            result === "success"
+              ? "Success"
+              : result === "failed"
+                ? "Failed"
+                : result === "partial"
+                  ? "Partial"
+                  : result === "conflict"
+                    ? "Conflict"
+                    : "Not synced yet";
           return (
-            <div
+            <li
               key={target.id}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
-                status?.lastSyncStatus === "success"
-                  ? "bg-success/20 text-success"
-                  : status?.lastSyncStatus === "failed"
-                    ? "bg-error/20 text-error"
-                    : status?.lastSyncStatus === "conflict"
-                      ? "bg-warning/20 text-warning"
-                      : "bg-primary/20 text-primary"
-              }`}
+              aria-label={target.label}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
             >
-              {providerIcons[target.provider]}
-              <span>{target.label}</span>
-              {status?.lastSyncStatus === "success" && (
-                <Check className="w-3 h-3" />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span aria-hidden="true" className="shrink-0">
+                      {providerIcons[target.provider]}
+                    </span>
+                    <span className="break-words [overflow-wrap:anywhere] text-sm font-medium text-[var(--color-text)]">
+                      {target.label}
+                    </span>
+                    <span className="text-xs text-[var(--color-textSecondary)]">
+                      {providerLabels[target.provider]}
+                    </span>
+                    {!target.enabled && (
+                      <span className="text-xs text-[var(--color-textMuted)]">
+                        Target disabled
+                      </span>
+                    )}
+                    {!mgr.cloudSync.enabled && (
+                      <span className="text-xs text-[var(--color-textMuted)]">
+                        Cloud sync disabled
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    role="status"
+                    aria-label={`${target.label} sync status`}
+                    className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-textSecondary)]"
+                  >
+                    {syncing ? (
+                      <>
+                        <CloudSyncStatusIcon
+                          state="syncing"
+                          label={`Syncing ${target.label}`}
+                        />
+                        <span>Syncing…</span>
+                        <span>· Last result: {resultLabel}</span>
+                      </>
+                    ) : (
+                      <>
+                        {result === "failed" && (
+                          <CloudSyncStatusIcon
+                            state="failed"
+                            label={`${target.label} sync failed`}
+                          />
+                        )}
+                        {result === "success" && (
+                          <Check
+                            aria-hidden="true"
+                            className="w-4 h-4 text-success"
+                          />
+                        )}
+                        {(result === "partial" || result === "conflict") && (
+                          <AlertTriangle
+                            aria-hidden="true"
+                            className="w-4 h-4 text-warning"
+                          />
+                        )}
+                        <span>{resultLabel}</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-textMuted)]">
+                    <span>
+                      Last attempt: {renderTime(status?.lastSyncTime)}
+                    </span>
+                    {status?.lastSuccessTime != null &&
+                      status.lastSuccessTime !== status.lastSyncTime && (
+                        <span>
+                          Last success: {renderTime(status.lastSuccessTime)}
+                        </span>
+                      )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => mgr.handleSyncTarget(target.id)}
+                  disabled={
+                    !mgr.cloudSync.enabled ||
+                    !target.enabled ||
+                    mgr.isSyncing ||
+                    syncing
+                  }
+                  aria-label={`${retry ? "Retry" : "Sync"} ${target.label}`}
+                  className="inline-flex shrink-0 self-start items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw aria-hidden="true" className="w-3.5 h-3.5" />
+                  {syncing ? "Syncing…" : retry ? "Retry" : "Sync"}
+                </button>
+              </div>
+              {status?.lastSyncError && (
+                <details className="mt-2 text-xs text-[var(--color-textSecondary)]">
+                  <summary className="cursor-pointer text-error">
+                    Error details
+                  </summary>
+                  <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                    {status.lastSyncError}
+                  </p>
+                </details>
               )}
-              {status?.lastSyncStatus === "failed" && (
-                <X className="w-3 h-3" />
-              )}
-              {status?.lastSyncStatus === "conflict" && (
-                <AlertTriangle className="w-3 h-3" />
-              )}
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </Card>
   );
 }
