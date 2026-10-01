@@ -545,21 +545,26 @@ export function useConnectionTree(
   }, []);
 
   const handleItemDrop = useCallback(
-    (targetId: string, position: "before" | "after" | "inside") => {
+    (
+      targetId: string,
+      position: "before" | "after" | "inside",
+      keyboardId?: string,
+    ): boolean => {
+      const sourceId = keyboardId ?? draggedId;
       if (
         !reorderEnabledRef.current ||
-        !draggedId ||
-        currentDragRef.current !== draggedId ||
-        draggedId === targetId
+        !sourceId ||
+        (!keyboardId && currentDragRef.current !== sourceId) ||
+        sourceId === targetId
       ) {
         setDraggedId(null);
         setDragOverId(null);
         setDropPosition(null);
-        return;
+        return false;
       }
 
       const draggedConnection = state.connections.find(
-        (conn) => conn.id === draggedId,
+        (conn) => conn.id === sourceId,
       );
       const targetConnection = state.connections.find(
         (conn) => conn.id === targetId,
@@ -568,18 +573,18 @@ export function useConnectionTree(
         setDraggedId(null);
         setDragOverId(null);
         setDropPosition(null);
-        return;
+        return false;
       }
 
       if (draggedConnection.isGroup && position === "inside") {
         let checkId: string | undefined = targetId;
         while (checkId) {
-          if (checkId === draggedId) {
+          if (checkId === sourceId) {
             console.warn("Cannot drop a folder into itself or its descendants");
             setDraggedId(null);
             setDragOverId(null);
             setDropPosition(null);
-            return;
+            return false;
           }
           const parent = state.connections.find((c) => c.id === checkId);
           checkId = parent?.parentId;
@@ -593,12 +598,12 @@ export function useConnectionTree(
         newParentId = targetConnection.parentId;
       }
 
-      if (!canMoveToParent(draggedId, newParentId, state.connections)) {
+      if (!canMoveToParent(sourceId, newParentId, state.connections)) {
         console.warn("Cannot move: would exceed maximum nesting depth");
         setDraggedId(null);
         setDragOverId(null);
         setDropPosition(null);
-        return;
+        return false;
       }
 
       const sortBy = state.filter.sortBy || "name";
@@ -610,7 +615,7 @@ export function useConnectionTree(
       // that have never been dragged in persisted order, so the index the drop
       // computed described no row the user could see.
       const displayedSiblings = state.connections
-        .filter((c) => c.parentId === newParentId && c.id !== draggedId)
+        .filter((c) => c.parentId === newParentId && c.id !== sourceId)
         .sort(createSiblingComparator(sortBy, sortDirection));
 
       // Where the dragged row lands among them, top-down.
@@ -672,12 +677,65 @@ export function useConnectionTree(
       setDraggedId(null);
       setDragOverId(null);
       setDropPosition(null);
+      return true;
     },
     [
       draggedId,
       state.connections,
       state.filter.sortBy,
       state.filter.sortDirection,
+      dispatch,
+    ],
+  );
+
+  const handleFolderKeyboardMove = useCallback(
+    (id: string, key: string): boolean => {
+      if (!reorderEnabledRef.current || hasActiveConnectionFilter) return false;
+      const folder = state.connections.find((c) => c.id === id && c.isGroup);
+      if (!folder) return false;
+      const siblings = buildTree(state.connections, folder.parentId).filter(
+        (c) => c.isGroup,
+      );
+      const index = siblings.findIndex((c) => c.id === id);
+      let target: Connection | undefined;
+      let position: "before" | "after" | "inside";
+      switch (key) {
+        case "ArrowUp":
+          target = siblings[index - 1];
+          position = "before";
+          break;
+        case "ArrowDown":
+          target = siblings[index + 1];
+          position = "after";
+          break;
+        case "ArrowRight":
+          target = siblings[index - 1];
+          position = "inside";
+          break;
+        case "ArrowLeft":
+          target = state.connections.find(
+            (c) => c.id === folder.parentId && c.isGroup,
+          );
+          position = "after";
+          break;
+        default:
+          return false;
+      }
+      if (!target || !handleItemDrop(target.id, position, id)) return false;
+      if (state.filter.sortBy !== "custom") {
+        dispatch({
+          type: "SET_FILTER",
+          payload: { sortBy: "custom", sortDirection: "asc" },
+        });
+      }
+      return true;
+    },
+    [
+      hasActiveConnectionFilter,
+      state.connections,
+      state.filter.sortBy,
+      buildTree,
+      handleItemDrop,
       dispatch,
     ],
   );
@@ -694,6 +752,7 @@ export function useConnectionTree(
     handleItemDragOver,
     handleItemDragEnd,
     handleItemDrop,
+    handleFolderKeyboardMove,
     handlePanelContextMenu,
     handlePanelDragOver,
     handlePanelDrop,

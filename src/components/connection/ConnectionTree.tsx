@@ -357,12 +357,19 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
       ));
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    if ((event.target as HTMLElement).closest("button, input, [role=menu]"))
+    if (
+      event.defaultPrevented ||
+      event.nativeEvent.isComposing ||
+      (event.target as HTMLElement).closest(
+        'button, input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role=menu], [role=textbox]',
+      )
+    )
       return;
     const element = (event.target as HTMLElement).closest('[role="treeitem"]');
     const id = element
       ?.querySelector("[data-connection-id]")
       ?.getAttribute("data-connection-id");
+    if (event.altKey && !id && !mgr.state.selectedConnection) return;
     let index = Math.max(
       0,
       rows.findIndex(
@@ -372,6 +379,18 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
     const row = rows[index];
     if (!row) return;
     const { connection } = row;
+    if (event.altKey) {
+      if (
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        mgr.handleFolderKeyboardMove(connection.id, event.key)
+      ) {
+        event.preventDefault();
+        setFocusId(connection.id);
+      }
+      return;
+    }
     switch (event.key) {
       case "ArrowDown":
         index = Math.min(rows.length - 1, index + 1);

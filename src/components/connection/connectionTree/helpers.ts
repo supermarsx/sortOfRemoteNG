@@ -34,19 +34,6 @@ export const getConnectionIconResolution = (connection: Connection) => {
 export const getConnectionIcon = (connection: Connection): LucideIcon =>
   getConnectionIconResolution(connection).icon;
 
-export const getStatusColor = (status?: string) => {
-  switch (status) {
-    case "connected":
-      return "text-success";
-    case "connecting":
-      return "text-warning";
-    case "error":
-      return "text-error";
-    default:
-      return "text-[var(--color-textSecondary)]";
-  }
-};
-
 /* ── ConnectionTreeItem ────────────────────────────────────────── */
 
 export interface ConnectionTreeItemProps {

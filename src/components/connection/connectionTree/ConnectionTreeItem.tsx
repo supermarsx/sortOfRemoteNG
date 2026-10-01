@@ -1,7 +1,6 @@
 import {
   ConnectionTreeItemProps,
   getConnectionIconResolution,
-  getStatusColor,
 } from "./helpers";
 import TreeItemMenu from "./TreeItemMenu";
 import MultiSelectMenu from "./MultiSelectMenu";
@@ -309,7 +308,7 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
           <ProtocolIcon
             size={16}
             aria-label={iconResolution.ariaLabel}
-            className={`mr-2 ${connection.isGroup ? "text-warning" : getStatusColor(activeSession?.status)}`}
+            className={`mr-2 ${connection.isGroup ? "text-warning" : "text-[var(--color-textSecondary)]"}`}
             style={connection.isGroup ? { color: folderIconColor } : undefined}
           />
           {connection.favorite && (
@@ -339,11 +338,16 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
             )}
           {activeSession && (
             <div
+              role="img"
+              aria-label={t(
+                `sessions.${activeSession.status}`,
+                activeSession.status,
+              )}
               className={`ml-2 w-2 h-2 rounded-full ${
                 activeSession.status === "connected"
                   ? "bg-success"
                   : activeSession.status === "connecting"
-                    ? "bg-warning"
+                    ? "bg-warning animate-pulse"
                     : "bg-error"
               }`}
             />
