@@ -72,6 +72,34 @@ describe("SettingsPasswordRow", () => {
     expect(input.type).toBe("password");
   });
 
+  it.each(["18rem", "24rem"])(
+    "keeps the reveal button inside the %s input width",
+    async (inputWidth) => {
+      await renderWithLoadedSettings(
+        <SettingsPasswordRow
+          label="Encryption password"
+          value="test-sync-password"
+          onChange={vi.fn()}
+          inputWidth={inputWidth}
+        />,
+      );
+      const input = screen.getByLabelText("Encryption password");
+      const frame = input.parentElement!;
+      const reveal = screen.getByRole("button", { name: "Show password" });
+      expect(frame).toContainElement(reveal);
+      expect(frame.parentElement).toHaveStyle({
+        width: inputWidth,
+        maxWidth: "100%",
+      });
+      expect(input).toHaveClass("w-full");
+      expect(input).toHaveStyle({ maxWidth: "none", paddingRight: "2.25rem" });
+      fireEvent.click(reveal);
+      expect(input).toHaveAttribute("type", "text");
+      fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+      expect(input).toHaveAttribute("type", "password");
+    },
+  );
+
   it("forwards onChange when the user types", async () => {
     const onChange = vi.fn();
     await renderWithLoadedSettings(

@@ -186,6 +186,14 @@ async function mount() {
     expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled(),
   );
 }
+function chooseOption(label: string, option: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: label }));
+  fireEvent.mouseDown(
+    within(screen.getByRole("listbox", { name: label })).getByRole("option", {
+      name: option,
+    }),
+  );
+}
 /**
  * The import dialog clears its acknowledgment in a passive effect whenever the
  * review changes. When React yields before that effect (a slow frame on a
@@ -264,6 +272,109 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("dedicated Trust Center", () => {
+  it("uses themed menus for every identity type and preserves the selected filter", async () => {
+    const types = ["https", "certificate", "rdp", "ssh", "tls"] as const;
+    fixture.records = types.map((type) => ({
+      ...record(`${type}-host:443`),
+      type,
+    }));
+    fixture.connectionRecords = [];
+    await mount();
+    expect(screen.getAllByRole("combobox")).toHaveLength(4);
+    for (const trigger of screen.getAllByRole("combobox")) {
+      expect(trigger.tagName).toBe("BUTTON");
+      expect(trigger).toHaveClass("sor-form-select", "sor-select-trigger");
+      expect(trigger).not.toHaveAttribute("title");
+    }
+    const trigger = screen.getByRole("combobox", { name: "Identity type" });
+    expect(trigger).toHaveTextContent("All identity types");
+    for (const type of types) {
+      chooseOption("Identity type", type.toUpperCase());
+      expect(screen.getAllByRole("row")).toHaveLength(2);
+      expect(screen.getByText(`${type}-host:443`)).toBeInTheDocument();
+      expect(trigger).toHaveTextContent(type.toUpperCase());
+      fireEvent.click(trigger);
+      const listbox = screen.getByRole("listbox", { name: "Identity type" });
+      expect(listbox.closest(".sor-select-dropdown")).toHaveClass(
+        "sor-popover-panel",
+      );
+      expect(
+        within(listbox).getByRole("option", { selected: true }),
+      ).toHaveTextContent(type.toUpperCase());
+      fireEvent.keyDown(trigger, { key: "Escape" });
+    }
+    chooseOption("Identity type", "All identity types");
+    expect(screen.getAllByRole("row")).toHaveLength(6);
+  });
+
+  it("combines themed status and scope filters without losing hidden selections", async () => {
+    await mount();
+    chooseOption("Identity status", "Revoked");
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByText("beta:443")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select all filtered" }),
+    );
+    chooseOption("Identity status", "Not revoked");
+    expect(screen.queryByText("beta:443")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(3);
+    expect(screen.getByText(/1 selected/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export selected" }),
+    ).toBeEnabled();
+    chooseOption("Identity scope", "Connection-specific");
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByText("gateway:443")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Select page" }));
+    chooseOption("Identity scope", "Database-wide");
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByText("alpha:443")).toBeInTheDocument();
+    expect(screen.getByText(/2 selected/)).toBeInTheDocument();
+    chooseOption("Identity status", "All statuses");
+    expect(screen.getAllByRole("row")).toHaveLength(3);
+    chooseOption("Identity scope", "All scopes");
+    expect(screen.getAllByRole("row")).toHaveLength(4);
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Select tls beta:443 Database-wide",
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Select tls gateway:443 Production gateway",
+      }),
+    ).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.getByText(/0 selected/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export selected" }),
+    ).toBeDisabled();
+  });
+
+  it("retains host, type and recent ordering through the themed sort menu", async () => {
+    fixture.records[1].type = "ssh";
+    fixture.records[1].identity.lastSeen = "2026-08-01";
+    fixture.connectionRecords[0].records[0].identity.lastSeen = "2026-10-01";
+    await mount();
+    const visibleHosts = () =>
+      within(screen.getByRole("table"))
+        .getAllByRole("row")
+        .slice(1)
+        .map((row) =>
+          within(row).getByRole("checkbox").getAttribute("aria-label"),
+        );
+    const alpha = "Select tls alpha:443 Database-wide";
+    const beta = "Select ssh beta:443 Database-wide";
+    const gateway = "Select tls gateway:443 Production gateway";
+    expect(visibleHosts()).toEqual([alpha, beta, gateway]);
+    chooseOption("Sort identities", "Type, then host");
+    expect(visibleHosts()).toEqual([beta, alpha, gateway]);
+    chooseOption("Sort identities", "Recently seen");
+    expect(visibleHosts()).toEqual([gateway, alpha, beta]);
+    chooseOption("Sort identities", "Host A–Z");
+    expect(visibleHosts()).toEqual([alpha, beta, gateway]);
+  });
+
   it("preserves tags and descriptions through native identity export and reviewed import", async () => {
     const exported = {
       ...nativeRecord("alpha:443", "OLD-FP"),
@@ -1012,48 +1123,117 @@ describe("dedicated Trust Center", () => {
     });
   });
 
-  it("requires review for per-host policy changes and never defaults to trust-all", async () => {
+  it("keeps the stored policy selected and its review action disabled during inspection", async () => {
+    fixture.records[0].hostPolicy = "strict";
+    let resolveHistory!: (value: unknown[]) => void;
+    const history = new Promise<unknown[]>((resolve) => {
+      resolveHistory = resolve;
+    });
+    const invoke = fixture.invoke.getMockImplementation()!;
+    fixture.invoke.mockImplementation((command, args) =>
+      command === "trust_get_identity_history"
+        ? history
+        : invoke(command, args),
+    );
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Inspect alpha:443" }));
+    const trigger = screen.getByRole("combobox", {
+      name: "Per-host verification policy",
+    });
+    expect(trigger).toHaveTextContent("strict");
+    expect(trigger).toBeEnabled();
+    const review = screen.getByRole("button", { name: "Review policy change" });
+    expect(review).toBeDisabled();
+    chooseOption("Per-host verification policy", "always ask");
+    expect(trigger).toHaveTextContent("always ask");
+    fireEvent.click(review);
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Identity — alpha:443",
+    );
     expect(
-      screen.getByRole("combobox", { name: "Per-host verification policy" }),
-    ).toHaveValue("inherit");
-    fireEvent.change(
-      screen.getByRole("combobox", { name: "Per-host verification policy" }),
-      { target: { value: "strict" } },
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Review policy change" }),
-      ).toBeEnabled(),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Review policy change" }),
-    );
-    expect(fixture.policy).not.toHaveBeenCalled();
-    fireEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
-        name: "Change policy",
-      }),
-    );
-    await waitFor(() =>
-      expect(fixture.invoke).toHaveBeenCalledWith(
-        "trust_apply_reviewed_batch",
-        {
-          databaseId: "db-a",
-          action: "policy",
-          targets: [
-            {
-              host: "alpha:443",
-              recordType: "tls",
-              fingerprint: "FP-alpha:443",
-            },
-          ],
-          policy: "strict",
-        },
+      fixture.invoke.mock.calls.filter(
+        ([command]) => command === "trust_apply_reviewed_batch",
       ),
-    );
+    ).toHaveLength(0);
+    await act(async () => resolveHistory([]));
+    expect(review).toBeEnabled();
+    expect(trigger).toHaveTextContent("always ask");
   });
+
+  it.each([
+    ["Inherit global policy", null],
+    ["tofu", "tofu"],
+    ["always ask", "always-ask"],
+    ["always trust", "always-trust"],
+    ["strict", "strict"],
+  ] as const)(
+    "requires review for policy %s and never defaults to trust-all",
+    async (label, policy) => {
+      await mount();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Inspect alpha:443" }),
+      );
+      const trigger = screen.getByRole("combobox", {
+        name: "Per-host verification policy",
+      });
+      expect(trigger).toHaveTextContent("Inherit global policy");
+      expect(trigger).toHaveClass("sor-form-select", "sor-select-trigger");
+      expect(screen.getByLabelText("Per-host verification policy")).toBe(
+        trigger,
+      );
+      expect(screen.getAllByText("Per-host verification policy")).toHaveLength(
+        1,
+      );
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.keyDown(trigger, { key: "Escape" });
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(trigger).toHaveTextContent("Inherit global policy");
+      chooseOption("Per-host verification policy", label);
+      expect(trigger).toHaveTextContent(label);
+      expect(
+        fixture.invoke.mock.calls.filter(
+          ([command]) => command === "trust_apply_reviewed_batch",
+        ),
+      ).toHaveLength(0);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Review policy change" }),
+        ).toBeEnabled(),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Review policy change" }),
+      );
+      expect(fixture.policy).not.toHaveBeenCalled();
+      expect(
+        fixture.invoke.mock.calls.filter(
+          ([command]) => command === "trust_apply_reviewed_batch",
+        ),
+      ).toHaveLength(0);
+      fireEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", {
+          name: "Change policy",
+        }),
+      );
+      await waitFor(() =>
+        expect(fixture.invoke).toHaveBeenCalledWith(
+          "trust_apply_reviewed_batch",
+          {
+            databaseId: "db-a",
+            action: "policy",
+            targets: [
+              {
+                host: "alpha:443",
+                recordType: "tls",
+                fingerprint: "FP-alpha:443",
+              },
+            ],
+            policy,
+          },
+        ),
+      );
+    },
+  );
 
   it("loads native statistics and supports reviewed individual and bulk tag replacement", async () => {
     await mount();

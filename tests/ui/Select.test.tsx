@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Select } from "../../src/components/ui/forms/Select";
+import { Modal } from "../../src/components/ui/overlays/Modal";
 
 // jsdom doesn't implement scrollIntoView
 beforeAll(() => {
@@ -14,6 +15,21 @@ const options = [
 ];
 
 describe("Select", () => {
+  it("dismisses its menu with Escape before closing the owning dialog", () => {
+    const close = vi.fn();
+    render(
+      <Modal isOpen onClose={close}>
+        <Select value="a" onChange={vi.fn()} options={options} />
+      </Modal>,
+    );
+    const trigger = screen.getByRole("combobox");
+    fireEvent.click(trigger);
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(close).not.toHaveBeenCalled();
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(close).toHaveBeenCalledOnce();
+  });
   it("renders a select element", () => {
     render(<Select value="a" onChange={vi.fn()} options={options} />);
     const select = screen.getByRole("combobox");

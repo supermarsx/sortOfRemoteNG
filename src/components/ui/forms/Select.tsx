@@ -60,6 +60,8 @@ export interface SelectProps {
    * that joins the search index to the rendered controls.
    */
   settingKey?: string;
+  /** Keep a menu inside an owning modal/access boundary when required. */
+  portalContainer?: HTMLElement | null;
 }
 
 /** Lower-case and strip diacritics so `cote` matches `Côte`. */
@@ -100,6 +102,7 @@ export const Select: React.FC<SelectProps> = ({
   searchable = false,
   searchPlaceholder,
   settingKey,
+  portalContainer,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(-1);
@@ -327,6 +330,11 @@ export const Select: React.FC<SelectProps> = ({
           break;
         }
         case "Escape":
+          // Dismiss this menu before an owning unlock/settings dialog.
+          e.stopPropagation();
+          e.preventDefault();
+          close();
+          break;
         case "Tab":
           e.preventDefault();
           close();
@@ -489,7 +497,7 @@ export const Select: React.FC<SelectProps> = ({
               })}
             </div>
           </div>,
-          document.body,
+          portalContainer ?? document.body,
         )}
     </>
   );

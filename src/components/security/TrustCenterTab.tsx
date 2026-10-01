@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   Fingerprint,
   RefreshCw,
@@ -20,6 +20,7 @@ import {
   type TrustCenterAction,
 } from "../../hooks/security/useTrustCenter";
 import ConfirmDialog from "../ui/dialogs/ConfirmDialog";
+import { Select } from "../ui/forms/Select";
 import { TrustIdentityImportDialog } from "./TrustIdentityImportDialog";
 import { TrustIdentityScopeDialog } from "./TrustIdentityScopeDialog";
 import TrustIdentityInspector from "./TrustIdentityInspector";
@@ -85,6 +86,7 @@ export default function TrustCenterTab({
     detailSelection?.databaseId === mgr.databaseId ? detailSelection : null;
   const [nickname, setNickname] = useState("");
   const [policy, setPolicy] = useState<TrustPolicy | "inherit">("inherit");
+  const policySelectId = useId();
   const [tags, setTags] = useState("");
   const [bulkTags, setBulkTags] = useState("");
   const [metadataSelection, setMetadataSelection] = useState<{
@@ -231,49 +233,55 @@ export default function TrustCenterTab({
                   onChange={(event) => mgr.setQuery(event.target.value)}
                 />
               </div>
-              <select
-                aria-label="Identity type"
-                className={field}
+              <Select
+                label="Identity type"
+                variant="form"
+                className="!w-auto text-xs"
                 value={mgr.type}
-                onChange={(event) => mgr.setType(event.target.value)}
-              >
-                <option value="all">All identity types</option>
-                {["https", "certificate", "rdp", "ssh", "tls"].map((type) => (
-                  <option key={type} value={type}>
-                    {type.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Identity status"
-                className={field}
+                onChange={mgr.setType}
+                options={[
+                  { value: "all", label: "All identity types" },
+                  ...["https", "certificate", "rdp", "ssh", "tls"].map(
+                    (type) => ({ value: type, label: type.toUpperCase() }),
+                  ),
+                ]}
+              />
+              <Select
+                label="Identity status"
+                variant="form"
+                className="!w-auto text-xs"
                 value={mgr.status}
-                onChange={(event) => mgr.setStatus(event.target.value)}
-              >
-                <option value="all">All statuses</option>
-                <option value="active">Not revoked</option>
-                <option value="revoked">Revoked</option>
-              </select>
-              <select
-                aria-label="Identity scope"
-                className={field}
+                onChange={mgr.setStatus}
+                options={[
+                  { value: "all", label: "All statuses" },
+                  { value: "active", label: "Not revoked" },
+                  { value: "revoked", label: "Revoked" },
+                ]}
+              />
+              <Select
+                label="Identity scope"
+                variant="form"
+                className="!w-auto text-xs"
                 value={mgr.scopeFilter}
-                onChange={(event) => mgr.setScopeFilter(event.target.value)}
-              >
-                <option value="all">All scopes</option>
-                <option value="database">Database-wide</option>
-                <option value="connection">Connection-specific</option>
-              </select>
-              <select
-                aria-label="Sort identities"
-                className={field}
+                onChange={mgr.setScopeFilter}
+                options={[
+                  { value: "all", label: "All scopes" },
+                  { value: "database", label: "Database-wide" },
+                  { value: "connection", label: "Connection-specific" },
+                ]}
+              />
+              <Select
+                label="Sort identities"
+                variant="form"
+                className="!w-auto text-xs"
                 value={mgr.sort}
-                onChange={(event) => mgr.setSort(event.target.value)}
-              >
-                <option value="host">Host A–Z</option>
-                <option value="type">Type, then host</option>
-                <option value="recent">Recently seen</option>
-              </select>
+                onChange={mgr.setSort}
+                options={[
+                  { value: "host", label: "Host A–Z" },
+                  { value: "type", label: "Type, then host" },
+                  { value: "recent", label: "Recently seen" },
+                ]}
+              />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -734,26 +742,28 @@ export default function TrustCenterTab({
               >
                 Save label
               </button>
-              <label className="mt-4 block text-xs">
+              <label htmlFor={policySelectId} className="mt-4 block text-xs">
                 Per-host verification policy
-                <select
-                  aria-label="Per-host verification policy"
-                  className={`${field} ml-2`}
-                  value={policy}
-                  onChange={(event) =>
-                    setPolicy(event.target.value as TrustPolicy | "inherit")
-                  }
-                >
-                  <option value="inherit">Inherit global policy</option>
-                  {(
-                    ["tofu", "always-ask", "always-trust", "strict"] as const
-                  ).map((value) => (
-                    <option key={value} value={value}>
-                      {value.replace(/-/g, " ")}
-                    </option>
-                  ))}
-                </select>
               </label>
+              <Select
+                id={policySelectId}
+                label="Per-host verification policy"
+                variant="form"
+                className="mt-1 text-xs"
+                value={policy}
+                onChange={(value) =>
+                  setPolicy(value as TrustPolicy | "inherit")
+                }
+                options={[
+                  { value: "inherit", label: "Inherit global policy" },
+                  ...(
+                    ["tofu", "always-ask", "always-trust", "strict"] as const
+                  ).map((value) => ({
+                    value,
+                    label: value.replace(/-/g, " "),
+                  })),
+                ]}
+              />
               <p className="mt-1 text-xs text-[var(--color-textMuted)]">
                 An override changes future identity verification. Always trust
                 bypasses identity checks; it is never selected automatically.

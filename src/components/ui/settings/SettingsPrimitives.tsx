@@ -490,12 +490,16 @@ export const SettingsPasswordRow: React.FC<SettingsPasswordRowProps> = ({
         </p>
       )}
     </div>
-    <div style={{ width: inputWidth }}>
+    <div className="min-w-0" style={{ width: inputWidth, maxWidth: "100%" }}>
       <PasswordInput
+        aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className="sor-settings-input w-full"
+        // The row owns the width. The shared input's 16rem max-width must
+        // not leave its reveal button outside the visible input border.
+        style={{ maxWidth: "none" }}
         disabled={disabled}
         revealable={revealable}
         isSaved={isSaved}
