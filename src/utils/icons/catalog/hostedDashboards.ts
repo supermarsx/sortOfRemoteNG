@@ -17,9 +17,18 @@ import {
   freednsIdentifier,
 } from "../brand/dashboardBrandIcons";
 import { defineIcon } from "./types";
+import { canva } from "../brand/canvaBrandIcon";
 
 /** Pure provider marks: no browser/server frames or permission implications. */
 export const HOSTED_DASHBOARD_ICONS = [
+  defineIcon(
+    "canva",
+    "Canva",
+    "web-applications",
+    canva,
+    ["canva", "design", "presentations"],
+    "Publisher Canva C contour from the official icon SVG; unframed, theme-aware vector.",
+  ),
   defineIcon(
     "adobe",
     "Adobe",

@@ -453,6 +453,8 @@ test("historical marks preserve the version-pinned upstream path bytes", async (
       "ac0ff3139ff3fda1b381d7f5ec7206a3827ecc2f2f992c9b7a0ab34919dd3564",
     microsoftexchange:
       "c465e4905722d5754dc3d8bc551060a2a848e2c9bb5ae5bca7ade601e7090993",
+    microsoftoutlook:
+      "8f76cad4592d67f6baf99d2230fd3e26a8b5ecbab9479e9165febd16fa0cc938",
     slack: "69c3650cc9632f4edcf00bb5fd02792d5cb46d8af58f8db5001ba64cdd40da4b",
     microsoftdynamics365:
       "e94805642fc2492a49226adec04458ebcdcb5b4342cc92554791a0c00d05ed2e",

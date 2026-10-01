@@ -42,7 +42,7 @@ const references = {
 
 describe("dashboard pure vector identifiers", () => {
   it("adds only missing keys, reuses Zoom and keeps the full catalogue unique", () => {
-    expect(added).toHaveLength(14);
+    expect(added).toHaveLength(15);
     expect(new Set(CONNECTION_ICON_CATALOG.map((e) => e.key)).size).toBe(
       CONNECTION_ICON_CATALOG.length,
     );

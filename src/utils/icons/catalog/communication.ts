@@ -18,6 +18,7 @@ import {
   matrix,
   mattermost,
   microsoftexchangemodern,
+  microsoftoutlook,
   osticket,
   postfix,
   rocketdotchat,
@@ -31,6 +32,23 @@ import { MESSAGING_PLATFORM_ICONS } from "./messagingPlatforms";
 export const COMMUNICATION_ICONS = [
   ...MESSAGING_PLATFORM_ICONS,
   defineIcon("mail", "Mail", "communication", Mail, ["exchange", "email"]),
+  defineIcon(
+    "outlook",
+    "Microsoft Outlook",
+    "communication",
+    microsoftoutlook,
+    [
+      "outlook",
+      "owa",
+      "outlook web access",
+      "outlook on the web",
+      "exchange-owa",
+      "exchange outlook",
+      "webmail",
+      "email",
+    ],
+    "Microsoft Outlook connection icon using the historical Outlook O-and-envelope mark, styled with the app theme.",
+  ),
   defineIcon("mailbox", "Mailbox", "communication", Mailbox, [
     "mailcow",
     "email",

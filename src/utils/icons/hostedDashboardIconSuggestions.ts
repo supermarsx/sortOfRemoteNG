@@ -32,8 +32,8 @@ export const HOSTED_DASHBOARD_ICON_SUGGESTIONS = {
   sqlpad: "sqlpad",
   "eaton-ups": "eaton",
   gmail: "gmail",
-  "outlook-online": "microsoft",
-  "exchange-owa": "exchange",
+  "outlook-online": "outlook",
+  "exchange-owa": "outlook",
   ddwrt: "ddwrt",
   freshtomato: "freshtomato",
 } as const satisfies Readonly<Record<string, ConnectionIconKey>>;

@@ -182,6 +182,16 @@ the app's role frames, not fabricated provider product logos.
 
 ## Pinned historical paths
 
+Microsoft Outlook (`outlook`, suggested for both on-premises Exchange OWA and
+Outlook Online) uses the exact O-and-envelope path from
+[Simple Icons 11.0.0](https://raw.githubusercontent.com/simple-icons/simple-icons/11.0.0/icons/microsoftoutlook.svg).
+SVG SHA-256: `f2fcdd8cbd3be6855935de2ab3fb7010aef607963fb157c64ac308e693a18f87`.
+The release metadata cites `https://developer.microsoft.com/en-us/outlook/docs`
+and Microsoft's trademark guidance. This is a pinned historical mark, not a
+claim to the latest Outlook branding. It is bundled locally and uses
+`currentColor` for both light and dark themes. Existing custom choices are not
+overwritten; Exchange ECP retains its separate Exchange icon.
+
 `historicalBrandIcons.ts` preserves these upstream path strings verbatim, without
 installing an older package. Original SVG SHA-256 hashes are recorded beside each
 export; offline tests also verify the rendered path hashes. These are identified
