@@ -1,4 +1,5 @@
 export const DEFAULT_SESSION_CLOSE_TIMEOUT_MS = 15_000;
+export const RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS = 60_000;
 
 export type SessionClosePhase = "closing" | "unresponsive";
 
@@ -14,6 +15,8 @@ export interface SessionCloseState {
   readonly startedAt: number;
   readonly timeoutMs: number;
   readonly cleanupPending: boolean;
+  /** Full RDP disconnect only; never starts while confirmation is pending. */
+  readonly autoForceCloseAt?: number;
   readonly message: string;
 }
 

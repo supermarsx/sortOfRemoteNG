@@ -589,6 +589,58 @@ describe("SessionViewer", () => {
     expect(screen.getByText(/rdp handshake failed/i)).toBeInTheDocument();
   });
 
+  it.each(["connecting", "connected", "reconnecting", "error"] as const)(
+    "routes RDP %s close requests through the manager using the tab id",
+    async (status) => {
+      const onCloseSession = vi.fn();
+      const session = createSession({
+        protocol: "rdp",
+        status,
+        backendSessionId: "native-rdp-actor",
+        errorMessage: "RDP worker is still closing",
+      });
+      render(
+        <SessionViewer session={session} onCloseSession={onCloseSession} />,
+      );
+      await screen.findByTestId(
+        status === "error" ? "mock-rdp-error-screen" : "mock-rdp-client",
+      );
+      const propsMock =
+        status === "error"
+          ? mockState.rdpErrorScreenProps
+          : mockState.rdpClientProps;
+
+      expect(onCloseSession).not.toHaveBeenCalled();
+      propsMock.mock.lastCall![0].onClose();
+
+      expect(onCloseSession).toHaveBeenCalledExactlyOnceWith(session.id);
+    },
+  );
+
+  it.each(["connected", "error"] as const)(
+    "omits the RDP %s close action when the viewer has no close handler",
+    async (status) => {
+      render(
+        <SessionViewer
+          session={createSession({
+            protocol: "rdp",
+            status,
+            errorMessage: "RDP worker is still closing",
+          })}
+        />,
+      );
+      await screen.findByTestId(
+        status === "error" ? "mock-rdp-error-screen" : "mock-rdp-client",
+      );
+      const propsMock =
+        status === "error"
+          ? mockState.rdpErrorScreenProps
+          : mockState.rdpClientProps;
+
+      expect(propsMock.mock.lastCall![0].onClose).toBeUndefined();
+    },
+  );
+
   it("mounts runtime-owned non-RDP connecting sessions so clients report real status", () => {
     render(
       <SessionViewer

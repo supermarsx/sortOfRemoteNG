@@ -21,6 +21,7 @@ import { useRDPInternalsBridge } from "../../hooks/rdp/useRDPInternalsBridge";
 interface RDPClientProps {
   session: ConnectionSession;
   onActivateSession?: (sessionId: string) => void;
+  onClose?: () => void;
 }
 
 // ─── Status helpers ──────────────────────────────────────────────────
@@ -110,7 +111,8 @@ const ConnectingOverlay: React.FC<{
 const ErrorOverlay: React.FC<{
   mgr: RDPClientMgr;
   session: ConnectionSession;
-}> = ({ mgr, session }) => (
+  onClose?: () => void;
+}> = ({ mgr, session, onClose }) => (
   <RDPErrorScreen
     sessionId={mgr.rdpSessionId || session.id}
     hostname={session.hostname}
@@ -118,6 +120,7 @@ const ErrorOverlay: React.FC<{
       mgr.statusMessage || `Unable to connect to ${session.hostname}`
     }
     onRetry={mgr.handleRetry}
+    onClose={onClose}
     connectionDetails={{
       port: mgr.connection?.port || 3389,
       username: mgr.connection?.username || "",
@@ -140,7 +143,8 @@ const CanvasArea: React.FC<{
   mgr: RDPClientMgr;
   session: ConnectionSession;
   rotation: 0 | 90 | 180 | 270;
-}> = ({ mgr, session, rotation }) => {
+  onClose?: () => void;
+}> = ({ mgr, session, rotation, onClose }) => {
   // Smart sizing: scale the canvas to fit via CSS objectFit.
   // Resize to window: canvas buffer matches container — no CSS scaling needed.
   // Neither: fixed size, may overflow (scrollbars handled by container).
@@ -612,7 +616,7 @@ const CanvasArea: React.FC<{
       )}
 
       {mgr.connectionStatus === "error" && (
-        <ErrorOverlay mgr={mgr} session={session} />
+        <ErrorOverlay mgr={mgr} session={session} onClose={onClose} />
       )}
 
       {mgr.connectionStatus === "disconnected" && <DisconnectedOverlay />}
@@ -625,6 +629,7 @@ const CanvasArea: React.FC<{
 const RDPClient: React.FC<RDPClientProps> = ({
   session,
   onActivateSession,
+  onClose,
 }) => {
   const mgr = useRDPClient(session);
   const openInternals = useRDPInternalsBridge(session, mgr, onActivateSession);
@@ -735,7 +740,12 @@ const RDPClient: React.FC<RDPClientProps> = ({
           />
         )}
 
-      <CanvasArea mgr={mgr} session={session} rotation={rotation} />
+      <CanvasArea
+        mgr={mgr}
+        session={session}
+        rotation={rotation}
+        onClose={onClose}
+      />
 
       {!mgr.isFullscreen && (
         <RDPStatusBar

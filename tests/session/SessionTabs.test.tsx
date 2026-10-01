@@ -584,6 +584,45 @@ describe("SessionTabs accessibility", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the remaining RDP auto-close time alongside the force button", () => {
+    vi.useFakeTimers();
+    try {
+      const { unmount } = renderTabs({
+        sessionCloseStates: {
+          s1: {
+            sessionId: "s1",
+            attemptId: 9,
+            phase: "unresponsive",
+            startedAt: Date.now() - 15_000,
+            timeoutMs: 15_000,
+            autoForceCloseAt: Date.now() + 45_000,
+            cleanupPending: true,
+            message:
+              "RDP cleanup is not confirmed. The tab closes after one minute.",
+          },
+        },
+        onSessionRetryClose,
+        onSessionForceClose,
+      });
+      expect(
+        screen.getByLabelText("Automatic tab close in 45 seconds"),
+      ).toHaveTextContent("45s");
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(
+        screen.getByLabelText("Automatic tab close in 44 seconds"),
+      ).toHaveTextContent("44s");
+      fireEvent.click(
+        screen.getByRole("button", { name: /force close session one/i }),
+      );
+      expect(onSessionForceClose).toHaveBeenCalledWith("s1");
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("opens and closes submenu with keyboard and updates aria-expanded", async () => {
     renderTabs();
 

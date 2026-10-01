@@ -193,49 +193,69 @@ const UnresponsiveCloseActions: React.FC<UnresponsiveCloseActionsProps> = ({
   closeState,
   onRetry,
   onForce,
-}) => (
-  <div
-    role="group"
-    aria-label={`Cleanup controls for ${session.name}`}
-    className="ml-auto flex flex-shrink-0 items-center gap-0.5"
-  >
-    <TriangleAlert
-      size={13}
-      className="mr-0.5 text-warning"
-      aria-hidden="true"
-    />
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        onRetry?.(session.id);
-      }}
-      disabled={!onRetry}
-      aria-label={`Check cleanup again for ${session.name}`}
-      data-tooltip="Check the same cleanup attempt again (does not start another teardown)"
-      className="rounded p-1 text-warning transition-colors hover:bg-[var(--color-border)] disabled:opacity-40"
+}) => {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!closeState.autoForceCloseAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [closeState.autoForceCloseAt]);
+  const remainingSeconds = closeState.autoForceCloseAt
+    ? Math.max(0, Math.ceil((closeState.autoForceCloseAt - now) / 1000))
+    : undefined;
+  return (
+    <div
+      role="group"
+      aria-label={`Cleanup controls for ${session.name}`}
+      className="ml-auto flex flex-shrink-0 items-center gap-0.5"
     >
-      <RefreshCw size={12} />
-    </button>
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        onForce?.(session.id);
-      }}
-      disabled={!onForce}
-      aria-label={`Force close ${session.name}`}
-      aria-describedby={`session-close-status-${session.id}`}
-      data-tooltip="Force close tab — backend cleanup is not confirmed"
-      className="rounded p-1 text-error transition-colors hover:bg-error/15 disabled:opacity-40"
-    >
-      <XCircle size={13} />
-    </button>
-    <span id={`session-close-status-${session.id}`} className="sr-only">
-      {closeState.message}
-    </span>
-  </div>
-);
+      <TriangleAlert
+        size={13}
+        className="mr-0.5 text-warning"
+        aria-hidden="true"
+      />
+      {remainingSeconds !== undefined && (
+        <span
+          className="mr-1 text-[10px] tabular-nums text-warning"
+          aria-label={`Automatic tab close in ${remainingSeconds} seconds`}
+          data-tooltip="Automatic tab close after one minute; backend cleanup may still be pending"
+        >
+          {remainingSeconds}s
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRetry?.(session.id);
+        }}
+        disabled={!onRetry}
+        aria-label={`Check cleanup again for ${session.name}`}
+        data-tooltip="Check the same cleanup attempt again (does not start another teardown)"
+        className="rounded p-1 text-warning transition-colors hover:bg-[var(--color-border)] disabled:opacity-40"
+      >
+        <RefreshCw size={12} />
+      </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onForce?.(session.id);
+        }}
+        disabled={!onForce}
+        aria-label={`Force close ${session.name}`}
+        aria-describedby={`session-close-status-${session.id}`}
+        data-tooltip="Force close tab — backend cleanup is not confirmed"
+        className="rounded p-1 text-error transition-colors hover:bg-error/15 disabled:opacity-40"
+      >
+        <XCircle size={13} />
+      </button>
+      <span id={`session-close-status-${session.id}`} className="sr-only">
+        {closeState.message}
+      </span>
+    </div>
+  );
+};
 
 interface SessionTabsProps {
   activeSessionId?: string;

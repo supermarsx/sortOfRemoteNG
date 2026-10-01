@@ -92,6 +92,10 @@ import {
   withSessionLifecycleAttempt,
   type SessionLifecycleActorAttempt,
 } from "../../utils/session/sessionLifecycle";
+import {
+  preserveForcedSessionCleanupEvidence,
+  type ForcedSessionCleanupActor,
+} from "../../utils/session/forcedSessionCleanupLedger";
 
 const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
   data as Uint8ClampedArray<ArrayBuffer>;
@@ -212,6 +216,27 @@ export function useRDPClient(session: ConnectionSession) {
   const connectionContextRef = useRef(connectionContext);
   connectionContextRef.current = connectionContext;
   const { state, dispatch } = connectionContext;
+  const publishSessionUpdate = useCallback(
+    (
+      updatedSession: ConnectionSession,
+      actor: ForcedSessionCleanupActor = updatedSession,
+    ) => {
+      const retained = preserveForcedSessionCleanupEvidence(
+        updatedSession,
+        actor,
+      );
+      if (retained) {
+        if (!retained.persisted) {
+          debugLog(
+            `Late RDP cleanup evidence could not be saved: ${retained.error}`,
+          );
+        }
+        return;
+      }
+      dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+    },
+    [dispatch],
+  );
   const { settings } = useSettings();
   const { toast } = useToastContext();
 
@@ -654,7 +679,7 @@ export function useRDPClient(session: ConnectionSession) {
           ...persistTrackedVpnLeaseOwners(tracker),
         };
         sessionRef.current = updatedSession;
-        dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+        publishSessionUpdate(updatedSession);
         return false;
       }
 
@@ -668,10 +693,10 @@ export function useRDPClient(session: ConnectionSession) {
         ...persistTrackedVpnLeaseOwners(tracker),
       };
       sessionRef.current = updatedSession;
-      dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+      publishSessionUpdate(updatedSession);
       return true;
     },
-    [dispatch, releaseVpnLeaseOwner],
+    [publishSessionUpdate, releaseVpnLeaseOwner],
   );
 
   // ─── Handlers ──────────────────────────────────────────────────────
@@ -818,6 +843,7 @@ export function useRDPClient(session: ConnectionSession) {
     clearH264RecoveryTimers();
     initGenRef.current++; // abort any in-flight init
     const sid = sessionIdRef.current;
+    const disconnectActor = { ...sessionRef.current };
     const backendSessionIds = [
       ...new Set(
         [
@@ -829,6 +855,7 @@ export function useRDPClient(session: ConnectionSession) {
       ),
     ];
     for (const backendSessionId of backendSessionIds) {
+      const cleanupActor = { ...disconnectActor, backendSessionId };
       const pendingOwnerId =
         pendingRdpBackendOwnersRef.current.get(backendSessionId);
       if (pendingOwnerId) {
@@ -840,7 +867,7 @@ export function useRDPClient(session: ConnectionSession) {
             status: "cleanup-pending",
           });
           sessionRef.current = correlated;
-          dispatch({ type: "UPDATE_SESSION", payload: correlated });
+          publishSessionUpdate(correlated, cleanupActor);
         } catch (bindingError) {
           setConnectionStatus("error");
           setStatusMessage(String(bindingError));
@@ -864,7 +891,7 @@ export function useRDPClient(session: ConnectionSession) {
             persisted: primary,
             pending: new Set(ownerIds.filter((ownerId) => ownerId !== primary)),
           };
-          dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+          publishSessionUpdate(updatedSession, cleanupActor);
         },
       });
       cleanup.releasedOwnerIds.forEach((ownerId) => {
@@ -923,7 +950,7 @@ export function useRDPClient(session: ConnectionSession) {
       ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
     };
     sessionRef.current = updatedSession;
-    dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+    publishSessionUpdate(updatedSession, disconnectActor);
     pipelineRef.current!.destroy();
     pipelineRef.current = createRdpFramePipeline(
       rdpSettingsRef.current,
@@ -931,7 +958,7 @@ export function useRDPClient(session: ConnectionSession) {
       effectiveRenderActivityRef.current,
     );
     return vpnClean;
-  }, [clearH264RecoveryTimers, dispatch, settleVpnLeaseOwner]);
+  }, [clearH264RecoveryTimers, publishSessionUpdate, settleVpnLeaseOwner]);
 
   const handleCopyToClipboard = useCallback(async () => {
     // If CLIPRDR is active, request clipboard text from the remote session.
@@ -1281,6 +1308,21 @@ export function useRDPClient(session: ConnectionSession) {
     let vaultFacets: DatabaseCredentialFacets | null = null;
     let lifecycleAttempt: SessionLifecycleActorAttempt | null = null;
 
+    const publishAttemptSession = (
+      updatedSession: ConnectionSession,
+      backendSessionId = attemptRdpBackendSessionId ?? undefined,
+    ) => {
+      const authority = lifecycleAttempt ?? expectedLifecycleAuthority;
+      publishSessionUpdate(updatedSession, {
+        id: sess.id,
+        connectionId: sess.connectionId,
+        protocol: "rdp",
+        backendSessionId,
+        lifecycleActorGeneration: authority.generation,
+        lifecycleWriterId: authority.writerId,
+      });
+    };
+
     const releaseAttemptVpnLease = async () => {
       const ownerId = attemptVpnLeaseOwnerId;
       if (!ownerId) return;
@@ -1336,7 +1378,7 @@ export function useRDPClient(session: ConnectionSession) {
           lifecycleAttempt,
         );
         sessionRef.current = failedSession;
-        dispatch({ type: "UPDATE_SESSION", payload: failedSession });
+        publishAttemptSession(failedSession, backendSessionId);
         setConnectionStatus("error");
         setStatusMessage(message);
         return false;
@@ -1352,7 +1394,7 @@ export function useRDPClient(session: ConnectionSession) {
         lifecycleAttempt,
       );
       sessionRef.current = closedSession;
-      dispatch({ type: "UPDATE_SESSION", payload: closedSession });
+      publishAttemptSession(closedSession, backendSessionId);
       pendingRdpBackendCleanupRef.current.delete(backendSessionId);
       pendingRdpBackendOwnersRef.current.delete(backendSessionId);
       attemptRdpBackendSessionId = null;
@@ -1395,7 +1437,7 @@ export function useRDPClient(session: ConnectionSession) {
           lifecycleAttempt,
         );
         sessionRef.current = boundSession;
-        dispatch({ type: "UPDATE_SESSION", payload: boundSession });
+        publishAttemptSession(boundSession, targetSessionId);
       }
       for (const previousOwnerId of primaryOwnerIds) {
         if (previousOwnerId !== nextOwnerId) {
@@ -1455,7 +1497,7 @@ export function useRDPClient(session: ConnectionSession) {
       );
       lifecycleAttempt = reservation.attempt;
       sessionRef.current = reservation.session;
-      dispatch({ type: "UPDATE_SESSION", payload: reservation.session });
+      publishAttemptSession(reservation.session);
 
       setConnectionStatus("connecting");
       setStatusMessage("Checking binary IPC transport...");
@@ -1582,7 +1624,7 @@ export function useRDPClient(session: ConnectionSession) {
             ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
           };
           sessionRef.current = trackedSession;
-          dispatch({ type: "UPDATE_SESSION", payload: trackedSession });
+          publishAttemptSession(trackedSession);
           await acquireSessionVpnLeases(
             attemptVpnLeaseOwnerId,
             runtimePath.transport.vpnPreSteps,
@@ -1694,7 +1736,7 @@ export function useRDPClient(session: ConnectionSession) {
             generation: getSessionLifecycleActorGeneration(updatedSession),
             writerId: getSessionLifecycleWriterId(updatedSession),
           };
-          dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+          publishAttemptSession(updatedSession, reattachId);
           return;
         } catch (attachErr) {
           console.error(
@@ -1852,7 +1894,7 @@ export function useRDPClient(session: ConnectionSession) {
           lifecycleAttempt,
         );
         sessionRef.current = boundSession;
-        dispatch({ type: "UPDATE_SESSION", payload: boundSession });
+        publishAttemptSession(boundSession, sessionId);
       }
 
       const cleanupOrphanedRdp = async (): Promise<boolean> => {
@@ -1883,7 +1925,7 @@ export function useRDPClient(session: ConnectionSession) {
             lifecycleAttempt,
           );
           sessionRef.current = updatedSession;
-          dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+          publishAttemptSession(updatedSession, sessionId);
           setConnectionStatus("error");
           setStatusMessage(message);
           return false;
@@ -1898,7 +1940,7 @@ export function useRDPClient(session: ConnectionSession) {
           lifecycleAttempt,
         );
         sessionRef.current = closedSession;
-        dispatch({ type: "UPDATE_SESSION", payload: closedSession });
+        publishAttemptSession(closedSession, sessionId);
         pendingRdpBackendCleanupRef.current.delete(sessionId);
         pendingRdpBackendOwnersRef.current.delete(sessionId);
         attemptRdpBackendSessionId = null;
@@ -1936,7 +1978,7 @@ export function useRDPClient(session: ConnectionSession) {
         generation: getSessionLifecycleActorGeneration(updatedSession),
         writerId: getSessionLifecycleWriterId(updatedSession),
       };
-      dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+      publishAttemptSession(updatedSession, sessionId);
       attemptRdpBackendSessionId = null;
 
       // Don't attach the pipeline here — the rdp://status 'connected'
@@ -1983,7 +2025,7 @@ export function useRDPClient(session: ConnectionSession) {
           lifecycleAttempt,
         );
         sessionRef.current = failedSession;
-        dispatch({ type: "UPDATE_SESSION", payload: failedSession });
+        publishAttemptSession(failedSession);
       }
       console.error("RDP initialization failed:", safeError);
       toast.error("RDP connection failed", 5000);
@@ -2007,7 +2049,7 @@ export function useRDPClient(session: ConnectionSession) {
           lifecycleRevision: lifecycleAttempt.revision,
         };
         sessionRef.current = completedSession;
-        dispatch({ type: "UPDATE_SESSION", payload: completedSession });
+        publishAttemptSession(completedSession);
       }
       finishSessionLifecycleActorAttempt(lifecycleAttempt);
     }
@@ -2686,7 +2728,7 @@ export function useRDPClient(session: ConnectionSession) {
               if (terminalSession) {
                 setStatusMessage(status.message);
                 sessionRef.current = terminalSession;
-                dispatch({ type: "UPDATE_SESSION", payload: terminalSession });
+                publishSessionUpdate(terminalSession, cleanupSeed);
 
                 setRdpSessionId(null);
                 sessionIdRef.current = null;
@@ -2798,10 +2840,7 @@ export function useRDPClient(session: ConnectionSession) {
                     // Always publish the fenced cleanup ledger. A replacement
                     // generation rejects this terminal epoch's actor fields but
                     // can still merge safe release proofs/tombstones.
-                    dispatch({
-                      type: "UPDATE_SESSION",
-                      payload: terminalUpdate,
-                    });
+                    publishSessionUpdate(terminalUpdate, cleanupSeed);
                   },
                 });
                 cleanup.releasedOwnerIds.forEach((ownerId) => {
@@ -3163,7 +3202,7 @@ export function useRDPClient(session: ConnectionSession) {
         audioCtx = null;
       }
     };
-  }, [cleanup, dispatch, isClipboardDirectionEnabled]);
+  }, [cleanup, dispatch, isClipboardDirectionEnabled, publishSessionUpdate]);
 
   // ─── Connect on mount, disconnect on unmount ───────────────────────
 

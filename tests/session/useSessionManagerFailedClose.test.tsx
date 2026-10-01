@@ -6,7 +6,7 @@
  * fail-closed semantics (negative controls at the bottom).
  */
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Connection,
   ConnectionSession,
@@ -153,6 +153,11 @@ import { useCloseTabShortcut } from "../../src/hooks/session/useCloseTabShortcut
 import { registerSynologySession } from "../../src/utils/session/synologySessionLifecycle";
 import { registerDocumentDraft } from "../../src/utils/documents/documentDrafts";
 import { registerCredentialVaultDraft } from "../../src/utils/security/credentialVaultDrafts";
+import { RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS } from "../../src/utils/session/sessionClose";
+import {
+  FORCED_SESSION_CLEANUP_LEDGER_KEY,
+  readForcedSessionCleanupLedger,
+} from "../../src/utils/session/forcedSessionCleanupLedger";
 
 const makeConnection = (
   id: string,
@@ -232,6 +237,265 @@ beforeEach(() => {
   mocks.settings.warnOnClose = true;
   mocks.settings.rdpSessionClosePolicy = "detach";
   seed([], []);
+});
+
+describe("RDP close recovery and one-minute deadline", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.localStorage.removeItem(FORCED_SESSION_CLEANUP_LEDGER_KEY);
+    mocks.settings.confirmCloseActiveTab = false;
+    mocks.settings.warnOnClose = false;
+    mocks.settings.rdpSessionClosePolicy = "disconnect";
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    window.localStorage.removeItem(FORCED_SESSION_CLEANUP_LEDGER_KEY);
+  });
+  const setup = () => {
+    const connection = makeConnection("rdp-close", {
+      protocol: "rdp",
+      port: 3389,
+    });
+    const session = makeSession("rdp-tab", connection.id, {
+      protocol: "rdp",
+      status: "connected",
+      backendSessionId: "rdp-worker",
+      lifecycleActorGeneration: 1,
+      lifecycleRevision: 1,
+      lifecycleWriterId: "main",
+      vpnLeaseOwnerIds: ["rdp-route"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "rdp-route",
+          backendSessionId: "rdp-worker",
+          protocol: "rdp",
+          status: "active",
+        },
+      ],
+    });
+    seed([connection], [session]);
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "disconnect_rdp"
+        ? Promise.reject(
+            new Error(
+              "RDP worker rdp-worker (generation 1) is still closing; cleanup continues in the background",
+            ),
+          )
+        : Promise.resolve(undefined),
+    );
+    return { connection, session, ...renderHook(() => useSessionManager()) };
+  };
+  const flush = () =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+  it("retains Force close after a returned cleanup error and preserves exact ownership", async () => {
+    const { session, result, rerender } = setup();
+    let close!: Promise<boolean>;
+    act(() => {
+      close = result.current.handleSessionClose(session.id);
+    });
+    await flush();
+    await expect(close).resolves.toBe(false);
+    rerender();
+    expect(result.current.sessionCloseStates[session.id]).toMatchObject({
+      phase: "unresponsive",
+      cleanupPending: true,
+      autoForceCloseAt: expect.any(Number),
+    });
+    expect(removeDispatched(session.id)).toBe(false);
+    await act(async () => {
+      expect(await result.current.retrySessionClose(session.id)).toBe(false);
+    });
+    expect(invokedCommands()).toEqual(["disconnect_rdp"]);
+    act(() => {
+      expect(result.current.forceSessionClose(session.id)).toBe(true);
+    });
+    expect(removeDispatched(session.id)).toBe(true);
+    expect(readForcedSessionCleanupLedger()[0]).toMatchObject({
+      backendSessionId: "rdp-worker",
+      vpnLeaseOwnerIds: ["rdp-route"],
+      cleanupPending: true,
+    });
+    expect(mocks.emitEnded).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS);
+    });
+    expect(
+      mocks.dispatch.mock.calls.filter(([a]) => a.type === "REMOVE_SESSION"),
+    ).toHaveLength(1);
+  });
+
+  it("auto closes at one minute despite same-actor cleanup revision changes", async () => {
+    const { session, connection, result, rerender } = setup();
+    act(() => {
+      void result.current.handleSessionClose(session.id);
+    });
+    await flush();
+    seed([connection], [{ ...sessions()[0], lifecycleRevision: 2 }]);
+    rerender();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS - 1);
+    });
+    expect(removeDispatched(session.id)).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(removeDispatched(session.id)).toBe(true);
+    expect(result.current.confirmDialog?.props.message).toMatch(
+      /automatically force closed after one minute/i,
+    );
+    expect(readForcedSessionCleanupLedger()).toHaveLength(1);
+    expect(invokedCommands()).toEqual(["disconnect_rdp"]);
+  });
+
+  it("bounds a hung call and a recheck by the original deadline, fencing late settlement", async () => {
+    const { session, result } = setup();
+    let finish!: () => void;
+    mocks.invoke.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let close!: Promise<boolean>;
+    act(() => {
+      close = result.current.handleSessionClose(session.id);
+    });
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(55_000);
+    });
+    await expect(close).resolves.toBe(false);
+    let recheck!: Promise<boolean>;
+    act(() => {
+      recheck = result.current.retrySessionClose(session.id);
+    });
+    expect(result.current.sessionCloseStates[session.id]?.phase).toBe(
+      "closing",
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await expect(recheck).resolves.toBe(false);
+    expect(removeDispatched(session.id)).toBe(true);
+    await act(async () => {
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(
+      mocks.dispatch.mock.calls.filter(([a]) => a.type === "REMOVE_SESSION"),
+    ).toHaveLength(1);
+    expect(mocks.emitEnded).not.toHaveBeenCalled();
+  });
+
+  it("removes a confirmed terminal actor before the deadline without recording an unconfirmed close", async () => {
+    const { session, connection, result, rerender } = setup();
+    act(() => {
+      void result.current.handleSessionClose(session.id);
+    });
+    await flush();
+    seed(
+      [connection],
+      [
+        {
+          ...session,
+          status: "disconnected",
+          backendSessionId: undefined,
+          vpnLeaseOwnerIds: undefined,
+          vpnLeaseBindings: undefined,
+          lifecycleRevision: 3,
+        },
+      ],
+    );
+    rerender();
+    expect(removeDispatched(session.id)).toBe(true);
+    expect(result.current.sessionCloseStates[session.id]).toBeUndefined();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS);
+    });
+    expect(readForcedSessionCleanupLedger()).toEqual([]);
+    expect(mocks.emitEnded).toHaveBeenCalledOnce();
+  });
+
+  it("never auto-removes a replacement actor occupying the same tab id", async () => {
+    const { session, connection, result, rerender } = setup();
+    act(() => {
+      void result.current.handleSessionClose(session.id);
+    });
+    await flush();
+    seed(
+      [connection],
+      [
+        {
+          ...session,
+          backendSessionId: "new-worker",
+          lifecycleActorGeneration: 2,
+          lifecycleRevision: 3,
+        },
+      ],
+    );
+    rerender();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS);
+    });
+    expect(removeDispatched(session.id)).toBe(false);
+    expect(sessions()[0].backendSessionId).toBe("new-worker");
+    expect(readForcedSessionCleanupLedger()).toEqual([]);
+    expect(result.current.sessionCloseStates[session.id]).toBeUndefined();
+    expect(invokedCommands()).toEqual(["disconnect_rdp"]);
+  });
+
+  it("cancels the deadline on unmount", async () => {
+    const { session, result, unmount } = setup();
+    act(() => {
+      void result.current.handleSessionClose(session.id);
+    });
+    await flush();
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS);
+    });
+    expect(removeDispatched(session.id)).toBe(false);
+    expect(readForcedSessionCleanupLedger()).toEqual([]);
+  });
+
+  it("does not start the deadline while a close confirmation is awaiting input", async () => {
+    const { session, result } = setup();
+    mocks.settings.warnOnClose = true;
+    let close!: Promise<boolean>;
+    act(() => {
+      close = result.current.handleSessionClose(session.id);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS * 2);
+    });
+    expect(invokedCommands()).toEqual([]);
+    expect(removeDispatched(session.id)).toBe(false);
+    act(() => {
+      result.current.confirmDialog?.props.onCancel();
+    });
+    await expect(close).resolves.toBe(false);
+  });
+
+  it("never auto force closes an intentional detach", async () => {
+    const { session, result, unmount } = setup();
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    mocks.invoke.mockImplementation(() => new Promise(() => {}));
+    act(() => {
+      void result.current.handleSessionClose(session.id);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS * 2);
+    });
+    expect(invokedCommands()).toEqual(["detach_rdp_session"]);
+    expect(removeDispatched(session.id)).toBe(false);
+    expect(
+      result.current.sessionCloseStates[session.id]?.autoForceCloseAt,
+    ).toBeUndefined();
+    unmount();
+  });
 });
 
 describe("handleSessionClose — sessions with no live transport", () => {

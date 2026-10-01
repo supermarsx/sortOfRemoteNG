@@ -70,6 +70,7 @@ import {
 } from "../integrations/IntegrationSessionLifecycle";
 import {
   DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
+  RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS,
   type SessionCloseState,
   type SessionCloseStateById,
 } from "../../utils/session/sessionClose";
@@ -176,6 +177,10 @@ type SessionCloseAttempt = {
   resolveResult: (value: boolean) => void;
   cleanupPromise?: Promise<boolean>;
   cleanupSettled: boolean;
+  retainFailedCleanup?: boolean;
+  forceAvailable?: boolean;
+  autoForceCloseAt?: number;
+  forceCloseTimer?: ReturnType<typeof setTimeout>;
   timedOut: boolean;
   forced: boolean;
 };
@@ -215,9 +220,17 @@ const isSameSessionCloseActor = (
     original.protocol === current.protocol &&
     original.hostname === current.hostname &&
     original.startTime === sessionStartTimeIdentity(current) &&
-    original.backendSessionId === current.backendSessionId &&
+    (original.backendSessionId === current.backendSessionId ||
+      (original.protocol === "rdp" &&
+        original.lifecycleActorGeneration !== undefined &&
+        !current.backendSessionId &&
+        (current.status === "disconnected" || current.status === "error"))) &&
     original.shellId === current.shellId &&
-    original.lifecycleRevision === current.lifecycleRevision &&
+    (original.lifecycleRevision === current.lifecycleRevision ||
+      (original.protocol === "rdp" &&
+        original.lifecycleActorGeneration !== undefined &&
+        (current.lifecycleRevision ?? 0) >=
+          (original.lifecycleRevision ?? 0))) &&
     original.lifecycleActorGeneration === current.lifecycleActorGeneration &&
     original.lifecycleWriterId === current.lifecycleWriterId &&
     original.lifecycleActorReservationId ===
@@ -296,6 +309,12 @@ export const useSessionManager = () => {
   const [sessionCloseStates, setSessionCloseStates] =
     useState<SessionCloseStateById>({});
   const isUnmountedRef = useRef(false);
+  const forceCloseDeadlineRef = useRef<(attempt: SessionCloseAttempt) => void>(
+    () => {},
+  );
+  const settleTerminalCloseRef = useRef<(attempt: SessionCloseAttempt) => void>(
+    () => {},
+  );
   const pendingReconnectsRef = useRef(new Set<string>());
   const reconnectsInFlightRef = useRef(new Set<string>());
   const permissionRequestRef = useRef<Promise<NotificationPermission> | null>(
@@ -505,13 +524,14 @@ export const useSessionManager = () => {
     attempt: SessionCloseAttempt,
     state: Omit<SessionCloseState, "sessionId" | "attemptId" | "startedAt">,
   ) => {
-    if (isUnmountedRef.current) return;
+    if (isUnmountedRef.current || !isCurrentCloseAttempt(attempt)) return;
     setSessionCloseStates((current) => ({
       ...current,
       [attempt.sessionId]: {
         sessionId: attempt.sessionId,
         attemptId: attempt.attemptId,
         startedAt: attempt.startedAt,
+        autoForceCloseAt: attempt.autoForceCloseAt,
         ...state,
       },
     }));
@@ -534,6 +554,7 @@ export const useSessionManager = () => {
     closeAttemptsRef.current.get(attempt.sessionId) === attempt;
 
   const retireSessionCloseAttempt = (attempt: SessionCloseAttempt) => {
+    clearTimeout(attempt.forceCloseTimer);
     if (closeAttemptsRef.current.get(attempt.sessionId) === attempt) {
       closeAttemptsRef.current.delete(attempt.sessionId);
     }
@@ -563,14 +584,19 @@ export const useSessionManager = () => {
       void cleanupPromise.then((value) => finish({ kind: "settled", value }));
     });
 
+    if (!isCurrentCloseAttempt(attempt)) return false;
     if (outcome.kind === "timed-out") {
       attempt.timedOut = true;
+      attempt.forceAvailable = true;
       publishSessionCloseState(attempt, {
         phase: "unresponsive",
         timeoutMs: DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
         cleanupPending: true,
         message:
-          "Cleanup is still pending. Check again without starting another teardown, or force close the tab.",
+          "Cleanup is still pending. Check again without starting another teardown, or force close the tab." +
+          (attempt.autoForceCloseAt
+            ? " The tab will close automatically one minute after disconnect started; unconfirmed cleanup evidence is retained."
+            : ""),
       });
       return false;
     }
@@ -597,8 +623,26 @@ export const useSessionManager = () => {
         return false;
       });
     attempt.cleanupPromise = cleanupPromise;
-    void cleanupPromise.then(() => {
+    void cleanupPromise.then((closed) => {
       attempt.cleanupSettled = true;
+      // A returned native `still closing` error is not completed cleanup.
+      // Keep recovery controls and the original deadline, even though IPC settled.
+      if (
+        !closed &&
+        attempt.autoForceCloseAt &&
+        isCurrentCloseAttempt(attempt)
+      ) {
+        attempt.retainFailedCleanup = true;
+        attempt.forceAvailable = true;
+        publishSessionCloseState(attempt, {
+          phase: "unresponsive",
+          timeoutMs: DEFAULT_SESSION_CLOSE_TIMEOUT_MS,
+          cleanupPending: true,
+          message:
+            "RDP cleanup is not confirmed. Force close now, or the tab will close automatically one minute after disconnect started. Background cleanup and its ownership evidence are retained.",
+        });
+        return;
+      }
       if (attempt.timedOut || attempt.forced) {
         retireSessionCloseAttempt(attempt);
       }
@@ -624,6 +668,7 @@ export const useSessionManager = () => {
       genericCompletionTimers.clear();
 
       for (const attempt of closeAttempts.values()) {
+        clearTimeout(attempt.forceCloseTimer);
         attempt.forced = true;
         attempt.waiters.forEach((resolve) => resolve({ kind: "forced" }));
         attempt.waiters.clear();
@@ -647,6 +692,11 @@ export const useSessionManager = () => {
     for (const attempt of closeAttemptsRef.current.values()) {
       attempt.stateWaiters.forEach((resolve) => resolve());
       attempt.stateWaiters.clear();
+      // A native terminal event can arrive after disconnect returned a timeout.
+      // Remove a now-clean tab promptly instead of waiting for the force deadline.
+      if (attempt.retainFailedCleanup) {
+        settleTerminalCloseRef.current(attempt);
+      }
     }
   }, [state.sessions]);
 
@@ -1781,6 +1831,16 @@ export const useSessionManager = () => {
 
     // From this point onward every user-facing close policy has been accepted.
     // Cancelling in-flight rules here cannot bypass a confirmation dialog.
+    if (disconnectRdpBackend) {
+      // This point is after close-policy/confirmation handling, so a cancelled
+      // prompt or an intentional detach can never arm automatic force closure.
+      attempt.autoForceCloseAt =
+        Date.now() + RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS;
+      attempt.forceCloseTimer = setTimeout(() => {
+        if (isCurrentCloseAttempt(attempt))
+          forceCloseDeadlineRef.current(attempt);
+      }, RDP_SESSION_FORCE_CLOSE_TIMEOUT_MS);
+    }
     return runBoundedSessionCleanup(attempt, async () => {
       markSessionEnding(sessionId);
       lifecycle.beginEnding(sessionId);
@@ -2249,7 +2309,10 @@ export const useSessionManager = () => {
 
     void performSessionClose(sessionId, attempt, authoritativeSession).then(
       (closed) => {
-        if (!attempt.cleanupPromise || attempt.cleanupSettled) {
+        if (
+          !attempt.cleanupPromise ||
+          (attempt.cleanupSettled && !attempt.retainFailedCleanup)
+        ) {
           retireSessionCloseAttempt(attempt);
         }
         attempt.resolveResult(closed);
@@ -2323,6 +2386,18 @@ export const useSessionManager = () => {
 
   const retrySessionClose = (sessionId: string): Promise<boolean> => {
     const attempt = closeAttemptsRef.current.get(sessionId);
+    if (attempt?.retainFailedCleanup && isCurrentCloseAttempt(attempt)) {
+      const current = stateRef.current.sessions.find(
+        (candidate) => candidate.id === sessionId,
+      );
+      const closed = Boolean(
+        current &&
+        isSameSessionCloseActor(attempt.originalActor, current) &&
+        removeCleanlyEndedRdpSession(sessionId, attempt),
+      );
+      if (closed) retireSessionCloseAttempt(attempt);
+      return Promise.resolve(closed);
+    }
     if (
       !attempt ||
       attempt.forced ||
@@ -2342,16 +2417,20 @@ export const useSessionManager = () => {
     return waitForSessionCleanup(attempt);
   };
 
-  const forceSessionClose = (sessionId: string): boolean => {
+  const forceSessionClose = (sessionId: string, automatic = false): boolean => {
     const attempt = closeAttemptsRef.current.get(sessionId);
-    const closeState = sessionCloseStates[sessionId];
     const session = stateRef.current.sessions.find(
       (candidate) => candidate.id === sessionId,
     );
     if (
       !attempt ||
       attempt.forced ||
-      closeState?.phase !== "unresponsive" ||
+      (!attempt.forceAvailable &&
+        !(
+          automatic &&
+          attempt.autoForceCloseAt &&
+          Date.now() >= attempt.autoForceCloseAt
+        )) ||
       !session
     ) {
       return false;
@@ -2383,12 +2462,19 @@ export const useSessionManager = () => {
       return false;
     }
 
+    if (removeCleanlyEndedRdpSession(sessionId, attempt)) {
+      retireSessionCloseAttempt(attempt);
+      attempt.resolveResult(true);
+      return true;
+    }
+
     attempt.forced = true;
     attempt.waiters.forEach((resolve) => resolve({ kind: "forced" }));
     attempt.waiters.clear();
     attempt.stateWaiters.forEach((resolve) => resolve());
     attempt.stateWaiters.clear();
-    clearSessionCloseState(attempt);
+    retireSessionCloseAttempt(attempt);
+    attempt.resolveResult(true);
 
     markSessionEnding(sessionId);
     pendingReconnectsRef.current.delete(sessionId);
@@ -2413,7 +2499,7 @@ export const useSessionManager = () => {
     const persistenceSummary = evidence.persisted
       ? ` Local evidence record: ${evidence.record.id}.`
       : ` Local evidence persistence failed: ${evidence.error ?? "unknown storage error"}.`;
-    const warning = `Session "${session.name}" was force closed in the app after cleanup stopped responding. Backend cleanup was not confirmed and the remote session may still be running.${backendSummary}${proofSummary}${persistenceSummary}`;
+    const warning = `Session "${session.name}" was ${automatic ? "automatically force closed after one minute" : "force closed in the app after cleanup stopped responding"}. Backend cleanup was not confirmed and the remote session may still be running.${backendSummary}${proofSummary}${persistenceSummary}`;
 
     console.warn(warning, evidence.record);
     settingsManager.logAction(
@@ -2450,6 +2536,21 @@ export const useSessionManager = () => {
       `${warning}\n\nThe tab and its frontend state were removed without claiming a clean shutdown. Verify the remote endpoint and VPN manager before reconnecting.`,
     );
     return true;
+  };
+
+  forceCloseDeadlineRef.current = (attempt) => {
+    forceSessionClose(attempt.sessionId, true);
+  };
+  settleTerminalCloseRef.current = (attempt) => {
+    const current = stateRef.current.sessions.find(
+      (candidate) => candidate.id === attempt.sessionId,
+    );
+    if (
+      !current ||
+      (isSameSessionCloseActor(attempt.originalActor, current) &&
+        removeCleanlyEndedRdpSession(attempt.sessionId, attempt))
+    )
+      retireSessionCloseAttempt(attempt);
   };
 
   const activeSession = state.sessions.find((s) => s.id === activeSessionId);

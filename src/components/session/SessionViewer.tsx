@@ -539,7 +539,13 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "reconnecting")
     ) {
       return (
-        <RDPClient session={session} onActivateSession={onActivateSession} />
+        <RDPClient
+          session={session}
+          onActivateSession={onActivateSession}
+          onClose={
+            onCloseSession ? () => onCloseSession(session.id) : undefined
+          }
+        />
       );
     }
 
@@ -758,6 +764,9 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
           sessionId={session.id}
           hostname={session.hostname}
           errorMessage={session.errorMessage}
+          onClose={
+            onCloseSession ? () => onCloseSession(session.id) : undefined
+          }
         />
       );
     }

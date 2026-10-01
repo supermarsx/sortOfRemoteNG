@@ -20,6 +20,7 @@ import {
   Settings2,
   Zap,
   ArrowRight,
+  X,
 } from 'lucide-react';
 import type { RDPConnectionSettings } from '../../types/connection/connection';
 import {
@@ -38,6 +39,7 @@ interface RDPErrorScreenProps {
   errorMessage: string;
   onRetry?: () => void;
   onEditConnection?: () => void;
+  onClose?: () => void;
   connectionDetails?: {
     port: number;
     username: string;
@@ -113,8 +115,9 @@ const QuickActions: React.FC<{
   mgr: Mgr;
   onRetry?: () => void;
   onEditConnection?: () => void;
+  onClose?: () => void;
   hasConnectionDetails: boolean;
-}> = ({ mgr, onRetry, onEditConnection, hasConnectionDetails }) => (
+}> = ({ mgr, onRetry, onEditConnection, onClose, hasConnectionDetails }) => (
   <section className="flex flex-wrap gap-2">
     {onRetry && (
       <button onClick={onRetry} className="sor-btn sor-btn-primary">
@@ -124,6 +127,15 @@ const QuickActions: React.FC<{
     {onEditConnection && (
       <button onClick={onEditConnection} className="sor-btn sor-btn-secondary">
         <Settings2 size={13} /> Edit Settings
+      </button>
+    )}
+    {onClose && (
+      <button
+        type="button"
+        onClick={onClose}
+        className="sor-btn sor-btn-secondary"
+      >
+        <X size={13} /> Close tab
       </button>
     )}
     {hasConnectionDetails && (
@@ -426,6 +438,7 @@ const RDPErrorScreen: React.FC<RDPErrorScreenProps> = ({
   errorMessage,
   onRetry,
   onEditConnection,
+  onClose,
   connectionDetails,
 }) => {
   const mgr = useRDPErrorScreen({ sessionId, hostname, errorMessage, connectionDetails });
@@ -435,7 +448,7 @@ const RDPErrorScreen: React.FC<RDPErrorScreenProps> = ({
       <HeaderBanner mgr={mgr} hostname={hostname} sessionId={sessionId} />
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-6 py-5 space-y-5">
-          <QuickActions mgr={mgr} onRetry={onRetry} onEditConnection={onEditConnection} hasConnectionDetails={!!connectionDetails} />
+          <QuickActions mgr={mgr} onRetry={onRetry} onEditConnection={onEditConnection} onClose={onClose} hasConnectionDetails={!!connectionDetails} />
           <CauseAccordion mgr={mgr} />
           <DiagnosticsReport mgr={mgr} />
           <CredSspHelper category={mgr.category} />

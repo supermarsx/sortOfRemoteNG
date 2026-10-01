@@ -105,6 +105,34 @@ describe('RDPErrorScreen', () => {
     expect(onEdit).toHaveBeenCalledOnce();
   });
 
+  it('delegates Close tab to onClose without retrying or running diagnostics', () => {
+    const onClose = vi.fn();
+    const onRetry = vi.fn();
+    const mgr = makeMgr({ isRunningDiagnostics: true });
+    vi.mocked(useRDPErrorScreen).mockReturnValue(mgr);
+    render(
+      <RDPErrorScreen
+        {...baseProps}
+        onClose={onClose}
+        onRetry={onRetry}
+        connectionDetails={{ port: 3389, username: 'admin', password: 'pass' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close tab' }));
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onRetry).not.toHaveBeenCalled();
+    expect(mgr.runDeepDiagnostics).not.toHaveBeenCalled();
+  });
+
+  it('does not offer Close tab without a close handler', () => {
+    render(<RDPErrorScreen {...baseProps} />);
+    expect(
+      screen.queryByRole('button', { name: 'Close tab' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('renders Copy Error button and calls handleCopy', () => {
     const handleCopy = vi.fn();
     vi.mocked(useRDPErrorScreen).mockReturnValue(makeMgr({ handleCopy }));

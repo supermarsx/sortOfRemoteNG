@@ -34,6 +34,10 @@ import {
   mergeLocalSessionUpdate,
   resetSessionLifecycleAllocatorForTests,
 } from "../../src/utils/session/sessionLifecycle";
+import {
+  readForcedSessionCleanupLedger,
+  recordForcedSessionCleanupEvidence,
+} from "../../src/utils/session/forcedSessionCleanupLedger";
 
 // Mock Tauri invoke + Channel
 const tauriCoreMocks = vi.hoisted(() => ({
@@ -1453,6 +1457,52 @@ describe("RDPClient", () => {
       });
     });
 
+    it("offers the managed close flow after toolbar disconnect fails", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const { releaseCalls } = installOpenVpnLeaseRuntime({
+        disconnectError: new Error("RDP worker is still closing"),
+      });
+      const onClose = vi.fn();
+      render(<RDPClient session={mockSession} onClose={onClose} />, {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.anything(),
+        ),
+      );
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      expect(
+        screen.queryByRole("button", { name: "Close tab" }),
+      ).not.toBeInTheDocument();
+      const disconnectButton = document.querySelector<HTMLButtonElement>(
+        'button[data-tooltip="Disconnect"]',
+      );
+      expect(disconnectButton).not.toBeNull();
+      fireEvent.click(disconnectButton!);
+
+      const closeButton = await screen.findByRole("button", {
+        name: "Close tab",
+      });
+      expect(mockInvoke).toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: "rdp-session-123",
+      });
+      expect(onClose).not.toHaveBeenCalled();
+      mockInvoke.mockClear();
+      connectionContextMocks.dispatch.mockClear();
+
+      fireEvent.click(closeButton);
+
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(connectionContextMocks.dispatch).not.toHaveBeenCalled();
+      expect(releaseCalls).toEqual([]);
+      expect(screen.getByTestId("rdp-error-screen")).toBeInTheDocument();
+    });
+
     it("keeps a failed post-disconnect owner visible and clears it on retry", async () => {
       (mockConnection as any).security = {
         openvpn: { enabled: true, configId: "vpn-office" },
@@ -1851,6 +1901,162 @@ describe("RDPClient", () => {
       expect(staleOwnerReleaseIndex).toBeGreaterThan(
         staleDisconnectCallOrders[1],
       );
+    });
+
+    it.each([false, true])(
+      "retains a late native actor after force-removal (VPN=%s)",
+      async (withVpn) => {
+        if (withVpn) {
+          (mockConnection as any).security = {
+            openvpn: { enabled: true, configId: "vpn-office" },
+          };
+        }
+        const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime({
+          disconnectError: new Error("RDP worker is still closing"),
+        });
+        const fallbackInvoke = mockInvoke.getMockImplementation()!;
+        let finishConnect!: (id: string) => void;
+        const pendingConnect = new Promise<string>((resolve) => {
+          finishConnect = resolve;
+        });
+        mockInvoke.mockImplementation((command, args) =>
+          command === "connect_rdp"
+            ? pendingConnect
+            : fallbackInvoke(command, args),
+        );
+        const view = renderHook(() => useRDPClient(mockSession), {
+          wrapper: hookWrapper,
+        });
+        await waitFor(() =>
+          expect(mockInvoke).toHaveBeenCalledWith(
+            "connect_rdp",
+            expect.anything(),
+          ),
+        );
+        const snapshot = [...connectionContextMocks.dispatch.mock.calls]
+          .reverse()
+          .find(([action]) => action.type === "UPDATE_SESSION")![0]
+          .payload as ConnectionSession;
+        expect(snapshot.backendSessionId).toBeUndefined();
+        const forced = recordForcedSessionCleanupEvidence(snapshot, 17);
+        view.unmount();
+        connectionContextMocks.dispatch.mockClear();
+
+        await act(async () => {
+          finishConnect("late-actor-a");
+          await pendingConnect;
+        });
+        await waitFor(() =>
+          expect(readForcedSessionCleanupLedger()[0].backendSessionId).toBe(
+            "late-actor-a",
+          ),
+        );
+        expect(mockInvoke).toHaveBeenCalledWith("disconnect_rdp", {
+          sessionId: "late-actor-a",
+        });
+        expect(readForcedSessionCleanupLedger()[0].id).toBe(forced.record.id);
+        if (withVpn) {
+          expect(readForcedSessionCleanupLedger()[0].vpnLeaseBindings).toEqual([
+            {
+              ownerId: acquiredOwners[0],
+              backendSessionId: "late-actor-a",
+              protocol: "rdp",
+              status: "cleanup-pending",
+            },
+          ]);
+        }
+        expect(releaseCalls).toEqual([]);
+        expect(connectionContextMocks.dispatch).not.toHaveBeenCalled();
+      },
+    );
+
+    it("retains deferred disconnect proofs after force-close without touching a replacement", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime();
+      const fallbackInvoke = mockInvoke.getMockImplementation()!;
+      let finishDisconnect!: () => void;
+      const pendingDisconnect = new Promise<void>((resolve) => {
+        finishDisconnect = resolve;
+      });
+      let connects = 0;
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "connect_rdp") {
+          return Promise.resolve(++connects === 1 ? "actor-a" : "actor-b");
+        }
+        if (
+          command === "disconnect_rdp" &&
+          (args as { sessionId?: string } | undefined)?.sessionId === "actor-a"
+        ) {
+          return pendingDisconnect;
+        }
+        return fallbackInvoke(command, args);
+      });
+      const original = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      const latestActor = (backendSessionId: string) =>
+        [...connectionContextMocks.dispatch.mock.calls]
+          .reverse()
+          .find(
+            ([action]) =>
+              action.type === "UPDATE_SESSION" &&
+              action.payload.backendSessionId === backendSessionId,
+          )?.[0].payload as ConnectionSession | undefined;
+      await waitFor(() => expect(latestActor("actor-a")).toBeDefined());
+      const actorA = latestActor("actor-a")!;
+      let closing!: Promise<boolean>;
+      act(() => {
+        closing = original.result.current.handleDisconnect();
+      });
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("disconnect_rdp", {
+          sessionId: "actor-a",
+        }),
+      );
+      recordForcedSessionCleanupEvidence(actorA, 18);
+      original.unmount();
+
+      const replacementSession: ConnectionSession = {
+        ...mockSession,
+        lifecycleActorGeneration: actorA.lifecycleActorGeneration! + 1,
+      };
+      connectionContextMocks.sessions = [replacementSession];
+      const replacement = renderHook(() => useRDPClient(replacementSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() => expect(latestActor("actor-b")).toBeDefined());
+      const beforeCleanup = connectionContextMocks.sessions[0];
+      connectionContextMocks.dispatch.mockClear();
+      await act(async () => {
+        finishDisconnect();
+        expect(await closing).toBe(true);
+      });
+
+      expect(readForcedSessionCleanupLedger()[0]).toMatchObject({
+        backendSessionId: "actor-a",
+        vpnLeaseReleaseTombstones: [
+          {
+            ownerId: acquiredOwners[0],
+            backendSessionId: "actor-a",
+            protocol: "rdp",
+          },
+        ],
+      });
+      expect(
+        readForcedSessionCleanupLedger()[0].vpnLeaseOwnerIds,
+      ).toBeUndefined();
+      expect(releaseCalls).toEqual([acquiredOwners[0]]);
+      expect(mockInvoke).not.toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: "actor-b",
+      });
+      expect(connectionContextMocks.dispatch).not.toHaveBeenCalled();
+      expect(connectionContextMocks.sessions[0]).toEqual(beforeCleanup);
+      expect(connectionContextMocks.sessions[0].backendSessionId).toBe(
+        "actor-b",
+      );
+      replacement.unmount();
     });
 
     it("creates the resolved final SSH bastion before connecting RDP", async () => {
