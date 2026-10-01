@@ -12,6 +12,11 @@ export interface PasswordEncryptionOptions {
   iterations?: number;
 }
 
+export interface PasswordDecryptionOptions {
+  /** Caller-owned byte budget; defaults to 64 MiB for existing import paths. */
+  maxCiphertextBytes?: number;
+}
+
 interface WebCryptoEnvelope {
   version: 2;
   algorithm: "AES-256-GCM";
@@ -153,7 +158,12 @@ export async function encryptWithPassword(
 export async function decryptWithPassword(
   payload: string,
   password: string,
+  options: PasswordDecryptionOptions = {},
 ): Promise<string> {
+  const limit = options.maxCiphertextBytes ?? MAX_ENCRYPTED_PAYLOAD_BYTES;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 * 1024 * 1024) {
+    throw new Error("Invalid encrypted payload size limit");
+  }
   const envelope = parseEnvelope(payload);
   if (envelope) {
     const salt = fromBase64(envelope.kdf.salt);
@@ -163,7 +173,7 @@ export async function decryptWithPassword(
       salt.length !== 16 ||
       iv.length !== 12 ||
       data.length < 16 ||
-      data.length > MAX_ENCRYPTED_PAYLOAD_BYTES
+      data.length > limit
     ) {
       throw new Error("Invalid encrypted payload dimensions");
     }
@@ -189,6 +199,14 @@ export async function decryptWithPassword(
   const salt = fromBase64(saltB64);
   const iv = fromBase64(ivB64);
   const data = fromBase64(dataB64);
+  if (
+    salt.length !== 16 ||
+    iv.length !== 12 ||
+    data.length < 16 ||
+    data.length > limit
+  ) {
+    throw new Error("Invalid encrypted payload dimensions");
+  }
   const key = await deriveKey(password, salt, PBKDF2_ITERATIONS);
   const crypto = getCrypto();
   const decrypted = await crypto.subtle.decrypt(

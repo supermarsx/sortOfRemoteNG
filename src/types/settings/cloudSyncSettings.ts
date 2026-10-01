@@ -19,8 +19,63 @@ export const CloudSyncFrequencies = [
   "every30Minutes",
   "hourly",
   "daily",
+  "custom",
 ] as const;
 export type CloudSyncFrequency = (typeof CloudSyncFrequencies)[number];
+
+export const cloudSyncFrequencyLabels: Record<CloudSyncFrequency, string> = {
+  manual: "Manual Only",
+  realtime: "Real-time (Instant)",
+  onSave: "On Save",
+  every5Minutes: "Every 5 Minutes",
+  every15Minutes: "Every 15 Minutes",
+  every30Minutes: "Every 30 Minutes",
+  hourly: "Every Hour",
+  daily: "Once Daily",
+  custom: "Custom Interval",
+};
+
+export const MIN_CLOUD_SYNC_INTERVAL_MINUTES = 1;
+export const MAX_CLOUD_SYNC_INTERVAL_MINUTES = 7 * 24 * 60;
+export const DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES = 15;
+export const DEFAULT_CLOUD_SYNC_FAILURE_NOTIFICATION_MINUTES = 30;
+export const MAX_CLOUD_SYNC_FILE_SIZE_MIB = 100;
+export const DEFAULT_CLOUD_SYNC_FILE_SIZE_MIB = 50;
+
+/** Repair legacy limits on load without changing valid, smaller byte budgets. */
+export function normalizeCloudSyncFileSizeMiB(value: unknown): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    Math.floor(value * 1024 * 1024) < 1
+  ) {
+    return DEFAULT_CLOUD_SYNC_FILE_SIZE_MIB;
+  }
+  return Math.min(MAX_CLOUD_SYNC_FILE_SIZE_MIB, value);
+}
+
+/** Zero explicitly permits every failure; missing legacy values default to 30. */
+export function normalizeCloudSyncFailureNotificationMinutes(
+  value: unknown,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value))
+    return DEFAULT_CLOUD_SYNC_FAILURE_NOTIFICATION_MINUTES;
+  return Math.min(
+    MAX_CLOUD_SYNC_INTERVAL_MINUTES,
+    Math.max(0, Math.round(value)),
+  );
+}
+
+/** Bound persisted/custom input and keep browser timers below their 32-bit limit. */
+export function normalizeCloudSyncIntervalMinutes(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES;
+  }
+  return Math.min(
+    MAX_CLOUD_SYNC_INTERVAL_MINUTES,
+    Math.max(MIN_CLOUD_SYNC_INTERVAL_MINUTES, Math.round(value)),
+  );
+}
 
 // Conflict Resolution Strategy
 export const ConflictResolutionStrategies = [
@@ -53,6 +108,8 @@ export interface TargetSyncStatus {
 // ── Per-provider configuration shapes (now stored per-target) ──────────
 
 export interface GoogleDriveProviderConfig {
+  clientId?: string;
+  clientSecret?: string;
   accessToken?: string;
   refreshToken?: string;
   tokenExpiry?: number;
@@ -62,6 +119,9 @@ export interface GoogleDriveProviderConfig {
 }
 
 export interface OneDriveProviderConfig {
+  clientId?: string;
+  clientSecret?: string;
+  tenantId?: string;
   accessToken?: string;
   refreshToken?: string;
   tokenExpiry?: number;
@@ -90,6 +150,8 @@ export interface WebDavProviderConfig {
 
 export interface SftpProviderConfig {
   host: string;
+  /** Required at runtime; optional only so existing saved targets can be edited. */
+  hostKeyFingerprint?: string;
   port: number;
   username: string;
   password?: string;
@@ -164,7 +226,7 @@ export function defaultProviderConfigFor(
           host: "",
           port: 22,
           username: "",
-          folderPath: "/sortOfRemoteNG",
+          folderPath: "sortOfRemoteNG",
           authMethod: "password",
         },
       };
@@ -203,6 +265,8 @@ export interface CloudSyncConfig {
 
   // Sync frequency
   frequency: CloudSyncFrequency;
+  /** Whole minutes, used only for custom frequency; older configs may omit it. */
+  customIntervalMinutes?: number;
 
   // @deprecated — top-level provider blocks live here only so the
   // migration helper can lift them onto the first matching target on
@@ -214,7 +278,10 @@ export interface CloudSyncConfig {
   webdav: WebDavProviderConfig;
   sftp: SftpProviderConfig;
 
-  // Sync options
+  /** Explicit inventory ids; empty/absent selects nothing. New items are never auto-selected. */
+  selectedItems?: string[];
+
+  // Deprecated category options retained for saved-config compatibility only.
   syncConnections: boolean;
   syncSettings: boolean;
   syncSSHKeys: boolean;
@@ -241,6 +308,8 @@ export interface CloudSyncConfig {
   // Notifications
   notifyOnSync: boolean;
   notifyOnConflict: boolean;
+  /** Minimum minutes between failure toasts, across targets; 0 means every failure. */
+  failureNotificationIntervalMinutes?: number;
 
   // Advanced options
   maxFileSizeMB: number;
@@ -259,6 +328,7 @@ export const defaultCloudSyncConfig: CloudSyncConfig = {
   syncTargets: [],
   providerStatus: {},
   frequency: "manual",
+  customIntervalMinutes: DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES,
   googleDrive: {
     folderPath: "/sortOfRemoteNG",
   },
@@ -281,10 +351,11 @@ export const defaultCloudSyncConfig: CloudSyncConfig = {
     host: "",
     port: 22,
     username: "",
-    folderPath: "/sortOfRemoteNG",
+    folderPath: "sortOfRemoteNG",
     authMethod: "password",
   },
   syncConnections: true,
+  selectedItems: [],
   syncSettings: true,
   syncSSHKeys: false,
   syncScripts: true,
@@ -296,7 +367,9 @@ export const defaultCloudSyncConfig: CloudSyncConfig = {
   syncOnShutdown: false,
   notifyOnSync: true,
   notifyOnConflict: true,
-  maxFileSizeMB: 50,
+  failureNotificationIntervalMinutes:
+    DEFAULT_CLOUD_SYNC_FAILURE_NOTIFICATION_MINUTES,
+  maxFileSizeMB: DEFAULT_CLOUD_SYNC_FILE_SIZE_MIB,
   excludePatterns: [],
   compressionEnabled: true,
   uploadLimitKBs: 0,
@@ -369,6 +442,25 @@ function liftLegacyProviderConfig(
 export function migrateCloudSyncConfig(
   config: CloudSyncConfig,
 ): CloudSyncConfig {
+  const maxFileSizeMB = normalizeCloudSyncFileSizeMiB(config.maxFileSizeMB);
+  if (config.maxFileSizeMB !== maxFileSizeMB) {
+    config = { ...config, maxFileSizeMB };
+  }
+  const failureNotificationIntervalMinutes =
+    normalizeCloudSyncFailureNotificationMinutes(
+      config.failureNotificationIntervalMinutes,
+    );
+  if (
+    config.failureNotificationIntervalMinutes !==
+    failureNotificationIntervalMinutes
+  )
+    config = { ...config, failureNotificationIntervalMinutes };
+  const customIntervalMinutes = normalizeCloudSyncIntervalMinutes(
+    config.customIntervalMinutes,
+  );
+  if (config.customIntervalMinutes !== customIntervalMinutes) {
+    config = { ...config, customIntervalMinutes };
+  }
   if (config.syncTargets && config.syncTargets.length > 0) {
     return config;
   }

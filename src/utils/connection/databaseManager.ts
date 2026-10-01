@@ -1,3 +1,4 @@
+import { acquireCloudSyncDatabaseBarrier } from "../services/cloudSyncDatabaseBarrier";
 import {
   Connection,
   ConnectionDatabase,
@@ -2574,6 +2575,8 @@ export class DatabaseManager {
           structuredClone(data),
         );
         rememberCommitted(data);
+        if (typeof window !== "undefined")
+          window.dispatchEvent(new Event("sorng-database-data-saved"));
         return;
       } catch (error) {
         throw Object.assign(
@@ -2644,6 +2647,8 @@ export class DatabaseManager {
         structuredClone(payload),
       );
       rememberCommitted(payload);
+      if (typeof window !== "undefined")
+        window.dispatchEvent(new Event("sorng-database-data-saved"));
       return;
     }
 
@@ -3009,6 +3014,149 @@ export class DatabaseManager {
       ...options,
       fullDatabase: true,
     }) as Promise<FullDatabaseArchive>;
+  }
+
+  /** Owner-bound cloud restore. Body and trust are separate durable transactions. */
+  async restoreCloudSyncArchive(
+    collectionId: string,
+    value: unknown,
+    expectedArchive: unknown,
+  ): Promise<void> {
+    const release = await acquireCloudSyncDatabaseBarrier([collectionId], true);
+    let bodyCommitted = false;
+    const refresh = async () => {
+      try {
+        await release();
+      } catch (error) {
+        if (bodyCommitted)
+          throw Object.assign(
+            new Error(
+              "Cloud database was saved, but the visible database could not be refreshed. Reload before editing.",
+            ),
+            { kind: "partial" as const },
+          );
+        throw error;
+      }
+    };
+    try {
+      const epoch = this.captureDatabaseEpoch(collectionId);
+      const activeId = this.currentDatabase?.id;
+      const assertOwner = () => {
+        this.assertDatabaseEpoch(collectionId, epoch);
+        if (this.currentDatabase?.id !== activeId)
+          throw new Error("Database selection changed during cloud restore.");
+        this.requireManagedSession(collectionId);
+      };
+      const collection = await this.getDatabase(collectionId);
+      if (!collection || collection.protectionFormat !== "sorng-db")
+        throw new Error("Cloud restore requires an unlocked managed database.");
+      assertOwner();
+      const archive = await normalizeFullDatabaseArchive(value);
+      const expected = await normalizeFullDatabaseArchive(expectedArchive);
+      assertOwner();
+      if (
+        archive.collection.id !== collectionId ||
+        expected.collection.id !== collectionId
+      )
+        throw new Error("Cloud archive belongs to a different database.");
+      const canonical = (input: unknown): string => {
+        if (Array.isArray(input)) return `[${input.map(canonical).join(",")}]`;
+        if (input && typeof input === "object")
+          return `{${Object.entries(input)
+            .filter(([, entry]) => entry !== undefined)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
+            .join(",")}}`;
+        return JSON.stringify(input);
+      };
+      const comparable = (input: FullDatabaseArchive) => ({
+        ...input,
+        timestamp: 0,
+        collection: { id: input.collection.id },
+      });
+      for (const [raw, normalized] of [
+        [value, archive],
+        [expectedArchive, expected],
+      ] as const) {
+        const incoming = normalizeRecordLedger(
+          (raw as FullDatabaseArchive).recordMetadata,
+        );
+        if (
+          incoming &&
+          canonical(incoming) !== canonical(normalized.recordMetadata)
+        )
+          throw new Error(
+            "Cloud archive record metadata does not match the reviewed data.",
+          );
+      }
+      const current = await this.readFullDatabaseArchive(collectionId);
+      assertOwner();
+      if (canonical(comparable(current)) !== canonical(comparable(expected)))
+        throw new Error(
+          "Database changed since cloud capture; no data was overwritten.",
+        );
+      // Keep the exact baseline from this read, never a later reader's baseline.
+      const baseline = this.latestLoadedRepresentations.get(collectionId);
+      if (baseline === undefined)
+        throw new Error("Cloud restore baseline is unavailable.");
+      const invoke = await getInvoke();
+      assertOwner();
+      if (!invoke) throw new Error("Cloud restore requires the desktop app.");
+      try {
+        await this.saveDatabaseData(
+          collectionId,
+          fullDatabaseArchiveData(archive),
+          undefined,
+          undefined,
+          { expectedData: baseline, recordMetadataMode: "adopt" },
+        );
+      } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "kind" in error &&
+          error.kind === "partial"
+        )
+          bodyCommitted = true;
+        throw error;
+      }
+      bodyCommitted = true;
+      try {
+        assertOwner();
+        const freshTrust = await invoke<TrustExportDocument>(
+          "trust_export_database",
+          { databaseId: collectionId },
+        );
+        assertOwner();
+        if (canonical(freshTrust) !== canonical(expected.trustRecords))
+          throw new Error("Trust changed during cloud restore");
+        const outcome = await invoke<TrustImportOutcome>(
+          "trust_import_database",
+          {
+            databaseId: collectionId,
+            document: archive.trustRecords,
+            mode: "replace",
+            expectedDocument: freshTrust,
+          },
+        );
+        assertOwner();
+        if (
+          !outcome ||
+          outcome.skipped !== 0 ||
+          outcome.imported !== archive.trustRecords.records.length
+        )
+          throw new Error("Incomplete trust import");
+      } catch {
+        throw Object.assign(
+          new Error(
+            "Cloud database body was saved, but trust restoration did not complete. Inspect the database before retrying; no rollback was attempted.",
+          ),
+          { kind: "partial" as const },
+        );
+      }
+    } finally {
+      await refresh();
+    }
   }
 
   async exportFullDatabaseArchive(

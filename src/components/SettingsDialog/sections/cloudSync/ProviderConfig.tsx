@@ -1,4 +1,4 @@
-import { PasswordInput, Textarea } from '../../../ui/forms';
+import { PasswordInput, Textarea } from "../../../ui/forms";
 import { Check, Globe } from "lucide-react";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 import type {
@@ -10,6 +10,60 @@ import type {
   SftpProviderConfig,
 } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
+
+function OAuthRefreshFields({
+  config,
+  onChange,
+  oneDrive = false,
+}: {
+  config?: GoogleDriveProviderConfig | OneDriveProviderConfig;
+  onChange: (patch: Partial<OneDriveProviderConfig>) => void;
+  oneDrive?: boolean;
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-[var(--color-textSecondary)]">
+        Optional OAuth application details for refreshing an existing token.
+        Manual access tokens still work; this does not enroll an OAuth
+        application.
+      </p>
+      <label className="block text-sm text-[var(--color-textSecondary)]">
+        Client ID (optional)
+        <input
+          className="sor-settings-input"
+          value={config?.clientId ?? ""}
+          onChange={(event) =>
+            onChange({ clientId: event.target.value || undefined })
+          }
+        />
+      </label>
+      <label className="block text-sm text-[var(--color-textSecondary)]">
+        Client secret (optional)
+        <PasswordInput
+          className="sor-settings-input"
+          value={config?.clientSecret ?? ""}
+          onChange={(event) =>
+            onChange({ clientSecret: event.target.value || undefined })
+          }
+        />
+      </label>
+      {oneDrive && (
+        <label className="block text-sm text-[var(--color-textSecondary)]">
+          Tenant ID (optional)
+          <input
+            className="sor-settings-input"
+            value={
+              (config as OneDriveProviderConfig | undefined)?.tenantId ?? ""
+            }
+            onChange={(event) =>
+              onChange({ tenantId: event.target.value || undefined })
+            }
+          />
+        </label>
+      )}
+    </div>
+  );
+}
 
 /**
  * Per-target provider configuration editor. Reads from and writes to
@@ -67,7 +121,7 @@ function ProviderConfig({
         host: "",
         port: 22,
         username: "",
-        folderPath: "/sortOfRemoteNG",
+        folderPath: "sortOfRemoteNG",
         authMethod: "password",
         ...target.sftp,
         ...patch,
@@ -84,7 +138,7 @@ function ProviderConfig({
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-success" />
                 <span className="text-sm text-[var(--color-text)]">
-                  Connected as {gd.accountEmail}
+                  Configured account: {gd.accountEmail}
                 </span>
               </div>
               <button
@@ -110,6 +164,14 @@ function ProviderConfig({
             </button>
           )}
 
+          <button
+            type="button"
+            onClick={() => mgr.openTokenDialog(target.id)}
+            className="text-sm text-primary"
+          >
+            Edit access / refresh tokens
+          </button>
+          <OAuthRefreshFields config={gd} onChange={writeGoogle} />
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Folder Path
@@ -135,7 +197,7 @@ function ProviderConfig({
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-primary" />
                 <span className="text-sm text-[var(--color-text)]">
-                  Connected as {od.accountEmail}
+                  Configured account: {od.accountEmail}
                 </span>
               </div>
               <button
@@ -161,6 +223,14 @@ function ProviderConfig({
             </button>
           )}
 
+          <button
+            type="button"
+            onClick={() => mgr.openTokenDialog(target.id)}
+            className="text-sm text-primary"
+          >
+            Edit access / refresh tokens
+          </button>
+          <OAuthRefreshFields config={od} onChange={writeOneDrive} oneDrive />
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Folder Path
@@ -234,9 +304,7 @@ function ProviderConfig({
                 )
               }
               placeholder={
-                nc?.useAppPassword
-                  ? "xxxxx-xxxxx-xxxxx-xxxxx"
-                  : "••••••••"
+                nc?.useAppPassword ? "xxxxx-xxxxx-xxxxx-xxxxx" : "••••••••"
               }
               className="sor-settings-input"
             />
@@ -356,6 +424,22 @@ function ProviderConfig({
       const sf = target.sftp;
       return (
         <div className="space-y-4">
+          <label className="block text-sm text-[var(--color-textSecondary)]">
+            Host key fingerprint (SHA256, required)
+            <input
+              required
+              className="sor-settings-input font-mono"
+              placeholder="SHA256:…"
+              value={sf?.hostKeyFingerprint ?? ""}
+              onChange={(event) =>
+                writeSftp({ hostKeyFingerprint: event.target.value.trim() })
+              }
+            />
+            <span className="block text-xs">
+              Verify this fingerprint with your server administrator. Unknown or
+              mismatched host keys are rejected; trust cannot be skipped.
+            </span>
+          </label>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
@@ -461,9 +545,13 @@ function ProviderConfig({
               type="text"
               value={sf?.folderPath ?? ""}
               onChange={(e) => writeSftp({ folderPath: e.target.value })}
-              placeholder="/home/user/sortOfRemoteNG"
+              placeholder="sortOfRemoteNG"
               className="sor-settings-input"
             />
+            <p className="text-xs text-[var(--color-textSecondary)]">
+              A relative path such as sortOfRemoteNG uses the SFTP login home.
+              Existing absolute paths are preserved.
+            </p>
           </div>
         </div>
       );

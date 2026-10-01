@@ -40,6 +40,8 @@ import {
   syncTargetsFromCloudSyncConfig,
 } from "./utils/services/cloudSyncService";
 import { SettingsManager } from "./utils/settings/settingsManager";
+import { useCloudSyncScheduler } from "./hooks/sync/useCloudSyncScheduler";
+import { showCloudSyncReviewToast } from "./components/sync/cloudSyncReviewToast";
 import { StatusChecker } from "./utils/connection/statusChecker";
 import { DatabaseManager } from "./utils/connection/databaseManager";
 import {
@@ -52,7 +54,7 @@ import { useAppFormPrivacy } from "./hooks/window/useAppFormPrivacy";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { collectConnectionSubtreeIds } from "./utils/connection/recycleBin";
-import { ToastProvider } from "./contexts/ToastContext";
+import { ToastProvider, useToastContext } from "./contexts/ToastContext";
 import type { DatabaseOpenObserver } from "./types/connection/databaseOpening";
 import {
   databaseAccessErrorMessage,
@@ -127,6 +129,7 @@ const TRAY_QUIT_REQUESTED_EVENT = "tray-quit-requested";
  * managing global application state.
  */
 const AppContent: React.FC = () => {
+  const { toast } = useToastContext();
   useAppFormPrivacy();
   const { begin: beginDatabaseOpening } = useDatabaseOpenNotification();
   const { t } = useTranslation();
@@ -1222,7 +1225,8 @@ const AppContent: React.FC = () => {
 
   const performCloudSync = useCallback(
     async (provider?: CloudSyncProvider) => {
-      const currentConfig = appSettings.cloudSync ?? defaultCloudSyncConfig;
+      const currentConfig =
+        settingsManager.getSettings().cloudSync ?? defaultCloudSyncConfig;
       const enabledProviders = providersFromCloudSyncConfig(currentConfig);
 
       if (!currentConfig.enabled || enabledProviders.length === 0) {
@@ -1238,7 +1242,8 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      const results = await syncCloudTargets(targetsToRun);
+      await flushPendingSave();
+      const results = await syncCloudTargets(targetsToRun, currentConfig);
       const latestConfig =
         settingsManager.getSettings().cloudSync ?? defaultCloudSyncConfig;
       const updatedCloudSync: GlobalSettings["cloudSync"] = {
@@ -1251,8 +1256,36 @@ const AppContent: React.FC = () => {
         { cloudSync: updatedCloudSync },
         { silent: true },
       );
+      if (
+        updatedCloudSync.lastSyncStatus === "conflict" &&
+        currentConfig.notifyOnConflict
+      ) {
+        showCloudSyncReviewToast(
+          toast,
+          handleOpenSettings,
+          "Cloud sync needs conflict review. Open Cloud Sync settings for target actions.",
+          "warning",
+        );
+      } else if (currentConfig.notifyOnSync) {
+        if (updatedCloudSync.lastSyncStatus === "success")
+          toast.success("Cloud sync completed.");
+        else
+          showCloudSyncReviewToast(
+            toast,
+            handleOpenSettings,
+            "Cloud sync did not complete for every target. Review Cloud Sync statuses.",
+            "error",
+            currentConfig.failureNotificationIntervalMinutes,
+          );
+      }
     },
-    [appSettings, settingsManager],
+    [flushPendingSave, settingsManager, toast, handleOpenSettings],
+  );
+
+  useCloudSyncScheduler(
+    appSettings.cloudSync ?? defaultCloudSyncConfig,
+    appSettingsLoaded && !state.isLoading,
+    performCloudSync,
   );
 
   useEffect(() => {
@@ -1391,7 +1424,20 @@ const AppContent: React.FC = () => {
 
       try {
         await flushPendingSave();
+        if (settingsManager.getSettings().cloudSync?.syncOnShutdown) {
+          await performCloudSync();
+          const sync = settingsManager.getSettings().cloudSync;
+          if (sync?.enabled && sync.lastSyncStatus !== "success") {
+            throw new Error(
+              "Cloud sync did not complete. Review target statuses before closing.",
+            );
+          }
+        }
       } catch (error) {
+        toast.error(
+          "Close paused: saving or cloud sync did not complete. Review Cloud Sync statuses and retry.",
+          10000,
+        );
         console.error(
           "Failed to persist pending connection changes before close:",
           error,
@@ -1426,6 +1472,9 @@ const AppContent: React.FC = () => {
           event.preventDefault();
           return;
         }
+
+        // Saving/syncing is asynchronous; keep the window alive until completed.
+        event.preventDefault();
 
         const settings = settingsManager.getSettings();
         const hiddenToTray = await handleCloseToTrayRequest({
@@ -1531,10 +1580,12 @@ const AppContent: React.FC = () => {
     cancelMainWindowClose,
     confirmMainWindowClose,
     flushPendingSave,
+    performCloudSync,
     requestMainWindowClose,
     settingsManager,
     state.sessions.length,
     syncTrayVisibility,
+    toast,
     t,
   ]);
 

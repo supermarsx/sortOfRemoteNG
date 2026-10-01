@@ -2,9 +2,17 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import {
+  applyCloudSyncPayload,
+  captureCloudSyncPayload,
+  upgradeCloudSyncPayload,
+} from "../../src/utils/services/cloudSyncPayload";
+import { defaultCloudSyncConfig } from "../../src/types/settings/cloudSyncSettings";
+import {
   buildFullDatabaseArchive,
   encryptFullDatabaseArchive,
+  fullDatabaseArchiveData,
 } from "../../src/utils/connection/fullDatabaseArchive";
+import { reconcileRecordLedger } from "../../src/utils/storage/recordLedger";
 import {
   encryptWithPassword,
   decryptWithPassword,
@@ -113,6 +121,17 @@ beforeEach(async () => {
             },
           ],
         };
+      if (command === "database_protection_save") {
+        expect(args.expectedData).toEqual(privateData.get(args.databaseId));
+        privateData.set(args.databaseId, structuredClone(args.data));
+        return {
+          committed: true,
+          cleanupPending: false,
+          warnings: [],
+          securityRevision: rows.find((row) => row.id === args.databaseId)!
+            .securityRevision,
+        };
+      }
       if (command === "database_protection_change") {
         const row = rows.find((row) => row.id === args.databaseId)!;
         row.isEncrypted = true;
@@ -171,6 +190,216 @@ async function openPlainDatabase() {
 }
 
 describe("full database manager archive boundary", () => {
+  it("round trips the intended cloud body and trust without export-time or local-label drift", async () => {
+    rows[0].name = "Actual local display name";
+    rows[0].description = "Local description that is not the database ID";
+    await exported();
+    const manager = DatabaseManager.getInstance();
+    const key = `database:${collection.id}`;
+    const config = {
+      ...defaultCloudSyncConfig,
+      selectedItems: [key],
+      encryptBeforeSync: true,
+    };
+    const original = await captureCloudSyncPayload(config);
+    const incoming = structuredClone(original);
+    const archive = incoming.sections[key] as Awaited<
+      ReturnType<typeof manager.readFullDatabaseArchive>
+    >;
+    archive.connections[0].name = "Remote update";
+    archive.recordMetadata = await reconcileRecordLedger(
+      fullDatabaseArchiveData(archive),
+      archive.recordMetadata,
+      { mode: "write" },
+    );
+    let savedTrust = structuredClone(trust);
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "database_protection_save") {
+        expect(args.expectedData).toEqual(privateData.get(collection.id));
+        privateData.set(collection.id, structuredClone(args.data));
+        return {
+          committed: true,
+          securityRevision: collection.securityRevision,
+          warnings: [],
+          cleanupPending: false,
+        };
+      }
+      if (command === "trust_import_database") {
+        expect(args.expectedDocument).toEqual(savedTrust);
+        savedTrust = structuredClone(args.document);
+        return { imported: savedTrust.records.length, skipped: 0 };
+      }
+      if (command === "trust_export_database")
+        return structuredClone(savedTrust);
+      return previous(command, args);
+    });
+    await applyCloudSyncPayload(incoming, config, original);
+    const recaptured = await captureCloudSyncPayload(config);
+    expect(recaptured).toEqual(await upgradeCloudSyncPayload(incoming));
+    expect(await manager.getDatabase(collection.id)).toMatchObject({
+      name: "Actual local display name",
+      description: "Local description that is not the database ID",
+    });
+  });
+  it("restores a cloud archive to its exact unlocked owner with the captured body baseline", async () => {
+    await exported();
+    const manager = DatabaseManager.getInstance();
+    const original = await manager.readFullDatabaseArchive(collection.id);
+    const incoming = structuredClone(original);
+    incoming.connections[0].name = "Cloud update";
+    incoming.recordMetadata = await reconcileRecordLedger(
+      fullDatabaseArchiveData(incoming),
+      incoming.recordMetadata,
+      { mode: "write" },
+    );
+    incoming.collection.exportDate = "1970-01-01T00:00:00.000Z";
+    incoming.timestamp = 0;
+    const save = vi.spyOn(manager, "saveDatabaseData").mockResolvedValue();
+    await manager.restoreCloudSyncArchive(collection.id, incoming, original);
+    expect(save).toHaveBeenCalledWith(
+      collection.id,
+      expect.objectContaining({ connections: incoming.connections }),
+      undefined,
+      undefined,
+      {
+        expectedData: privateData.get(collection.id),
+        recordMetadataMode: "adopt",
+      },
+    );
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      "trust_import_database",
+      expect.objectContaining({ databaseId: collection.id, mode: "replace" }),
+    );
+  });
+
+  it("rejects cloud edits with stale record metadata before writing body or trust", async () => {
+    await exported();
+    const manager = DatabaseManager.getInstance();
+    const original = await manager.readFullDatabaseArchive(collection.id);
+    const incoming = structuredClone(original);
+    incoming.connections[0].name = "Untracked remote edit";
+    const save = vi.spyOn(manager, "saveDatabaseData");
+    bridge.invoke.mockClear();
+    await expect(
+      manager.restoreCloudSyncArchive(collection.id, incoming, original),
+    ).rejects.toThrow(/record metadata does not match/);
+    expect(save).not.toHaveBeenCalled();
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "trust_import_database",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a stale cloud snapshot without writing", async () => {
+    await exported();
+    const manager = DatabaseManager.getInstance();
+    const original = await manager.readFullDatabaseArchive(collection.id);
+    privateData.get(collection.id)!.connections[0].name = "New local edit";
+    const save = vi.spyOn(manager, "saveDatabaseData");
+    await expect(
+      manager.restoreCloudSyncArchive(collection.id, original, original),
+    ).rejects.toThrow(/changed/);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("uses native managed CAS for cloud writes and rejects a raced body", async () => {
+    await exported();
+    const manager = DatabaseManager.getInstance();
+    const original = await manager.readFullDatabaseArchive(collection.id);
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "database_protection_save") {
+        expect(args.expectedData).toEqual(privateData.get(collection.id));
+        expect(args.databaseId).toBe(collection.id);
+        return {
+          committed: false,
+          securityRevision: collection.securityRevision,
+          warnings: [],
+          cleanupPending: false,
+        };
+      }
+      return previous(command, args);
+    });
+    await expect(
+      manager.restoreCloudSyncArchive(collection.id, original, original),
+    ).rejects.toThrow(/not committed/);
+    expect(
+      bridge.invoke.mock.calls.filter(
+        ([command]) => command === "trust_import_database",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("reports partial when the native body committed but save finalization rejects its revision", async () => {
+    await exported();
+    const manager = DatabaseManager.getInstance();
+    const original = await manager.readFullDatabaseArchive(collection.id);
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockClear().mockImplementation(async (command, args) => {
+      if (command === "database_protection_save") {
+        privateData.set(collection.id, structuredClone(args.data));
+        return {
+          committed: true,
+          securityRevision: "unexpected-revision",
+          warnings: [],
+          cleanupPending: false,
+        };
+      }
+      return previous(command, args);
+    });
+    await expect(
+      manager.restoreCloudSyncArchive(collection.id, original, original),
+    ).rejects.toMatchObject({ kind: "partial" });
+    expect(
+      bridge.invoke.mock.calls.filter(
+        ([command]) => command === "database_protection_save",
+      ),
+    ).toHaveLength(1);
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "trust_import_database",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects wrong database ownership and timestamp-only differences do not cause conflicts", async () => {
+    await exported();
+    const manager = DatabaseManager.getInstance();
+    const original = await manager.readFullDatabaseArchive(collection.id);
+    const expected = structuredClone(original);
+    expected.timestamp = 0;
+    expected.collection.exportDate = "1970-01-01T00:00:00.000Z";
+    const save = vi.spyOn(manager, "saveDatabaseData").mockResolvedValue();
+    await manager.restoreCloudSyncArchive(collection.id, original, expected);
+    expect(save).toHaveBeenCalledTimes(1);
+    const wrong = structuredClone(original);
+    wrong.collection.id = "another-database";
+    await expect(
+      manager.restoreCloudSyncArchive(collection.id, wrong, expected),
+    ).rejects.toThrow();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports partial cloud restore when trust fails without rolling back the body", async () => {
+    await exported();
+    const manager = DatabaseManager.getInstance();
+    const original = await manager.readFullDatabaseArchive(collection.id);
+    const save = vi
+      .spyOn(manager, "saveDatabaseData")
+      .mockImplementation(async () => {
+        trustFailure = true;
+      });
+    await expect(
+      manager.restoreCloudSyncArchive(collection.id, original, original),
+    ).rejects.toMatchObject({
+      kind: "partial",
+      message: expect.stringMatching(/body was saved.*trust/),
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
   it("exports and restores a full protected database with source ownership rebinding and strict trust replacement", async () => {
     const manager = DatabaseManager.getInstance();
     privateData.get(collection.id)!.connections[2].password = "***ENCRYPTED***";

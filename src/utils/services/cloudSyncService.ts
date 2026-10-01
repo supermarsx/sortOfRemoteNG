@@ -4,6 +4,13 @@ import type {
   CloudSyncTarget,
 } from "../../types/settings/settings";
 import { getInvoke } from "../tauri/invoke";
+import { defaultCloudSyncConfig } from "../../types/settings/cloudSyncSettings";
+import {
+  CloudSyncConflict,
+  cloudSyncTransportOptions,
+  runCloudSync,
+  serializeCloudSync,
+} from "./cloudSyncEngine";
 import {
   beginCloudSyncActivity,
   cloudSyncTargetIdentity,
@@ -25,10 +32,7 @@ export interface CloudSyncOperationResult {
   canWrite?: boolean;
 }
 
-type CloudSyncTargetLike = Pick<
-  CloudSyncTarget,
-  "id" | "label" | "provider" | "enabled"
->;
+type CloudSyncTargetLike = CloudSyncTarget;
 
 const PROVIDER_LABELS: Record<CloudSyncProvider, string> = {
   none: "None",
@@ -40,14 +44,14 @@ const PROVIDER_LABELS: Record<CloudSyncProvider, string> = {
 };
 
 function errorMessage(error: unknown): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  )
+    return error.message;
   return error instanceof Error ? error.message : String(error);
-}
-
-function unsupportedProvider(provider: CloudSyncProvider): string {
-  if (provider === "nextcloud") {
-    return "Nextcloud cloud sync is not implemented for application data in this build. The Nextcloud file-sync backend is not connected to these settings; no data was transferred.";
-  }
-  return `${PROVIDER_LABELS[provider]} cloud sync does not have a registered sync backend in this build.`;
 }
 
 function failed(
@@ -90,7 +94,7 @@ export function syncTargetsFromCloudSyncConfig(
   config: {
     enabledProviders?: CloudSyncProvider[];
     syncTargets?: CloudSyncTarget[];
-  },
+  } & Partial<CloudSyncConfig>,
   provider?: CloudSyncProvider,
 ): CloudSyncTargetLike[] {
   const targets = config.syncTargets ?? [];
@@ -113,6 +117,9 @@ export function syncTargetsFromCloudSyncConfig(
       label: PROVIDER_LABELS[candidate],
       provider: candidate,
       enabled: true,
+      ...(candidate !== "none" && config[candidate]
+        ? { [candidate]: config[candidate] }
+        : {}),
     }));
 }
 
@@ -273,63 +280,120 @@ export function cloudSyncStatusUpdate(
 
 export async function testCloudSyncProvider(
   provider: CloudSyncProvider,
+  config?: CloudSyncConfig,
+): Promise<CloudSyncOperationResult> {
+  if (config?.enabled) {
+    const targets = syncTargetsFromCloudSyncConfig(config, provider);
+    if (targets.length) {
+      const results = await Promise.all(
+        targets.map((target) => testCloudSyncTarget(target, config)),
+      );
+      const aggregate = aggregateCloudSyncResults(results);
+      return {
+        provider,
+        status: aggregate.status,
+        message:
+          aggregate.message ||
+          "All configured destinations passed their read/write test.",
+        canRead: results.every((result) => result.canRead === true),
+        canWrite: results.every((result) => result.canWrite === true),
+      };
+    }
+  }
+  // A provider alone has no account, folder or credentials. Do not report a
+  // globally registered service as proof that a particular target can sync.
+  return failed(
+    provider,
+    "Select a configured destination and test that target.",
+    { canRead: false, canWrite: false },
+  );
+}
+
+export async function testCloudSyncTarget(
+  target: CloudSyncTarget,
+  config: CloudSyncConfig = defaultCloudSyncConfig,
 ): Promise<CloudSyncOperationResult> {
   const started = Date.now();
   const invoke = await getInvoke();
-  const latencyMs = Date.now() - started;
-
-  if (!invoke) {
-    return failed(
-      provider,
-      "Cloud sync connection tests require the Tauri backend.",
-      { latencyMs, canRead: false, canWrite: false },
-    );
-  }
-
-  if (provider === "nextcloud") {
-    try {
-      await invoke("nextcloud_sync_list");
-      return failed(
-        provider,
-        "Nextcloud sync backend is reachable, but this settings surface has no read/write validation command.",
-        {
-          latencyMs: Date.now() - started,
-          canRead: false,
-          canWrite: false,
-        },
+  const identity = cloudSyncTargetIdentity(target.id);
+  try {
+    if (!invoke)
+      throw new Error(
+        "Cloud sync connection tests require the desktop backend.",
       );
-    } catch (error) {
-      return failed(
-        provider,
-        `Nextcloud sync backend is unavailable: ${errorMessage(error)}`,
-        {
-          latencyMs: Date.now() - started,
-          canRead: false,
-          canWrite: false,
-        },
-      );
-    }
+    await invoke("cloud_sync_test", {
+      target,
+      options: cloudSyncTransportOptions(config),
+    });
+    return {
+      provider: target.provider,
+      targetId: target.id,
+      requestIdentity: identity,
+      status: "success",
+      message: "Created, read back and removed a temporary test file.",
+      latencyMs: Date.now() - started,
+      canRead: true,
+      canWrite: true,
+    };
+  } catch (error) {
+    return failed(target.provider, errorMessage(error), {
+      targetId: target.id,
+      requestIdentity: identity,
+      latencyMs: Date.now() - started,
+      canRead: false,
+      canWrite: false,
+    });
   }
-
-  return failed(provider, unsupportedProvider(provider), {
-    latencyMs,
-    canRead: false,
-    canWrite: false,
-  });
 }
 
 export async function syncCloudTarget(
   target: CloudSyncTargetLike,
+  config: CloudSyncConfig = defaultCloudSyncConfig,
 ): Promise<CloudSyncOperationResult> {
-  return failed(target.provider, unsupportedProvider(target.provider), {
+  const started = Date.now();
+  const common = {
     targetId: target.id,
     targetLabel: target.label,
     requestIdentity: cloudSyncTargetIdentity(target.id),
-  });
+  };
+  try {
+    const message = await serializeCloudSync(() => {
+      if (common.requestIdentity !== cloudSyncTargetIdentity(target.id))
+        throw new Error(
+          "Sync target or selection changed while queued. Retry with the current settings.",
+        );
+      return runCloudSync(target, config);
+    });
+    return {
+      ...common,
+      provider: target.provider,
+      status: "success",
+      message,
+      latencyMs: Date.now() - started,
+    };
+  } catch (error) {
+    const conflict =
+      error instanceof CloudSyncConflict ||
+      (error &&
+        typeof error === "object" &&
+        "kind" in error &&
+        error.kind === "conflict");
+    const partial =
+      error &&
+      typeof error === "object" &&
+      "kind" in error &&
+      error.kind === "partial";
+    return failed(target.provider, errorMessage(error), {
+      ...common,
+      status: partial ? "partial" : conflict ? "conflict" : "failed",
+      latencyMs: Date.now() - started,
+    });
+  }
 }
 
 export async function syncCloudTargets(
   targets: CloudSyncTargetLike[],
+  config: CloudSyncConfig = defaultCloudSyncConfig,
 ): Promise<CloudSyncOperationResult[]> {
   return Promise.all(
     targets
@@ -338,7 +402,13 @@ export async function syncCloudTargets(
         const requestIdentity = cloudSyncTargetIdentity(target.id);
         const finish = beginCloudSyncActivity({ ...target, requestIdentity });
         try {
-          return { ...(await syncCloudTarget(target)), requestIdentity };
+          return {
+            ...(await syncCloudTarget(
+              structuredClone(target),
+              structuredClone(config),
+            )),
+            requestIdentity,
+          };
         } catch (error) {
           return failed(target.provider, errorMessage(error), {
             targetId: target.id,

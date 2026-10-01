@@ -281,7 +281,7 @@ describe("per-target cloud sync results", () => {
     ).toEqual({ status: "partial", message: "One file failed" });
   });
 
-  it("reports the unimplemented Nextcloud application sync honestly", async () => {
+  it("reports unavailable desktop storage without claiming data was transferred", async () => {
     const snapshots: number[] = [];
     const unsubscribe = subscribeCloudSyncActivity(() =>
       snapshots.push(getCloudSyncActivity().length),
@@ -293,7 +293,7 @@ describe("per-target cloud sync results", () => {
       ]);
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({ targetId: "work", status: "failed" });
-      expect(result[0].message).toContain("no data was transferred");
+      expect(result[0].message).toContain("requires the desktop backend");
       expect(snapshots).toEqual([1, 0]);
       expect(getCloudSyncActivity()).toEqual([]);
     } finally {

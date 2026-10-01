@@ -34,6 +34,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         disabled={
           !mgr.cloudSync.enabled ||
           !mgr.syncTargets.some((target) => target.enabled) ||
+          Boolean(mgr.validationError) ||
+          mgr.isBusy ||
           mgr.isSyncing
         }
         className="absolute top-0 right-0 !mt-0 flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
@@ -46,6 +48,11 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
       {mgr.syncTargets.length > 0 && <SyncStatusOverview mgr={mgr} />}
 
       <EnableSyncToggle mgr={mgr} />
+      {mgr.validationError && (
+        <p role="status" className="text-sm text-[var(--color-textSecondary)]">
+          {mgr.validationError}
+        </p>
+      )}
       <SyncTargetsSection mgr={mgr} />
       <SyncFrequencySelect mgr={mgr} />
       <SyncItemsGrid mgr={mgr} />

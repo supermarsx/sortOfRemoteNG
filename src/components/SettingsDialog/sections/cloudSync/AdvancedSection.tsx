@@ -16,6 +16,7 @@ import {
   SettingsNumberRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+import { MAX_CLOUD_SYNC_FILE_SIZE_MIB } from "../../../../types/settings/cloudSyncSettings";
 
 /* ── Built-in exclude-pattern presets ────────────────────────────
  * Each preset appends a small bundle of globs that targets a common
@@ -28,41 +29,34 @@ const EXCLUDE_PRESETS: Array<{
   patterns: string[];
 }> = [
   {
-    value: "temp",
-    label: "Temp & backup files",
-    patterns: ["*.tmp", "*.bak", "*.swp", "*.swo", "*~", "*.cache"],
+    value: "databases",
+    label: "Database archives",
+    patterns: ["database:*"],
   },
   {
-    value: "os",
-    label: "OS metadata files",
-    patterns: [".DS_Store", "Thumbs.db", "desktop.ini", "$RECYCLE.BIN/*"],
+    value: "libraries",
+    label: "Global scripts and automation libraries",
+    patterns: ["app:recording.*"],
   },
   {
-    value: "logs",
-    label: "Logs",
-    patterns: ["*.log", "*.log.*", "logs/*"],
+    value: "settings",
+    label: "Portable settings (when available)",
+    patterns: ["app:settings"],
   },
   {
-    value: "vcs",
-    label: "Version control",
-    patterns: [".git/*", ".svn/*", ".hg/*"],
+    value: "scripts",
+    label: "Saved terminal scripts",
+    patterns: ["app:recording.managed-scripts"],
   },
   {
-    value: "build",
-    label: "Build artifacts",
-    patterns: [
-      "node_modules/*",
-      "dist/*",
-      "build/*",
-      "target/*",
-      "*.pyc",
-      "__pycache__/*",
-    ],
+    value: "macros",
+    label: "Terminal macros",
+    patterns: ["app:recording.terminal-macros"],
   },
   {
-    value: "secrets",
-    label: "Secrets & env files",
-    patterns: [".env", ".env.*", "*.pem", "*.key", "id_rsa", "id_ed25519"],
+    value: "webAutomation",
+    label: "Website scripts and macros",
+    patterns: ["app:recording.web-automation.v1"],
   },
 ];
 
@@ -108,14 +102,25 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
         <SettingsNumberRow
           settingKey="cloudSync.maxFileSizeMB"
           icon={<FileBox size={16} />}
-          label="Max File Size"
+          label="Maximum Sync Snapshot Size"
           value={mgr.cloudSync.maxFileSizeMB}
           min={1}
-          max={500}
-          unit="MB"
-          onChange={(v) => mgr.updateCloudSync({ maxFileSizeMB: v })}
-          infoTooltip="Files larger than this are skipped during sync. Set generously high to allow large attachments."
+          max={MAX_CLOUD_SYNC_FILE_SIZE_MIB}
+          unit="MiB"
+          onChange={(v) =>
+            mgr.updateCloudSync({
+              maxFileSizeMB: Number.isFinite(v)
+                ? Math.min(MAX_CLOUD_SYNC_FILE_SIZE_MIB, Math.max(1, v))
+                : 1,
+            })
+          }
+          infoTooltip={`Maximum complete sync snapshot size, from 1 to ${MAX_CLOUD_SYNC_FILE_SIZE_MIB} MiB. Encryption and encoded envelope overhead count toward this limit. Oversized snapshots fail rather than silently skipping selected items.`}
         />
+        <p className="text-xs text-[var(--color-textSecondary)]">
+          Limit: 1–{MAX_CLOUD_SYNC_FILE_SIZE_MIB} MiB for the complete snapshot,
+          including encrypted and encoded overhead. Oversized snapshots are
+          rejected.
+        </p>
 
         <SettingsNumberRow
           settingKey="cloudSync.uploadLimitKBs"
@@ -148,18 +153,21 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
               <Filter size={16} />
             </span>
             Exclude Patterns
-            <InfoTooltip text="Glob patterns (one per line) for files to skip during sync. Useful for temp files, caches, or local-only data." />
+            <InfoTooltip text="Glob patterns (one per line) matching selected application artifact IDs or labels. They exclude entire artifacts, not files or records inside a database archive. No arbitrary filesystem paths are scanned." />
           </span>
           <div className="flex flex-col gap-2" style={{ width: "20rem" }}>
             <div className="flex items-center gap-2">
-              <Plus size={14} className="text-[var(--color-textMuted)] flex-shrink-0" />
+              <Plus
+                size={14}
+                className="text-[var(--color-textMuted)] flex-shrink-0"
+              />
               <div className="flex-1 min-w-0">
                 <Select
                   value=""
                   onChange={applyPreset}
                   options={presetOptions}
                   variant="settings"
-                  aria-label="Add an exclude-pattern preset"
+                  label="Add an exclude-pattern preset"
                 />
               </div>
             </div>
@@ -172,10 +180,14 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
                     .filter((p: string) => p.trim()),
                 })
               }
-              placeholder={"*.tmp\n*.bak\ntemp/*"}
+              placeholder={"database:*\n*macros*"}
               rows={4}
               className="sor-settings-input font-mono"
             />
+            <p className="text-xs text-[var(--color-textSecondary)]">
+              Patterns and presets match artifact IDs or labels only; they do
+              not select filesystem paths or filter archive contents.
+            </p>
           </div>
         </div>
       </Card>

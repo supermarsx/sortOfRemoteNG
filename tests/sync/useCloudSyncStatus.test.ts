@@ -185,7 +185,7 @@ describe("useCloudSyncStatus", () => {
     const testResult = result.current.getTestResultForProvider("googleDrive");
     expect(testResult?.success).toBe(false);
     expect(testResult?.message).toMatch(
-      /Tauri backend|registered sync backend/,
+      /Select a configured destination|desktop backend/,
     );
     expect(testResult?.canRead).toBe(false);
     expect(testResult?.canWrite).toBe(false);

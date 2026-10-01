@@ -22,6 +22,31 @@ describe("Toast", () => {
     vi.useRealTimers();
   });
 
+  it("keeps an action available while keyboard focused and dismisses after activation", () => {
+    const action = vi.fn();
+    const remove = vi.fn();
+    render(
+      <Toast
+        toast={{
+          id: "action",
+          type: "error",
+          message: "Sync failed",
+          duration: 1000,
+          action: { label: "Open sync settings", onClick: action },
+        }}
+        onRemove={remove}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Open sync settings" });
+    act(() => button.focus());
+    act(() => vi.advanceTimersByTime(2000));
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    expect(action).toHaveBeenCalledOnce();
+    act(() => vi.advanceTimersByTime(250));
+    expect(remove).toHaveBeenCalledExactlyOnceWith("action");
+  });
+
   it("renders with the correct message", () => {
     const toast: ToastMessage = {
       id: "1",

@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import {
   CloudSyncProvider,
   CloudSyncTarget,
+  CloudSyncConfig,
 } from "../../types/settings/settings";
+import { defaultCloudSyncConfig } from "../../types/settings/cloudSyncSettings";
 import {
   providersFromCloudSyncConfig,
   testCloudSyncProvider,
@@ -30,7 +32,9 @@ interface UseCloudSyncStatusParams {
   cloudSyncConfig?: {
     enabled: boolean;
     enabledProviders: CloudSyncProvider[];
-    syncTargets?: Array<Pick<CloudSyncTarget, "provider" | "enabled">>;
+    syncTargets?: Array<
+      Pick<CloudSyncTarget, "provider" | "enabled"> & Partial<CloudSyncTarget>
+    >;
     providerStatus: Partial<Record<CloudSyncProvider, ProviderStatus>>;
     frequency: string;
   };
@@ -117,7 +121,15 @@ export function useCloudSyncStatus({
     setIsTesting(true);
     setTestResults((prev) => prev.filter((r) => r.provider !== provider));
     try {
-      const result = await testCloudSyncProvider(provider);
+      const targets = config.syncTargets?.filter(
+        (target): target is CloudSyncTarget =>
+          typeof target.id === "string" && typeof target.label === "string",
+      );
+      const result = await testCloudSyncProvider(provider, {
+        ...defaultCloudSyncConfig,
+        ...config,
+        syncTargets: targets,
+      } as CloudSyncConfig);
       setTestResults((prev) => [
         ...prev,
         {

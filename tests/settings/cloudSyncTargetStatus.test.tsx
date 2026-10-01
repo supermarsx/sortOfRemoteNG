@@ -102,6 +102,9 @@ function manager() {
     isSyncing: false,
     handleSyncTarget: vi.fn(),
     handleSyncNow: vi.fn(),
+    handleTestTarget: vi.fn(),
+    getTargetTestResult: vi.fn(),
+    handleResolveConflict: vi.fn(),
     expandedTargetId: null,
     authTargetId: null,
   };
@@ -182,6 +185,46 @@ describe("per-target cloud sync settings status", () => {
       ).toHaveTextContent(result === "partial" ? "Partial" : "Conflict");
     },
   );
+
+  it("only resolves a conflict after the target-specific choice is clicked", () => {
+    const { mgr, value, statuses } = manager();
+    statuses.work.lastSyncStatus = "conflict";
+    render(<SyncStatusOverview mgr={mgr} />);
+    expect(value.handleResolveConflict).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Keep remote for Work" }),
+    );
+    expect(value.handleResolveConflict).toHaveBeenCalledExactlyOnceWith(
+      "work",
+      "keepRemote",
+    );
+  });
+
+  it("renders independent read/write probe results and a real test callback", () => {
+    const { mgr, value } = manager();
+    value.getTargetTestResult.mockImplementation((id: string) =>
+      id === "work"
+        ? {
+            status: "failed",
+            canRead: true,
+            canWrite: false,
+            message: "Write denied",
+            latencyMs: 12,
+          }
+        : undefined,
+    );
+    render(<SyncTargetsSection mgr={mgr} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Test connection for Personal" }),
+    );
+    expect(value.handleTestTarget).toHaveBeenCalledExactlyOnceWith("personal");
+    expect(
+      screen.getByRole("status", { name: "Work connection test" }),
+    ).toHaveTextContent("Read: verified · Write: not verified · 12 ms");
+    expect(
+      screen.queryByRole("status", { name: "Personal connection test" }),
+    ).not.toBeInTheDocument();
+  });
 
   it("shows never attempted targets and renders nothing for an empty list", () => {
     const { mgr, statuses, value } = manager();

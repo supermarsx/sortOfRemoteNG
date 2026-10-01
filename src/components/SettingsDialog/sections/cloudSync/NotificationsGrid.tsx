@@ -1,8 +1,13 @@
-import { Bell, AlertTriangle } from "lucide-react";
+import { Bell, AlertTriangle, Clock } from "lucide-react";
+import {
+  MAX_CLOUD_SYNC_INTERVAL_MINUTES,
+  normalizeCloudSyncFailureNotificationMinutes,
+} from "../../../../types/settings/cloudSyncSettings";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
+  SettingsNumberRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 
@@ -18,10 +23,30 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
           settingKey="cloudSync.notifyOnSync"
           icon={<Bell size={16} />}
           label="Notify on Sync"
-          description="Show a desktop notification when a sync completes"
+          description="Show in-app notifications for sync results"
           checked={mgr.cloudSync.notifyOnSync}
           onChange={(v) => mgr.updateCloudSync({ notifyOnSync: v })}
-          infoTooltip="Show a desktop notification each time a cloud sync completes successfully."
+          infoTooltip="Notify when cloud sync succeeds or fails. Repeated failures respect the interval below."
+        />
+
+        <SettingsNumberRow
+          settingKey="cloudSync.failureNotificationIntervalMinutes"
+          icon={<Clock size={16} />}
+          label="Sync Failure Notification Interval"
+          description="First failure is shown immediately; repeated failures are limited across all targets. Target statuses always update. 0 shows every failure."
+          value={normalizeCloudSyncFailureNotificationMinutes(
+            mgr.cloudSync.failureNotificationIntervalMinutes,
+          )}
+          min={0}
+          max={MAX_CLOUD_SYNC_INTERVAL_MINUTES}
+          step={1}
+          unit="minutes"
+          onChange={(value) =>
+            mgr.updateCloudSync({
+              failureNotificationIntervalMinutes:
+                normalizeCloudSyncFailureNotificationMinutes(value),
+            })
+          }
         />
 
         <Toggle

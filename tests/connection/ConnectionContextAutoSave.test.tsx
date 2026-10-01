@@ -4,6 +4,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
+import { acquireCloudSyncDatabaseBarrier } from "../../src/utils/services/cloudSyncDatabaseBarrier";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { openDB } from "idb";
 import { Connection } from "../../src/types/connection/connection";
@@ -55,6 +56,27 @@ describe("ConnectionProvider auto-save", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+
+  it("cloud barriers flush drafts, block edits, and reload committed rows before releasing", async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(async () => { await result.current.loadData(collectionId); });
+    const row: Connection = { id: "cloud-row", name: "Pending local", protocol: "ssh", hostname: "fixture.test", port: 22, isGroup: false, createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString() };
+    act(() => result.current.dispatch({ type: "SET_CONNECTIONS", payload: [row] }));
+    let release!: () => Promise<void>;
+    await act(async () => { release = await acquireCloudSyncDatabaseBarrier([collectionId]); });
+    expect((await manager.loadDatabaseData(collectionId))?.connections[0].name).toBe("Pending local");
+    act(() => result.current.dispatch({ type: "SET_CONNECTIONS", payload: [{ ...row, name: "Blocked edit" }] }));
+    expect(result.current.state.connections[0].name).toBe("Pending local");
+    await act(async () => { await release(); });
+    await act(async () => { release = await acquireCloudSyncDatabaseBarrier([collectionId], true); });
+    const current = (await manager.loadDatabaseData(collectionId))!;
+    await manager.saveDatabaseData(collectionId, { ...current, connections: [{ ...row, name: "Synced row" }] });
+    await act(async () => { await release(); });
+    expect(result.current.state.connections[0].name).toBe("Synced row");
+    await flushSave(result);
+    expect((await manager.loadDatabaseData(collectionId))?.connections[0].name).toBe("Synced row");
+    expect(result.current.persistence.dirty).toBe(false);
   });
 
   it("captures a session's database at creation and preserves that owner through later updates and window snapshots", async () => {

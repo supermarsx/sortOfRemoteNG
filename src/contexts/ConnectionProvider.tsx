@@ -11,6 +11,7 @@ import {
   DatabaseManager,
   type DatabaseDataTarget,
 } from "../utils/connection/databaseManager";
+import { registerCloudSyncDatabaseBarrier } from "../utils/services/cloudSyncDatabaseBarrier";
 import { StorageData } from "../utils/storage/storage";
 import { activateConnectionNotes } from "../utils/storage/connectionNotesVault";
 import { generateId } from "../utils/core/id";
@@ -482,6 +483,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const recycleBinRef = useRef(state.recycleBinData ?? emptyRecycleBin());
   const loadedStorageRef = useRef<StorageData | null>(null);
   const automationBusyRef = useRef(false);
+  const cloudSyncBusyRef = useRef(false);
   const automationFaultRef = useRef(false);
   const documentsBusyRef = useRef(false);
   const documentsFaultRef = useRef(false);
@@ -1238,6 +1240,63 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       // loadData already publishes the owning database's explicit error state.
     });
   };
+
+  useLayoutEffect(
+    () =>
+      registerCloudSyncDatabaseBarrier(async (ids, restore) => {
+        const owner = databaseManager.getCurrentDatabase()?.id;
+        if (!owner || !ids.includes(owner)) return async () => {};
+        if (
+          cloudSyncBusyRef.current ||
+          recycleLoadingRef.current ||
+          automationBusyRef.current ||
+          documentsBusyRef.current ||
+          databaseSettingsBusyRef.current ||
+          vaultBusyRef.current ||
+          recycleBusyRef.current
+        )
+          throw new Error(
+            "A database operation is pending. Retry cloud sync after it finishes.",
+          );
+        cloudSyncBusyRef.current = true;
+        databaseRowsRevokedRef.current = true;
+        recycleLoadingRef.current = true;
+        setRecycleLoading(true);
+        publishDatabaseAvailability("loading");
+        const release = async () => {
+          try {
+            if (databaseManager.getCurrentDatabase()?.id !== owner) return;
+            if (restore) {
+              if (!(await loadData(owner)))
+                throw new Error("Cloud restore refresh was superseded.");
+            } else {
+              databaseRowsRevokedRef.current = false;
+              recycleLoadingRef.current = false;
+              setRecycleLoading(false);
+              publishDatabaseAvailability();
+            }
+          } finally {
+            cloudSyncBusyRef.current = false;
+          }
+        };
+        try {
+          await flushPendingSave();
+          if (databaseManager.getCurrentDatabase()?.id !== owner)
+            throw new Error("Database changed while preparing cloud sync.");
+          return release;
+        } catch (error) {
+          cloudSyncBusyRef.current = false;
+          if (databaseManager.getCurrentDatabase()?.id === owner) {
+            databaseRowsRevokedRef.current = false;
+            recycleLoadingRef.current = false;
+            setRecycleLoading(false);
+            publishDatabaseAvailability();
+          }
+          throw error;
+        }
+      }),
+    [databaseManager, flushPendingSave, loadData, publishDatabaseAvailability],
+  );
 
   const captureRecycleScope = useCallback((): RecycleBinScope => {
     const target = activeDatabaseTargetRef.current;

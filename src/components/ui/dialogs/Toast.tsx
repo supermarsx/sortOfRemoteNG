@@ -7,6 +7,7 @@ import {
   Info,
   Loader2,
   X,
+  type LucideIcon,
 } from "lucide-react";
 
 export type ToastType = "success" | "error" | "warning" | "info" | "loading";
@@ -25,6 +26,7 @@ export interface ToastMessage {
   /** Approximate deadline from measured work; null means no estimate is available. */
   etaAt?: number | null;
   details?: string[];
+  action?: { label: string; onClick: () => void; icon?: LucideIcon };
   /** Provider-owned update counter: refreshes the completion expiry once. */
   revision?: number;
 }
@@ -40,6 +42,7 @@ export type ToastUpdate = Partial<
     | "progressLabel"
     | "description"
     | "etaAt"
+    | "action"
   >
 >;
 
@@ -97,6 +100,8 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
   const remainingRef = useRef(toast.duration ?? 4000);
   const startRef = useRef(Date.now());
   const pausedRef = useRef(false);
+  const hoveredRef = useRef(false);
+  const focusedRef = useRef(false);
   const exitingRef = useRef(false);
   const barRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
@@ -188,14 +193,15 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
   }, [duration, isLoading, revision, toast.id]);
 
   // When pausing/resuming, snapshot remaining time
-  const handleMouseEnter = () => {
+  const pauseDismissal = () => {
     if (isLoading || pausedRef.current) return;
     const elapsed = Date.now() - startRef.current;
     remainingRef.current = Math.max(0, remainingRef.current - elapsed);
     pausedRef.current = true;
   };
 
-  const handleMouseLeave = () => {
+  const resumeDismissal = () => {
+    if (hoveredRef.current || focusedRef.current) return;
     startRef.current = Date.now();
     pausedRef.current = false;
   };
@@ -206,11 +212,28 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
     clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => removeRef.current(toast.id), 250);
   };
+  const ActionIcon = toast.action?.icon;
 
   return (
     <div
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onMouseEnter={() => {
+        hoveredRef.current = true;
+        pauseDismissal();
+      }}
+      onMouseLeave={() => {
+        hoveredRef.current = false;
+        resumeDismissal();
+      }}
+      onFocusCapture={() => {
+        focusedRef.current = true;
+        pauseDismissal();
+      }}
+      onBlurCapture={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null))
+          return;
+        focusedRef.current = false;
+        resumeDismissal();
+      }}
       className={`toast-item group relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl shadow-black/20 backdrop-blur-sm transition-all duration-250 ${
         isExiting
           ? "opacity-0 translate-x-8 scale-95"
@@ -279,6 +302,22 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
             ))}
           </ul>
         </details>
+      )}
+
+      {toast.action && (
+        <div className="px-3 pb-2.5">
+          <button
+            type="button"
+            className="sor-btn-secondary-sm inline-flex items-center gap-1.5"
+            onClick={() => {
+              toast.action?.onClick();
+              handleClose();
+            }}
+          >
+            {ActionIcon && <ActionIcon size={13} aria-hidden="true" />}
+            {toast.action.label}
+          </button>
+        </div>
       )}
 
       {/* Operation progress never shares the timer/expiry animation. */}

@@ -51,6 +51,8 @@ const SyncTargetRow: React.FC<SyncTargetRowProps> = ({
 }) => {
   const isExpanded = mgr.expandedTargetId === target.id;
   const isSyncing = mgr.isTargetSyncing(target.id);
+  const testResult = mgr.getTargetTestResult(target.id);
+  const isTesting = mgr.testingTargetId === target.id;
   return (
     <div
       className={`rounded-lg border ${
@@ -91,6 +93,8 @@ const SyncTargetRow: React.FC<SyncTargetRowProps> = ({
           disabled={
             !mgr.cloudSync.enabled ||
             !target.enabled ||
+            Boolean(mgr.validationError) ||
+            mgr.isBusy ||
             mgr.isSyncing ||
             isSyncing
           }
@@ -161,6 +165,50 @@ const SyncTargetRow: React.FC<SyncTargetRowProps> = ({
       </div>
 
       {/* Expanded per-target credentials editor */}
+      <div className="px-3 pb-3 space-y-2">
+        <button
+          type="button"
+          onClick={() => void mgr.handleTestTarget(target.id)}
+          disabled={
+            !mgr.cloudSync.enabled ||
+            !target.enabled ||
+            target.provider === "none" ||
+            mgr.isBusy ||
+            mgr.isSyncing
+          }
+          aria-label={`Test connection for ${target.label}`}
+          className="rounded border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-50"
+        >
+          {isTesting ? "Testing connection…" : "Test connection"}
+        </button>
+        <p className="text-xs text-[var(--color-textSecondary)]">
+          Tests native read/write access with a temporary probe; does not sync
+          your selected data.
+        </p>
+        {testResult && (
+          <div
+            role="status"
+            aria-label={`${target.label} connection test`}
+            className="text-xs text-[var(--color-textSecondary)]"
+          >
+            <p>
+              {testResult.status === "success" &&
+              testResult.canRead &&
+              testResult.canWrite
+                ? "Read/write probe succeeded."
+                : "Read/write probe did not succeed."}{" "}
+              {testResult.message}
+            </p>
+            <p>
+              Read: {testResult.canRead ? "verified" : "not verified"} · Write:{" "}
+              {testResult.canWrite ? "verified" : "not verified"}
+              {testResult.latencyMs !== undefined
+                ? ` · ${testResult.latencyMs} ms`
+                : ""}
+            </p>
+          </div>
+        )}
+      </div>
       {isExpanded && (
         <div className="border-t border-[var(--color-border)] p-3 bg-[var(--color-surface)]/50">
           <ProviderConfig target={target} mgr={mgr} />

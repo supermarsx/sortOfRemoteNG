@@ -38,9 +38,7 @@ function EncryptionSection({ mgr }: { mgr: Mgr }) {
             icon={<Lock size={16} />}
             label="Encryption password"
             value={mgr.cloudSync.syncEncryptionPassword || ""}
-            onChange={(v) =>
-              mgr.updateCloudSync({ syncEncryptionPassword: v })
-            }
+            onChange={(v) => mgr.updateCloudSync({ syncEncryptionPassword: v })}
             placeholder="Enter a strong password"
             disabled={!enabled}
             infoTooltip="The password used to derive the encryption key. The same password is required on every device that participates in the sync."
@@ -48,7 +46,9 @@ function EncryptionSection({ mgr }: { mgr: Mgr }) {
           <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1 mt-1">
             <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
             <span>
-              This password is required on all devices to decrypt synced data.
+              This password is required on all devices to decrypt synced data.{" "}
+              It encrypts the cloud copy; it does not change the local
+              database's protection format.
             </span>
           </p>
         </div>

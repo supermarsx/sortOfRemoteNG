@@ -14,20 +14,20 @@ descriptor and mounts its management panel through `SessionViewer`.
 These are management sessions. They do not provide a shell, framebuffer, or
 generic remote desktop merely because the panel opens.
 
-| Picker protocol | Required saved fields | Optional non-secret context | What connect proves |
-| --- | --- | --- | --- |
-| Dell iDRAC | Host, username, password | Insecure TLS choice, timeout, forced Redfish/WS-Man/IPMI protocol | The native device connect path must succeed; capabilities still depend on live hardware and firmware. |
-| HPE iLO | Host, username, password | Auth mode, iLO generation, timeout, Redfish/RIBCL/IPMI choice and IPMI port | The native device connect path must succeed; capabilities still depend on live hardware and firmware. |
-| Lenovo XClarity | Host, username, password | XCC/IMM generation, timeout, Redfish/legacy REST/IPMI choice and IPMI port | The native device connect path must succeed; capabilities still depend on live hardware and firmware. |
-| Supermicro BMC | Host, username, password | Platform, TLS verification, auth mode and timeout | The native device connect path must succeed; capabilities still depend on live hardware and firmware. |
-| Google Cloud | Project ID and service-account JSON credential | Region, zone, OAuth scopes and endpoint override | Local service-account parsing and client/session initialization. It does not prove a provider API request. |
-| Microsoft Azure | Tenant ID, client ID, subscription ID and client secret | Default resource group and region | An Azure token request is attempted. Inventory and resource permissions require later live calls. |
-| DigitalOcean | API token | Region | Local backend session creation only. |
-| IBM Cloud | API key | Region and resource group | Local backend session creation only. |
-| Heroku | API key | App name and region | Local backend session creation only. |
-| Scaleway | API key | Organization ID, project name and region | Local backend session creation only. |
-| Linode | API key | Region | Local backend session creation only. |
-| OVHcloud | Application/API key, application secret and consumer key | Service ID, project name and region | Local backend session creation after validating the three-part credential bundle. |
+| Picker protocol | Required saved fields                                    | Optional non-secret context                                                 | What connect proves                                                                                        |
+| --------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Dell iDRAC      | Host, username, password                                 | Insecure TLS choice, timeout, forced Redfish/WS-Man/IPMI protocol           | The native device connect path must succeed; capabilities still depend on live hardware and firmware.      |
+| HPE iLO         | Host, username, password                                 | Auth mode, iLO generation, timeout, Redfish/RIBCL/IPMI choice and IPMI port | The native device connect path must succeed; capabilities still depend on live hardware and firmware.      |
+| Lenovo XClarity | Host, username, password                                 | XCC/IMM generation, timeout, Redfish/legacy REST/IPMI choice and IPMI port  | The native device connect path must succeed; capabilities still depend on live hardware and firmware.      |
+| Supermicro BMC  | Host, username, password                                 | Platform, TLS verification, auth mode and timeout                           | The native device connect path must succeed; capabilities still depend on live hardware and firmware.      |
+| Google Cloud    | Project ID and service-account JSON credential           | Region, zone, OAuth scopes and endpoint override                            | Local service-account parsing and client/session initialization. It does not prove a provider API request. |
+| Microsoft Azure | Tenant ID, client ID, subscription ID and client secret  | Default resource group and region                                           | An Azure token request is attempted. Inventory and resource permissions require later live calls.          |
+| DigitalOcean    | API token                                                | Region                                                                      | Local backend session creation only.                                                                       |
+| IBM Cloud       | API key                                                  | Region and resource group                                                   | Local backend session creation only.                                                                       |
+| Heroku          | API key                                                  | App name and region                                                         | Local backend session creation only.                                                                       |
+| Scaleway        | API key                                                  | Organization ID, project name and region                                    | Local backend session creation only.                                                                       |
+| Linode          | API key                                                  | Region                                                                      | Local backend session creation only.                                                                       |
+| OVHcloud        | Application/API key, application secret and consumer key | Service ID, project name and region                                         | Local backend session creation after validating the three-part credential bundle.                          |
 
 <div class="callout">
   <strong>Connected is not universal proof of provider authentication.</strong>
@@ -61,15 +61,15 @@ Older saved records may contain a `cloudProvider` object. The editor and runtime
 normalizer read that deprecated shape and map it into the canonical
 provider-specific settings plus the protected credential:
 
-| Legacy field | Canonical destination |
-| --- | --- |
-| GCP `projectId`, `region`, `zone` | `gcpSettings` |
-| GCP `serviceAccountKey` | protected credential |
-| Azure tenant, client, subscription, resource-group and region fields | `azureSettings` |
-| Azure `clientSecret` | protected credential |
-| Provider `apiKey` or `accessToken` | protected credential |
+| Legacy field                                                                   | Canonical destination                 |
+| ------------------------------------------------------------------------------ | ------------------------------------- |
+| GCP `projectId`, `region`, `zone`                                              | `gcpSettings`                         |
+| GCP `serviceAccountKey`                                                        | protected credential                  |
+| Azure tenant, client, subscription, resource-group and region fields           | `azureSettings`                       |
+| Azure `clientSecret`                                                           | protected credential                  |
+| Provider `apiKey` or `accessToken`                                             | protected credential                  |
 | Provider region, app, organization, project, resource-group or service context | the matching provider settings object |
-| OVHcloud `apiKey`, `appSecret`, `consumerKey` | protected credential bundle |
+| OVHcloud `apiKey`, `appSecret`, `consumerKey`                                  | protected credential bundle           |
 
 Canonical values win when both forms exist. Invalid non-string legacy values
 are dropped rather than coerced. The next explicit save or autosave removes the
@@ -135,3 +135,167 @@ The primary implementation and regression seams are:
 Source-level registration and focused tests are not substitutes for live
 provider/device validation. Release evidence must state which real providers,
 accounts, BMC generations, transports, and firmware versions were exercised.
+
+## Application-data cloud sync
+
+Settings → Cloud Sync synchronizes selected application snapshots through
+Nextcloud, WebDAV, SFTP, Google Drive or OneDrive. This is separate from the
+providers' file-management and file-sync panels.
+
+**What to Sync** discovers existing databases and app-wide automation libraries,
+plus portable appearance preferences from settings storage. Select individual
+items or all currently available items. New discoveries are not automatically
+selected. Locked, missing or unsupported artifacts retain their selection and
+show an explanation; unlock or explicitly deselect them before syncing.
+
+Database Center rows and the sync inventory show the current database file's
+actual byte length, including its encryption envelope. Measurement does not
+open, decrypt or unlock databases, and does not depend on sync eligibility.
+Sizes refresh after saves and can also be refreshed manually. Backups, trust
+sidecars and unsaved edits are excluded, so this is not the final cloud archive
+size. Browser-only mode labels the stored UTF-8 JSON size instead of claiming a
+physical file size. Missing files and failed metadata reads are reported
+separately, never as an empty database.
+
+A database is one coherent archive: connections, documents and attachments,
+password vault, automation, database settings, recycle bin and trust records.
+It must already exist locally as an unlocked managed protected database. The
+sync engine does not recreate missing databases or copy device-local private-key
+files. Move those keys into the database vault to make them portable. Database
+names and descriptions in the local index remain local; they do not create
+spurious body-content conflicts between devices.
+Global appearance sync excludes device paths, network/security policy and cloud
+account credentials. Deselecting an item stops synchronization; it does not
+delete its existing cloud copy. Exclusion patterns match whole artifact IDs,
+virtual names or labels, not nested database records or arbitrary local files.
+
+Configure each destination separately. Nextcloud accepts the HTTPS instance
+address, username, app password and destination folder. WebDAV accepts an HTTPS
+DAV endpoint with Basic, Digest or Bearer authentication. SFTP requires a
+verified `SHA256:` server host-key fingerprint and password or inline private
+key; atomic replacement requires the OpenSSH `posix-rename` extension. Google
+Drive and OneDrive use the supplied OAuth tokens and optional refresh-client
+configuration. Refreshed tokens are cached in memory, not written back to the
+saved account configuration. Configured destination subfolders can be created;
+connection tests write, verify and remove a uniquely named probe file.
+
+Database and library snapshots require password-based client-side encryption.
+Use the same sync password on participating devices. Optional compression runs
+before encryption. The complete envelope and decoded snapshot must each fit the
+configured limit (at most 100 MiB). Existing encrypted snapshots cannot silently
+be downgraded to plaintext.
+
+Manual, startup, save-triggered and interval sync use the same engine. Custom
+intervals accept whole minutes, hours or days, from one minute to seven days;
+changing the interval reschedules the background timer. Writes
+verify their uploaded content and use provider revisions; competing writers,
+ambiguous duplicate cloud files and same-item divergent edits become conflicts.
+Independent items can merge; same-item conflicts require the configured policy
+or an explicit Keep local / Keep remote action in target status. Local edits
+made during a transfer are checked again before restore. Database body and trust
+restore are separate transactions: an incomplete restore is reported, never
+advertised as atomic or silently rolled back. Opt-in shutdown sync keeps the
+window open if synchronization does not complete successfully.
+
+Automated checks exercise local provider fixtures, snapshot encryption, artifact
+selection, conflicts and storage coordination. They do not establish that a real
+account's credentials, quotas or permissions are valid; use **Test connection**
+for the configured destination before the first real synchronization.
+
+### Record dates and migration
+
+Database bodies carry a versioned `recordMetadata` ledger inside their existing
+storage envelope. It indexes connections (including folders), tab groups,
+documents and their ID-bearing blocks, attachments, people, tickets, vault
+entries, automation items, recycle-bin entries, settings and tag definitions.
+Nested objects without an independent stable ID belong to their containing
+record; they are not assigned array-index identities. The root record tracks
+changes to the complete body, including ordering and anonymous nested content.
+
+Each entry has creation/modification dates, their provenance, a content digest
+and a revision. The journal records revision ancestry and operation kind, not
+passwords or before/after content. Deletions leave tombstones even after recycle
+bin cleanup. Restoring an ID preserves its creation history. History limits
+fail explicitly instead of silently dropping deletion or ancestry information.
+
+Migration is lazy and local: opening a database prepares its ledger and saves
+with the exact previously loaded representation as the compare-and-swap guard.
+Subsequent writes maintain it, including writers that rebuild their payload
+without carrying the ledger. Full archives preserve this metadata. Migration
+does not convert the encryption format or enroll new unlock methods. A locked
+database remains unchanged until it is opened with local unlock authority.
+
+Existing valid dates are preserved. Dates that cannot be recovered are marked
+inferred, using an available enclosing timestamp or the epoch as an explicitly
+unknown-history sentinel. Migration time is not presented as the original edit
+time. Reopening unchanged data does not generate new edits. Later observed
+updates preserve creation dates and use monotonic per-record dates even if the
+local clock moves backwards. Those dates are audit information, not proof of
+causal order across devices.
+
+App-wide automation libraries migrate under their existing storage CAS. Native
+settings and Trust Center records maintain their own timestamp metadata at their
+locked persistence boundaries. Portable appearance sync still sends only its
+five allowed preferences, not the complete application-settings history or
+account configuration. Runtime sessions, caches, diagnostics and third-party
+API response objects are not promoted into synchronized application records.
+Cloud-sync status ticks are persisted without adding history entries; edits to
+the actual sync configuration still do. Incoming snapshots with existing ledgers
+must match their recorded content. Only snapshots without a ledger receive the
+legacy upgrade; inconsistent remote history is rejected before apply.
+
+Large-collection performance remains a limitation. A local Windows/Node stress
+test with 100,000 synthetic connections took about 29 seconds for initial ledger
+migration and validation, and about 19 seconds for a one-record update; peak RSS
+was about 637 MiB. These are not webview timings or typical-collection estimates.
+Worker offloading and incremental hashing are still needed before claiming
+interactive performance at that scale.
+
+### Decision: three-way record merge, not last-writer-wins
+
+The current sync engine still compares **whole artifacts** against hash-only
+checkpoints. The ledger is a prerequisite for record-aware reconciliation, not
+an assertion that it has already been implemented. `Keep newer` now asks for
+review when both copies changed; snapshot upload time and locally observed
+change time cannot reliably rank offline edits.
+
+The recommended next stage is:
+
+1. Persist an **encrypted common-base snapshot** per database/target and a
+   revision DAG. Stable IDs and parent revisions determine whether a change
+   descends from the base; UTC dates explain it to a person.
+2. Compare base/local/remote by record ID. Automatically combine one-sided edits
+   and additions to different IDs. Within a record, combine disjoint field edits
+   only with schema-specific rules; arrays need explicit ordering semantics.
+3. Preserve both branches for same-field edits, delete-versus-edit, moves that
+   produce invalid folder graphs, and incompatible schema changes. Present a
+   per-record review showing local/remote/base, operation dates and inferred-date
+   badges. Never expose passwords in the general activity log.
+4. Treat credentials, trust approval/revocation, security policy and their
+   references as protected conflict units. Never resurrect a forgotten or
+   revoked identity through an automatic merge. Validate all links, IDs and
+   domain invariants before committing an entire reviewed database generation.
+5. Keep tombstones until all participating replicas have acknowledged them, or
+   require a deliberate baseline reset for an expired replica. A short recycle
+   bin retention window is not a safe tombstone retention policy.
+6. Publish with remote revision preconditions and apply with local exact-base
+   CAS. Recovery must distinguish upload success, body success and trust success;
+   pending staged generations must survive a crash. Do not describe the existing
+   separate body/trust writes as one transaction.
+
+All comparison/decryption/merging happens locally after unlocking the relevant
+database and cloud envelope. The cloud stores encrypted snapshots; it receives
+neither the database unlock password nor plaintext conflict payloads. Opaque
+backup of a locked file is conceptually possible, but is a different workflow
+from record merge and is not enabled by this migration.
+
+This choice follows the revision-tree/common-ancestor approach described in
+[CouchDB's conflict model](https://docs.couchdb.org/en/stable/replication/conflicts.html),
+while retaining application-specific review. A wholesale CRDT conversion is not
+recommended for credentials and trust: even
+[Automerge's conflict model](https://automerge.org/docs/reference/documents/conflicts/)
+retains concurrent property assignments for application handling. CRDTs can be
+considered later for collaborative text editing. Remote conditional writes use
+the lost-update protection represented by
+[HTTP If-Match](https://www.rfc-editor.org/rfc/rfc9110.html#name-if-match);
+that protects the commit, but does not decide the semantic winner.

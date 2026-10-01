@@ -131,6 +131,8 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
                   disabled={
                     !mgr.cloudSync.enabled ||
                     !target.enabled ||
+                    Boolean(mgr.validationError) ||
+                    mgr.isBusy ||
                     mgr.isSyncing ||
                     syncing
                   }
@@ -141,6 +143,45 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
                   {syncing ? "Syncing…" : retry ? "Retry" : "Sync"}
                 </button>
               </div>
+              {result === "conflict" && (
+                <div className="mt-2 space-y-2 text-xs text-[var(--color-textSecondary)]">
+                  <p>
+                    Choose which copy to keep for this target. Keep local
+                    replaces the remote copy; keep remote replaces selected
+                    local data. This choice applies only to this retry.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {(["keepLocal", "keepRemote"] as const).map(
+                      (resolution) => (
+                        <button
+                          key={resolution}
+                          type="button"
+                          disabled={
+                            !mgr.cloudSync.enabled ||
+                            !target.enabled ||
+                            Boolean(mgr.validationError) ||
+                            mgr.isBusy ||
+                            mgr.isSyncing ||
+                            syncing
+                          }
+                          onClick={() =>
+                            void mgr.handleResolveConflict(
+                              target.id,
+                              resolution,
+                            )
+                          }
+                          aria-label={`${resolution === "keepLocal" ? "Keep local" : "Keep remote"} for ${target.label}`}
+                          className="rounded border border-[var(--color-border)] px-3 py-1.5 hover:bg-[var(--color-surfaceHover)] disabled:opacity-50"
+                        >
+                          {resolution === "keepLocal"
+                            ? "Keep local and retry"
+                            : "Keep remote and retry"}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
+              )}
               {status?.lastSyncError && (
                 <details className="mt-2 text-xs text-[var(--color-textSecondary)]">
                   <summary className="cursor-pointer text-error">

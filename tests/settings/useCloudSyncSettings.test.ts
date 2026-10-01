@@ -1,6 +1,10 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useCloudSyncSettings } from "../../src/hooks/settings/useCloudSyncSettings";
+import {
+  useCloudSyncSettings,
+  conflictDescriptions,
+  conflictLabels,
+} from "../../src/hooks/settings/useCloudSyncSettings";
 import {
   defaultCloudSyncConfig,
   type CloudSyncConfig,
@@ -12,15 +16,19 @@ import {
   cloudSyncTargetIdentity,
 } from "../../src/utils/services/cloudSyncActivity";
 
-const mocks = vi.hoisted(() => ({ sync: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sync: vi.fn(), test: vi.fn() }));
+// Hook tests exercise status aggregation but never execute payload/transport work.
+vi.mock("../../src/utils/services/cloudSyncEngine", () => ({}));
 vi.mock("../../src/utils/services/cloudSyncService", async (actual) => ({
   ...(await actual<object>()),
   syncCloudTargets: mocks.sync,
+  testCloudSyncTarget: mocks.test,
 }));
 
 const config = (): CloudSyncConfig => ({
   ...defaultCloudSyncConfig,
   enabled: true,
+  selectedItems: ["record:work"],
   syncTargets: [
     { id: "work", provider: "nextcloud", label: "Work", enabled: true },
     { id: "home", provider: "nextcloud", label: "Home", enabled: true },
@@ -324,11 +332,471 @@ describe("cloud sync settings target status", () => {
     expect(mocks.sync).not.toHaveBeenCalled();
     hook.rerender({ cloudSync: config() });
     mocks.sync.mockRejectedValue(new Error("Unavailable"));
-    await act(async () => {
-      await expect(
-        hook.result.current.handleSyncTarget("work"),
-      ).rejects.toThrow("Unavailable");
-    });
+    await act(async () => hook.result.current.handleSyncTarget("work"));
     expect(hook.result.current.isSyncing).toBe(false);
+    expect(update.mock.lastCall![0].cloudSync.targetStatus.work).toMatchObject({
+      lastSyncStatus: "failed",
+      lastSyncError: expect.stringContaining("could not complete"),
+    });
+  });
+
+  it("passes current configuration and selections unchanged to sync", async () => {
+    mocks.sync.mockResolvedValue([]);
+    const cloudSync = {
+      ...config(),
+      compressionEnabled: false,
+      maxFileSizeMB: 17,
+      excludePatterns: ["*.tmp"],
+      selectedItems: ["record:chosen"],
+    };
+    const hook = renderHook(() =>
+      useCloudSyncSettings({ cloudSync } as GlobalSettings, vi.fn()),
+    );
+    await act(async () => hook.result.current.handleSyncTarget("work"));
+    expect(mocks.sync).toHaveBeenCalledWith(
+      [cloudSync.syncTargets![0]],
+      cloudSync,
+    );
+  });
+
+  it.each([undefined, []])(
+    "requires an explicit item selection (%j), ignoring legacy toggles",
+    async (selectedItems) => {
+      const cloudSync = { ...config(), selectedItems };
+      const hook = renderHook(() =>
+        useCloudSyncSettings({ cloudSync } as GlobalSettings, vi.fn()),
+      );
+      expect(hook.result.current.validationError).toContain(
+        "Select at least one",
+      );
+      await act(async () => hook.result.current.handleSyncNow());
+      expect(mocks.sync).not.toHaveBeenCalled();
+    },
+  );
+
+  it("probes with current config without writing sync history, and redacts known secrets", async () => {
+    const cloudSync = config();
+    cloudSync.syncTargets![0].nextcloud = {
+      serverUrl: "https://cloud.test",
+      username: "test",
+      appPassword: "private-secret",
+      folderPath: "/app",
+      useAppPassword: true,
+    };
+    const update = vi.fn();
+    mocks.test.mockResolvedValue({
+      provider: "nextcloud",
+      status: "failed",
+      message: "Denied private-secret",
+      canRead: true,
+      canWrite: false,
+    });
+    const hook = renderHook(() =>
+      useCloudSyncSettings({ cloudSync } as GlobalSettings, update),
+    );
+    await act(async () => hook.result.current.handleTestTarget("work"));
+    expect(mocks.test).toHaveBeenCalledWith(
+      cloudSync.syncTargets![0],
+      cloudSync,
+    );
+    expect(update).not.toHaveBeenCalled();
+    expect(hook.result.current.getTargetTestResult("work")).toMatchObject({
+      status: "failed",
+      message: "Denied [redacted]",
+      canRead: true,
+      canWrite: false,
+    });
+    expect(hook.result.current.getTargetTestResult("home")).toBeUndefined();
+  });
+
+  it.each(["remove", "edit", "disable", "provider"])(
+    "discards a pending probe after target %s",
+    async (change) => {
+      let finish!: (result: CloudSyncOperationResult) => void;
+      mocks.test.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const initial = config();
+      const hook = renderHook(
+        ({ cloudSync }) =>
+          useCloudSyncSettings({ cloudSync } as GlobalSettings, vi.fn()),
+        { initialProps: { cloudSync: initial } },
+      );
+      let running!: Promise<void>;
+      act(() => {
+        running = hook.result.current.handleTestTarget("work");
+      });
+      const latest = {
+        ...initial,
+        syncTargets: initial.syncTargets!.flatMap((target) =>
+          target.id !== "work"
+            ? [target]
+            : change === "remove"
+              ? []
+              : [
+                  {
+                    ...target,
+                    ...(change === "disable"
+                      ? { enabled: false }
+                      : change === "provider"
+                        ? { provider: "googleDrive" as const }
+                        : {
+                            nextcloud: {
+                              serverUrl: "https://new.test",
+                              username: "changed",
+                              folderPath: "/app",
+                              useAppPassword: true,
+                            },
+                          }),
+                  },
+                ],
+        ),
+      };
+      hook.rerender({ cloudSync: latest });
+      await act(async () => {
+        finish({
+          provider: "nextcloud",
+          status: "success",
+          message: "Old probe",
+          canRead: true,
+          canWrite: true,
+        });
+        await running;
+      });
+      expect(hook.result.current.getTargetTestResult("work")).toBeUndefined();
+      expect(hook.result.current.testingTargetId).toBeNull();
+    },
+  );
+
+  it("does not duplicate overlapping operations and returns a safe per-target thrown error", async () => {
+    let fail!: (error: Error) => void;
+    mocks.test.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const cloudSync = config();
+    const hook = renderHook(() =>
+      useCloudSyncSettings({ cloudSync } as GlobalSettings, vi.fn()),
+    );
+    let running!: Promise<void>;
+    act(() => {
+      running = hook.result.current.handleTestTarget("work");
+      void hook.result.current.handleTestTarget("work");
+      void hook.result.current.handleSyncNow();
+    });
+    expect(mocks.test).toHaveBeenCalledOnce();
+    expect(mocks.sync).not.toHaveBeenCalled();
+    await act(async () => {
+      fail(new Error("secret in backend exception"));
+      await running;
+    });
+    expect(
+      hook.result.current.getTargetTestResult("work")?.message,
+    ).not.toContain("secret");
+  });
+
+  it("allows a probe with no selected data, but respects disabled master and target", async () => {
+    mocks.test.mockResolvedValue({
+      provider: "nextcloud",
+      status: "success",
+      message: "Probe",
+      canRead: true,
+      canWrite: true,
+    });
+    const cloudSync: CloudSyncConfig = { ...config(), selectedItems: [] };
+    const hook = renderHook(
+      ({ cloudSync }) =>
+        useCloudSyncSettings({ cloudSync } as GlobalSettings, vi.fn()),
+      { initialProps: { cloudSync } },
+    );
+    await act(async () => hook.result.current.handleTestTarget("work"));
+    expect(mocks.test).toHaveBeenCalledOnce();
+    hook.rerender({ cloudSync: { ...cloudSync, enabled: false } });
+    await act(async () => hook.result.current.handleTestTarget("work"));
+    await act(async () => hook.result.current.handleTestTarget("off"));
+    expect(mocks.test).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    undefined,
+    "",
+    "MD5:1234",
+    "SHA256:bad",
+    `SHA256:${"A".repeat(43)}=`,
+    `SHA256:${"A".repeat(42)}`,
+    `SHA256:${"A".repeat(44)}`,
+  ])(
+    "rejects unpinned SFTP without calling native (%s)",
+    async (hostKeyFingerprint) => {
+      const cloudSync = {
+        ...config(),
+        syncTargets: [
+          {
+            id: "ssh",
+            label: "SSH",
+            provider: "sftp" as const,
+            enabled: true,
+            sftp: {
+              host: "ssh.test",
+              port: 22,
+              username: "test",
+              authMethod: "password" as const,
+              folderPath: "/sync",
+              hostKeyFingerprint,
+            },
+          },
+        ],
+      };
+      const update = vi.fn();
+      const hook = renderHook(() =>
+        useCloudSyncSettings({ cloudSync } as GlobalSettings, update),
+      );
+      await act(async () => hook.result.current.handleTestTarget("ssh"));
+      await act(async () => hook.result.current.handleSyncTarget("ssh"));
+      expect(mocks.test).not.toHaveBeenCalled();
+      expect(mocks.sync).not.toHaveBeenCalled();
+      expect(hook.result.current.getTargetTestResult("ssh")?.message).toContain(
+        "SHA256",
+      );
+      expect(
+        update.mock.lastCall![0].cloudSync.targetStatus.ssh.lastSyncError,
+      ).toContain("SHA256");
+    },
+  );
+
+  it.each(["keepLocal", "keepRemote"] as const)(
+    "requires an explicit conflict retry and scopes %s to that request",
+    async (resolution) => {
+      mocks.sync.mockResolvedValue([]);
+      const cloudSync: CloudSyncConfig = {
+        ...config(),
+        conflictResolution: "askEveryTime",
+        targetStatus: {
+          work: {
+            provider: "nextcloud",
+            lastSyncTime: 1,
+            lastSyncStatus: "conflict",
+          },
+        },
+      };
+      const update = vi.fn();
+      const hook = renderHook(() =>
+        useCloudSyncSettings({ cloudSync } as GlobalSettings, update),
+      );
+      expect(mocks.sync).not.toHaveBeenCalled();
+      await act(async () =>
+        hook.result.current.handleResolveConflict("home", resolution),
+      );
+      expect(mocks.sync).not.toHaveBeenCalled();
+      await act(async () =>
+        hook.result.current.handleResolveConflict("work", resolution),
+      );
+      expect(mocks.sync).toHaveBeenCalledWith([cloudSync.syncTargets![0]], {
+        ...cloudSync,
+        conflictResolution: resolution,
+      });
+      expect(update.mock.lastCall![0].cloudSync.conflictResolution).toBe(
+        "askEveryTime",
+      );
+    },
+  );
+
+  it("forwards a pinned SFTP target to the native probe", async () => {
+    const cloudSync: CloudSyncConfig = {
+      ...config(),
+      syncTargets: [
+        {
+          id: "ssh",
+          label: "SSH",
+          provider: "sftp",
+          enabled: true,
+          sftp: {
+            host: "ssh.test",
+            port: 22,
+            username: "test",
+            authMethod: "password",
+            folderPath: "/sync",
+            hostKeyFingerprint: `SHA256:${"A".repeat(43)}`,
+          },
+        },
+      ],
+    };
+    mocks.test.mockResolvedValue({
+      provider: "sftp",
+      status: "success",
+      message: "Probe",
+      canRead: true,
+      canWrite: true,
+    });
+    const hook = renderHook(() =>
+      useCloudSyncSettings({ cloudSync } as GlobalSettings, vi.fn()),
+    );
+    await act(async () => hook.result.current.handleTestTarget("ssh"));
+    expect(mocks.test).toHaveBeenCalledWith(
+      cloudSync.syncTargets![0],
+      cloudSync,
+    );
+    expect(hook.result.current.getTargetTestResult("ssh")?.canWrite).toBe(true);
+  });
+
+  it("trims the SFTP fingerprint before persisting it", () => {
+    const cloudSync = config();
+    const update = vi.fn();
+    const hook = renderHook(() =>
+      useCloudSyncSettings({ cloudSync } as GlobalSettings, update),
+    );
+    act(() =>
+      hook.result.current.updateSyncTarget("off", {
+        sftp: {
+          host: "ssh.test",
+          port: 22,
+          username: "test",
+          authMethod: "password",
+          folderPath: "/sync",
+          hostKeyFingerprint: `  SHA256:${"A".repeat(43)}\n`,
+        },
+      }),
+    );
+    expect(
+      update.mock.lastCall![0].cloudSync.syncTargets.find(
+        (target: { id: string }) => target.id === "off",
+      ).sftp.hostKeyFingerprint,
+    ).toBe(`SHA256:${"A".repeat(43)}`);
+  });
+
+  it("describes target review and whole-artifact conflict semantics accurately", () => {
+    expect(conflictDescriptions.askEveryTime).toContain("target status");
+    expect(conflictDescriptions.askEveryTime).not.toContain("dialog");
+    expect(conflictLabels.keepNewer).toBe("Newer when unambiguous");
+    expect(conflictDescriptions.keepNewer).toBe(
+      "One-sided changes sync automatically. If both copies changed, review is required; clock timestamps never choose a winner.",
+    );
+    expect(conflictDescriptions.merge).toContain(
+      "Records inside an archive are not merged",
+    );
+  });
+
+  it.each([
+    { selectedItems: [] },
+    { selectedItems: ["different-item"] },
+    { encryptBeforeSync: false },
+    { syncEncryptionPassword: "new-password" },
+    { excludePatterns: ["*.private"] },
+    { enabled: false },
+  ] satisfies Partial<CloudSyncConfig>[])(
+    "revokes every target before publishing changed consent %j",
+    async (patch) => {
+      const cloudSync = config();
+      let finish!: (results: CloudSyncOperationResult[]) => void;
+      mocks.sync.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const identities = cloudSync.syncTargets!.map((target) =>
+        cloudSyncTargetIdentity(target.id),
+      );
+      const update = vi.fn();
+      const hook = renderHook(
+        ({ cloudSync }) =>
+          useCloudSyncSettings({ cloudSync } as GlobalSettings, update),
+        { initialProps: { cloudSync } },
+      );
+      let running!: Promise<void>;
+      act(() => {
+        running = hook.result.current.handleSyncTarget("work");
+      });
+      act(() => hook.result.current.updateCloudSync(patch));
+      cloudSync.syncTargets!.forEach((target, index) =>
+        expect(cloudSyncTargetIdentity(target.id)).not.toBe(identities[index]),
+      );
+      hook.rerender({ cloudSync: { ...cloudSync, ...patch } });
+      await act(async () => {
+        finish([
+          {
+            provider: "nextcloud",
+            targetId: "work",
+            status: "success",
+            message: "Old selection",
+            requestIdentity: identities[0],
+          },
+        ]);
+        await running;
+      });
+      expect(
+        update.mock.lastCall![0].cloudSync.targetStatus?.work,
+      ).toBeUndefined();
+    },
+  );
+
+  it("does not revoke runs for status writes, unchanged consent, or notification edits", () => {
+    const cloudSync = config();
+    const identity = cloudSyncTargetIdentity("work");
+    const hook = renderHook(() =>
+      useCloudSyncSettings({ cloudSync } as GlobalSettings, vi.fn()),
+    );
+    act(() =>
+      hook.result.current.updateCloudSync({
+        lastSyncStatus: "success",
+        targetStatus: {},
+        notifyOnSync: false,
+      }),
+    );
+    act(() =>
+      hook.result.current.updateCloudSync({
+        selectedItems: [...cloudSync.selectedItems!],
+        encryptBeforeSync: cloudSync.encryptBeforeSync,
+        syncEncryptionPassword: undefined,
+        excludePatterns: [],
+      }),
+    );
+    expect(cloudSyncTargetIdentity("work")).toBe(identity);
+  });
+
+  it("keeps optional OAuth refresh settings when saving a manual access token", () => {
+    const cloudSync: CloudSyncConfig = {
+      ...config(),
+      syncTargets: [
+        {
+          id: "drive",
+          label: "Drive",
+          provider: "oneDrive",
+          enabled: true,
+          oneDrive: {
+            folderPath: "/existing",
+            clientId: "client",
+            clientSecret: "secret",
+            tenantId: "tenant",
+          },
+        },
+      ],
+    };
+    const update = vi.fn();
+    const hook = renderHook(() =>
+      useCloudSyncSettings({ cloudSync } as GlobalSettings, update),
+    );
+    act(() => hook.result.current.openTokenDialog("drive"));
+    act(() =>
+      hook.result.current.setAuthForm({
+        accessToken: "manual",
+        refreshToken: "",
+        accountEmail: "person@example.test",
+        tokenExpiry: "",
+      }),
+    );
+    act(() => hook.result.current.saveTokenDialog());
+    expect(
+      update.mock.lastCall![0].cloudSync.syncTargets[0].oneDrive,
+    ).toMatchObject({
+      clientId: "client",
+      clientSecret: "secret",
+      tenantId: "tenant",
+      accessToken: "manual",
+      folderPath: "/existing",
+    });
+    expect(hook.result.current.authTargetId).toBeNull();
   });
 });

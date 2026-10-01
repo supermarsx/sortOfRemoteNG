@@ -119,7 +119,7 @@ describe("settings search — backup / cloud / network tabs", () => {
       ["upload limit", "cloudSync.uploadLimitKBs"],
       ["throttle", "cloudSync.uploadLimitKBs"],
       ["sync on startup", "cloudSync.syncOnStartup"],
-      ["sync ssh keys", "cloudSync.syncSSHKeys"],
+      ["sync ssh keys", "cloudSync.selectedItems"],
     ])("%s resolves to %s", (query, key) => {
       expect(keys(query)).toContain(key);
     });

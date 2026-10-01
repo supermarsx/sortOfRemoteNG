@@ -1588,6 +1588,70 @@ export class SettingsManager {
     }
   }
 
+  /** Apply portable cloud preferences only after native exact-base persistence. */
+  async saveCloudSyncSettings(
+    patch: Partial<GlobalSettings>,
+    expectedPatch: Partial<GlobalSettings>,
+  ): Promise<void> {
+    const epoch = this.loadEpoch;
+    patch = structuredClone(patch);
+    expectedPatch = structuredClone(expectedPatch);
+    await this.ensureLoaded();
+    const allowed = new Set([
+      "language",
+      "theme",
+      "colorScheme",
+      "animationsEnabled",
+      "sidebarWidth",
+    ]);
+    const keys = [
+      ...new Set([...Object.keys(patch), ...Object.keys(expectedPatch)]),
+    ];
+    if (keys.some((key) => !allowed.has(key)))
+      throw new Error("Cloud settings contain unsupported preferences.");
+    if (epoch !== this.loadEpoch || this.storageLocked)
+      throw new Error("Unlock global settings before syncing preferences.");
+    const before = Object.fromEntries(
+      keys.map((key) => [key, this.settings[key as keyof GlobalSettings]]),
+    );
+    const safePatch = this.sanitizeSettingsPatch(patch);
+    const invoke = await tauriInvoke();
+    if (!invoke) throw new Error("Preference sync requires desktop storage.");
+    // No blind retry: a rejected comparison must remain a conflict, not become
+    // a last-writer-wins overwrite of the newly edited values.
+    const generation = await invoke<number>("write_app_settings", {
+      patch: safePatch,
+      expectedPatch,
+    });
+    try {
+      if (epoch !== this.loadEpoch || this.storageLocked)
+        throw new Error(
+          "Settings lock changed after cloud preferences were saved; reload settings.",
+        );
+      if (
+        keys.some(
+          (key) => this.settings[key as keyof GlobalSettings] !== before[key],
+        )
+      )
+        throw new Error(
+          "Preferences were edited while cloud sync completed. Local edits remain in memory; sync again after saving them.",
+        );
+      this.settings = { ...this.settings, ...safePatch };
+      await this.broadcastSettingsSync(safePatch, generation);
+    } catch (error) {
+      // The native CAS committed. Finalization failures are not safe to replay,
+      // and must not roll back persisted preferences or newer in-memory drafts.
+      throw Object.assign(
+        new Error(
+          error instanceof Error
+            ? error.message
+            : "Cloud preferences were saved, but finalization failed. Reload settings before retrying.",
+        ),
+        { kind: "partial" as const },
+      );
+    }
+  }
+
   /** Commit-confirmed, exact-base library patch; never installs failed vectors. */
   async saveIconLibrary(
     data: IconLibraryData,

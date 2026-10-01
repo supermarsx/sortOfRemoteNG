@@ -23,6 +23,12 @@ import { normalizeDatabaseSettings } from "../documents/documentTypePolicy";
 import { verifyDocumentAttachments } from "../documents/documentAttachments";
 import { normalizeRecycleBin } from "./recycleBin";
 import {
+  ArchiveDependencyCollector,
+  archiveDependencyPath,
+  formatArchiveDependencyDiagnostics,
+  type ArchiveDependencyDiagnostics,
+} from "./archiveDependencyDiagnostics";
+import {
   normalizeRecordLedger,
   reconcileRecordLedger,
 } from "../storage/recordLedger";
@@ -67,25 +73,40 @@ export class FullDatabaseArchiveError extends Error {
       | "password"
       | "protection"
       | "trust",
+    public readonly diagnostics?: ArchiveDependencyDiagnostics,
   ) {
     super(
-      {
-        format:
-          "Invalid, unsupported or oversized full database archive. No archive data was applied.",
-        dependencies:
-          "The full database archive has missing or external connection, credential, document or script dependencies. Include the owning database library and repair unresolved references before exporting or importing.",
-        "file-credential":
-          "A connection uses a device-local private-key file. Move the key material into this database's credential vault and select that credential before creating a portable full database archive.",
-        password:
-          "Full database archives require a password of 12–1024 characters that meets the export password policy.",
-        protection:
-          "Full database archives require a password-encrypted source and a new managed protected database. Connection-only append cannot restore a full database.",
-        trust:
-          "Full database trust records could not be read or restored. The operation is not a complete database backup or restore.",
-      }[code],
+      diagnostics
+        ? formatArchiveDependencyDiagnostics(diagnostics)
+        : {
+            format:
+              "Invalid, unsupported or oversized full database archive. No archive data was applied.",
+            dependencies:
+              "The full database archive has missing or external connection, credential, document or script dependencies. Include the owning database library and repair unresolved references before exporting or importing.",
+            "file-credential":
+              "A connection uses a device-local private-key file. Move the key material into this database's credential vault and select that credential before creating a portable full database archive.",
+            password:
+              "Full database archives require a password of 12–1024 characters that meets the export password policy.",
+            protection:
+              "Full database archives require a password-encrypted source and a new managed protected database. Connection-only append cannot restore a full database.",
+            trust:
+              "Full database trust records could not be read or restored. The operation is not a complete database backup or restore.",
+          }[code],
     );
     this.name = "FullDatabaseArchiveError";
   }
+}
+
+/** Only archive-authored diagnostics may enter sync status; never raw causes. */
+export function fullDatabaseArchiveErrorDetail(error: unknown): string {
+  let current = error;
+  for (let depth = 0; depth < 4; depth++) {
+    if (current instanceof FullDatabaseArchiveError)
+      return ` ${current.message}`;
+    if (!(current instanceof Error)) break;
+    current = (current as Error & { cause?: unknown }).cause;
+  }
+  return "";
 }
 const fail = (code: FullDatabaseArchiveError["code"] = "format"): never => {
   throw new FullDatabaseArchiveError(code);
@@ -234,6 +255,17 @@ const present = (value: unknown): boolean =>
   !(typeof value === "object" && value !== null && !Object.keys(value).length);
 
 function validateClosure(archive: FullDatabaseArchive): void {
+  const collector = new ArchiveDependencyCollector(archive.collection.id);
+  const rows = [
+    ...archive.connections.map((row, index) => ({
+      row,
+      path: `connections[${index}]`,
+    })),
+    ...archive.recycleBin.entries.map((entry, index) => ({
+      row: entry.connection,
+      path: `recycleBin.entries[${index}].connection`,
+    })),
+  ];
   const all = [
     ...archive.connections,
     ...archive.recycleBin.entries.map((entry) => entry.connection),
@@ -253,20 +285,45 @@ function validateClosure(archive: FullDatabaseArchive): void {
   const websiteScripts = new Set(library.website.scripts.map((row) => row.id));
   const websiteMacros = new Set(library.website.macros.map((row) => row.id));
   const groups = new Set(archive.tabGroups.map((row) => row.id));
-  const visitRoute = (value: unknown): void => {
+  const visitRoute = (
+    value: unknown,
+    recordId: string,
+    path: string,
+    relativePath = "",
+  ): void => {
     if (Array.isArray(value)) {
-      value.forEach(visitRoute);
+      value.forEach((item, index) =>
+        visitRoute(
+          item,
+          recordId,
+          `${path}[${index}]`,
+          `${relativePath}[${index}]`,
+        ),
+      );
       return;
     }
     if (!value || typeof value !== "object") return;
-    for (const [key, item] of Object.entries(value)) {
+    // These exact schema fields are scalar request/metadata dictionaries, not
+    // reference containers. A header called connectionId is just a header.
+    if (
+      (relativePath === "httpHeaders" &&
+        Object.values(value).every((item) => typeof item === "string")) ||
+      (relativePath === "integration.providerFields" &&
+        Object.values(value).every(
+          (item) =>
+            item === null ||
+            ["string", "number", "boolean"].includes(typeof item),
+        ))
+    )
+      return;
+    for (const [index, [key, item]] of Object.entries(value).entries()) {
       // This format carries no profile catalog; even malformed declarations
       // must not be treated as absent and later become an unconfigured route.
       if (
         (key === "proxyProfileId" || key === "tunnelProfileId") &&
         item !== undefined
       )
-        fail("dependencies");
+        collector.add(recordId, `${path}.${key}`, "external-route");
       // Connection/inline-route privateKey is a file path, while vault facet
       // privateKey is material (and is outside this route traversal). Keep an
       // ignored local value only when an explicit vault reference remains.
@@ -276,81 +333,130 @@ function validateClosure(archive: FullDatabaseArchive): void {
         (value as { credentialSource?: { kind?: string } }).credentialSource
           ?.kind !== "vault"
       )
-        fail("file-credential");
-      if (EXTERNAL_REFERENCES.has(key) && present(item)) fail("dependencies");
+        collector.add(recordId, `${path}.${key}`, "file-credential");
+      if (
+        EXTERNAL_REFERENCES.has(key) &&
+        present(item) &&
+        key !== "proxyProfileId" &&
+        key !== "tunnelProfileId"
+      )
+        collector.add(
+          recordId,
+          `${path}.${key}`,
+          /credential|vault|certificate|privateKey|agentSocket/i.test(key)
+            ? "external-credential"
+            : "external-route",
+        );
       if (
         key === "connectionId" &&
         present(item) &&
         (typeof item !== "string" || !connections.has(item))
       )
-        fail("dependencies");
+        collector.add(recordId, `${path}.${key}`, "connection", item);
       if (
         key === "defaultTabGroupId" &&
         present(item) &&
         (typeof item !== "string" || !groups.has(item))
       )
-        fail("dependencies");
-      visitRoute(item);
+        collector.add(recordId, `${path}.${key}`, "tab-group", item);
+      visitRoute(
+        item,
+        recordId,
+        archiveDependencyPath(path, key, index),
+        relativePath ? `${relativePath}.${key}` : key,
+      );
     }
   };
-  for (const row of all) {
+  for (const { row, path } of rows) {
     if (row.parentId && !connections.get(row.parentId)?.isGroup)
-      fail("dependencies");
+      collector.add(row.id, `${path}.parentId`, "folder", row.parentId);
     const source = normalizeConnectionCredentialSource(row.credentialSource);
     if (source?.kind === "vault") {
       const credential = credentials.get(source.credentialId);
-      if (
-        !credential ||
-        (source.totpId &&
-          !credential.facets.totp?.some((item) => item.id === source.totpId))
+      if (!credential)
+        collector.add(
+          row.id,
+          `${path}.credentialSource.credentialId`,
+          "credential",
+          source.credentialId,
+        );
+      else if (
+        source.totpId &&
+        !credential.facets.totp?.some((item) => item.id === source.totpId)
       )
-        fail("dependencies");
+        collector.add(
+          row.id,
+          `${path}.credentialSource.totpId`,
+          "totp",
+          source.totpId,
+        );
     }
-    for (const [config, scriptIds, macroIds] of [
+    for (const [field, config, scriptIds, macroIds] of [
       [
+        "sshQuickActions",
         normalizeSshQuickActions(row.sshQuickActions),
         terminalScripts,
         terminalMacros,
       ],
       [
+        "httpAutomation",
         normalizeHttpAutomation(row.httpAutomation),
         websiteScripts,
         websiteMacros,
       ],
     ] as const) {
-      for (const ref of config.items) {
+      for (const [index, ref] of config.items.entries()) {
         if (
           ref.scope?.kind !== "database" ||
-          ref.scope.databaseId !== archive.collection.id ||
-          !(ref.kind === "script" ? scriptIds : macroIds).has(ref.id)
+          ref.scope.databaseId !== archive.collection.id
         )
-          fail("dependencies");
+          collector.add(
+            row.id,
+            `${path}.${field}.items[${index}]`,
+            "external-script",
+            ref.id,
+          );
+        else if (!(ref.kind === "script" ? scriptIds : macroIds).has(ref.id))
+          collector.add(
+            row.id,
+            `${path}.${field}.items[${index}]`,
+            "script",
+            ref.id,
+          );
       }
     }
     // These legacy lifecycle actions resolve against SettingsManager's app
     // custom-script store, never the database automation library.
-    if (
-      Object.values(row.scripts ?? {}).some((items) => items?.length) ||
-      row.behaviorAutomation?.rules?.some((rule) =>
-        rule.actions.some((action) => action.type === "runCustomScript"),
-      )
-    )
-      fail("dependencies");
-    visitRoute(row);
+    if (Object.values(row.scripts ?? {}).some((items) => items?.length))
+      collector.add(row.id, `${path}.scripts`, "legacy-script");
+    row.behaviorAutomation?.rules?.forEach((rule, ruleIndex) =>
+      rule.actions.forEach((action, actionIndex) => {
+        if (action.type === "runCustomScript")
+          collector.add(
+            row.id,
+            `${path}.behaviorAutomation.rules[${ruleIndex}].actions[${actionIndex}]`,
+            "legacy-script",
+          );
+      }),
+    );
+    visitRoute(row, row.id, path);
   }
   // Folder cycles otherwise survive a nominally complete archive as an unusable tree.
   const done = new Set<string>();
-  for (const row of all) {
-    const path = new Set<string>();
+  for (const { row, path } of rows) {
+    const ancestors = new Set<string>();
     let current: Connection | undefined = row;
     while (current && !done.has(current.id)) {
-      if (path.has(current.id)) fail("dependencies");
-      path.add(current.id);
+      if (ancestors.has(current.id)) {
+        collector.add(row.id, `${path}.parentId`, "cycle", current.id);
+        break;
+      }
+      ancestors.add(current.id);
       current = current.parentId
         ? connections.get(current.parentId)
         : undefined;
     }
-    path.forEach((id) => done.add(id));
+    ancestors.forEach((id) => done.add(id));
   }
   const documents = archive.documents;
   const refs = {
@@ -359,12 +465,15 @@ function validateClosure(archive: FullDatabaseArchive): void {
     person: new Set(documents.people.map((row) => row.id)),
     ticket: new Set(documents.tickets.map((row) => row.id)),
   };
-  const checkRef = (ref: DocumentReference) => {
-    if (
-      ref.databaseId !== archive.collection.id ||
-      !refs[ref.kind === "cell" ? "document" : ref.kind].has(ref.id)
-    )
-      fail("dependencies");
+  const checkRef = (ref: DocumentReference, recordId: string, path: string) => {
+    if (ref.scope === "app" || ref.databaseId !== archive.collection.id) {
+      collector.add(recordId, path, "external-document", ref.id);
+      return;
+    }
+    if (!refs[ref.kind === "cell" ? "document" : ref.kind].has(ref.id)) {
+      collector.add(recordId, path, "document", ref.id);
+      return;
+    }
     if (ref.kind === "cell") {
       const block = documents.documents
         .find((row) => row.id === ref.id)
@@ -373,25 +482,48 @@ function validateClosure(archive: FullDatabaseArchive): void {
         block?.type !== "spreadsheet" ||
         !block.workbook.sheets.some((sheet) => sheet.id === ref.sheetId)
       )
-        fail("dependencies");
+        collector.add(recordId, path, "cell", ref.id);
     }
   };
-  const visitDocument = (value: unknown): void => {
+  const visitDocument = (
+    value: unknown,
+    recordId: string,
+    path: string,
+  ): void => {
     if (Array.isArray(value)) {
-      value.forEach(visitDocument);
+      value.forEach((item, index) =>
+        visitDocument(item, recordId, `${path}[${index}]`),
+      );
       return;
     }
     if (!value || typeof value !== "object") return;
     const row = value as Record<string, unknown>;
     if ("databaseId" in row && "kind" in row && "id" in row)
-      checkRef(row as unknown as DocumentReference);
-    Object.values(row).forEach(visitDocument);
+      checkRef(row as unknown as DocumentReference, recordId, path);
+    Object.entries(row).forEach(([key, item], index) =>
+      visitDocument(item, recordId, archiveDependencyPath(path, key, index)),
+    );
   };
-  for (const doc of documents.documents) {
+  for (const [index, doc] of documents.documents.entries()) {
     if (doc.parentFolderId && !connections.get(doc.parentFolderId)?.isGroup)
-      fail("dependencies");
+      collector.add(
+        doc.id,
+        `documents.documents[${index}].parentFolderId`,
+        "folder",
+        doc.parentFolderId,
+      );
   }
-  visitDocument(documents);
+  for (const category of ["documents", "people", "tickets"] as const)
+    documents[category].forEach((row, index) =>
+      visitDocument(row, row.id, `documents.${category}[${index}]`),
+    );
+  if (collector.diagnostics.totalIssues)
+    throw new FullDatabaseArchiveError(
+      collector.diagnostics.issues[0].reason === "file-credential"
+        ? "file-credential"
+        : "dependencies",
+      collector.diagnostics,
+    );
 }
 
 /** Normalize and verify the entire closure; credentials never pass generic redaction. */
