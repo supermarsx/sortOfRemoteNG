@@ -39,12 +39,12 @@ test("desktop CSP permits the protected loopback mediator without arbitrary HTTP
 
 test("native mediator ownership remains per returned session, never saved connection eviction", () => {
   const source = readFileSync(
-    new URL("src-tauri/crates/sorng-protocols/src/http_cmds.rs", root),
+    new URL("src-tauri/crates/sorng-protocols/src/http_proxy_start.rs", root),
     "utf8",
   );
   const start = source.slice(
-    source.indexOf("pub async fn start_basic_auth_proxy("),
-    source.indexOf("pub fn stop_basic_auth_proxy("),
+    source.indexOf("pub async fn start_proxy_session("),
+    source.indexOf("#[cfg(test)]", source.indexOf("pub async fn start_proxy_session(")),
   );
   assert.match(start, /let session_id = uuid::Uuid::new_v4\(\)/u);
   assert.match(start, /mgr\.sessions\.insert\(\s*session_id\.clone\(\)/u);

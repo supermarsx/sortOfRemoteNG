@@ -26,6 +26,11 @@ pub use proxy_transport::{fetch_tls_certificate_info, CertificateInspectionError
 mod proxy_transport_settings;
 pub use proxy_transport_settings::ProxyTransportSettings;
 
+#[path = "http_proxy_start.rs"]
+#[doc(hidden)]
+pub mod proxy_start;
+pub use proxy_start::start_proxy_session;
+
 #[path = "http_browser_compatibility.rs"]
 mod browser_compatibility;
 pub use browser_compatibility::BrowserCompatibility;
