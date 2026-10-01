@@ -14,7 +14,7 @@ interface SuspendedDatabase {
   access: DatabaseAccessState;
 }
 
-/** Access loss masks the existing editor tree; it never closes or reloads it. */
+/** Observe scoped access loss without locking the shell or opening an unlock UI. */
 export function useDatabaseAccessSuspension() {
   const manager = DatabaseManager.getInstance();
   const read = useCallback((): SuspendedDatabase | null => {
@@ -45,6 +45,7 @@ export function useDatabaseAccessSuspension() {
         request.current += 1;
         setStatus(null);
         setError(null);
+        setLoading(false);
       }
       latest.current = next;
       setSuspended(next);
@@ -91,11 +92,6 @@ export function useDatabaseAccessSuspension() {
       if (mounted.current && request.current === id) setLoading(false);
     }
   }, [manager]);
-  const key = identity(suspended);
-  useLayoutEffect(() => {
-    if (key) void inspect();
-  }, [key, inspect]);
-
   return {
     suspended,
     status,

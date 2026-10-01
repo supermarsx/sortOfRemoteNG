@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DatabaseAccessSuspensionScreen } from "../../src/components/encryption/DatabaseAccessSuspensionScreen";
+import { DatabaseAccessNotice } from "../../src/components/encryption/DatabaseAccessNotice";
 import { ManagedDatabaseUnlockForm } from "../../src/components/encryption/ManagedDatabaseUnlockForm";
 import { useDatabaseAccessSuspension } from "../../src/hooks/settings/useDatabaseAccessSuspension";
 import { ConfirmDialog } from "../../src/components/ui/dialogs/ConfirmDialog";
@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   globalUnlock: vi.fn(),
   globalLocked: false,
+  openSettings: vi.fn(),
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => {
   const manager = {
@@ -109,36 +110,52 @@ function emit(next: DatabaseAccessState) {
     mocks.accessListeners.forEach((listener) => listener());
   });
 }
+async function choosePassword() {
+  fireEvent.click(
+    await screen.findByRole("combobox", { name: "Database unlock method" }),
+  );
+  fireEvent.mouseDown(
+    screen.getByRole("option", { name: "Portable password (password)" }),
+  );
+  return screen.getByLabelText("Database password");
+}
 function Harness({ portal = false }: { portal?: boolean }) {
   const guard = useDatabaseAccessSuspension();
   const [draft, setDraft] = useState("saved value");
   return (
     <>
       <div
-        data-testid="editors"
-        hidden={guard.blocked}
-        inert={guard.blocked}
-        aria-hidden={guard.blocked || undefined}
+        data-testid="app-shell"
+        hidden={mocks.globalLocked}
+        inert={mocks.globalLocked}
       >
-        <label>
-          Unsaved editor
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+        <button onClick={mocks.openSettings}>Settings</button>
+        <div
+          data-testid="editors"
+          hidden={guard.blocked}
+          inert={guard.blocked}
+          aria-hidden={guard.blocked || undefined}
+        >
+          <label>
+            Unsaved editor
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          </label>
+        </div>
+        {portal && (
+          <ConfirmDialog
+            isOpen
+            message="Discard dirty work?"
+            onConfirm={mocks.close}
           />
-        </label>
-      </div>
-      {portal && (
-        <ConfirmDialog
-          isOpen
-          message="Discard dirty work?"
-          onConfirm={mocks.close}
+        )}
+        <DatabaseAccessNotice
+          access={guard}
+          globallyLocked={mocks.globalLocked}
         />
-      )}
-      <DatabaseAccessSuspensionScreen
-        access={guard}
-        globallyLocked={mocks.globalLocked}
-      />
+      </div>
       <UnlockScreen />
     </>
   );
@@ -160,11 +177,12 @@ describe("managed database access suspension boundary", () => {
     mocks.close.mockReset();
     mocks.load.mockReset();
     mocks.globalLocked = false;
+    mocks.openSettings.mockReset();
     mocks.globalUnlock.mockReset().mockResolvedValue("wrong-password");
   });
   afterEach(cleanup);
 
-  it("hides expired views and preserves their exact dirty state through explicit reauthentication", async () => {
+  it("keeps the shell usable while masking locked database views until explicit reauthentication", async () => {
     render(<Harness />);
     const editor = screen.getByLabelText("Unsaved editor");
     fireEvent.change(editor, { target: { value: "unsaved local edits" } });
@@ -172,11 +190,21 @@ describe("managed database access suspension boundary", () => {
     expect(screen.getByTestId("editors")).toHaveAttribute("hidden");
     expect(screen.getByTestId("editors")).toHaveAttribute("inert");
     expect(mocks.unlock).not.toHaveBeenCalled();
-    const password = await screen.findByLabelText("Database password");
+    expect(mocks.inspect).not.toHaveBeenCalled();
+    expect(screen.getByTestId("app-shell")).not.toHaveAttribute("hidden");
+    expect(screen.getByTestId("app-shell")).not.toHaveAttribute("inert");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Work database — Database locked.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(mocks.openSettings).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
+    const password = await choosePassword();
     fireEvent.change(password, { target: { value: "database-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
     await waitFor(() =>
-      expect(screen.queryByTestId("database-access-suspended")).toBeNull(),
+      expect(screen.queryByTestId("database-access-notice")).toBeNull(),
     );
     expect(mocks.unlock).toHaveBeenCalledWith(
       "work",
@@ -193,10 +221,11 @@ describe("managed database access suspension boundary", () => {
   it("keeps views inaccessible after native refusal and ignores an unvalidated ready notification", async () => {
     render(<Harness />);
     emit(access("suspended", "locked"));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
     mocks.unlock.mockRejectedValue(
       new Error("Native unlock rejected this credential"),
     );
-    fireEvent.change(await screen.findByLabelText("Database password"), {
+    fireEvent.change(await choosePassword(), {
       target: { value: "wrong" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
@@ -205,16 +234,28 @@ describe("managed database access suspension boundary", () => {
     );
     expect(screen.getByLabelText("Database password")).toHaveValue("");
     act(() => mocks.accessListeners.forEach((listener) => listener()));
-    expect(screen.getByTestId("database-access-suspended")).toBeInTheDocument();
+    expect(screen.getByTestId("database-access-notice")).toBeInTheDocument();
     expect(screen.getByTestId("editors")).toHaveAttribute("hidden");
   });
 
-  it("requires explicit OS-vault selection and never treats it as a master unlock", async () => {
+  it("defaults to OS vault but requires explicit unlock and never treats it as a master unlock", async () => {
     render(<Harness />);
     emit(access("suspended"));
-    fireEvent.change(await screen.findByLabelText("Database unlock method"), {
-      target: { value: "device" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
+    expect(
+      await screen.findByRole("combobox", { name: "Database unlock method" }),
+    ).toHaveTextContent("This computer (OS vault · this device)");
+    fireEvent.click(
+      await screen.findByRole("combobox", { name: "Database unlock method" }),
+    );
+    expect(screen.getByTestId("database-access-notice")).toContainElement(
+      screen.getByRole("listbox"),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "This computer (OS vault · this device)",
+      }),
+    );
     expect(mocks.unlock).not.toHaveBeenCalled();
     expect(screen.queryByLabelText("Database password")).toBeNull();
     expect(screen.getByText(/not a master-key unlock/)).toBeInTheDocument();
@@ -227,16 +268,17 @@ describe("managed database access suspension boundary", () => {
     expect(mocks.globalUnlock).not.toHaveBeenCalled();
   });
 
-  it("blocks background portal commands and gives the global master gate precedence", async () => {
+  it("does not intercept app actions, while the global master lock still takes precedence", async () => {
     const rendered = render(<Harness portal />);
     emit(access("suspended"));
-    const password = await screen.findByLabelText("Database password");
-    fireEvent.keyDown(password, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
+    const password = await choosePassword();
     fireEvent.click(screen.getByTestId("confirm-yes"));
-    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.close).toHaveBeenCalledOnce();
+    fireEvent.change(password, { target: { value: "not-submitted" } });
     mocks.globalLocked = true;
     rendered.rerender(<Harness portal />);
-    expect(screen.queryByTestId("database-access-suspended")).toBeNull();
+    expect(screen.queryByTestId("database-access-notice")).toBeNull();
     const global = screen.getByTestId("encryption-unlock-screen");
     expect(global).not.toHaveAttribute("inert");
     fireEvent.change(screen.getByLabelText("Master password"), {
@@ -272,11 +314,18 @@ describe("managed database access suspension boundary", () => {
     );
     render(<Harness />);
     emit(access("suspended"));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
     act(() => {
       mocks.current = { id: "other", name: "Other database" };
       mocks.access.set("other", access("suspended", "locked", "other"));
       mocks.currentListeners.forEach((listener) => listener());
     });
+    expect(screen.queryByText("New database method (password)")).toBeNull();
+    expect(screen.getByRole("button", { name: "Unlock…" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
     await screen.findByText("New database method (password)");
     await act(async () => resolveOld(protection));
     expect(screen.queryByText("Portable password (password)")).toBeNull();
@@ -285,22 +334,47 @@ describe("managed database access suspension boundary", () => {
     ).toBeInTheDocument();
   });
 
-  it("retains the blocking overlay on status-read failure with an explicit retry", async () => {
+  it("keeps the shell usable on status-read failure and offers an explicit retry", async () => {
     mocks.inspect.mockRejectedValueOnce(
       new Error("Could not inspect native database"),
     );
     render(<Harness />);
     emit(access("suspended"));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Could not inspect native database",
     );
     expect(screen.getByTestId("editors")).toHaveAttribute("hidden");
+    expect(screen.getByTestId("app-shell")).not.toHaveAttribute("inert");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(mocks.openSettings).toHaveBeenCalledOnce();
     fireEvent.click(
       screen.getByRole("button", { name: "Refresh unlock methods" }),
     );
     expect(
-      await screen.findByLabelText("Database password"),
-    ).toBeInTheDocument();
+      await screen.findByRole("combobox", { name: "Database unlock method" }),
+    ).toHaveTextContent("OS vault");
+    expect(mocks.unlock).not.toHaveBeenCalled();
+  });
+
+  it("never steals focus on lock and clears entered passwords when unlock options are hidden", async () => {
+    render(<Harness />);
+    const settings = screen.getByRole("button", { name: "Settings" });
+    settings.focus();
+    emit(access("suspended"));
+    expect(settings).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
+    fireEvent.change(await choosePassword(), {
+      target: { value: "unsent-secret" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Hide unlock options" }),
+    );
+    expect(screen.queryByLabelText("Database password")).toBeNull();
+    expect(screen.getByTestId("database-access-notice")).toBeInTheDocument();
+    expect(mocks.unlock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
+    expect(await choosePassword()).toHaveValue("");
   });
 
   it("ignores a completed authentication after its selection form unmounts", async () => {
@@ -319,7 +393,7 @@ describe("managed database access suspension boundary", () => {
         onUnlockComplete={completed}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Database password"), {
+    fireEvent.change(await choosePassword(), {
       target: { value: "fixture" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
@@ -346,7 +420,7 @@ describe("managed database access suspension boundary", () => {
         onUnlockComplete={completed}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Database password"), {
+    fireEvent.change(await choosePassword(), {
       target: { value: "old-scope-secret" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
@@ -359,8 +433,9 @@ describe("managed database access suspension boundary", () => {
       />,
     );
     expect(validity()).toBe(false);
-    expect(screen.getByLabelText("Database password")).toHaveValue("");
+    expect(screen.queryByLabelText("Database password")).toBeNull();
     await act(async () => resolve());
     expect(completed).not.toHaveBeenCalled();
+    expect(await choosePassword()).toHaveValue("");
   });
 });

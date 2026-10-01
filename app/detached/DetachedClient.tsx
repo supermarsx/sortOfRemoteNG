@@ -86,7 +86,7 @@ import {
 import { MemoryWatchdogController } from "../../src/components/app/MemoryWatchdogController";
 import { UnlockScreen } from "../../src/components/encryption/UnlockScreen";
 import { SettingsStorageNotice } from "../../src/components/encryption/SettingsStorageNotice";
-import { DatabaseAccessSuspensionScreen } from "../../src/components/encryption/DatabaseAccessSuspensionScreen";
+import { DatabaseAccessNotice } from "../../src/components/encryption/DatabaseAccessNotice";
 import { useDatabaseAccessSuspension } from "../../src/hooks/settings/useDatabaseAccessSuspension";
 import { useGlobalEncryptionGuard } from "../../src/hooks/settings/useGlobalEncryptionGuard";
 import { useLockShortcut } from "../../src/hooks/settings/useLockShortcut";
@@ -2311,19 +2311,17 @@ const DetachedSecurityBoundary: React.FC<{ children: React.ReactNode }> = ({
     <>
       {!locked && (
         <div
-          hidden={databaseAccess.blocked}
-          inert={databaseAccess.blocked}
-          aria-hidden={databaseAccess.blocked || undefined}
-          style={{ display: databaseAccess.blocked ? "none" : "contents" }}
+          className="flex h-full min-h-0 flex-col"
+          data-testid="detached-app-shell"
         >
-          {children}
+          <DatabaseAccessNotice
+            access={databaseAccess}
+            globallyLocked={locked}
+          />
+          <div className="min-h-0 flex-1">{children}</div>
         </div>
       )}
       <SettingsStorageNotice />
-      <DatabaseAccessSuspensionScreen
-        access={databaseAccess}
-        globallyLocked={locked}
-      />
       <UnlockScreen />
     </>
   );
