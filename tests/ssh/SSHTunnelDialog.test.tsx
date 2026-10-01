@@ -14,6 +14,10 @@ import {
 } from "../../src/contexts/ConnectionContextTypes";
 import type { Connection } from "../../src/types/connection/connection";
 
+vi.mock("../../src/contexts/SettingsContext", () => ({
+  useSettings: () => ({ settings: {} }),
+}));
+
 vi.mock("../../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
@@ -60,6 +64,51 @@ describe("SSHTunnelDialog", () => {
 
   const renderWithProvider = (ui: React.ReactElement) =>
     render(<ConnectionProvider>{ui}</ConnectionProvider>);
+
+  it("themes standalone credentials, password reveal, and labeled bind controls", () => {
+    const { container } = renderWithProvider(
+      <SSHTunnelDialog
+        isOpen
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        sshConnections={[]}
+      />,
+    );
+    const password = screen.getByLabelText("SSH password");
+    expect(password).toHaveClass("sor-form-input");
+    expect(password.parentElement).toHaveClass("relative", "w-full");
+    expect(password).toHaveStyle({ paddingRight: "2.25rem" });
+    fireEvent.change(password, { target: { value: "draft-secret" } });
+    fireEvent.click(
+      within(password.parentElement!).getByRole("button", {
+        name: "Show password",
+      }),
+    );
+    expect(password).toHaveAttribute("type", "text");
+    fireEvent.click(
+      within(password.parentElement!).getByRole("button", {
+        name: "Hide password",
+      }),
+    );
+    expect(password).toHaveAttribute("type", "password");
+    expect(screen.getByLabelText("Local Port")).toHaveClass("sor-form-input");
+    expect(container.querySelector(".sor-input")).toBeNull();
+    const type = screen.getByRole("combobox", { name: "Tunnel Type" });
+    expect(type).toHaveClass("sor-form-select");
+    fireEvent.click(type);
+    expect(
+      screen.getByRole("listbox").closest(".sor-select-dropdown"),
+    ).toHaveClass("sor-popover-panel");
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Dynamic (SOCKS proxy)" }),
+    );
+    expect(screen.queryByLabelText("Remote Port")).not.toBeInTheDocument();
+    const bind = screen.getByRole("checkbox", { name: /Allow binding/ });
+    expect(bind).not.toBeChecked();
+    expect(bind).toHaveClass("sor-form-checkbox");
+    fireEvent.click(screen.getByText(/Allow binding to non-loopback/));
+    expect(bind).toBeChecked();
+  });
 
   it("does not reset a standalone draft when saved SSH connections become available", () => {
     const props = { isOpen: true, onClose: vi.fn(), onSave: vi.fn() };

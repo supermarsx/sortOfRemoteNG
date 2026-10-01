@@ -157,7 +157,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
             disabled={
               !editor.metadata.name.trim() || editor.layers.length === 0
             }
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-[var(--color-primary)] hover:bg-[var(--color-primaryHover)] text-white disabled:opacity-40 transition-colors"
+            className="sor-btn sor-btn-primary sor-btn-sm"
           >
             <Save size={12} />{" "}
             {editingChainId
@@ -166,18 +166,19 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
           </button>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
+            aria-label={t("proxyChainMenu.common.close", "Close")}
+            className="sor-icon-btn"
           >
             <X size={14} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto w-full max-w-3xl mx-auto p-4 sm:p-6 space-y-5">
         {/* Metadata */}
         <div className="space-y-3">
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+            <label className="sor-form-label">
               {t("proxyChainMenu.tunnelChainEditor.nameLabel", "Name *")}
             </label>
             <input
@@ -188,12 +189,12 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                 "proxyChainMenu.tunnelChainEditor.namePlaceholder",
                 "e.g. Office VPN + Jump Host",
               )}
-              className="w-full px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+              className="sor-form-input min-w-0 text-sm"
               autoFocus
             />
           </div>
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+            <label className="sor-form-label">
               {t(
                 "proxyChainMenu.tunnelChainEditor.descriptionLabel",
                 "Description",
@@ -209,11 +210,11 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                 "Optional description...",
               )}
               rows={2}
-              className="w-full px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] resize-none"
+              className="sor-form-textarea text-sm resize-y"
             />
           </div>
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+            <label className="sor-form-label">
               {t("proxyChainMenu.tunnelChainEditor.tagsLabel", "Tags")}
             </label>
             <div className="flex items-center gap-1 flex-wrap">
@@ -225,7 +226,8 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                   {tag}
                   <button
                     onClick={() => handleRemoveTag(tag)}
-                    className="hover:text-[var(--color-danger)]"
+                    aria-label={`Remove tag ${tag}`}
+                    className="sor-icon-btn-danger"
                   >
                     <X size={10} />
                   </button>
@@ -245,7 +247,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                   "proxyChainMenu.tunnelChainEditor.tagPlaceholder",
                   "Add tag...",
                 )}
-                className="px-2 py-0.5 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] w-24"
+                className="sor-form-input-sm w-40 min-w-0"
               />
             </div>
           </div>
@@ -266,7 +268,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
             {editor.isDirty && (
               <button
                 onClick={() => editor.clearLayers()}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] transition-colors"
+                className="sor-btn sor-btn-secondary sor-btn-sm"
               >
                 <RotateCcw size={12} />{" "}
                 {t("proxyChainMenu.tunnelChainEditor.reset", "Reset")}
@@ -281,7 +283,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                     setShowProfileMenu(!showProfileMenu);
                     setShowAddMenu(false);
                   }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] transition-colors"
+                  className="sor-btn sor-btn-secondary sor-btn-sm"
                 >
                   <UserPlus size={12} />{" "}
                   {t(
@@ -316,7 +318,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                   setShowAddMenu(!showAddMenu);
                   setShowProfileMenu(false);
                 }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md bg-[var(--color-primary)] hover:bg-[var(--color-primaryHover)] text-white transition-colors"
+                className="sor-btn sor-btn-primary sor-btn-sm"
               >
                 <Plus size={12} />{" "}
                 {t("proxyChainMenu.tunnelChainEditor.addLayer", "Add Layer")}
@@ -403,7 +405,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                   )}
                   <button
                     onClick={() => editor.toggleLayer(layer.id)}
-                    className="p-1 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
+                    className="sor-icon-btn"
                     title={
                       layer.enabled
                         ? t(
@@ -420,21 +422,24 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                   </button>
                   <button
                     onClick={() => editor.moveLayer(layer.id, "up")}
+                    aria-label="Move layer up"
                     disabled={idx === 0}
-                    className="p-1 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] disabled:opacity-30"
+                    className="sor-icon-btn"
                   >
                     <ChevronUp size={12} />
                   </button>
                   <button
                     onClick={() => editor.moveLayer(layer.id, "down")}
+                    aria-label="Move layer down"
                     disabled={idx === editor.layers.length - 1}
-                    className="p-1 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] disabled:opacity-30"
+                    className="sor-icon-btn"
                   >
                     <ChevronDown size={12} />
                   </button>
                   <button
                     onClick={() => editor.removeLayer(layer.id)}
-                    className="p-1 rounded hover:bg-red-500/15 text-[var(--color-textSecondary)] hover:text-red-400"
+                    aria-label="Remove layer"
+                    className="sor-icon-btn-danger"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -455,7 +460,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                             name: e.target.value || undefined,
                           })
                         }
-                        className="w-full px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] mb-2"
+                        className="sor-form-input min-w-0 text-sm"
                       />
                     </div>
                     <LayerConfigForm

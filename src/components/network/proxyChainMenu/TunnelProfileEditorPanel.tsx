@@ -214,7 +214,7 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
           <button
             onClick={handleSave}
             disabled={!name.trim()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-[var(--color-primary)] hover:bg-[var(--color-primaryHover)] text-white disabled:opacity-40 transition-colors"
+            className="sor-btn sor-btn-primary sor-btn-sm"
           >
             <Save size={12} />{" "}
             {editingProfileId
@@ -223,18 +223,19 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
           </button>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
+            aria-label={t("proxyChainMenu.common.close", "Close")}
+            className="sor-icon-btn"
           >
             <X size={14} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto w-full max-w-3xl mx-auto p-4 sm:p-6 space-y-5">
         {/* Metadata */}
         <div className="space-y-3">
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+            <label className="sor-form-label">
               {t("proxyChainMenu.tunnelProfileEditor.nameLabel", "Name *")}
             </label>
             <input
@@ -245,12 +246,12 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
                 "proxyChainMenu.tunnelProfileEditor.namePlaceholder",
                 "e.g. Office WireGuard, Bastion SSH",
               )}
-              className="w-full px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+              className="sor-form-input min-w-0 text-sm"
               autoFocus
             />
           </div>
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+            <label className="sor-form-label">
               {t(
                 "proxyChainMenu.tunnelProfileEditor.descriptionLabel",
                 "Description",
@@ -264,11 +265,11 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
                 "Optional description...",
               )}
               rows={2}
-              className="w-full px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] resize-none"
+              className="sor-form-textarea text-sm resize-y"
             />
           </div>
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+            <label className="sor-form-label">
               {t("proxyChainMenu.tunnelProfileEditor.tagsLabel", "Tags")}
             </label>
             <div className="flex items-center gap-1 flex-wrap">
@@ -280,7 +281,8 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
                   {tag}
                   <button
                     onClick={() => handleRemoveTag(tag)}
-                    className="hover:text-[var(--color-danger)]"
+                    aria-label={`Remove tag ${tag}`}
+                    className="sor-icon-btn-danger"
                   >
                     <X size={10} />
                   </button>
@@ -300,7 +302,7 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
                   "proxyChainMenu.tunnelProfileEditor.tagPlaceholder",
                   "Add tag...",
                 )}
-                className="px-2 py-0.5 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] w-24"
+                className="sor-form-input-sm w-40 min-w-0"
               />
             </div>
           </div>
@@ -308,7 +310,7 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
 
         {/* Tunnel Type Selector */}
         <div className="border-t border-[var(--color-border)] pt-4">
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-2">
+          <label className="sor-form-label">
             {t(
               "proxyChainMenu.tunnelProfileEditor.tunnelTypeLabel",
               "Tunnel Type",
@@ -325,10 +327,11 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
                     <button
                       key={opt.value}
                       onClick={() => handleTypeChange(opt.value)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md border transition-colors ${
+                      aria-pressed={selectedType === opt.value}
+                      className={`sor-btn sor-btn-sm ${
                         selectedType === opt.value
-                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
-                          : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+                          ? "sor-btn-primary"
+                          : "sor-btn-secondary"
                       }`}
                     >
                       {opt.icon} {opt.label}

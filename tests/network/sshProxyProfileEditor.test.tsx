@@ -10,6 +10,10 @@ import { SshJumpLayerConfig } from "../../src/components/network/proxyChainMenu/
 import type { SavedProxyProfile } from "../../src/types/settings/settings";
 import type { Connection } from "../../src/types/connection/connection";
 
+vi.mock("../../src/contexts/SettingsContext", () => ({
+  useSettings: () => ({ settings: {} }),
+}));
+
 afterEach(cleanup);
 const base = {
   id: "base",

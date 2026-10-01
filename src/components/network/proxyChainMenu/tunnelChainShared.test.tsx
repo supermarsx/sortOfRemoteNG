@@ -54,12 +54,13 @@ describe("saved tunnel VPN profile selector", () => {
     );
 
     const selector = screen.getByRole("combobox");
-    expect(selector).toHaveValue("legacy-tailnet");
+    expect(selector).toHaveClass("sor-form-select");
     expect(screen.getByText(/Unavailable profile/)).toBeInTheDocument();
+    fireEvent.click(selector);
     expect(screen.getByText(/Office Tailnet/)).toBeInTheDocument();
     expect(screen.queryByText(/Office WireGuard/)).not.toBeInTheDocument();
 
-    fireEvent.change(selector, { target: { value: "tailscale-office" } });
+    fireEvent.mouseDown(screen.getByRole("option", { name: /Office Tailnet/ }));
     expect(onUpdate).toHaveBeenCalledWith({
       vpn: { configId: "tailscale-office", configFile: undefined },
       mesh: {
@@ -114,7 +115,8 @@ describe("saved tunnel VPN profile selector", () => {
         />,
       );
 
-      expect(screen.getByRole("combobox")).toHaveTextContent(
+      fireEvent.click(screen.getByRole("combobox"));
+      expect(screen.getByRole("listbox")).toHaveTextContent(
         `${vpnType} Office`,
       );
     },
@@ -149,8 +151,13 @@ describe("saved tunnel VPN profile selector", () => {
       />,
     );
 
-    expect(screen.getByRole("option", { name: /IKE Office/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("combobox"));
+    expect(screen.getByRole("option", { name: /IKE Office/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(screen.getByRole("status")).toHaveTextContent(profileReason);
+    fireEvent.click(screen.getByRole("combobox"));
 
     rerender(
       <VpnLayerConfig
@@ -177,7 +184,10 @@ describe("saved tunnel VPN profile selector", () => {
       />,
     );
 
-    expect(screen.getByRole("option", { name: /IPsec Office/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("combobox"));
+    expect(
+      screen.getByRole("option", { name: /IPsec Office/ }),
+    ).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("status")).toHaveTextContent(platformReason);
   });
 

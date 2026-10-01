@@ -16,6 +16,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { PasswordInput, Select } from "../ui/forms";
 import {
   useVpnEditor,
   type VpnEditorSecretField,
@@ -36,10 +37,8 @@ type Mgr = ReturnType<typeof useVpnEditor>;
 
 // ── CSS helpers ─────────────────────────────────────────────────
 
-const inputCls =
-  "w-full px-3 py-2 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)]";
-const labelCls =
-  "block text-xs font-medium text-[var(--color-textSecondary)] mb-1.5";
+const inputCls = "sor-form-input text-sm min-w-0";
+const labelCls = "sor-form-label";
 const sectionCls = "space-y-4";
 const sectionHeadingCls =
   "text-sm font-medium text-[var(--color-text)] pb-2 border-b border-[var(--color-border)]";
@@ -77,7 +76,7 @@ function FormField({
   span?: number;
 }) {
   return (
-    <div className={span === 2 ? "col-span-2" : ""}>
+    <div className={span === 2 ? "min-w-0 sm:col-span-2" : "min-w-0"}>
       <label className={labelCls}>{label}</label>
       {children}
     </div>
@@ -115,7 +114,7 @@ function BrowseField({
         type="button"
         onClick={handleBrowse}
         aria-label={`Browse for ${label}`}
-        className="px-3 py-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] transition-colors"
+        className="sor-btn sor-btn-secondary sor-btn-sm"
         title="Browse"
       >
         <FolderOpen size={14} />
@@ -134,12 +133,12 @@ function SecretStatus({
   const state = mgr.getSecretState(field);
   if (state.clearRequested) {
     return (
-      <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-amber-400">
+      <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-warning">
         <span>Stored secret will be cleared when this profile is updated.</span>
         <button
           type="button"
           onClick={() => mgr.undoClearSecret(field)}
-          className="shrink-0 hover:text-amber-300"
+          className="shrink-0 hover:text-warning"
         >
           Undo clear
         </button>
@@ -148,7 +147,7 @@ function SecretStatus({
   }
   if (state.replacementEntered) {
     return (
-      <p className="mt-1 text-[11px] text-sky-300">
+      <p className="mt-1 text-[11px] text-info">
         {state.stored
           ? "New value will replace the stored secret."
           : "New secret will be stored securely."}
@@ -157,12 +156,12 @@ function SecretStatus({
   }
   if (!state.stored) return null;
   return (
-    <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-emerald-400">
+    <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-success">
       <span>Stored securely. Leave blank to keep this secret.</span>
       <button
         type="button"
         onClick={() => mgr.clearSecret(field)}
-        className="shrink-0 text-red-300 hover:text-red-200"
+        className="sor-btn sor-btn-danger sor-btn-sm shrink-0"
       >
         Clear stored secret
       </button>
@@ -184,20 +183,22 @@ function VpnRoutingSection({ mgr }: { mgr: Mgr }) {
         Routing
       </div>
       <FormField label="Traffic Routing">
-        <select
+        <Select
+          label="Traffic Routing"
+          variant="form"
           value={routingMode}
-          onChange={(event) => {
-            const nextMode = event.target.value as "full" | "split";
+          onChange={(value) => {
+            const nextMode = value as "full" | "split";
             mgr.updateConfig({
               routingMode: nextMode,
               remoteSubnets: nextMode === "full" ? [] : remoteSubnets,
             });
           }}
-          className={inputCls}
-        >
-          <option value="full">Full tunnel — route all traffic</option>
-          <option value="split">Split tunnel — route selected networks</option>
-        </select>
+          options={[
+            { value: "full", label: "Full tunnel — route all traffic" },
+            { value: "split", label: "Split tunnel — route selected networks" },
+          ]}
+        />
       </FormField>
       {routingMode === "split" && (
         <FormField label="Remote Subnets *">
@@ -378,7 +379,7 @@ const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-controls={open ? "vpn-type-options" : undefined}
-          className="w-full flex items-center gap-2.5 px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm hover:border-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 transition-all disabled:cursor-not-allowed disabled:opacity-70"
+          className="sor-form-select sor-select-trigger gap-2.5 text-sm"
         >
           <SelectedIcon
             size={17}
@@ -407,12 +408,12 @@ const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         )}
 
         {open && (
-          <div className="absolute z-50 left-0 right-0 mt-1 flex max-h-72 flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
-            <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+          <div className="sor-select-dropdown sor-popover-panel absolute z-50 left-0 right-0 mt-1 flex max-h-72 flex-col overflow-hidden">
+            <div className="sor-select-search">
               <Search
                 size={15}
                 aria-hidden="true"
-                className="text-[var(--color-textMuted)]"
+                className="sor-select-search-icon"
               />
               <input
                 ref={searchRef}
@@ -442,7 +443,7 @@ const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 onKeyDown={handleSearchKeyDown}
                 autoComplete="off"
                 placeholder="Search VPN providers…"
-                className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none"
+                className="sor-select-search-input"
               />
               {query && (
                 <button
@@ -463,7 +464,7 @@ const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               id="vpn-type-options"
               role="listbox"
               aria-label="Available VPN types"
-              className="overflow-y-auto py-1"
+              className="sor-select-dropdown-scroll"
             >
               {visibleTypes.map((type, index) => {
                 const Icon = type.icon;
@@ -482,12 +483,12 @@ const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     tabIndex={-1}
                     onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => choose(type.value)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                    className={`sor-select-option w-full gap-2.5 text-left ${
                       isSelected
-                        ? "bg-primary/15 text-primary"
+                        ? "sor-select-option-selected"
                         : isActive
-                          ? "bg-[var(--color-surfaceHover)] text-[var(--color-text)]"
-                          : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+                          ? "sor-select-option-highlighted"
+                          : ""
                     }`}
                   >
                     <Icon size={16} aria-hidden="true" className="shrink-0" />
@@ -647,7 +648,7 @@ function OpenVpnManualServerSection({
                         remotes.filter((_, itemIndex) => itemIndex !== index),
                       )
                     }
-                    className="rounded p-1 text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                    className="sor-icon-btn-danger"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -691,31 +692,32 @@ function OpenVpnManualServerSection({
                     className={inputCls}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label
                     className={labelCls}
                     htmlFor={`openvpn-remote-protocol-${index}`}
                   >
                     Protocol
                   </label>
-                  <select
+                  <Select
+                    label="Protocol"
+                    variant="form"
                     id={`openvpn-remote-protocol-${index}`}
                     value={remote.protocol}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       updateRemote(index, {
-                        protocol: event.target
-                          .value as OpenVpnRemoteDraft["protocol"],
+                        protocol: value as OpenVpnRemoteDraft["protocol"],
                       })
                     }
-                    className={inputCls}
-                  >
-                    <option value="udp">UDP</option>
-                    <option value="udp4">UDP IPv4</option>
-                    <option value="tcp">TCP</option>
-                    <option value="tcp4">TCP IPv4</option>
-                    <option value="udp6">UDP IPv6</option>
-                    <option value="tcp6">TCP IPv6</option>
-                  </select>
+                    options={[
+                      { value: "udp", label: "UDP" },
+                      { value: "udp4", label: "UDP IPv4" },
+                      { value: "tcp", label: "TCP" },
+                      { value: "tcp4", label: "TCP IPv4" },
+                      { value: "udp6", label: "UDP IPv6" },
+                      { value: "tcp6", label: "TCP IPv6" },
+                    ]}
+                  />
                 </div>
               </div>
             </div>
@@ -726,7 +728,7 @@ function OpenVpnManualServerSection({
           onClick={() =>
             setRemotes([...remotes, { host: "", port: 1194, protocol: "udp" }])
           }
-          className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+          className="sor-btn sor-btn-secondary sor-btn-sm"
         >
           <Plus size={13} /> Add remote
         </button>
@@ -734,6 +736,7 @@ function OpenVpnManualServerSection({
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.remoteRandom ?? false}
               disabled={remotes.length < 2}
               onChange={(event) => up("remoteRandom", event.target.checked)}
@@ -743,6 +746,7 @@ function OpenVpnManualServerSection({
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.remoteRandomHostname ?? false}
               onChange={(event) =>
                 up("remoteRandomHostname", event.target.checked)
@@ -753,6 +757,7 @@ function OpenVpnManualServerSection({
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.resolveRetryInfinite ?? true}
               onChange={(event) =>
                 up("resolveRetryInfinite", event.target.checked)
@@ -767,16 +772,18 @@ function OpenVpnManualServerSection({
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Transport & security
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Device type">
-            <select
+            <Select
+              label="Device type"
+              variant="form"
               value={config.deviceType ?? "tun"}
-              onChange={(event) => up("deviceType", event.target.value)}
-              className={inputCls}
-            >
-              <option value="tun">TUN — routed IP tunnel</option>
-              <option value="tap">TAP — Ethernet bridge</option>
-            </select>
+              onChange={(value) => up("deviceType", value)}
+              options={[
+                { value: "tun", label: "TUN — routed IP tunnel" },
+                { value: "tap", label: "TAP — Ethernet bridge" },
+              ]}
+            />
           </FormField>
           <FormField label="Device name">
             <input
@@ -815,19 +822,19 @@ function OpenVpnManualServerSection({
             />
           </FormField>
           <FormField label="Minimum TLS version">
-            <select
+            <Select
+              label="Minimum TLS version"
+              variant="form"
               value={config.tlsVersionMin ?? ""}
-              onChange={(event) =>
-                up("tlsVersionMin", event.target.value || undefined)
-              }
-              className={inputCls}
-            >
-              <option value="">OpenVPN default</option>
-              <option value="1.0">TLS 1.0</option>
-              <option value="1.1">TLS 1.1</option>
-              <option value="1.2">TLS 1.2</option>
-              <option value="1.3">TLS 1.3</option>
-            </select>
+              onChange={(value) => up("tlsVersionMin", value || undefined)}
+              options={[
+                { value: "", label: "OpenVPN default" },
+                { value: "1.0", label: "TLS 1.0" },
+                { value: "1.1", label: "TLS 1.1" },
+                { value: "1.2", label: "TLS 1.2" },
+                { value: "1.3", label: "TLS 1.3" },
+              ]}
+            />
           </FormField>
           <FormField label="Verify server name">
             <input
@@ -840,22 +847,24 @@ function OpenVpnManualServerSection({
             />
           </FormField>
           <FormField label="Server name match">
-            <select
-              aria-label="Server name match"
+            <Select
+              label="Server name match"
+              variant="form"
               value={config.verifyX509Type ?? "name"}
-              onChange={(event) => up("verifyX509Type", event.target.value)}
+              onChange={(value) => up("verifyX509Type", value)}
               disabled={!config.verifyX509Name}
-              className={inputCls}
-            >
-              <option value="name">Certificate name (CN/RDN)</option>
-              <option value="subject">Full certificate subject</option>
-              <option value="name-prefix">Certificate name prefix</option>
-            </select>
+              options={[
+                { value: "name", label: "Certificate name (CN/RDN)" },
+                { value: "subject", label: "Full certificate subject" },
+                { value: "name-prefix", label: "Certificate name prefix" },
+              ]}
+            />
           </FormField>
         </div>
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.remoteCertTls ?? true}
             onChange={(event) => up("remoteCertTls", event.target.checked)}
           />
@@ -919,6 +928,7 @@ function OpenVpnNetworkSection({
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.routeNoPull ?? false}
             onChange={(event) =>
               updateConfig({ routeNoPull: event.target.checked })
@@ -929,6 +939,7 @@ function OpenVpnNetworkSection({
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.redirectGateway ?? false}
             onChange={(event) => {
               const redirectGateway = event.target.checked;
@@ -948,6 +959,7 @@ function OpenVpnNetworkSection({
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.blockOutsideDns ?? false}
               disabled={!isWindows && config.blockOutsideDns !== true}
               onChange={(event) =>
@@ -957,7 +969,7 @@ function OpenVpnNetworkSection({
             <span>
               Block outside DNS (Windows only)
               {!isWindows && config.blockOutsideDns === true && (
-                <span className="block text-[11px] text-amber-400">
+                <span className="block text-[11px] text-warning">
                   This stored setting is unsupported here; uncheck it before
                   using this profile on this platform.
                 </span>
@@ -977,6 +989,7 @@ function OpenVpnNetworkSection({
               <label key={option.value} className={checkCls}>
                 <input
                   type="checkbox"
+                  className="sor-form-checkbox"
                   checked={redirectGatewayFlags.includes(option.value)}
                   onChange={(event) => {
                     let next = event.target.checked
@@ -1012,7 +1025,7 @@ function OpenVpnNetworkSection({
                 route: [...routes, { network: "", netmask: "", gateway: "" }],
               })
             }
-            className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+            className="sor-btn sor-btn-secondary sor-btn-sm"
           >
             <Plus size={12} /> Add route
           </button>
@@ -1060,7 +1073,7 @@ function OpenVpnNetworkSection({
                   route: routes.filter((_, routeIndex) => routeIndex !== index),
                 })
               }
-              className="flex items-center justify-center rounded-md border border-[var(--color-border)] text-red-400 hover:bg-red-500/10"
+              className="sor-icon-btn-danger"
             >
               <Trash2 size={13} />
             </button>
@@ -1080,7 +1093,7 @@ function OpenVpnNetworkSection({
                 dns: [...dnsEntries, { server: "", domain: "" }],
               })
             }
-            className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+            className="sor-btn sor-btn-secondary sor-btn-sm"
           >
             <Plus size={12} /> Add DNS server
           </button>
@@ -1121,7 +1134,7 @@ function OpenVpnNetworkSection({
                   ),
                 })
               }
-              className="flex items-center justify-center rounded-md border border-[var(--color-border)] text-red-400 hover:bg-red-500/10"
+              className="sor-icon-btn-danger"
             >
               <Trash2 size={13} />
             </button>
@@ -1145,7 +1158,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   return (
     <div className="space-y-5">
       {hasConfigSource && (
-        <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-[var(--color-textSecondary)]">
+        <div className="rounded-md border border-info/30 bg-info/10 p-3 text-xs text-[var(--color-textSecondary)]">
           The selected OpenVPN configuration is authoritative for server,
           certificate, TLS, routing, and custom options. Only the authentication
           override below is applied separately.
@@ -1164,7 +1177,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Authentication
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Username">
             <input
               type="text"
@@ -1175,8 +1188,9 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
           </FormField>
           <FormField label="Password">
-            <input
-              type="password"
+            <PasswordInput
+              aria-label="Password"
+              autoComplete="new-password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
               placeholder={
@@ -1218,7 +1232,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 <button
                   type="button"
                   onClick={() => up("inlineConfig", undefined)}
-                  className="shrink-0 text-sky-300 hover:text-sky-200"
+                  className="shrink-0 text-info hover:text-[var(--color-text)]"
                 >
                   Switch to manual
                 </button>
@@ -1245,7 +1259,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </p>
           )}
           {inlineState.stored && !inlineState.replacementEntered ? (
-            <p className="mt-1 text-[11px] text-emerald-400">
+            <p className="mt-1 text-[11px] text-success">
               Stored securely. Leave blank to keep it, or paste a complete
               replacement configuration.
             </p>
@@ -1309,6 +1323,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
+                className="sor-form-checkbox"
                 checked={config.tlsAuth ?? false}
                 onChange={(e) =>
                   updateConfig({
@@ -1324,6 +1339,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
+                className="sor-form-checkbox"
                 checked={config.tlsCrypt ?? false}
                 onChange={(e) =>
                   updateConfig({
@@ -1339,6 +1355,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
+                className="sor-form-checkbox"
                 checked={config.compression ?? false}
                 onChange={(e) => up("compression", e.target.checked)}
               />
@@ -1347,6 +1364,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
+                className="sor-form-checkbox"
                 checked={config.mtuDiscover ?? false}
                 onChange={(e) => up("mtuDiscover", e.target.checked)}
               />
@@ -1355,6 +1373,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
+                className="sor-form-checkbox"
                 checked={config.persistTun ?? true}
                 onChange={(e) => up("persistTun", e.target.checked)}
               />
@@ -1363,6 +1382,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
+                className="sor-form-checkbox"
                 checked={config.persistKey ?? true}
                 onChange={(e) => up("persistKey", e.target.checked)}
               />
@@ -1371,6 +1391,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
+                className="sor-form-checkbox"
                 checked={config.nobind ?? true}
                 onChange={(e) => up("nobind", e.target.checked)}
               />
@@ -1379,6 +1400,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
+                className="sor-form-checkbox"
                 checked={config.float ?? false}
                 onChange={(e) => up("float", e.target.checked)}
               />
@@ -1386,7 +1408,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </label>
           </div>
           {(config.tlsAuth || config.tlsCrypt) && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {config.tlsAuth && (
                 <FormField label="TLS Auth Key File">
                   <BrowseField
@@ -1396,7 +1418,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     extensions={["key", "pem"]}
                   />
                   {!config.tlsAuthFile && (
-                    <p className="mt-1 text-[11px] text-red-400">
+                    <p className="mt-1 text-[11px] text-error">
                       A key file is required for manual TLS Auth.
                     </p>
                   )}
@@ -1411,7 +1433,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     extensions={["key", "pem"]}
                   />
                   {!config.tlsCryptFile && (
-                    <p className="mt-1 text-[11px] text-red-400">
+                    <p className="mt-1 text-[11px] text-error">
                       A key file is required for manual TLS Crypt.
                     </p>
                   )}
@@ -1463,7 +1485,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               />
             </FormField>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Keep-Alive Interval (s)">
               <input
                 type="number"
@@ -1493,7 +1515,7 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               />
             </FormField>
           </div>
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {[
               ["Connect timeout (s)", "connectTimeout", "30"],
               ["Retry delay (s)", "connectRetry", "5"],
@@ -1571,7 +1593,7 @@ const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   return (
     <div className="space-y-5">
       {keyless && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+        <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
           This WireGuard profile has no private key. It can be saved, but
           connecting remains disabled until a key or a config file is supplied.
         </div>
@@ -1597,8 +1619,9 @@ const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           [Interface]
         </div>
         <FormField label="Private Key">
-          <input
-            type="password"
+          <PasswordInput
+            aria-label="Private Key"
+            autoComplete="new-password"
             value={config.privateKey ?? ""}
             onChange={(e) => up("privateKey", e.target.value)}
             placeholder={
@@ -1610,7 +1633,7 @@ const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
           <SecretStatus mgr={mgr} field="privateKey" />
         </FormField>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Address(es)">
             <input
               type="text"
@@ -1658,8 +1681,9 @@ const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
         </FormField>
         <FormField label="Preshared Key">
-          <input
-            type="password"
+          <PasswordInput
+            aria-label="Preshared Key"
+            autoComplete="new-password"
             value={config.presharedKey ?? ""}
             onChange={(e) => up("presharedKey", e.target.value)}
             placeholder={
@@ -1671,7 +1695,7 @@ const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
           <SecretStatus mgr={mgr} field="presharedKey" />
         </FormField>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Endpoint">
             <input
               type="text"
@@ -1719,8 +1743,9 @@ const TailscaleConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   return (
     <div className="space-y-5">
       <FormField label="Auth Key">
-        <input
-          type="password"
+        <PasswordInput
+          aria-label="Auth Key"
+          autoComplete="new-password"
           value={config.authKey ?? ""}
           onChange={(e) => up("authKey", e.target.value)}
           placeholder={
@@ -1732,7 +1757,7 @@ const TailscaleConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         />
         <SecretStatus mgr={mgr} field="authKey" />
       </FormField>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormField label="Login Server">
           <input
             type="text"
@@ -1765,6 +1790,7 @@ const TailscaleConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.acceptRoutes ?? false}
             onChange={(e) => up("acceptRoutes", e.target.checked)}
           />
@@ -1773,6 +1799,7 @@ const TailscaleConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.ssh ?? false}
             onChange={(e) => up("ssh", e.target.checked)}
           />
@@ -1800,7 +1827,7 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           className={inputCls}
         />
       </FormField>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormField label="Identity Public Key">
           <input
             type="text"
@@ -1811,8 +1838,9 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
         </FormField>
         <FormField label="Identity Secret">
-          <input
-            type="password"
+          <PasswordInput
+            aria-label="Identity Secret"
+            autoComplete="new-password"
             value={config.identitySecret ?? ""}
             onChange={(event) => up("identitySecret", event.target.value)}
             placeholder={
@@ -1826,8 +1854,9 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </FormField>
       </div>
       <FormField label="Auth Token Secret">
-        <input
-          type="password"
+        <PasswordInput
+          aria-label="Auth Token Secret"
+          autoComplete="new-password"
           value={config.authtokenSecret ?? ""}
           onChange={(event) => up("authtokenSecret", event.target.value)}
           placeholder={
@@ -1843,6 +1872,7 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.allowManaged ?? true}
             onChange={(e) => up("allowManaged", e.target.checked)}
           />
@@ -1851,6 +1881,7 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.allowGlobal ?? false}
             onChange={(e) => up("allowGlobal", e.target.checked)}
           />
@@ -1859,6 +1890,7 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.allowDefault ?? false}
             onChange={(e) => up("allowDefault", e.target.checked)}
           />
@@ -1867,6 +1899,7 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.allowDNS ?? false}
             onChange={(e) => up("allowDNS", e.target.checked)}
           />
@@ -1915,7 +1948,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Authentication
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Username *">
             <input
               type="text"
@@ -1926,8 +1959,9 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
           </FormField>
           <FormField label="Password *">
-            <input
-              type="password"
+            <PasswordInput
+              aria-label="Password *"
+              autoComplete="new-password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
               placeholder={
@@ -1960,6 +1994,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.requireMppe ?? false}
               onChange={(e) => up("requireMppe", e.target.checked)}
             />
@@ -1968,6 +2003,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.mppeStateful ?? false}
               onChange={(e) => up("mppeStateful", e.target.checked)}
             />
@@ -1976,6 +2012,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.refuseEap ?? false}
               onChange={(e) => up("refuseEap", e.target.checked)}
             />
@@ -1984,6 +2021,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.refusePap ?? false}
               onChange={(e) => up("refusePap", e.target.checked)}
             />
@@ -1992,6 +2030,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.refuseChap ?? false}
               onChange={(e) => up("refuseChap", e.target.checked)}
             />
@@ -2000,6 +2039,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.refuseMsChap ?? false}
               onChange={(e) => up("refuseMsChap", e.target.checked)}
             />
@@ -2008,6 +2048,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.refuseMsChapV2 ?? false}
               onChange={(e) => up("refuseMsChapV2", e.target.checked)}
             />
@@ -2016,6 +2057,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.nobsdcomp ?? false}
               onChange={(e) => up("nobsdcomp", e.target.checked)}
             />
@@ -2024,6 +2066,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.nodeflate ?? false}
               onChange={(e) => up("nodeflate", e.target.checked)}
             />
@@ -2032,6 +2075,7 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.noVjComp ?? false}
               onChange={(e) => up("noVjComp", e.target.checked)}
             />
@@ -2086,7 +2130,7 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Authentication
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Username *">
             <input
               type="text"
@@ -2097,8 +2141,9 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
           </FormField>
           <FormField label="Password *">
-            <input
-              type="password"
+            <PasswordInput
+              aria-label="Password *"
+              autoComplete="new-password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
               placeholder={
@@ -2112,8 +2157,9 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </FormField>
         </div>
         <FormField label="IPsec Pre-shared Key (PSK)">
-          <input
-            type="password"
+          <PasswordInput
+            aria-label="IPsec Pre-shared Key (PSK)"
+            autoComplete="new-password"
             value={config.psk ?? ""}
             onChange={(e) => up("psk", e.target.value)}
             placeholder={
@@ -2132,7 +2178,7 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           PPP Settings
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="MRU">
             <input
               type="number"
@@ -2162,7 +2208,7 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
           </FormField>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="LCP Echo Interval">
             <input
               type="number"
@@ -2196,6 +2242,7 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.requireChap ?? false}
               onChange={(e) => up("requireChap", e.target.checked)}
             />
@@ -2204,6 +2251,7 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.requireMsChapV2 ?? false}
               onChange={(e) => up("requireMsChapV2", e.target.checked)}
             />
@@ -2212,6 +2260,7 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.requireEap ?? false}
               onChange={(e) => up("requireEap", e.target.checked)}
             />
@@ -2304,7 +2353,7 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Authentication
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Username *">
             <input
               type="text"
@@ -2315,8 +2364,9 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
           </FormField>
           <FormField label="Password">
-            <input
-              type="password"
+            <PasswordInput
+              aria-label="Password"
+              autoComplete="new-password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
               placeholder={
@@ -2330,16 +2380,18 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </FormField>
         </div>
         <FormField label="EAP Method">
-          <select
+          <Select
+            label="EAP Method"
+            variant="form"
             value={config.eapMethod ?? ""}
-            onChange={(e) => up("eapMethod", e.target.value || undefined)}
-            className={inputCls}
-          >
-            <option value="">None</option>
-            <option value="mschapv2">MS-CHAPv2</option>
-            <option value="tls">TLS</option>
-            <option value="peap">PEAP</option>
-          </select>
+            onChange={(value) => up("eapMethod", value || undefined)}
+            options={[
+              { value: "", label: "None" },
+              { value: "mschapv2", label: "MS-CHAPv2" },
+              { value: "tls", label: "TLS" },
+              { value: "peap", label: "PEAP" },
+            ]}
+          />
         </FormField>
       </div>
 
@@ -2380,7 +2432,7 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Identity
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Local ID">
             <input
               type="text"
@@ -2407,7 +2459,7 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Algorithms
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Phase 1 Algorithms">
             <input
               type="text"
@@ -2438,6 +2490,7 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.fragmentation ?? false}
               onChange={(e) => up("fragmentation", e.target.checked)}
             />
@@ -2446,6 +2499,7 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className={checkCls}>
             <input
               type="checkbox"
+              className="sor-form-checkbox"
               checked={config.mobike ?? false}
               onChange={(e) => up("mobike", e.target.checked)}
             />
@@ -2503,20 +2557,23 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           Authentication
         </div>
         <FormField label="Auth Method">
-          <select
+          <Select
+            label="Auth Method"
+            variant="form"
             value={config.authMethod ?? "psk"}
-            onChange={(e) => up("authMethod", e.target.value)}
-            className={inputCls}
-          >
-            <option value="psk">Pre-Shared Key</option>
-            <option value="certificate">Certificate</option>
-            <option value="eap">EAP</option>
-          </select>
+            onChange={(value) => up("authMethod", value)}
+            options={[
+              { value: "psk", label: "Pre-Shared Key" },
+              { value: "certificate", label: "Certificate" },
+              { value: "eap", label: "EAP" },
+            ]}
+          />
         </FormField>
         {(config.authMethod === "psk" || !config.authMethod) && (
           <FormField label="Pre-Shared Key">
-            <input
-              type="password"
+            <PasswordInput
+              aria-label="Pre-Shared Key"
+              autoComplete="new-password"
               value={config.psk ?? ""}
               onChange={(e) => up("psk", e.target.value)}
               placeholder={
@@ -2570,7 +2627,7 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Proposals
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Phase 1 Proposals">
             <input
               type="text"
@@ -2651,6 +2708,7 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.tunnelMode ?? true}
             onChange={(e) => up("tunnelMode", e.target.checked)}
           />
@@ -2704,7 +2762,7 @@ const SSTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
           Authentication
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Username *">
             <input
               type="text"
@@ -2715,8 +2773,9 @@ const SSTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
           </FormField>
           <FormField label="Password">
-            <input
-              type="password"
+            <PasswordInput
+              aria-label="Password"
+              autoComplete="new-password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
               placeholder={
@@ -2764,6 +2823,7 @@ const SSTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <label className={checkCls}>
           <input
             type="checkbox"
+            className="sor-form-checkbox"
             checked={config.ignoreCertificate ?? false}
             onChange={(e) => up("ignoreCertificate", e.target.checked)}
           />
@@ -2798,7 +2858,7 @@ const ConfigurationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       {mgr.unsupportedSettings.length > 0 && (
         <div
           role="alert"
-          className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300"
+          className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning"
         >
           <div className="flex items-start gap-2">
             <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
@@ -2815,7 +2875,7 @@ const ConfigurationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               <button
                 type="button"
                 onClick={mgr.removeUnsupportedSettings}
-                className="mt-2 rounded border border-amber-500/40 px-2.5 py-1 font-medium text-amber-200 hover:bg-amber-500/15"
+                className="mt-2 rounded border border-warning/40 px-2.5 py-1 font-medium text-warning hover:bg-warning/15"
               >
                 Remove unsupported settings
               </button>
@@ -2876,7 +2936,7 @@ const TagsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <button
         onClick={mgr.handleAddTag}
         disabled={!mgr.tagInput.trim()}
-        className="px-3 py-2 rounded-md bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] text-sm inline-flex items-center gap-1.5"
+        className="sor-btn sor-btn-primary"
       >
         <Plus size={14} />
         Add
@@ -2927,7 +2987,7 @@ const VpnEditor: React.FC<VpnEditorProps> = ({
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
       {/* Scrollable content area */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto w-full p-6 space-y-6">
+        <div className="max-w-2xl mx-auto w-full p-4 sm:p-6 space-y-6">
           <BasicInfoSection mgr={mgr} />
           <VpnTypeSelector mgr={mgr} />
           <ConfigurationSection mgr={mgr} />
@@ -2938,13 +2998,13 @@ const VpnEditor: React.FC<VpnEditorProps> = ({
       {/* Footer bar */}
       <div className="flex-shrink-0 px-6 py-3 border-t border-[var(--color-border)]">
         {mgr.error && (
-          <div className="mb-3 px-3 py-2 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 text-sm flex items-center gap-2">
+          <div className="mb-3 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-error text-sm flex items-center gap-2">
             <AlertCircle size={14} className="flex-shrink-0" />
             {mgr.error}
           </div>
         )}
         {!mgr.error && mgr.name.trim() && mgr.validationError && (
-          <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
             <AlertCircle size={14} className="shrink-0" />
             {mgr.validationError}
           </div>

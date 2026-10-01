@@ -12,6 +12,7 @@ import {
 } from "../../../utils/network/vpnProviderCatalog";
 import { getTypeIcon, getTypeLabel } from "./tunnelChainShared.helpers";
 import { SshSourceFields } from "./SshSourceFields";
+import { Select } from "../../ui/forms";
 
 // ── Per-layer config forms ──────────────────────────────────────
 
@@ -31,31 +32,35 @@ export function ProxyLayerConfig({
     onUpdate({ proxy: { ...proxy, ...updates } });
 
   return (
-    <div className="grid grid-cols-3 gap-2 mt-2">
-      <select
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+      <Select
+        label="Proxy type"
+        variant="form"
         value={proxy.proxyType}
-        onChange={(e) => up({ proxyType: e.target.value as any })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      >
-        <option value="socks5">SOCKS5</option>
-        <option value="socks4">SOCKS4</option>
-        <option value="http">HTTP</option>
-        <option value="https">HTTPS</option>
-        <option value="http-connect">HTTP CONNECT</option>
-      </select>
+        onChange={(value) => up({ proxyType: value as typeof proxy.proxyType })}
+        options={[
+          { value: "socks5", label: "SOCKS5" },
+          { value: "socks4", label: "SOCKS4" },
+          { value: "http", label: "HTTP" },
+          { value: "https", label: "HTTPS" },
+          { value: "http-connect", label: "HTTP CONNECT" },
+        ]}
+      />
       <input
         type="text"
+        aria-label="Proxy host"
         placeholder="Host"
         value={proxy.host}
         onChange={(e) => up({ host: e.target.value })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+        className="sor-form-input min-w-0 text-sm"
       />
       <input
         type="number"
+        aria-label="Proxy port"
         placeholder="Port"
         value={proxy.port}
         onChange={(e) => up({ port: parseInt(e.target.value) || 0 })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+        className="sor-form-input min-w-0 text-sm"
       />
     </div>
   );
@@ -134,38 +139,38 @@ export function VpnLayerConfig({
   };
 
   return (
-    <div className="mt-2 space-y-1.5">
-      <select
+    <div className="mt-3 space-y-2">
+      <Select
+        label={`${getVpnProviderLabel(provider)} profile`}
+        variant="form"
+        searchable
         value={currentId}
-        onChange={(event) => updateProfile(event.target.value)}
-        className="w-full px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      >
-        <option value="">
-          Select {getVpnProviderLabel(provider)} profile…
-        </option>
-        {currentLabel && <option value={currentId}>{currentLabel}</option>}
-        {profiles.map((profile) => {
-          const disabledReason =
-            profile.connectDisabledReason ?? providerDisabledReason;
-          return (
-            <option
-              key={profile.id}
-              value={profile.id}
-              disabled={Boolean(disabledReason)}
-            >
-              {profile.name} ({profile.status})
-              {disabledReason ? " — unavailable" : ""}
-            </option>
-          );
-        })}
-      </select>
+        onChange={updateProfile}
+        options={[
+          {
+            value: "",
+            label: `Select ${getVpnProviderLabel(provider)} profile…`,
+          },
+          ...(currentLabel ? [{ value: currentId, label: currentLabel }] : []),
+          ...profiles.map((profile) => {
+            const disabledReason =
+              profile.connectDisabledReason ?? providerDisabledReason;
+            return {
+              value: profile.id,
+              label: `${profile.name} (${profile.status})${disabledReason ? " — unavailable" : ""}`,
+              disabled: Boolean(disabledReason),
+              description: disabledReason,
+            };
+          }),
+        ]}
+      />
       {currentDisabledReason && (
-        <p className="text-[11px] text-amber-400" role="status">
+        <p className="text-xs text-warning" role="status">
           {currentDisabledReason}
         </p>
       )}
       {providerStatus === "error" && (
-        <p className="text-[11px] text-amber-400">
+        <p className="text-xs text-warning">
           The provider store could not be loaded. Existing references remain
           unverified and are not classified as deleted.
         </p>
@@ -204,20 +209,23 @@ export function TunnelLayerConfig({
     onUpdate({ tunnel: { ...tunnel, ...updates } });
 
   return (
-    <div className="grid grid-cols-2 gap-2 mt-2">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
       <input
         type="text"
+        aria-label="Server URL"
         placeholder="Server URL"
         value={tunnel.serverUrl ?? ""}
         onChange={(e) => up({ serverUrl: e.target.value })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+        className="sor-form-input min-w-0 text-sm"
       />
       <input
-        type="text"
+        type="password"
+        aria-label="Auth Token"
+        autoComplete="new-password"
         placeholder="Auth Token"
         value={tunnel.authToken ?? ""}
         onChange={(e) => up({ authToken: e.target.value })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+        className="sor-form-input min-w-0 text-sm"
       />
     </div>
   );

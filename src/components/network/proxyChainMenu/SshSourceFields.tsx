@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { ConnectionContext } from "../../../contexts/ConnectionContextTypes";
 import type { TunnelChainLayer } from "../../../types/connection/connection";
-import { Select } from "../../ui/forms";
+import { PasswordInput, Select } from "../../ui/forms";
 
 type SshConfig = NonNullable<TunnelChainLayer["sshTunnel"]>;
 
@@ -23,7 +23,7 @@ export function SshSourceFields({
     value.authMethod ?? (value.privateKey ? "key" : "password");
   const available = connections.some((c) => c.id === value.connectionId);
   const owner = context?.databaseAvailability;
-  const inputClass = "sor-form-input";
+  const inputClass = "sor-form-input min-w-0 text-sm";
   const selectSource = (connectionId: string | undefined) =>
     onChange({
       ...value,
@@ -102,8 +102,8 @@ export function SshSourceFields({
           )}
         </>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
-          <label className="sor-form-label col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="sor-form-label sm:col-span-2">
             SSH authentication
             <Select
               label="SSH authentication"
@@ -160,10 +160,9 @@ export function SshSourceFields({
           {authMethod === "password" ? (
             <label className="sor-form-label">
               SSH password
-              <input
+              <PasswordInput
                 aria-label="SSH password"
                 className={inputClass}
-                type="password"
                 autoComplete="new-password"
                 value={value.password ?? ""}
                 onChange={(e) =>
@@ -186,10 +185,9 @@ export function SshSourceFields({
               </label>
               <label className="sor-form-label">
                 Key passphrase
-                <input
+                <PasswordInput
                   aria-label="Key passphrase"
                   className={inputClass}
-                  type="password"
                   autoComplete="new-password"
                   value={value.passphrase ?? ""}
                   onChange={(e) =>

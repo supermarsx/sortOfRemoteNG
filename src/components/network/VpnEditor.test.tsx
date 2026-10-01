@@ -16,6 +16,15 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }));
 
+vi.mock("../../contexts/SettingsContext", () => ({
+  useSettings: () => ({ settings: {} }),
+}));
+
+function selectOption(control: HTMLElement, name: string) {
+  fireEvent.click(control);
+  fireEvent.mouseDown(screen.getByRole("option", { name }));
+}
+
 describe("VpnEditor OpenVPN configuration sources", () => {
   beforeEach(() => {
     invokeMock.mockReset();
@@ -24,6 +33,62 @@ describe("VpnEditor OpenVPN configuration sources", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
+  it.each([
+    "OpenVPN",
+    "WireGuard",
+    "Tailscale",
+    "ZeroTier",
+    "PPTP",
+    "L2TP/IPsec",
+    "IKEv2",
+    "IPsec",
+    "SSTP",
+  ])(
+    "uses app form controls and full-width password reveal fields for %s",
+    (provider) => {
+      const { container } = render(
+        <VpnEditor isOpen onClose={vi.fn()} onSave={vi.fn()} />,
+      );
+      const picker = screen.getByRole("button", {
+        name: /connection provider/i,
+      });
+      expect(picker).toHaveClass("sor-form-select");
+      fireEvent.click(picker);
+      const menu = screen.getByRole("listbox", { name: "Available VPN types" });
+      expect(menu.parentElement).toHaveClass(
+        "sor-select-dropdown",
+        "sor-popover-panel",
+      );
+      fireEvent.click(
+        within(menu)
+          .getAllByRole("option")
+          .find((option) => option.textContent?.startsWith(`${provider} `))!,
+      );
+      expect(container.querySelector("select")).toBeNull();
+      for (const field of container.querySelectorAll("input, textarea")) {
+        expect(field).toHaveClass(
+          field.getAttribute("type") === "checkbox"
+            ? "sor-form-checkbox"
+            : "sor-form-input",
+        );
+      }
+      for (const field of container.querySelectorAll(
+        'input[type="password"]',
+      )) {
+        expect(field.parentElement).toHaveClass("relative", "w-full");
+        expect(field).toHaveStyle({ paddingRight: "2.25rem" });
+        expect(
+          within(field.parentElement!).getByRole("button", {
+            name: "Show password",
+          }),
+        ).toHaveClass("absolute", "right-2");
+      }
+      expect(screen.getByRole("button", { name: "Create VPN" })).toHaveClass(
+        "sor-btn",
+        "sor-btn-primary",
+      );
+    },
+  );
   it("offers every persisted session provider with a catalog-backed icon", () => {
     render(<VpnEditor isOpen onClose={vi.fn()} onSave={vi.fn()} />);
 
@@ -133,9 +198,7 @@ describe("VpnEditor OpenVPN configuration sources", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add remote" }));
     const hosts = screen.getAllByLabelText("Host");
     fireEvent.change(hosts[1], { target: { value: "backup.example.com" } });
-    fireEvent.change(screen.getAllByLabelText("Protocol")[1], {
-      target: { value: "tcp6" },
-    });
+    selectOption(screen.getAllByLabelText("Protocol")[1], "TCP IPv6");
     fireEvent.click(screen.getByLabelText("Random remote selection"));
 
     fireEvent.click(screen.getByRole("button", { name: "Add route" }));
@@ -174,9 +237,7 @@ describe("VpnEditor OpenVPN configuration sources", () => {
     fireEvent.change(screen.getAllByLabelText("Port")[1], {
       target: { value: "443" },
     });
-    fireEvent.change(screen.getAllByLabelText("Protocol")[1], {
-      target: { value: "tcp" },
-    });
+    selectOption(screen.getAllByLabelText("Protocol")[1], "TCP");
     fireEvent.click(screen.getByLabelText("Random remote selection"));
     fireEvent.click(screen.getByLabelText("Randomize hostname lookup"));
     const retryDns = screen.getByLabelText("Retry DNS resolution indefinitely");
@@ -210,15 +271,14 @@ describe("VpnEditor OpenVPN configuration sources", () => {
     fireEvent.change(screen.getByLabelText("Host"), {
       target: { value: "vpn.example.com" },
     });
-    fireEvent.change(screen.getByLabelText("Protocol"), {
-      target: { value: "tcp4" },
-    });
+    selectOption(screen.getByLabelText("Protocol"), "TCP IPv4");
     fireEvent.change(screen.getByLabelText("Verify server name"), {
       target: { value: "vpn-" },
     });
-    fireEvent.change(screen.getByLabelText("Server name match"), {
-      target: { value: "name-prefix" },
-    });
+    selectOption(
+      screen.getByLabelText("Server name match"),
+      "Certificate name prefix",
+    );
 
     const maximumRetryDelay = screen.getByLabelText("Maximum retry delay (s)");
     expect(maximumRetryDelay).toBeDisabled();
@@ -337,7 +397,7 @@ describe("VpnEditor OpenVPN configuration sources", () => {
       "Stored secret — leave blank to keep",
     );
     expect(password).toHaveValue("");
-    const field = password.parentElement;
+    const field = password.parentElement?.parentElement;
     expect(field).not.toBeNull();
     fireEvent.click(
       within(field!).getByRole("button", { name: "Clear stored secret" }),
