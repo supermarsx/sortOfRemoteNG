@@ -1,6 +1,7 @@
 pub use sorng_app_domains::*;
 
 mod dropbox_commands;
+mod cloud_sync_commands;
 mod gdrive_commands;
 mod mremoteng_dedicated_commands;
 mod nextcloud_commands;

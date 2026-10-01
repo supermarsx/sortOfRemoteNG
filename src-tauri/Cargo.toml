@@ -29,6 +29,7 @@ members = [
   "crates/sorng-socket-transport",
   "crates/sorng-vpn",
   "crates/sorng-cloud",
+  "crates/sorng-cloud-sync",
   "crates/sorng-aws",
   "crates/sorng-remote-mgmt",
   "crates/sorng-gpo",

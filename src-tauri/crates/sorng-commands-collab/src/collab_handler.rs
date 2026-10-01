@@ -4,6 +4,9 @@ pub fn is_command(command: &str) -> bool {
     matches!(
         command,
         "mrng_detect_format"
+            | "cloud_sync_read"
+            | "cloud_sync_write"
+            | "cloud_sync_test"
             | "mrng_get_import_formats"
             | "mrng_get_export_formats"
             | "mrng_import_xml"
@@ -390,6 +393,9 @@ pub fn is_command(command: &str) -> bool {
 
 pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        cloud_sync_commands::cloud_sync_read,
+        cloud_sync_commands::cloud_sync_write,
+        cloud_sync_commands::cloud_sync_test,
         // mRemoteNG commands — Format Detection
         mremoteng_dedicated_commands::mrng_detect_format,
         mremoteng_dedicated_commands::mrng_get_import_formats,

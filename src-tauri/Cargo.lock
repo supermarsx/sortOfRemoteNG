@@ -2437,6 +2437,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "digest_auth"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3054f4e81d395e50822796c5e99ca522e6ba7be98947d6d4b0e5e61640bdb894"
+dependencies = [
+ "digest 0.10.7",
+ "hex",
+ "md-5 0.10.6",
+ "rand 0.8.8",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "dirs"
 version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8202,6 +8215,7 @@ dependencies = [
  "pkcs1 0.8.0-rc.4",
  "pkcs8 0.11.0",
  "rand_core 0.10.1",
+ "sha2 0.11.0",
  "signature 3.0.0",
  "spki 0.8.0",
  "zeroize",
@@ -8250,12 +8264,14 @@ dependencies = [
  "p521 0.14.0-rc.10",
  "pageant",
  "pbkdf2 0.13.0",
+ "pkcs1 0.8.0-rc.4",
  "pkcs5 0.8.0",
  "pkcs8 0.11.0",
  "polyval 0.7.3",
  "rand 0.10.2",
  "rand_core 0.10.1",
  "ring",
+ "rsa 0.10.0-rc.18",
  "russh-cryptovec",
  "russh-util",
  "salsa20 0.11.0",
@@ -10027,6 +10043,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-cloud-sync"
+version = "26.50.0"
+dependencies = [
+ "base64 0.23.1",
+ "digest_auth",
+ "futures-util",
+ "hex",
+ "reqwest 0.12.28",
+ "russh",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-collaboration"
 version = "26.50.0"
 dependencies = [
@@ -10113,6 +10148,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-app-domains",
+ "sorng-cloud-sync",
  "tauri",
 ]
 
@@ -13761,6 +13797,7 @@ checksum = "7abf34aa716da5d5b4c496936d042ea282ab392092cd68a72ef6a8863ff8c96a"
 dependencies = [
  "base64ct",
  "bytes",
+ "crypto-bigint 0.7.5",
  "ctutils",
  "digest 0.11.3",
  "pem-rfc7468 1.0.0",
@@ -13808,6 +13845,7 @@ dependencies = [
  "p384 0.14.0-rc.10",
  "p521 0.14.0-rc.10",
  "rand_core 0.10.1",
+ "rsa 0.10.0-rc.18",
  "sec1 0.8.1",
  "sha1 0.11.0",
  "sha2 0.11.0",

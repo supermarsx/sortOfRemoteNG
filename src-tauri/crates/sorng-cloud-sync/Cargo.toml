@@ -1,0 +1,23 @@
+[package]
+publish = false
+name = "sorng-cloud-sync"
+version.workspace = true
+edition = "2021"
+description = "Application-data cloud sync transports, independent of file-sync jobs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+url = { workspace = true }
+base64 = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+russh = { version = "0.61.2", default-features = false, features = ["ring", "rsa"] }
+futures-util = "0.3"
+digest_auth = "0.3"
+
+[dev-dependencies]
+tempfile = { workspace = true }
