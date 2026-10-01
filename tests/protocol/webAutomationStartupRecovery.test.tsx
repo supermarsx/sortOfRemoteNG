@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import React, { StrictMode } from "react";
+import { createHash, webcrypto } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection } from "../../src/types/connection/connection";
 import type { GlobalSettings } from "../../src/types/settings/settings";
@@ -63,6 +64,7 @@ import {
   type ConnectionContextType,
 } from "../../src/contexts/ConnectionContextTypes";
 import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
+import { reconcileRecordLedger } from "../../src/utils/storage/recordLedger";
 import {
   normalizeWebAutomationLibrary,
   WEB_AUTOMATION_STORE_KEY,
@@ -85,7 +87,7 @@ const library = normalizeWebAutomationLibrary({
     },
   ],
 });
-const raw = JSON.stringify(library);
+let raw: string;
 const options = () => ({
   connection: {
     id: "connection",
@@ -128,7 +130,28 @@ const tick = async (ms = 0) => {
   });
 };
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.stubGlobal("crypto", webcrypto);
+  // Real SHA-256, settled in microtasks: a native crypto worker must not race
+  // fake-timer backoff or leak a pending store queue into the following test.
+  vi.spyOn(webcrypto.subtle, "digest").mockImplementation(
+    async (algorithm, data) => {
+      if (algorithm !== "SHA-256")
+        throw new Error("Unexpected digest algorithm");
+      const bytes = ArrayBuffer.isView(data)
+        ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+        : new Uint8Array(data);
+      return new Uint8Array(createHash("sha256").update(bytes).digest()).buffer;
+    },
+  );
+  // This suite exercises pre-read recovery, not legacy ledger migration/CAS.
+  // Seed the current durable format so successful reads remain read-only.
+  raw = JSON.stringify({
+    ...library,
+    recordMetadata: await reconcileRecordLedger(library, undefined, {
+      mode: "migrate",
+    }),
+  });
   vi.useFakeTimers();
   h.owner = "db-a";
   h.lease = 1;
@@ -150,6 +173,8 @@ afterEach(async () => {
   cleanup();
   await vi.advanceTimersByTimeAsync(0);
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("website library startup with the real durable store", () => {
