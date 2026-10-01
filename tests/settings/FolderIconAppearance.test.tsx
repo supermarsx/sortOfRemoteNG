@@ -132,7 +132,7 @@ describe("folder icon appearance", () => {
     );
   });
 
-  it("does not override a connection status icon", () => {
+  it("keeps connection icons neutral and status on the separate indicator", () => {
     const { container } = render(
       <ConnectionTreeRow
         {...props}
@@ -142,8 +142,10 @@ describe("folder icon appearance", () => {
       />,
     );
     const icon = container.querySelector("svg[aria-label]") as SVGElement;
-    expect(icon).toHaveClass("text-success");
+    expect(icon).toHaveClass("text-[var(--color-textSecondary)]");
+    expect(icon).not.toHaveClass("text-success");
     expect(icon.style.color).toBe("");
+    expect(container.querySelector('div[role="img"]')).toHaveClass("bg-success");
   });
 
   it("exposes a themed mode selector and a labeled native custom color picker", () => {
