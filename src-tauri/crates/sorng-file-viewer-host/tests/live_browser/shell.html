@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native browser readiness probe</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #181a1b;
+      }
+      iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- No allow attribute, explicit blank navigation, popup or top-navigation grant. -->
+    <!-- Production strips shell Referer upstream; this disposable port is not an app origin. -->
+    <iframe
+      id="website"
+      title="Website under test"
+      sandbox=""
+      referrerpolicy="no-referrer"
+    ></iframe>
+    <script>
+      (() => {
+        "use strict";
+        // Host replaces the single configuration expression with script-safe JSON
+        // (escape '<', U+2028 and U+2029). allowedOrigins contains only reviewed
+        // native DOCUMENT aliases, never the complete resource-alias catalogue.
+        const config = __CONFIG__;
+        const frame = document.getElementById("website");
+        const marker = "__sorng_navigation_v1";
+        const hex = /^[0-9a-f]{32}$/;
+        const started = performance.now();
+        const counts = {
+          documentStart: 0,
+          navigationStart: 0,
+          domReady: 0,
+          darkPending: 0,
+          darkReady: 0,
+          frameLoad: 0,
+          activationRequests: 0,
+          activationBridgeErrors: 0,
+          rejectedMessages: 0,
+          networkBlocked: 0,
+        };
+        let origins,
+          initial,
+          pending,
+          current = null;
+        let configured = false,
+          stopped = false,
+          sample = 0,
+          timer = null;
+        // A successful IPC send is NOT an activation acknowledgement. Native
+        // code records activate_document's result separately; false is valid.
+        function send(message) {
+          try {
+            window.ipc.postMessage(JSON.stringify(message));
+            return true;
+          } catch {
+            return false;
+          }
+        }
+        function increment(key) {
+          counts[key] = Math.min(1000, counts[key] + 1);
+        }
+        function report(complete = false, stopReason = "observing") {
+          send({
+            kind: "lifecycle",
+            snapshot: {
+              version: 1,
+              sample: sample++,
+              elapsedSeconds: Math.min(
+                60,
+                Math.floor((performance.now() - started) / 1000),
+              ),
+              complete,
+              stopReason,
+              configAccepted: configured,
+              documentSeen: current !== null,
+              domReady: !!current && current.domReady && !current.leaving,
+              darkReady: !!current && current.darkReady,
+              activationResult: "host-owned",
+              authenticated: "not-tested",
+              counts: { ...counts },
+            },
+          });
+        }
+        function stop(reason) {
+          if (stopped) return;
+          stopped = true;
+          clearInterval(timer);
+          window.removeEventListener("message", receive);
+          frame.removeEventListener("load", loaded);
+          window.removeEventListener("pagehide", hidden);
+          report(true, reason);
+        }
+        function hidden() {
+          stop("pagehide");
+        }
+        function loaded() {
+          if (!configured || !frame.getAttribute("src")) return;
+          increment("frameLoad"); // A load is not DOM-bridge or login evidence.
+          frame.style.visibility = "visible";
+        }
+        function reject() {
+          increment("rejectedMessages");
+        }
+        function receive(event) {
+          if (
+            stopped ||
+            event.source !== frame.contentWindow ||
+            !origins.has(event.origin)
+          )
+            return;
+          const d = event.data;
+          if (!d || typeof d !== "object" || Array.isArray(d)) return;
+          if (d.type === "native_live_observation") {
+            if (
+              !current ||
+              current.leaving ||
+              d.url !== current.url ||
+              !d.snapshot ||
+              typeof d.snapshot !== "object"
+            )
+              return;
+            send({
+              kind: "observation",
+              sequence: current.sequence,
+              snapshot: d.snapshot,
+            });
+            return;
+          }
+          const types = [
+            "proxy_document_start",
+            "proxy_navigation_start",
+            "proxy_dom_ready",
+            "proxy_dark_pending",
+            "proxy_dark_ready",
+            "sorng_web_network_blocked",
+          ];
+          if (!types.includes(d.type)) return;
+          if (
+            d.version !== 1 ||
+            d.sessionId !== config.sessionId ||
+            typeof d.documentToken !== "string" ||
+            !hex.test(d.documentToken) ||
+            !Number.isSafeInteger(d.documentSequence) ||
+            d.documentSequence <= 0 ||
+            !(
+              d.navigationToken === null ||
+              (typeof d.navigationToken === "string" &&
+                hex.test(d.navigationToken))
+            ) ||
+            typeof d.url !== "string" ||
+            d.url.length > 16384
+          )
+            return reject();
+          let url;
+          try {
+            url = new URL(d.url);
+            if (
+              url.origin !== event.origin ||
+              url.username ||
+              url.password ||
+              url.searchParams.has(marker)
+            )
+              return reject();
+          } catch {
+            return reject();
+          }
+          const same =
+            current &&
+            current.token === d.documentToken &&
+            current.sequence === d.documentSequence &&
+            current.navigationToken === d.navigationToken &&
+            current.url === url.href;
+          if (d.type === "proxy_document_start") {
+            if (same) return;
+            if (current && d.documentSequence <= current.sequence)
+              return reject();
+            if (d.navigationToken !== null) {
+              if (d.navigationToken !== pending) return reject();
+              // Native-reviewed aliases permit hosted Google redirects. No
+              // upstream URL is accepted, constructed, logged or navigated here.
+            } else {
+              if (!current) return reject();
+              pending = null;
+            }
+            if (counts.activationRequests >= 128) return stop("document-limit");
+            current = {
+              token: d.documentToken,
+              sequence: d.documentSequence,
+              navigationToken: d.navigationToken,
+              url: url.href,
+              domReady: false,
+              darkReady: false,
+              leaving: false,
+            };
+            increment("documentStart");
+            increment("activationRequests");
+            if (!send({ kind: "activate", sequence: current.sequence }))
+              increment("activationBridgeErrors");
+            send({ kind: "lifecycle", event: "proxy_document_start" });
+            return;
+          }
+          if (!same) return reject();
+          if (d.type === "proxy_navigation_start") {
+            if (!current.leaving) {
+              increment("navigationStart");
+              send({ kind: "lifecycle", event: "proxy_navigation_start" });
+            }
+            current.leaving = true;
+          } else if (d.type === "proxy_dom_ready" && !current.leaving) {
+            if (!current.domReady) {
+              increment("domReady");
+              send({ kind: "lifecycle", event: "proxy_dom_ready" });
+            }
+            current.domReady = true;
+            frame.style.visibility = "visible";
+          } else if (d.type === "proxy_dark_ready" && !current.leaving) {
+            if (!current.darkReady) increment("darkReady");
+            current.darkReady = true;
+          } else if (d.type === "proxy_dark_pending" && !current.leaving) {
+            increment("darkPending");
+            current.darkReady = false;
+          } else if (d.type === "sorng_web_network_blocked") {
+            increment("networkBlocked"); // No page-supplied diagnostic text.
+            send({
+              kind: "network-block",
+              sequence: current.sequence,
+              requestKind: d.kind,
+              reason: d.reason,
+            });
+          }
+        }
+        try {
+          if (
+            window !== window.top ||
+            !config ||
+            typeof config !== "object" ||
+            typeof config.sessionId !== "string" ||
+            !config.sessionId.length ||
+            config.sessionId.length > 256 ||
+            !hex.test(config.navigationToken) ||
+            !Array.isArray(config.allowedOrigins) ||
+            !config.allowedOrigins.length ||
+            config.allowedOrigins.length > 32 ||
+            typeof config.proxyUrl !== "string" ||
+            config.proxyUrl.length > 16384
+          )
+            throw new Error("configuration");
+          initial = new URL(config.proxyUrl);
+          origins = new Set(config.allowedOrigins);
+          for (const value of origins) {
+            const url = new URL(value);
+            if (
+              url.origin !== value ||
+              url.protocol !== "http:" ||
+              !/^p[0-9a-f]{32}\.localhost$/.test(url.hostname) ||
+              !url.port ||
+              url.port !== initial.port ||
+              url.origin === location.origin
+            )
+              throw new Error("configuration");
+          }
+          if (
+            !origins.has(initial.origin) ||
+            initial.username ||
+            initial.password ||
+            initial.searchParams.has(marker)
+          )
+            throw new Error("configuration");
+          pending = config.navigationToken;
+          // Preserve original query serialization (including signed parameters).
+          initial.search += `${initial.search ? "&" : "?"}${marker}=${pending}`;
+          configured = true;
+        } catch {
+          stop("configuration-invalid");
+          return;
+        }
+        send({
+          kind: "identity",
+          userAgent: navigator.userAgent.slice(0, 512),
+        });
+        window.addEventListener("message", receive);
+        window.addEventListener("pagehide", hidden, { once: true });
+        frame.addEventListener("load", loaded);
+        frame.style.visibility = "hidden";
+        frame.setAttribute(
+          "sandbox",
+          "allow-same-origin allow-scripts allow-forms",
+        );
+        frame.src = initial.href;
+        report();
+        timer = setInterval(() => {
+          if (performance.now() - started >= 60000 || sample >= 60)
+            stop("deadline");
+          else report();
+        }, 1000);
+        // HTTP redirects follow the production mediator's reviewed aliases.
+        // proxy_navigate is history metadata, not a parent navigation command.
+        // Native owns session teardown and all activation-result receipts.
+      })();
+    </script>
+  </body>
+</html>

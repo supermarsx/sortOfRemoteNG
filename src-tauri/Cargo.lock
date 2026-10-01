@@ -10903,8 +10903,10 @@ version = "26.50.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sorng-protocols",
  "tao",
  "tempfile",
+ "tokio",
  "url",
  "webview2-com",
  "windows 0.61.3",

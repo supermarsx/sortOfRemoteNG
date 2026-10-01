@@ -111,6 +111,62 @@ browser prerequisite check is implemented in this runner.
 
 ## Actual WebView acceptance
 
+### Repeatable anonymous live probe (Windows)
+
+`npm run browser:live` builds and runs a disposable **real WebView2** host with
+the production proxy startup, response rewriting, cookie handling and Windows
+network guard. It opens Google Analytics's Google sign-in route, Cloudflare
+Dashboard and Porkbun, once normally and once with the proxy's dark bootstrap.
+Use `-- --site porkbun --dark` for one case. Each case observes for 45 seconds.
+Use `-- --report .artifacts/browser-live-check.json` to preserve a separate run.
+
+This is not jsdom, a recorded HTTP response or an unrelated browser. It is also
+not the entire React/Tauri application shell: the small parent reproduces its
+sandbox and validated document-activation handshake. The dark bootstrap's local
+CSS fallback is tested, not the React-delivered DarkReader configuration.
+There is no debugger port, fake User-Agent or WebDriver flag. Each invocation
+uses an isolated temporary profile and closes its controller and proxy afterward.
+It never opens the application's database or imports an existing browser profile.
+
+The sanitized `.artifacts/browser-live.json` contains visible form counts,
+challenge/refusal booleans, script/CSP error counts, activation counts, request
+status counts and blocked origins. It contains no field values, cookies, query
+strings or raw page/console text. Missing observations and unrendered forms fail
+the command. **A rendered form is not a successful login:** identifier submission,
+password, MFA, human challenges, authenticated state and reload remain untested
+until exercised interactively with a test account. No dummy credentials are sent.
+An ordinary Cargo test run skips this public-network probe unless `--live` is
+explicitly supplied. Site refusals are test findings, not reasons to disable the
+network guard or browser security.
+
+#### Observed on 2026-10-01
+
+The six-case matrix ran against the real public services with Windows WebView2
+146.0.3856.84 and its native Edge 146 User-Agent, verified upstream TLS and the
+default per-connection network policy. Every normal run removed its temporary
+profile after closing the browser. Results are opening-stage evidence only:
+
+| Site | Dark off | Dark bootstrap on | Remaining evidence gap |
+| --- | --- | --- | --- |
+| Google Analytics / Google sign-in | Email field visible, no observed script/CSP errors | Same; dark shield released | Identifier submission, password, MFA, authentication, reload |
+| Porkbun | Username/password visible; Turnstile present | Same; dark shield released | Human verification and authenticated login; two resource/CSP blocks remain |
+| Cloudflare Dashboard | 403 managed challenge, no login fields after 45 seconds | Same; dark shield released | Challenge completion and every login stage |
+
+A focused Cloudflare rerun recorded `Worker` / `unsupported-network-context`
+from the **production injected network layer**. This is an app-side compatibility
+blocker even though no uncaught script/CSP error was reported. The source blocks
+Worker/SharedWorker/WebTransport construction in `web_network_client.js`; a
+future repair needs guarded worker execution and mediated worker requests, not
+an unrestricted constructor or direct-network escape. Removing this blocker is
+not proof that Cloudflare will accept a rewritten-origin proxy session.
+
+Local receipts: `.artifacts/browser-live.json` (complete matrix) and
+`.artifacts/browser-live-cloudflare-diagnostic.json` (categorized block).
+The runner correctly exits nonzero for the unresolved Cloudflare cases. The
+anonymous probe never asserts successful account login or challenge clearance.
+
+### Full application and authenticated acceptance
+
 Use a freshly built isolated app profile, a test account entered interactively,
 and the intended saved application profile and proxy settings. Record build
 revision, WebView version, platform, enabled options, stage outcomes and elapsed

@@ -50,6 +50,7 @@
     "format:write": "node ./scripts/format-changed.mjs --write",
     "test": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --run",
     "browser:readiness": "node ./scripts/browser-readiness.mjs",
+    "browser:live": "node ./scripts/browser-live.mjs",
     "test:coverage": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --run --coverage",
     "test:import-export": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --config vitest.import-export.config.ts --run",
     "test:coverage:import-export": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --config vitest.import-export.config.ts --run --coverage",
