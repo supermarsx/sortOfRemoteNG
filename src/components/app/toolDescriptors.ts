@@ -28,7 +28,7 @@ import {
 
 import { TOOL_LABELS, type ToolKey } from "./toolSession";
 
-/** Database-owned workspace, deliberately outside global display modes. */
+/** Documents default to database scope; app-wide tabs opt out of the DB gate. */
 export const DOCUMENTS_TOOL_DESCRIPTOR = Object.freeze({
   label: "Documents",
   icon: FileText,

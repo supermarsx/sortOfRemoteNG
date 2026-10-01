@@ -54,12 +54,13 @@ describe("recording editor themed dropdowns", () => {
     const p = props();
     const { rerender } = render(<WebsiteMacroEditor {...p} />);
     fireEvent.click(screen.getByRole("combobox", { name: "Action 1" }));
-    expect(
-      screen.getByRole("option", { name: "Set checkbox" }),
-    ).toBeInTheDocument();
+    const retainedOption = screen.getByRole("option", { name: "Set checkbox" });
+    expect(retainedOption).toBeInTheDocument();
     rerender(<WebsiteMacroEditor {...p} disabled />);
     expect(screen.getByRole("combobox", { name: "Action 1" })).toBeDisabled();
-    fireEvent.mouseDown(screen.getByRole("option", { name: "Set checkbox" }));
+    // The shared Select now closes its portal as soon as it becomes disabled.
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.mouseDown(retainedOption);
     expect(p.onChange).not.toHaveBeenCalled();
     expect(p.onSave).not.toHaveBeenCalled();
   });

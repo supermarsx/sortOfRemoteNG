@@ -25,6 +25,47 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 describe("Documents browser entry", () => {
+  it("opens app-wide without a database and keeps the default database tab separate", () => {
+    const activate = vi.fn();
+    const { result, rerender } = renderHook(() => useDocumentSession(activate));
+    act(() => result.current({ scope: "app" }));
+    const app = h.dispatch.mock.calls[0][0].payload as ConnectionSession;
+    expect(app).toMatchObject({
+      id: "documents-app-wide",
+      ownerDatabaseId: undefined,
+      documentsWorkspace: { scope: "app", databaseId: "app-wide-documents" },
+    });
+    h.sessions = [app];
+    h.availability = {
+      status: "ready",
+      databaseId: "app-wide-documents",
+      generation: 3,
+    };
+    rerender();
+    h.dispatch.mockClear();
+    act(() => result.current({ scope: "app" }));
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(activate).toHaveBeenLastCalledWith(app.id);
+    act(() => result.current());
+    expect(h.dispatch.mock.calls[0][0]).toMatchObject({
+      type: "ADD_SESSION",
+      payload: {
+        ownerDatabaseId: "app-wide-documents",
+        documentsWorkspace: {
+          scope: "database",
+          databaseId: "app-wide-documents",
+        },
+      },
+    });
+    expect(h.dispatch.mock.calls[0][0].payload.id).not.toBe(app.id);
+  });
+  it("rejects current database folders in app scope", () => {
+    const { result } = renderHook(() => useDocumentSession());
+    act(() =>
+      result.current({ scope: "app", parentFolderId: "folder", create: true }),
+    );
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
   it("creates an independent main tab when the canonical tab is detached, without rewriting its request", () => {
     h.availability = { status: "ready", databaseId: "a", generation: 1 };
     const { result, rerender } = renderHook(() => useDocumentSession());

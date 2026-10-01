@@ -7,9 +7,9 @@ function MacroRecordButton({ mgr }: { mgr: WebTerminalMgr }) {
       <button
         onClick={mgr.handleStartMacroRecording}
         className="app-bar-button p-2"
-        data-tooltip="Record Macro"
+        data-tooltip="Record macro in the app-wide library"
         aria-label="Record Macro"
-        disabled={mgr.status !== "connected"}
+        disabled={mgr.status !== "connected" || !mgr.terminalLibrary.available}
       >
         <CircleDot size={14} />
       </button>
@@ -23,9 +23,7 @@ function MacroRecordButton({ mgr }: { mgr: WebTerminalMgr }) {
       aria-label="Stop Macro Recording"
     >
       <SquareIcon size={12} fill="currentColor" />
-      <span className="ml-1 text-[10px] font-mono animate-pulse">
-        MACRO
-      </span>
+      <span className="ml-1 text-[10px] font-mono animate-pulse">MACRO</span>
     </button>
   );
 }

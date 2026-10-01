@@ -73,6 +73,8 @@ export interface DatabaseAutomationLibrary {
   website: WebAutomationLibrary;
   /** Keys are `${family}:${id}`. Strict website payloads remain unchanged. */
   provenance: Record<string, AutomationProvenance>;
+  /** Atomic proof of a one-time move; retained through ordinary library edits. */
+  terminalLibraryMigration?: import("../../utils/recording/terminalLibraryMigrationReceipt").TerminalLibraryMigrationReceipt;
 }
 export interface DatabaseAutomationScope {
   databaseId: string;

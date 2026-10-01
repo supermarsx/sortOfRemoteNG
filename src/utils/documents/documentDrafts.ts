@@ -1,6 +1,7 @@
 /** Runtime metadata only: private document contents never enter tab state. */
 export interface DocumentDraftState {
   databaseId: string;
+  scope?: "app" | "database";
   dirty: boolean;
   busy: boolean;
   revision: number;
@@ -20,9 +21,16 @@ export function getDocumentDraft(
 ): DocumentDraftState | undefined {
   return drafts.get(sessionId)?.();
 }
-export function hasPendingDocumentDraft(databaseId: string): boolean {
+export function hasPendingDocumentDraft(
+  databaseId: string,
+  scope: "app" | "database" = "database",
+): boolean {
   return [...drafts.values()].some((read) => {
     const draft = read();
-    return draft.databaseId === databaseId && (draft.dirty || draft.busy);
+    return (
+      (draft.scope ?? "database") === scope &&
+      draft.databaseId === databaseId &&
+      (draft.dirty || draft.busy)
+    );
   });
 }

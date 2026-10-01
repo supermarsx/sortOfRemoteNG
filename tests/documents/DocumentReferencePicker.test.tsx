@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import DocumentReferencePicker from "../../src/components/documents/DocumentReferencePicker";
 import type { Connection } from "../../src/types/connection/connection";
 import { emptyDatabaseDocuments } from "../../src/utils/documents/validation";
+import { fixture } from "./fixtures";
 
 const connection: Connection = {
   id: "connection-a",
@@ -32,6 +33,32 @@ function renderPicker() {
 afterEach(cleanup);
 
 describe("record link picker", () => {
+  it("only offers app-local records and returns an explicit app scope", () => {
+    const onClose = vi.fn();
+    render(
+      <DocumentReferencePicker
+        data={fixture()}
+        connections={[connection]}
+        databaseId="app-wide-documents"
+        scope="app"
+        onClose={onClose}
+      />,
+    );
+    expect(screen.queryByText("Development server")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("combobox", { name: "Record type" }));
+    expect(
+      screen.queryByRole("option", { name: "Connection" }),
+    ).not.toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Document" }));
+    fireEvent.click(screen.getByRole("option", { name: /Inventory/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Add link" }));
+    expect(onClose).toHaveBeenCalledExactlyOnceWith({
+      scope: "app",
+      databaseId: "app-wide-documents",
+      kind: "document",
+      id: "doc",
+    });
+  });
   it("uses standard modal body padding without changing section spacing", () => {
     renderPicker();
     const dialog = screen.getByRole("dialog", { name: "Link to a record" });

@@ -96,7 +96,9 @@ describe("protected terminal macro library", () => {
     controller.abort();
     release(true);
     expect(await result).toMatchObject({
-      message: expect.stringContaining("access changed"),
+      name: "AppDataJsonStoreCommittedError",
+      kind: "partial",
+      message: expect.stringContaining("write committed"),
     });
     expect(JSON.parse(raw!).macros).toEqual(original);
     expect(bridge.invoke.mock.calls.map(([command]) => command)).toEqual([

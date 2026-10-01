@@ -373,6 +373,7 @@ export function createAutomationLibraryApi(
             ),
           );
           return {
+            ...current,
             ...buildManagedScriptsSnapshot(
               replacement.map(
                 (entry) => entry.payload,

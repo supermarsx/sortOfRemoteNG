@@ -32,6 +32,7 @@ const mock = vi.hoisted(() => ({
   policyReady: true,
   disabledTypes: [] as DatabaseDocumentType[],
   store: undefined as DatabaseDocumentStore | undefined,
+  appStore: undefined as DatabaseDocumentStore | undefined,
   connections: [] as Connection[],
   sheets: new Map<string, SpreadsheetEditorProps>(),
   open: vi.fn(),
@@ -46,6 +47,9 @@ const mock = vi.hoisted(() => ({
     update: vi.fn(),
     remove: vi.fn(),
   },
+}));
+vi.mock("../../src/hooks/documents/useAppDocumentsStore", () => ({
+  useAppDocumentsStore: () => mock.appStore,
 }));
 vi.mock("../../src/hooks/settings/useCurrentDatabaseSettings", () => ({
   useCurrentDatabaseSettings: () => ({
@@ -165,6 +169,7 @@ let saved: DatabaseDocuments;
 beforeEach(() => {
   vi.clearAllMocks();
   mock.ready = true;
+  mock.appStore = undefined;
   mock.policyReady = true;
   mock.disabledTypes = [];
   mock.sheets.clear();
@@ -228,16 +233,22 @@ beforeEach(() => {
   };
 });
 afterEach(cleanup);
-function show(next = request, onOpenConnection = vi.fn()) {
+function show(
+  next = request,
+  onOpenConnection = vi.fn(),
+  onChangeScope = vi.fn(),
+) {
   return {
     ...render(
       <DocumentsWorkspace
         sessionId="workspace-tab"
         request={next}
         onOpenConnection={onOpenConnection}
+        onChangeScope={onChangeScope}
       />,
     ),
     onOpenConnection,
+    onChangeScope,
   };
 }
 const loaded = async () => {
@@ -253,6 +264,193 @@ function deferred<T>() {
 }
 
 describe("protected document workspace integration", () => {
+  it("shows the default Database selector when no database is available", async () => {
+    mock.ready = false;
+    const { onChangeScope } = show();
+    const selector = screen.getByRole("combobox", {
+      name: "Document storage scope",
+    });
+    expect(selector).toHaveTextContent("Database");
+    fireEvent.click(selector);
+    fireEvent.mouseDown(screen.getByRole("option", { name: "App-wide" }));
+    expect(onChangeScope).toHaveBeenCalledExactlyOnceWith("app");
+    expect(mock.store!.read).not.toHaveBeenCalled();
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
+
+  it("opens the other scope through a callback and blocks dirty or pending editor drafts", async () => {
+    const { onChangeScope } = show();
+    await loaded();
+    const selector = screen.getByRole("combobox", {
+      name: "Document storage scope",
+    });
+    fireEvent.click(selector);
+    fireEvent.mouseDown(screen.getByRole("option", { name: "App-wide" }));
+    expect(onChangeScope).toHaveBeenCalledExactlyOnceWith("app");
+    expect(screen.getByLabelText("Name")).toHaveValue("Inventory");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Pending spreadsheet review" }),
+    );
+    expect(selector).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Accept spreadsheet review" }),
+    );
+    expect(selector).toBeEnabled();
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Unsaved scoped draft" },
+    });
+    expect(selector).toBeDisabled();
+    fireEvent.click(selector);
+    expect(onChangeScope).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Name")).toHaveValue("Unsaved scoped draft");
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
+
+  it("blocks scope switching during a save and re-enables it after durable readback", async () => {
+    const pending = deferred<void>();
+    const write = mock.store!.compareAndSwap;
+    mock.store!.compareAndSwap = vi.fn(async (scope, expected, replacement) => {
+      await pending.promise;
+      await write(scope, expected, replacement);
+    });
+    show();
+    await loaded();
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Saved draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const selector = screen.getByRole("combobox", {
+      name: "Document storage scope",
+    });
+    expect(selector).toBeDisabled();
+    await act(async () => pending.resolve());
+    await waitFor(() => expect(selector).toBeEnabled());
+  });
+
+  it("edits app documents, people and tickets using defaults without database policy or folders", async () => {
+    mock.ready = false;
+    mock.policyReady = false;
+    mock.disabledTypes = DOCUMENT_TYPE_OPTIONS.map((item) => item.type);
+    saved.documents.forEach((doc) => {
+      doc.parentFolderId = null;
+    });
+    mock.appStore = {
+      ...mock.store!,
+      scope: { kind: "app", databaseId: "app-wide-documents", generation: 8 },
+    };
+    mock.connections.push({
+      ...mock.connections[0],
+      id: "folder",
+      name: "Database-only folder",
+      isGroup: true,
+    });
+    show({ ...request, scope: "app", databaseId: "app-wide-documents" });
+    await loaded();
+    expect(
+      screen.getByRole("combobox", { name: "Document storage scope" }),
+    ).toHaveTextContent("App-wide");
+    expect(screen.queryByText(/Loading this database/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New document" })).toBeEnabled();
+    expect(screen.queryByText("Database-only folder")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "App document" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "People" }));
+    fireEvent.click(screen.getByRole("button", { name: "New person" }));
+    fireEvent.click(screen.getByRole("button", { name: "Service desk" }));
+    fireEvent.click(screen.getByRole("button", { name: "New ticket" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mock.appStore!.compareAndSwap).toHaveBeenCalledOnce(),
+    );
+    expect(saved.documents[0].name).toBe("App document");
+    expect(saved.people).toHaveLength(1);
+    expect(saved.tickets).toHaveLength(1);
+    expect(saved.documents.every((doc) => doc.parentFolderId === null)).toBe(
+      true,
+    );
+  });
+
+  it("refuses a database reference with an identical app owner ID and record ID", async () => {
+    mock.ready = false;
+    mock.policyReady = false;
+    mock.appStore = {
+      ...mock.store!,
+      scope: { kind: "app", databaseId: "app-wide-documents", generation: 8 },
+    };
+    saved.documents[0].blocks.push({
+      id: "collision",
+      type: "reference",
+      label: "Follow colliding owner",
+      reference: {
+        databaseId: "app-wide-documents",
+        kind: "document",
+        id: "other-doc",
+      },
+    });
+    show({ ...request, scope: "app", databaseId: "app-wide-documents" });
+    await loaded();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Follow colliding owner" }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /another database or document scope/,
+    );
+    expect(screen.getByLabelText("Name")).toHaveValue("Inventory");
+  });
+
+  it("imports an app attachment without a database and leaves the existing database library untouched", async () => {
+    mock.ready = false;
+    mock.policyReady = false;
+    const databaseSnapshot = structuredClone(saved);
+    const appSaved: DatabaseDocuments = { ...fixture(), documents: [] };
+    mock.appStore = {
+      scope: { kind: "app", databaseId: "app-wide-documents", generation: 8 },
+      changeRevision: 0,
+      read: vi.fn(async () => structuredClone(appSaved)),
+      compareAndSwap: vi.fn(async (_scope, _expected, replacement) => {
+        Object.assign(appSaved, structuredClone(replacement));
+      }),
+    };
+    const { container } = show({
+      ...request,
+      scope: "app",
+      databaseId: "app-wide-documents",
+      documentId: undefined,
+    });
+    await screen.findByTestId("documents-workspace");
+    const bytes = new TextEncoder().encode(
+      "%PDF-1.7\nSynthetic app attachment",
+    );
+    const file = new File([bytes], "app-attachment.pdf", {
+      type: "application/pdf",
+    });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: async () => bytes.buffer,
+    });
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+    await screen.findByDisplayValue("app-attachment.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mock.appStore!.compareAndSwap).toHaveBeenCalledOnce(),
+    );
+    expect(appSaved.attachments[0]).toMatchObject({
+      name: "app-attachment.pdf",
+      mimeType: "application/pdf",
+      size: bytes.length,
+    });
+    expect(appSaved.documents[0]).toMatchObject({
+      parentFolderId: null,
+      blocks: [
+        { type: "attachment", attachmentId: appSaved.attachments[0].id },
+      ],
+    });
+    expect(saved).toEqual(databaseSnapshot);
+    expect(mock.store!.read).not.toHaveBeenCalled();
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
   const bulkSelect = (label: string, option: string) => {
     fireEvent.click(screen.getByRole("combobox", { name: label }));
     fireEvent.mouseDown(screen.getByRole("option", { name: option }));
@@ -659,12 +857,14 @@ describe("protected document workspace integration", () => {
     await screen.findByDisplayValue("Other document");
     await waitFor(() =>
       expect(
-        mock.sheets.get("db-a:1:other-doc:sheet")?.focusReference,
+        mock.sheets.get("database:db-a:1:other-doc:sheet")?.focusReference,
       ).toMatchObject({ id: "other-doc", blockId: "sheet", address: "B3" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Open Inventory" }));
     await screen.findByDisplayValue("Inventory");
-    expect(mock.sheets.get("db-a:1:doc:sheet")?.focusReference).toBeUndefined();
+    expect(
+      mock.sheets.get("database:db-a:1:doc:sheet")?.focusReference,
+    ).toBeUndefined();
   });
 
   it("retains an unaccepted spreadsheet review when another writer publishes a library revision", async () => {
@@ -685,7 +885,7 @@ describe("protected document workspace integration", () => {
     );
     expect(screen.getByLabelText("Name")).toHaveValue("Inventory");
     expect(mock.store.read).toHaveBeenCalledTimes(reads);
-    expect(mock.sheets.get("db-a:1:doc:sheet")?.readOnly).toBe(false);
+    expect(mock.sheets.get("database:db-a:1:doc:sheet")?.readOnly).toBe(false);
     expect(getDocumentDraft("workspace-tab")?.dirty).toBe(true);
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(

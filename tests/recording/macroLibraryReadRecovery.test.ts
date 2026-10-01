@@ -256,7 +256,11 @@ describe("bounded native macro-library pre-read recovery", () => {
       .mockResolvedValueOnce(true)
       .mockRejectedValue(busy);
     const edit = vi.fn(() => ({ items: ["Reviewed edit"] }));
-    await expect(store().update(edit)).rejects.toBe(busy);
+    await expect(store().update(edit)).rejects.toMatchObject({
+      name: "AppDataJsonStoreCommittedError",
+      kind: "partial",
+      message: expect.stringContaining("write committed"),
+    });
     expect(edit).toHaveBeenCalledTimes(1);
     expect(native.invoke.mock.calls.map(([command]) => command)).toEqual([
       "read_macro_library",

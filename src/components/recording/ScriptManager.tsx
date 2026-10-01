@@ -175,7 +175,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
                 ? [
                     {
                       value: mgr.scope.databaseId,
-                      label: "Owning database (unavailable)",
+                      label: "Current database (open and unlock)",
                     },
                   ]
                 : []),
@@ -185,8 +185,25 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
         <span className="min-w-0 break-all text-[var(--color-textSecondary)]">
           {mgr.scope.kind === "app"
             ? "Shared across connections; separate from the current database."
-            : `Database: ${mgr.scope.databaseId}. No app-wide fallback.`}
+            : mgr.scope.databaseId
+              ? `Saved with the current database: ${mgr.scope.databaseId}.`
+              : "Open and unlock a database to load and save its scripts."}
         </span>
+        {view === "terminal" && mgr.selectedScript && !mgr.isEditing && (
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={
+              !mgr.ready ||
+              mgr.busy ||
+              (mgr.scope.kind === "app" && !mgr.databaseScope)
+            }
+            onClick={() => mgr.copyToScope(mgr.selectedScript!)}
+          >
+            Copy to scope:{" "}
+            {mgr.scope.kind === "database" ? "App-wide" : "Current database"}
+          </button>
+        )}
         {view === "terminal" && (
           <button
             type="button"
@@ -341,7 +358,10 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({
         isOpen={!!mgr.review}
         title={mgr.review?.title}
         message={mgr.review?.message ?? ""}
-        confirmText={mgr.review?.destructive ? "Delete" : "Discard draft"}
+        confirmText={
+          mgr.review?.confirmText ??
+          (mgr.review?.destructive ? "Delete" : "Discard draft")
+        }
         variant={mgr.review?.destructive ? "danger" : "warning"}
         confirmOnEnter={false}
         onConfirm={mgr.confirmReview}

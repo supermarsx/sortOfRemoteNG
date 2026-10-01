@@ -39,6 +39,7 @@ export default function BulkEditEntriesDialog({
   section,
   count,
   folders,
+  rootLabel = "Database root",
   tagSuggestions,
   disabled = false,
   onClose,
@@ -47,6 +48,7 @@ export default function BulkEditEntriesDialog({
   section: BulkEntrySection;
   count: number;
   folders: readonly { id: string; name: string }[];
+  rootLabel?: string;
   tagSuggestions: string[];
   disabled?: boolean;
   onClose: () => void;
@@ -103,7 +105,7 @@ export default function BulkEditEntriesDialog({
       if (section === "documents") {
         if (folder !== "keep")
           lines.push(
-            `Move to ${folder === "root" ? "Database root" : (folders.find((item) => `folder:${item.id}` === folder)?.name ?? "unavailable folder")}`,
+            `Move to ${folder === "root" ? rootLabel : (folders.find((item) => `folder:${item.id}` === folder)?.name ?? "unavailable folder")}`,
           );
         if (iconMode !== "keep") lines.push("Set the selected document icon");
         patch = {
@@ -246,7 +248,10 @@ export default function BulkEditEntriesDialog({
                     searchable
                     options={[
                       keep,
-                      { value: "root", label: "Move to database root" },
+                      {
+                        value: "root",
+                        label: `Move to ${rootLabel.toLowerCase()}`,
+                      },
                       ...folders.map((item) => ({
                         value: `folder:${item.id}`,
                         label: item.name,

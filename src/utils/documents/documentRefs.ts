@@ -13,7 +13,7 @@ export function rebindDatabaseDocuments(
 ): DatabaseDocuments {
   const data = normalizeDatabaseDocuments(value);
   const ref = (value: DocumentReference): DocumentReference =>
-    value.databaseId === sourceDatabaseId
+    value.scope !== "app" && value.databaseId === sourceDatabaseId
       ? { ...value, databaseId: destinationDatabaseId }
       : value;
   const rich = (node: DocumentRichTextNode): DocumentRichTextNode => ({

@@ -1,7 +1,11 @@
 import { WebTerminalMgr } from "./types";
 import PopoverSurface from "../../ui/overlays/PopoverSurface";
 import { PlayCircle, StopCircle } from "lucide-react";
-import { OptionList, OptionEmptyState, OptionItemButton } from "../../ui/display/OptionList";
+import {
+  OptionList,
+  OptionEmptyState,
+  OptionItemButton,
+} from "../../ui/display/OptionList";
 
 function MacroReplayPopover({ mgr }: { mgr: WebTerminalMgr }) {
   return (
@@ -33,6 +37,10 @@ function MacroReplayPopover({ mgr }: { mgr: WebTerminalMgr }) {
         className="sor-popover-panel w-64 max-h-64 overflow-y-auto"
         dataTestId="web-terminal-macro-popover"
       >
+        <p className="px-3 py-2 text-xs text-[var(--color-textSecondary)]">
+          {mgr.terminalLibrary.error ??
+            "App-wide macros. Database macros are available in the Macro Manager and favorites."}
+        </p>
         <OptionList>
           {mgr.savedMacros.length === 0 ? (
             <OptionEmptyState>No saved macros</OptionEmptyState>

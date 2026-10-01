@@ -7,6 +7,7 @@ import type {
 } from "../../src/types/connection/connection";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { emptyDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
+import { reconcileRecordLedger } from "../../src/utils/storage/recordLedger";
 
 const h = vi.hoisted(() => ({
   owner: "db-a",
@@ -18,6 +19,9 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("../../src/utils/tauri/invoke", () => ({
   getInvoke: async () => h.invoke,
+}));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => vi.fn()),
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
@@ -39,11 +43,17 @@ vi.mock("../../src/contexts/useConnections", () => ({
   }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
-  useSettings: () => ({ settings: {} }),
+  useSettings: () => ({ settings: {}, settingsReady: true }),
 }));
-vi.mock("../../src/components/recording/scriptManager/shared", () => ({
-  getDefaultScripts: () => [],
-}));
+vi.mock(
+  "../../src/components/recording/scriptManager/shared",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../src/components/recording/scriptManager/shared")
+    >()),
+    getDefaultScripts: () => [],
+  }),
+);
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
@@ -70,6 +80,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
   },
 }));
 import { useSshQuickActions } from "../../src/hooks/ssh/useSshQuickActions";
+import { useTerminalAppLibrary } from "../../src/hooks/recording/useTerminalAppLibrary";
 
 const busy =
   "Storage error: encryption storage transition in progress; retry after it completes";
@@ -89,6 +100,9 @@ const script = {
   script: "printf fixture",
   language: "sh",
   category: "Fixture",
+  osTags: ["agnostic"],
+  createdAt: "2026-09-13",
+  updatedAt: "2026-09-13",
 };
 const connection = {
   id: "saved",
@@ -144,21 +158,31 @@ beforeEach(async () => {
   await IndexedDbService.init();
   await (await openDB("mremote-keyval", 1)).clear("keyval");
   localStorage.clear();
-  rawMacro = JSON.stringify({
+  const macros = {
     version: 1,
     macros: [macro],
     legacyDigest: null,
+  };
+  // Recovery cases start after metadata adoption. Legacy migration is exercised
+  // separately below; an untracked fixture would trigger a real migration CAS.
+  rawMacro = JSON.stringify({
+    ...macros,
+    recordMetadata: await reconcileRecordLedger(macros),
+  });
+  const scripts = {
+    customScripts: [script],
+    modifiedDefaults: [],
+    deletedDefaultIds: [],
+  };
+  const rawScripts = JSON.stringify({
+    ...scripts,
+    recordMetadata: await reconcileRecordLedger(scripts),
   });
   h.invoke
     .mockReset()
     .mockImplementation(
       async (command: string, args: Record<string, unknown>) => {
-        if (command === "read_app_data")
-          return JSON.stringify({
-            customScripts: [script],
-            modifiedDefaults: [],
-            deletedDefaultIds: [],
-          });
+        if (command === "read_app_data") return rawScripts;
         if (command === "read_macro_library") return rawMacro;
         if (command === "compare_and_swap_macro_library") {
           if (args.expected !== rawMacro) return false;
@@ -175,6 +199,37 @@ afterEach(() => {
 });
 
 describe("SSH actions with real protected stores", () => {
+  it("loads the toolbar app library without any database provider or active database", async () => {
+    h.owner = "";
+    h.accessible = false;
+    const view = renderHook(() => useTerminalAppLibrary(true));
+    await waitFor(() =>
+      expect(
+        view.result.current.macros,
+        view.result.current.error ?? undefined,
+      ).toEqual([macro]),
+    );
+    expect(view.result.current.scripts).toContainEqual(script);
+    expect(view.result.current.error).toBeNull();
+    expect(mutations()).toEqual([]);
+  });
+  it("appends toolbar recordings through protected app storage without a database", async () => {
+    h.owner = "";
+    h.accessible = false;
+    const view = renderHook(() => useTerminalAppLibrary(true));
+    await waitFor(() =>
+      expect(
+        view.result.current.macros,
+        view.result.current.error ?? undefined,
+      ).toEqual([macro]),
+    );
+    const recording = { ...macro, id: "new-recording", name: "Recorded" };
+    await act(() => view.result.current.captureMacroSave()(recording));
+    expect(JSON.parse(rawMacro!).macros).toEqual([macro, recording]);
+    expect(view.result.current.macros).toEqual([macro, recording]);
+    expect(mutations()).toHaveLength(1);
+    expect(mutations()[0][0]).toBe("compare_and_swap_macro_library");
+  });
   it.each([
     ["read_app_data", "storage write in progress; retry after it completes"],
     [

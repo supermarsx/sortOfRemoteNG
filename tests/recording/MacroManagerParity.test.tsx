@@ -114,7 +114,13 @@ beforeEach(() => {
     }),
   );
 });
-const mount = () => render(<MacroManager isOpen onClose={vi.fn()} />);
+const mount = () => {
+  const view = render(<MacroManager isOpen onClose={vi.fn()} />);
+  expect(
+    screen.getByRole("combobox", { name: "Macro library scope" }),
+  ).toHaveTextContent(/^App-wide$/);
+  return view;
+};
 describe("Macro Manager parity", () => {
   it("searches platform filters and preserves user-assigned distro tags in the macro editor", async () => {
     const entry = {

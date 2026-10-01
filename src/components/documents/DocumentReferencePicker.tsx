@@ -20,14 +20,18 @@ export default function DocumentReferencePicker({
   data,
   connections,
   databaseId,
+  scope = "database",
   onClose,
 }: {
   data: DatabaseDocuments;
   connections: Connection[];
   databaseId: string;
+  scope?: "app" | "database";
   onClose: (reference: DocumentReference | null) => void;
 }) {
-  const [kind, setKind] = useState<DocumentReference["kind"]>("connection");
+  const [kind, setKind] = useState<DocumentReference["kind"]>(
+    scope === "app" ? "document" : "connection",
+  );
   const [query, setQuery] = useState("");
   const [id, setId] = useState("");
   const [blockId, setBlockId] = useState("");
@@ -37,7 +41,7 @@ export default function DocumentReferencePicker({
   const items = useMemo(() => {
     const list =
       kind === "connection"
-        ? connections
+        ? (scope === "app" ? [] : connections)
             .filter((item) => !item.isGroup)
             .map((item) => ({
               id: item.id,
@@ -70,7 +74,7 @@ export default function DocumentReferencePicker({
     return list.filter((item) =>
       `${item.name} ${item.detail}`.toLowerCase().includes(query.toLowerCase()),
     );
-  }, [connections, data, kind, query]);
+  }, [connections, data, kind, query, scope]);
   const sheets =
     data.documents
       .find((item) => item.id === id)
@@ -91,6 +95,7 @@ export default function DocumentReferencePicker({
               address: address.trim().toUpperCase(),
             }
           : { databaseId, kind, id };
+      if (scope === "app") reference.scope = "app";
       validateDocumentReference(reference);
       if (reference.kind === "cell") {
         const sheet = workbook?.sheets.find((item) => item.id === sheetId);
@@ -121,12 +126,12 @@ export default function DocumentReferencePicker({
       <ModalHeader title="Link to a record" onClose={() => onClose(null)} />
       <ModalBody className="space-y-3 px-5 py-4">
         <p className="text-sm text-[var(--color-textSecondary)]">
-          Links keep their owning database. Following a connection link is an
-          explicit action; adding a link never connects or runs a command.
+          Links keep their owning scope. Following a link is an explicit action;
+          adding a link never connects or runs a command.
         </p>
         <div className="flex flex-wrap gap-2">
           <Select
-            aria-label="Record type"
+            label="Record type"
             value={kind}
             onChange={(value) => {
               setKind(value as DocumentReference["kind"]);
@@ -135,7 +140,9 @@ export default function DocumentReferencePicker({
               setSheetId("");
             }}
             options={[
-              { value: "connection", label: "Connection" },
+              ...(scope === "app"
+                ? []
+                : [{ value: "connection", label: "Connection" }]),
               { value: "document", label: "Document" },
               { value: "cell", label: "Spreadsheet cell" },
               { value: "person", label: "Person" },
@@ -183,7 +190,7 @@ export default function DocumentReferencePicker({
         {kind === "cell" && id && (
           <div className="flex flex-wrap gap-2">
             <Select
-              aria-label="Spreadsheet block"
+              label="Spreadsheet block"
               value={blockId}
               onChange={(value) => {
                 setBlockId(value);
@@ -198,7 +205,7 @@ export default function DocumentReferencePicker({
               ]}
             />
             <Select
-              aria-label="Sheet"
+              label="Sheet"
               value={sheetId}
               onChange={setSheetId}
               options={[

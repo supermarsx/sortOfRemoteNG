@@ -1,5 +1,10 @@
 import type { TerminalMacro } from "../../types/recording/macroTypes";
 import type { AutomationProvenance } from "../../types/recording/automationLibrary";
+import type { RecordLedger } from "../storage/recordLedger";
+import {
+  normalizeTerminalLibraryMigrationReceipt,
+  type TerminalLibraryMigrationReceipt,
+} from "./terminalLibraryMigrationReceipt";
 import {
   normalizeAutomationProvenanceMap,
   pruneAutomationProvenance,
@@ -18,11 +23,13 @@ const LEGACY_KEY = "mremote-terminal-macros";
 export const TERMINAL_MACROS_STORE_KEY = "recording.terminal-macros";
 export const MAX_TERMINAL_MACRO_STEPS = 100_000;
 export const MAX_TERMINAL_MACRO_BYTES = 8 * 1024 * 1024;
-interface MacroLibrary {
+export interface MacroLibrary {
   version: 1;
   macros: TerminalMacro[];
   legacyDigest: string | null;
   provenance?: Record<string, AutomationProvenance>;
+  recordMetadata?: RecordLedger;
+  databaseMigration?: TerminalLibraryMigrationReceipt;
 }
 
 /** Commands are private library data, never copied into connection favorites. */
@@ -117,6 +124,13 @@ function sanitize(value: unknown): SanitizedValue<MacroLibrary> {
       version: 1,
       macros: validateTerminalMacros(library.macros),
       legacyDigest: library.legacyDigest,
+      ...(library.databaseMigration === undefined
+        ? {}
+        : {
+            databaseMigration: normalizeTerminalLibraryMigrationReceipt(
+              library.databaseMigration,
+            ),
+          }),
       ...(library.provenance === undefined
         ? {}
         : { provenance: normalizeAutomationProvenanceMap(library.provenance) }),
@@ -125,11 +139,14 @@ function sanitize(value: unknown): SanitizedValue<MacroLibrary> {
   };
 }
 
+// App-wide storage. Database macros live separately in the owning provider's
+// automationLibrary; reading either scope never moves entries between them.
 export const terminalMacrosStore = new AppDataJsonStore<MacroLibrary>({
   key: TERMINAL_MACROS_STORE_KEY,
   // IndexedDB migration below owns the legacy key and its verified cleanup.
   requireNative: true,
   backend: "macro-library",
+  trackRecords: true,
   sanitize,
 });
 
@@ -144,6 +161,7 @@ async function digest(value: unknown): Promise<string> {
 /** Verified create-if-absent migration; a later legacy writer cannot resurrect removed macros. */
 export async function loadTerminalMacros(
   access?: MacroLibraryReadAccess,
+  options: { createIfAbsent?: boolean } = {},
 ): Promise<TerminalMacro[]> {
   assertMacroLibraryReadAccess(access);
   const durable = await terminalMacrosStore.load(access);
@@ -173,6 +191,8 @@ export async function loadTerminalMacros(
       "Legacy terminal macro copies disagree. Both originals were retained.",
     );
   const legacy = indexed ?? local;
+  if (!durable.value && legacy === null && options.createIfAbsent === false)
+    return [];
   if (durable.value && legacy === null) return durable.value.macros;
   const legacyMacros = legacy === null ? [] : validateTerminalMacros(legacy);
   const legacyDigest = legacy === null ? null : await digest(legacy);

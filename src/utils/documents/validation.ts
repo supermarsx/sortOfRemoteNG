@@ -110,10 +110,11 @@ export function validateDocumentReference(
 ): asserts value is DocumentReference {
   const ref = record(
     value,
-    ["databaseId", "kind", "id", "blockId", "sheetId", "address"],
+    ["databaseId", "scope", "kind", "id", "blockId", "sheetId", "address"],
     ["databaseId", "kind", "id"],
   );
   id(ref.databaseId);
+  if (ref.scope !== undefined) choice(ref.scope, ["app"]);
   id(ref.id);
   choice(ref.kind, ["document", "connection", "person", "ticket", "cell"]);
   if (ref.kind === "cell") {

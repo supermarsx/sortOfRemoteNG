@@ -48,15 +48,15 @@ export function createDocumentService(
     string,
     { scope: DocumentScope; expected: DatabaseDocuments }
   >();
+  const sameScope = (left: DocumentScope, right: DocumentScope) =>
+    (left.kind ?? "database") === (right.kind ?? "database") &&
+    left.databaseId === right.databaseId &&
+    left.generation === right.generation;
   const current = (scope: DocumentScope) => {
     const store = getStore();
-    if (
-      !store?.scope ||
-      store.scope.databaseId !== scope.databaseId ||
-      store.scope.generation !== scope.generation
-    )
+    if (!store?.scope || !sameScope(store.scope, scope))
       throw new Error(
-        "The owning document database is unavailable. Reopen its protected database and review again.",
+        "The owning document store is unavailable. Reopen its scope and review again.",
       );
     return store;
   };
@@ -78,7 +78,7 @@ export function createDocumentService(
       // A UI instance keeps one private baseline, not many attachment-sized copies.
       reviews.clear();
       reviews.set(receipt, {
-        scope: captured,
+        scope: { ...captured },
         expected: normalizeDatabaseDocuments(data),
       });
       return { scope: captured, receipt, data };
@@ -90,8 +90,7 @@ export function createDocumentService(
       const saved = reviews.get(review.receipt);
       if (
         !saved ||
-        saved.scope.databaseId !== review.scope.databaseId ||
-        saved.scope.generation !== review.scope.generation ||
+        !sameScope(saved.scope, review.scope) ||
         JSON.stringify(saved.expected) !== JSON.stringify(review.data)
       )
         throw new Error(

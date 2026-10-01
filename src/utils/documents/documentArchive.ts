@@ -18,6 +18,8 @@ export interface DocumentArchive {
   format: "sorng-documents";
   version: 1;
   databaseId: string;
+  /** Absent means a database archive. */
+  scope?: "app";
   data: DatabaseDocuments;
 }
 
@@ -25,6 +27,7 @@ export async function exportDocumentArchive(
   data: DatabaseDocuments,
   databaseId: string,
   password: string,
+  scope: "database" | "app" = "database",
 ): Promise<string> {
   if (!DATABASE_ID.test(databaseId))
     throw new Error("Choose a valid owning database.");
@@ -36,6 +39,7 @@ export async function exportDocumentArchive(
     format: "sorng-documents",
     version: 1,
     databaseId,
+    ...(scope === "app" ? { scope } : {}),
     data: normalized,
   });
   if (new TextEncoder().encode(payload).length > LIMIT)
@@ -57,10 +61,12 @@ export async function importDocumentArchive(
     typeof raw !== "object" ||
     Array.isArray(raw) ||
     Object.keys(raw).some(
-      (key) => !["format", "version", "databaseId", "data"].includes(key),
+      (key) =>
+        !["format", "version", "databaseId", "scope", "data"].includes(key),
     ) ||
     raw.format !== "sorng-documents" ||
     raw.version !== 1 ||
+    (raw.scope !== undefined && raw.scope !== "app") ||
     !Object.prototype.hasOwnProperty.call(raw, "data") ||
     raw.data === null ||
     typeof raw.databaseId !== "string" ||
@@ -74,6 +80,7 @@ export async function importDocumentArchive(
     format: "sorng-documents",
     version: 1,
     databaseId: raw.databaseId,
+    ...(raw.scope === "app" ? { scope: "app" as const } : {}),
     data,
   };
 }
@@ -84,6 +91,7 @@ export function appendDocumentArchive(
   archive: DocumentArchive,
   databaseId: string,
   parentFolderId: string | null,
+  scope: "database" | "app" = "database",
 ): DatabaseDocuments {
   const imported = normalizeDatabaseDocuments(archive.data);
   const mappings = {
@@ -97,12 +105,20 @@ export function appendDocumentArchive(
     ),
   };
   const ref = (value: DocumentReference): DocumentReference => {
-    if (value.databaseId !== archive.databaseId || value.kind === "connection")
+    if (
+      (value.scope ?? "database") !== (archive.scope ?? "database") ||
+      value.databaseId !== archive.databaseId ||
+      value.kind === "connection"
+    )
       return value;
     const id = mappings[value.kind === "cell" ? "document" : value.kind].get(
       value.id,
     );
-    return id ? { ...value, databaseId, id } : value;
+    if (!id) return value;
+    const rebound = { ...value, databaseId, id };
+    if (scope === "app") rebound.scope = "app";
+    else delete rebound.scope;
+    return rebound;
   };
   const rich = (node: DocumentRichTextNode): DocumentRichTextNode => ({
     ...node,
@@ -111,7 +127,7 @@ export function appendDocumentArchive(
   });
   for (const doc of imported.documents) {
     doc.id = mappings.document.get(doc.id)!;
-    doc.parentFolderId = parentFolderId;
+    doc.parentFolderId = scope === "app" ? null : parentFolderId;
     for (const block of doc.blocks) {
       if (block.type === "rich-text") block.content = rich(block.content);
       if (block.type === "reference") block.reference = ref(block.reference);

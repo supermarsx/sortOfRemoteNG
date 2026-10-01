@@ -9,6 +9,7 @@ import type {
 } from "../../types/recording/automationLibrary";
 import { containsLikelySecretText } from "../storage/appDataJsonStore";
 import { validateTerminalMacros } from "./terminalMacroPersistence";
+import { normalizeTerminalLibraryMigrationReceipt } from "./terminalLibraryMigrationReceipt";
 import {
   normalizeWebAutomationItem,
   normalizeWebAutomationLibrary,
@@ -163,6 +164,7 @@ export function normalizeDatabaseAutomationLibrary(
     "revision",
     "terminalScripts",
     "terminalMacros",
+    "terminalLibraryMigration",
     "website",
     "provenance",
   ]);
@@ -209,5 +211,12 @@ export function normalizeDatabaseAutomationLibrary(
     terminalMacros,
     website: normalizeWebAutomationLibrary(raw.website),
     provenance: normalizeAutomationProvenanceMap(raw.provenance),
+    ...(raw.terminalLibraryMigration === undefined
+      ? {}
+      : {
+          terminalLibraryMigration: normalizeTerminalLibraryMigrationReceipt(
+            raw.terminalLibraryMigration,
+          ),
+        }),
   };
 }

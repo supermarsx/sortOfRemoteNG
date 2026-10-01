@@ -3,6 +3,7 @@ import { useConnections } from "../../contexts/useConnections";
 import type { ConnectionSession } from "../../types/connection/connection";
 import { generateId } from "../../utils/core/id";
 import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
+import { APP_DOCUMENTS_OWNER_ID } from "../../utils/documents/appDocumentsStore";
 
 export const DOCUMENTS_PROTOCOL = "tool:documents";
 
@@ -11,6 +12,7 @@ export function useDocumentSession(onActivateSession?: (id: string) => void) {
   return useCallback(
     (
       options: {
+        scope?: "app" | "database";
         parentFolderId?: string;
         documentId?: string;
         create?: boolean;
@@ -18,14 +20,20 @@ export function useDocumentSession(onActivateSession?: (id: string) => void) {
         allowUnavailable?: boolean;
       } = {},
     ) => {
-      const databaseId = databaseAvailability?.databaseId;
-      const ready = !!databaseId && databaseAvailability?.status === "ready";
+      const scope = options.scope ?? "database";
+      const isApp = scope === "app";
+      const databaseId = isApp
+        ? APP_DOCUMENTS_OWNER_ID
+        : databaseAvailability?.databaseId;
+      const ready =
+        isApp || (!!databaseId && databaseAvailability?.status === "ready");
       if (!ready && !options.allowUnavailable) return;
       if (
         options.parentFolderId &&
-        !state.connections.some(
-          (item) => item.id === options.parentFolderId && item.isGroup,
-        )
+        (isApp ||
+          !state.connections.some(
+            (item) => item.id === options.parentFolderId && item.isGroup,
+          ))
       )
         return;
       const explicitNavigation =
@@ -37,14 +45,16 @@ export function useDocumentSession(onActivateSession?: (id: string) => void) {
           (session) =>
             session.protocol === DOCUMENTS_PROTOCOL &&
             !session.layout?.isDetached &&
+            (session.documentsWorkspace?.scope ?? "database") === scope &&
             (session.documentsWorkspace?.databaseId ??
               session.ownerDatabaseId) === databaseId,
         ) ??
-        (!explicitNavigation
+        (!isApp && !explicitNavigation
           ? state.sessions.find(
               (session) =>
                 session.protocol === DOCUMENTS_PROTOCOL &&
                 !session.layout?.isDetached &&
+                session.documentsWorkspace?.scope !== "app" &&
                 !session.ownerDatabaseId &&
                 !session.documentsWorkspace?.databaseId,
             )
@@ -53,23 +63,27 @@ export function useDocumentSession(onActivateSession?: (id: string) => void) {
         onActivateSession?.(existing.id);
         return;
       }
-      const preferredId = databaseId
-        ? `documents-${encodeURIComponent(databaseId)}`
-        : `documents-unbound-${generateId()}`;
+      const preferredId = isApp
+        ? "documents-app-wide"
+        : databaseId
+          ? `documents-${encodeURIComponent(databaseId)}`
+          : `documents-unbound-${generateId()}`;
       const id =
         existing?.id ??
         (state.sessions.some((session) => session.id === preferredId)
           ? `${preferredId}-${generateId()}`
           : preferredId);
-      const request = ready
-        ? {
-            databaseId,
-            parentFolderId: options.parentFolderId,
-            documentId: options.documentId,
-            create: options.create,
-            requestId: generateId(),
-          }
-        : undefined;
+      const request =
+        ready && databaseId
+          ? {
+              databaseId,
+              scope,
+              parentFolderId: options.parentFolderId,
+              documentId: options.documentId,
+              create: options.create,
+              requestId: generateId(),
+            }
+          : undefined;
       if (state.sessions.some((session) => session.id === id)) {
         if (request)
           dispatch({
@@ -80,12 +94,12 @@ export function useDocumentSession(onActivateSession?: (id: string) => void) {
         const session: ConnectionSession = {
           id,
           connectionId: "tool-documents",
-          name: "Documents",
+          name: isApp ? "Documents · App-wide" : "Documents",
           status: "connected",
           startTime: new Date(),
           protocol: DOCUMENTS_PROTOCOL,
           hostname: "",
-          ownerDatabaseId: databaseId,
+          ownerDatabaseId: isApp ? undefined : databaseId,
           documentsWorkspace: request,
         };
         dispatch({ type: "ADD_SESSION", payload: session });

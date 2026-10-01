@@ -145,6 +145,7 @@ export interface CreateDocumentDialogProps {
   onCreate: (document: DatabaseDocument) => void | Promise<void>;
   folders: readonly { id: string; name: string }[];
   initialParentFolderId: string | null;
+  rootLabel?: string;
   /** Required verified policy; callers disable this dialog while policy is loading. */
   enabledTypes: readonly DocumentBlock["type"][];
   disabled?: boolean;
@@ -324,7 +325,11 @@ function DocumentCreationForm(props: CreateDocumentDialogProps) {
                 searchPlaceholder="Find a folder…"
                 className="w-full"
                 options={[
-                  { value: "", label: "Database root", icon: Folder },
+                  {
+                    value: "",
+                    label: props.rootLabel ?? "Database root",
+                    icon: Folder,
+                  },
                   ...props.folders.map((item) => ({
                     value: item.id,
                     label: item.name,

@@ -16,6 +16,7 @@ import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabas
 import { TOTPConfig } from "../../types/settings/settings";
 import { useTerminalRecorder } from "../recording/useTerminalRecorder";
 import { useMacroRecorder } from "../recording/useMacroRecorder";
+import { useTerminalAppLibrary } from "../recording/useTerminalAppLibrary";
 import {
   TerminalMacro,
   SavedRecording,
@@ -41,11 +42,7 @@ import {
   mergeSSHConnectionConfig,
   defaultSSHConnectionConfig,
 } from "../../types/settings/settings";
-import {
-  ManagedScript,
-  getDefaultScripts,
-  OSTag,
-} from "../../components/recording/ScriptManager";
+import { ManagedScript, OSTag } from "../../components/recording/ScriptManager";
 import {
   verifyIdentity,
   trustIdentity,
@@ -82,11 +79,6 @@ import {
   type SshFailureKind,
 } from "../../utils/ssh/sshFailure";
 import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
-import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
-import {
-  nativeManagedScriptsStore as managedScriptsStore,
-  resolveManagedScripts,
-} from "../../utils/recording/managedScriptPersistence";
 import {
   cancelSessionLifecycleActorAttempts,
   finishSessionLifecycleActorAttempt,
@@ -258,7 +250,7 @@ export function useWebTerminal(
   const connectionContextRef = useRef(connectionContext);
   connectionContextRef.current = connectionContext;
   const { state, dispatch } = connectionContext;
-  const { settings } = useSettings();
+  const { settings, settingsReady } = useSettings();
   const { toast } = useToastContext();
   const toastRef = useRef(toast);
   toastRef.current = toast;
@@ -417,7 +409,15 @@ export function useWebTerminal(
 
   /* ── Script selector state ── */
   const [showScriptSelector, setShowScriptSelector] = useState(false);
-  const [scripts, setScripts] = useState<ManagedScript[]>([]);
+  const terminalLibrary = useTerminalAppLibrary(Boolean(settingsReady));
+  const {
+    scripts,
+    macros: savedMacros,
+    captureMacroSave,
+    reviewScript,
+    reviewMacro,
+    refresh: refreshTerminalLibrary,
+  } = terminalLibrary;
   const [scriptSearchQuery, setScriptSearchQuery] = useState("");
   const [scriptCategoryFilter, setScriptCategoryFilter] =
     useState<string>("all");
@@ -454,7 +454,9 @@ export function useWebTerminal(
     macroRecorderRef.current = macroRecorder;
   }, [macroRecorder]);
   const [showMacroList, setShowMacroList] = useState(false);
-  const [savedMacros, setSavedMacros] = useState<TerminalMacro[]>([]);
+  const recordedMacroSaveRef = useRef<
+    ((macro: TerminalMacro) => Promise<void>) | null
+  >(null);
   const [replayingMacro, setReplayingMacro] = useState(false);
   const replayAbortRef = useRef<AbortController | null>(null);
   const scriptRunBusyRef = useRef(false);
@@ -531,38 +533,8 @@ export function useWebTerminal(
    * ────────────────────────────────────────────────────────────── */
 
   useEffect(() => {
-    let cancelled = false;
-    const loadScripts = async () => {
-      try {
-        const defaults = getDefaultScripts();
-        const result = await managedScriptsStore.load();
-        if (cancelled) return;
-        setScripts(resolveManagedScripts(defaults, result.value));
-        if (result.sanitized) {
-          toast.warning(
-            "Unsafe script entries or credential material were removed during secure storage migration.",
-          );
-        }
-      } catch (e) {
-        if (cancelled) return;
-        toast.error(`Failed to load scripts securely: ${String(e)}`);
-        setScripts([]);
-      }
-    };
-    void loadScripts();
-    const handleStorageChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ key?: string }>).detail;
-      if (detail?.key === managedScriptsStore.key) void loadScripts();
-    };
-    window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, handleStorageChange);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(
-        APP_DATA_STORE_CHANGED_EVENT,
-        handleStorageChange,
-      );
-    };
-  }, [toast]);
+    if (showScriptSelector || showMacroList) void refreshTerminalLibrary();
+  }, [showScriptSelector, showMacroList, refreshTerminalLibrary]);
 
   /* ── script filter memos ── */
   const uniqueCategories = useMemo(() => {
@@ -2630,6 +2602,7 @@ export function useWebTerminal(
       try {
         const assertCurrent = captureQuickActionSession();
         const reviewed = structuredClone(script);
+        const assertLibrary = assertReviewed ?? reviewScript(reviewed);
         if (
           normalizeSessionQuickActions(settingsRef.current.sessionQuickActions)
             .confirmBeforeScriptRun &&
@@ -2639,7 +2612,7 @@ export function useWebTerminal(
         )
           return;
         assertCurrent();
-        if (assertReviewed) await assertReviewed();
+        await assertLibrary();
         assertCurrent();
         script = reviewed;
         const targetSessionId = sshSessionId.current;
@@ -2785,6 +2758,7 @@ export function useWebTerminal(
       isSsh,
       safeWrite,
       captureQuickActionSession,
+      reviewScript,
     ],
   );
 
@@ -3672,10 +3646,20 @@ export function useWebTerminal(
   /* ── Macro handlers ── */
 
   const handleStartMacroRecording = useCallback(() => {
-    macroRecorder.startRecording();
-  }, [macroRecorder]);
+    try {
+      captureQuickActionSession();
+      recordedMacroSaveRef.current = captureMacroSave();
+      macroRecorder.startRecording();
+    } catch {
+      toastRef.current.error(
+        "The SSH session or app-wide macro library is unavailable. Check session access and reload the library before recording.",
+      );
+    }
+  }, [macroRecorder, captureMacroSave, captureQuickActionSession]);
 
   const handleStopMacroRecording = useCallback(async () => {
+    const save = recordedMacroSaveRef.current;
+    recordedMacroSaveRef.current = null;
     const steps = macroRecorder.stopRecording();
     if (steps.length > 0) {
       const macro: TerminalMacro = {
@@ -3685,8 +3669,14 @@ export function useWebTerminal(
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await macroService.saveMacro(macro);
-      setSavedMacros(await macroService.loadMacros());
+      try {
+        if (!save) throw new Error("App-wide recording library unavailable");
+        await save(macro);
+      } catch {
+        toastRef.current.error(
+          "The macro could not be saved to the app-wide library. Recorded steps remain in this terminal.",
+        );
+      }
     }
   }, [macroRecorder]);
 
@@ -3703,7 +3693,9 @@ export function useWebTerminal(
         return;
       }
       const reviewed = structuredClone(macro);
+      let assertLibrary: () => Promise<void>;
       try {
+        assertLibrary = assertReviewed ?? reviewMacro(reviewed);
         if (
           settingsRef.current.macros?.confirmBeforeReplay !== false &&
           !window.confirm(
@@ -3712,7 +3704,7 @@ export function useWebTerminal(
         )
           return;
         assertCurrent();
-        if (assertReviewed) await assertReviewed();
+        await assertLibrary();
         assertCurrent();
       } catch {
         toastRef.current.error(
@@ -3740,7 +3732,7 @@ export function useWebTerminal(
           reviewed,
           () => {
             assertCurrent();
-            if (assertReviewed) return assertReviewed().then(assertCurrent);
+            return assertLibrary().then(assertCurrent);
           },
           controller.signal,
         );
@@ -3763,32 +3755,12 @@ export function useWebTerminal(
         replayAbortRef.current = null;
       }
     },
-    [captureQuickActionSession],
+    [captureQuickActionSession, reviewMacro],
   );
 
   const handleStopReplay = useCallback(() => {
     replayAbortRef.current?.abort();
   }, []);
-
-  useEffect(() => {
-    if (!showMacroList) return;
-    let current = true;
-    macroService
-      .loadMacros()
-      .then((macros) => {
-        if (current) setSavedMacros(macros);
-      })
-      .catch(() => {
-        if (!current) return;
-        setSavedMacros([]);
-        toastRef.current.error(
-          "Macro library unavailable. Open the desktop app and unlock its data store, then retry.",
-        );
-      });
-    return () => {
-      current = false;
-    };
-  }, [showMacroList]);
 
   /* ── TOTP ── */
 
@@ -3914,6 +3886,7 @@ export function useWebTerminal(
     showMacroList,
     setShowMacroList,
     savedMacros,
+    terminalLibrary,
     replayingMacro,
     handleReplayMacro,
     handleStopReplay,

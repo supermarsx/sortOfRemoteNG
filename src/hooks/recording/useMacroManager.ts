@@ -21,6 +21,7 @@ type Review = {
   title: string;
   message: string;
   destructive: boolean;
+  confirmText?: string;
   action: () => void;
 };
 const same = (a: unknown, b: unknown) =>
@@ -31,7 +32,14 @@ const familyFor = (tab: MacroTab): MacroFamily =>
 /** Explicit scoped macro CRUD. Session recordings load independently. */
 export function useMacroManager(isOpen: boolean) {
   const bridge = useAutomationLibraryApi();
-  const [scope, setScope] = useState<AutomationScope>({ kind: "app" });
+  const [scopeKind, setScopeKind] = useState<AutomationScope["kind"]>("app");
+  const scope: AutomationScope =
+    scopeKind === "app"
+      ? { kind: "app" }
+      : {
+          kind: "database",
+          databaseId: bridge.databaseScope?.databaseId ?? "",
+        };
   const [activeTab, setTab] = useState<MacroTab>("macros");
   const family = familyFor(activeTab);
   const owner =
@@ -66,6 +74,8 @@ export function useMacroManager(isOpen: boolean) {
   const [page, setPage] = useState(0);
   const latest = useRef({ key, accessKey, available });
   latest.current = { key, accessKey, available };
+  const latestDatabase = useRef(bridge.databaseScope);
+  latestDatabase.current = bridge.databaseScope;
   const live = useRef(false);
   const readSequence = useRef(0);
   const current = (captured = key) =>
@@ -119,10 +129,20 @@ export function useMacroManager(isOpen: boolean) {
     // Scope/generation, not unrelated renders, owns the private draft lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, available]);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (wasBusy.current && !busy && available && loaded?.key !== key && !error)
+      void refresh();
+    wasBusy.current = busy;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
   useEffect(() => {
     setPage(0);
   }, [searchQuery, category, platform, sort]);
+  const previousDatabaseRevision = useRef(bridge.databaseRevision);
   useEffect(() => {
+    if (previousDatabaseRevision.current === bridge.databaseRevision) return;
+    previousDatabaseRevision.current = bridge.databaseRevision;
     if (scope.kind === "database" && available) void refresh();
     // Content refresh does not replace a reviewed draft/base or its owner key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,6 +153,7 @@ export function useMacroManager(isOpen: boolean) {
     message: string,
     action: () => void,
     destructive = false,
+    confirmText?: string,
   ) {
     if (busyRef.current || !current()) return;
     const next = {
@@ -142,6 +163,7 @@ export function useMacroManager(isOpen: boolean) {
       message,
       action,
       destructive,
+      confirmText,
     };
     reviewRef.current = next;
     setReview(next);
@@ -181,7 +203,7 @@ export function useMacroManager(isOpen: boolean) {
   }
   function changeScope(next: AutomationScope) {
     leave(() => {
-      setScope(next);
+      setScopeKind(next.kind);
       cancelReview();
     });
   }
@@ -337,6 +359,72 @@ export function useMacroManager(isOpen: boolean) {
         })();
       },
       true,
+    );
+  }
+  function copyToScope(entry: MacroEntry) {
+    const expected = snapshot?.entries.find((item) => same(item, entry));
+    const target: AutomationScope | null =
+      scope.kind === "database"
+        ? { kind: "app" }
+        : bridge.databaseScope
+          ? { kind: "database", databaseId: bridge.databaseScope.databaseId }
+          : null;
+    if (!expected || !target || dirty || !current()) return;
+    const targetDatabase = bridge.databaseScope;
+    const targetCurrent = () =>
+      target.kind === "app" ||
+      (latestDatabase.current?.databaseId === targetDatabase?.databaseId &&
+        latestDatabase.current?.generation === targetDatabase?.generation);
+    ask(
+      "Copy macro to scope?",
+      `Copy “${expected.payload.name}” to ${target.kind === "app" ? "App-wide" : "the current database"} as a new entry? The original and existing destination entries will be kept.`,
+      () => {
+        if (!targetCurrent()) return;
+        const captured = key;
+        busyRef.current = true;
+        setBusy(true);
+        readSequence.current++;
+        setLoading(false);
+        setError(null);
+        void (async () => {
+          try {
+            const destination = await bridge.api.read(target, family);
+            if (!current(captured) || !targetCurrent()) return;
+            const source = await bridge.api.read(scope, family);
+            if (!current(captured) || !targetCurrent()) return;
+            if (
+              !same(
+                source.entries.find(
+                  (item) => item.payload.id === expected.payload.id,
+                ),
+                expected,
+              )
+            )
+              throw new Error(
+                "The reviewed macro changed. Reload before copying.",
+              );
+            const copy = structuredClone(expected);
+            const now = new Date().toISOString();
+            copy.payload = {
+              ...copy.payload,
+              id: crypto.randomUUID(),
+              createdAt: now,
+              updatedAt: now,
+            };
+            await bridge.api.apply(destination, [
+              { operation: "put", entry: copy },
+            ]);
+          } catch (failure) {
+            if (current(captured))
+              setError(automationLibraryDiagnostic(failure).message);
+          } finally {
+            busyRef.current = false;
+            if (live.current) setBusy(false);
+          }
+        })();
+      },
+      false,
+      "Copy",
     );
   }
   function duplicateEntry(entry: MacroEntry) {
@@ -510,6 +598,7 @@ export function useMacroManager(isOpen: boolean) {
     saveEntry,
     deleteEntry,
     duplicateEntry,
+    copyToScope,
     handleNewMacro,
     useTemplate,
     closeDraft: () => leave(() => {}),

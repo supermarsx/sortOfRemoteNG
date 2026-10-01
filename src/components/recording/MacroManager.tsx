@@ -233,6 +233,21 @@ function MacroLibrary({ mgr }: { mgr: Mgr }) {
                 </span>
                 <button
                   type="button"
+                  disabled={
+                    mgr.busy ||
+                    mgr.dirty ||
+                    (mgr.scope.kind === "app" && !mgr.databaseScope)
+                  }
+                  className="sor-btn sor-btn-secondary"
+                  onClick={() => mgr.copyToScope(entry)}
+                >
+                  Copy to scope:{" "}
+                  {mgr.scope.kind === "database"
+                    ? "App-wide"
+                    : "Current database"}
+                </button>
+                <button
+                  type="button"
                   disabled={mgr.busy}
                   className="sor-btn sor-btn-secondary"
                   onClick={mgr.closeDraft}
@@ -607,7 +622,7 @@ export function MacroManager({
                   ? [
                       {
                         value: mgr.scope.databaseId,
-                        label: "Owning database (unavailable)",
+                        label: "Current database (open and unlock)",
                       },
                     ]
                   : []),
@@ -622,7 +637,9 @@ export function MacroManager({
           >
             {mgr.scope.kind === "app"
               ? "Shared across connections; protected by app storage settings."
-              : `Database: ${mgr.scope.databaseId}. No app-wide fallback.`}
+              : mgr.scope.databaseId
+                ? `Saved with the current database: ${mgr.scope.databaseId}.`
+                : "Open and unlock a database to load and save its macros."}
           </span>
           <button
             type="button"
@@ -678,7 +695,10 @@ export function MacroManager({
         title={mgr.review?.title}
         message={mgr.review?.message ?? ""}
         variant={mgr.review?.destructive ? "danger" : "warning"}
-        confirmText={mgr.review?.destructive ? "Delete" : "Discard changes"}
+        confirmText={
+          mgr.review?.confirmText ??
+          (mgr.review?.destructive ? "Delete" : "Discard changes")
+        }
         confirmOnEnter={false}
         onConfirm={mgr.confirmReview}
         onCancel={mgr.cancelReview}

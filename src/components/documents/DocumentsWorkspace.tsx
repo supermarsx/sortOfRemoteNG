@@ -80,6 +80,7 @@ import {
   DOCUMENT_TYPE_OPTIONS,
   assertDocumentTypesAllowedForChange,
   isDocumentTypeEnabled,
+  normalizeDatabaseSettings,
 } from "../../utils/documents/documentTypePolicy";
 import type { DatabaseDocumentType } from "../../types/settings/databaseSettings";
 import type { DocumentBlock } from "../../types/documents/document";
@@ -97,6 +98,7 @@ const ConnectionIconPicker = dynamic(
 );
 type Section = "documents" | "people" | "tickets";
 type Request = NonNullable<ConnectionSession["documentsWorkspace"]>;
+const APP_DOCUMENT_TYPE_SETTINGS = normalizeDatabaseSettings(undefined);
 function pruneAttachments(data: DatabaseDocuments): DatabaseDocuments {
   const used = new Set<string>();
   for (const document of data.documents)
@@ -116,50 +118,59 @@ export default function DocumentsWorkspace({
   request,
   onOpenConnection,
   onOpenSecurity,
+  onChangeScope,
 }: {
   sessionId: string;
   request: Request;
   onOpenConnection?: (connection: Connection) => void;
   onOpenSecurity?: () => void;
+  onChangeScope?: (scope: "app" | "database") => void;
 }) {
   const { state } = useConnections();
+  const scope = request.scope ?? "database";
+  const isApp = scope === "app";
+  const connections = isApp ? [] : state.connections;
   const [valid, setValid] = useState(true);
   const [sheetValidity, setSheetValidity] = useState<Record<string, boolean>>(
     {},
   );
   const allValid = valid && Object.values(sheetValidity).every(Boolean);
-  const workspace = useDocumentsWorkspace(request.databaseId, !allValid);
+  const workspace = useDocumentsWorkspace(request.databaseId, !allValid, scope);
   const typePolicy = useCurrentDatabaseSettings();
+  const typeSettings = isApp ? APP_DOCUMENT_TYPE_SETTINGS : typePolicy.settings;
   const { data } = workspace;
-  const policyReady =
-    !typePolicy.loading &&
-    !!typePolicy.settings &&
-    !!typePolicy.scope &&
-    !!workspace.scope &&
-    typePolicy.scope.databaseId === workspace.scope.databaseId &&
-    typePolicy.scope.generation === workspace.scope.generation;
+  const policyReady = isApp
+    ? !!workspace.scope
+    : !typePolicy.loading &&
+      !!typePolicy.settings &&
+      !!typePolicy.scope &&
+      !!workspace.scope &&
+      typePolicy.scope.databaseId === workspace.scope.databaseId &&
+      typePolicy.scope.generation === workspace.scope.generation;
   const enabledTypes = DOCUMENT_TYPE_OPTIONS.filter(
     (option) =>
       option.type !== "person" &&
       option.type !== "ticket" &&
       policyReady &&
-      isDocumentTypeEnabled(typePolicy.settings!, option.type),
+      isDocumentTypeEnabled(typeSettings!, option.type),
   ).map((option) => option.type as DocumentBlock["type"]);
   const [createKey, setCreateKey] = useState<string | null>(null);
   const [createParent, setCreateParent] = useState<string | null>(null);
   const latestPolicy = useRef({
-    settings: typePolicy.settings,
+    settings: typeSettings,
     ready: policyReady,
     data,
   });
   latestPolicy.current = {
-    settings: typePolicy.settings,
+    settings: typeSettings,
     ready: policyReady,
     data,
   };
   const [section, setSection] = useState<Section>("documents");
   const [selectedId, setSelectedId] = useState("");
-  const [folder, setFolder] = useState(request.parentFolderId ?? "*");
+  const [folder, setFolder] = useState(
+    isApp ? "*" : (request.parentFolderId ?? "*"),
+  );
   const [query, setQuery] = useState("");
   const [ticketStatus, setTicketStatus] = useState<TicketFilters["status"]>("");
   const [ticketPriority, setTicketPriority] =
@@ -235,7 +246,7 @@ export default function DocumentsWorkspace({
     policyReady,
     stale: workspace.stale,
     accessKey: workspace.accessKey,
-    folderIds: state.connections
+    folderIds: connections
       .filter((item) => item.isGroup)
       .map((item) => item.id),
   });
@@ -247,12 +258,13 @@ export default function DocumentsWorkspace({
     policyReady,
     stale: workspace.stale,
     accessKey: workspace.accessKey,
-    folderIds: state.connections
+    folderIds: connections
       .filter((item) => item.isGroup)
       .map((item) => item.id),
   };
   const guard = useRef({
     databaseId: request.databaseId,
+    scope,
     dirty: false,
     busy: false,
     revision: 0,
@@ -265,6 +277,7 @@ export default function DocumentsWorkspace({
   guard.current = {
     ...guard.current,
     databaseId: request.databaseId,
+    scope,
     dirty: workspace.dirty || !allValid,
     busy,
   };
@@ -279,7 +292,7 @@ export default function DocumentsWorkspace({
   );
   const currentPerson = data?.people.find((item) => item.id === selectedId);
   const currentTicket = data?.tickets.find((item) => item.id === selectedId);
-  const folders = state.connections.filter((item) => item.isGroup);
+  const folders = connections.filter((item) => item.isGroup);
   const active = (key: string) =>
     live.current && !!key && access.current === key;
   useEffect(() => {
@@ -297,7 +310,7 @@ export default function DocumentsWorkspace({
     if (!allValid) return;
     consumed.current = request.requestId;
     setSection("documents");
-    setFolder(request.parentFolderId ?? "*");
+    setFolder(isApp ? "*" : (request.parentFolderId ?? "*"));
     if (request.create) {
       const parent =
         request.parentFolderId &&
@@ -307,7 +320,7 @@ export default function DocumentsWorkspace({
       setCreateParent(parent);
       setCreateKey(workspace.accessKey);
     } else setSelectedId(request.documentId ?? "");
-  }, [data, request, workspace, folders, allValid]);
+  }, [data, request, workspace, folders, allValid, isApp]);
 
   useEffect(() => {
     setSheetValidity({});
@@ -435,14 +448,17 @@ export default function DocumentsWorkspace({
       );
       return;
     }
-    if (reference.databaseId !== request.databaseId) {
+    if (
+      (reference.scope ?? "database") !== scope ||
+      reference.databaseId !== request.databaseId
+    ) {
       setIoError(
-        "This link belongs to another database. Open that database explicitly; records are never resolved against a different owner.",
+        "This link belongs to another database or document scope. Open its owning scope explicitly; records are never resolved against a different owner.",
       );
       return;
     }
     if (reference.kind === "connection") {
-      const connection = state.connections.find(
+      const connection = connections.find(
         (item) => item.id === reference.id && !item.isGroup,
       );
       if (!connection) {
@@ -481,11 +497,14 @@ export default function DocumentsWorkspace({
     setFocusReference(reference.kind === "cell" ? reference : undefined);
   };
   const referenceLabel = (reference: DocumentReference) => {
-    if (reference.databaseId !== request.databaseId)
-      return `Other database · ${reference.kind}`;
+    if (
+      (reference.scope ?? "database") !== scope ||
+      reference.databaseId !== request.databaseId
+    )
+      return `Other database or scope · ${reference.kind}`;
     if (reference.kind === "connection")
       return (
-        state.connections.find((item) => item.id === reference.id)?.name ??
+        connections.find((item) => item.id === reference.id)?.name ??
         "Missing connection"
       );
     if (reference.kind === "person")
@@ -735,6 +754,7 @@ export default function DocumentsWorkspace({
           data,
           request.databaseId,
           archivePassword,
+          scope,
         );
         if (!active(key)) return;
         await saveFile(
@@ -838,39 +858,95 @@ export default function DocumentsWorkspace({
     }
   };
 
+  const scopeBlocked =
+    busy ||
+    workspace.dirty ||
+    !allValid ||
+    !!createKey ||
+    !!bulkReview ||
+    !!archiveMode ||
+    !!textMode ||
+    chooseLink ||
+    !!confirm;
+  const scopeSelector = (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-[var(--color-textMuted)]">
+        Storage scope
+      </span>
+      <Select
+        label="Document storage scope"
+        value={scope}
+        disabled={!onChangeScope || scopeBlocked}
+        title={
+          scopeBlocked
+            ? "Save or finish pending changes before switching scope."
+            : "Open documents in another scope"
+        }
+        options={[
+          { value: "database", label: "Database" },
+          { value: "app", label: "App-wide" },
+        ]}
+        onChange={(value) => {
+          if (
+            !scopeBlocked &&
+            value !== scope &&
+            (value === "app" || value === "database")
+          )
+            onChangeScope?.(value);
+        }}
+      />
+      {scopeBlocked && (
+        <span className="text-xs text-[var(--color-textMuted)]">
+          Save or finish pending changes before switching scope.
+        </span>
+      )}
+    </div>
+  );
+
   if (!data)
     return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="max-w-lg space-y-3 text-center">
-          <ShieldCheck className="mx-auto h-9 w-9 text-primary" />
-          <h2 className="text-lg font-semibold">
-            {workspace.busy
-              ? "Opening protected documents…"
-              : "Documents need database protection"}
-          </h2>
-          <p
-            role={workspace.error ? "alert" : "status"}
-            className="text-sm text-[var(--color-textSecondary)]"
-          >
-            {workspace.error ||
-              "Open and unlock the owning database in the desktop app. Documents need one verified protection layer: managed protection under Security → Current database, or applicable global Connections encryption with its key unlocked and the existing database file encrypted. An OS-vaulted global key qualifies when that encryption is active; a stored or unlocked key alone is not enough."}
-          </p>
-          <div className="flex justify-center gap-2">
-            <button
-              className="sor-btn sor-btn-secondary"
-              disabled={workspace.busy}
-              onClick={() => void workspace.reload()}
+      <div className="flex h-full flex-col bg-[var(--color-background)] text-[var(--color-text)]">
+        <header className="border-b border-[var(--color-border)] px-4 py-3">
+          {scopeSelector}
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="max-w-lg space-y-3 text-center">
+            <ShieldCheck className="mx-auto h-9 w-9 text-primary" />
+            <h2 className="text-lg font-semibold">
+              {workspace.busy
+                ? isApp
+                  ? "Opening app-wide documents…"
+                  : "Opening protected documents…"
+                : isApp
+                  ? "App-wide documents are locked"
+                  : "Documents need database protection"}
+            </h2>
+            <p
+              role={workspace.error ? "alert" : "status"}
+              className="text-sm text-[var(--color-textSecondary)]"
             >
-              Retry
-            </button>
-            {onOpenSecurity && (
+              {workspace.error ||
+                (isApp
+                  ? "Unlock app access to open app-wide documents. No database is required."
+                  : "Open and unlock the owning database in the desktop app. Documents need one verified protection layer: managed protection under Security → Current database, or applicable global Connections encryption with its key unlocked and the existing database file encrypted. An OS-vaulted global key qualifies when that encryption is active; a stored or unlocked key alone is not enough.")}
+            </p>
+            <div className="flex justify-center gap-2">
               <button
-                className="sor-btn sor-btn-primary"
-                onClick={onOpenSecurity}
+                className="sor-btn sor-btn-secondary"
+                disabled={workspace.busy}
+                onClick={() => void workspace.reload()}
               >
-                Database security
+                Retry
               </button>
-            )}
+              {!isApp && onOpenSecurity && (
+                <button
+                  className="sor-btn sor-btn-primary"
+                  onClick={onOpenSecurity}
+                >
+                  Database security
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -891,7 +967,9 @@ export default function DocumentsWorkspace({
             detail: entry.parentFolderId
               ? (folders.find((item) => item.id === entry.parentFolderId)
                   ?.name ?? "Unavailable folder")
-              : "Database root",
+              : isApp
+                ? "App-wide root"
+                : "Database root",
           }))
       : section === "people"
         ? data.people.map((entry) => ({
@@ -959,10 +1037,13 @@ export default function DocumentsWorkspace({
           <p className="text-xs text-[var(--color-textMuted)]">
             {workspace.dirty || !allValid
               ? "Unsaved changes"
-              : "Saved in the protected database"}{" "}
+              : isApp
+                ? "Saved in app-wide storage"
+                : "Saved in the protected database"}{" "}
             · Documents, people and service desk
           </p>
         </div>
+        {scopeSelector}
         <div className="flex flex-wrap gap-2">
           <button
             className="sor-btn sor-btn-secondary"
@@ -1040,7 +1121,7 @@ export default function DocumentsWorkspace({
           )}
         </div>
       )}
-      {(!policyReady || typePolicy.error) && (
+      {!isApp && (!policyReady || typePolicy.error) && (
         <p
           role={typePolicy.error ? "alert" : "status"}
           className="px-4 py-2 text-xs text-[var(--color-textMuted)]"
@@ -1121,7 +1202,7 @@ export default function DocumentsWorkspace({
               }}
               options={[
                 { value: "*", label: "All folders" },
-                { value: "", label: "Database root" },
+                { value: "", label: isApp ? "App-wide root" : "Database root" },
                 ...folders.map((item) => ({
                   value: item.id,
                   label: item.name,
@@ -1214,7 +1295,7 @@ export default function DocumentsWorkspace({
               (section === "documents" && enabledTypes.length === 0) ||
               (section !== "documents" &&
                 !isDocumentTypeEnabled(
-                  typePolicy.settings!,
+                  typeSettings!,
                   section === "people" ? "person" : "ticket",
                 ))
             }
@@ -1490,7 +1571,10 @@ export default function DocumentsWorkspace({
                         updateDocument({ parentFolderId: value || null })
                       }
                       options={[
-                        { value: "", label: "Database root" },
+                        {
+                          value: "",
+                          label: isApp ? "App-wide root" : "Database root",
+                        },
                         ...folders.map((item) => ({
                           value: item.id,
                           label: item.name,
@@ -1563,7 +1647,7 @@ export default function DocumentsWorkspace({
                                 title: "Export unprotected spreadsheet?",
                                 cancel: () => resolve("cancelled"),
                                 message:
-                                  "Spreadsheet exports may contain private cell values, notes and links. The exported file is not protected by your database. Continue only to a trusted destination.",
+                                  "Spreadsheet exports may contain private cell values, notes and links. The exported file is outside document storage protection. Continue only to a trusted destination.",
                                 run: () => {
                                   void saveFile(file.name, file.bytes, key)
                                     .then(resolve)
@@ -1741,7 +1825,9 @@ export default function DocumentsWorkspace({
                     }}
                   >
                     <Plus size={14} />
-                    Link connection, document, person, ticket or cell
+                    {isApp
+                      ? "Link document, person, ticket or cell"
+                      : "Link connection, document, person, ticket or cell"}
                   </button>
                 </section>
               )}
@@ -1763,8 +1849,8 @@ export default function DocumentsWorkspace({
                   </h3>
                   <p className="mt-1 text-xs text-[var(--color-textMuted)]">
                     {visible.length}{" "}
-                    {visible.length === 1 ? "record" : "records"} · Current
-                    protected database
+                    {visible.length === 1 ? "record" : "records"} ·{" "}
+                    {isApp ? "App-wide storage" : "Current protected database"}
                   </p>
                 </div>
                 <span className="text-xs text-[var(--color-textMuted)]">
@@ -1816,7 +1902,7 @@ export default function DocumentsWorkspace({
                     <p>
                       {query || folder !== "*"
                         ? "No records match this view. Adjust the search or folder filter."
-                        : "Your protected library is ready. Create a record or import a document to get started."}
+                        : "Your document library is ready. Create a record or import a document to get started."}
                     </p>
                   </div>
                 )}
@@ -1849,8 +1935,9 @@ export default function DocumentsWorkspace({
       {chooseLink && (
         <DocumentReferencePicker
           data={data}
-          connections={state.connections}
+          connections={connections}
           databaseId={request.databaseId}
+          scope={scope}
           onClose={finishReference}
         />
       )}
@@ -1862,6 +1949,7 @@ export default function DocumentsWorkspace({
           onCreate={createDocument}
           folders={folders}
           initialParentFolderId={createParent}
+          rootLabel={isApp ? "App-wide root" : "Database root"}
           disabled={busy || !allValid || !policyReady}
           enabledTypes={enabledTypes}
         />
@@ -1955,6 +2043,7 @@ export default function DocumentsWorkspace({
                       folders.some((item) => item.id === folder)
                         ? folder
                         : null,
+                      scope,
                     );
                     assertAllowed(next);
                     workspace.update(() => next);
@@ -1963,7 +2052,7 @@ export default function DocumentsWorkspace({
                     setArchiveError(
                       cause instanceof Error
                         ? cause.message
-                        : "Import exceeds the database limits.",
+                        : "Import exceeds the document library limits.",
                     );
                   }
                 } else void archiveAction();
@@ -1986,6 +2075,7 @@ export default function DocumentsWorkspace({
           section={bulkReview.section}
           count={bulkReview.ids.length}
           folders={folders}
+          rootLabel={isApp ? "App-wide root" : "Database root"}
           tagSuggestions={tagSuggestions}
           disabled={
             busy ||
@@ -2020,11 +2110,11 @@ export default function DocumentsWorkspace({
           />
           <ModalBody className="space-y-3">
             <p className="text-sm">
-              This copy is outside database protection. Structured secrets and
-              personal identifiers are redacted by default, but ordinary notes
-              and cells may still be private. Attachments, rich formatting and
-              diagrams are not rendered in this text copy. Use Protected export
-              for a complete, encrypted archive.
+              This copy is outside document storage protection. Structured
+              secrets and personal identifiers are redacted by default, but
+              ordinary notes and cells may still be private. Attachments, rich
+              formatting and diagrams are not rendered in this text copy. Use
+              Protected export for a complete, encrypted archive.
             </p>
             <label className="flex items-center gap-2 text-sm">
               <input

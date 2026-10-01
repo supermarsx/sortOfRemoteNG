@@ -32,7 +32,7 @@ vi.mock("../../src/hooks/recording/useAutomationLibraryApi", async () => {
       ready: true,
       settingsReady: true,
       accessEpoch: 1,
-      databaseScope: null,
+      databaseScope: { databaseId: "fixture-database", generation: 1 },
       databaseRevision: 0,
       diagnostic: null,
       retry: vi.fn(),

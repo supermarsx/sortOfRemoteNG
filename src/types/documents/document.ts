@@ -1,11 +1,14 @@
-/** Database-owned data only. These records are never executable HTML or code. */
+/** Scope-owned data only. These records are never executable HTML or code. */
 export type DocumentReference =
   | {
+      /** Absent means database-owned, including legacy references. */
+      scope?: "app";
       databaseId: string;
       kind: "document" | "connection" | "person" | "ticket";
       id: string;
     }
   | {
+      scope?: "app";
       databaseId: string;
       kind: "cell";
       id: string;
@@ -165,7 +168,7 @@ export type DocumentBlock = { id: string } & (
 );
 export interface DatabaseDocument {
   id: string;
-  /** Existing connection folder ID; null places the document at database root. */
+  /** Database connection folder ID, or null for scope root (always null for app). */
   parentFolderId: string | null;
   name: string;
   icon: string;
@@ -185,7 +188,7 @@ export interface DocumentAttachment {
     | "text/markdown";
   size: number;
   sha256: string;
-  /** Protected inside the same database envelope; no plaintext sidecar path. */
+  /** Inline in the owning store; database documents share its protected envelope. */
   dataBase64: string;
 }
 export interface DocumentPerson {
@@ -218,10 +221,12 @@ export interface DatabaseDocuments {
   tickets: DocumentTicket[];
 }
 export interface DocumentScope {
+  /** Legacy scopes without a kind are database-owned. */
+  kind?: "database" | "app";
   databaseId: string;
   generation: number;
 }
-/** Provider-owned, native managed-database persistence; never browser fallback. */
+/** Native persistence owned by a database provider or the app document store. */
 export interface DatabaseDocumentStore {
   scope: DocumentScope | null;
   changeRevision: number;

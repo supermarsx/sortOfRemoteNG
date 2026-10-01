@@ -57,6 +57,9 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
 
   return (
     <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] max-h-96 overflow-hidden flex flex-col">
+      <p className="px-4 py-2 text-xs text-[var(--color-textSecondary)]">
+        App-wide bulk SSH library
+      </p>
       <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center gap-3 bg-[var(--color-surfaceHover)]/30">
         <input
           type="text"

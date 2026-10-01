@@ -91,6 +91,64 @@ const editor = () => ({
   ownerDatabaseId: "db-a",
 });
 describe("database-owned tool tab access", () => {
+  it.each(["none", "suspended", "ready"])(
+    "keeps App-wide documents independent of database availability (%s)",
+    async (status) => {
+      h.availability = { status, databaseId: "other-db", generation: 4 };
+      const session = {
+        ...createToolSession("connectionEditor"),
+        protocol: "tool:documents",
+        name: "App-wide documents",
+        ownerDatabaseId: undefined,
+        documentsWorkspace: {
+          scope: "app" as const,
+          databaseId: "app-wide-documents",
+          requestId: "app-documents-request",
+        },
+      };
+      render(<ToolTabViewer session={session} onClose={vi.fn()} />);
+      expect(
+        await screen.findByTestId("protected-documents"),
+      ).toHaveTextContent("app-wide-documents:app-documents-request");
+      expect(
+        screen.queryByTestId("tool-database-gate"),
+      ).not.toBeInTheDocument();
+      expect(h.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "BIND_TOOL_DATABASE_OWNER" }),
+      );
+    },
+  );
+
+  it("offers App-wide documents from an unavailable database tab without rebinding it", () => {
+    const session = {
+      ...createToolSession("connectionEditor"),
+      protocol: "tool:documents",
+      name: "Documents",
+      ownerDatabaseId: "closed-db",
+    };
+    render(
+      <ToolTabViewer
+        session={session}
+        onClose={vi.fn()}
+        onActivateSession={vi.fn()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open App-wide documents" }),
+    );
+    expect(h.dispatch).toHaveBeenCalledWith({
+      type: "ADD_SESSION",
+      payload: expect.objectContaining({
+        protocol: "tool:documents",
+        documentsWorkspace: expect.objectContaining({ scope: "app" }),
+        ownerDatabaseId: undefined,
+      }),
+    });
+    expect(h.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "BIND_TOOL_DATABASE_OWNER" }),
+    );
+  });
+
   it("binds an ownerless Documents browser once and never mounts it under another database or lock", async () => {
     let session = {
       ...createToolSession("connectionEditor"),

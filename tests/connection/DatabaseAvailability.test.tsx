@@ -86,6 +86,31 @@ async function createDatabase() {
   return database.id;
 }
 describe("authoritative database availability", () => {
+  it("does not give App-wide document tabs the currently open database owner", async () => {
+    const id = await createDatabase();
+    const { result } = renderHook(() => useConnections(), { wrapper });
+    await act(async () => {
+      await result.current.loadData(id);
+    });
+    act(() =>
+      result.current.dispatch({
+        type: "ADD_SESSION",
+        payload: {
+          ...session("app-documents", "tool:documents"),
+          documentsWorkspace: {
+            scope: "app",
+            databaseId: "app-wide-documents",
+            requestId: "app-documents",
+          },
+        },
+      }),
+    );
+    expect(
+      result.current.state.sessions.find((item) => item.id === "app-documents")
+        ?.ownerDatabaseId,
+    ).toBeUndefined();
+  });
+
   it("clears the tree when an index reload discovers cross-window deletion", async () => {
     const id = await createDatabase();
     const { result } = renderHook(() => useConnections(), { wrapper });

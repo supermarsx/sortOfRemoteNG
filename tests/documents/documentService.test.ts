@@ -55,4 +55,51 @@ describe("reviewed document service", () => {
     finish(fixture());
     await expect(pending).rejects.toThrow(/expired/);
   });
+  it.each([undefined, "database"] as const)(
+    "treats %s scopes as database-owned and isolates an app with the same ID and generation",
+    async (kind) => {
+      const { scope, store, service } = setup();
+      store.scope = { ...scope, kind };
+      const review = await service.read({ ...scope, kind: "database" });
+      store.scope = { ...scope, kind: "app" };
+      await expect(service.read(scope)).rejects.toThrow(/owning/);
+      await expect(
+        service.apply(review, { ...fixture(), revision: 1 }),
+      ).rejects.toThrow(/owning/);
+      expect(store.compareAndSwap).not.toHaveBeenCalled();
+      const appReview = await service.read({ ...scope, kind: "app" });
+      store.scope = scope;
+      await expect(
+        service.apply(appReview, { ...fixture(), revision: 1 }),
+      ).rejects.toThrow(/owning/);
+    },
+  );
+  it("refuses a review whose caller-mutated kind would otherwise rewrite the private receipt", async () => {
+    const { scope, store, service } = setup();
+    const review = await service.read(scope);
+    review.scope.kind = "app";
+    store.scope = { ...scope, kind: "app" };
+    await expect(
+      service.apply(review, { ...fixture(), revision: 1 }),
+    ).rejects.toThrow(/expired/);
+    expect(store.compareAndSwap).not.toHaveBeenCalled();
+  });
+  it("discards an in-flight read if only the owner kind changes", async () => {
+    const { scope, store, service } = setup();
+    let finish!: (value: ReturnType<typeof fixture>) => void;
+    store.read = () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    const pending = service.read(scope);
+    store.scope = { ...scope, kind: "app" };
+    finish(fixture());
+    await expect(pending).rejects.toThrow(/owning/);
+  });
+  it("keeps legacy and explicit database scopes interoperable", async () => {
+    const { scope, store, service } = setup();
+    const review = await service.read({ ...scope, kind: "database" });
+    await service.apply(review, { ...fixture(), revision: 1 });
+    expect(store.compareAndSwap).toHaveBeenCalledOnce();
+  });
 });

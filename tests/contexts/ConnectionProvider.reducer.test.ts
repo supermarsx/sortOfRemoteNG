@@ -50,6 +50,31 @@ const state: ConnectionState = {
 };
 
 describe("session database owner snapshot reconciliation", () => {
+  it("does not bind App-wide documents to an open database", () => {
+    const tool = {
+      ...session,
+      protocol: "tool:documents",
+      ownerDatabaseId: undefined,
+      documentsWorkspace: {
+        scope: "app" as const,
+        databaseId: "app-wide-documents",
+        requestId: "app-documents",
+      },
+    };
+    const next = connectionReducer(
+      { ...state, sessions: [tool] },
+      {
+        type: "BIND_TOOL_DATABASE_OWNER",
+        payload: {
+          sessionId: tool.id,
+          databaseId: "database-a",
+          generation: 1,
+        },
+      },
+    );
+    expect(next.sessions[0]).toEqual(tool);
+  });
+
   it("carries the first authoritative bind to an ownerless recipient and preserves it across repeated moves", () => {
     const tool = {
       ...session,

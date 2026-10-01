@@ -17,13 +17,17 @@ import {
   type DocumentReview,
 } from "../../utils/documents/documentService";
 import { normalizeDatabaseDocuments } from "../../utils/documents/validation";
+import { useAppDocumentsStore } from "./useAppDocumentsStore";
 
-/** Private drafts live only in this mounted, database-owned workspace. */
+/** Private drafts live only in this mounted, scope-owned workspace. */
 export function useDocumentsWorkspace(
   databaseId: string,
   hasPendingEditorChanges = false,
+  requestedScope: "database" | "app" = "database",
 ) {
-  const { documents: store, databaseAvailability } = useConnections();
+  const { documents: databaseStore, databaseAvailability } = useConnections();
+  const appStore = useAppDocumentsStore();
+  const store = requestedScope === "app" ? appStore : databaseStore;
   const toast = useContext(ToastContext)?.toast;
   const storeRef = useRef(store);
   storeRef.current = store;
@@ -35,8 +39,9 @@ export function useDocumentsWorkspace(
   const accessKey =
     scope &&
     scope.databaseId === databaseId &&
-    databaseAvailability?.status === "ready"
-      ? `${scope.databaseId}:${scope.generation}`
+    (scope.kind ?? "database") === requestedScope &&
+    (requestedScope === "app" || databaseAvailability?.status === "ready")
+      ? `${requestedScope}:${scope.databaseId}:${scope.generation}`
       : "";
   const accessRef = useRef(accessKey);
   accessRef.current = accessKey;
@@ -90,7 +95,7 @@ export function useDocumentsWorkspace(
         setError(
           cause instanceof Error
             ? cause.message
-            : "The document library could not be read. Reopen its protected database and retry.",
+            : "The document library could not be read. Unlock its storage and retry.",
         );
     } finally {
       if (current(key, token)) {
@@ -165,7 +170,11 @@ export function useDocumentsWorkspace(
     busyRef.current = true;
     setBusy(true);
     setError("");
-    const notification = toast?.loading("Saving protected documents…");
+    const notification = toast?.loading(
+      review.scope.kind === "app"
+        ? "Saving app-wide documents…"
+        : "Saving protected documents…",
+    );
     try {
       const replacement = normalizeDatabaseDocuments({
         ...draft,
@@ -183,7 +192,10 @@ export function useDocumentsWorkspace(
       if (notification)
         toast?.update(notification, {
           type: "success",
-          message: "Documents saved to the protected database.",
+          message:
+            review.scope.kind === "app"
+              ? "Documents saved to app-wide storage."
+              : "Documents saved to the protected database.",
           duration: 4000,
         });
       return true;

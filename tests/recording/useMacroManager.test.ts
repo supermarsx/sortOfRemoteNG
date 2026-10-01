@@ -133,6 +133,7 @@ beforeEach(() => {
 });
 async function open() {
   const view = renderHook(() => useMacroManager(true));
+  act(() => view.result.current.changeScope({ kind: "app" }));
   await waitFor(() => expect(view.result.current.ready).toBe(true));
   return view;
 }

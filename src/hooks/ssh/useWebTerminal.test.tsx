@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ILinkHandler } from "@xterm/xterm";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import type { ConnectionSession } from "../../types/connection/connection";
+import type { MacroStep } from "../../types/recording/macroTypes";
 import {
   hasSessionLifecycleActorAttempt,
   resetSessionLifecycleAllocatorForTests,
@@ -123,7 +124,7 @@ const mocks = vi.hoisted(() => {
     currentCommand: "",
     startRecording: vi.fn(),
     recordInput: vi.fn(),
-    stopRecording: vi.fn(() => []),
+    stopRecording: vi.fn((): MacroStep[] => []),
   };
   const connection = {
     id: "connection-ssh-1",
@@ -144,6 +145,7 @@ const mocks = vi.hoisted(() => {
   };
   const settingsContext = {
     settings: {} as Record<string, unknown>,
+    settingsReady: true,
   };
   const createToast = () =>
     Object.assign(vi.fn(), {
@@ -205,6 +207,10 @@ const mocks = vi.hoisted(() => {
     runtimePath,
     databaseId: "database-ssh-fixture",
     databaseAccessible: true,
+    terminalLibraryError: null as string | null,
+    saveAppMacro: vi.fn(async (_macro: unknown) => {}),
+    reviewAppScript: vi.fn(async () => {}),
+    reviewAppMacro: vi.fn(async () => {}),
   };
 });
 
@@ -259,6 +265,20 @@ vi.mock("../recording/useTerminalRecorder", () => ({
 }));
 vi.mock("../recording/useMacroRecorder", () => ({
   useMacroRecorder: () => mocks.macroRecorder,
+}));
+// App storage, CAS and payload checks have dedicated adapter tests.
+// These tests exercise SSH dispatch/session lifecycle after library review.
+vi.mock("../recording/useTerminalAppLibrary", () => ({
+  useTerminalAppLibrary: () => ({
+    available: true,
+    error: mocks.terminalLibraryError,
+    scripts: [],
+    macros: [],
+    refresh: mocks.loadManagedScripts,
+    captureMacroSave: () => mocks.saveAppMacro,
+    reviewScript: () => mocks.reviewAppScript,
+    reviewMacro: () => mocks.reviewAppMacro,
+  }),
 }));
 vi.mock("../../utils/recording/macroService", () => ({
   loadMacros: vi.fn(async () => []),
@@ -335,6 +355,12 @@ beforeEach(() => {
   vi.mocked(macroService.replayMacro).mockReset().mockResolvedValue(undefined);
   mocks.databaseId = "database-ssh-fixture";
   mocks.databaseAccessible = true;
+  mocks.terminalLibraryError = null;
+  mocks.saveAppMacro.mockReset().mockResolvedValue(undefined);
+  mocks.reviewAppScript.mockReset().mockResolvedValue(undefined);
+  mocks.reviewAppMacro.mockReset().mockResolvedValue(undefined);
+  mocks.idleMacroRecorder.startRecording.mockReset();
+  mocks.idleMacroRecorder.stopRecording.mockReset().mockReturnValue([]);
   resetSessionLifecycleAllocatorForTests();
   mocks.MockTerminal.instances.length = 0;
   mocks.webLinksHandlers.length = 0;
@@ -425,21 +451,21 @@ afterEach(() => {
 });
 
 describe("useWebTerminal SSH link security", () => {
-  it("never populates bundled scripts on a secure library read failure", async () => {
+  it("exposes app library read failure without populating bundled scripts", async () => {
     const catalog = await import("../../components/recording/ScriptManager");
     const templates = vi
       .spyOn(catalog, "getDefaultScripts")
       .mockReturnValue(defaultScripts);
-    mocks.loadManagedScripts.mockRejectedValueOnce(
-      new Error("Fixture storage unavailable"),
-    );
+    mocks.terminalLibraryError = "App library unavailable";
     let model: WebTerminalMgr | null = null;
     function Harness() {
       model = useWebTerminal(session);
       return <div ref={model.containerRef} />;
     }
     render(<Harness />);
-    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(model!.terminalLibrary.error).toBe("App library unavailable"),
+    );
     expect(model!.scriptsByCategory).toEqual({});
     templates.mockRestore();
   });
@@ -467,6 +493,130 @@ describe("useWebTerminal SSH link security", () => {
           command === "send_ssh_input" || command === "execute_script",
       ),
     ).toEqual([]);
+  });
+  it.each(["script", "macro"])(
+    "revalidates the app-wide %s after confirmation and refuses a changed payload",
+    async (family) => {
+      let model: WebTerminalMgr | null = null;
+      function Harness() {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} />;
+      }
+      render(<Harness />);
+      await waitFor(() => expect(model?.status).toBe("connected"));
+      mocks.confirmPaste.mockImplementation(() => {
+        const review =
+          family === "script" ? mocks.reviewAppScript : mocks.reviewAppMacro;
+        review.mockRejectedValue(
+          new Error("App entry changed during confirmation"),
+        );
+        return true;
+      });
+      await act(async () => {
+        if (family === "script") await model!.runScript(defaultScripts[0]);
+        else
+          await model!.handleReplayMacro({
+            id: "macro",
+            name: "Fixture",
+            createdAt: "2026-10-01",
+            updatedAt: "2026-10-01",
+            steps: [{ command: "pwd", delayMs: 0, sendNewline: true }],
+          });
+      });
+      expect(mocks.confirmPaste).toHaveBeenCalledOnce();
+      expect(
+        family === "script" ? mocks.reviewAppScript : mocks.reviewAppMacro,
+      ).toHaveBeenCalledOnce();
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) =>
+            command === "send_ssh_input" || command === "execute_script",
+        ),
+      ).toEqual([]);
+    },
+  );
+  it.each(["locked", "different owner", "missing owner"])(
+    "keeps app-wide execution and recording start blocked for a %s session",
+    async (reason) => {
+      let target = { ...session };
+      let model: WebTerminalMgr | null = null;
+      function Harness() {
+        model = useWebTerminal(target);
+        return <div ref={model.containerRef} />;
+      }
+      const view = render(<Harness />);
+      await waitFor(() => expect(model?.status).toBe("connected"));
+      if (reason === "locked") mocks.databaseAccessible = false;
+      else if (reason === "different owner") mocks.databaseId = "another-db";
+      else {
+        target = { ...target, ownerDatabaseId: undefined };
+        view.rerender(<Harness />);
+      }
+      await act(async () => {
+        model!.handleStartMacroRecording();
+        await model!.runScript(defaultScripts[0]);
+        await model!.handleReplayMacro({
+          id: "macro",
+          name: "Fixture",
+          createdAt: "2026-10-01",
+          updatedAt: "2026-10-01",
+          steps: [{ command: "pwd", delayMs: 0, sendNewline: true }],
+        });
+      });
+      expect(mocks.idleMacroRecorder.startRecording).not.toHaveBeenCalled();
+      expect(mocks.saveAppMacro).not.toHaveBeenCalled();
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) =>
+            command === "send_ssh_input" || command === "execute_script",
+        ),
+      ).toEqual([]);
+    },
+  );
+  it("saves recorded steps to app storage even after the session database closes", async () => {
+    const steps = [{ command: "pwd", delayMs: 0, sendNewline: true }];
+    mocks.idleMacroRecorder.stopRecording.mockReturnValue(steps);
+    let model: WebTerminalMgr | null = null;
+    function Harness() {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    act(() => model!.handleStartMacroRecording());
+    expect(mocks.idleMacroRecorder.startRecording).toHaveBeenCalledOnce();
+    mocks.databaseId = "";
+    mocks.databaseAccessible = false;
+    await act(() => model!.handleStopMacroRecording());
+    expect(mocks.saveAppMacro).toHaveBeenCalledWith(
+      expect.objectContaining({ steps }),
+    );
+    expect(mocks.toast.error).not.toHaveBeenCalled();
+  });
+  it("honors an explicitly scoped favorite review without substituting the app entry", async () => {
+    mocks.reviewAppScript.mockRejectedValue(new Error("Not in app library"));
+    const reviewDatabaseFavorite = vi.fn(async () => {});
+    let model: WebTerminalMgr | null = null;
+    function Harness() {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await act(() =>
+      model!.runScript(
+        { ...defaultScripts[0], script: "pwd" },
+        reviewDatabaseFavorite,
+      ),
+    );
+    expect(reviewDatabaseFavorite).toHaveBeenCalledOnce();
+    expect(mocks.reviewAppScript).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "send_ssh_input",
+      expect.objectContaining({ data: "pwd\n" }),
+    );
   });
   beforeEach(() => SettingsManager.resetInstance());
   afterEach(() => {
@@ -2269,6 +2419,7 @@ describe("useWebTerminal input lifecycle", () => {
         updatedAt: "2026-01-01",
       });
     });
+    await waitFor(() => expect(complete).toBeTypeOf("function"));
     mocks.databaseId = "different-db";
     await act(async () => {
       complete({ stdout: "private fixture output", stderr: "", exitCode: 0 });
@@ -2332,6 +2483,7 @@ describe("useWebTerminal input lifecycle", () => {
         });
       });
       if (reason !== "cancel") {
+        await waitFor(() => expect(complete).toBeTypeOf("function"));
         if (reason === "locked after first step")
           mocks.databaseAccessible = false;
         else act(() => model!.handleStopReplay());

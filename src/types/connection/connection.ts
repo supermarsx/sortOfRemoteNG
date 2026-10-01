@@ -1739,6 +1739,8 @@ export interface ConnectionSession {
   connectionRecycleBin?: { databaseId: string };
   /** Private document contents never enter session metadata. */
   documentsWorkspace?: {
+    /** Omitted for legacy database tabs. */
+    scope?: "app" | "database";
     databaseId: string;
     parentFolderId?: string;
     documentId?: string;

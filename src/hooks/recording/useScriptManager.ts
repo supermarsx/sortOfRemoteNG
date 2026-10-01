@@ -24,6 +24,7 @@ type Review = {
   title: string;
   message: string;
   destructive: boolean;
+  confirmText?: string;
   action: () => void;
 };
 const same = (a: unknown, b: unknown) =>
@@ -32,7 +33,16 @@ const same = (a: unknown, b: unknown) =>
 /** A selected scope never falls back to another store or treats a read failure as empty. */
 export function useScriptManager(onClose: () => void, enabled = true) {
   const bridge = useAutomationLibraryApi();
-  const [scope, setScope] = useState<AutomationScope>({ kind: "app" });
+  // App-wide is the default; opting into database scope follows the open
+  // database. accessKey binds every draft/read/write to its access lease.
+  const [scopeKind, setScopeKind] = useState<AutomationScope["kind"]>("app");
+  const scope: AutomationScope =
+    scopeKind === "app"
+      ? { kind: "app" }
+      : {
+          kind: "database",
+          databaseId: bridge.databaseScope?.databaseId ?? "",
+        };
   const owner =
     scope.kind === "app"
       ? "app"
@@ -60,6 +70,8 @@ export function useScriptManager(onClose: () => void, enabled = true) {
     readSequence = useRef(0);
   const latest = useRef({ accessKey, available });
   latest.current = { accessKey, available };
+  const latestDatabase = useRef(bridge.databaseScope);
+  latestDatabase.current = bridge.databaseScope;
   const current = (key = accessKey) =>
     live.current &&
     latest.current.available &&
@@ -140,7 +152,25 @@ export function useScriptManager(onClose: () => void, enabled = true) {
     // Private drafts are bound to access, not ordinary content refreshes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessKey, available]);
+  const wasBusy = useRef(false);
   useEffect(() => {
+    // A previous owner's pending operation can outlive a database switch.
+    // Resume the new owner's initial read once that operation settles.
+    if (
+      wasBusy.current &&
+      !busy &&
+      available &&
+      loaded?.key !== accessKey &&
+      !storageError
+    )
+      void refresh();
+    wasBusy.current = busy;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
+  const previousDatabaseRevision = useRef(bridge.databaseRevision);
+  useEffect(() => {
+    if (previousDatabaseRevision.current === bridge.databaseRevision) return;
+    previousDatabaseRevision.current = bridge.databaseRevision;
     if (scope.kind === "database" && available) void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge.databaseRevision]);
@@ -149,6 +179,7 @@ export function useScriptManager(onClose: () => void, enabled = true) {
     message: string,
     action: () => void,
     destructive = false,
+    confirmText?: string,
   ) {
     if (!current() || busyRef.current) return;
     const next = {
@@ -158,6 +189,7 @@ export function useScriptManager(onClose: () => void, enabled = true) {
       message,
       action,
       destructive,
+      confirmText,
     };
     reviewRef.current = next;
     setReview(next);
@@ -190,7 +222,7 @@ export function useScriptManager(onClose: () => void, enabled = true) {
     if (!busyRef.current) {
       discardEdit();
       cancelReview();
-      setScope(next);
+      setScopeKind(next.kind);
     }
   }
   function startDraft(script?: ManagedScript, duplicate = false) {
@@ -329,6 +361,77 @@ export function useScriptManager(onClose: () => void, enabled = true) {
       true,
     );
   }
+  function copyToScope(script: ManagedScript) {
+    const expected = snapshot?.entries.find((entry) =>
+      same(entry.payload, script),
+    );
+    const target: AutomationScope | null =
+      scope.kind === "database"
+        ? { kind: "app" }
+        : bridge.databaseScope
+          ? { kind: "database", databaseId: bridge.databaseScope.databaseId }
+          : null;
+    if (!expected || !target || visibleDraft || !current()) return;
+    const targetDatabase = bridge.databaseScope;
+    const targetCurrent = () =>
+      target.kind === "app" ||
+      (latestDatabase.current?.databaseId === targetDatabase?.databaseId &&
+        latestDatabase.current?.generation === targetDatabase?.generation);
+    ask(
+      "Copy script to scope?",
+      `Copy “${expected.payload.name}” to ${target.kind === "app" ? "App-wide" : "the current database"} as a new entry? The original and existing destination entries will be kept.`,
+      () => {
+        if (!targetCurrent()) return;
+        const key = accessKey;
+        busyRef.current = true;
+        setBusy(true);
+        readSequence.current++;
+        setLoading(false);
+        setStorageError(null);
+        void (async () => {
+          try {
+            const destination = await bridge.api.read(
+              target,
+              "terminal-script",
+            );
+            if (!current(key) || !targetCurrent()) return;
+            const source = await bridge.api.read(scope, "terminal-script");
+            if (!current(key) || !targetCurrent()) return;
+            if (
+              !same(
+                source.entries.find(
+                  (entry) => entry.payload.id === expected.payload.id,
+                ),
+                expected,
+              )
+            )
+              throw new Error(
+                "The reviewed script changed. Reload before copying.",
+              );
+            const now = new Date().toISOString();
+            const entry: Entry = {
+              ...structuredClone(expected),
+              payload: {
+                ...expected.payload,
+                id: crypto.randomUUID(),
+                createdAt: now,
+                updatedAt: now,
+              },
+            };
+            await bridge.api.apply(destination, [{ operation: "put", entry }]);
+          } catch (error) {
+            if (current(key))
+              setStorageError(automationLibraryDiagnostic(error).message);
+          } finally {
+            busyRef.current = false;
+            if (live.current) setBusy(false);
+          }
+        })();
+      },
+      false,
+      "Copy",
+    );
+  }
   async function handleCopyScript(script: ManagedScript) {
     if (
       !current() ||
@@ -417,6 +520,7 @@ export function useScriptManager(onClose: () => void, enabled = true) {
     handleSaveScript,
     handleDeleteScript,
     handleCopyScript,
+    copyToScope,
     handleCancelEdit: () => leave(discardEdit),
     discardEdit,
     handleSelectScript: (script: ManagedScript) => {

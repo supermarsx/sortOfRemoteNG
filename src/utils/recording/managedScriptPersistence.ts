@@ -1,6 +1,11 @@
 import type { ManagedScript } from "../../components/recording/ScriptManager";
 import type { AutomationProvenance } from "../../types/recording/automationLibrary";
+import type { RecordLedger } from "../storage/recordLedger";
 import { normalizeAutomationProvenanceMap } from "./automationProvenance";
+import {
+  normalizeTerminalLibraryMigrationReceipt,
+  type TerminalLibraryMigrationReceipt,
+} from "./terminalLibraryMigrationReceipt";
 import {
   AppDataJsonStore,
   containsLikelySecretText,
@@ -12,6 +17,8 @@ export interface PersistedManagedScripts {
   modifiedDefaults: ManagedScript[];
   deletedDefaultIds: string[];
   provenance?: Record<string, AutomationProvenance>;
+  recordMetadata?: RecordLedger;
+  databaseMigration?: TerminalLibraryMigrationReceipt;
 }
 
 const isManagedScript = (value: unknown): value is ManagedScript => {
@@ -100,6 +107,13 @@ const sanitizeManagedScripts = (
       customScripts: customScripts.value,
       modifiedDefaults: modifiedDefaults.value,
       deletedDefaultIds: [...deletedDefaultIds],
+      ...(record.databaseMigration === undefined
+        ? {}
+        : {
+            databaseMigration: normalizeTerminalLibraryMigrationReceipt(
+              record.databaseMigration,
+            ),
+          }),
       ...(record.provenance === undefined
         ? {}
         : { provenance: normalizeAutomationProvenanceMap(record.provenance) }),
@@ -113,10 +127,13 @@ const sanitizeManagedScripts = (
   };
 };
 
+// App-wide storage. Database entries are persisted separately through the
+// provider's automationLibrary, never assigned an owner by reading this store.
 export const managedScriptsStore =
   new AppDataJsonStore<PersistedManagedScripts>({
     key: "recording.managed-scripts",
     legacyLocalStorageKey: "managedScripts",
+    trackRecords: true,
     sanitize: sanitizeManagedScripts,
   });
 
@@ -126,6 +143,7 @@ export const nativeManagedScriptsStore =
     key: "recording.managed-scripts",
     legacyLocalStorageKey: "managedScripts",
     requireNative: true,
+    trackRecords: true,
     sanitize: sanitizeManagedScripts,
   });
 

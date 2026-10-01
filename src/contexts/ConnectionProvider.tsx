@@ -386,6 +386,10 @@ export const connectionReducer = (
         sessions: state.sessions.map((session) =>
           session.id === action.payload.sessionId &&
           session.protocol.startsWith("tool:") &&
+          !(
+            session.protocol === "tool:documents" &&
+            session.documentsWorkspace?.scope === "app"
+          ) &&
           !session.ownerDatabaseId
             ? { ...session, ownerDatabaseId: action.payload.databaseId }
             : session,
@@ -768,7 +772,14 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
       }
-      if (action.type === "ADD_SESSION" && !action.payload.ownerDatabaseId) {
+      if (
+        action.type === "ADD_SESSION" &&
+        !action.payload.ownerDatabaseId &&
+        !(
+          action.payload.protocol === "tool:documents" &&
+          action.payload.documentsWorkspace?.scope === "app"
+        )
+      ) {
         // Capture ownership at creation, not when a lazy viewer later mounts.
         // Window hydration uses SET_SESSIONS and retains the source owner.
         action = {

@@ -256,6 +256,9 @@ describe("explicit script library scopes", () => {
   });
   it("requires scope discard and passes the exact selected scope into Website management", async () => {
     render(<ScriptManager isOpen onClose={vi.fn()} />);
+    expect(
+      screen.getByRole("combobox", { name: "Script library scope" }),
+    ).toHaveTextContent(/^App-wide$/);
     await screen.findByText("App fixture");
     fireEvent.click(screen.getByRole("button", { name: "New Script" }));
     fireEvent.change(screen.getByPlaceholderText(/Enter script name/i), {
@@ -344,12 +347,16 @@ describe("explicit script library scopes", () => {
   });
   it("routes repository browsing by the explicit script kind and selected scope", async () => {
     render(<ScriptManager isOpen onClose={vi.fn()} />);
-    await screen.findByText("App fixture");
     fireEvent.click(
       screen.getByRole("combobox", { name: "Script library scope" }),
     );
     fireEvent.mouseDown(
       screen.getByRole("option", { name: "Current database" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "Script library scope" }),
+      ).toHaveTextContent("Current database"),
     );
     fireEvent.click(screen.getByRole("tab", { name: "Browse scripts" }));
     fireEvent.click(

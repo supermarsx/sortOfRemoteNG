@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
+import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
@@ -30,7 +31,10 @@ import { useSecurityToolSession } from "../../hooks/security/useSecurityToolSess
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { getToolDescriptor } from "./toolDescriptors";
 import EmptyState from "../ui/display/EmptyState";
-import { DOCUMENTS_PROTOCOL } from "../../hooks/documents/useDocumentSession";
+import {
+  DOCUMENTS_PROTOCOL,
+  useDocumentSession,
+} from "../../hooks/documents/useDocumentSession";
 
 const DocumentsWorkspace = dynamic(
   () => import("../documents/DocumentsWorkspace"),
@@ -275,14 +279,19 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
     onActivateSession,
     session,
   );
+  const openDocuments = useDocumentSession(onActivateSession);
+  const appDocuments =
+    session.protocol === DOCUMENTS_PROTOCOL &&
+    session.documentsWorkspace?.scope === "app";
   const databaseDependent =
     (toolKey !== null && getToolDescriptor(toolKey).access === "database") ||
     session.protocol === TRUST_CENTER_PROTOCOL ||
     session.protocol === CREDENTIAL_VAULT_PROTOCOL ||
-    session.protocol === DOCUMENTS_PROTOCOL ||
+    (session.protocol === DOCUMENTS_PROTOCOL && !appDocuments) ||
     session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL;
-  const explicitOwner =
-    session.protocol === DOCUMENTS_PROTOCOL
+  const explicitOwner = appDocuments
+    ? undefined
+    : session.protocol === DOCUMENTS_PROTOCOL
       ? (session.documentsWorkspace?.databaseId ?? session.ownerDatabaseId)
       : session.protocol === CONNECTION_RECYCLE_BIN_PROTOCOL
         ? session.connectionRecycleBin?.databaseId
@@ -379,6 +388,17 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           }
           className="max-w-md text-center"
         >
+          {session.protocol === DOCUMENTS_PROTOCOL && onActivateSession && (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary mt-4"
+              onClick={() =>
+                openDocuments({ scope: "app", allowUnavailable: true })
+              }
+            >
+              Open App-wide documents
+            </button>
+          )}
           {onActivateSession && onDatabaseSelect ? (
             <button
               type="button"
@@ -406,7 +426,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
                     : {}),
                 };
                 dispatch({ type: "ADD_SESSION", payload: candidate });
-                onActivateSession(candidate.id);
+                activateNewToolTab(candidate, onActivateSession);
               }}
             >
               Open Databases
@@ -453,8 +473,16 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           sessionId={session.id}
           request={documentsRequest}
           onOpenConnection={onReconnect}
+          onChangeScope={
+            onActivateSession
+              ? (scope) => openDocuments({ scope, allowUnavailable: true })
+              : undefined
+          }
           onOpenSecurity={
-            onOpenSettings ? () => onOpenSettings("currentDatabase") : undefined
+            onOpenSettings
+              ? () =>
+                  onOpenSettings(appDocuments ? "security" : "currentDatabase")
+              : undefined
           }
         />
       </FeatureErrorBoundary>
@@ -643,7 +671,8 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
                     type: existing ? "UPDATE_SESSION" : "ADD_SESSION",
                     payload: target,
                   });
-                  onActivateSession(target.id);
+                  if (existing) onActivateSession(target.id);
+                  else activateNewToolTab(target, onActivateSession);
                 }
               : undefined
           }

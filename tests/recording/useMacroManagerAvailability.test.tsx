@@ -130,6 +130,8 @@ describe("macro scope and durable-write fences", () => {
   });
   it("invalidates app drafts on global lock epoch, not on unrelated database switching", async () => {
     const view = await open();
+    act(() => view.result.current.changeScope({ kind: "app" }));
+    await waitFor(() => expect(view.result.current.ready).toBe(true));
     act(() => view.result.current.selectEntry(view.result.current.entries[0]));
     state.databaseScope = { databaseId: "b", generation: 9 };
     view.rerender();

@@ -26,9 +26,13 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
           icon={FileCode}
           iconColor="text-success"
           variant="compact"
-          title="Run Script"
+          title="Run Script — App-wide"
           onClose={mgr.closeScriptSelector}
         />
+        <p className="px-4 py-2 text-xs text-[var(--color-textSecondary)]">
+          {mgr.terminalLibrary.error ??
+            "App-wide scripts. Database scripts are available in the Script Manager and favorites."}
+        </p>
 
         {/* Search */}
         <div className="px-4 py-2 border-b border-[var(--color-border)]">
