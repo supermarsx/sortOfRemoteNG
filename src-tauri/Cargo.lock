@@ -10149,6 +10149,8 @@ dependencies = [
  "serde_json",
  "sorng-app-domains",
  "sorng-cloud-sync",
+ "sorng-mremoteng",
+ "sorng-termserv",
  "tauri",
 ]
 
