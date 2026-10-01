@@ -4,7 +4,6 @@ use super::AxumProxyState;
 use axum::body::Body;
 use axum::http::{Method, Response, StatusCode};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Semaphore;
 
 pub(super) const PREFIX: &str = "/__sortofremoteng_assets_v1/synology-inter/";
@@ -18,7 +17,17 @@ pub(super) struct ReviewedFontAssets {
 }
 
 impl ReviewedFontAssets {
+    #[cfg(test)]
     pub(super) fn new(proxy: Option<reqwest::Proxy>, min_tls: &str) -> Result<Self, String> {
+        Self::with_transport_settings(proxy, min_tls, &super::ProxyTransportSettings::default())
+    }
+
+    pub(super) fn with_transport_settings(
+        proxy: Option<reqwest::Proxy>,
+        min_tls: &str,
+        settings: &super::ProxyTransportSettings,
+    ) -> Result<Self, String> {
+        settings.validate()?;
         let roots = super::native_root_store()
             .map_err(|_| "Unable to load trusted roots for public font resources".to_string())?;
         if roots.is_empty() {
@@ -36,7 +45,8 @@ impl ReviewedFontAssets {
         .map_err(|_| "Unable to configure verified font TLS".to_string())?
         .with_root_certificates(roots)
         .with_no_client_auth();
-        let mut builder = reqwest::Client::builder()
+        let mut builder = settings
+            .apply_to_client_builder(reqwest::Client::builder())?
             .no_proxy()
             .use_preconfigured_tls(tls)
             .cookie_store(false)
@@ -45,10 +55,7 @@ impl ReviewedFontAssets {
             .no_gzip()
             .no_brotli()
             .no_deflate()
-            .no_zstd()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(15))
-            .pool_max_idle_per_host(4);
+            .no_zstd();
         if let Some(proxy) = proxy {
             builder = builder.proxy(proxy);
         }
@@ -301,7 +308,7 @@ pub(super) async fn handle(
     match state
         .network
         .while_active(tokio::time::timeout(
-            Duration::from_secs(30),
+            state.network.transport_settings().request_timeout(),
             download(assets, &name),
         ))
         .await

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicationLogin";
 import { DEFAULT_HTTP_FORM_AUTOMATION } from "../../src/utils/connection/httpFormAutomation";
@@ -273,10 +273,7 @@ describe("FreePBX reviewed admin launcher", () => {
   });
 });
 
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Credentials = { username: string | null; password: string | null };
 type Client = {
   fetchCredsAndRun(

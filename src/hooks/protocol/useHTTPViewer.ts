@@ -20,17 +20,26 @@ import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
 import { hasConfiguredNetworkPath } from "../../utils/network/networkPathConfig";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useBrowserRuntimeSettings } from "./useBrowserRuntimeSettings";
+import { normalizeInternalProxySettings } from "../../utils/settings/webBrowserSettings";
+import { validateHttpCustomHeaders } from "../../utils/connection/httpProxyPolicy";
+import { normalizeHttpFormAutomation } from "../../utils/connection/httpFormAutomation";
+import { browserCompatibilityOptions } from "../../utils/protocol/browserCompatibility";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
 import { captureHttpNetworkRoute } from "../integration/httpNetworkRoute";
 import { HttpNetworkRouteError } from "../../utils/network/httpProxyRoute";
 import { RuntimeNetworkPathError } from "../../utils/network/networkPathError";
 import { useRuntimeCredentialVault } from "../security/useRuntimeCredentialVault";
 import { validateProtectedProxyUrl } from "./useWebBrowser";
-import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
+import {
+  getFirstPartyGoogleHostedApplicationUrl,
+  getHttpApplicationProfile,
+} from "../../utils/connection/httpApplicationProfiles";
 import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
 import {
   googleAccountsEntryFor,
   validateGoogleProxyRoutes,
+  requiresHostedProxyRoutes,
 } from "../../utils/protocol/googleProxySession";
 
 interface ProxyMediatorResponse {
@@ -47,10 +56,24 @@ export function useHTTPViewer(session: ConnectionSession) {
   const networkPathContextRef = useRef(networkPathContext);
   networkPathContextRef.current = networkPathContext;
   const { state, dispatch } = networkPathContext;
-  const { settings } = useSettings();
+  const { settings, settingsReady } = useSettings();
   const connection = state.connections.find(
     (c) => c.id === session.connectionId,
   );
+  const browserRuntime = useBrowserRuntimeSettings(
+    session.id,
+    connection?.httpProxyPolicy,
+    settings,
+    settingsReady,
+  );
+  const {
+    policy,
+    error: settingsError,
+    ready: settingsLoaded,
+    liveRef,
+  } = browserRuntime;
+  const settingsErrorRef = useRef(settingsError);
+  settingsErrorRef.current = settingsError;
   const httpConnectionRef = useRef(connection);
   httpConnectionRef.current = connection;
   const resolveVaultCredential = useRuntimeCredentialVault(session, connection);
@@ -122,6 +145,18 @@ export function useHTTPViewer(session: ConnectionSession) {
       target.pathname = authority.initialPathname ?? "/";
       target.search = authority.initialSearch ?? "";
       target.hash = authority.initialHash ?? "";
+      if (
+        connection.httpApplication?.id === "chatgpt" ||
+        connection.httpApplication?.id === "claude"
+      ) {
+        validateHttpApplicationTarget(connection, target.href);
+        if (authority.initialPathname === undefined)
+          target.pathname = new URL(
+            getHttpApplicationProfile(connection.httpApplication.id)!
+              .hostedLoginUrl!,
+          ).pathname;
+        return target.href;
+      }
       if (connection.httpApplication?.id === "cloudflare") {
         validateHttpApplicationTarget(connection, target.href);
         if (connection.httpApplication.loginMode === "form")
@@ -153,6 +188,7 @@ export function useHTTPViewer(session: ConnectionSession) {
   }, []);
 
   const initProxy = useCallback(async () => {
+    if (!settingsLoaded) return;
     const generation = ++proxyGenerationRef.current;
     if (!connection) {
       setStatus("error");
@@ -174,6 +210,7 @@ export function useHTTPViewer(session: ConnectionSession) {
 
     let startedSession: string | undefined;
     try {
+      if (settingsErrorRef.current) throw new Error(settingsErrorRef.current);
       const targetUrl = buildTargetUrl();
       if (!targetUrl) {
         throw new Error(
@@ -211,7 +248,10 @@ export function useHTTPViewer(session: ConnectionSession) {
       const login = vault
         ? resolveHttpApplicationLogin(connection, {
             username: vault.facets.username ?? "",
-            password: vault.facets.password ?? "",
+            password:
+              initialLogin.loginFlow === "claude"
+                ? ""
+                : (vault.facets.password ?? ""),
           })
         : initialLogin;
       if (vault) vault.facets = {};
@@ -223,6 +263,20 @@ export function useHTTPViewer(session: ConnectionSession) {
       const reviewedApplicationMeshOrigin =
         getReviewedApplicationMeshOrigin(connection);
       validateTacticalRmmMeshTarget(connection, targetUrl);
+      if (settingsErrorRef.current) throw new Error(settingsErrorRef.current);
+      // Validate saved values before preferences can remove an override. As in
+      // the main browser, application profiles never inherit legacy headers.
+      const compatibility = browserCompatibilityOptions(
+        liveRef.current.browser,
+        validateHttpCustomHeaders(
+          connection.httpApplication === undefined
+            ? connection.httpHeaders
+            : undefined,
+          login.upstreamAuthMode ?? connection.authType ?? "none",
+        ),
+        normalizeHttpFormAutomation(connection.httpFormAutomation),
+        !!login.loginFlow,
+      );
       const proxyConfig = {
         target_url: targetUrl,
         username: creds?.username ?? "",
@@ -231,6 +285,15 @@ export function useHTTPViewer(session: ConnectionSession) {
           ? { upstream_auth_mode: login.upstreamAuthMode }
           : {}),
         local_port: 0,
+        transport_settings: normalizeInternalProxySettings(
+          liveRef.current.transport,
+        ),
+        proxy_policy: policy,
+        custom_headers: compatibility.headers,
+        http_form_automation: compatibility.form,
+        browser_compatibility: {
+          hide_webdriver: liveRef.current.browser.hideAutomationIndicator,
+        },
         verify_ssl: connection.httpVerifySsl ?? true,
         connection_id: connection.id,
         upstream_proxy_url: httpRoute.upstreamProxyUrl,
@@ -243,7 +306,7 @@ export function useHTTPViewer(session: ConnectionSession) {
         ...(reviewedApplicationMeshOrigin
           ? { reviewed_application_mesh_origin: reviewedApplicationMeshOrigin }
           : {}),
-        http_auto_login: login.autoLogin,
+        http_auto_login: policy?.pageScripts !== "block" && login.autoLogin,
         http_auto_login_selectors: login.selectors
           ? {
               username_selector: login.selectors.usernameSelector,
@@ -271,20 +334,22 @@ export function useHTTPViewer(session: ConnectionSession) {
       // Assign components, rather than resolving a path starting with //,
       // so even unusual saved paths cannot replace the protected authority.
       const mappedEntry = new URL(protectedProxyUrl);
+      // Even providers whose entry remains on the source origin must prove
+      // their complete native route catalog before loading the page.
+      const hostedRoutes = requiresHostedProxyRoutes(reviewedApplicationProfile)
+        ? validateGoogleProxyRoutes(
+            response.google_routes,
+            entry.origin,
+            protectedProxyUrl,
+            true,
+          )
+        : [];
       mappedEntry.pathname = entry.pathname;
       mappedEntry.search = entry.search;
       mappedEntry.hash = entry.hash;
       const initialProxyUrl =
         reviewedApplicationProfile === "google-hosted"
-          ? (googleAccountsEntryFor(
-              validateGoogleProxyRoutes(
-                response.google_routes,
-                entry.origin,
-                protectedProxyUrl,
-                true,
-              ),
-              entry,
-            ) ??
+          ? (googleAccountsEntryFor(hostedRoutes, entry) ??
             (() => {
               throw new Error(
                 "Backend did not provide a safe Google Accounts entry route.",
@@ -317,7 +382,15 @@ export function useHTTPViewer(session: ConnectionSession) {
       setStatus("error");
       setError(safeMessage);
     }
-  }, [connection, buildTargetUrl, stopProxy, resolveVaultCredential]);
+  }, [
+    connection,
+    buildTargetUrl,
+    stopProxy,
+    resolveVaultCredential,
+    policy,
+    settingsLoaded,
+    liveRef,
+  ]);
 
   useEffect(() => {
     void initProxy();

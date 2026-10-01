@@ -9,6 +9,7 @@ import {
   validateHttpApplicationTarget,
 } from "../../src/utils/auth/httpApplicationLogin";
 import type { Connection } from "../../src/types/connection/connection";
+import { EXCHANGE_ECP_LOGIN_SELECTORS } from "../../src/utils/connection/exchangeEcpProfile";
 const connection = (
   id: string,
   hostname = "service.example.test",
@@ -155,12 +156,29 @@ describe("safe true-origin browser handoff", () => {
         autoLogin: false,
         upstreamAuthMode: "none",
       });
-      expect(() =>
-        resolveHttpApplicationLogin({
-          ...connection(id),
-          httpApplication: { version: 1, id, loginMode: "form" },
-        }),
-      ).toThrow(/invalid/);
+      const explicitForm = {
+        ...connection(id),
+        httpApplication: {
+          version: 1 as const,
+          id,
+          loginMode: "form" as const,
+        },
+      };
+      if (id === "exchange-ecp") {
+        expect(resolveHttpApplicationLogin(explicitForm)).toEqual({
+          credentials: {
+            username: "fixture-user",
+            password: "fixture-password",
+          },
+          autoLogin: true,
+          upstreamAuthMode: "none",
+          selectors: EXCHANGE_ECP_LOGIN_SELECTORS,
+        });
+      } else {
+        expect(() => resolveHttpApplicationLogin(explicitForm)).toThrow(
+          /invalid/,
+        );
+      }
     }
   });
 });

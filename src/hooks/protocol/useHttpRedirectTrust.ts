@@ -75,10 +75,23 @@ export function useHttpRedirectTrust(
   session: ConnectionSession,
   connection?: Connection,
   navigationKey = connection?.id ?? "",
+  effectivePolicy?: import("../../types/connection/httpProxyPolicy").HttpProxyPolicy,
 ) {
   const context = useConnections();
-  const latest = useRef({ context, session, connection, navigationKey });
-  latest.current = { context, session, connection, navigationKey };
+  const latest = useRef({
+    context,
+    session,
+    connection,
+    navigationKey,
+    effectivePolicy,
+  });
+  latest.current = {
+    context,
+    session,
+    connection,
+    navigationKey,
+    effectivePolicy,
+  };
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -511,7 +524,8 @@ export function useHttpRedirectTrust(
         review.sessionId,
         origin,
         withSynologyRedirectDefaults(
-          normalizeHttpProxyPolicy(runtime.httpProxyPolicy),
+          captured.effectivePolicy ??
+            normalizeHttpProxyPolicy(runtime.httpProxyPolicy),
           capturedDefaults.defaults,
         ),
       )
@@ -656,7 +670,8 @@ export function useHttpRedirectTrust(
           check();
           const defaultTrusted = isSynologyDefaultRedirect(
             withSynologyRedirectDefaults(
-              normalizeHttpProxyPolicy(runtime.httpProxyPolicy),
+              captured.effectivePolicy ??
+                normalizeHttpProxyPolicy(runtime.httpProxyPolicy),
               capturedDefaults.defaults,
             ),
             review.sourceOrigin,
@@ -702,9 +717,10 @@ export function useHttpRedirectTrust(
         grantIsSettled &&
         isSynologyDefaultRedirect(
           withSynologyRedirectDefaults(
-            normalizeHttpProxyPolicy(
-              latest.current.connection?.httpProxyPolicy,
-            ),
+            latest.current.effectivePolicy ??
+              normalizeHttpProxyPolicy(
+                latest.current.connection?.httpProxyPolicy,
+              ),
             verified.defaultProvenance
               ? synologyRedirectDefaultsForConnection(verified.persisted)
               : undefined,

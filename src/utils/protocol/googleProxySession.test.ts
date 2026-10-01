@@ -26,6 +26,46 @@ function nativeRoutes(): GoogleProxyRoute[] {
 }
 
 describe("Google proxy session routes", () => {
+  it("isolates Adobe's catalog and never starts it at Google Accounts", () => {
+    const adobe = "https://adminconsole.adobe.com";
+    const routes = [...expectedGoogleOrigins(adobe)].map(
+      ([upstreamOrigin, documents], index) => ({
+        upstreamOrigin,
+        documents,
+        proxyOrigin:
+          upstreamOrigin === adobe
+            ? proxy
+            : `http://p${(index + 1).toString(16).padStart(32, "0")}.localhost:43123`,
+      }),
+    );
+    expect(validateGoogleProxyRoutes(routes, adobe, proxy, true)).toEqual(
+      routes,
+    );
+    expect(googleAccountsEntryFor(routes, new URL(adobe))).toBeUndefined();
+    expect(
+      expectedGoogleOrigins(adobe).get("https://auth.services.adobe.com"),
+    ).toBe(true);
+    expect(
+      expectedGoogleOrigins(adobe).get("https://auth-api.services.adobe.com"),
+    ).toBe(false);
+    expect(
+      expectedGoogleOrigins(adobe).has("https://accounts.google.com"),
+    ).toBe(false);
+    expect(
+      expectedGoogleOrigins("https://adminconsole.adobe.com.attacker.test")
+        .size,
+    ).toBe(0);
+    expect(() =>
+      validateGoogleProxyRoutes(routes, source, proxy, true),
+    ).toThrow();
+    expect(() => validateGoogleProxyRoutes([], adobe, proxy, true)).toThrow();
+    const injected = structuredClone(routes);
+    injected[1]!.upstreamOrigin =
+      "https://auth.services.adobe.com.attacker.test";
+    expect(() =>
+      validateGoogleProxyRoutes(injected, adobe, proxy, true),
+    ).toThrow();
+  });
   it("uses an exact profile allowlist and grants no lookalike origin", () => {
     expect([...expectedGoogleOrigins(source)]).toEqual([
       ["https://analytics.google.com", true],

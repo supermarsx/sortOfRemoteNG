@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { describe, it, expect } from "vitest";
 import {
   getHttpApplicationProfile,
@@ -177,10 +177,7 @@ describe("Joomla administrator entry paths", () => {
   it.each(["auto", "3", "4", "5", "6"] as const)(
     "submits version %s's reviewed POST form at a custom entry slug",
     async (joomlaVersion) => {
-      const source = readFileSync(
-        "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-        "utf8",
-      );
+      const source = loadAutologinClient();
       const ready = Object.getOwnPropertyDescriptor(document, "readyState");
       Object.defineProperty(document, "readyState", {
         configurable: true,

@@ -1,12 +1,9 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NPM_AUTO_LOGIN_SELECTORS } from "../../src/components/integrations/nginxProxyMgr/webUiLaunch";
 import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicationLogin";
 
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Result = { ok: boolean; reason: string };
 type Client = {
   fetchCredsAndRun(nonce: string, selectors?: object): Promise<Result>;

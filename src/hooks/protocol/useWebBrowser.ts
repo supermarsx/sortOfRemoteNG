@@ -16,6 +16,7 @@ import {
   googleProxyForUpstream,
   googleUpstreamForProxy,
   validateGoogleProxyRoutes,
+  requiresHostedProxyRoutes,
   type GoogleProxyRoute,
 } from "../../utils/protocol/googleProxySession";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
@@ -54,6 +55,12 @@ import { useDisplayRecorder } from "../recording/useDisplayRecorder";
 import { useWebAutomation } from "./useWebAutomation";
 import { useWebAutoMfa } from "./useWebAutoMfa";
 import { useWebPopupTabs } from "./useWebPopupTabs";
+import {
+  browserSessionPolicy,
+  useBrowserRuntimeSettings,
+} from "./useBrowserRuntimeSettings";
+import { normalizeInternalProxySettings } from "../../utils/settings/webBrowserSettings";
+import { browserCompatibilityOptions } from "../../utils/protocol/browserCompatibility";
 import { webPopupTabs } from "../../utils/protocol/webPopupTabs";
 import {
   popupProxyUrl,
@@ -70,6 +77,8 @@ import {
 import { useHttpRedirectReview } from "./useHttpRedirectReview";
 import { useHttpRedirectTrust } from "./useHttpRedirectTrust";
 import { useDeferredSynologyLoginStatus } from "./useDeferredSynologyLoginStatus";
+import { useEcpLoginNotice } from "./useEcpLoginNotice";
+import { useClaudeLoginNotice } from "./useClaudeLoginNotice";
 import { recordSessionActivity } from "../../utils/monitoring/sessionActivityLog";
 import {
   synologyDefaultRedirectOrigins,
@@ -100,6 +109,7 @@ import {
 } from "../../utils/session/runtimeConnectionRegistry";
 import type { ProtocolDiagnosticReport } from "../../types/monitoring/diagnostics";
 import { getGlobalHttpProxyUrl } from "../integration/httpProxy";
+import { HttpNetworkRouteError } from "../../utils/network/httpProxyRoute";
 import {
   captureHttpNetworkRoute,
   httpNetworkPathIdentity,
@@ -573,6 +583,24 @@ export function useWebBrowser(
     state.connections,
     session.connectionId,
   );
+  const sharedPopup = sharedPopupId
+    ? webPopupTabs.getSnapshot(sharedPopupId)
+    : null;
+  const browserRuntime = useBrowserRuntimeSettings(
+    session.id,
+    connection?.httpProxyPolicy,
+    settings,
+    settingsReady,
+    sharedPopupId
+      ? sharedPopup
+        ? browserSessionPolicy.read(
+            sharedPopup.sourceSessionId,
+            sharedPopup.document.sessionId,
+          )
+        : null
+      : undefined,
+  );
+  const { browserSettings, liveRef: browserRuntimeRef } = browserRuntime;
   const httpConnectionRef = useRef(connection);
   httpConnectionRef.current = connection;
   const httpRouteRef = useRef<HttpNetworkRoute | null>(null);
@@ -600,6 +628,7 @@ export function useWebBrowser(
     session,
     connection,
     runtimeNavigationKey,
+    browserRuntime.policy ?? undefined,
   );
   const websiteDarkBootstrapCandidate = useMemo(() => {
     try {
@@ -958,8 +987,9 @@ export function useWebBrowser(
   assertFormLoginCurrentRef.current = redirectTrust.assertFormLoginCurrent;
   const proxyOptions = useMemo(() => {
     try {
+      if (browserRuntime.error) throw new Error(browserRuntime.error);
       const policy = withSynologyRedirectDefaults(
-        normalizeHttpProxyPolicy(connection?.httpProxyPolicy),
+        browserRuntime.policy ?? normalizeHttpProxyPolicy(undefined),
         synologyRedirectOriginalOrigin
           ? { version: 1, originalOrigin: synologyRedirectOriginalOrigin }
           : undefined,
@@ -984,11 +1014,14 @@ export function useWebBrowser(
         headers: {},
         form: undefined,
         error:
+          browserRuntime.error ??
           "Review Advanced login and internal proxy controls: the saved options or custom headers are invalid.",
       };
     }
   }, [
     connection,
+    browserRuntime.policy,
+    browserRuntime.error,
     applicationAuth.login?.upstreamAuthMode,
     synologyRedirectOriginalOrigin,
   ]);
@@ -1406,7 +1439,11 @@ export function useWebBrowser(
       if (sharedPopupId && iframeRef.current !== iframe) {
         popupViewerRef.current?.release({ preserveTab: true });
         popupViewerRef.current = iframe
-          ? webPopupTabs.attachViewer(sharedPopupId, iframe)
+          ? webPopupTabs.attachViewer(
+              sharedPopupId,
+              iframe,
+              () => browserRuntimeRef.current.browser,
+            )
           : null;
       }
       iframeRef.current = iframe;
@@ -1429,10 +1466,11 @@ export function useWebBrowser(
           iframe,
           pending.url,
           documentAliases.length ? documentAliases : proxyUrlRef.current,
+          browserRuntimeRef.current.browser,
         );
       }
     },
-    [sharedPopupId],
+    [sharedPopupId, browserRuntimeRef],
   );
   const navigateFrame = useCallback(
     (url: string, generation: number, sessionId: string) => {
@@ -1512,6 +1550,35 @@ export function useWebBrowser(
     navigationFailure,
   );
 
+  const { receive: receiveEcpLoginResult, presentation: ecpLoginNotice } =
+    useEcpLoginNotice(() => {
+      const current = currentDocumentRef.current;
+      return getReviewedApplicationProfile(connection) === "exchange-ecp" &&
+        applicationAuth.login?.autoLogin === true &&
+        current &&
+        current.generation === navGenRef.current &&
+        current.sessionId === proxySessionIdRef.current &&
+        current.ownerScope === trustOwnerScopeRef.current &&
+        !navigationFailureRef.current
+        ? current
+        : null;
+    });
+
+  const { receive: receiveClaudeLoginResult, presentation: claudeLoginNotice } =
+    useClaudeLoginNotice(() => {
+      const current = currentDocumentRef.current;
+      return getReviewedApplicationProfile(connection) === "claude" &&
+        applicationAuth.login?.autoLogin === true &&
+        current &&
+        current.generation === navGenRef.current &&
+        current.sessionId === proxySessionIdRef.current &&
+        current.ownerScope === trustOwnerScopeRef.current &&
+        !navigationFailureRef.current
+        ? current
+        : null;
+    });
+  const automaticLoginNotice = ecpLoginNotice ?? claudeLoginNotice;
+
   const clearNavigationFailure = useCallback(() => {
     navigationFailureRef.current = null;
     setNavigationFailure(null);
@@ -1573,19 +1640,20 @@ export function useWebBrowser(
    */
   const acceptedCertFingerprintRef = useRef<string | null>(null);
   const requireCaVerificationRef = useRef(false);
-  const LOAD_TIMEOUT_MS = 30_000;
   // Once the server has answered, slow applications (for example DSM) may
   // stream and boot their document for much longer before DOM-ready. Each
   // document of a load gets this window, within the load's absolute cap
   // (kept below the native Synology readiness lifetimes).
-  const DOCUMENT_READY_TIMEOUT_MS = 120_000;
+  const documentReadyTimeoutMs =
+    browserSettings.documentReadyTimeoutSeconds * 1000;
   const NAVIGATION_READY_CAP_MS = 300_000;
   const loadStartedAtRef = useRef(0);
   const armNavigationDeadline = useCallback(
     (
       generation: number,
       url: string,
-      windowMs = LOAD_TIMEOUT_MS,
+      windowMs = browserRuntimeRef.current.browser.initialLoadTimeoutSeconds *
+        1000,
       continuesLoad = false,
     ) => {
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
@@ -1614,7 +1682,7 @@ export function useWebBrowser(
         );
       }, timeoutMs);
     },
-    [applyNavigationFailure],
+    [applyNavigationFailure, browserRuntimeRef],
   );
 
   const sslVerifyDisabled =
@@ -1892,33 +1960,46 @@ export function useWebBrowser(
           error: safeError,
         });
         acceptedCertFingerprintRef.current = null;
-        if (err instanceof HttpsRouteChangedError) {
+        if (
+          err instanceof HttpsRouteChangedError ||
+          err instanceof HttpNetworkRouteError
+        ) {
           applyNavigationFailure(
             localNavigationFailure(
               "navigation_cancelled",
               "HTTPS route changed",
               activeNavigationUrlRef.current,
               "The configured proxy route changed while the certificate was being checked. Reload to check it on the current route.",
-              err.message,
+              safeError,
             ),
           );
           return false;
         }
         if (stage !== "verification") {
           // Classify by the failing network layer; every class stays blocked.
-          applyNavigationFailure(
-            describeCertificateInspectionFailure({
-              error: safeError,
-              hookStage: stage,
-              host: targetHostname,
-              port,
-              route: proxyUrl ? "proxy" : "direct",
-              proxyTls: /^https:/i.test(proxyUrl ?? ""),
-              url: activeNavigationUrlRef.current,
-              startedAt: attempt.epoch,
-              failedAfterMs: performance.now() - attempt.mono,
-            }),
-          );
+          // Keep the strict native wire shape until classification. Redacting
+          // it as a string first loses the stage, kind and measured timeline.
+          const failure = describeCertificateInspectionFailure({
+            error: err,
+            hookStage: stage,
+            host: targetHostname,
+            port,
+            route: proxyUrl ? "proxy" : "direct",
+            proxyTls: /^https:/i.test(proxyUrl ?? ""),
+            url: activeNavigationUrlRef.current,
+            startedAt: attempt.epoch,
+            failedAfterMs: performance.now() - attempt.mono,
+          });
+          const route = httpRouteRef.current;
+          if (route) {
+            failure.title = route.redactError(failure.title);
+            failure.reason = route.redactError(failure.reason);
+            if (failure.detail)
+              failure.detail = route.redactError(failure.detail);
+            for (const step of failure.timeline?.steps ?? [])
+              if (step.detail) step.detail = route.redactError(step.detail);
+          }
+          applyNavigationFailure(failure);
           return false;
         }
         applyNavigationFailure(
@@ -2088,6 +2169,7 @@ export function useWebBrowser(
       if (sharedPopupId) return;
       const id = sessionId ?? proxySessionIdRef.current;
       if (!id) return;
+      browserSessionPolicy.release(session.id, id);
       if (id === proxySessionIdRef.current) {
         clearWebBrowserFrame(iframeRef.current);
         webPopupTabs.revokeSource(session.id);
@@ -2277,6 +2359,7 @@ export function useWebBrowser(
         sessionId: id,
         ...(continuationId ? { continuationId } : {}),
       });
+      browserSessionPolicy.release(session.id, id);
       if (proxySessionIdRef.current === id) {
         proxySessionIdRef.current = "";
         proxyUrlRef.current = "";
@@ -2379,6 +2462,7 @@ export function useWebBrowser(
   // ── Navigation ─────────────────────────────────────────────
   const navigateToUrl = useCallback(
     async (url: string, addToHistory = true) => {
+      if (!browserRuntime.ready) return;
       initialNavigationStarted.current = true;
       const gen = ++navGenRef.current;
       attemptStartRef.current = {
@@ -2409,6 +2493,11 @@ export function useWebBrowser(
       }
       if (sharedPopupId) {
         try {
+          if (browserRuntime.error || !browserRuntime.policy)
+            throw new Error(
+              browserRuntime.error ??
+                "The source browser policy is unavailable.",
+            );
           const popup = webPopupTabs.getSnapshot(sharedPopupId);
           if (!popup || !webPopupTabs.isCurrent(sharedPopupId))
             throw new Error(
@@ -2472,6 +2561,7 @@ export function useWebBrowser(
             clearFrame();
             publishAutomationDocument(null);
             webPopupTabs.revokeSource(session.id);
+            browserSessionPolicy.release(session.id, proxySessionIdRef.current);
             proxySessionIdRef.current = "";
             proxyUrlRef.current = "";
             googleRoutesRef.current = [];
@@ -2683,7 +2773,10 @@ export function useWebBrowser(
           vault && !existingProxy
             ? resolveHttpApplicationLogin(connection, {
                 username: vault.facets.username ?? "",
-                password: vault.facets.password ?? "",
+                password:
+                  applicationAuth.login?.loginFlow === "claude"
+                    ? ""
+                    : (vault.facets.password ?? ""),
               })
             : applicationAuth.login;
         attemptPassword = attemptLogin?.credentials?.password ?? "";
@@ -2772,6 +2865,12 @@ export function useWebBrowser(
             getReviewedApplicationApiOrigin(connection);
           const reviewedApplicationMeshOrigin =
             getReviewedApplicationMeshOrigin(connection);
+          const compatibility = browserCompatibilityOptions(
+            browserRuntimeRef.current.browser,
+            proxyOptions.headers,
+            proxyOptions.form,
+            !!attemptLogin?.loginFlow,
+          );
           httpRoute.assertCurrent();
           const response = await invoke<ProxyMediatorResponse>(
             "start_basic_auth_proxy",
@@ -2793,10 +2892,17 @@ export function useWebBrowser(
                     }
                   : {}),
                 local_port: 0,
+                transport_settings: normalizeInternalProxySettings(
+                  browserRuntimeRef.current.transport,
+                ),
                 proxy_policy: proxyOptions.policy,
                 redirect_profile: redirectBudget?.profile ?? null,
-                custom_headers: proxyOptions.headers,
-                http_form_automation: proxyOptions.form,
+                custom_headers: compatibility.headers,
+                http_form_automation: compatibility.form,
+                browser_compatibility: {
+                  hide_webdriver:
+                    browserRuntimeRef.current.browser.hideAutomationIndicator,
+                },
                 // CA/hostname verification and explicit trust are separate.
                 // Always retain the accepted HTTPS fingerprint: disabling CA
                 // verification must not erase the user's certificate pin.
@@ -2884,13 +2990,18 @@ export function useWebBrowser(
               response.google_routes,
               urlObj.origin,
               protectedProxyUrl,
-              reviewedApplicationProfile === "google-hosted",
+              requiresHostedProxyRoutes(reviewedApplicationProfile),
             );
           } catch (error) {
             await stopProxy(response.session_id);
             throw error;
           }
           proxySessionIdRef.current = response.session_id;
+          browserSessionPolicy.bind(
+            session.id,
+            response.session_id,
+            proxyOptions.policy!,
+          );
           proxyUrlRef.current = protectedProxyUrl;
           proxyHealthFailureCountRef.current = 0;
           if (
@@ -2992,6 +3103,10 @@ export function useWebBrowser(
       resolvedCreds,
       applicationAuth,
       proxyOptions,
+      browserRuntime.ready,
+      browserRuntime.error,
+      browserRuntime.policy,
+      browserRuntimeRef,
       connection,
       targetResolution,
       stopProxy,
@@ -3093,6 +3208,7 @@ export function useWebBrowser(
   useEffect(() => {
     if (
       initialNavigationStarted.current ||
+      !browserRuntime.ready ||
       websiteDarkBootstrapCandidate === undefined
     )
       return;
@@ -3106,7 +3222,12 @@ export function useWebBrowser(
     return () => {
       cancelled = true;
     };
-  }, [currentUrl, navigateToUrl, websiteDarkBootstrapCandidate]);
+  }, [
+    currentUrl,
+    navigateToUrl,
+    websiteDarkBootstrapCandidate,
+    browserRuntime.ready,
+  ]);
 
   // window.open(..., existingName) may retarget the same tool tab. Its registry
   // URL is runtime-only; do not persist token-bearing control links in sessions.
@@ -3160,6 +3281,7 @@ export function useWebBrowser(
       proxySessionIdRef.current = "";
       proxyUrlRef.current = "";
       if (id && !sharedPopupId) {
+        browserSessionPolicy.release(session.id, id);
         // Fast Refresh can retain the DOM while cleaning up this effect. Stop
         // the old page (and its retrying sockets) before retiring its listener
         // and protected-origin lease, not after asynchronous proxy startup.
@@ -3248,6 +3370,11 @@ export function useWebBrowser(
       clearWebBrowserFrame(iframeRef.current);
       publishAutomationDocument(null);
       currentHttpProxyUrl();
+      const sourcePolicy = browserSessionPolicy.read(session.id, sid);
+      if (!sourcePolicy)
+        throw new Error(
+          "The source browser policy is unavailable. Reopen this tab.",
+        );
       const resp = await invoke<ProxyMediatorResponse>(
         "restart_proxy_session",
         { sessionId: sid },
@@ -3261,7 +3388,7 @@ export function useWebBrowser(
           resp.google_routes,
           baseTargetRef.current,
           protectedProxyUrl,
-          getReviewedApplicationProfile(connection) === "google-hosted",
+          requiresHostedProxyRoutes(getReviewedApplicationProfile(connection)),
         );
       } catch (error) {
         await stopProxy(resp.session_id);
@@ -3272,6 +3399,7 @@ export function useWebBrowser(
         return false;
       }
       proxySessionIdRef.current = resp.session_id;
+      browserSessionPolicy.bind(session.id, resp.session_id, sourcePolicy);
       proxyUrlRef.current = protectedProxyUrl;
       googleRoutesRef.current = googleRoutes;
       proxyHealthFailureCountRef.current = 0;
@@ -3309,6 +3437,7 @@ export function useWebBrowser(
       requireNetworkGuard,
       sharedPopupId,
       publishAutomationDocument,
+      session.id,
     ],
   );
 
@@ -3448,6 +3577,10 @@ export function useWebBrowser(
         return;
       }
       if (event.data?.type === "proxy_autologin_result") {
+        // Source/origin were validated above. ECP timeout is a neutral local
+        // advisory only, never authentication/MFA evidence or a retry trigger.
+        receiveEcpLoginResult(event.data?.result);
+        receiveClaudeLoginResult(event.data?.result);
         const current = currentDocumentRef.current;
         // This legacy, unscoped result is only a bounded refresh hint, never
         // status or sign-in proof. Read the exact current native session again;
@@ -3616,7 +3749,7 @@ export function useWebBrowser(
           armNavigationDeadline(
             generation,
             activeNavigationUrlRef.current,
-            LOAD_TIMEOUT_MS,
+            browserRuntimeRef.current.browser.initialLoadTimeoutSeconds * 1000,
             continuesLoad,
           );
         };
@@ -3735,7 +3868,8 @@ export function useWebBrowser(
           armNavigationDeadline(
             navGenRef.current,
             realUrl,
-            DOCUMENT_READY_TIMEOUT_MS,
+            browserRuntimeRef.current.browser.documentReadyTimeoutSeconds *
+              1000,
             true,
           );
           return;
@@ -3839,6 +3973,9 @@ export function useWebBrowser(
     sharedPopupId,
     dispatch,
     session.id,
+    receiveEcpLoginResult,
+    receiveClaudeLoginResult,
+    browserRuntimeRef,
   ]);
 
   // ── Navigation handlers ────────────────────────────────────
@@ -3958,6 +4095,7 @@ export function useWebBrowser(
           delete runtimeNavigation.nativeContinuation;
       }
       if (sid) await invoke("stop_basic_auth_proxy", { sessionId: sid });
+      browserSessionPolicy.release(session.id, sid);
       if (!mountedRef.current || gen !== navGenRef.current) return;
       proxySessionIdRef.current = "";
       proxyUrlRef.current = "";
@@ -3997,6 +4135,7 @@ export function useWebBrowser(
     runtimeNavigationKey,
     sessionNavigationKey,
     sharedPopupId,
+    session.id,
   ]);
 
   const canGoBack = historyIndex > 0;
@@ -4493,7 +4632,7 @@ export function useWebBrowser(
           "The page remains covered because its dark appearance could not be confirmed. Retry the page, or turn off the dark-mode extension in this website's settings and reload.",
         ),
       );
-    }, DOCUMENT_READY_TIMEOUT_MS);
+    }, documentReadyTimeoutMs);
     return () => clearTimeout(timeout);
   }, [
     waitingForDarkPaint,
@@ -4501,6 +4640,7 @@ export function useWebBrowser(
     paintSessionId,
     trustOwnerScope,
     paintDocument,
+    documentReadyTimeoutMs,
     applyNavigationFailure,
   ]);
 
@@ -4947,6 +5087,7 @@ export function useWebBrowser(
   useWebPopupTabs({
     session,
     sessions: state.sessions,
+    popupPolicy: browserSettings.popupPolicy,
     enabled:
       !sharedPopupId &&
       settingsReady === true &&
@@ -4965,6 +5106,7 @@ export function useWebBrowser(
     onActivateSession,
   });
   const automation = useWebAutomation({
+    effectivePolicy: proxyOptions.policy ?? undefined,
     activityContext: session.ownerDatabaseId
       ? {
           sessionId: session.id,
@@ -5007,6 +5149,7 @@ export function useWebBrowser(
     availability: databaseAvailability,
     settingsReady: settingsReady === true,
     blocked:
+      browserSettings.manualFormSubmit ||
       !!sharedPopupId ||
       waitingForTrust ||
       redirectHandoffPending ||
@@ -5104,6 +5247,7 @@ export function useWebBrowser(
     connection: noncredentialConnection,
     settings,
     // Navigation
+    browserSettings,
     currentUrl,
     inputUrl,
     setInputUrl,
@@ -5159,6 +5303,7 @@ export function useWebBrowser(
     // Auth
     hasAuth,
     deferredLogin: deferredLogin.presentation,
+    automaticLoginNotice,
     refreshDeferredLoginStatus: deferredLogin.refresh,
     authLabel:
       ["none", "bitwarden-form", "synology-form"].includes(

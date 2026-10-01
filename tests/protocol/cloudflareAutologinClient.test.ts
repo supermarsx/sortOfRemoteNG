@@ -1,14 +1,12 @@
 import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/cloudflare_autologin_client.js",
   "utf8",
 );
-const primary = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const primary = loadAutologinClient();
 type Client = {
   fetchCredsAndRun(nonce: string, selectors: undefined, flow: string): void;
   cancel(): void;

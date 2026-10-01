@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getHttpApplicationProfile,
@@ -13,10 +14,7 @@ const helper = readFileSync(
   "src-tauri/crates/sorng-protocols/src/synology_autologin_client.js",
   "utf8",
 );
-const client = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const client = loadAutologinClient();
 const automation = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_automation_client.js",
   "utf8",

@@ -22,6 +22,14 @@ pub use tls_ca::{
 mod proxy_transport;
 pub use proxy_transport::{fetch_tls_certificate_info, CertificateInspectionError};
 
+#[path = "http_proxy_transport_settings.rs"]
+mod proxy_transport_settings;
+pub use proxy_transport_settings::ProxyTransportSettings;
+
+#[path = "http_browser_compatibility.rs"]
+mod browser_compatibility;
+pub use browser_compatibility::BrowserCompatibility;
+
 #[path = "http_log_diagnostics.rs"]
 mod log_diagnostics;
 #[path = "http_proxy_policy.rs"]
@@ -61,6 +69,10 @@ pub use dark_mode::WebsiteDarkModeBootstrap;
 pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
 #[path = "http_cloudflare_challenge.rs"]
 pub mod cloudflare_challenge;
+#[path = "http_exchange_cookies.rs"]
+mod exchange_cookies;
+#[path = "http_exchange_ecp.rs"]
+mod exchange_ecp;
 #[path = "http_external_fonts.rs"]
 mod external_fonts;
 #[path = "http_font_assets.rs"]
@@ -566,6 +578,15 @@ pub enum UpstreamAuthMode {
     /// released only on exact accounts.google.com proxy documents.
     #[serde(rename = "google-form")]
     GoogleForm,
+    /// Adobe-managed email/password sign-in on the exact reviewed auth origin.
+    #[serde(rename = "adobe-form")]
+    AdobeForm,
+    /// Reviewed ChatGPT email then exact OpenAI auth password document.
+    #[serde(rename = "chatgpt-form")]
+    ChatgptForm,
+    /// Passwordless Claude email only; never releases a saved password.
+    #[serde(rename = "claude-form")]
+    ClaudeForm,
     /// Reviewed dashboard form credentials, never HTTP Basic or API tokens.
     #[serde(rename = "cloudflare-form")]
     CloudflareForm,
@@ -607,6 +628,9 @@ impl UpstreamAuthMode {
             | Self::BitwardenForm
             | Self::SynologyForm
             | Self::GoogleForm
+            | Self::AdobeForm
+            | Self::ChatgptForm
+            | Self::ClaudeForm
             | Self::CloudflareForm
             | Self::YealinkServlet
             | Self::Unknown => None,
@@ -629,6 +653,9 @@ impl UpstreamAuthMode {
             | Self::BitwardenForm
             | Self::SynologyForm
             | Self::GoogleForm
+            | Self::AdobeForm
+            | Self::ChatgptForm
+            | Self::ClaudeForm
             | Self::CloudflareForm
             | Self::YealinkServlet
             | Self::Unknown => String::new(),
@@ -656,6 +683,9 @@ impl UpstreamAuthMode {
             | Self::BitwardenForm
             | Self::SynologyForm
             | Self::GoogleForm
+            | Self::AdobeForm
+            | Self::ChatgptForm
+            | Self::ClaudeForm
             | Self::CloudflareForm
             | Self::YealinkServlet
             | Self::Unknown => request,
@@ -667,6 +697,49 @@ impl UpstreamAuthMode {
     /// challenge", never to "sends credentials".
     fn accepts_basic_challenge(self) -> bool {
         matches!(self, Self::Basic | Self::PfSenseV1)
+    }
+}
+
+#[cfg(test)]
+mod ai_chat_mode_tests {
+    use super::*;
+
+    #[test]
+    fn ai_chat_wire_modes_and_profiles_are_closed_and_never_transport_auth() {
+        for (mode, wire, marker, profile) in [
+            (
+                UpstreamAuthMode::ChatgptForm,
+                "chatgpt-form",
+                ReviewedApplicationProfile::Chatgpt,
+                "chatgpt",
+            ),
+            (
+                UpstreamAuthMode::ClaudeForm,
+                "claude-form",
+                ReviewedApplicationProfile::Claude,
+                "claude",
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(mode).unwrap(), wire);
+            assert_eq!(
+                serde_json::from_value::<UpstreamAuthMode>(serde_json::json!(wire)).unwrap(),
+                mode
+            );
+            assert_eq!(serde_json::to_value(marker).unwrap(), profile);
+            assert!(!mode.accepts_basic_challenge());
+            assert!(mode.authorization_value("fixture", "fixture").is_none());
+            assert!(mode.manager_visible_username("fixture").is_empty());
+            let request = mode
+                .apply_credentials(
+                    reqwest::Client::new().get("https://fixture.invalid/"),
+                    "fixture",
+                    "fixture",
+                )
+                .build()
+                .unwrap();
+            assert!(!request.headers().contains_key("authorization"));
+            assert!(!request.headers().contains_key("x-auth-key"));
+        }
     }
 }
 
@@ -687,10 +760,19 @@ pub enum ReviewedApplicationProfile {
     TacticalRmm,
     #[serde(rename = "google-hosted")]
     GoogleHosted,
+    #[serde(rename = "adobe-admin-console")]
+    AdobeAdminConsole,
+    Chatgpt,
+    Claude,
+    Instagram,
+    Canva,
     Cloudflare,
     Porkbun,
     Cpanel,
     Freepbx,
+    Ptisp,
+    #[serde(rename = "exchange-ecp")]
+    ExchangeEcp,
 }
 
 pub fn same_origin_redirect_limit(profile: Option<BrowserRedirectProfile>) -> usize {
@@ -716,6 +798,12 @@ pub struct BasicAuthProxyConfig {
     pub upstream_auth_mode: UpstreamAuthMode,
     #[serde(default)]
     pub proxy_policy: Option<HttpProxyPolicy>,
+    /// Website session transport budgets and connection pooling.
+    #[serde(default)]
+    pub transport_settings: ProxyTransportSettings,
+    /// Runtime-only page compatibility preferences, never routing or TLS grants.
+    #[serde(default)]
+    pub browser_compatibility: BrowserCompatibility,
     /// Runtime-only original application profile; omitted legacy callers keep
     /// the ordinary ten-redirect same-origin limit.
     #[serde(default)]
@@ -2153,7 +2241,10 @@ pub async fn axum_proxy_handler(
         popup_parent = Some(root);
     } else if let Some(parent) = popup_parent {
         if !state.network.permits_tactical_popup_parent(parent)
-            || state.tactical_rmm_api.is_none()
+            || !state
+                .tactical_rmm_api
+                .as_ref()
+                .is_some_and(|route| route.is_tactical())
             || !matches!(
                 *req.method(),
                 axum::http::Method::GET | axum::http::Method::HEAD
@@ -2184,12 +2275,14 @@ pub async fn axum_proxy_handler(
     }
     // API HTTP requests, like sockets, must remain bound through response-body
     // completion, not merely pass a current-document check before the send.
-    let api_document = if req.uri().path() == tactical_rmm::PATH
+    let api_document = if tactical_rmm::document_parameter(req.uri().path()).is_some()
         && !websocket::is_upgrade_candidate(req.headers())
     {
         let documents: Vec<_> =
             url::form_urlencoded::parse(req.uri().query().unwrap_or_default().as_bytes())
-                .filter(|(name, _)| name == "__sorng_tactical_document_v1")
+                .filter(|(name, _)| {
+                    Some(name.as_ref()) == tactical_rmm::document_parameter(req.uri().path())
+                })
                 .collect();
         match documents.as_slice() {
             [(_, value)] => value.parse::<u64>().ok(),
@@ -2259,6 +2352,24 @@ async fn axum_proxy_handler_inner(
     } else {
         state
     };
+    if req.uri().path() == exchange_cookies::COOKIE_BRIDGE_PATH {
+        if proxy_request_headers_are_authorized(
+            req.headers(),
+            &state.proxy_authority,
+            &state.proxy_origin,
+        ) {
+            if let Some(cookies) = &state.network.exchange_cookies {
+                return cookies.document_cookie_response(req).await;
+            }
+        }
+        return Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("Cache-Control", "no-store")
+            .body(Body::from(
+                "Exchange cookie bridge is not available for this session.",
+            ))
+            .expect("static Exchange cookie bridge refusal");
+    }
     if req.uri().path() == google::COOKIE_BRIDGE_PATH {
         if let Some(google) = state.network.google.clone() {
             return google
@@ -2408,15 +2519,31 @@ async fn axum_proxy_handler_inner(
             state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1
         } else if matches!(
             state.upstream_auth_mode,
-            UpstreamAuthMode::BitwardenForm | UpstreamAuthMode::CloudflareForm
+            UpstreamAuthMode::BitwardenForm
+                | UpstreamAuthMode::CloudflareForm
+                | UpstreamAuthMode::AdobeForm
         ) {
             let mut continuation = state.bitwarden_continuation.lock().ok();
             let next = state.document_sequence.fetch_add(1, Ordering::SeqCst) + 1;
-            if let Some(slot) = continuation.as_mut() {
-                **slot = None;
+            if state.upstream_auth_mode != UpstreamAuthMode::AdobeForm
+                || state.auto_login_armed.load(Ordering::SeqCst)
+            {
+                if let Some(slot) = continuation.as_mut() {
+                    **slot = None;
+                }
             }
+            // Adobe's password transition stays in one SPA. Child-frame
+            // issuance must not revoke its post-email grant; redemption holds
+            // the selected primary-document lease and rejects real navigation.
             next
-        } else if state.upstream_auth_mode == UpstreamAuthMode::GoogleForm {
+        } else if matches!(
+            state.upstream_auth_mode,
+            UpstreamAuthMode::GoogleForm
+                | UpstreamAuthMode::ChatgptForm
+                | UpstreamAuthMode::ClaudeForm
+        ) {
+            // AI chat grants record bounded page candidates. Issuance is not
+            // selection and must neither clear nor rebind their continuation.
             state.document_sequence.fetch_add(1, Ordering::SeqCst) + 1
         } else {
             state.document_sequence.fetch_add(1, Ordering::Relaxed) + 1
@@ -2460,7 +2587,20 @@ async fn axum_proxy_handler_inner(
                 path_and_query
             )
         });
-    let full_url = if state.network.google.is_some()
+    // PTisp's login URL includes the account email. Diagnostics/recordings
+    // must retain only the API origin, never that path or its query.
+    let full_url = if tactical_api_destination.is_some()
+        && state
+            .tactical_rmm_api
+            .as_ref()
+            .is_some_and(|route| !route.is_tactical())
+    {
+        tactical_api_destination
+            .as_ref()
+            .unwrap()
+            .origin()
+            .ascii_serialization()
+    } else if state.network.google.is_some()
         || state
             .network
             .tactical_mesh
@@ -2957,13 +3097,19 @@ async fn axum_proxy_handler_inner(
                 }
             }
 
+            // Copy the owning native identity, never infer it from a page or
+            // from the presence of a challenge route. Release the manager lock
+            // before classification or any subsequent response processing.
+            let reviewed_challenge_profile =
+                state.global_sessions.lock().ok().and_then(|sessions| {
+                    sessions
+                        .sessions
+                        .get(&state.session_id)
+                        .and_then(|session| session.reviewed_application_profile)
+                });
             let is_cloudflare_managed_challenge =
                 cloudflare_challenge::is_managed_challenge_response(
-                    state
-                        .network
-                        .cloudflare_challenge
-                        .as_ref()
-                        .map(|_| ReviewedApplicationProfile::Cloudflare),
+                    reviewed_challenge_profile,
                     &response_url,
                     &resp_hdrs,
                 );
@@ -3195,7 +3341,9 @@ async fn axum_proxy_handler_inner(
                 let autologin_asset = if autologin_script.is_empty() {
                     String::new()
                 } else {
-                    crate::autologin_asset::autologin_client_asset_script()
+                    crate::autologin_asset::autologin_client_asset_script_for_mode(
+                        crate::themed_autologin::autologin_asset_mode(&state),
+                    )
                 };
                 if is_cloudflare_managed_challenge {
                     for fragment in [&autologin_asset, &autologin_script] {
@@ -3223,6 +3371,8 @@ async fn axum_proxy_handler_inner(
                         policy: &state.proxy_policy,
                         tactical_rmm_api: state.tactical_rmm_api.as_ref(),
                         google: state.network.google.as_deref(),
+                        exchange_cookies: state.network.exchange_cookies.is_some(),
+                        browser_compatibility: state.network.browser_compatibility(),
                         popup_parent_sequence: popup_parent,
                         tactical_mesh: state.network.tactical_mesh.as_ref().and_then(|mesh| {
                             mesh.is_dashboard(&state.proxy_origin)
@@ -3315,7 +3465,7 @@ async fn axum_proxy_handler_inner(
             // Build response, stripping headers that block iframe display
             // or trigger browser auth prompts.
             let mut builder = Response::builder().status(status_u16);
-            if is_html {
+            if is_html && state.network.exchange_cookies.is_none() {
                 if let Some(attempt) = &state.attempt {
                     // Seed only the four provider route hints onto a new
                     // loopback origin. A fresh upstream value/deletion wins.

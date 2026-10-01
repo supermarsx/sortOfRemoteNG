@@ -63,6 +63,7 @@ export interface WebsiteDarkModeController {
 }
 
 interface Options {
+  effectivePolicy?: import("../../types/connection/httpProxyPolicy").HttpProxyPolicy;
   connection: Connection | undefined;
   ownerDatabaseId: string | undefined;
   settings: GlobalSettings;
@@ -172,7 +173,9 @@ export function useWebsiteDarkMode(
     sourceProblem = UNSAVED;
   // The policy of the connection this session opened, not of the saved row a
   // redirected page stores its appearance on.
-  const scriptsPolicy = pageScriptsPolicy(runtimeConnection);
+  const scriptsPolicy =
+    options.effectivePolicy?.pageScripts ??
+    pageScriptsPolicy(runtimeConnection);
   const latest = useRef({ options, context });
   latest.current = { options, context };
   const mounted = useRef(false);

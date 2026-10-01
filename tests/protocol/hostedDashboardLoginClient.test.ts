@@ -1,14 +1,11 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getHttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
 
 // Reduced DOM fixtures reproduce the reviewed controls, not a running provider.
 // GitLab fa8866a33046ee6ab803291d3a38810f16d395b0 sign_in_form.vue.
 // SQLPad 57cc866b4c5e8cb5a1964d6a58a789e76853d537 pages/SignIn.tsx.
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Client = {
   bootstrap(
     creds: { username: string | null; password: string | null },

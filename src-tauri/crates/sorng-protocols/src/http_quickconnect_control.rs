@@ -311,7 +311,17 @@ pub(super) struct ReviewedQuickConnectControl {
     probe_identities: probe_identities::ProbeIdentities,
 }
 impl ReviewedQuickConnectControl {
+    #[cfg(test)]
     pub(super) fn new(proxy: Option<reqwest::Proxy>, min_tls: &str) -> Result<Self, String> {
+        Self::with_transport_settings(proxy, min_tls, &super::ProxyTransportSettings::default())
+    }
+
+    pub(super) fn with_transport_settings(
+        proxy: Option<reqwest::Proxy>,
+        min_tls: &str,
+        settings: &super::ProxyTransportSettings,
+    ) -> Result<Self, String> {
+        settings.validate()?;
         let roots =
             super::native_root_store().map_err(|_| "Verified QuickConnect roots unavailable")?;
         if roots.is_empty() {
@@ -329,7 +339,8 @@ impl ReviewedQuickConnectControl {
         .map_err(|_| "Verified QuickConnect TLS unavailable")?
         .with_root_certificates(roots)
         .with_no_client_auth();
-        let mut builder = reqwest::Client::builder()
+        let mut builder = settings
+            .apply_to_client_builder(reqwest::Client::builder())?
             .no_proxy()
             .use_preconfigured_tls(tls)
             .cookie_store(false)
@@ -339,10 +350,7 @@ impl ReviewedQuickConnectControl {
             .no_gzip()
             .no_brotli()
             .no_deflate()
-            .no_zstd()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(25))
-            .pool_max_idle_per_host(2);
+            .no_zstd();
         if let Some(proxy) = proxy {
             builder = builder.proxy(proxy);
         }
@@ -650,7 +658,15 @@ async fn exchange(
     let mut response = request
         .header("Accept", "application/json")
         .header("Accept-Encoding", "identity")
-        .timeout(exchange.lane.network_budget())
+        .timeout(
+            exchange.lane.network_budget().min(
+                exchange
+                    .state
+                    .network
+                    .transport_settings()
+                    .request_timeout(),
+            ),
+        )
         .send()
         .await
         .map_err(|error| transport_failure(&error, false))?;

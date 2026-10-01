@@ -179,7 +179,25 @@ mod tests {
 
         assert!(style.contains("class=\"darkreader\""));
         assert!(style.contains("@layer sorng-force-dark,sorng-dark-surface,sorng-dark-loading;"));
-        assert!(style.contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body *:not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;background-image:none!important;transition:none!important}}"));
+        assert!(style.contains("@layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body *:not(iframe):not(frame):not(img):not(picture):not(video):not(audio):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;transition:none!important}}"));
+        // Background removal belongs to the permanent, icon-aware surface
+        // layer. A blanket loading rule would erase icon sprites before the
+        // runtime starts, even though the permanent layer preserves them.
+        let loading = style.split_once("@layer sorng-dark-loading{").unwrap().1;
+        assert!(!loading.contains("background-image:"));
+        let surface = style
+            .split_once("@layer sorng-dark-surface{")
+            .unwrap()
+            .1
+            .split_once("}@layer sorng-dark-loading{")
+            .unwrap()
+            .0;
+        let backgrounds: Vec<_> = surface
+            .split('}')
+            .filter(|rule| rule.contains("background-image:none!important"))
+            .collect();
+        assert_eq!(backgrounds.len(), 1);
+        assert!(backgrounds[0].contains(":not(:is(i,span):is(.icon,"));
         assert!(!style.contains("<script"));
         assert!(!style.contains("visibility:"));
         assert!(!style.contains("display:"));

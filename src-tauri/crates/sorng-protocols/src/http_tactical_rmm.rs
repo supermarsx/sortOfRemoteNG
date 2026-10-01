@@ -1,4 +1,4 @@
-//! Closed Tactical RMM API-origin capability.
+//! Closed application API-origin transport (Tactical RMM and PTisp).
 //!
 //! Tactical's dashboard reads `window._env_.PROD_URL`. Deployments commonly
 //! place the API either at `https://api.<dashboard-host>` or beside an `rmm`
@@ -9,7 +9,11 @@
 use super::{ProxyNetworkState, ReviewedApplicationProfile};
 
 pub(super) const PATH: &str = "/__sortofremoteng_tactical_rmm_api_v1";
+pub(super) const PTISP_PATH: &str = "/__sortofremoteng_ptisp_api_v1";
+pub(super) const PTISP_SOURCE: &str = "https://my.ptisp.pt";
+pub(super) const PTISP_API: &str = "https://api3.ptisp.pt";
 const DOCUMENT_PARAMETER: &str = "__sorng_tactical_document_v1";
+const PTISP_DOCUMENT_PARAMETER: &str = "__sorng_ptisp_document_v1";
 const GENERATION_PARAMETER: &str = "__sorng_generation_v1";
 
 #[derive(Clone)]
@@ -17,6 +21,7 @@ const GENERATION_PARAMETER: &str = "__sorng_generation_v1";
 pub struct TacticalRmmApiRoute {
     api_origins: Vec<String>,
     client: reqwest::Client,
+    profile: ReviewedApplicationProfile,
 }
 
 impl TacticalRmmApiRoute {
@@ -27,6 +32,21 @@ impl TacticalRmmApiRoute {
         configured_api_origin: Option<&str>,
         client: reqwest::Client,
     ) -> Option<Self> {
+        // Reuse only the stateless transport. PTisp receives no derived hosts,
+        // configured API override, Tactical popups, Mesh or WebSocket grant.
+        if profile == Some(ReviewedApplicationProfile::Ptisp) {
+            if source.origin().ascii_serialization() != PTISP_SOURCE
+                || !source.username().is_empty()
+                || source.password().is_some()
+            {
+                return None;
+            }
+            return Some(Self {
+                api_origins: vec![PTISP_API.into()],
+                client,
+                profile: ReviewedApplicationProfile::Ptisp,
+            });
+        }
         if profile != Some(ReviewedApplicationProfile::TacticalRmm)
             || source.scheme() != "https"
             || source.port_or_known_default() != Some(443)
@@ -59,7 +79,28 @@ impl TacticalRmmApiRoute {
         Some(Self {
             api_origins,
             client,
+            profile: ReviewedApplicationProfile::TacticalRmm,
         })
+    }
+
+    pub(super) fn is_tactical(&self) -> bool {
+        self.profile == ReviewedApplicationProfile::TacticalRmm
+    }
+
+    pub(super) fn manifest_key(&self) -> &'static str {
+        if self.is_tactical() {
+            "tacticalRmmApi"
+        } else {
+            "ptispApi"
+        }
+    }
+
+    fn path(&self) -> &'static str {
+        if self.is_tactical() {
+            PATH
+        } else {
+            PTISP_PATH
+        }
     }
 
     pub(super) fn client(&self) -> &reqwest::Client {
@@ -70,7 +111,7 @@ impl TacticalRmmApiRoute {
         serde_json::json!({
             "version": 2,
             "apiOrigins": self.api_origins,
-            "proxyUrl": format!("{proxy_origin}{PATH}"),
+            "proxyUrl": format!("{proxy_origin}{}", self.path()),
         })
     }
 
@@ -124,22 +165,32 @@ fn push_exact_origin(origins: &mut Vec<String>, value: &str) -> Option<()> {
     Some(())
 }
 
+pub(super) fn document_parameter(path: &str) -> Option<&'static str> {
+    match path {
+        PATH => Some(DOCUMENT_PARAMETER),
+        PTISP_PATH => Some(PTISP_DOCUMENT_PARAMETER),
+        _ => None,
+    }
+}
+
 pub(super) fn destination(
     route: Option<&TacticalRmmApiRoute>,
     network: &ProxyNetworkState,
     uri: &axum::http::Uri,
 ) -> Result<Option<reqwest::Url>, &'static str> {
-    if uri.path() != PATH {
+    let Some(document_parameter) = document_parameter(uri.path()) else {
         return Ok(None);
-    }
-    let route = route.ok_or("The Tactical RMM API route is unavailable.")?;
+    };
+    let route = route
+        .filter(|route| route.path() == uri.path())
+        .ok_or("The reviewed application API route is unavailable.")?;
     let mut destination = None;
     let mut document = None;
     let mut generation_seen = false;
     for (name, value) in url::form_urlencoded::parse(uri.query().unwrap_or_default().as_bytes()) {
         match name.as_ref() {
             "destination" if destination.is_none() => destination = Some(value.into_owned()),
-            DOCUMENT_PARAMETER if document.is_none() => {
+            name if name == document_parameter && document.is_none() => {
                 document = value.parse::<u64>().ok();
                 if document.is_none() {
                     return Err("The Tactical RMM API document is invalid.");
@@ -165,6 +216,141 @@ pub(super) fn destination(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ptisp_requires_exact_reviewed_source_and_discloses_no_tactical_grants() {
+        assert_eq!(
+            serde_json::to_string(&ReviewedApplicationProfile::Ptisp).unwrap(),
+            "\"ptisp\""
+        );
+        for (profile, source) in [
+            (None, PTISP_SOURCE),
+            (Some(ReviewedApplicationProfile::Porkbun), PTISP_SOURCE),
+            (
+                Some(ReviewedApplicationProfile::Ptisp),
+                "http://my.ptisp.pt",
+            ),
+            (
+                Some(ReviewedApplicationProfile::Ptisp),
+                "https://my.ptisp.pt:8443",
+            ),
+            (
+                Some(ReviewedApplicationProfile::Ptisp),
+                "https://my.ptisp.pt.evil.test",
+            ),
+            (
+                Some(ReviewedApplicationProfile::Ptisp),
+                "https://my.ptisp.pt.",
+            ),
+            (
+                Some(ReviewedApplicationProfile::Ptisp),
+                "https://user:secret@my.ptisp.pt",
+            ),
+            (Some(ReviewedApplicationProfile::Ptisp), PTISP_API),
+        ] {
+            assert!(TacticalRmmApiRoute::new(
+                profile,
+                &reqwest::Url::parse(source).unwrap(),
+                None,
+                reqwest::Client::new()
+            )
+            .is_none());
+        }
+        let capability = TacticalRmmApiRoute::new(
+            Some(ReviewedApplicationProfile::Ptisp),
+            &reqwest::Url::parse("https://my.ptisp.pt:443/login").unwrap(),
+            Some("https://unapproved.test"),
+            reqwest::Client::new(),
+        )
+        .unwrap();
+        assert!(!capability.is_tactical());
+        assert_eq!(capability.api_origins, [PTISP_API]);
+        assert_eq!(capability.manifest_key(), "ptispApi");
+        assert_eq!(
+            capability.manifest("http://fixture.localhost:1234")["proxyUrl"],
+            "http://fixture.localhost:1234/__sortofremoteng_ptisp_api_v1"
+        );
+        let bootstrap = super::super::network::bootstrap(
+            "fixture",
+            1,
+            None,
+            PTISP_SOURCE,
+            "http://fixture.localhost:1234",
+            &super::super::HttpProxyPolicy::default(),
+            Some(&capability),
+            None,
+            None,
+            None,
+            None,
+            false,
+            super::super::BrowserCompatibility::default(),
+        );
+        assert!(bootstrap.contains("\"ptispApi\":{"));
+        assert!(bootstrap.contains("\"popupTabs\":false"));
+        assert!(!bootstrap.contains("\"tacticalRmmApi\":{"));
+        assert!(!bootstrap.contains("\"tacticalRmmMesh\":{"));
+    }
+
+    #[test]
+    fn ptisp_destination_requires_its_own_alias_document_and_exact_api_origin() {
+        let capability = TacticalRmmApiRoute::new(
+            Some(ReviewedApplicationProfile::Ptisp),
+            &reqwest::Url::parse(PTISP_SOURCE).unwrap(),
+            None,
+            reqwest::Client::new(),
+        )
+        .unwrap();
+        let network = ProxyNetworkState::default();
+        network.document_issued(3, true);
+        let uri = |target: &str| -> axum::http::Uri {
+            format!(
+                "{PTISP_PATH}?{}",
+                url::form_urlencoded::Serializer::new(String::new())
+                    .append_pair("destination", target)
+                    .append_pair(PTISP_DOCUMENT_PARAMETER, "3")
+                    .finish()
+            )
+            .parse()
+            .unwrap()
+        };
+        let target = "https://api3.ptisp.pt/user/security/fixture%40example.test/login?raw=%2F+";
+        assert_eq!(
+            destination(Some(&capability), &network, &uri(target))
+                .unwrap()
+                .unwrap()
+                .as_str(),
+            target
+        );
+        assert!(destination(None, &network, &uri(target)).is_err());
+        assert!(destination(Some(&capability), &network, &request_uri(target, 3)).is_err());
+        for target in [
+            "http://api3.ptisp.pt/",
+            "https://api3.ptisp.pt:8443/",
+            "https://api3.ptisp.pt.evil.test/",
+            "https://api3.ptisp.pt./",
+            "https://user:secret@api3.ptisp.pt/",
+            "https://api3.ptisp.pt/#fragment",
+            "https://api4.ptisp.pt/",
+        ] {
+            assert!(destination(Some(&capability), &network, &uri(target)).is_err());
+        }
+        for extra in [
+            "&__sorng_ptisp_document_v1=3",
+            "&__sorng_tactical_document_v1=3",
+            "&destination=https://api3.ptisp.pt/",
+            "&unknown=secret",
+        ] {
+            assert!(destination(
+                Some(&capability),
+                &network,
+                &format!("{}{extra}", uri(target)).parse().unwrap()
+            )
+            .is_err());
+        }
+        network.document_issued(4, true);
+        network.activate_document(4).unwrap();
+        assert!(destination(Some(&capability), &network, &uri(target)).is_err());
+    }
 
     fn route(source: &str) -> Option<TacticalRmmApiRoute> {
         route_with_config(source, None)

@@ -16,6 +16,8 @@ fn bootstrap_reports_installed_network_capabilities_on_existing_readiness_payloa
         None,
         None,
         None,
+        false,
+        BrowserCompatibility::default(),
     );
     assert!(script.contains("var sorngNetworkClient=installWebNetworkClient("));
     let popup_helper = script

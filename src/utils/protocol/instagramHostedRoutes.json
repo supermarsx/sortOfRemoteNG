@@ -1,0 +1,6 @@
+{
+  "profiles": { "instagram": "https://www.instagram.com" },
+  "loginOrigins": [],
+  "resourceOrigins": ["https://static.cdninstagram.com"],
+  "profileOrigins": {}
+}

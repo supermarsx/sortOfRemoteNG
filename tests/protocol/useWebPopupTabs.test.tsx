@@ -56,9 +56,15 @@ afterEach(() => {
   frame.remove();
   vi.unstubAllGlobals();
 });
-function mount() {
+function mount(popupPolicy: "tabs" | "block" = "tabs") {
   return renderHook(
-    ({ enabled }) => {
+    ({
+      enabled,
+      popupPolicy = "tabs",
+    }: {
+      enabled: boolean;
+      popupPolicy?: "tabs" | "block";
+    }) => {
       const [sessions, setSessions] = useState<ConnectionSession[]>([source]);
       applyAction = (action) => {
         dispatch(action);
@@ -73,6 +79,7 @@ function mount() {
         session: source,
         sessions,
         enabled,
+        popupPolicy,
         iframe: { current: frame },
         getDocument: () => doc,
         getProxyUrl: () => `${proxy}/`,
@@ -80,7 +87,7 @@ function mount() {
         onActivateSession: activate,
       });
     },
-    { initialProps: { enabled: true } },
+    { initialProps: { enabled: true, popupPolicy } },
   );
 }
 function send(
@@ -118,6 +125,50 @@ const opened = () => {
 };
 
 describe("source popup bridge", () => {
+  it("reports a blocked supported popup as closed to its verified source", () => {
+    mount("block");
+    const reply = vi.spyOn(frame.contentWindow!, "postMessage");
+    send({}, "https://unrelated.example");
+    expect(reply).not.toHaveBeenCalled();
+    send();
+    expect(opened()).toBeUndefined();
+    expect(reply).toHaveBeenCalledWith(
+      {
+        type: "sorng_web_popup",
+        version: 1,
+        action: "closed",
+        id: childId,
+        sessionId: "native",
+        documentSequence: 3,
+      },
+      proxy,
+    );
+  });
+  it("blocks only new tabs while existing tabs still navigate, focus and close", () => {
+    const hook = mount();
+    send();
+    const popup = opened()!;
+    hook.rerender({ enabled: true, popupPolicy: "block" });
+    expect(webPopupTabs.getSnapshot(popup.id)).not.toBeNull();
+    send({ action: "focus" });
+    expect(activate).toHaveBeenLastCalledWith(popup.id);
+    send({
+      action: "navigate",
+      destination: `${proxy}/webterm?__sorng_popup_parent_v1=3`,
+    });
+    expect(webPopupTabs.getSnapshot(popup.id)?.url).toContain("/webterm?");
+    send({ id: "d".repeat(32) });
+    expect(
+      dispatch.mock.calls.filter(([action]) => action.type === "ADD_SESSION"),
+    ).toHaveLength(1);
+    send({ action: "close" });
+    expect(webPopupTabs.getSnapshot(popup.id)).toBeNull();
+    hook.rerender({ enabled: true, popupPolicy: "tabs" });
+    send();
+    expect(
+      dispatch.mock.calls.filter(([action]) => action.type === "ADD_SESSION"),
+    ).toHaveLength(2);
+  });
   it("releases capacity when closed before the lazy viewer mounts and cancels pending activation", () => {
     const callbacks: Array<() => void> = [];
     vi.stubGlobal("requestAnimationFrame", (callback: () => void) => {
@@ -197,7 +248,7 @@ describe("source popup bridge", () => {
       const id = opened()!.id;
       if (reason === "document") doc = { ...initialDocument, generation: 4 };
       if (reason === "owner") owner.valid = false;
-      hook.rerender({ enabled: reason !== "disabled" });
+      hook.rerender({ enabled: reason !== "disabled", popupPolicy: "tabs" });
       expect(webPopupTabs.getSnapshot(id)).toBeNull();
     },
   );
@@ -211,7 +262,7 @@ describe("source popup bridge", () => {
     const hook = mount();
     send();
     const id = opened()!.id;
-    hook.rerender({ enabled: true });
+    hook.rerender({ enabled: true, popupPolicy: "tabs" });
     expect(webPopupTabs.getSnapshot(id)).not.toBeNull();
     hook.unmount();
     expect(webPopupTabs.getSnapshot(id)).toBeNull();

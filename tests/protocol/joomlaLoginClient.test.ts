@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicationLogin";
 import { DEFAULT_HTTP_FORM_AUTOMATION } from "../../src/utils/connection/httpFormAutomation";
@@ -11,10 +11,7 @@ import type { HttpApplicationSettings } from "../../src/types/connection/connect
 // https://github.com/joomla/joomla-cms/blob/4.4.13/administrator/modules/mod_login/tmpl/default.php
 // https://github.com/joomla/joomla-cms/blob/5.4.8/administrator/modules/mod_login/tmpl/default.php
 // https://github.com/joomla/joomla-cms/blob/6.1.3/administrator/modules/mod_login/tmpl/default.php
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Result = { ok: boolean; reason: string };
 type Credentials = { username: string | null; password: string | null };
 type Client = {

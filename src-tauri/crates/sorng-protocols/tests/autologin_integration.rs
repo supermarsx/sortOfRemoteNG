@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, RwLock};
 
-use sorng_protocols::autologin_asset::{autologin_client_asset_script, AUTOLOGIN_CLIENT_JS};
+use sorng_protocols::autologin_asset::{assembled_autologin_client, autologin_client_asset_script};
 use sorng_protocols::http::{
     AxumProxyState, HttpAutoLoginSelectors, HttpProxyPolicy, ProxyNetworkState,
     ProxySessionManager, UpstreamAuthMode,
@@ -121,7 +121,7 @@ fn served_asset_is_the_full_e5_routine() {
     let nonce = RwLock::new(None);
     let html = serve_injected(&armed, &nonce, &None, "<body></body>");
     assert!(
-        html.contains(AUTOLOGIN_CLIENT_JS),
+        html.contains(&assembled_autologin_client()),
         "served HTML embeds the full e5 client routine verbatim"
     );
     assert!(
@@ -202,11 +202,11 @@ fn served_html_carries_no_credential_only_a_nonce() {
         "no JSON credential literal in HTML"
     );
     assert!(
-        include_str!("../src/autologin_client.js").contains("credentials: \"same-origin\""),
+        assembled_autologin_client().contains("credentials: \"same-origin\""),
         "credential is fetched same-origin, not embedded"
     );
     assert!(
-        include_str!("../src/autologin_client.js").contains("cache: \"no-store\""),
+        assembled_autologin_client().contains("cache: \"no-store\""),
         "credential fetch is no-store"
     );
 }

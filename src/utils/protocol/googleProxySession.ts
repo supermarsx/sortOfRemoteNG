@@ -1,4 +1,31 @@
 import catalog from "./googleHostedRoutes.json";
+import adobeCatalog from "./adobeHostedRoutes.json";
+import instagramCatalog from "./instagramHostedRoutes.json";
+import canvaCatalog from "./canvaHostedRoutes.json";
+import chatgptCatalog from "./chatgptHostedRoutes.json";
+import claudeCatalog from "./claudeHostedRoutes.json";
+
+export function requiresHostedProxyRoutes(
+  profile: string | null | undefined,
+): boolean {
+  return [
+    "google-hosted",
+    "adobe-admin-console",
+    "instagram",
+    "canva",
+    "chatgpt",
+    "claude",
+  ].includes(profile ?? "");
+}
+
+export function hostedSessionLabel(origins: readonly string[]): string {
+  if (origins.includes("https://adminconsole.adobe.com")) return "Adobe";
+  if (origins.includes("https://www.instagram.com")) return "Instagram";
+  if (origins.includes("https://www.canva.com")) return "Canva";
+  if (origins.includes("https://chatgpt.com")) return "ChatGPT";
+  if (origins.includes("https://claude.ai")) return "Claude";
+  return "Google";
+}
 
 export interface GoogleProxyRoute {
   upstreamOrigin: string;
@@ -7,19 +34,35 @@ export interface GoogleProxyRoute {
 }
 
 export function expectedGoogleOrigins(source: string): Map<string, boolean> {
-  const profile = Object.entries(catalog.profiles).find(
+  // Legacy DTO names are shared with the reviewed hosted-session transport;
+  // catalogs are disjoint and never grant another provider's destinations.
+  const providerCatalog =
+    [
+      adobeCatalog,
+      instagramCatalog,
+      canvaCatalog,
+      chatgptCatalog,
+      claudeCatalog,
+      catalog,
+    ].find((candidate) => Object.values(candidate.profiles).includes(source)) ??
+    catalog;
+  const profile = Object.entries(providerCatalog.profiles).find(
     ([, origin]) => origin === source,
   )?.[0];
   if (!profile) return new Map();
   return new Map([
     [source, true],
-    ...catalog.loginOrigins.map((origin): [string, boolean] => [origin, true]),
-    ...catalog.resourceOrigins.map((origin): [string, boolean] => [
+    ...providerCatalog.loginOrigins.map((origin): [string, boolean] => [
+      origin,
+      true,
+    ]),
+    ...providerCatalog.resourceOrigins.map((origin): [string, boolean] => [
       origin,
       false,
     ]),
     ...(
-      (catalog.profileOrigins as Record<string, string[]>)[profile] ?? []
+      (providerCatalog.profileOrigins as Record<string, string[]>)[profile] ??
+      []
     ).map((origin): [string, boolean] => [origin, profile === "youtube"]),
   ]);
 }

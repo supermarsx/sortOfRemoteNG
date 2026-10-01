@@ -206,6 +206,15 @@ async function captureCpanelPaint(profile, url, regions) {
             whiteFrames: samples.filter((sample) => sample.white.some(Boolean))
               .length,
             markersVisible,
+            markerSeen: samples.some((sample) =>
+              regions.some(
+                (region, index) =>
+                  region.kind === "marker" &&
+                  ["rgb(220, 40, 60)", "rgb(40, 100, 220)"].includes(
+                    sample.colors[index],
+                  ),
+              ),
+            ),
           };
           if (failedPng) {
             const artifacts = await mkdtemp(
@@ -374,7 +383,12 @@ test(
 
 // Real wall-clock timers and a Node watchdog: a timeout inside the renderer
 // cannot diagnose a microtask loop that prevents all browser timers from firing.
-async function dynamicBrowser(t, checks, capturePaint = false) {
+async function dynamicBrowser(
+  t,
+  checks,
+  capturePaint = false,
+  stalledLogin = false,
+) {
   const [source, bundle] = await Promise.all([
     runtimeSource(),
     readFile(
@@ -412,12 +426,22 @@ async function dynamicBrowser(t, checks, capturePaint = false) {
     @layer sorng-force-dark{html:root,html:root body{background-color:#181a1b!important;color:#e8e6e3!important}}
     @layer sorng-dark-loading{html:root:not([data-sorng-dark-ready]) body :not(iframe):not(img):not(video):not(canvas):not(svg):not(svg *){background-color:transparent!important;color:#e8e6e3!important;transition:none!important}}
     </style>${paintShield}`;
+  const loginMarkup = stalledLogin
+    ? /export const porkbunLoginHtml = `([\s\S]*)`;/u.exec(
+        await readFile(
+          new URL("../protocol/fixtures/porkbunLogin.ts", import.meta.url),
+          "utf8",
+        ),
+      )?.[1]
+    : "";
+  if (stalledLogin) assert.ok(loginMarkup, "saved public Porkbun form fixture");
   const fixture = (frame) => `<!doctype html><html><head>${bootstrap}
     <link rel="stylesheet" href="/frontend/jupiter/theme.css"><script src="/runtime.js"></script>
-    </head><body id="cpanel_body"><div class="unconverted">Opaque arbitrary upstream surface</div>
+    </head><body ${stalledLogin ? 'class="bodyDefault"' : 'id="cpanel_body"'}><div class="unconverted">Opaque arbitrary upstream surface</div>
     <script>window.firstPaint = {background: getComputedStyle(document.querySelector('.unconverted')).backgroundColor, text: getComputedStyle(document.querySelector('.unconverted')).color, canvas: getComputedStyle(document.body).backgroundColor};</script>
-    <nav class="navbar">Menu</nav><main id="content"></main>
+    <nav class="navbar">Menu</nav><main id="content">${stalledLogin && !frame ? loginMarkup : ""}</main>
     ${frame ? "" : '<iframe src="/frame" title="cPanel child dashboard"></iframe><script src="/checks.js"></script>'}
+    ${stalledLogin && !frame ? '<script src="/stalled-footer-sdk.js"></script>' : ""}
     </body></html>`;
   const script = `(${async function (checks) {
     const assert = (condition, name) => {
@@ -443,7 +467,9 @@ async function dynamicBrowser(t, checks, capturePaint = false) {
     );
     try {
       await eventually(
-        () => document.querySelector("iframe").contentWindow.firstPaint,
+        () =>
+          document.querySelector('iframe[src="/frame"]').contentWindow
+            .firstPaint,
         "child frame loaded",
       );
       const metrics = await checks({ assert, delay, eventually, report });
@@ -474,6 +500,13 @@ async function dynamicBrowser(t, checks, capturePaint = false) {
   let engineRequests = 0;
   let camera;
   const server = createServer(async (req, res) => {
+    // Keep the parser genuinely blocked after visible login content, not a
+    // mocked readyState. Only the fixture-owned server connection is held.
+    if (stalledLogin && req.url === "/stalled-footer-sdk.js") return;
+    if (stalledLogin && req.url === "/__sortofremoteng_web_darkreader_v1.js") {
+      engineRequests++;
+      return;
+    }
     if (capturePaint && req.method === "POST" && req.url === "/paint-start") {
       try {
         let body = "";
@@ -630,6 +663,98 @@ const dynamicOptions = {
     : "Set CPANEL_TEST_BROWSER to an installed Chromium browser",
   timeout: 45000,
 };
+
+test(
+  "a stalled footer script cannot leave a ready dark login behind its paint shield",
+  dynamicOptions,
+  async (t) => {
+    await dynamicBrowser(
+      t,
+      async ({ assert, eventually, delay }) => {
+        const login = document.getElementById("loginForm");
+        assert(
+          login && login.target === "lame_login_iframe",
+          "saved Porkbun form parsed before stalled script",
+        );
+        const marker = document.createElement("canvas");
+        marker.width = marker.height = 24;
+        marker.style.cssText =
+          "position:fixed;left:40px;top:40px;width:24px;height:24px";
+        login.append(marker);
+        const context = marker.getContext("2d");
+        context.fillStyle = "rgb(220,40,60)";
+        context.fillRect(0, 0, 24, 24);
+        const controller = window.__sorngWebDarkModeDocument_v1;
+        assert(document.readyState === "loading", "footer SDK blocks parsing");
+        await fetch("/paint-start", {
+          method: "POST",
+          body: JSON.stringify([
+            { x: 400, y: 400, width: 24, height: 24 },
+            { x: 40, y: 40, width: 24, height: 24, kind: "marker" },
+          ]),
+        });
+        const started = performance.now();
+        const outcome = await controller.set({ enabled: true });
+        assert(
+          outcome === "cssOnly",
+          "real engine loader falls back while parser is blocked",
+        );
+        assert(
+          performance.now() - started >= 3900,
+          "real engine asset deadline exercised",
+        );
+        await eventually(
+          () =>
+            document.documentElement.hasAttribute("data-sorng-dark-presented"),
+          "ready palette uncovers parsed login while SDK remains stalled",
+        );
+        assert(
+          document.readyState === "loading",
+          "did not wait for DOMContentLoaded",
+        );
+        assert(
+          getComputedStyle(document.documentElement, "::after").content ===
+            "none",
+          "native shield no longer covers content",
+        );
+        assert(
+          getComputedStyle(document.body).backgroundColor === "rgb(24, 26, 27)",
+          "body remains dark",
+        );
+        assert(
+          getComputedStyle(document.getElementById("loginUsername")).color ===
+            "rgb(232, 230, 227)",
+          "login text is readable",
+        );
+        assert(
+          document.getElementById("loginUsername").getBoundingClientRect()
+            .width > 0,
+          "form has visible layout",
+        );
+        await delay(150);
+        const pixels = await fetch("/paint-stop", { method: "POST" }).then(
+          (response) => response.json(),
+        );
+        assert(
+          pixels.samples > 0 && pixels.whiteFrames === 0,
+          "no light frame during engine wait and fallback",
+        );
+        assert(
+          pixels.markerSeen,
+          "form marker painted after shield release while parsing is still blocked",
+        );
+        return {
+          parserStillLoading: true,
+          shieldReleased: true,
+          outcome,
+          ...pixels,
+        };
+      },
+      true,
+      true,
+    );
+  },
+);
 
 test(
   "cPanel after-ready inline mutations stay dark in compositor pixels",

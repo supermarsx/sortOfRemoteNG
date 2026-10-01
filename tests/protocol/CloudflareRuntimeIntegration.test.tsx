@@ -15,6 +15,7 @@ import type {
 import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
 import { clearRuntimeConnectionsForTests } from "../../src/utils/session/runtimeConnectionRegistry";
 import { normalizeWebsiteDarkModeSettings } from "../../src/utils/connection/websiteDarkMode";
+import claudeRoutes from "../../src/utils/protocol/claudeHostedRoutes.json";
 
 const fixture = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -230,6 +231,105 @@ function configureVault() {
   fixture.vault = api;
   return api;
 }
+
+// Reuse the real viewer/vault owner harness to exercise the passwordless caller
+// boundary as well as the normal Cloudflare password path below.
+describe.each(["browser", "viewer"] as const)(
+  "Claude %s vault startup",
+  (runtime) => {
+    it.each(["manual", "form"] as const)(
+      "%s never reads or forwards the password facet",
+      async (loginMode) => {
+        fixture.connections[0].hostname = "claude.ai";
+        fixture.connections[0].httpApplication = {
+          version: 1,
+          id: "claude",
+          loginMode,
+        };
+        const originalInvoke = fixture.invoke.getMockImplementation()!;
+        fixture.invoke.mockImplementation(async (command, ...args) => {
+          if (command === "start_basic_auth_proxy")
+            return {
+              ...proxy,
+              google_routes: [
+                {
+                  upstreamOrigin: claudeRoutes.profiles.claude,
+                  proxyOrigin: new URL(proxy.proxy_url).origin,
+                  documents: true,
+                },
+                ...claudeRoutes.loginOrigins.map((upstreamOrigin, index) => ({
+                  upstreamOrigin,
+                  proxyOrigin: `http://p${(index + 10).toString(16).padStart(32, "0")}.localhost:43081`,
+                  documents: true,
+                })),
+              ],
+            };
+          return originalInvoke(command, ...args);
+        });
+        const api = configureVault();
+        const passwordRead = vi.fn(() => {
+          throw new Error("Claude read a password facet");
+        });
+        vi.mocked(api.resolve).mockImplementation(
+          async (_snapshot, _id, requested) => {
+            expect(requested).toEqual(["username"]);
+            return {
+              username: "email@example.test",
+              get password(): string {
+                return passwordRead();
+              },
+            };
+          },
+        );
+        if (runtime === "browser") render(<BrowserHarness />);
+        else {
+          const viewer = renderHook(() =>
+            useHTTPViewer({ ...session, hostname: "claude.ai" }),
+          );
+          await waitFor(() => {
+            expect(viewer.result.current.status).toBe("connected");
+            expect(viewer.result.current.error).toBe("");
+            const url = new URL(viewer.result.current.proxyUrl);
+            expect(url.origin).toBe(new URL(proxy.proxy_url).origin);
+            expect(viewer.result.current.buildTargetUrl()).toBe(
+              "https://claude.ai/login",
+            );
+            expect(url.pathname).toBe("/login");
+            expect(url.search).toBe("");
+            expect(viewer.result.current.proxySessionId).toBe(proxy.session_id);
+          });
+        }
+        if (runtime === "browser") {
+          await waitFor(() => {
+            const frame = screen.getByTitle("Cloudflare") as HTMLIFrameElement;
+            const url = new URL(frame.src);
+            expect(url.origin).toBe(new URL(proxy.proxy_url).origin);
+            expect(url.pathname).toBe("/login");
+            expect([...url.searchParams.keys()]).toEqual([
+              "__sorng_navigation_v1",
+            ]);
+            expect(url.searchParams.get("__sorng_navigation_v1")).toMatch(
+              /^[0-9a-f]{32}$/,
+            );
+            expect(screen.getByRole("status")).toHaveTextContent("null");
+          });
+        }
+        await waitFor(() => expect(starts()).toHaveLength(1));
+        expect(starts()[0][1].config).toMatchObject({
+          username: loginMode === "form" ? "email@example.test" : "",
+          password: "",
+          http_auto_login: loginMode === "form",
+          upstream_auth_mode: loginMode === "form" ? "claude-form" : "none",
+        });
+        expect(passwordRead).not.toHaveBeenCalled();
+        if (loginMode === "manual") expect(api.resolve).not.toHaveBeenCalled();
+        else expect(api.resolve).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(starts())).not.toContain("stale-basic-password");
+        expect(JSON.stringify(starts())).not.toContain("local-password");
+      },
+    );
+  },
+);
 describe.each(["browser", "viewer"] as const)(
   "Cloudflare %s runtime",
   (runtime) => {

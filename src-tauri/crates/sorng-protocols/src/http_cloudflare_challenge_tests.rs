@@ -331,6 +331,23 @@ async fn fixture_with_profile_and_mode(
     profile: Option<ReviewedApplicationProfile>,
     mode: UpstreamAuthMode,
 ) -> FixtureProxy {
+    fixture_with_browser_compatibility(
+        peer,
+        challenge_client,
+        profile,
+        mode,
+        BrowserCompatibility::default(),
+    )
+    .await
+}
+
+async fn fixture_with_browser_compatibility(
+    peer: &Peer,
+    challenge_client: reqwest::Client,
+    profile: Option<ReviewedApplicationProfile>,
+    mode: UpstreamAuthMode,
+    browser_compatibility: BrowserCompatibility,
+) -> FixtureProxy {
     let source = if profile == Some(ReviewedApplicationProfile::Porkbun) {
         "https://porkbun.com"
     } else {
@@ -348,6 +365,7 @@ async fn fixture_with_profile_and_mode(
     )
     .unwrap();
     let network = ProxyNetworkState::default()
+        .with_browser_compatibility(browser_compatibility)
         .with_cloudflare_challenge(route)
         .with_reviewed_application_profile(profile);
     let mut policy = HttpProxyPolicy::default();
@@ -373,11 +391,25 @@ async fn fixture_with_profile_and_mode(
     let task = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
-    FixtureProxy {
+    let fixture = FixtureProxy {
         base: format!("http://127.0.0.1:{port}"),
         state,
         task,
+    };
+    // Production registers the owning session before serving requests. The
+    // challenge classifier reads that native profile, not the route's presence.
+    super::super::cloudflare_tests::register_cloudflare_session(&fixture);
+    {
+        let mut sessions = fixture.state.global_sessions.lock().unwrap();
+        let entry = sessions
+            .sessions
+            .get_mut(&fixture.state.session_id)
+            .unwrap();
+        entry.reviewed_application_profile = profile;
+        entry.upstream_auth_mode = mode;
+        entry.target_url = fixture.state.target_url.clone();
     }
+    fixture
 }
 
 fn config(html: &str) -> serde_json::Value {
@@ -414,6 +446,10 @@ async fn root(fixture: &FixtureProxy) -> String {
         .to_owned();
     let html = response.text().await.unwrap();
     let cfg = config(&html);
+    assert_eq!(
+        cfg["browserCompatibility"],
+        serde_json::json!({"hideWebdriver": fixture.state.network.browser_compatibility().hide_webdriver})
+    );
     let alias = cfg["cloudflareChallenge"]["proxyOrigin"]
         .as_str()
         .unwrap()
@@ -847,6 +883,45 @@ async fn cloudflare_challenge_alias_html_authorizes_only_its_bootstrap_against_m
 }
 
 #[tokio::test]
+async fn browser_compatibility_reaches_cloudflare_source_and_challenge_alias_with_csp_intact() {
+    for hide_webdriver in [false, true] {
+        let peer = peer(false).await;
+        let fixture = fixture_with_browser_compatibility(
+            &peer,
+            peer.trusted.clone(),
+            Some(ReviewedApplicationProfile::Cloudflare),
+            UpstreamAuthMode::Basic,
+            BrowserCompatibility { hide_webdriver },
+        )
+        .await;
+        let alias = root(&fixture).await;
+        let response = request(&fixture, &alias, "/strict-meta")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let html = response.text().await.unwrap();
+        let cfg = config(&html);
+        assert_eq!(
+            cfg["browserCompatibility"],
+            serde_json::json!({"hideWebdriver": hide_webdriver})
+        );
+        assert_eq!(cfg["sourceOrigin"], CHALLENGE);
+        assert_eq!(cfg["proxyOrigin"], alias);
+        assert_eq!(cfg["mappings"], serde_json::json!([]));
+        let scripts = inline_script_bodies(&html);
+        let bootstrap = scripts
+            .iter()
+            .find(|body| body.contains("installWebNetworkClient("))
+            .unwrap();
+        let csp = csp_meta_content(&html);
+        assert!(csp.contains("script-src 'nonce-upstream'"));
+        assert!(csp.contains(&csp_hash_source(bootstrap)));
+        assert!(!csp.contains("unsafe-inline"));
+    }
+}
+
+#[tokio::test]
 async fn cloudflare_challenge_reserved_foreign_and_stale_roots_fail_without_upstream_io() {
     let peer = peer(false).await;
     let fixture = fixture(&peer, peer.trusted.clone()).await;
@@ -969,7 +1044,16 @@ async fn cloudflare_challenge_strict_tls_proxy_failure_and_foreign_redirect_have
         } else {
             peer.untrusted.clone()
         };
-        let fixture = fixture(&peer, challenge_client).await;
+        let fixture = fixture_with_browser_compatibility(
+            &peer,
+            challenge_client,
+            Some(ReviewedApplicationProfile::Cloudflare),
+            UpstreamAuthMode::Basic,
+            BrowserCompatibility {
+                hide_webdriver: true,
+            },
+        )
+        .await;
         let alias = root(&fixture).await; // source TLS bypass stays source-only
         let before = peer.seen.lock().unwrap().len();
         assert_eq!(
@@ -1205,6 +1289,66 @@ fn porkbun_managed_challenge_requires_exact_source_html_and_signal() {
     assert!(!cloudflare_challenge::is_managed_challenge_response(
         profile, &url, &headers
     ));
+}
+
+#[test]
+fn ai_managed_challenges_require_exact_native_profile_origin_html_and_signal() {
+    for (profile, origins) in [
+        (
+            ReviewedApplicationProfile::Chatgpt,
+            vec!["https://chatgpt.com", "https://auth.openai.com"],
+        ),
+        (
+            ReviewedApplicationProfile::Claude,
+            vec!["https://claude.ai"],
+        ),
+    ] {
+        for origin in origins {
+            let url = reqwest::Url::parse(&format!("{origin}/login")).unwrap();
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert("content-type", "text/html".parse().unwrap());
+            assert!(!cloudflare_challenge::is_managed_challenge_response(
+                Some(profile),
+                &url,
+                &headers
+            ));
+            headers.insert("cf-mitigated", "challenge".parse().unwrap());
+            assert!(cloudflare_challenge::is_managed_challenge_response(
+                Some(profile),
+                &url,
+                &headers
+            ));
+            assert!(!cloudflare_challenge::is_managed_challenge_response(
+                None, &url, &headers
+            ));
+            for invalid in [
+                format!("{origin}.attacker.test/"),
+                origin.replace("https:", "http:"),
+                format!("{origin}:444/"),
+                origin.replace("https://", "https://user@"),
+                "https://challenges.cloudflare.com".into(),
+            ] {
+                assert!(!cloudflare_challenge::is_managed_challenge_response(
+                    Some(profile),
+                    &reqwest::Url::parse(&invalid).unwrap(),
+                    &headers
+                ));
+            }
+            headers.append("cf-mitigated", "challenge".parse().unwrap());
+            assert!(!cloudflare_challenge::is_managed_challenge_response(
+                Some(profile),
+                &url,
+                &headers
+            ));
+            headers.insert("cf-mitigated", "challenge".parse().unwrap());
+            headers.insert("content-type", "application/json".parse().unwrap());
+            assert!(!cloudflare_challenge::is_managed_challenge_response(
+                Some(profile),
+                &url,
+                &headers
+            ));
+        }
+    }
 }
 
 #[tokio::test]

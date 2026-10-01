@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
@@ -21,7 +22,7 @@ const fixtures = JSON.parse(
   readFileSync("tests/fixtures/proxy-page-script-insertion.json", "utf8"),
 ) as Array<{ name: string; input: string; expected: string }>;
 const base = "src-tauri/crates/sorng-protocols/src/";
-const assets = `<script>${["bitwarden_autologin_client.js", "synology_autologin_client.js", "autologin_client.js"].map((path) => readFileSync(base + path, "utf8")).join("")}</script>`;
+const assets = `<script>${["bitwarden_autologin_client.js", "synology_autologin_client.js"].map((path) => readFileSync(base + path, "utf8")).join("")}${loadAutologinClient()}</script>`;
 const native = readFileSync(base + "themed_autologin.rs", "utf8");
 const template = native.match(
   /r#"(<script>\(function\(\)\{\{\n'use strict';\nvar NONCE=[\s\S]*?<\/script>)"#/u,

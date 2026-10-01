@@ -10,7 +10,12 @@ starts in **Manual** mode. Selecting a preset does not overwrite your icon,
 launch a browser, or send credentials. First-party Google presets own their
 reviewed HTTPS destination: a blank connection receives it automatically, and
 switching between Google presets replaces the previous managed Google address.
-An explicit custom address is preserved. For other hosted services use the
+An explicit custom address is preserved. The Porkbun and PTisp presets set
+their exact HTTPS hostname and port 443 on selection, without changing the
+certificate policy or enabling automatic login. Adobe Admin Console, Instagram
+and Canva fill a blank address with their HTTPS hostname and port 443, but
+preserve an existing custom address. Use their explicit address button to replace
+it; automatic assistance still requires the exact hosted origin. For other hosted services use the
 explicit **Use hosted login address** action, review the change, and save.
 Hosted presets require their exact HTTPS origin; choosing one cannot relabel an
 unrelated server as that provider. Self-hosted presets keep your server address
@@ -25,12 +30,14 @@ in the handoff URL. These presets add no cookie persistence.
 
 ## Hosted services
 
-The following are **interactive website presets**, not automatic password or
-2FA integrations. SSO, email links, CAPTCHA, tenant policy, device approval,
+The following are hosted website presets, **manual by default**. The bounded
+opt-in assistance described below is not a guarantee of completed sign-in or an
+automatic 2FA integration. SSO, email links, CAPTCHA, tenant policy, device approval,
 passkeys and security keys stay with the provider. Use the original-site browser
 when a sign-in flow requires a different origin or rejects the embedded browser.
 In particular, [Google documents restrictions on embedded-browser sign-in](https://support.google.com/accounts/answer/7675428).
-The protected single-origin proxy is not expanded or weakened for these sites.
+Only explicitly reviewed first-party route catalogs extend the embedded proxy;
+unlisted origins are not automatically approved.
 
 Official public entry points reviewed on 2026-09-10:
 
@@ -58,7 +65,7 @@ Official public entry points reviewed on 2026-09-10:
 | Zoom                    | [Web portal sign-in](https://zoom.us/signin); not the native meeting client.                                                                                                                                                                                                                        |
 | iCloud                  | [iCloud website](https://www.icloud.com/); Apple Account/device verification, not app-specific passwords.                                                                                                                                                                                           |
 | OVHcloud                | [EU Control Panel](https://manager.eu.ovhcloud.com/), the destination of the [legacy manager link](https://www.ovh.com/manager/). Other regions need a separately reviewed connection, not cross-origin credential forwarding.                                                                      |
-| PTisp                   | [myPTisp](https://my.ptisp.pt/); hosting and billing customer account.                                                                                                                                                                                                                              |
+| PTisp                   | [myPTisp login](https://my.ptisp.pt/login); opt-in customer email/password automation is described below.                                                                                                                                                                                          |
 | Marcaria                | [Account login](https://www.marcaria.com/register/user/login.asp), linked from its [homepage](https://www.marcaria.com/ws/en/home); provider challenge protection remains intact.                                                                                                                   |
 | FreeDNS                 | [afraid.org member dashboard](https://freedns.afraid.org/); dynamic DNS update tokens are not account passwords.                                                                                                                                                                                    |
 | Registro.br             | [Account login](https://registro.br/login/).                                                                                                                                                                                                                                                        |
@@ -69,7 +76,98 @@ Public entry-point/source review and fixture tests do **not** prove that a
 provider currently permits embedded sign-in, that a particular account is
 authenticated, or that every deployment works. No live accounts were used.
 
+### Adobe Admin Console, Instagram and Canva
+
+All three start in **Manual** mode. Explicit **Automatic form login** may use
+connection-local or selected vault credentials; selecting the profile never
+grants permission to submit them. SSO, account/profile choice, MFA, CAPTCHA,
+recovery and unsupported stages remain interactive. No live authenticated
+account completion has been established by the public-source and fixture tests.
+
+| Preset | Entry point | Opt-in assistance and evidence boundary |
+| --- | --- | --- |
+| Adobe Admin Console (`adobe-admin-console`) | [Admin Console](https://adminconsole.adobe.com/) | Reviewed English email-then-password flow at `https://auth.services.adobe.com/en_US/index.html`, from `#/` to `#/password`. Public staged controls were verified; synthetic fixtures exercise the bounded adapter. Other locales, SSO and account/profile choice are not automated. The separate **Adobe Account** (`adobe`) preset remains manual-only. |
+| Instagram (`instagram`) | [Login](https://www.instagram.com/accounts/login/) | One username/password submission through a strict same-form adapter. Public HTML was unhydrated: the hydrated live controls and authenticated completion were not verified. Strict fixtures are not proof of current live-site compatibility. |
+| Canva (`canva`) | [Login](https://www.canva.com/login/) | **Generic email/password form assistance only.** Public markup research was blocked by HTTP 403. No Canva-specific selectors or staged flow were verified. The helper does not open email login, advance identifier/code stages, or claim full automatic support. |
+
+#### Exact first-party proxy route catalogs
+
+The embedded session routes approved documents, resources and redirects through
+the connection's native proxy/network path, with no direct-network fallback.
+These are exact HTTPS origins on port 443, not wildcard/suffix grants. A resource
+route is not a navigation or credential-release grant; unknown destinations stay
+blocked. Routing approval never enables automatic login or weakens TLS checks.
+
+| Profile/catalog | Document/login hosts | Resource-only hosts |
+| --- | --- | --- |
+| Adobe Admin Console — `src/utils/protocol/adobeHostedRoutes.json` | `adminconsole.adobe.com`, `auth.services.adobe.com`, `ims-na1.adobelogin.com` | `adobeid-na1.services.adobe.com`, `auth-api.services.adobe.com`, `auth-api-i.services.adobe.com`, `static.adobelogin.com`, `wwwimages2.adobe.com`, `bps-il.adobe.io`, `p13n.adobe.io` |
+| Instagram — `src/utils/protocol/instagramHostedRoutes.json` | `www.instagram.com` | `static.cdninstagram.com` |
+| Canva — `src/utils/protocol/canvaHostedRoutes.json` | `www.canva.com` | `static.canva.com` |
+
+Adobe's staged credential grant is narrower than its route catalog: only the
+reviewed English document on `auth.services.adobe.com` may receive the email and
+then the password. IMS and resource routes do not receive that grant. Instagram
+and Canva use ordinary form assistance, not Adobe/Google staged grants. The
+explicit **Open original sign-in** action remains a separate system-browser
+handoff, with the separate cookies and OS routing described above.
+
+### ChatGPT and Claude
+
+Both presets start in **Manual** mode. Opt-in assistance uses the saved
+connection identity or an explicitly selected vault identity and requires the
+canonical HTTPS host on port 443: `chatgpt.com` for ChatGPT, `claude.ai` for
+Claude. Selecting a preset is not consent to submit credentials. API keys are
+not website login credentials.
+
+The bounded adapters recognize semantic login controls rather than relying on
+unverified generated CSS classes. Their behavior is exercised with synthetic
+fixtures; that is not verification of a completed live sign-in.
+
+| Preset | Entry and bounded assistance | Manual boundaries |
+| --- | --- | --- |
+| ChatGPT (`chatgpt`) | [Website login](https://chatgpt.com/auth/login), with the recognized email/password stages on known OpenAI login paths, including `https://auth.openai.com/log-in` and its password stage. Unknown or ambiguous controls are not filled. | Social/enterprise SSO, verification codes, MFA, passkeys, recovery, CAPTCHA and unsupported stages. |
+| Claude (`claude`) | [Website login](https://claude.ai/login). Email-only assistance requests a login link once; it does not retrieve a saved password. | Opening the emailed link or entering its verification code, Google/enterprise SSO, CAPTCHA and other verification. Claude has no dedicated account password. |
+
+Public-source inspection on 2026-09-30 did **not** establish live authenticated
+completion. Direct unauthenticated GETs returned HTTP 403 challenge pages;
+the web text extractor exposed email/Continue entry controls for ChatGPT, not
+raw field selectors or a verified password transaction. The challenge responses
+exposed same-origin `/cdn-cgi/challenge-platform/` resources and
+`https://challenges.cloudflare.com`, not an additional static/CDN allowlist.
+Do not infer wildcard access, external identity-provider grants, or a browser
+resource host from an email-sender domain. Exact proxy routing and challenge
+handling do not authorize password delivery or bypass a provider challenge.
+
+Sources: [OpenAI authentication origin](https://developers.openai.com/siwc/website),
+[OpenAI login entry](https://auth.openai.com/log-in), and
+[Claude login methods and password limitation](https://support.claude.com/en/articles/13189465-log-in-to-your-claude-account).
+
+### PTisp customer login
+
+Reviewed 2026-09-30 from the public [login page](https://my.ptisp.pt/login),
+its [login component](https://my.ptisp.pt/static/js/40.3795390781c5148c36d7.js),
+its [input component](https://my.ptisp.pt/static/js/140.9b1e136d96380dbdb798.js),
+and the first-party app bundle linked from that page. Select **PTisp customer
+area**, save the customer email/password (or choose a vault record), then
+explicitly select **Automatic form login**.
+
+The client waits for the Vue-rendered password form and submits once through
+the site's own handler. The dashboard and its exact first-party API,
+`https://api3.ptisp.pt`, use the connection's internal proxy/network path. The
+API has separate certificate verification and receives only the page's own
+API requests, not injected dashboard HTTP credentials or cookies. An API grant
+is not a navigation grant to other websites.
+
+The six-digit verification step, CAPTCHA, recovery and other challenges remain
+interactive. Remember me is not changed. Incorrect-password responses do not
+trigger repeated automatic attempts. Tests use synthetic credentials and
+reduced public-form fixtures; a real account sign-in has not been verified.
+
 ## Self-hosted and device profiles
+
+On-premises **Exchange Admin Center / ECP** also supports opt-in forms-based
+login; see [Exchange ECP login](exchange-ecp-login.md) for its form contract,
+proxy behavior and interactive authentication cases.
 
 | Preset                     | Supported behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -100,3 +198,10 @@ saved icon. Zoom, Namecheap, Network Solutions, Time4VPS, Contabo, GitLab, HPE,
 OVHcloud, PTisp, SQLPad, Eaton, Microsoft, Exchange, DD-WRT and FreshTomato retain
 their existing choices. ChatGPT uses a neutral AI glyph, not a claimed OpenAI
 mark. New provenance is recorded in [connection icon brands](connection-icon-brands.md).
+
+Adobe Admin Console reuses the Adobe icon; Instagram keeps its existing mark.
+Canva has a dedicated local, theme-aware SVG C contour from the publisher's
+[official icon asset ZIP](https://www.canva.dev/assets/connect/Canva-logos.zip),
+reviewed 2026-09-30. It uses the central code/SVG catalog, not an emoji, remote
+image request or generic browser badge. Selecting a profile only suggests the
+icon; it never replaces a saved choice automatically.

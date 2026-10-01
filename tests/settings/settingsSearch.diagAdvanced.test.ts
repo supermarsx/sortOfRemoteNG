@@ -334,7 +334,7 @@ describe("queries the audit recorded as returning nothing now resolve", () => {
     ["1.1.1.1", "performanceLatencyTarget"],
     ["heap", "memoryWatchdog.heapWarningMb"],
     ["repair", "protocolRepair"],
-    ["web browser", "proxyKeepaliveEnabled"],
+    ["web browser", "confirmDeleteAllBookmarks"],
   ])("%s is no longer a dead query", (query, key) => {
     expect(search(query).length).toBeGreaterThan(0);
     expectResolves(query, key);

@@ -1,0 +1,6 @@
+{
+  "profiles": { "claude": "https://claude.ai" },
+  "loginOrigins": ["https://challenges.cloudflare.com"],
+  "resourceOrigins": [],
+  "profileOrigins": {}
+}

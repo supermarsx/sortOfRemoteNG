@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ANALYTICS_CMS_PROFILES } from "../../src/utils/connection/analyticsCmsProfiles";
 import {
@@ -12,10 +12,7 @@ import {
 import type { Connection } from "../../src/types/connection/connection";
 import { getHttpApplicationExternalTarget } from "../../src/utils/auth/httpApplicationExternal";
 
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Client = {
   bootstrap(
     credentials: { username: string | null; password: string | null },

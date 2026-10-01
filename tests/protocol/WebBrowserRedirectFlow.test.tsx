@@ -2771,8 +2771,9 @@ describe("actual website redirect review integration", () => {
     },
   );
   it("replays the retained redirect failure once settings readiness arrives, without another page message", async () => {
-    h.settingsReady = false;
     const view = await mounted();
+    h.settingsReady = false;
+    view.rerender(<Harness />);
     redirect(
       view.container.querySelector("iframe")!,
       "https://relay.example.test/",

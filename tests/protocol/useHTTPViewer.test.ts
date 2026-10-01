@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
+import chatgptRoutes from "../../src/utils/protocol/chatgptHostedRoutes.json";
+import claudeRoutes from "../../src/utils/protocol/claudeHostedRoutes.json";
 
 const { mockDispatch } = vi.hoisted(() => ({
   mockDispatch: vi.fn(),
@@ -219,6 +221,77 @@ describe("useHTTPViewer", () => {
   });
 
   // ── resolveCredentials ─────────────────────────────────────────────────
+
+  it.each([
+    ["chatgpt", "chatgpt.com", "https://chatgpt.com/auth/login"],
+    ["claude", "claude.ai", "https://claude.ai/login"],
+    [
+      "chatgpt",
+      "https://chatgpt.com/custom?return=%2Fhome#stage",
+      "https://chatgpt.com/custom?return=%2Fhome#stage",
+    ],
+    [
+      "claude",
+      "https://claude.ai/?return=%2Fhome#stage",
+      "https://claude.ai/?return=%2Fhome#stage",
+    ],
+    ["chatgpt", "https://chatgpt.com/", "https://chatgpt.com/"],
+    ["chatgpt", "chatgpt.com.evil.test", ""],
+    ["claude", "claude.ai:8443", ""],
+    ["claude", "http://claude.ai/login", ""],
+    ["chatgpt", "https://user:secret@chatgpt.com/", ""],
+  ])(
+    "uses only validated AI preset defaults: %s / %s",
+    async (id, hostname, expected) => {
+      const connection = useConnections().state.connections[1];
+      const original = { ...connection };
+      connection.hostname = hostname;
+      connection.httpApplication = { version: 1, id, loginMode: "manual" };
+      const catalog = id === "chatgpt" ? chatgptRoutes : claudeRoutes;
+      mockInvoke.mockResolvedValue({
+        ...defaultProxyResponse,
+        google_routes: [
+          {
+            upstreamOrigin: Object.values(catalog.profiles)[0],
+            proxyOrigin: new URL(defaultProxyResponse.proxy_url).origin,
+            documents: true,
+          },
+          ...catalog.loginOrigins.map((upstreamOrigin, index) => ({
+            upstreamOrigin,
+            proxyOrigin: `http://p${(index + 10).toString(16).padStart(32, "0")}.localhost:9000`,
+            documents: true,
+          })),
+        ],
+      });
+      const hook = renderHook(() => useHTTPViewer(makeHttpsSession()));
+      try {
+        expect(hook.result.current.buildTargetUrl()).toBe(expected);
+        await act(async () => {});
+        if (expected)
+          await waitFor(() => {
+            expect(hook.result.current.status).toBe("connected");
+            const target = new URL(expected);
+            const mapped = new URL(hook.result.current.proxyUrl);
+            expect(mapped.origin).toBe(
+              new URL(defaultProxyResponse.proxy_url).origin,
+            );
+            expect(mapped.pathname + mapped.search + mapped.hash).toBe(
+              target.pathname + target.search + target.hash,
+            );
+          });
+        if (!expected)
+          expect(mockInvoke).not.toHaveBeenCalledWith(
+            "start_basic_auth_proxy",
+            expect.anything(),
+          );
+      } finally {
+        hook.unmount();
+        Object.assign(connection, original);
+        if (original.httpApplication === undefined)
+          delete connection.httpApplication;
+      }
+    },
+  );
 
   it.each([
     "/pt/Account/Login",

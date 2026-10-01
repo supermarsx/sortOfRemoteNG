@@ -14,6 +14,8 @@ mod tactical_mesh_tests;
 mod cloudflare_challenge_tests;
 #[path = "http_tactical_websocket_tests.rs"]
 mod tactical_websocket_tests;
+#[path = "http_ptisp_tests.rs"]
+mod ptisp_tests;
 #[path = "http_websocket_acceptance_tests.rs"]
 mod websocket_acceptance_tests;
 

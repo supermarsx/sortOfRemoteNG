@@ -252,6 +252,24 @@ fn build_autologin_injection_with_readiness(
     ))
 }
 
+/// Effective native adapter authority, used only after a bootstrap was granted.
+/// QuickConnect deliberately strips ordinary HTTP auth mode/arming while its
+/// separate deferred Synology intent owns the document grant. Preserve the
+/// same precedence as build_autologin_injection without redeeming that grant.
+pub(crate) fn autologin_asset_mode(state: &AxumProxyState) -> crate::http::UpstreamAuthMode {
+    use crate::http::UpstreamAuthMode;
+    if state.upstream_auth_mode != UpstreamAuthMode::YealinkServlet
+        && state
+            .attempt
+            .as_ref()
+            .is_some_and(|attempt| attempt.uses_deferred_synology_login())
+    {
+        UpstreamAuthMode::SynologyForm
+    } else {
+        state.upstream_auth_mode
+    }
+}
+
 /// `&AxumProxyState` wrapper over [`build_autologin_injection_from_slots`] for
 /// the proxy handler's call site.
 pub fn build_autologin_injection(
@@ -259,6 +277,11 @@ pub fn build_autologin_injection(
     document_sequence: u64,
     document_url: &str,
 ) -> Option<String> {
+    if state.network.google.as_ref().is_some_and(|hosted| {
+        !hosted.allows_autologin(&state.target_origin, state.upstream_auth_mode)
+    }) {
+        return None;
+    }
     if state.upstream_auth_mode == crate::http::UpstreamAuthMode::YealinkServlet {
         if !crate::http::yealink_login::browser_login_pending(&state.yealink_session) {
             return None;
@@ -284,6 +307,18 @@ pub fn build_autologin_injection(
         // redeem it. Redemption requires this document to be selected.
         let nonce = bitwarden::bind_synology_document(state, document_sequence)?;
         return Some(autologin_client_script(&nonce, "null", Some("synology")));
+    }
+    if matches!(
+        state.upstream_auth_mode,
+        crate::http::UpstreamAuthMode::ChatgptForm | crate::http::UpstreamAuthMode::ClaudeForm
+    ) {
+        let (nonce, flow) =
+            bitwarden::bind_ai_chat_document(state, document_sequence, document_url)?;
+        return Some(autologin_client_script(&nonce, "null", Some(flow)));
+    }
+    if state.upstream_auth_mode == crate::http::UpstreamAuthMode::AdobeForm {
+        let nonce = bitwarden::bind_adobe_document(state, document_sequence, document_url)?;
+        return Some(autologin_client_script(&nonce, "null", Some("adobe")));
     }
     if state.upstream_auth_mode == crate::http::UpstreamAuthMode::GoogleForm {
         let (nonce, flow) =
@@ -346,6 +381,10 @@ fn autologin_client_script_with_readiness(
         Some("synology") => ", 'synology'".to_string(),
         Some("google") => ", 'google'".to_string(),
         Some("cloudflare") => ", 'cloudflare'".to_string(),
+        Some("adobe") => ", 'adobe'".to_string(),
+        Some("chatgpt") => ", 'chatgpt'".to_string(),
+        Some("chatgpt-password") => ", 'chatgpt-password'".to_string(),
+        Some("claude") => ", 'claude'".to_string(),
         Some("google-password") => ", 'google-password'".to_string(),
         Some("cpanel") => ", 'cpanel'".to_string(),
         Some("yealink-t20p") => ", 'yealink-t20p'".to_string(),
@@ -452,6 +491,9 @@ pub async fn autologin_cred_handler(
             | crate::http::UpstreamAuthMode::SynologyForm
             | crate::http::UpstreamAuthMode::GoogleForm
             | crate::http::UpstreamAuthMode::CloudflareForm
+            | crate::http::UpstreamAuthMode::AdobeForm
+            | crate::http::UpstreamAuthMode::ChatgptForm
+            | crate::http::UpstreamAuthMode::ClaudeForm
     ) {
         return bitwarden::dispense(&state, &query);
     }
@@ -569,6 +611,24 @@ fn server_error(msg: &str) -> Response<Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ai_chat_bootstraps_have_only_closed_nonce_and_flow_hints() {
+        for flow in ["chatgpt", "chatgpt-password", "claude"] {
+            let script = autologin_client_script("fixture-nonce", "null", Some(flow));
+            assert!(script.contains(&format!("fetchCredsAndRun(NONCE,SEL, '{flow}')")));
+            assert!(!script.contains("username:"));
+            assert!(!script.contains("password:"));
+        }
+    }
+
+    #[test]
+    fn adobe_bootstrap_selects_only_its_dedicated_client() {
+        let script = autologin_client_script("fixture-nonce", "null", Some("adobe"));
+        assert!(script.contains("fetchCredsAndRun(NONCE,SEL, 'adobe')"));
+        assert!(!script.contains("google-password"));
+        assert!(!script.contains("password:"));
+    }
 
     fn selectors() -> HttpAutoLoginSelectors {
         HttpAutoLoginSelectors {
@@ -751,7 +811,7 @@ mod tests {
         // Sanity: nothing that looks like a credential value is templated in.
         assert!(!script.contains("password\":\""));
         // Only the full guarded asset may fetch credentials, same-origin/no-store.
-        let client = include_str!("autologin_client.js");
+        let client = crate::autologin_asset::assembled_autologin_client();
         assert!(client.contains("credentials: \"same-origin\""));
         assert!(client.contains("cache: \"no-store\""));
     }

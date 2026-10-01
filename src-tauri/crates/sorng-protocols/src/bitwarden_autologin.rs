@@ -8,6 +8,11 @@ use axum::http::Response;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+#[path = "adobe_autologin.rs"]
+mod adobe;
+#[path = "ai_chat_autologin.rs"]
+mod ai_chat;
+
 const GRANT_LIFETIME: Duration = Duration::from_secs(30);
 // Cloudflare may finish a managed challenge before the form becomes ready.
 // Only the initial grant gets this window; password grants stay at 30 seconds.
@@ -22,6 +27,8 @@ enum Grant {
     Vault(VaultContinuation),
     Synology(DirectSynologyLogin),
     Google(GoogleContinuation),
+    Adobe(adobe::AdobeGrant),
+    AiChat(ai_chat::AiChatGrant),
 }
 
 struct VaultContinuation {
@@ -198,6 +205,83 @@ pub fn bind_synology_document(state: &AxumProxyState, sequence: u64) -> Option<S
     }
 }
 
+/// Adobe's verified email/password transition is within one SPA document.
+/// Do not rebind a continuation to a reload or an unrelated child frame.
+pub fn bind_adobe_document(
+    state: &AxumProxyState,
+    sequence: u64,
+    document_url: &str,
+) -> Option<String> {
+    if state.upstream_auth_mode != UpstreamAuthMode::AdobeForm
+        || state.target_origin != adobe::LOGIN
+        || !adobe::login_document(document_url)
+        || sequence == 0
+    {
+        return None;
+    }
+    let sessions = state.global_sessions.lock().ok()?;
+    let session = sessions.sessions.get(&state.session_id)?;
+    if session.upstream_auth_mode != UpstreamAuthMode::AdobeForm
+        || session.reviewed_application_profile
+            != Some(crate::http::ReviewedApplicationProfile::AdobeAdminConsole)
+        || session.target_origin != adobe::SOURCE
+    {
+        return None;
+    }
+    let mut pending = state.bitwarden_continuation.lock().ok()?;
+    if !state.auto_login_armed.load(Ordering::SeqCst) {
+        return None;
+    }
+    if pending.is_none() {
+        *pending = Some(BitwardenContinuation(Grant::Adobe(adobe::AdobeGrant::new(
+            sequence,
+        ))));
+    }
+    match pending.as_ref()? {
+        BitwardenContinuation(Grant::Adobe(grant)) => grant.bootstrap(sequence),
+        _ => None,
+    }
+}
+
+fn ai_chat_session_matches(
+    provider: ai_chat::Provider,
+    session: &crate::http::ProxySessionEntry,
+) -> bool {
+    ai_chat::Provider::from_mode(session.upstream_auth_mode) == Some(provider)
+        && session.reviewed_application_profile == Some(provider.marker())
+        && session.target_origin == provider.source()
+        && (provider != ai_chat::Provider::Claude || session.password.is_empty())
+}
+
+/// Record an independently nonced candidate, without selecting or rebinding it.
+/// A password candidate is minted only within an existing ChatGPT continuation.
+pub fn bind_ai_chat_document(
+    state: &AxumProxyState,
+    sequence: u64,
+    document_url: &str,
+) -> Option<(String, &'static str)> {
+    let provider = ai_chat::Provider::from_mode(state.upstream_auth_mode)?;
+    let kind = ai_chat::document(provider, document_url)?;
+    if sequence == 0 || state.target_origin != kind.origin() {
+        return None;
+    }
+    let sessions = state.global_sessions.lock().ok()?;
+    if !ai_chat_session_matches(provider, sessions.sessions.get(&state.session_id)?) {
+        return None;
+    }
+    let mut pending = state.bitwarden_continuation.lock().ok()?;
+    if pending.is_none() && state.auto_login_armed.load(Ordering::SeqCst) {
+        *pending = Some(BitwardenContinuation(Grant::AiChat(
+            ai_chat::AiChatGrant::new(provider),
+        )));
+    }
+    let Some(BitwardenContinuation(Grant::AiChat(grant))) = pending.as_mut() else {
+        return None;
+    };
+    let selected = state.network.with_selected_document(|selected| selected);
+    grant.record_page(provider, sequence, selected, document_url)
+}
+
 pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
     if !matches!(
         config.upstream_auth_mode,
@@ -205,6 +289,9 @@ pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
             | UpstreamAuthMode::SynologyForm
             | UpstreamAuthMode::GoogleForm
             | UpstreamAuthMode::CloudflareForm
+            | UpstreamAuthMode::AdobeForm
+            | UpstreamAuthMode::ChatgptForm
+            | UpstreamAuthMode::ClaudeForm
     ) {
         return Ok(());
     }
@@ -221,6 +308,24 @@ pub fn validate_config(config: &BasicAuthProxyConfig) -> Result<(), String> {
     });
     if !https || config.http_auto_login_selectors.is_some() || !options_supported {
         return Err("Reviewed staged login requires HTTPS and its fixed two-stage controls. Clear advanced selector, timing, fill-only and extra-field overrides, or use manual login.".into());
+    }
+    if let Some(provider) = ai_chat::Provider::from_mode(config.upstream_auth_mode) {
+        if config.reviewed_application_profile != Some(provider.marker())
+            || !reqwest::Url::parse(&config.target_url)
+                .is_ok_and(|url| url.origin().ascii_serialization() == provider.source())
+            || config.http_form_automation.is_some()
+            || (provider == ai_chat::Provider::Claude && !config.password.is_empty())
+        {
+            return Err("Reviewed AI chat login requires its exact HTTPS source and built-in profile, no advanced overrides, and no saved password for Claude.".into());
+        }
+    }
+    if config.upstream_auth_mode == UpstreamAuthMode::AdobeForm
+        && (config.reviewed_application_profile
+            != Some(crate::http::ReviewedApplicationProfile::AdobeAdminConsole)
+            || !reqwest::Url::parse(&config.target_url)
+                .is_ok_and(|url| url.origin().ascii_serialization() == adobe::SOURCE))
+    {
+        return Err("Reviewed Adobe login requires the exact HTTPS Admin Console source and built-in profile.".into());
     }
     if config.upstream_auth_mode == UpstreamAuthMode::GoogleForm
         && config.reviewed_application_profile
@@ -262,6 +367,9 @@ pub(crate) fn reviewed_flow_label(mode: UpstreamAuthMode) -> Option<&'static str
         UpstreamAuthMode::SynologyForm => Some("synology"),
         UpstreamAuthMode::GoogleForm => Some("google"),
         UpstreamAuthMode::CloudflareForm => Some("cloudflare"),
+        UpstreamAuthMode::AdobeForm => Some("adobe"),
+        UpstreamAuthMode::ChatgptForm => Some("chatgpt"),
+        UpstreamAuthMode::ClaudeForm => Some("claude"),
         UpstreamAuthMode::Basic
         | UpstreamAuthMode::Digest
         | UpstreamAuthMode::Header
@@ -286,10 +394,46 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
     if !sessions.sessions.contains_key(&state.session_id) {
         return forbidden("reviewed login session ended");
     }
+    if let Some(provider) = ai_chat::Provider::from_mode(state.upstream_auth_mode) {
+        if !sessions
+            .sessions
+            .get(&state.session_id)
+            .is_some_and(|session| ai_chat_session_matches(provider, session))
+        {
+            return forbidden("reviewed AI chat session required");
+        }
+    }
+    if state.upstream_auth_mode == UpstreamAuthMode::AdobeForm
+        && !sessions
+            .sessions
+            .get(&state.session_id)
+            .is_some_and(|session| {
+                session.upstream_auth_mode == UpstreamAuthMode::AdobeForm
+                    && session.reviewed_application_profile
+                        == Some(crate::http::ReviewedApplicationProfile::AdobeAdminConsole)
+                    && session.target_origin == adobe::SOURCE
+            })
+    {
+        return forbidden("reviewed Adobe Admin Console session required");
+    }
     let mut pending = match state.bitwarden_continuation.lock() {
         Ok(pending) => pending,
         Err(_) => return forbidden("reviewed login unavailable"),
     };
+    if let Some(provider) = ai_chat::Provider::from_mode(state.upstream_auth_mode) {
+        return state
+            .network
+            .with_selected_document(|selected| {
+                dispense_ai_chat(state, &mut pending, query, provider, selected)
+            })
+            .unwrap_or_else(|| forbidden("reviewed AI chat document unavailable"));
+    }
+    if state.upstream_auth_mode == UpstreamAuthMode::AdobeForm {
+        return state
+            .network
+            .with_selected_document(|selected| dispense_adobe(state, &mut pending, query, selected))
+            .unwrap_or_else(|| forbidden("reviewed Adobe document unavailable"));
+    }
     if state.upstream_auth_mode == UpstreamAuthMode::SynologyForm {
         return dispense_synology(state, &mut pending, query);
     }
@@ -314,6 +458,102 @@ pub fn dispense(state: &AxumProxyState, query: &AutoLoginQuery) -> Response<Body
             .unwrap_or_else(|| forbidden("reviewed Cloudflare document unavailable"));
     }
     dispense_vault(state, &mut pending, query, flow)
+}
+
+fn dispense_ai_chat(
+    state: &AxumProxyState,
+    pending: &mut Option<BitwardenContinuation>,
+    query: &AutoLoginQuery,
+    provider: ai_chat::Provider,
+    selected: u64,
+) -> Response<Body> {
+    let Some(BitwardenContinuation(Grant::AiChat(grant))) = pending.as_mut() else {
+        return forbidden("reviewed AI chat grant required");
+    };
+    // The root target_url on hosted request-scoped state is not a document URL.
+    // Use the selected candidate's native record and exact scoped origin only;
+    // neither a Referer nor a page-supplied path may establish this authority.
+    let Some(document) = grant.redemption_document(
+        provider,
+        selected,
+        query.phase.as_deref() == Some("password"),
+    ) else {
+        return forbidden("reviewed AI chat document grant required");
+    };
+    if document.origin() != state.target_origin {
+        return forbidden("reviewed AI chat credential origin required");
+    }
+    if query.phase.as_deref() == Some("password") {
+        if !grant.password(provider, selected, document.url(), &query.nonce) {
+            return forbidden("reviewed AI chat password continuation unavailable");
+        }
+        // Only a consumed ChatGPT password grant can reach this slot. Claude
+        // returns false above, including with a forged phase or provider nonce.
+        let username = match state.username.read() {
+            Ok(username) => username,
+            Err(_) => return forbidden("reviewed AI chat credential unavailable"),
+        };
+        let password = match state.password.read() {
+            Ok(password) => password,
+            Err(_) => return forbidden("reviewed AI chat credential unavailable"),
+        };
+        return json(
+            serde_json::json!({"loginFlow":"chatgpt", "username": &*username, "password": &*password}),
+        );
+    }
+    if query.phase.is_some() || !state.auto_login_armed.load(Ordering::SeqCst) {
+        return forbidden("reviewed AI chat login not armed");
+    }
+    let Some(release) = grant.email(provider, selected, document.url(), &query.nonce) else {
+        return forbidden("reviewed AI chat email grant unavailable");
+    };
+    state.auto_login_armed.store(false, Ordering::SeqCst);
+    let username = match state.username.read() {
+        Ok(username) => username,
+        Err(_) => return forbidden("reviewed AI chat credential unavailable"),
+    };
+    match release {
+        ai_chat::EmailRelease::Chatgpt(token) => json(
+            serde_json::json!({"loginFlow":"chatgpt", "username": &*username, "continuation":token}),
+        ),
+        ai_chat::EmailRelease::Claude => {
+            json(serde_json::json!({"loginFlow":"claude", "username": &*username}))
+        }
+    }
+}
+
+fn dispense_adobe(
+    state: &AxumProxyState,
+    pending: &mut Option<BitwardenContinuation>,
+    query: &AutoLoginQuery,
+    selected: u64,
+) -> Response<Body> {
+    let Some(BitwardenContinuation(Grant::Adobe(grant))) = pending.as_mut() else {
+        return forbidden("reviewed Adobe grant required");
+    };
+    if query.phase.as_deref() == Some("password") {
+        if !grant.password(&state.target_origin, selected, &query.nonce) {
+            return forbidden("reviewed Adobe continuation expired or invalid");
+        }
+        // Consumed before accessing the secret; the slot cannot become another provider.
+        let password = match state.password.read() {
+            Ok(password) => password,
+            Err(_) => return forbidden("reviewed Adobe credential unavailable"),
+        };
+        return json(serde_json::json!({"loginFlow":"adobe", "password": &*password}));
+    }
+    if query.phase.is_some() || !state.auto_login_armed.load(Ordering::SeqCst) {
+        return forbidden("reviewed Adobe login not armed");
+    }
+    let Some(token) = grant.email(&state.target_origin, selected, &query.nonce) else {
+        return forbidden("reviewed Adobe document changed or expired");
+    };
+    state.auto_login_armed.store(false, Ordering::SeqCst);
+    let username = match state.username.read() {
+        Ok(username) => username,
+        Err(_) => return forbidden("reviewed Adobe credential unavailable"),
+    };
+    json(serde_json::json!({"loginFlow":"adobe", "username": &*username, "continuation":token}))
 }
 
 fn dispense_vault(
@@ -494,6 +734,90 @@ fn dispense_synology(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ai_chat_config_pins_sources_markers_and_refuses_overrides_and_claude_passwords() {
+        for (mode, marker, source) in [
+            ("chatgpt-form", "chatgpt", "https://chatgpt.com/"),
+            ("claude-form", "claude", "https://claude.ai/"),
+        ] {
+            let base = serde_json::json!({"target_url":source, "username":"fixture@example.test", "password":"",
+                "upstream_auth_mode":mode, "reviewed_application_profile":marker, "http_auto_login":true});
+            let config: BasicAuthProxyConfig = serde_json::from_value(base.clone()).unwrap();
+            assert!(validate_config(&config).is_ok());
+            assert_eq!(reviewed_flow_label(config.upstream_auth_mode), Some(marker));
+            for patch in [
+                serde_json::json!({"target_url":"https://auth.openai.com/log-in"}),
+                serde_json::json!({"target_url":"http://chatgpt.com/"}),
+                serde_json::json!({"target_url":"https://chatgpt.com:444/"}),
+                serde_json::json!({"target_url":"https://user@claude.ai/"}),
+                serde_json::json!({"target_url":"https://claude.ai.evil.invalid/"}),
+                serde_json::json!({"reviewed_application_profile":null}),
+                serde_json::json!({"reviewed_application_profile":"google-hosted"}),
+                serde_json::json!({"http_auto_login_selectors":{"username_selector":"#guessed"}}),
+                serde_json::json!({"http_form_automation":{"version":1,"fillDelayMs":0,"submitDelayMs":0,"detectionTimeoutMs":8000,"submit":true,"fields":[]}}),
+            ] {
+                let mut raw = base.clone();
+                raw.as_object_mut()
+                    .unwrap()
+                    .extend(patch.as_object().unwrap().clone());
+                assert!(
+                    validate_config(&serde_json::from_value(raw).unwrap()).is_err(),
+                    "{mode}: {patch}"
+                );
+            }
+            let mut raw = base.clone();
+            raw["password"] = serde_json::json!("synthetic-secret");
+            assert_eq!(
+                validate_config(&serde_json::from_value(raw).unwrap()).is_ok(),
+                mode == "chatgpt-form"
+            );
+            let mut malformed = base.clone();
+            malformed["http_form_automation"] = serde_json::json!([]);
+            assert!(serde_json::from_value::<BasicAuthProxyConfig>(malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn adobe_config_requires_its_exact_source_marker_and_fixed_controls() {
+        let base = serde_json::json!({
+            "target_url": "https://adminconsole.adobe.com/", "username":"fixture", "password":"fixture",
+            "upstream_auth_mode":"adobe-form", "reviewed_application_profile":"adobe-admin-console",
+            "http_auto_login":true
+        });
+        let cfg: BasicAuthProxyConfig = serde_json::from_value(base.clone()).unwrap();
+        assert!(validate_config(&cfg).is_ok());
+        assert_eq!(reviewed_flow_label(cfg.upstream_auth_mode), Some("adobe"));
+        assert_eq!(
+            serde_json::to_value(cfg.upstream_auth_mode).unwrap(),
+            "adobe-form"
+        );
+        assert!(cfg
+            .upstream_auth_mode
+            .manager_visible_username("fixture")
+            .is_empty());
+        for patch in [
+            serde_json::json!({"target_url":"https://auth.services.adobe.com/en_US/index.html"}),
+            serde_json::json!({"target_url":"http://adminconsole.adobe.com/"}),
+            serde_json::json!({"target_url":"https://user@adminconsole.adobe.com/"}),
+            serde_json::json!({"target_url":"https://adminconsole.adobe.com:444/"}),
+            serde_json::json!({"target_url":"https://adminconsole.adobe.com.evil.invalid/"}),
+            serde_json::json!({"reviewed_application_profile":null}),
+            serde_json::json!({"reviewed_application_profile":"google-hosted"}),
+            serde_json::json!({"reviewed_application_profile":"cloudflare"}),
+            serde_json::json!({"http_auto_login_selectors":{"username_selector":"#guessed"}}),
+            serde_json::json!({"http_form_automation":{"version":1,"fillDelayMs":0,"submitDelayMs":0,"detectionTimeoutMs":8000,"submit":false,"fields":[]}}),
+        ] {
+            let mut raw = base.clone();
+            raw.as_object_mut()
+                .unwrap()
+                .extend(patch.as_object().unwrap().clone());
+            assert!(
+                validate_config(&serde_json::from_value(raw).unwrap()).is_err(),
+                "{patch}"
+            );
+        }
+    }
+
     #[test]
     fn cloudflare_readiness_is_120_seconds_but_password_is_only_30() {
         let mut grant = VaultContinuation {

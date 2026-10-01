@@ -92,6 +92,8 @@ const FILE_TAB_OVERRIDES: Record<string, string> = {
   "UpdaterSettings.tsx": "updater",
   "VpnSettings.tsx": "vpn",
   "WebBrowserSettings.tsx": "webBrowser",
+  "InternalProxySettings.tsx": "internalProxy",
+  "InternalProxyRequestLog.tsx": "internalProxy",
   "WebsiteAppearanceSection.tsx": "webBrowser",
 };
 

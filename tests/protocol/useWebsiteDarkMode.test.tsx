@@ -1137,6 +1137,20 @@ describe("what the open page actually got", () => {
     expect(db.rows[0].httpProxyPolicy).toEqual(policy("inline-only"));
   });
 
+  it("uses the tab's effective default script policy without writing it into the saved connection", async () => {
+    consent();
+    const hook = mount({ effectivePolicy: policy("inline-only") });
+    await waitFor(() =>
+      expect(request).toHaveBeenLastCalledWith(
+        "dark",
+        expect.objectContaining({ enabled: true, cssOnly: true }),
+      ),
+    );
+    expect(hook.result.current.status.kind).toBe("cssOnly");
+    expect(connection.httpProxyPolicy).toBeUndefined();
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("explains a scripts-blocked connection instead of leaving the toggle silent", async () => {
     connection.httpProxyPolicy = policy("block");
     consent();

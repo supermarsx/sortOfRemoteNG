@@ -1,4 +1,7 @@
-//! Exact first-party Google routes behind one protected session/listener.
+//! Exact reviewed hosted routes behind one protected session/listener.
+//! Google names on the wire are retained for compatibility with existing clients.
+//! Provider catalogs and credential modes remain separate: routing never grants
+//! one provider another provider's credential endpoint.
 //! Each upstream origin gets a separate unguessable browser origin. The shared
 //! native cookie jar retains upstream host/domain/path scope, never localhost
 //! scope. No saved headers, passwords, certificate bypass or wildcard grants.
@@ -15,6 +18,13 @@ use std::{
 };
 
 const CATALOG: &str = include_str!("../../../../src/utils/protocol/googleHostedRoutes.json");
+const ADOBE_CATALOG: &str = include_str!("../../../../src/utils/protocol/adobeHostedRoutes.json");
+const INSTAGRAM_CATALOG: &str =
+    include_str!("../../../../src/utils/protocol/instagramHostedRoutes.json");
+const CANVA_CATALOG: &str = include_str!("../../../../src/utils/protocol/canvaHostedRoutes.json");
+const CHATGPT_CATALOG: &str =
+    include_str!("../../../../src/utils/protocol/chatgptHostedRoutes.json");
+const CLAUDE_CATALOG: &str = include_str!("../../../../src/utils/protocol/claudeHostedRoutes.json");
 pub(super) const REDIRECT_MARKER: &str = "__sorng_google_hop_v1";
 pub(super) const COOKIE_BRIDGE_PATH: &str = "/__sortofremoteng_google_cookie_v1";
 const COOKIE_PATH_HEADER: &str = "x-sorng-google-cookie-path";
@@ -59,6 +69,7 @@ pub struct GoogleProxyRoute {
 }
 
 pub struct GoogleSession {
+    profile: ReviewedApplicationProfile,
     pub(super) routes: Vec<GoogleProxyRoute>,
     source_origin: String,
     source_client: reqwest::Client,
@@ -73,6 +84,19 @@ pub struct GoogleSession {
 pub struct GoogleCookieState(Arc<Mutex<cookie_store::CookieStore>>);
 
 impl GoogleSession {
+    pub fn supports(profile: Option<ReviewedApplicationProfile>) -> bool {
+        matches!(
+            profile,
+            Some(
+                ReviewedApplicationProfile::GoogleHosted
+                    | ReviewedApplicationProfile::AdobeAdminConsole
+                    | ReviewedApplicationProfile::Instagram
+                    | ReviewedApplicationProfile::Canva
+                    | ReviewedApplicationProfile::Chatgpt
+                    | ReviewedApplicationProfile::Claude
+            )
+        )
+    }
     pub fn new(
         profile: Option<ReviewedApplicationProfile>,
         source: &Url,
@@ -80,17 +104,35 @@ impl GoogleSession {
         source_client: reqwest::Client,
         client: reqwest::Client,
     ) -> Result<Option<Self>, String> {
-        if profile != Some(ReviewedApplicationProfile::GoogleHosted) {
-            return Ok(None);
-        }
-        let catalog: Catalog = serde_json::from_str(CATALOG).expect("reviewed Google catalog");
+        let (profile, catalog) = match profile {
+            Some(ReviewedApplicationProfile::GoogleHosted) => {
+                (ReviewedApplicationProfile::GoogleHosted, CATALOG)
+            }
+            Some(ReviewedApplicationProfile::AdobeAdminConsole) => {
+                (ReviewedApplicationProfile::AdobeAdminConsole, ADOBE_CATALOG)
+            }
+            Some(ReviewedApplicationProfile::Instagram) => {
+                (ReviewedApplicationProfile::Instagram, INSTAGRAM_CATALOG)
+            }
+            Some(ReviewedApplicationProfile::Canva) => {
+                (ReviewedApplicationProfile::Canva, CANVA_CATALOG)
+            }
+            Some(ReviewedApplicationProfile::Chatgpt) => {
+                (ReviewedApplicationProfile::Chatgpt, CHATGPT_CATALOG)
+            }
+            Some(ReviewedApplicationProfile::Claude) => {
+                (ReviewedApplicationProfile::Claude, CLAUDE_CATALOG)
+            }
+            _ => return Ok(None),
+        };
+        let catalog: Catalog = serde_json::from_str(catalog).expect("reviewed hosted catalog");
         let origin = source.origin().ascii_serialization();
         let (profile_id, _) = catalog
             .profiles
             .iter()
             .find(|(_, value)| **value == origin)
             .filter(|_| valid_url(source))
-            .ok_or("Google profile requires its exact HTTPS hosted origin")?;
+            .ok_or("Hosted profile requires its exact HTTPS hosted origin")?;
         let local = Url::parse(proxy_origin).map_err(|_| "Invalid Google proxy origin")?;
         let port = local.port().ok_or("Invalid Google proxy port")?;
         let mut origins = BTreeMap::from([(origin.clone(), true)]);
@@ -122,6 +164,7 @@ impl GoogleSession {
             });
         }
         Ok(Some(Self {
+            profile,
             routes,
             source_origin: origin,
             source_client,
@@ -174,6 +217,28 @@ impl GoogleSession {
             .find(|route| route.proxy_origin == origin)
     }
 
+    pub(crate) fn allows_autologin(&self, origin: &str, mode: super::UpstreamAuthMode) -> bool {
+        match (self.profile, mode) {
+            (ReviewedApplicationProfile::GoogleHosted, super::UpstreamAuthMode::GoogleForm) => {
+                origin == "https://accounts.google.com"
+            }
+            (ReviewedApplicationProfile::AdobeAdminConsole, super::UpstreamAuthMode::AdobeForm) => {
+                origin == "https://auth.services.adobe.com"
+            }
+            (ReviewedApplicationProfile::Chatgpt, super::UpstreamAuthMode::ChatgptForm) => {
+                matches!(origin, "https://chatgpt.com" | "https://auth.openai.com")
+            }
+            (ReviewedApplicationProfile::Claude, super::UpstreamAuthMode::ClaudeForm) => {
+                origin == "https://claude.ai"
+            }
+            (
+                ReviewedApplicationProfile::Instagram | ReviewedApplicationProfile::Canva,
+                super::UpstreamAuthMode::None,
+            ) => origin == self.source_origin,
+            _ => false,
+        }
+    }
+
     pub(super) fn map_url(&self, url: &Url) -> Option<String> {
         let route = self.upstream_route(url)?;
         Some(format!(
@@ -213,9 +278,40 @@ impl GoogleSession {
         }
         // Cross-origin aliases must never expose the connection's credential
         // endpoints. Automation must redeem its own origin/document-bound grant.
-        let google_login = route.upstream_origin == "https://accounts.google.com"
-            && state.upstream_auth_mode == super::UpstreamAuthMode::GoogleForm;
-        let local_autologin = request.uri().path() == super::AUTOLOGIN_PATH && google_login;
+        let login_mode = match (
+            self.profile,
+            state.upstream_auth_mode,
+            route.upstream_origin.as_str(),
+        ) {
+            (
+                ReviewedApplicationProfile::GoogleHosted,
+                super::UpstreamAuthMode::GoogleForm,
+                "https://accounts.google.com",
+            ) => super::UpstreamAuthMode::GoogleForm,
+            (
+                ReviewedApplicationProfile::AdobeAdminConsole,
+                super::UpstreamAuthMode::AdobeForm,
+                "https://auth.services.adobe.com",
+            ) => super::UpstreamAuthMode::AdobeForm,
+            (
+                ReviewedApplicationProfile::Chatgpt,
+                super::UpstreamAuthMode::ChatgptForm,
+                "https://chatgpt.com" | "https://auth.openai.com",
+            ) => super::UpstreamAuthMode::ChatgptForm,
+            (
+                ReviewedApplicationProfile::Claude,
+                super::UpstreamAuthMode::ClaudeForm,
+                "https://claude.ai",
+            ) => super::UpstreamAuthMode::ClaudeForm,
+            _ => super::UpstreamAuthMode::None,
+        };
+        let source_form = matches!(
+            self.profile,
+            ReviewedApplicationProfile::Instagram | ReviewedApplicationProfile::Canva
+        ) && route.upstream_origin == self.source_origin
+            && state.upstream_auth_mode == super::UpstreamAuthMode::None;
+        let local_autologin = request.uri().path() == super::AUTOLOGIN_PATH
+            && (login_mode != super::UpstreamAuthMode::None || source_form);
         let local_cookie_bridge = request.uri().path() == COOKIE_BRIDGE_PATH && route.documents;
         if request.uri().path().starts_with("/__sortofremoteng_")
             && request.uri().path() != super::web_automation::DARKREADER_PATH
@@ -233,11 +329,7 @@ impl GoogleSession {
         scoped.proxy_origin = route.proxy_origin.clone();
         scoped.proxy_authority = host.into();
         scoped.client = self.client.clone();
-        scoped.upstream_auth_mode = if google_login {
-            super::UpstreamAuthMode::GoogleForm
-        } else {
-            super::UpstreamAuthMode::None
-        };
+        scoped.upstream_auth_mode = login_mode;
         scoped.custom_headers.clear();
         scoped.proxy_policy.query_parameters.clear();
         // Routing permission is never saved-login permission.
@@ -487,7 +579,8 @@ impl GoogleSession {
         } else {
             &self.client
         };
-        let mut request = client.request(method.clone(), url.clone());
+        let upstream_url = self.upstream_callback_url(url);
+        let mut request = client.request(method.clone(), upstream_url);
         for (name, value) in headers {
             if !name.eq_ignore_ascii_case("cookie")
                 && !name.eq_ignore_ascii_case("x-sorng-google-credentials")
@@ -525,6 +618,64 @@ impl GoogleSession {
             }
         }
         Ok(response)
+    }
+
+    /// Hosted sign-in SDKs can compute redirect_uri from window.location. Restore only an
+    /// exact native-issued document alias, never arbitrary user-provided URLs.
+    /// Preserve all unrelated raw query fields (including signed state).
+    pub(super) fn upstream_callback_url(&self, url: &Url) -> Url {
+        if self.profile != ReviewedApplicationProfile::AdobeAdminConsole
+            && !(self.profile == ReviewedApplicationProfile::Chatgpt
+                && url.origin().ascii_serialization() == "https://auth.openai.com")
+        {
+            return url.clone();
+        }
+        let Some(query) = url.query() else {
+            return url.clone();
+        };
+        let mut changed = false;
+        let fields = query
+            .split('&')
+            .map(|field| {
+                let Some((key, value)) = url::form_urlencoded::parse(field.as_bytes()).next()
+                else {
+                    return field.to_string();
+                };
+                if key != "redirect_uri" {
+                    return field.to_string();
+                }
+                let Ok(callback) = Url::parse(&value) else {
+                    return field.to_string();
+                };
+                if !callback.username().is_empty() || callback.password().is_some() {
+                    return field.to_string();
+                }
+                let Some(route) = self
+                    .local_route(&callback.origin().ascii_serialization())
+                    .filter(|route| {
+                        route.documents
+                            && (self.profile != ReviewedApplicationProfile::Chatgpt
+                                || route.upstream_origin == self.source_origin)
+                    })
+                else {
+                    return field.to_string();
+                };
+                let mut restored = upstream_document_referer(&callback, &route.upstream_origin);
+                if let Some(fragment) = callback.fragment() {
+                    restored.push('#');
+                    restored.push_str(fragment);
+                }
+                changed = true;
+                url::form_urlencoded::Serializer::new(String::new())
+                    .append_pair("redirect_uri", &restored)
+                    .finish()
+            })
+            .collect::<Vec<_>>();
+        let mut restored = url.clone();
+        if changed {
+            restored.set_query(Some(&fields.join("&")));
+        }
+        restored
     }
 
     pub(super) fn observe_cookies(

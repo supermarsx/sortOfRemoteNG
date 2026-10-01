@@ -17,6 +17,7 @@ import CurrentDatabaseSettings from "./sections/CurrentDatabaseSettings";
 import type { DatabaseSecurityCallbacks } from "./sections/security/CurrentDatabaseSecuritySection";
 import PerformanceSettings from "./sections/PerformanceSettings";
 import ProxySettings from "./sections/ProxySettings";
+import InternalProxySettings from "./sections/InternalProxySettings";
 import VpnSettings from "./sections/VpnSettings";
 import AdvancedSettings from "./sections/AdvancedSettings";
 import StartupSettings from "./sections/StartupSettings";
@@ -248,6 +249,12 @@ const ContentPanel: React.FC<
           <ProxySettings
             settings={s}
             updateProxy={mgr.updateProxy}
+            updateSettings={u}
+          />
+        )}
+        {mgr.activeTab === "internalProxy" && (
+          <InternalProxySettings
+            settings={s}
             updateSettings={u}
             requestLogSync={mgr.proxyRequestLogSync}
             settingsReady={mgr.settingsReady}

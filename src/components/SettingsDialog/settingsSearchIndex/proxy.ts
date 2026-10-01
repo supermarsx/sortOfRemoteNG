@@ -13,23 +13,13 @@ import type { SettingSearchEntry } from "./types";
  */
 export const PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
-    key: "proxyRequestLogLimit",
-    label: "Proxy request log limit",
-    description:
-      "Retain the newest diagnostic requests. Apply zero to clear and disable this log; HAR recordings are unaffected.",
-    tags: ["proxy", "requests", "log", "limit", "retention", "capacity"],
-    synonyms: ["10000", "newest first", "request history", "disable proxy log"],
-    section: "proxy",
-    sectionLabel: "Proxy",
-  },
-  {
     key: "proxyEnabled",
     label: "Enable global proxy",
     description: "Route all connections through a proxy server",
     tags: ["proxy", "enable", "global", "route", "tunnel"],
     synonyms: ["turn on proxy", "use a proxy", "corporate proxy"],
     section: "proxy",
-    sectionLabel: "Proxy",
+    sectionLabel: "Upstream Proxy",
   },
   {
     key: "proxyType",
@@ -39,7 +29,7 @@ export const PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     tags: ["proxy", "type", "protocol", "socks", "http", "https"],
     synonyms: ["socks5", "socks4", "proxy protocol", "http proxy"],
     section: "proxy",
-    sectionLabel: "Proxy",
+    sectionLabel: "Upstream Proxy",
     values: [
       "http",
       "HTTP — standard HTTP proxy",
@@ -59,7 +49,7 @@ export const PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     tags: ["proxy", "host", "hostname", "server", "address", "ip"],
     synonyms: ["proxy server", "proxy address", "proxy hostname"],
     section: "proxy",
-    sectionLabel: "Proxy",
+    sectionLabel: "Upstream Proxy",
   },
   {
     key: "proxyPort",
@@ -69,7 +59,7 @@ export const PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     tags: ["proxy", "port", "tcp", "8080", "1080"],
     synonyms: ["proxy port number"],
     section: "proxy",
-    sectionLabel: "Proxy",
+    sectionLabel: "Upstream Proxy",
   },
   {
     key: "proxyUsername",
@@ -79,7 +69,7 @@ export const PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     tags: ["proxy", "username", "user", "authentication", "credentials"],
     synonyms: ["proxy user", "proxy login", "proxy auth"],
     section: "proxy",
-    sectionLabel: "Proxy",
+    sectionLabel: "Upstream Proxy",
   },
   {
     key: "proxyPassword",
@@ -89,7 +79,7 @@ export const PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     tags: ["proxy", "password", "secret", "authentication", "credentials"],
     synonyms: ["proxy password", "proxy auth"],
     section: "proxy",
-    sectionLabel: "Proxy",
+    sectionLabel: "Upstream Proxy",
   },
   {
     key: "globalProxyPresets",
@@ -99,6 +89,6 @@ export const PROXY_SEARCH_ENTRIES: SettingSearchEntry[] = [
     tags: ["preset", "presets", "saved", "profile", "switch", "apply"],
     synonyms: ["proxy profiles", "saved proxies", "proxy bookmarks"],
     section: "proxy",
-    sectionLabel: "Proxy",
+    sectionLabel: "Upstream Proxy",
   },
 ];

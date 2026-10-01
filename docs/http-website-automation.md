@@ -7,6 +7,75 @@ permalink: /http-website-automation/
 
 Open an HTTP or HTTPS connection's **Protocol → Advanced** settings to opt into website macros, manual JavaScript, or the dark-mode extension. Each capability starts off. Global **Session quick actions** settings control availability but never grant permission for a connection. Save the connection and open its website normally; certificate approval and website sign-in remain separate.
 
+## Browser and internal proxy settings
+
+**Settings → Web Browser** controls the bookmarks bar, ordinary connection
+information, supported popup tabs, and page-readiness deadlines, alongside the
+website appearance settings. Hiding ordinary connection information does not
+hide certificate or login warnings. Popup blocking prevents new supported
+Tactical RMM popup tabs; it does not close existing remote-control sessions.
+
+Website-policy defaults include script handling, HTTPS-only requests,
+same-origin restrictions, cache bypass, and external fonts. A connection's
+explicitly saved policy takes precedence as a whole. Tabs capture the defaults
+when opened; close and reopen a tab to adopt changed defaults. External fonts
+remain opt-in and need exact HTTPS origins for their stylesheets and font files;
+same-origin restrictions take precedence. Global defaults never enable login,
+release credentials, or grant cross-origin redirects. Those still require the
+connection's own configuration and review.
+
+**Settings → Internal Proxy** is separate from the upstream proxy/profile
+configuration. It controls upstream connect/request deadlines, idle connection
+pooling, TCP keepalive, local health checks and recovery, and the diagnostic
+request-log limit. Transport changes apply to newly created proxy sessions,
+including their derived application/API routes. Existing sessions retain their
+transport configuration. TCP keepalive is separate from local health polling;
+zero disables TCP keepalive, while zero idle connections disables pool retention.
+Request-log changes retain their explicit Apply action; applying zero clears
+and disables that diagnostic log, not recordings or saved browser data.
+
+The browser identity readout shows the native renderer's user agent. The
+embedded renderer, loopback URL rewriting and native upstream HTTP transport
+are not identical to a standalone browser. These settings do not promise that
+Google sign-in or a Cloudflare challenge will accept the session. Proxy routing,
+certificate checks and origin isolation remain enforced.
+
+### Browser identity and sign-in compatibility
+
+Under **Settings → Web Browser → Browser identity and compatibility**:
+
+- **Keep browser identity consistent** and **Keep browser language consistent**
+  ignore saved `User-Agent` and `Accept-Language` overrides, respectively. Both
+  default on. Requests retain the runtime's real identity and language instead
+  of inventing a different browser, version or locale.
+- **Hide WebDriver indicator (experimental)** defaults off. Where supported,
+  approved proxied documents report `navigator.webdriver` as false before site
+  scripts run, only if the native value was true. Already false or absent values
+  are untouched. Native descriptors that cannot be overridden do not prevent
+  loading. This page-local JavaScript change is detectable; it does not change
+  workers, iframe identity, the upstream TLS fingerprint or app diagnostics.
+  Disable it if verification gets worse.
+- **Minimum autofill delay** and **Minimum sign-in submit delay** accept 0–30000
+  ms each, defaulting to zero. They apply to generic DOM form assistance only
+  when login is already explicitly enabled. Longer saved delays are preserved.
+  Staged application adapters retain their fixed controls and timing. Delays
+  add neither credential attempts nor challenge automation. Effective combined
+  delays must not exceed 52,000 ms: eight seconds remain available for detection
+  within the native 60-second limit. Incompatible combinations with saved
+  connection delays stop before login starts.
+- **Require manual sign-in submission** restricts generic form assistance to
+  filling and pauses automatic 2FA. Staged adapters that cannot support fill-only
+  mode reject that combination; select Manual in that connection's Application
+  settings instead. API and HTTP authentication are unaffected.
+
+Save settings and close/reopen the website tab to apply identity and form
+changes. Existing tabs are not reloaded by a settings change. Redirects and
+secondary routes retain their native session's compatibility preference, while
+all traffic continues through the internal proxy. No CSP, origin or TLS checks
+are disabled. These are compatibility controls, not a promise of undetectability:
+[Google may reject embedded browsers](https://support.google.com/accounts/answer/7675428?hl=en)
+and [Cloudflare documents limited WebView support](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/).
+
 ## Record a website macro
 
 Choose **Record macro** beside the bookmarks. If this connection has not opted in, review **Enable website macros?** first. Enabling saves only that connection's macro permission; it does not start recording, enable JavaScript, or change dark mode. Click **Record macro** again when ready. The library also offers **Record new macro**.

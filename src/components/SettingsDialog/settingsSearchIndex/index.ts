@@ -13,6 +13,7 @@ import { PERFORMANCE_SEARCH_ENTRIES } from "./performance";
 import { RDP_DEFAULTS_SEARCH_ENTRIES } from "./rdpDefaults";
 import { SSH_TERMINAL_SEARCH_ENTRIES } from "./sshTerminal";
 import { WEB_BROWSER_SEARCH_ENTRIES } from "./webBrowser";
+import { INTERNAL_PROXY_SEARCH_ENTRIES } from "./internalProxy";
 import { PROXY_SEARCH_ENTRIES } from "./proxy";
 import { VPN_SEARCH_ENTRIES } from "./vpn";
 import { BACKUP_SEARCH_ENTRIES } from "./backup";
@@ -44,6 +45,7 @@ export { PERFORMANCE_SEARCH_ENTRIES } from "./performance";
 export { RDP_DEFAULTS_SEARCH_ENTRIES } from "./rdpDefaults";
 export { SSH_TERMINAL_SEARCH_ENTRIES } from "./sshTerminal";
 export { WEB_BROWSER_SEARCH_ENTRIES } from "./webBrowser";
+export { INTERNAL_PROXY_SEARCH_ENTRIES } from "./internalProxy";
 export { PROXY_SEARCH_ENTRIES } from "./proxy";
 export { VPN_SEARCH_ENTRIES } from "./vpn";
 export { BACKUP_SEARCH_ENTRIES } from "./backup";
@@ -82,6 +84,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   ...RDP_DEFAULTS_SEARCH_ENTRIES,
   ...SSH_TERMINAL_SEARCH_ENTRIES,
   ...WEB_BROWSER_SEARCH_ENTRIES,
+  ...INTERNAL_PROXY_SEARCH_ENTRIES,
   ...PROXY_SEARCH_ENTRIES,
   ...VPN_SEARCH_ENTRIES,
   ...BACKUP_SEARCH_ENTRIES,

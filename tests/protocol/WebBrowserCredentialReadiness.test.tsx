@@ -21,6 +21,7 @@ import { clearRuntimeConnectionsForTests } from "../../src/utils/session/runtime
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
   connection: null as Connection | null,
+  connections: [] as Connection[],
   settings: {} as Record<string, unknown>,
   availability: { status: "ready", databaseId: "owner", generation: 1 },
 }));
@@ -34,7 +35,7 @@ vi.mock("../../src/utils/tauri/invoke", () => ({
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
-    state: { connections: [native.connection], sessions: [] },
+    state: { connections: native.connections, sessions: [] },
     databaseAvailability: native.availability,
     dispatch: vi.fn(),
     dispatchAndFlush: vi.fn(),
@@ -158,7 +159,11 @@ beforeEach(() => {
     },
     macros: { confirmBeforeReplay: true },
   };
-  native.invoke.mockReset().mockImplementation(async (command) => {
+  native.connections = [native.connection];
+  let library = JSON.stringify(
+    normalizeWebAutomationLibrary({ version: 1, scripts: [], macros: [] }),
+  );
+  native.invoke.mockReset().mockImplementation(async (command, args) => {
     if (command === "start_basic_auth_proxy")
       return {
         session_id: "proxy",
@@ -178,10 +183,12 @@ beforeEach(() => {
         allNetworkRequestsMediated: false,
       };
     if (command === "activate_proxy_network_document") return false;
-    if (command === "read_macro_library")
-      return JSON.stringify(
-        normalizeWebAutomationLibrary({ version: 1, scripts: [], macros: [] }),
-      );
+    if (command === "read_macro_library") return library;
+    if (command === "compare_and_swap_macro_library") {
+      if (args.expected !== library) return false;
+      library = args.replacement;
+      return true;
+    }
     throw new Error(`Unexpected native command ${command}`);
   });
 });

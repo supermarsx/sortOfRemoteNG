@@ -26,6 +26,11 @@ import AutomaticMfaSection from "./AutomaticMfaSection";
 import { isSynologyFileConnection } from "../../../types/protocols/synology";
 import CredentialSourceSection from "../CredentialSourceSection";
 import { PORKBUN_LOGIN_URL } from "../../../utils/connection/porkbunProfile";
+import { PTISP_LOGIN_URL } from "../../../utils/connection/ptispProfile";
+import { ADOBE_ADMIN_CONSOLE_URL } from "../../../utils/connection/adobeAdminConsoleProfile";
+import { INSTAGRAM_LOGIN_URL } from "../../../utils/connection/instagramProfile";
+import { CANVA_LOGIN_URL } from "../../../utils/connection/canvaProfile";
+import { resolveHttpApplicationEmail } from "../../../utils/auth/httpApplicationLogin";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -78,10 +83,13 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       ? getJoomlaLoginSelectors(settings?.joomlaVersion)
       : profile?.selectors;
   const fileApi = isSynologyFileConnection(mgr.formData);
-  const credentials = resolveHttpBasicCredentials({
-    ...mgr.formData,
-    authType: "basic",
-  });
+  const boundedAiFlow = profile?.id === "chatgpt" || profile?.id === "claude";
+  const credentials = profile?.emailOnly
+    ? { username: resolveHttpApplicationEmail(mgr.formData), password: "" }
+    : resolveHttpBasicCredentials({
+        ...mgr.formData,
+        authType: "basic",
+      });
   const vaultCredentials = mgr.formData.credentialSource?.kind === "vault";
   const selectProfile = (id: string) =>
     mgr.setFormData((previous) => {
@@ -105,7 +113,18 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
           ? new URL(CLOUDFLARE_DASHBOARD_URL)
           : id === "porkbun"
             ? new URL(PORKBUN_LOGIN_URL)
-            : googleUrl;
+            : id === "ptisp"
+              ? new URL(PTISP_LOGIN_URL)
+              : id === "adobe-admin-console" && !previous.hostname?.trim()
+                ? new URL(ADOBE_ADMIN_CONSOLE_URL)
+                : id === "instagram" && !previous.hostname?.trim()
+                  ? new URL(INSTAGRAM_LOGIN_URL)
+                  : id === "canva" && !previous.hostname?.trim()
+                    ? new URL(CANVA_LOGIN_URL)
+                    : (id === "chatgpt" || id === "claude") &&
+                        !previous.hostname?.trim()
+                      ? new URL(getHttpApplicationProfile(id)!.hostedLoginUrl!)
+                      : googleUrl;
       return {
         ...previous,
         ...(selectedUrl
@@ -117,6 +136,12 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
         // A fresh selection must never revive a prior app's automatic submission.
         httpAutoLogin: false,
         httpAutoLoginSelectors: undefined,
+        // These staged adapters do not expose the advanced-form editor. Drop
+        // another application's overrides on explicit selection so hidden
+        // settings cannot make subsequent opt-in impossible to configure.
+        ...(id === "chatgpt" || id === "claude"
+          ? { httpFormAutomation: undefined }
+          : {}),
         httpAutoMfa: { version: 1, enabled: false },
         synologySettings: previous.synologySettings
           ? { ...previous.synologySettings, accessMode: "website" }
@@ -131,6 +156,14 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
     }));
   };
   const updateCredential = (key: "username" | "password", value: string) => {
+    if (profile?.emailOnly) {
+      if (key === "username")
+        mgr.setFormData((previous) => ({
+          ...previous,
+          basicAuthUsername: value,
+        }));
+      return;
+    }
     const next = {
       username: credentials?.username ?? "",
       password: credentials?.password ?? "",
@@ -465,9 +498,13 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                   {profile.hostedLoginUrl}
                 </span>
                 . This preset requires that HTTPS origin.
-                {profile.id === "porkbun"
-                  ? " Selecting this preset sets HTTPS, porkbun.com and port 443; certificate policy is preserved."
-                  : getFirstPartyGoogleHostedApplicationUrl(profile.id)
+                {profile.id === "porkbun" || profile.id === "ptisp"
+                  ? ` Selecting this preset sets HTTPS, ${new URL(profile.hostedLoginUrl).hostname} and port 443; certificate policy is preserved.`
+                  : getFirstPartyGoogleHostedApplicationUrl(profile.id) ||
+                      profile.id === "adobe-admin-console" ||
+                      profile.id === "instagram" ||
+                      profile.id === "canva" ||
+                      boundedAiFlow
                     ? " Blank connections use this built-in address automatically; an existing custom address is preserved."
                     : " Selection has not changed your address or certificate policy."}
               </p>
@@ -546,11 +583,18 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                   role="note"
                   className="max-w-2xl text-xs text-[var(--color-textSecondary)]"
                 >
-                  A database vault credential is selected. Website username and
-                  password fields are locked here; select or edit the reusable
-                  credential in the Database vault instead. Automatic 2FA can
-                  use only that selected vault credential's authenticator and
-                  requires separate consent below.
+                  {profile.emailOnly ? (
+                    "A database vault credential is selected. Only its email is used for this flow; no configured password is sent."
+                  ) : (
+                    <>
+                      A database vault credential is selected. Website username
+                      and password fields are locked here; select or edit the
+                      reusable credential in the Database vault instead.
+                      Automatic 2FA can use only that selected vault
+                      credential's authenticator and requires separate consent
+                      below.
+                    </>
+                  )}
                 </p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
@@ -577,29 +621,31 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                     }
                   />
                 </div>
-                <div>
-                  <label
-                    htmlFor="http-application-password"
-                    className="block text-sm mb-2"
-                  >
-                    Website password
-                  </label>
-                  <PasswordInput
-                    id="http-application-password"
-                    className="sor-form-input"
-                    autoComplete="new-password"
-                    disabled={vaultCredentials}
-                    placeholder={
-                      vaultCredentials
-                        ? "Stored in selected database vault"
-                        : undefined
-                    }
-                    value={credentials?.password ?? ""}
-                    onChange={(event) =>
-                      updateCredential("password", event.target.value)
-                    }
-                  />
-                </div>
+                {!profile.emailOnly && (
+                  <div>
+                    <label
+                      htmlFor="http-application-password"
+                      className="block text-sm mb-2"
+                    >
+                      Website password
+                    </label>
+                    <PasswordInput
+                      id="http-application-password"
+                      className="sor-form-input"
+                      autoComplete="new-password"
+                      disabled={vaultCredentials}
+                      placeholder={
+                        vaultCredentials
+                          ? "Stored in selected database vault"
+                          : undefined
+                      }
+                      value={credentials?.password ?? ""}
+                      onChange={(event) =>
+                        updateCredential("password", event.target.value)
+                      }
+                    />
+                  </div>
+                )}
                 {profile.id === "proxmox" && settings?.loginMode === "form" && (
                   <div>
                     <label
@@ -631,72 +677,86 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
           {settings?.loginMode === "form" && !settings.invalid && (
             <>
               <p className="text-sm text-[var(--color-textSecondary)]">
-                One automatic submission per proxy session. No preemptive Basic
-                header is sent. Authenticator codes require the separate
-                explicit setting below. CAPTCHA, external SSO, and a rejected
-                login remain manual.
+                {profile.emailOnly ? (
+                  "Submit your email once, then complete the emailed link or code manually. No password is required or sent. SSO and security challenges remain interactive; this does not establish a signed-in session."
+                ) : boundedAiFlow ? (
+                  "Bounded fixture-tested email/password assistance, without verified live later stages. SSO, email codes, MFA, CAPTCHA and recovery remain interactive. Selector overrides and advanced automation are not supported."
+                ) : profile.id === "adobe-admin-console" ? (
+                  "Staged email and password sign-in uses the reviewed Adobe flow without HTTP Basic authentication. SSO, MFA, CAPTCHA and account/profile choice remain interactive. Selector overrides are not supported."
+                ) : (
+                  <>
+                    One automatic submission per proxy session. No preemptive
+                    Basic header is sent. Authenticator codes require the
+                    separate explicit setting below. CAPTCHA, external SSO, and
+                    a rejected login remain manual.
+                  </>
+                )}
               </p>
-              <details
-                key={profile.id}
-                open={profile.capability === "custom-form" ? true : undefined}
-                className="max-w-2xl rounded border border-[var(--color-border)] p-3"
-              >
-                <summary className="cursor-pointer text-sm font-medium">
-                  {profile.capability === "custom-form"
-                    ? "Custom form selectors (required)"
-                    : "Selector overrides (optional)"}
-                </summary>
-                <p className="text-xs text-[var(--color-textMuted)] my-3">
-                  {profile.capability === "custom-form" ? (
-                    "Provide all three CSS selectors for visible controls in the same login form. Missing or unmatched selectors block filling; no heuristic fallback is used."
-                  ) : (
-                    <>
-                      Leave blank for{" "}
-                      {reviewedSelectors
-                        ? "the reviewed application selectors"
-                        : "generic detection"}
-                      . An unmatched override never falls back to a different
-                      field.
-                    </>
-                  )}
-                </p>
-                <div className="space-y-3">
-                  {(
-                    [
-                      ["usernameSelector", "Username field selector"],
-                      ["passwordSelector", "Password field selector"],
-                      ["submitSelector", "Submit button selector"],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <div key={key}>
-                      <label
-                        htmlFor={`http-app-${key}`}
-                        className="block text-xs mb-1"
-                      >
-                        {label}
-                      </label>
-                      <input
-                        id={`http-app-${key}`}
-                        className="sor-form-input"
-                        maxLength={512}
-                        required={profile.capability === "custom-form"}
-                        value={mgr.formData.httpAutoLoginSelectors?.[key] ?? ""}
-                        placeholder={
-                          profile.capability === "custom-form"
-                            ? SELECTOR_EXAMPLES[key]
-                            : (reviewedSelectors?.[key] ?? "Auto-detect")
-                        }
-                        onChange={(event) =>
-                          updateSelector(key, event.target.value)
-                        }
-                      />
-                    </div>
-                  ))}
-                </div>
-              </details>
+              {profile.id !== "adobe-admin-console" && !boundedAiFlow && (
+                <details
+                  key={profile.id}
+                  open={profile.capability === "custom-form" ? true : undefined}
+                  className="max-w-2xl rounded border border-[var(--color-border)] p-3"
+                >
+                  <summary className="cursor-pointer text-sm font-medium">
+                    {profile.capability === "custom-form"
+                      ? "Custom form selectors (required)"
+                      : "Selector overrides (optional)"}
+                  </summary>
+                  <p className="text-xs text-[var(--color-textMuted)] my-3">
+                    {profile.capability === "custom-form" ? (
+                      "Provide all three CSS selectors for visible controls in the same login form. Missing or unmatched selectors block filling; no heuristic fallback is used."
+                    ) : (
+                      <>
+                        Leave blank for{" "}
+                        {reviewedSelectors
+                          ? "the reviewed application selectors"
+                          : "generic detection"}
+                        . An unmatched override never falls back to a different
+                        field.
+                      </>
+                    )}
+                  </p>
+                  <div className="space-y-3">
+                    {(
+                      [
+                        ["usernameSelector", "Username field selector"],
+                        ["passwordSelector", "Password field selector"],
+                        ["submitSelector", "Submit button selector"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <div key={key}>
+                        <label
+                          htmlFor={`http-app-${key}`}
+                          className="block text-xs mb-1"
+                        >
+                          {label}
+                        </label>
+                        <input
+                          id={`http-app-${key}`}
+                          className="sor-form-input"
+                          maxLength={512}
+                          required={profile.capability === "custom-form"}
+                          value={
+                            mgr.formData.httpAutoLoginSelectors?.[key] ?? ""
+                          }
+                          placeholder={
+                            profile.capability === "custom-form"
+                              ? SELECTOR_EXAMPLES[key]
+                              : (reviewedSelectors?.[key] ?? "Auto-detect")
+                          }
+                          onChange={(event) =>
+                            updateSelector(key, event.target.value)
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </>
           )}
-          {!settings?.invalid && (
+          {!settings?.invalid && !boundedAiFlow && (
             <AutomaticMfaSection key={profile.id} mgr={mgr} profile={profile} />
           )}
           <p className="text-xs text-[var(--color-textMuted)]">

@@ -74,6 +74,28 @@ function titleViewer(extra = {}) {
 }
 
 describe("source-owned web popup registry", () => {
+  it("applies current optional sandbox permissions to popup navigations and revokes them on release", () => {
+    const session = open();
+    const frame = window.document.createElement("iframe");
+    window.document.body.append(frame);
+    let allowDownloads = true;
+    const lease = webPopupTabs.attachViewer(session.id, frame, () => ({
+      allowDownloads,
+    }))!;
+    expect(lease.navigate()).toBe(true);
+    expect(frame).toHaveAttribute(
+      "sandbox",
+      "allow-same-origin allow-scripts allow-forms allow-downloads",
+    );
+    allowDownloads = false;
+    expect(lease.navigate()).toBe(true);
+    expect(frame).toHaveAttribute(
+      "sandbox",
+      "allow-same-origin allow-scripts allow-forms",
+    );
+    webPopupTabs.close(session.id);
+    expect(frame).toHaveAttribute("sandbox", "");
+  });
   it("requires document-start then exact child identity, and leaves the runtime snapshot unchanged", () => {
     const { session, lease, event, ready } = titleViewer();
     const snapshot = webPopupTabs.getSnapshot(session.id);

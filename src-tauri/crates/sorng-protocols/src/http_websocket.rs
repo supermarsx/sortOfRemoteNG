@@ -8,10 +8,9 @@ use axum::{
 };
 use base64::Engine;
 use sha1::{Digest, Sha1};
-use std::{
-    sync::{atomic::Ordering, Arc},
-    time::Duration,
-};
+use std::sync::{atomic::Ordering, Arc};
+#[cfg(test)]
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const DOCUMENT_MARKER: &str = "__sorng_ws_document_v1";
@@ -298,6 +297,17 @@ async fn handle_inner(
         Err(detail) => return refusal(StatusCode::FORBIDDEN, detail),
     };
     let tactical_api_request = tactical_destination.is_some();
+    if tactical_api_request
+        && state
+            .tactical_rmm_api
+            .as_ref()
+            .is_some_and(|route| !route.is_tactical())
+    {
+        return refusal(
+            StatusCode::FORBIDDEN,
+            "This application API route supports only HTTP requests.",
+        );
+    }
     let mut forwarded = collect_upstream_headers(
         headers,
         if tactical_api_request {
@@ -436,7 +446,10 @@ async fn handle_inner(
         .network
         .while_document(
             sequence,
-            tokio::time::timeout(Duration::from_secs(15), response.upgrade()),
+            tokio::time::timeout(
+                state.network.transport_settings().connect_timeout(),
+                response.upgrade(),
+            ),
         )
         .await
     {
@@ -458,8 +471,11 @@ async fn handle_inner(
         let _ = state
             .network
             .while_document(sequence, async {
-                let Ok(Ok(browser)) =
-                    tokio::time::timeout(Duration::from_secs(15), browser_upgrade).await
+                let Ok(Ok(browser)) = tokio::time::timeout(
+                    state.network.transport_settings().connect_timeout(),
+                    browser_upgrade,
+                )
+                .await
                 else {
                     return;
                 };

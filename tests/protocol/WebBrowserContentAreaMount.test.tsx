@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ContentArea from "../../src/components/protocol/webBrowser/ContentArea";
 import type { WebBrowserMgr } from "../../src/components/protocol/webBrowser/types";
+import { normalizeWebBrowserSettings } from "../../src/utils/settings/webBrowserSettings";
 import {
   EMPTY_WEB_FRAME_SANDBOX,
   PROXY_WEB_FRAME_SANDBOX,
@@ -28,6 +29,32 @@ function manager(overrides: Partial<WebBrowserMgr> = {}): WebBrowserMgr {
 afterEach(cleanup);
 
 describe("ContentArea frame mounting boundary", () => {
+  it("hides only the optional loading bar while preserving the dark paint shield", () => {
+    const mgr = manager({
+      showLoadingIndicator: true,
+      waitingForDarkPaint: true,
+      websiteDarkBootstrap: {
+        backgroundColor: "#111111",
+        textColor: "#eeeeee",
+      },
+      browserSettings: normalizeWebBrowserSettings(undefined),
+    });
+    const view = render(<ContentArea mgr={mgr} />);
+    expect(view.getByTestId("web-navigation-progress")).toBeVisible();
+    view.rerender(
+      <ContentArea
+        mgr={{
+          ...mgr,
+          browserSettings: {
+            ...mgr.browserSettings,
+            showLoadingProgress: false,
+          },
+        }}
+      />,
+    );
+    expect(view.queryByTestId("web-navigation-progress")).toBeNull();
+    expect(view.getByTestId("web-dark-paint-shield")).toBeVisible();
+  });
   it("creates no browsing context before the controller permits mounting", () => {
     const attachIframe = vi.fn();
     const { container } = render(

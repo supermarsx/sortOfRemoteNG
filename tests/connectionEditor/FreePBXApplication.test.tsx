@@ -108,7 +108,9 @@ describe("FreePBX Administration application mapping", () => {
       upstreamAuthMode: "none",
     });
     expect(connection.password).toBe("fixture-password");
-    expect(getReviewedApplicationProfile(connection)).toBeUndefined();
+    // Native compatibility identity is independent of credential storage;
+    // it grants neither transport authentication nor local vault fallback.
+    expect(getReviewedApplicationProfile(connection)).toBe("freepbx");
   });
 
   it("defaults to the admin pathname and existing icon with no MFA contract", () => {

@@ -9,6 +9,10 @@ export const DEFAULT_HTTP_FORM_AUTOMATION: Readonly<HttpFormAutomation> =
     submit: true,
     fields: [],
   });
+// Global delay preferences must leave the native 60-second form lifetime room
+// to detect controls and process the page, not spend it entirely waiting.
+export const MAX_BROWSER_FORM_COMBINED_DELAY_MS =
+  60000 - DEFAULT_HTTP_FORM_AUTOMATION.detectionTimeoutMs;
 const invalid = () =>
   new Error(
     "Invalid advanced form settings. Review selectors, timing and additional fields before connecting.",

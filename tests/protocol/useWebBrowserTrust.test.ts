@@ -30,7 +30,7 @@ const mocks = vi.hoisted(() => ({
   proxyInvalid: false,
   verifySsl: true,
   credentialOverrides: {} as Record<string, unknown>,
-  settingsReady: false,
+  settingsReady: true,
   availability: { status: "ready", databaseId: "owner", generation: 1 },
   assertLease: vi.fn(),
 }));
@@ -50,34 +50,47 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: async () => () => undefined,
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
-  useConnections: () => ({
-    state: {
-      connections: [
-        {
-          id: "fixture",
-          protocol: "https",
-          name: "Device",
-          hostname: "10.10.10.2",
-          port: 443,
-          username: "saved-user",
-          password: "saved-password",
-          httpVerifySsl: mocks.verifySsl,
-          ...mocks.credentialOverrides,
-        },
-      ],
-    },
-    dispatch: mocks.dispatch,
-    databaseAvailability: mocks.availability,
-  }),
+  useConnections: () => {
+    const { verifySsl, credentialOverrides } = mocks;
+    return {
+      // Match the provider's stable state identity between actual edits.
+      state: React.useMemo(
+        () => ({
+          connections: [
+            {
+              id: "fixture",
+              protocol: "https",
+              name: "Device",
+              hostname: "10.10.10.2",
+              port: 443,
+              username: "saved-user",
+              password: "saved-password",
+              httpVerifySsl: verifySsl,
+              ...credentialOverrides,
+            },
+          ],
+        }),
+        [verifySsl, credentialOverrides],
+      ),
+      dispatch: mocks.dispatch,
+      databaseAvailability: mocks.availability,
+    };
+  },
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
-  useSettings: () => ({
-    settings: {
-      httpsTrustPolicy: mocks.policy,
-      httpsCaTrustMode: mocks.caMode,
-    },
-    settingsReady: mocks.settingsReady,
-  }),
+  useSettings: () => {
+    const { policy, caMode } = mocks;
+    return {
+      settings: React.useMemo(
+        () => ({
+          httpsTrustPolicy: policy,
+          httpsCaTrustMode: caMode,
+        }),
+        [policy, caMode],
+      ),
+      settingsReady: mocks.settingsReady,
+    };
+  },
 }));
 vi.mock("../../src/utils/session/sessionDatabaseOwnership", () => ({
   captureSessionDatabaseAccess: (value: ConnectionSession) => {
@@ -156,7 +169,7 @@ describe("HTTPS certificate and native trust stages", () => {
     mocks.proxy = "http://proxy.fixture:8080";
     mocks.verifySsl = true;
     mocks.credentialOverrides = {};
-    mocks.settingsReady = false;
+    mocks.settingsReady = true;
     mocks.availability = {
       status: "ready",
       databaseId: "owner",
@@ -378,6 +391,8 @@ describe("HTTPS certificate and native trust stages", () => {
     expect(config.proxy_policy).toEqual({
       ...(mocks.credentialOverrides.httpProxyPolicy as object),
       allowCrossOriginRedirects: false,
+      allowExternalFonts: false,
+      externalFontOrigins: [],
       allowHttpDowngradeRedirects: false,
     });
     expect(config.custom_headers).toEqual({
@@ -1040,17 +1055,36 @@ describe("HTTPS certificate and native trust stages", () => {
     },
   );
 
-  it("does not request automatic CA trust before persisted preferences are ready", async () => {
+  it("waits for persisted preferences before checking HTTPS trust and still requires first-use approval", async () => {
     mocks.settingsReady = false;
     mocks.caMode = "system";
     mocks.verify.mockResolvedValue({ status: "first-use", identity: cert });
-    const { result } = renderHook(() => useWebBrowser(ownedSession));
+    const { result, rerender } = renderHook(() => useWebBrowser(ownedSession));
+    await act(async () => {});
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "get_tls_certificate_info",
+      expect.anything(),
+    );
+    expect(mocks.verify).not.toHaveBeenCalled();
+    expect(mocks.trust).not.toHaveBeenCalled();
+    expect(result.current.trustPrompt).toBeNull();
+    expect(proxyStarts()).toHaveLength(0);
+
+    mocks.settingsReady = true;
+    rerender();
     await waitFor(() =>
       expect(result.current.trustPrompt?.status).toBe("first-use"),
     );
-    expect(mocks.verify.mock.calls[0][5].caTrustMode).toBe("review");
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(mocks.verify.mock.calls[0][5].caTrustMode).toBe("system");
     expect(proxyStarts()).toHaveLength(0);
     expect(mocks.trust).not.toHaveBeenCalled();
+
+    await act(async () => result.current.handleTrustAccept());
+    await waitFor(() => expect(proxyStarts()).toHaveLength(1));
+    expect(proxyStarts()[0][1].config.accepted_cert_fingerprint).toBe(
+      cert.fingerprint,
+    );
   });
 
   it("cancels pending CA admission when settings readiness is revoked", async () => {
@@ -1132,7 +1166,7 @@ describe("HTTPS certificate and native trust stages", () => {
         ],
       }),
       "fixture",
-      { caTrustMode: "review", policy: "tofu", proxyUrl: mocks.proxy },
+      { caTrustMode: "system", policy: "tofu", proxyUrl: mocks.proxy },
     );
     const config = mocks.invoke.mock.calls.find(
       ([name]) => name === "start_basic_auth_proxy",
@@ -1677,6 +1711,40 @@ describe("HTTPS certificate and native trust stages", () => {
       ).toBe(true);
       expect(result.current.trustCheck).toBeNull();
       expect(result.current.isLoading).toBe(false);
+      expect(proxyStarts()).toHaveLength(0);
+      expect(mocks.verify).not.toHaveBeenCalled();
+      expect(mocks.trust).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "redacts proxy credentials after classifying a native inspection rejection (malformed: %s)",
+    async (malformed) => {
+      mocks.proxy =
+        "http://fixture-proxy-user:fixture-proxy-pass@proxy.fixture:8080";
+      const wire = {
+        ...inspectionWire("proxy_auth_rejected"),
+        message: `Rejected ${mocks.proxy}: fixture-proxy-user / fixture-proxy-pass`,
+        ...(malformed ? { unrecognized: true } : {}),
+      };
+      const pending = pendingInspections();
+      const { result } = renderHook(() => useWebBrowser(session));
+      await act(async () => {});
+      await act(async () => pending[0].reject(wire));
+      expect(result.current.navigationFailure?.kind).toBe(
+        malformed ? "tls_failure" : "proxy_route_failure",
+      );
+      if (!malformed)
+        expect(result.current.navigationFailure?.detail).toBe(
+          "Rejected [redacted]: [redacted] / [redacted]",
+        );
+      const displayed = JSON.stringify(result.current.navigationFailure);
+      for (const secret of [
+        mocks.proxy,
+        "fixture-proxy-user",
+        "fixture-proxy-pass",
+      ])
+        expect(displayed).not.toContain(secret);
       expect(proxyStarts()).toHaveLength(0);
       expect(mocks.verify).not.toHaveBeenCalled();
       expect(mocks.trust).not.toHaveBeenCalled();

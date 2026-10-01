@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { describe, expect, it, vi } from "vitest";
 import type {
   Connection,
@@ -23,10 +24,7 @@ const endpoints = readFileSync(
   "src-tauri/crates/sorng-voip-phone/src/endpoints.rs",
   "utf8",
 );
-const client = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const client = loadAutologinClient();
 const profile = getHttpApplicationProfile("voip-phone")!;
 
 /** Phones commonly serve plain HTTP; the profile must not pin HTTPS. */

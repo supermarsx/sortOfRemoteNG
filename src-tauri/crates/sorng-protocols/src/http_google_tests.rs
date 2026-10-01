@@ -358,6 +358,701 @@ fn request_for(route: &google::GoogleProxyRoute, path: &str) -> Request<Body> {
         .unwrap()
 }
 
+fn adobe_session() -> google::GoogleSession {
+    google::GoogleSession::new(
+        Some(ReviewedApplicationProfile::AdobeAdminConsole),
+        &Url::parse("https://adminconsole.adobe.com/").unwrap(),
+        PRIMARY_PROXY,
+        client(),
+        client(),
+    )
+    .unwrap()
+    .unwrap()
+}
+
+fn ai_chat_fixture(claude: bool) -> Arc<AxumProxyState> {
+    let (origin, mode, profile) = if claude {
+        (
+            "https://claude.ai",
+            UpstreamAuthMode::ClaudeForm,
+            ReviewedApplicationProfile::Claude,
+        )
+    } else {
+        (
+            "https://chatgpt.com",
+            UpstreamAuthMode::ChatgptForm,
+            ReviewedApplicationProfile::Chatgpt,
+        )
+    };
+    let hosted = google::GoogleSession::new(
+        Some(profile),
+        &Url::parse(origin).unwrap(),
+        PRIMARY_PROXY,
+        client(),
+        client(),
+    )
+    .unwrap()
+    .unwrap();
+    let mut root = state(origin);
+    let inner = Arc::get_mut(&mut root).unwrap();
+    inner.upstream_auth_mode = mode;
+    inner.network = Arc::new(ProxyNetworkState::default().with_google_routes(Some(hosted)));
+    if claude {
+        inner.password.write().unwrap().clear();
+    }
+    activate(&root);
+    let mut sessions = root.global_sessions.lock().unwrap();
+    let entry = sessions.sessions.get_mut(&root.session_id).unwrap();
+    entry.upstream_auth_mode = mode;
+    entry.reviewed_application_profile = Some(profile);
+    if claude {
+        entry.password.clear();
+    }
+    drop(sessions);
+    root
+}
+
+fn ai_chat_scope(root: &Arc<AxumProxyState>, origin: &str) -> Arc<AxumProxyState> {
+    let hosted = root.network.google.as_ref().unwrap();
+    let route = hosted
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == origin)
+        .unwrap();
+    let scoped = hosted
+        .request_state(root, &request_for(route, AUTOLOGIN_PATH))
+        .unwrap();
+    // Regression: routed requests carry the origin root, not the sign-in URL.
+    assert_eq!(scoped.target_url, format!("{origin}/"));
+    scoped
+}
+
+fn ai_chat_nonce(state: &Arc<AxumProxyState>, sequence: u64, url: &str) -> String {
+    state.document_sequence.store(sequence, Ordering::SeqCst);
+    state.network.document_issued(sequence, sequence == 1);
+    let script = crate::themed_autologin::build_autologin_injection(state, sequence, url).unwrap();
+    assert!(!script.contains("saved-user"));
+    assert!(!script.contains("saved-password"));
+    script
+        .split_once("var NONCE=\"")
+        .unwrap()
+        .1
+        .split('"')
+        .next()
+        .unwrap()
+        .into()
+}
+
+async fn ai_chat_body(response: axum::response::Response) -> serde_json::Value {
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn ai_chat_routed_endpoint_redeems_native_auth_document_and_spa_continuation_once() {
+    let root = ai_chat_fixture(false);
+    let auth = ai_chat_scope(&root, "https://auth.openai.com");
+    let nonce = ai_chat_nonce(&auth, 1, "https://auth.openai.com/log-in");
+    let email = ai_chat_body(adobe_redeem(&auth, &nonce, None).await).await;
+    assert_eq!(email["username"], "saved-user");
+    assert!(email.get("password").is_none());
+    assert_eq!(adobe_redeem(&auth, &nonce, None).await.status(), 403);
+    let token = email["continuation"].as_str().unwrap();
+    let password = ai_chat_body(adobe_redeem(&auth, token, Some("password")).await).await;
+    assert_eq!(
+        password,
+        serde_json::json!({
+            "loginFlow":"chatgpt", "username":"saved-user", "password":"saved-password"
+        })
+    );
+    assert_eq!(
+        adobe_redeem(&auth, token, Some("password")).await.status(),
+        403
+    );
+}
+
+#[tokio::test]
+async fn ai_chat_routed_source_requires_selected_auth_password_document_and_its_own_nonce() {
+    let root = ai_chat_fixture(false);
+    let source = ai_chat_scope(&root, "https://chatgpt.com");
+    let auth = ai_chat_scope(&root, "https://auth.openai.com");
+    let nonce = ai_chat_nonce(&source, 1, "https://chatgpt.com/auth/login");
+    let email = ai_chat_body(adobe_redeem(&source, &nonce, None).await).await;
+    let token = email["continuation"].as_str().unwrap();
+    assert_eq!(
+        adobe_redeem(&source, token, Some("password"))
+            .await
+            .status(),
+        403
+    );
+    assert_eq!(
+        adobe_redeem(&auth, token, Some("password")).await.status(),
+        403
+    );
+    let next = ai_chat_nonce(&auth, 2, "https://auth.openai.com/log-in/password");
+    assert_eq!(
+        adobe_redeem(&auth, &next, Some("password")).await.status(),
+        403
+    );
+    auth.network.activate_document(2).unwrap();
+    assert_eq!(
+        adobe_redeem(&auth, token, Some("password")).await.status(),
+        403
+    );
+    assert_eq!(
+        adobe_redeem(&source, &next, Some("password"))
+            .await
+            .status(),
+        403
+    );
+    let password = ai_chat_body(adobe_redeem(&auth, &next, Some("password")).await).await;
+    assert_eq!(password["username"], "saved-user");
+    assert_eq!(password["password"], "saved-password");
+}
+
+#[tokio::test]
+async fn ai_chat_routed_claude_is_email_only_without_password_or_continuation() {
+    let root = ai_chat_fixture(true);
+    let source = ai_chat_scope(&root, "https://claude.ai");
+    let nonce = ai_chat_nonce(&source, 1, "https://claude.ai/login");
+    assert_eq!(
+        adobe_redeem(&source, &nonce, Some("password"))
+            .await
+            .status(),
+        403
+    );
+    let email = ai_chat_body(adobe_redeem(&source, &nonce, None).await).await;
+    assert_eq!(
+        email,
+        serde_json::json!({"loginFlow":"claude", "username":"saved-user"})
+    );
+    assert_eq!(adobe_redeem(&source, &nonce, None).await.status(), 403);
+    assert_eq!(
+        adobe_redeem(&source, &nonce, Some("password"))
+            .await
+            .status(),
+        403
+    );
+    source.network.document_issued(2, false);
+    assert!(crate::themed_autologin::build_autologin_injection(
+        &source,
+        2,
+        "https://claude.ai/login"
+    )
+    .is_none());
+}
+
+#[tokio::test]
+async fn ai_chat_routed_grants_reject_revoked_owner_document_and_provider() {
+    for revoke in ["document", "network", "session", "provider"] {
+        let root = ai_chat_fixture(false);
+        let auth = ai_chat_scope(&root, "https://auth.openai.com");
+        let nonce = ai_chat_nonce(&auth, 1, "https://auth.openai.com/log-in");
+        let email = ai_chat_body(adobe_redeem(&auth, &nonce, None).await).await;
+        match revoke {
+            "document" => {
+                auth.network.document_issued(2, false);
+                auth.network.activate_document(2).unwrap();
+            }
+            "network" => auth.network.revoke(),
+            "session" => auth.global_sessions.lock().unwrap().sessions.clear(),
+            "provider" => {
+                auth.global_sessions
+                    .lock()
+                    .unwrap()
+                    .sessions
+                    .get_mut(&auth.session_id)
+                    .unwrap()
+                    .reviewed_application_profile = Some(ReviewedApplicationProfile::Claude);
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            adobe_redeem(
+                &auth,
+                email["continuation"].as_str().unwrap(),
+                Some("password")
+            )
+            .await
+            .status(),
+            403,
+            "{revoke}"
+        );
+    }
+}
+
+#[test]
+fn ai_hosted_routes_do_not_promote_challenges_or_other_providers_into_credential_origins() {
+    for (profile, mode, source, credential_origins) in [
+        (
+            ReviewedApplicationProfile::Chatgpt,
+            UpstreamAuthMode::ChatgptForm,
+            "https://chatgpt.com",
+            vec!["https://chatgpt.com", "https://auth.openai.com"],
+        ),
+        (
+            ReviewedApplicationProfile::Claude,
+            UpstreamAuthMode::ClaudeForm,
+            "https://claude.ai",
+            vec!["https://claude.ai"],
+        ),
+    ] {
+        assert!(google::GoogleSession::supports(Some(profile)));
+        assert!(mode.authorization_value("fixture", "never-basic").is_none());
+        let session = google::GoogleSession::new(
+            Some(profile),
+            &Url::parse(source).unwrap(),
+            PRIMARY_PROXY,
+            client(),
+            client(),
+        )
+        .unwrap()
+        .unwrap();
+        let mut base = state(source);
+        Arc::get_mut(&mut base).unwrap().upstream_auth_mode = mode;
+        for route in &session.routes {
+            let allowed = credential_origins.contains(&route.upstream_origin.as_str());
+            assert_eq!(
+                session.allows_autologin(&route.upstream_origin, mode),
+                allowed
+            );
+            let request = request_for(route, AUTOLOGIN_PATH);
+            assert_eq!(session.request_state(&base, &request).is_ok(), allowed);
+            assert!(!session.allows_autologin(&route.upstream_origin, UpstreamAuthMode::None));
+            assert!(!session.allows_autologin(&route.upstream_origin, UpstreamAuthMode::GoogleForm));
+        }
+        let challenge = session
+            .routes
+            .iter()
+            .find(|r| r.upstream_origin == "https://challenges.cloudflare.com")
+            .unwrap();
+        let scoped = session
+            .request_state(&base, &request_for(challenge, "/turnstile/frame"))
+            .unwrap();
+        assert_eq!(scoped.upstream_auth_mode, UpstreamAuthMode::None);
+        assert!(session
+            .request_state(&base, &request_for(challenge, "/__sortofremoteng_autototp"))
+            .is_err());
+        for origin in [
+            "https://accounts.google.com",
+            "https://www.facebook.com",
+            "https://auth.services.adobe.com",
+            "https://login.microsoftonline.com",
+        ] {
+            assert!(session.map_url(&Url::parse(origin).unwrap()).is_none());
+        }
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            header::SET_COOKIE,
+            "session=fixture; Secure; HttpOnly; Path=/".parse().unwrap(),
+        );
+        session
+            .observe_cookies(&headers, &Url::parse(source).unwrap())
+            .unwrap();
+        assert!(session
+            .cookie_header(&Url::parse(source).unwrap())
+            .is_some());
+        assert!(session
+            .cookie_header(&Url::parse("https://challenges.cloudflare.com").unwrap())
+            .is_none());
+        Arc::get_mut(&mut base).unwrap().upstream_auth_mode = UpstreamAuthMode::GoogleForm;
+        for route in &session.routes {
+            assert!(session
+                .request_state(&base, &request_for(route, AUTOLOGIN_PATH))
+                .is_err());
+        }
+        for wrong_source in [
+            "https://auth.openai.com",
+            "https://claude.ai.attacker.test",
+            "http://chatgpt.com",
+        ] {
+            assert!(google::GoogleSession::new(
+                Some(profile),
+                &Url::parse(wrong_source).unwrap(),
+                PRIMARY_PROXY,
+                client(),
+                client()
+            )
+            .is_err());
+        }
+    }
+}
+
+#[test]
+fn chatgpt_redirect_uri_restores_only_source_alias_at_the_auth_origin() {
+    let session = google::GoogleSession::new(
+        Some(ReviewedApplicationProfile::Chatgpt),
+        &Url::parse("https://chatgpt.com/").unwrap(),
+        PRIMARY_PROXY,
+        client(),
+        client(),
+    )
+    .unwrap()
+    .unwrap();
+    let mut request =
+        Url::parse("https://auth.openai.com/authorize?state=keep%2fExact+Value").unwrap();
+    request.query_pairs_mut().append_pair(
+        "redirect_uri",
+        &format!("{PRIMARY_PROXY}/api/auth/callback/openai?__sorng_generation_v1=private&return=1"),
+    );
+    let restored = session.upstream_callback_url(&request);
+    assert!(restored
+        .query()
+        .unwrap()
+        .starts_with("state=keep%2fExact+Value&"));
+    assert_eq!(
+        restored
+            .query_pairs()
+            .find(|(k, _)| k == "redirect_uri")
+            .unwrap()
+            .1,
+        "https://chatgpt.com/api/auth/callback/openai?return=1"
+    );
+    for route in session
+        .routes
+        .iter()
+        .filter(|r| r.upstream_origin != "https://chatgpt.com")
+    {
+        let mut foreign = Url::parse("https://auth.openai.com/authorize").unwrap();
+        foreign
+            .query_pairs_mut()
+            .append_pair("redirect_uri", &route.proxy_origin);
+        assert_eq!(session.upstream_callback_url(&foreign), foreign);
+    }
+    let mut other = Url::parse("https://challenges.cloudflare.com/frame").unwrap();
+    other
+        .query_pairs_mut()
+        .append_pair("redirect_uri", PRIMARY_PROXY);
+    assert_eq!(session.upstream_callback_url(&other), other);
+}
+
+#[test]
+fn hosted_form_routes_limit_credentials_to_source_and_keep_cdn_resource_only() {
+    for (profile, source, asset) in [
+        (
+            ReviewedApplicationProfile::Instagram,
+            "https://www.instagram.com",
+            "https://static.cdninstagram.com",
+        ),
+        (
+            ReviewedApplicationProfile::Canva,
+            "https://www.canva.com",
+            "https://static.canva.com",
+        ),
+    ] {
+        let session = google::GoogleSession::new(
+            Some(profile),
+            &Url::parse(source).unwrap(),
+            PRIMARY_PROXY,
+            client(),
+            client(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(session.routes.len(), 2);
+        let mut base = state(source);
+        Arc::get_mut(&mut base).unwrap().upstream_auth_mode = UpstreamAuthMode::None;
+        let source_route = session
+            .routes
+            .iter()
+            .find(|r| r.upstream_origin == source)
+            .unwrap();
+        let cdn = session
+            .routes
+            .iter()
+            .find(|r| r.upstream_origin == asset)
+            .unwrap();
+        assert!(session
+            .request_state(&base, &request_for(source_route, AUTOLOGIN_PATH))
+            .is_ok());
+        assert!(session.allows_autologin(source, UpstreamAuthMode::None));
+        assert!(!session.allows_autologin(asset, UpstreamAuthMode::None));
+        assert!(session
+            .request_state(&base, &request_for(cdn, AUTOLOGIN_PATH))
+            .is_err());
+        assert!(session
+            .request_state(&base, &request_for(cdn, "/bundle.js"))
+            .is_err());
+        let mut script = request_for(cdn, "/bundle.js");
+        script
+            .headers_mut()
+            .insert("sec-fetch-dest", header::HeaderValue::from_static("script"));
+        assert_eq!(
+            session.request_state(&base, &script).unwrap().target_origin,
+            asset
+        );
+        assert!(session
+            .map_url(&Url::parse("https://accounts.google.com/").unwrap())
+            .is_none());
+        assert!(session
+            .map_url(&Url::parse("https://www.facebook.com/").unwrap())
+            .is_none());
+        let mut foreign = request_for(source_route, AUTOLOGIN_PATH);
+        foreign.headers_mut().insert(
+            header::ORIGIN,
+            header::HeaderValue::from_static("https://foreign.test"),
+        );
+        assert!(session.request_state(&base, &foreign).is_err());
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            header::SET_COOKIE,
+            "session=fixture; Secure; HttpOnly; Path=/".parse().unwrap(),
+        );
+        session
+            .observe_cookies(&headers, &Url::parse(source).unwrap())
+            .unwrap();
+        assert!(session
+            .cookie_header(&Url::parse(source).unwrap())
+            .is_some());
+        assert!(session.cookie_header(&Url::parse(asset).unwrap()).is_none());
+    }
+}
+
+#[test]
+fn adobe_hosted_routes_are_exact_and_do_not_grant_google_or_resource_credentials() {
+    assert!(UpstreamAuthMode::AdobeForm
+        .authorization_value("fixture", "fixture")
+        .is_none());
+    let session = adobe_session();
+    let mut base = state("https://adminconsole.adobe.com");
+    Arc::get_mut(&mut base).unwrap().upstream_auth_mode = UpstreamAuthMode::AdobeForm;
+    for route in &session.routes {
+        let credential = request_for(route, AUTOLOGIN_PATH);
+        let result = session.request_state(&base, &credential);
+        if route.upstream_origin == "https://auth.services.adobe.com" {
+            assert_eq!(
+                result.unwrap().upstream_auth_mode,
+                UpstreamAuthMode::AdobeForm
+            );
+        } else {
+            assert!(result.is_err(), "{}", route.upstream_origin);
+        }
+    }
+    for target in [
+        "https://accounts.google.com/",
+        "https://auth.services.adobe.com.attacker.test/",
+        "https://auth-stg1.services.adobe.com/",
+        "http://auth.services.adobe.com/",
+        "https://auth.services.adobe.com:444/",
+    ] {
+        assert!(session.map_url(&Url::parse(target).unwrap()).is_none());
+    }
+    let auth = session
+        .routes
+        .iter()
+        .find(|r| r.upstream_origin == "https://auth.services.adobe.com")
+        .unwrap();
+    Arc::get_mut(&mut base).unwrap().upstream_auth_mode = UpstreamAuthMode::GoogleForm;
+    assert!(session
+        .request_state(&base, &request_for(auth, AUTOLOGIN_PATH))
+        .is_err());
+    for source in [
+        "https://account.adobe.com/",
+        "https://adminconsole.adobe.com.attacker.test/",
+        "http://adminconsole.adobe.com/",
+    ] {
+        assert!(google::GoogleSession::new(
+            Some(ReviewedApplicationProfile::AdobeAdminConsole),
+            &Url::parse(source).unwrap(),
+            PRIMARY_PROXY,
+            client(),
+            client()
+        )
+        .is_err());
+    }
+}
+
+#[test]
+fn adobe_ims_callbacks_restore_only_exact_native_document_aliases() {
+    let session = adobe_session();
+    let mut request = Url::parse("https://ims-na1.adobelogin.com/ims/authorize/v2?state=keep%2fExact+Value&client_id=ONESIE1").unwrap();
+    request.query_pairs_mut().append_pair(
+        "redirect_uri",
+        &format!("{PRIMARY_PROXY}/?__sorng_navigation_v1=private&org=test#return"),
+    );
+    let mapped = session.upstream_callback_url(&request);
+    assert!(mapped
+        .query()
+        .unwrap()
+        .starts_with("state=keep%2fExact+Value&client_id=ONESIE1&"));
+    assert_eq!(
+        mapped
+            .query_pairs()
+            .find(|(k, _)| k == "redirect_uri")
+            .unwrap()
+            .1,
+        "https://adminconsole.adobe.com/?org=test#return"
+    );
+    for callback in [
+        "https://unreviewed.test/",
+        "http://p11111111111111111111111111111111.localhost.attacker.test:43123/",
+        "https://adminconsole.adobe.com/",
+    ] {
+        let mut request = Url::parse("https://ims-na1.adobelogin.com/ims/authorize/v2").unwrap();
+        request
+            .query_pairs_mut()
+            .append_pair("redirect_uri", callback);
+        assert_eq!(session.upstream_callback_url(&request), request);
+    }
+}
+
+fn adobe_login_fixture() -> Arc<AxumProxyState> {
+    let session = adobe_session();
+    let route = session
+        .routes
+        .iter()
+        .find(|r| r.upstream_origin == "https://auth.services.adobe.com")
+        .unwrap()
+        .clone();
+    let mut root = state("https://adminconsole.adobe.com");
+    {
+        let state = Arc::get_mut(&mut root).unwrap();
+        state.upstream_auth_mode = UpstreamAuthMode::AdobeForm;
+        state.network = Arc::new(ProxyNetworkState::default().with_google_routes(Some(session)));
+    }
+    activate(&root);
+    {
+        let mut sessions = root.global_sessions.lock().unwrap();
+        let entry = sessions.sessions.get_mut(&root.session_id).unwrap();
+        entry.upstream_auth_mode = UpstreamAuthMode::AdobeForm;
+        entry.reviewed_application_profile = Some(ReviewedApplicationProfile::AdobeAdminConsole);
+    }
+    let scoped = root
+        .network
+        .google
+        .as_ref()
+        .unwrap()
+        .request_state(&root, &request_for(&route, "/en_US/index.html"))
+        .unwrap();
+    scoped.document_sequence.store(1, Ordering::SeqCst);
+    scoped.network.document_issued(1, true);
+    scoped
+}
+
+fn adobe_nonce(state: &Arc<AxumProxyState>) -> String {
+    let script = crate::themed_autologin::build_autologin_injection(
+        state,
+        1,
+        "https://auth.services.adobe.com/en_US/index.html",
+    )
+    .unwrap();
+    assert!(script.contains("'adobe'"));
+    assert!(!script.contains("saved-password"));
+    assert!(!script.contains("saved-user"));
+    script
+        .split_once("var NONCE=\"")
+        .unwrap()
+        .1
+        .split('"')
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+async fn adobe_redeem(
+    state: &Arc<AxumProxyState>,
+    nonce: &str,
+    phase: Option<&str>,
+) -> axum::response::Response {
+    crate::themed_autologin::autologin_cred_handler(
+        axum::extract::State(state.clone()),
+        axum::extract::Query(AutoLoginQuery {
+            nonce: nonce.into(),
+            phase: phase.map(str::to_string),
+        }),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn adobe_endpoint_stages_and_consumes_credentials_and_rejects_replays() {
+    let state = adobe_login_fixture();
+    let nonce = adobe_nonce(&state);
+    assert_eq!(
+        adobe_redeem(&state, &nonce, Some("password"))
+            .await
+            .status(),
+        403
+    );
+    let reply = adobe_redeem(&state, &nonce, None).await;
+    assert_eq!(reply.status(), 200);
+    assert_eq!(reply.headers()["cache-control"], "no-store");
+    let first: serde_json::Value =
+        serde_json::from_slice(&axum::body::to_bytes(reply.into_body(), 4096).await.unwrap())
+            .unwrap();
+    assert_eq!(first["username"], "saved-user");
+    assert!(first.get("password").is_none());
+    let continuation = first["continuation"].as_str().unwrap();
+    assert_ne!(nonce, continuation);
+    assert_eq!(adobe_redeem(&state, &nonce, None).await.status(), 403);
+    // A child frame can be issued while the auth SPA remains selected.
+    // Only native primary selection, not the global issue counter, owns it.
+    state.document_sequence.store(2, Ordering::SeqCst);
+    state.network.document_issued(2, false);
+    let reply = adobe_redeem(&state, continuation, Some("password")).await;
+    assert_eq!(reply.status(), 200);
+    let last: serde_json::Value =
+        serde_json::from_slice(&axum::body::to_bytes(reply.into_body(), 4096).await.unwrap())
+            .unwrap();
+    assert_eq!(
+        last,
+        serde_json::json!({"loginFlow":"adobe", "password":"saved-password"})
+    );
+    assert_eq!(
+        adobe_redeem(&state, continuation, Some("password"))
+            .await
+            .status(),
+        403
+    );
+}
+
+#[tokio::test]
+async fn adobe_endpoint_rejects_retired_documents_sessions_and_provider_changes() {
+    for revoke in ["document", "network", "session", "provider"] {
+        let state = adobe_login_fixture();
+        let nonce = adobe_nonce(&state);
+        let reply = adobe_redeem(&state, &nonce, None).await;
+        assert_eq!(reply.status(), 200);
+        let first: serde_json::Value =
+            serde_json::from_slice(&axum::body::to_bytes(reply.into_body(), 4096).await.unwrap())
+                .unwrap();
+        let token = first["continuation"].as_str().unwrap();
+        match revoke {
+            "document" => {
+                state.document_sequence.store(2, Ordering::SeqCst);
+                state.network.document_issued(2, true);
+                state.network.activate_document(2).unwrap();
+            }
+            "network" => state.network.revoke(),
+            "session" => {
+                state.global_sessions.lock().unwrap().sessions.clear();
+            }
+            "provider" => {
+                state
+                    .global_sessions
+                    .lock()
+                    .unwrap()
+                    .sessions
+                    .get_mut(&state.session_id)
+                    .unwrap()
+                    .reviewed_application_profile = Some(ReviewedApplicationProfile::GoogleHosted);
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            adobe_redeem(&state, token, Some("password")).await.status(),
+            403,
+            "{revoke}"
+        );
+    }
+}
+
 #[test]
 fn google_catalog_is_an_exact_profile_specific_allowlist_without_lookalikes() {
     for (source, extras) in [
@@ -654,6 +1349,39 @@ fn alias_scope_preserves_the_native_webview_user_agent_but_not_connection_secret
     assert!(session.request_state(&base, &credentials).is_err());
     let cookies = request_for(resource, google::COOKIE_BRIDGE_PATH);
     assert!(session.request_state(&base, &cookies).is_err());
+}
+
+#[test]
+fn browser_compatibility_is_shared_by_approved_google_document_routes() {
+    let session = session("https://analytics.google.com/");
+    for hide_webdriver in [false, true] {
+        let mut base = state("https://analytics.google.com");
+        Arc::get_mut(&mut base).unwrap().network = Arc::new(
+            ProxyNetworkState::default()
+                .with_browser_compatibility(BrowserCompatibility { hide_webdriver }),
+        );
+        for route in session.routes.iter().filter(|route| route.documents) {
+            let scoped = session
+                .request_state(&base, &request_for(route, "/login"))
+                .unwrap();
+            assert!(Arc::ptr_eq(&base.network, &scoped.network));
+            assert_eq!(
+                scoped.network.browser_compatibility().hide_webdriver,
+                hide_webdriver
+            );
+            assert!(scoped.custom_headers.is_empty());
+            assert!(scoped.proxy_policy.query_parameters.is_empty());
+        }
+        let foreign = Request::builder()
+            .uri("/login")
+            .header(
+                header::HOST,
+                "pffffffffffffffffffffffffffffffff.localhost:43123",
+            )
+            .body(Body::empty())
+            .unwrap();
+        assert!(session.request_state(&base, &foreign).is_err());
+    }
 }
 
 #[test]

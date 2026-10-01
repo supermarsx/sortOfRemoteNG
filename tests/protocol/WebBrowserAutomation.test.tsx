@@ -15,7 +15,11 @@ import type {
   HttpBookmarkItem,
 } from "../../src/types/connection/connection";
 import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
+import type { GlobalSettings } from "../../src/types/settings/settings";
 import * as redirectHooks from "../../src/hooks/protocol/useHttpRedirectReview";
+import { browserSessionPolicy } from "../../src/hooks/protocol/useBrowserRuntimeSettings";
+import { normalizeHttpProxyPolicy } from "../../src/utils/connection/httpProxyPolicy";
+import { normalizeWebBrowserSettings } from "../../src/utils/settings/webBrowserSettings";
 import {
   clearRuntimeConnectionsForTests,
   registerRuntimeConnection,
@@ -38,6 +42,7 @@ const native = vi.hoisted(() => ({
     generation: 1,
   },
   settings: {
+    webBrowser: undefined as GlobalSettings["webBrowser"],
     proxyKeepaliveEnabled: false,
     webRecording: { autoRecordWebSessions: false },
     sessionQuickActions: {
@@ -156,6 +161,7 @@ beforeEach(() => {
   document.addEventListener("load", holdFrameLoad, true);
   native.locked = false;
   Object.assign(native.settings, {
+    webBrowser: undefined,
     websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
   });
   native.vaultApi = undefined;
@@ -181,23 +187,30 @@ beforeEach(() => {
     },
   ];
   native.persistedConnections = undefined;
-  native.invoke.mockReset().mockImplementation(async (command) => {
+  let library = JSON.stringify(
+    normalizeWebAutomationLibrary({
+      version: 1,
+      scripts: [script],
+      macros: [],
+    }),
+  );
+  native.invoke.mockReset().mockImplementation(async (command, args) => {
     if (command === "start_basic_auth_proxy") return proxy;
     if (command === "stop_basic_auth_proxy") return undefined;
     if (command === "update_proxy_website_dark_mode") return undefined;
-    if (command === "read_macro_library")
-      return JSON.stringify(
-        normalizeWebAutomationLibrary({
-          version: 1,
-          scripts: [script],
-          macros: [],
-        }),
-      );
+    if (command === "read_macro_library") return library;
+    if (command === "compare_and_swap_macro_library") {
+      if (args.expected !== library) return false;
+      library = args.replacement;
+      return true;
+    }
     throw new Error(`Unexpected native command ${command}`);
   });
 });
 afterEach(() => {
   cleanup();
+  webPopupTabs.revokeSource("shared-source");
+  browserSessionPolicy.release("shared-source", proxy.session_id);
   document.removeEventListener("load", holdFrameLoad, true);
   vi.restoreAllMocks();
   clearRuntimeConnectionsForTests();
@@ -288,6 +301,11 @@ describe("source-owned full browser tabs", () => {
       navigationToken: null,
     };
     let current = true;
+    browserSessionPolicy.bind(
+      source.id,
+      proxy.session_id,
+      normalizeHttpProxyPolicy(connection.httpProxyPolicy),
+    );
     const child = webPopupTabs.open({
       source,
       document: root,
@@ -1753,6 +1771,37 @@ describe("real WebBrowser iframe and website automation integration", () => {
       1,
     );
   });
+  it("keeps manual scripts and macros blocked by the tab's effective browser default", async () => {
+    native.settings.webBrowser = {
+      ...normalizeWebBrowserSettings(undefined),
+      defaultPolicy: normalizeHttpProxyPolicy({
+        ...normalizeHttpProxyPolicy(undefined),
+        pageScripts: "block",
+      }),
+    };
+    native.connections[0].httpAutomation!.forceDark = false;
+    const { post, emit } = await mount();
+    const action = await screen.findByRole("button", {
+      name: "Demo page action",
+    });
+    emit("proxy_document_start");
+    emit("proxy_dom_ready");
+    expect(action).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Record macro" })).toBeDisabled();
+    fireEvent.click(action);
+    expect(
+      post.mock.calls.some(([message]) =>
+        ["script", "step", "recordStart"].includes(message.action),
+      ),
+    ).toBe(false);
+    expect(native.connections[0].httpProxyPolicy).toBeUndefined();
+    expect(
+      native.invoke.mock.calls.find(
+        ([name]) => name === "start_basic_auth_proxy",
+      )?.[1].config.proxy_policy.pageScripts,
+    ).toBe("block");
+  });
+
   it("exposes chips but arms no script or forced dark before authenticated document readiness", async () => {
     const { iframe, post, emit } = await mount();
     await screen.findByRole("button", { name: "Demo page action" });

@@ -29,6 +29,95 @@ afterEach(() => {
   delete page.Cookies;
   document.cookie = "fixture=;path=/;max-age=0";
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  document.body.innerHTML = "";
+});
+
+describe("FreePBX signed-out navbar preflight", () => {
+  type Options = { type: string; dataType: string; url: string; data?: string };
+  type Request = { abort(reason: string): void };
+  function setup(existingHelper = false) {
+    const origin = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
+    vi.stubGlobal("location", new URL(origin + "/admin/"));
+    vi.spyOn(document, "baseURI", "get").mockReturnValue(origin + "/admin/");
+    document.body.innerHTML =
+      '<a id="login_admin" class="login_item" href="/admin/">Admin</a><div id="login_form"><form id="loginform"><input type="text" name="username"><input type="password" name="password"></form></div>';
+    let filter!: (
+      options: Options,
+      original: Options,
+      request: Request,
+    ) => void;
+    const jq = {
+      fn: { jquery: "3.1.1" },
+      ajaxPrefilter: vi.fn((next: typeof filter) => {
+        filter = next;
+      }),
+      ...(existingHelper ? { removeCookie: vi.fn(() => true) } : {}),
+    };
+    page.jQuery = jq;
+    window.eval(bridge);
+    const options: Options = {
+      type: "POST",
+      dataType: "json",
+      url: "ajax.php?command=navbarToogle",
+    };
+    const abort = vi.fn();
+    return {
+      jq,
+      options,
+      abort,
+      run: () => filter(options, options, { abort }),
+    };
+  }
+  it.each([false, true])(
+    "cancels only the optional signed-out request even with existing cookie helper: %s",
+    (existing) => {
+      const fixture = setup(existing);
+      const helper = fixture.jq.removeCookie;
+      fixture.run();
+      expect(fixture.abort).toHaveBeenCalledExactlyOnceWith(
+        "freepbx-navbar-requires-login",
+      );
+      expect(fixture.jq.removeCookie).toBe(helper);
+    },
+  );
+  it.each([
+    { url: "ajax.php?command=navbarToogle&click=true" },
+    { url: "ajax.php?command=navbarToogle&command=navbarToogle" },
+    { url: "ajax.php?command=navbarToogle&command=other" },
+    { url: "ajax.php?command=navbarToogle&extra=true" },
+    { url: "ajax.php?command=authping" },
+    { url: "ajax.php?command=navbarToogle#fragment" },
+    { url: "https://foreign.example/admin/ajax.php?command=navbarToogle" },
+    {
+      url: "https://user:password@foreign.example/admin/ajax.php?command=navbarToogle",
+    },
+    { url: "/other/ajax.php?command=navbarToogle" },
+    { url: "https://[" },
+    { type: "GET" },
+    { dataType: "html" },
+    { data: "username=fixture&password=private" },
+  ])("leaves non-matching requests untouched: %j", (change) => {
+    const fixture = setup();
+    Object.assign(fixture.options, change);
+    fixture.run();
+    expect(fixture.abort).not.toHaveBeenCalled();
+  });
+  it.each(["#login_admin", "#login_form", 'input[name="password"]'])(
+    "leaves authenticated/unknown layouts untouched when %s is absent",
+    (selector) => {
+      const fixture = setup();
+      document.querySelector(selector)!.remove();
+      fixture.run();
+      expect(fixture.abort).not.toHaveBeenCalled();
+    },
+  );
+  it("stops acting after pagehide", () => {
+    const fixture = setup();
+    window.dispatchEvent(new Event("pagehide"));
+    fixture.run();
+    expect(fixture.abort).not.toHaveBeenCalled();
+  });
 });
 function installLibraries(reverse = false) {
   if (reverse) window.eval(library);

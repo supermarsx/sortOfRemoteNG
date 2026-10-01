@@ -1,0 +1,6 @@
+{
+  "profiles": { "canva": "https://www.canva.com" },
+  "loginOrigins": [],
+  "resourceOrigins": ["https://static.canva.com"],
+  "profileOrigins": {}
+}

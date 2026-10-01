@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { hostedSessionLabel } from "../../../utils/protocol/googleProxySession";
 import { ShieldAlert, RefreshCw } from "lucide-react";
 import type {
   WebNetworkReport,
@@ -219,7 +220,8 @@ export default function WebNetworkNotice({
               )}
               {routing.googleSession && (
                 <p className="text-[var(--color-textMuted)]">
-                  Google session routing:{" "}
+                  {hostedSessionLabel(routing.googleSession.origins)} session
+                  routing:{" "}
                   {routing.googleSession.status === "ready"
                     ? "Available for the exact session destinations"
                     : "Incomplete or unavailable"}
@@ -227,7 +229,7 @@ export default function WebNetworkNotice({
                   User-Agent is passed through unchanged. Browser-visible
                   cookies are synchronized with the native, domain-scoped
                   session without exposing HttpOnly values. This does not
-                  confirm successful sign-in; Google may reject embedded
+                  confirm successful sign-in; the provider may reject embedded
                   browsers.
                 </p>
               )}

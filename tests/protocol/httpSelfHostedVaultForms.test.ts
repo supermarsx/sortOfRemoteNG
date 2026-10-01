@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getHttpApplicationProfile,
@@ -14,10 +15,7 @@ const helper = readFileSync(
   "src-tauri/crates/sorng-protocols/src/bitwarden_autologin_client.js",
   "utf8",
 );
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Client = {
   fetchCredsAndRun(nonce: string): Promise<unknown>;
   cancel(): void;

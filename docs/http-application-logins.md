@@ -8,8 +8,11 @@ permalink: /http-application-logins/
 # Website application login
 
 For an HTTP/HTTPS connection, open **Protocol → Application**, choose the website
-application, and save. Selection is manual by default: it does not change the
-address, port, certificate policy, passwords, or icon. The suggested icon is an
+application, and save. Selection is manual by default: it does not enable
+credential submission or change certificate policy, passwords, or icon. Hosted
+presets may supply their HTTPS address and port; Adobe Admin Console, Instagram
+and Canva fill only a blank address and preserve custom hosts. Use their explicit
+login-address action to replace a custom host. The suggested icon is an
 explicit action; a neutral application symbol is used when no dedicated mark is
 available.
 
@@ -71,6 +74,116 @@ selector overrides, original-origin checks, CSRF fields and explicit fill-only
 settings still apply. See [Joomla versions and administrator paths](http-application-profiles.md#joomla-versions-and-administrator-path)
 for the source-reviewed version matrix and its limits. A filled password or
 visible OTP prompt does not mean authentication succeeded.
+
+## Adobe Admin Console, Instagram and Canva
+
+Select the distinct profile and explicitly opt into **Automatic form login**
+only if the assistance below suits the account. All three default to **Manual**;
+saved or selected vault credentials use the standard protected resolver, never
+a preemptive HTTP Basic header. Their entry addresses must match the exact
+hosted HTTPS origin on port 443. Profile selection resets prior automatic-login,
+selector and automatic-MFA settings, without overwriting credentials or TLS
+policy. Their descriptions deliberately do not promise completed sign-in.
+
+### Adobe Admin Console
+
+`adobe-admin-console` opens `https://adminconsole.adobe.com/`. The separate
+**Adobe Account** profile (`adobe`, `https://account.adobe.com/`) stays manual-only.
+The reviewed staged flow is limited to the English public login document,
+`https://auth.services.adobe.com/en_US/index.html`: email at `#/`, then password
+at `#/password`. Public staged selectors were verified and reduced synthetic
+fixtures exercise the adapter:
+
+- `form#EmailForm`, `input#EmailPage-EmailField[name="username"][type="email"]`,
+  and `button[data-id="EmailPage-ContinueButton"][type="submit"]`.
+- `form#PasswordForm`, `input#PasswordPage-PasswordField[name="password"][type="password"]`,
+  and `button[data-id="PasswordPage-ContinueButton"][type="submit"]`, with the
+  form's username identity checked against the preceding email stage.
+
+The `adobe` / `adobe-form` flow releases email and password separately using
+one-use document-bound grants and the page's own handlers. Routing permission
+alone cannot release credentials. Selector overrides, other locales, SSO,
+account/profile choice, MFA, CAPTCHA and recovery are not generalized into
+automatic steps. Public form review and fixture tests are not authenticated
+live-account proof.
+
+### Instagram
+
+`instagram` opens `https://www.instagram.com/accounts/login/`. Opt-in assistance
+uses a strict same-form username/password adapter and one submission, with
+`form input[name="username"]`, `form input[name="password"][type="password"]`
+and `form button[type="submit"]`. The public HTML inspected was unhydrated;
+these strict fixture-tested controls are **not verified live hydrated markup**.
+There is no dedicated staged authentication mode. Checkpoints, 2FA, recovery,
+CAPTCHA and linked-account flows remain interactive unless separately reviewed.
+
+### Canva
+
+`canva` opens `https://www.canva.com/login/`. It offers **generic current-form
+email/password assistance**, not a reviewed Canva-specific flow. Public markup
+research returned HTTP 403: there are no verified Canva selectors and no staged
+login mode. Explicit opt-in may fill/submit a supported current password form,
+or use user-supplied selectors through existing generic settings. It does not
+open the email-login choice, advance an identifier/code step, or automate SSO,
+security challenges or account selection. This is **not full Canva automatic
+login support**. Its reviewed marker enables exact routing only, not a staged
+credential grant. Canva's dedicated local SVG icon is an optional suggestion.
+
+For all three, the exact [first-party route catalogs](hosted-dashboard-profiles.md#exact-first-party-proxy-route-catalogs)
+keep supported embedded documents, resources and redirects on the native proxy
+path, with no direct-network fallback, wildcard origin approval or security
+relaxation. Resource-only hosts cannot become login documents. An explicit
+system-browser handoff remains separate, using OS routing and separate cookies;
+it is not a fallback inside the embedded proxy or proof that its session is
+authenticated.
+
+## ChatGPT and Claude website login
+
+The `chatgpt` and `claude` presets are **manual by default**. To enable bounded
+login assistance, explicitly choose automatic login and the saved connection or
+vault identity. Use the canonical HTTPS authority on port 443 (`chatgpt.com` or
+`claude.ai`); a lookalike, custom host, HTTP address or alternate port does not
+inherit the provider's credential grant. OpenAI and Anthropic API keys are not
+accepted as website login credentials.
+
+### ChatGPT
+
+The entry is `https://chatgpt.com/auth/login`. The bounded semantic adapter
+assists with email and password only when it recognizes the expected controls
+on known login paths, including `https://auth.openai.com/log-in` and
+`/log-in/password`. It does not manufacture a missing authentication transaction,
+guess generated selectors, or treat an unrelated form as the password stage.
+Unrecognized controls, social/enterprise SSO, account selection, email/SMS codes,
+MFA, recovery, passkeys and CAPTCHA require manual interaction. A submitted stage
+does not prove successful authentication.
+
+### Claude
+
+The entry is `https://claude.ai/login`. The bounded email-only adapter may enter
+the selected identity's email and request a login link **once**. It does not
+retrieve or fill a saved password: Claude's official guidance states that there
+is no dedicated Claude account password. The user completes the emailed link or
+verification code manually. Google/enterprise SSO and security challenges are
+not automated; codes are not treated as a password or automatic TOTP challenge.
+
+### Verification and transport limits
+
+These adapters are exercised against semantic fixtures, not a successful live
+authenticated account run. Public source inspection on 2026-09-30 encountered
+HTTP 403 challenge responses. ChatGPT's extracted public entry text showed
+email/Continue controls, but did not establish raw selectors or a live password
+transaction. No additional static resource origins were established by those
+responses: only the known document origins, their same-origin challenge paths,
+and `https://challenges.cloudflare.com` were evidenced. Missing resource evidence
+is not permission for wildcard/direct-network fallback. Provider challenges
+remain intact; email-sender domains are not browser transport destinations.
+
+See [OpenAI's authentication origin documentation](https://developers.openai.com/siwc/website),
+[ChatGPT login](https://chatgpt.com/auth/login),
+[OpenAI login](https://auth.openai.com/log-in), and
+[Claude's official login guidance](https://support.claude.com/en/articles/13189465-log-in-to-your-claude-account).
+The separate system-browser handoff still uses OS routing and separate cookies;
+it does not import a completed login into the embedded session.
 
 ## Explicit automatic authenticator codes
 
@@ -206,7 +319,7 @@ the tests capture the specific controls reviewed, not their entire implementatio
 | Gitea                             | Reviewed v1.27.3 `/user/login` form                                                      | Optional linked TOTP at `/user/two_factor`; scratch codes, enrollment, subpath/custom forms and external providers remain manual |
 | Brevo                             | Reviewed public `login.brevo.com` email/password controls; preset pins that HTTPS origin | Authenticator/SMS and Google/Apple/SAML remain manual; separate application origins may require the system browser               |
 | Drone CI                          | Interactive configured Git-provider OAuth                                                | No universal Drone password form; provider MFA and cross-origin callbacks may need the system browser                            |
-| Exchange Admin Center / ECP       | Interactive on-premises `/ecp/`                                                          | Server-dependent forms, Windows authentication, ADFS or publishing MFA; not the Exchange Online portal                           |
+| Exchange Admin Center / ECP       | Manual by default; opt-in reviewed OWA forms login for on-premises `/ecp/`                 | Windows authentication, ADFS, MFA and customized forms remain interactive; timeout advises manual sign-in without inferring MFA. Not Exchange Online. |
 | Windows RemoteApp / RD Web Access | Interactive `/RDWeb/` entry                                                              | Legacy portal, HTML5 client, gateway and Entra preauthentication differ; this does not configure or launch a native RemoteApp    |
 
 GitHub and Brevo selection does not overwrite the current address. Their explicit

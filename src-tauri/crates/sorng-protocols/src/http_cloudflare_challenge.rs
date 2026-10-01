@@ -33,7 +33,21 @@ pub(super) fn is_managed_challenge_response(
     url: &Url,
     headers: &axum::http::HeaderMap,
 ) -> bool {
-    reviewed_source(profile).is_some_and(|source| url.origin().ascii_serialization() == source)
+    // AI website challenge traffic uses the hosted-session aliases and jar,
+    // not a second standalone challenge transport. Preserve challenge HTML
+    // only when the upstream explicitly labels it, never infer clearance.
+    let origin = url.origin().ascii_serialization();
+    let hosted_source = match profile {
+        Some(ReviewedApplicationProfile::Chatgpt) => {
+            matches!(
+                origin.as_str(),
+                "https://chatgpt.com" | "https://auth.openai.com"
+            )
+        }
+        Some(ReviewedApplicationProfile::Claude) => origin == "https://claude.ai",
+        _ => false,
+    };
+    (hosted_source || reviewed_source(profile).is_some_and(|source| origin == source))
         && url.username().is_empty()
         && url.password().is_none()
         && headers.get_all("cf-mitigated").iter().count() == 1
@@ -882,6 +896,8 @@ impl CloudflareChallenge {
                     None,
                     None,
                     None,
+                    false,
+                    state.network.browser_compatibility(),
                 );
                 let identity =
                     serde_json::json!({"sessionId":state.session_id,"documentSequence":root})

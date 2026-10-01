@@ -752,7 +752,7 @@ function createWebDarkModeController() {
       disposed ||
       !desired ||
       !runtimeInstalled ||
-      document.readyState === "loading" ||
+      !document.body ||
       paintRevision === revision ||
       paintFrame !== null ||
       paintTimer !== null
@@ -767,11 +767,17 @@ function createWebDarkModeController() {
         !desired ||
         ticket !== revision ||
         !runtimeInstalled ||
+        !document.body ||
         paintRepairPending ||
         (desired.mode !== "filter" &&
           !document.documentElement.hasAttribute("data-sorng-dark-ready"))
       )
         return;
+      // A parsed body can be safely themed before DOMContentLoaded. A later
+      // parser-blocking script (for example a login page's payment SDK) may
+      // never finish; do not keep the ready CSS fallback behind an opaque
+      // shield waiting for unrelated network work. Palette readiness and the
+      // repair gate above still protect both this body and later parser nodes.
       // Flush the applied sheet before telling the outer frame to uncover it.
       window.getComputedStyle(document.documentElement).backgroundColor;
       document.documentElement.setAttribute("data-sorng-dark-presented", "");

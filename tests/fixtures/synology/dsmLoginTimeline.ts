@@ -39,6 +39,8 @@ export const DSM_READINESS_NONCE = "a".repeat(32);
 export const DSM_CONTINUATION_NONCE = "b".repeat(32);
 export const DSM_LOGIN_ASSET_PATHS = {
   helper: "src-tauri/crates/sorng-protocols/src/synology_autologin_client.js",
+  // Coordinator is a template: consumers execute loadAutologinClient(), which
+  // assembles private modules using the native autologin_asset.rs manifest.
   client: "src-tauri/crates/sorng-protocols/src/autologin_client.js",
   bridge:
     "src-tauri/crates/sorng-protocols/src/synology_login_progress_client.js",

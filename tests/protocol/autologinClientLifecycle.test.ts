@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Credentials = { username: string | null; password: string | null };
 type Result = { ok: boolean; reason: string };
 type Client = {
@@ -64,6 +61,14 @@ describe("actual injected auto-login client lifecycle", () => {
   });
   afterEach(() => {
     client.cancel();
+    for (const app of [
+      "bitwarden",
+      "synology",
+      "google",
+      "cloudflare",
+      "yealink",
+    ])
+      Reflect.deleteProperty(window, `__sorng_${app}_login`);
     window.removeEventListener("pagehide", client.cancel);
     window.removeEventListener("unload", client.cancel);
     Reflect.deleteProperty(window, "__sorng_autologin");
@@ -390,6 +395,141 @@ describe("actual injected auto-login client lifecycle", () => {
     expect(response.password).toBeNull();
     expect(submit).not.toHaveBeenCalled();
   });
+  it.each([
+    "unknown",
+    "",
+    "google",
+    "google-password",
+    "cloudflare",
+    "yealink-t20p",
+    "cpanel",
+    7,
+    {},
+    [],
+  ])(
+    "rejects unreviewed response flow %j without filling or leaking transport secrets",
+    async (loginFlow) => {
+      const submit = form();
+      const fields = [{ value: "fixture-extra-secret" }];
+      Object.assign(response, {
+        loginFlow,
+        continuation: "fixture-token",
+        formAutomation: { fields },
+      });
+      await client.fetchCredsAndRun("fixture", selectors);
+      expect(Reflect.get(window, "__autologin_last")).toEqual({
+        ok: false,
+        reason: "invalid-login-flow",
+      });
+      expect(input("user").value).toBe("");
+      expect(input("pass").value).toBe("");
+      expect(submit).not.toHaveBeenCalled();
+      expect(response).toMatchObject({
+        username: null,
+        password: null,
+        continuation: null,
+      });
+      expect(fields[0].value).toBe("");
+      client.fetchCredsAndRun("again", selectors);
+      expect(fetchMock).toHaveBeenCalledOnce();
+    },
+  );
+  it.each(["bitwarden", "synology", "google", "cpanel", "unknown"])(
+    "rejects response flow %s for the cPanel generic-credential contract",
+    async (loginFlow) => {
+      const submit = form();
+      const run = vi.fn();
+      Reflect.set(window, `__sorng_${loginFlow}_login`, {
+        run,
+        cancel: vi.fn(),
+      });
+      Object.assign(response, { loginFlow });
+      await client.fetchCredsAndRun("fixture", selectors, "cpanel");
+      expect(Reflect.get(window, "__autologin_last")).toMatchObject({
+        reason: "invalid-login-flow",
+      });
+      expect(run).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+      expect(input("pass").value).toBe("");
+      expect(response.password).toBeNull();
+      Reflect.deleteProperty(window, `__sorng_${loginFlow}_login`);
+    },
+  );
+  it.each(
+    ["bitwarden", "synology"].flatMap((flow) => [
+      { flow, missing: true },
+      { flow, missing: false },
+    ]),
+  )(
+    "rejects missing legacy response adapter $flow (absent=$missing)",
+    async ({ flow, missing }) => {
+      const submit = form();
+      if (!missing)
+        Reflect.set(window, `__sorng_${flow}_login`, { cancel: vi.fn() });
+      Object.assign(response, { loginFlow: flow });
+      await client.fetchCredsAndRun("fixture");
+      expect(Reflect.get(window, "__autologin_last")).toMatchObject({
+        reason: "autologin-client-unavailable",
+      });
+      expect(submit).not.toHaveBeenCalled();
+      expect(input("pass").value).toBe("");
+      expect(response.password).toBeNull();
+    },
+  );
+  it.each(["bitwarden", "synology"])(
+    "preserves reviewed legacy %s dispatch without a hint",
+    async (flow) => {
+      const submit = form();
+      const received = vi.fn();
+      const run = vi.fn((data: Credentials) => received(data.username));
+      Reflect.set(window, `__sorng_${flow}_login`, { run, cancel: vi.fn() });
+      Object.assign(response, { loginFlow: flow });
+      await client.fetchCredsAndRun("fixture");
+      expect(run).toHaveBeenCalledOnce();
+      expect(received).toHaveBeenCalledWith("fixture-admin");
+      expect(response.password).toBeNull();
+      expect(submit).not.toHaveBeenCalled();
+    },
+  );
+  it.each(
+    [
+      "synology",
+      "google",
+      "google-password",
+      "cloudflare",
+      "yealink-t20p",
+    ].flatMap((flow) => [
+      { flow, missing: true },
+      { flow, missing: false },
+    ]),
+  )(
+    "rejects missing injected adapter $flow before nonce redemption (absent=$missing)",
+    async ({ flow, missing }) => {
+      const app =
+        flow === "yealink-t20p"
+          ? "yealink"
+          : flow === "google-password"
+            ? "google"
+            : flow;
+      if (!missing)
+        Reflect.set(window, `__sorng_${app}_login`, { cancel: vi.fn() });
+      await client.fetchCredsAndRun("fixture", selectors, flow);
+      expect(Reflect.get(window, "__autologin_last")).toMatchObject({
+        reason: "autologin-client-unavailable",
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["unknown", "", "bitwarden", "__proto__"])(
+    "rejects unknown injected flow %s before nonce redemption",
+    async (flow) => {
+      await client.fetchCredsAndRun("fixture", selectors, flow);
+      expect(Reflect.get(window, "__autologin_last")).toMatchObject({
+        reason: "invalid-login-flow",
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
   it("does not retry a spent nonce after a non-200 response", async () => {
     form();
     fetchMock.mockResolvedValue({ ok: false, status: 403 });

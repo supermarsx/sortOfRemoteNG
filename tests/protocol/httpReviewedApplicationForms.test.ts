@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getHttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
 import {
@@ -33,10 +33,7 @@ const forms = {
   cpanel:
     '<form novalidate id="login_form" action="/login/" method="post"><input name="user" id="user" type="text"><input name="pass" id="pass" type="password"><button name="login" type="submit" id="login_submit">Log in</button></form>',
 };
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Client = {
   bootstrap(
     credentials: { username: string | null; password: string | null },

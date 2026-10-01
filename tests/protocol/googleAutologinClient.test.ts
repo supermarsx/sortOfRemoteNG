@@ -1,14 +1,12 @@
 import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const googleSource = readFileSync(
   "src-tauri/crates/sorng-protocols/src/google_autologin_client.js",
   "utf8",
 );
-const autologinSource = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const autologinSource = loadAutologinClient();
 
 type Client = {
   fetchCredsAndRun(

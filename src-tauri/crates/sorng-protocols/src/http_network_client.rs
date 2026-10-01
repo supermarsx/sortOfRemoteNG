@@ -188,6 +188,8 @@ impl DocumentReferrerPolicy {
 }
 
 pub struct ProxyNetworkState {
+    transport_settings: super::ProxyTransportSettings,
+    browser_compatibility: super::BrowserCompatibility,
     active: AtomicBool,
     requests: Arc<ProxyRequestActivity>,
     owns_origin: AtomicBool,
@@ -205,6 +207,7 @@ pub struct ProxyNetworkState {
     #[doc(hidden)]
     pub tactical_mesh: Option<Arc<super::tactical_mesh::TacticalMeshRoute>>,
     pub cloudflare_challenge: Option<Arc<super::cloudflare_challenge::CloudflareChallenge>>,
+    pub(super) exchange_cookies: Option<Arc<super::exchange_cookies::ExchangeCookies>>,
     reviewed_application_profile: Option<super::ReviewedApplicationProfile>,
 }
 
@@ -277,6 +280,8 @@ impl Drop for ProxyNetworkServerGuard {
 impl Default for ProxyNetworkState {
     fn default() -> Self {
         Self {
+            transport_settings: super::ProxyTransportSettings::default(),
+            browser_compatibility: super::BrowserCompatibility::default(),
             active: AtomicBool::new(true),
             requests: Arc::new(ProxyRequestActivity::default()),
             owns_origin: AtomicBool::new(true),
@@ -291,12 +296,35 @@ impl Default for ProxyNetworkState {
             google: None,
             tactical_mesh: None,
             cloudflare_challenge: None,
+            exchange_cookies: None,
             reviewed_application_profile: None,
         }
     }
 }
 
 impl ProxyNetworkState {
+    pub fn with_browser_compatibility(mut self, options: super::BrowserCompatibility) -> Self {
+        self.browser_compatibility = options;
+        self
+    }
+
+    pub fn browser_compatibility(&self) -> super::BrowserCompatibility {
+        self.browser_compatibility
+    }
+
+    pub fn with_transport_settings(
+        mut self,
+        settings: super::ProxyTransportSettings,
+    ) -> Result<Self, String> {
+        settings.validate()?;
+        self.transport_settings = settings;
+        Ok(self)
+    }
+
+    pub fn transport_settings(&self) -> &super::ProxyTransportSettings {
+        &self.transport_settings
+    }
+
     /// Native response evidence only. Retain no URL, page content or headers.
     pub(super) fn record_document_referrer(
         &self,
@@ -404,7 +432,12 @@ impl ProxyNetworkState {
         // Public typography is optional: a root-store/client setup failure
         // leaves this route unavailable (503), never disables source browsing
         // and never substitutes the source's possibly pinned/unverified TLS.
-        self.font_assets = super::font_assets::ReviewedFontAssets::new(proxy.clone(), min_tls).ok();
+        self.font_assets = super::font_assets::ReviewedFontAssets::with_transport_settings(
+            proxy.clone(),
+            min_tls,
+            &self.transport_settings,
+        )
+        .ok();
         if policy
             .synology_quick_connect_defaults
             .as_ref()
@@ -412,7 +445,12 @@ impl ProxyNetworkState {
             .is_some()
         {
             self.quickconnect_control =
-                super::quickconnect_control::ReviewedQuickConnectControl::new(proxy, min_tls).ok();
+                super::quickconnect_control::ReviewedQuickConnectControl::with_transport_settings(
+                    proxy,
+                    min_tls,
+                    &self.transport_settings,
+                )
+                .ok();
         }
         self
     }
@@ -478,6 +516,22 @@ impl ProxyNetworkState {
 
     pub(crate) fn has_freepbx_cookie_compatibility(&self) -> bool {
         self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::Freepbx)
+    }
+
+    pub(crate) fn has_exchange_ecp_login(&self) -> bool {
+        self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::ExchangeEcp)
+    }
+
+    /// Allocate native cookie ownership only for the exact reviewed ECP profile.
+    /// The jar validates the saved HTTPS origin; no cookie values enter page code.
+    pub fn with_exchange_cookies(mut self, source_origin: &str) -> Result<Self, String> {
+        if self.has_exchange_ecp_login() {
+            self.exchange_cookies = Some(Arc::new(
+                super::exchange_cookies::ExchangeCookies::new(source_origin)
+                    .map_err(str::to_owned)?,
+            ));
+        }
+        Ok(self)
     }
 
     pub(super) fn permits_tactical_popup_parent(&self, sequence: u64) -> bool {
@@ -554,6 +608,8 @@ impl ProxyNetworkState {
     /// registered protected origin. The successor owns the same origin lease.
     pub(super) fn successor(&self) -> Self {
         Self {
+            transport_settings: self.transport_settings,
+            browser_compatibility: self.browser_compatibility,
             origin_lease: self.origin_lease.clone(),
             proxy_origin: self.proxy_origin.clone(),
             ..Self::default()
@@ -563,6 +619,9 @@ impl ProxyNetworkState {
     pub(super) fn retire_activity(&self) {
         self.requests.stop_accepting();
         self.active.store(false, Ordering::Release);
+        if let Some(cookies) = &self.exchange_cookies {
+            cookies.revoke();
+        }
         if let Some(mesh) = &self.tactical_mesh {
             mesh.prune(None);
         }
@@ -805,6 +864,114 @@ mod freepbx_cookie_compat_tests {
     }
 }
 
+#[cfg(test)]
+mod exchange_cookie_wiring_tests {
+    use super::{bootstrap, HttpProxyPolicy, ProxyNetworkState};
+    use crate::http::ReviewedApplicationProfile;
+
+    const SOURCE: &str = "https://exchange.fixture.test:4443";
+    const PROXY: &str = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
+
+    #[test]
+    fn exchange_cookie_builder_requires_exact_reviewed_profile() {
+        assert!(ProxyNetworkState::default().exchange_cookies.is_none());
+        for profile in [
+            None,
+            Some(ReviewedApplicationProfile::GoogleHosted),
+            Some(ReviewedApplicationProfile::Freepbx),
+            Some(ReviewedApplicationProfile::Porkbun),
+        ] {
+            let network = ProxyNetworkState::default()
+                .with_reviewed_application_profile(profile)
+                .with_exchange_cookies("not-an-origin")
+                .unwrap();
+            assert!(network.exchange_cookies.is_none());
+        }
+        let network = ProxyNetworkState::default()
+            .with_reviewed_application_profile(Some(ReviewedApplicationProfile::ExchangeEcp))
+            .with_exchange_cookies(SOURCE)
+            .unwrap();
+        assert!(network.exchange_cookies.is_some());
+        network.revoke();
+    }
+
+    #[test]
+    fn exchange_cookie_builder_propagates_https_origin_validation() {
+        for origin in [
+            "",
+            "http://exchange.fixture.test",
+            "https:/exchange.fixture.test",
+            "//exchange.fixture.test",
+            "not-an-origin",
+            "https://user:secret@exchange.fixture.test",
+            "https://exchange.fixture.test/ecp/",
+            "https://exchange.fixture.test?account=fixture",
+            "https://exchange.fixture.test#fragment",
+            "https://exchange.fixture.test:invalid",
+        ] {
+            assert!(ProxyNetworkState::default()
+                .with_reviewed_application_profile(Some(ReviewedApplicationProfile::ExchangeEcp))
+                .with_exchange_cookies(origin)
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn exchange_cookie_retirement_revokes_existing_jar_handles() {
+        let retirement_paths: [fn(&ProxyNetworkState); 3] = [
+            ProxyNetworkState::revoke,
+            ProxyNetworkState::retire_listener,
+            ProxyNetworkState::retire_for_continuation,
+        ];
+        let url = reqwest::Url::parse(&format!("{SOURCE}/ecp/")).unwrap();
+        for retire in retirement_paths {
+            let network = ProxyNetworkState::default()
+                .with_reviewed_application_profile(Some(ReviewedApplicationProfile::ExchangeEcp))
+                .with_exchange_cookies(SOURCE)
+                .unwrap();
+            let cookies = network.exchange_cookies.as_ref().unwrap().clone();
+            assert!(cookies.cookie_header(&url).is_ok());
+            retire(&network);
+            assert!(!network.is_active());
+            assert!(cookies.cookie_header(&url).is_err());
+        }
+    }
+
+    #[test]
+    fn exchange_cookie_bootstrap_emits_only_explicit_non_google_capability() {
+        let script = |enabled, google| {
+            bootstrap(
+                "fixture",
+                1,
+                None,
+                SOURCE,
+                PROXY,
+                &HttpProxyPolicy::default(),
+                None,
+                google,
+                None,
+                None,
+                None,
+                enabled,
+                super::super::BrowserCompatibility::default(),
+            )
+        };
+        assert!(script(false, None).contains("\"exchangeCookies\":false"));
+        assert!(script(true, None).contains("\"exchangeCookies\":true"));
+        let google = super::super::google::GoogleSession::new(
+            Some(ReviewedApplicationProfile::GoogleHosted),
+            &reqwest::Url::parse("https://mail.google.com/").unwrap(),
+            PROXY,
+            reqwest::Client::new(),
+            reqwest::Client::new(),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(script(true, Some(&google)).contains("\"exchangeCookies\":false"));
+        google.revoke();
+    }
+}
+
 /// Only non-secret immutable routing identity enters page code. Foreign
 /// mappings are intentionally absent until separately reviewed native grants
 /// exist; the client cannot turn arbitrary URLs into native proxy requests.
@@ -822,13 +989,17 @@ pub(super) fn bootstrap(
     popup_parent_sequence: Option<u64>,
     tactical_mesh: Option<serde_json::Value>,
     cloudflare_challenge: Option<serde_json::Value>,
+    exchange_cookies: bool,
+    browser_compatibility: super::BrowserCompatibility,
 ) -> String {
     let mut config = serde_json::json!({
         "version": 1, "sessionId": session_id,
         "documentSequence": popup_parent_sequence.unwrap_or(sequence),
         "requestGeneration": request_generation,
         "popupParentDocument": popup_parent_sequence,
-        "popupTabs": tactical_rmm_api.is_some(),
+        "popupTabs": tactical_rmm_api.is_some_and(|route| route.is_tactical()),
+        "exchangeCookies": exchange_cookies && google.is_none(),
+        "browserCompatibility": { "hideWebdriver": browser_compatibility.hide_webdriver },
         "sourceOrigin": source_origin, "proxyOrigin": proxy_origin, "mappings": [],
         "fontAssets": super::font_assets::manifest(proxy_origin)
     });
@@ -841,7 +1012,7 @@ pub(super) fn bootstrap(
         config["synologyQuickConnect"] = capability;
     }
     if let Some(capability) = tactical_rmm_api {
-        config["tacticalRmmApi"] = capability.manifest(proxy_origin);
+        config[capability.manifest_key()] = capability.manifest(proxy_origin);
     }
     if let Some(google) = google {
         config["googleSession"] = google.manifest();

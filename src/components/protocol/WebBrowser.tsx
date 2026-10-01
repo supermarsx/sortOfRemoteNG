@@ -35,7 +35,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({
         <SecurityInfoBar mgr={mgr} />
       </div>
 
-      <BookmarkBar mgr={mgr} />
+      {mgr.browserSettings?.showBookmarksBar !== false && (
+        <BookmarkBar mgr={mgr} />
+      )}
       <ContentArea mgr={mgr} />
       <BrowserDialogs mgr={mgr} />
     </div>

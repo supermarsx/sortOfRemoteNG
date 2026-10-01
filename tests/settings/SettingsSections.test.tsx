@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 import MacroSettings from "../../src/components/SettingsDialog/sections/MacroSettings";
 import RecordingSettings from "../../src/components/SettingsDialog/sections/RecordingSettings";
-import WebBrowserSettings from "../../src/components/SettingsDialog/sections/WebBrowserSettings";
+import InternalProxySettings from "../../src/components/SettingsDialog/sections/InternalProxySettings";
 import AboutSettings from "../../src/components/SettingsDialog/sections/AboutSettings";
 import { APP_VERSION } from "../../src/generated/version";
 
@@ -104,7 +104,7 @@ describe("Settings sections centralization", () => {
     expect(enabledToggle.className).toContain("sor-settings-checkbox");
   });
 
-  it("uses centralized tile/input classes in WebBrowserSettings", () => {
+  it("uses themed, keyboard-disabled health controls in InternalProxySettings", () => {
     const updateSettings = vi.fn();
     const disabledSettings = {
       ...baseSettings,
@@ -112,22 +112,16 @@ describe("Settings sections centralization", () => {
       proxyAutoRestart: false,
     } as GlobalSettings;
     const { container } = render(
-      <WebBrowserSettings
+      <InternalProxySettings
         settings={disabledSettings}
         updateSettings={updateSettings}
       />,
     );
 
-    // Health-check interval row is dimmed/inert when keepalive is off —
-    // the new layout uses opacity + pointer-events-none on a wrapper
-    // div around the FieldRow.
     const intervalRow = container.querySelector(
       '[data-setting-key="proxyKeepaliveIntervalSeconds"]',
     );
-    expect(intervalRow?.parentElement?.className).toContain("opacity-50");
-    expect(intervalRow?.parentElement?.className).toContain(
-      "pointer-events-none",
-    );
+    expect(intervalRow?.querySelector("input")).toBeDisabled();
 
     const numberInput = container.querySelector(
       'input[value="10"]',

@@ -20,6 +20,10 @@ import {
 } from "../types/settings/settings";
 import { SettingsManager } from "../utils/settings/settingsManager";
 import { normalizeWebsiteDarkModeSettings } from "../utils/connection/websiteDarkMode";
+import {
+  normalizeWebBrowserSettings,
+  normalizeInternalProxySettings,
+} from "../utils/settings/webBrowserSettings";
 import { DEFAULT_PASSWORD_POLICY } from "../types/security/passwordPolicy";
 import { DEFAULT_NAS_FILE_VIEWERS } from "../types/settings/nasFileViewers";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../components/ui/display/loadingElement/defaults";
@@ -44,6 +48,8 @@ interface SettingsContextType {
 }
 
 export const defaultSettings: GlobalSettings = {
+  webBrowser: normalizeWebBrowserSettings(undefined),
+  internalProxy: normalizeInternalProxySettings(undefined),
   nasFileViewers: DEFAULT_NAS_FILE_VIEWERS,
   passwordPolicy: DEFAULT_PASSWORD_POLICY,
   iconLibrary: undefined,

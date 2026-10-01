@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SettingsManager } from "../../../utils/settings/settingsManager";
+import { normalizeInternalProxySettings } from "../../../utils/settings/webBrowserSettings";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
@@ -20,6 +22,7 @@ const protectedResponse = {
 
 describe("pfSense API internal proxy", () => {
   beforeEach(() => invokeMock.mockReset());
+  afterEach(() => vi.restoreAllMocks());
 
   it("builds canonical HTTP/HTTPS appliance origins", () => {
     expect(
@@ -110,5 +113,64 @@ describe("pfSense API internal proxy", () => {
     expect(invokeMock).toHaveBeenLastCalledWith("stop_basic_auth_proxy", {
       sessionId: "proxy-session",
     });
+  });
+
+  it("uses saved transport controls without changing routing or TLS verification", async () => {
+    const manager = SettingsManager.getInstance();
+    const settings = manager.getSettings();
+    const transport = normalizeInternalProxySettings({
+      connectTimeoutSeconds: 8,
+      requestTimeoutSeconds: 45,
+      poolIdleTimeoutSeconds: 0,
+      maxIdleConnectionsPerHost: 0,
+      tcpKeepaliveSeconds: 0,
+    });
+    vi.spyOn(manager, "getSettings").mockReturnValue({
+      ...settings,
+      internalProxy: transport,
+    });
+    invokeMock.mockResolvedValueOnce(protectedResponse);
+    await startPfsenseApiProxy({
+      host: "fw.example.test",
+      port: 443,
+      useTls: true,
+      acceptInvalidCerts: false,
+      apiKey: "id",
+      apiSecret: "secret",
+      connectionId: "pfsense-api:transport",
+      upstreamProxyUrl: "http://proxy.example.test:3128",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("start_basic_auth_proxy", {
+      config: expect.objectContaining({
+        transport_settings: transport,
+        verify_ssl: true,
+        upstream_proxy_url: "http://proxy.example.test:3128",
+        upstream_auth_mode: "pfSenseV1",
+      }),
+    });
+  });
+
+  it("rejects malformed transport before invoking the credential-bearing proxy", async () => {
+    const manager = SettingsManager.getInstance();
+    const settings = manager.getSettings();
+    vi.spyOn(manager, "getSettings").mockReturnValue({
+      ...settings,
+      internalProxy: {
+        ...normalizeInternalProxySettings(undefined),
+        connectTimeoutSeconds: 0,
+      },
+    });
+    await expect(
+      startPfsenseApiProxy({
+        host: "fw.example.test",
+        port: 443,
+        useTls: true,
+        acceptInvalidCerts: false,
+        apiKey: "id",
+        apiSecret: "secret",
+        connectionId: "pfsense-api:transport",
+      }),
+    ).rejects.toThrow(/Invalid internal proxy/);
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });

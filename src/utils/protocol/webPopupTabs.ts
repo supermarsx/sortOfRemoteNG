@@ -7,6 +7,7 @@ import {
   assertWebBrowserFrameNavigation,
   clearWebBrowserFrame,
   navigateWebBrowserFrame,
+  type WebBrowserFramePermissions,
 } from "./webBrowserFrame";
 
 export type WebPopupDocument = Readonly<
@@ -231,6 +232,7 @@ export const webPopupTabs = {
   attachViewer(
     id: string,
     frame: HTMLIFrameElement,
+    getPermissions: () => WebBrowserFramePermissions = () => ({}),
   ): WebPopupViewerLease | null {
     const entry = entries.get(id);
     if (!entry || !current(entry) || entry.viewer) return null;
@@ -323,6 +325,7 @@ export const webPopupTabs = {
           frame,
           entry.snapshot.url,
           entry.snapshot.proxyUrl,
+          getPermissions(),
         );
         return true;
       },

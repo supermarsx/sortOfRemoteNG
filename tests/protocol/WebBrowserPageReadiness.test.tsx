@@ -254,7 +254,7 @@ describe("mounted website page readiness", () => {
     expect(mocks.trust).not.toHaveBeenCalled();
   });
 
-  it("starts the FreePBX portal at /admin through the usual isolated proxy", async () => {
+  it("starts the FreePBX portal at /admin/ so relative assets stay under the admin directory", async () => {
     const { iframe } = await mounted(profiles[2]);
     const config = mocks.invoke.mock.calls.find(
       ([command]) => command === "start_basic_auth_proxy",
@@ -265,7 +265,10 @@ describe("mounted website page readiness", () => {
       http_auto_login: true,
     });
     expect(new URL(iframe.src).origin).toBe(new URL(proxy.proxy_url).origin);
-    expect(new URL(iframe.src).pathname).toBe("/admin");
+    expect(new URL(iframe.src).pathname).toBe("/admin/");
+    expect(new URL("assets/js/FreePBX.js", iframe.src).pathname).toBe(
+      "/admin/assets/js/FreePBX.js",
+    );
   });
 
   it("does not wait for optional recording startup before mounting the target document", async () => {

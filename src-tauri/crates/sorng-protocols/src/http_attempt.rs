@@ -68,6 +68,7 @@ struct HttpRedirectCycle {
 }
 struct Attempt {
     id: String,
+    transport_settings: super::ProxyTransportSettings,
     defaults: super::SynologyQuickConnectDefaults,
     upstream_proxy: Option<String>,
     min_tls: String,
@@ -91,6 +92,10 @@ pub struct AttemptSession {
 }
 
 impl AttemptSession {
+    pub fn transport_settings(&self) -> &super::ProxyTransportSettings {
+        &self.attempt.transport_settings
+    }
+
     /// Native command/fixture seam: after capture, portal HTTP state contains
     /// neither source credentials nor generic automatic-login authority.
     #[doc(hidden)]
@@ -1110,6 +1115,7 @@ impl AttemptRegistry {
         target: &Url,
         session_id: &str,
     ) -> Result<Option<AttemptSession>, String> {
+        config.transport_settings.validate()?;
         self.prune();
         let policy = config.proxy_policy.clone().unwrap_or_default();
         if let Some(id) = config.continuation_id.as_deref() {
@@ -1183,6 +1189,7 @@ impl AttemptRegistry {
             super::synology_login::DeferredSynologyLogin::capture(config, &defaults, target)?;
         let attempt = Arc::new(Attempt {
             id: uuid::Uuid::new_v4().to_string(),
+            transport_settings: config.transport_settings,
             defaults,
             upstream_proxy: config.upstream_proxy_url.clone(),
             min_tls: config.min_tls_version.clone(),

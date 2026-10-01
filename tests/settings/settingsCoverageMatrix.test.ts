@@ -101,6 +101,8 @@ function sampleValueFor(
   defaults: GlobalSettings,
 ): unknown {
   const special: Partial<Record<keyof GlobalSettings, unknown>> = {
+    webBrowser: { ...defaults.webBrowser!, showBookmarksBar: false },
+    internalProxy: { ...defaults.internalProxy!, connectTimeoutSeconds: 25 },
     sessionQuickActions: {
       sshEnabled: false,
       httpEnabled: false,

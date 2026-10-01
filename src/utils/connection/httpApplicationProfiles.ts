@@ -14,6 +14,9 @@ import {
 import { ANALYTICS_CMS_PROFILES } from "./analyticsCmsProfiles";
 import { FREEPBX_ADMIN_PROFILE } from "./freepbxProfile";
 import { PORKBUN_PROFILE } from "./porkbunProfile";
+import { EXCHANGE_ECP_PROFILE } from "./exchangeEcpProfile";
+import { ADOBE_ADMIN_CONSOLE_PROFILE } from "./adobeAdminConsoleProfile";
+import { CANVA_PROFILE } from "./canvaProfile";
 
 export interface HttpApplicationProfile {
   id: string;
@@ -28,6 +31,8 @@ export interface HttpApplicationProfile {
     | "none";
   description: string;
   usernameLabel?: string;
+  /** Passwordless assistance: resolve only the selected username/email. */
+  emailOnly?: boolean;
   selectors?: Readonly<HttpAutoLoginSelectors>;
   totpChallenges?: readonly HttpApplicationTotpChallenge[];
   /** Fixed public hosted login, never inferred from a page-supplied redirect. */
@@ -36,7 +41,15 @@ export interface HttpApplicationProfile {
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];
   requiresHttps?: boolean;
-  loginFlow?: "bitwarden" | "synology" | "google" | "yealink" | "cloudflare";
+  loginFlow?:
+    | "bitwarden"
+    | "synology"
+    | "google"
+    | "yealink"
+    | "cloudflare"
+    | "adobe"
+    | "chatgpt"
+    | "claude";
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -135,6 +148,8 @@ const unavailable = (
 export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   ...SELF_HOSTED_VAULT_PROFILES,
   ...HOSTED_DASHBOARD_PROFILES,
+  ADOBE_ADMIN_CONSOLE_PROFILE,
+  CANVA_PROFILE,
   ...ANALYTICS_CMS_PROFILES,
   FREEPBX_ADMIN_PROFILE,
   PORKBUN_PROFILE,
@@ -388,15 +403,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     description:
       "Interactive sign-in through the configured Git provider's OAuth flow. Drone has no universal local username/password form; runner RPC secrets and API tokens are not browser credentials. Use the system browser for cross-origin callbacks, provider MFA or security keys.",
   },
-  {
-    id: "exchange-ecp",
-    label: "Exchange Admin Center / ECP",
-    category: "mailStorage",
-    capability: "manual",
-    loginPath: "/ecp/",
-    description:
-      "Interactive on-premises Exchange administration, normally /ecp/. Forms, Windows-integrated, ADFS and MFA behavior depend on the server and publishing setup; no guessed login form or token conversion is attempted. Exchange Online uses a different hosted admin portal. Security keys and external identity providers require their true browser origin.",
-  },
+  EXCHANGE_ECP_PROFILE,
   {
     id: "brevo",
     label: "Brevo",

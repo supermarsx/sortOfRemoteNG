@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getHttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
@@ -24,7 +25,7 @@ import {
 // Simulated DSM boot and sign-in timelines against the production page
 // helper, with fake timers. Synthetic markup and accounts only.
 const helper = readFileSync(DSM_LOGIN_ASSET_PATHS.helper, "utf8");
-const client = readFileSync(DSM_LOGIN_ASSET_PATHS.client, "utf8");
+const client = loadAutologinClient();
 const automation = readFileSync(DSM_LOGIN_ASSET_PATHS.automation, "utf8");
 
 interface Trace {

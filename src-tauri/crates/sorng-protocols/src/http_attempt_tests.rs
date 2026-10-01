@@ -1,5 +1,52 @@
 use super::*;
 use serde_json::json;
+
+#[test]
+fn transport_settings_survive_legacy_handoff_and_restart() {
+    let mut registry = AttemptRegistry::default();
+    let mut initial = config("https://example.quickconnect.to/");
+    initial.transport_settings.connect_timeout_seconds = 9;
+    initial.transport_settings.request_timeout_seconds = 42;
+    initial.transport_settings.tcp_keepalive_seconds = 0;
+    let source = start(&mut registry, &initial, "transport-source");
+    let next = transfer(
+        &mut registry,
+        &source,
+        "https://example.fr3.quickconnect.to/",
+        "transport-next",
+    );
+    assert_eq!(*next.transport_settings(), initial.transport_settings);
+    let restarted = registry.restart(&next, "transport-restart").unwrap();
+    assert_eq!(*restarted.transport_settings(), initial.transport_settings);
+}
+
+#[test]
+fn invalid_transport_settings_do_not_consume_a_continuation_ticket() {
+    let mut registry = AttemptRegistry::default();
+    let source = start(
+        &mut registry,
+        &config("https://example.quickconnect.to/"),
+        "transport-source",
+    );
+    let mut next = config("https://example.fr3.quickconnect.to/");
+    let destination = Url::parse(&next.target_url).unwrap();
+    let token = registry
+        .prepare_transfer(&source, &destination, "native-receipt")
+        .unwrap();
+    registry.stop(&source, Some(&token)).unwrap();
+    next.continuation_id = Some(token);
+    next.transport_settings.connect_timeout_seconds = 0;
+    assert!(registry
+        .start(&next, &destination, "invalid")
+        .err()
+        .unwrap()
+        .contains("connectTimeoutSeconds"));
+    next.transport_settings = Default::default();
+    assert!(registry
+        .start(&next, &destination, "valid")
+        .unwrap()
+        .is_some());
+}
 #[path = "http_attempt_deferred_login_tests.rs"]
 mod deferred_login_tests;
 #[path = "http_attempt_provider_cookie_tests.rs"]

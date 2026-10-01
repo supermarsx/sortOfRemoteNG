@@ -22,6 +22,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     quickConnectRpc = null,
     quickConnectDiscovered = null,
     tacticalRmmApi = null,
+    ptispApi = null,
     tacticalRmmMesh = null,
     googleSession = null,
     googleDocuments = new Set(),
@@ -41,6 +42,8 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     resourceAttributeInterception = false,
     formInterception = true,
     documentCookieBridge = false,
+    hideWebdriver = false,
+    webdriverMasked = false,
     popupClient = null,
     active = true,
     disposed = false;
@@ -88,6 +91,27 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     proxyOrigin = origin(configuration.proxyOrigin, true);
   if (new NativeURL(rootLocation).origin !== proxyOrigin)
     throw new TypeError("Network route document mismatch");
+  if (configuration.browserCompatibility !== undefined) {
+    var compatibility = configuration.browserCompatibility;
+    if (
+      !compatibility ||
+      typeof compatibility !== "object" ||
+      Array.isArray(compatibility) ||
+      typeof compatibility.hideWebdriver !== "boolean" ||
+      Object.keys(compatibility).some(function (key) {
+        return key !== "hideWebdriver";
+      })
+    )
+      throw new TypeError("Invalid browser compatibility configuration");
+    hideWebdriver = compatibility.hideWebdriver;
+  }
+  var exchangeCookies = configuration.exchangeCookies === true;
+  if (
+    (configuration.exchangeCookies !== undefined &&
+      typeof configuration.exchangeCookies !== "boolean") ||
+    (exchangeCookies && new NativeURL(sourceOrigin).protocol !== "https:")
+  )
+    throw new TypeError("Invalid Exchange cookie bridge configuration");
   function addRoute(upstream, proxy) {
     upstream = origin(upstream, false);
     proxy = origin(proxy, true);
@@ -108,7 +132,9 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     if (
       !challenge ||
       challenge.version !== 1 ||
-      sourceOrigin !== "https://dash.cloudflare.com" ||
+      // Keep the closed source set aligned with Rust's reviewed_source().
+      (sourceOrigin !== "https://dash.cloudflare.com" &&
+        sourceOrigin !== "https://porkbun.com") ||
       challenge.upstreamOrigin !== "https://challenges.cloudflare.com"
     )
       throw new TypeError("Invalid Cloudflare challenge route");
@@ -148,7 +174,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       google.version !== 1 ||
       google.nativeCookies !== true ||
       !Array.isArray(google.routes) ||
-      google.routes.length < 3 ||
+      google.routes.length < 2 ||
       google.routes.length > 20
     )
       throw new TypeError("Invalid Google session configuration");
@@ -357,6 +383,71 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       apiOrigins: tacticalOrigins,
       proxyUrl: tactical.proxyUrl,
     };
+  }
+
+  // PTisp has one reviewed first-party HTTP API, not a Tactical capability.
+  if (configuration.ptispApi !== undefined) {
+    var ptisp = configuration.ptispApi;
+    if (
+      !ptisp ||
+      ptisp.version !== 2 ||
+      sourceOrigin !== "https://my.ptisp.pt" ||
+      configuration.tacticalRmmApi !== undefined ||
+      configuration.tacticalRmmMesh !== undefined ||
+      !Array.isArray(ptisp.apiOrigins) ||
+      ptisp.apiOrigins.length !== 1 ||
+      ptisp.apiOrigins[0] !== "https://api3.ptisp.pt" ||
+      ptisp.proxyUrl !== proxyOrigin + "/__sortofremoteng_ptisp_api_v1"
+    )
+      throw new TypeError("Invalid PTisp API route configuration");
+    ptispApi = {
+      apiOrigins: new Set(ptisp.apiOrigins),
+      proxyUrl: ptisp.proxyUrl,
+    };
+  }
+
+  // Best-effort, explicitly opted-in page compatibility. This does not conceal
+  // the embedded engine or alter network permissions. Validate the entire route
+  // manifest above before changing page state. Leave native false/absent alone.
+  if (hideWebdriver) {
+    try {
+      var browserNavigator = window.navigator;
+      if (browserNavigator && browserNavigator.webdriver === true) {
+        var originalWebdriver = Object.getOwnPropertyDescriptor(
+          browserNavigator,
+          "webdriver",
+        );
+        var webdriverGetter = function () {
+          return false;
+        };
+        Object.defineProperty(browserNavigator, "webdriver", {
+          configurable: true,
+          enumerable: originalWebdriver ? originalWebdriver.enumerable : true,
+          get: webdriverGetter,
+        });
+        webdriverMasked = true;
+        restores.push(function () {
+          var current = Object.getOwnPropertyDescriptor(
+            browserNavigator,
+            "webdriver",
+          );
+          if (!current || current.get !== webdriverGetter) return;
+          try {
+            if (originalWebdriver)
+              Object.defineProperty(
+                browserNavigator,
+                "webdriver",
+                originalWebdriver,
+              );
+            else delete browserNavigator.webdriver;
+          } catch (_) {
+            // A site may lock the installed descriptor. Continue other cleanup.
+          }
+        });
+      }
+    } catch (_) {
+      // A locked native property is not a reason to break proxy initialization.
+    }
   }
 
   function blocked(kind, reason, destination) {
@@ -673,10 +764,13 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     var lookup = new NativeURL(target.href);
     if (socket)
       lookup.protocol = target.protocol === "wss:" ? "https:" : "http:";
+    var applicationApi = ptispApi || tacticalRmmApi;
     if (
-      tacticalRmmApi &&
-      (kind === "fetch" || kind === "xhr" || kind === "websocket") &&
-      tacticalRmmApi.apiOrigins.has(lookup.origin)
+      applicationApi &&
+      (kind === "fetch" ||
+        kind === "xhr" ||
+        (!ptispApi && kind === "websocket")) &&
+      applicationApi.apiOrigins.has(lookup.origin)
     ) {
       if (lookup.hash || lookup.href.length > 16_384)
         throw blocked(kind, "invalid-url", lookup.origin);
@@ -684,10 +778,10 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
         throw blocked(kind, "reserved-url-parameter");
       // Native revalidates this exact HTTPS destination and uses the API's
       // certificate-verifying proxy client for both HTTP and WSS upgrades.
-      var tacticalApiUrl = new NativeURL(tacticalRmmApi.proxyUrl);
+      var tacticalApiUrl = new NativeURL(applicationApi.proxyUrl);
       tacticalApiUrl.searchParams.set("destination", lookup.href);
       tacticalApiUrl.searchParams.set(
-        "__sorng_tactical_document_v1",
+        ptispApi ? "__sorng_ptisp_document_v1" : "__sorng_tactical_document_v1",
         String(sequence),
       );
       if (socket) {
@@ -825,26 +919,42 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     );
   }
   if (
-    googleSession &&
+    (googleSession || exchangeCookies) &&
     typeof NativeXMLHttpRequest === "function" &&
     typeof nativeXhrOpen === "function" &&
     typeof nativeXhrSetRequestHeader === "function" &&
     typeof nativeXhrSend === "function"
   ) {
-    var cookieEndpoint = proxyOrigin + "/__sortofremoteng_google_cookie_v1",
+    var cookieBridgeName = googleSession ? "Google" : "Exchange",
+      cookieEndpoint =
+        proxyOrigin +
+        (googleSession
+          ? "/__sortofremoteng_google_cookie_v1"
+          : "/__sortofremoteng_exchange_cookie_v1" +
+            (requestGeneration
+              ? "?__sorng_generation_v1=" + requestGeneration
+              : "")),
       ownCookieDescriptor = Object.getOwnPropertyDescriptor(document, "cookie");
     function documentCookieRequest(method, value) {
+      if (
+        !googleSession &&
+        (!active || new NativeURL(location.href).origin !== proxyOrigin)
+      )
+        throw new DOMException(
+          "The Exchange cookie bridge is unavailable",
+          "SecurityError",
+        );
       var xhr = new NativeXMLHttpRequest(),
         currentPath = new NativeURL(location.href).pathname;
       Reflect.apply(nativeXhrOpen, xhr, [method, cookieEndpoint, false]);
       Reflect.apply(nativeXhrSetRequestHeader, xhr, [
-        "X-Sorng-Google-Cookie-Path",
+        "X-Sorng-" + cookieBridgeName + "-Cookie-Path",
         currentPath,
       ]);
       Reflect.apply(nativeXhrSend, xhr, [value]);
       if (xhr.status < 200 || xhr.status >= 300)
         throw new DOMException(
-          "The Google cookie bridge is unavailable",
+          "The " + cookieBridgeName + " cookie bridge is unavailable",
           "SecurityError",
         );
       return xhr.responseText || "";
@@ -879,16 +989,26 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     }
   }
   if (typeof nativeFetch === "function") {
-    function googleRequestOptions(url, options, credentials) {
-      if (!googleSession) return options;
+    function nativeCookieRequestOptions(url, options, credentials) {
+      if (!googleSession && !exchangeCookies) return options;
       var target = new NativeURL(url);
-      if (!proxies.has(target.origin)) return options;
+      if (
+        googleSession
+          ? !proxies.has(target.origin)
+          : target.origin !== proxyOrigin
+      )
+        return options;
       var headers = new Headers(options?.headers);
       var mode = credentials || options?.credentials || "same-origin";
       var include =
         mode === "include" ||
         (mode === "same-origin" && target.origin === location.origin);
-      headers.set("X-Sorng-Google-Credentials", include ? "include" : "omit");
+      headers.set(
+        googleSession
+          ? "X-Sorng-Google-Credentials"
+          : "X-Sorng-Exchange-Credentials",
+        include ? "include" : "omit",
+      );
       return Object.assign({}, options, { headers: headers });
     }
     function controlRequestOptions(url, options) {
@@ -925,7 +1045,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
               signal: input.signal,
             };
             requestOptions = controlRequestOptions(url, requestOptions);
-            requestOptions = googleRequestOptions(
+            requestOptions = nativeCookieRequestOptions(
               url,
               requestOptions,
               input.credentials,
@@ -945,10 +1065,22 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
               ]);
             });
           }
+          if (
+            exchangeCookies &&
+            !googleSession &&
+            new NativeURL(url).origin === proxyOrigin
+          ) {
+            input = new NativeRequest(input, init);
+            init = nativeCookieRequestOptions(
+              url,
+              { headers: input.headers },
+              input.credentials,
+            );
+          }
         } else {
           input = mapUrl(input, "fetch", false, init?.method ?? "GET");
           init = controlRequestOptions(input, init);
-          init = googleRequestOptions(input, init, init?.credentials);
+          init = nativeCookieRequestOptions(input, init, init?.credentials);
         }
         return Reflect.apply(nativeFetch, window, [input, init]);
       } catch (error) {
@@ -961,13 +1093,15 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       nativeOpen = nativeXhrOpen,
       nativeSetRequestHeader = nativeXhrSetRequestHeader,
       nativeSend = nativeXhrSend,
-      googleXhr = new WeakMap();
+      nativeCookieXhr = new WeakMap();
     xhrInterception = replace(xhrPrototype, "open", function () {
       var args = Array.prototype.slice.call(arguments);
       args[1] = mapUrl(args[1], "xhr", false, args[0]);
       var control = isQuickConnectRelay(args[1]);
       var mapped = new NativeURL(args[1]);
-      var googleControl = googleSession && proxies.has(mapped.origin);
+      var cookieControl = googleSession
+        ? proxies.has(mapped.origin)
+        : exchangeCookies && mapped.origin === proxyOrigin;
       if (control && (args[3] || args[4]))
         throw blocked("xhr", "url-credentials");
       if (control && typeof nativeSetRequestHeader !== "function")
@@ -978,15 +1112,21 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
           "X-Sorng-QuickConnect-Document",
           String(sequence),
         ]);
-      if (googleControl) googleXhr.set(this, mapped.origin === location.origin);
+      nativeCookieXhr.delete(this);
+      if (cookieControl)
+        nativeCookieXhr.set(this, mapped.origin === location.origin);
       return result;
     });
     if (typeof nativeSend === "function")
       replace(xhrPrototype, "send", function () {
-        if (googleXhr.has(this)) {
+        if (nativeCookieXhr.has(this)) {
           Reflect.apply(nativeSetRequestHeader, this, [
-            "X-Sorng-Google-Credentials",
-            this.withCredentials || googleXhr.get(this) ? "include" : "omit",
+            googleSession
+              ? "X-Sorng-Google-Credentials"
+              : "X-Sorng-Exchange-Credentials",
+            this.withCredentials || nativeCookieXhr.get(this)
+              ? "include"
+              : "omit",
           ]);
         }
         return Reflect.apply(nativeSend, this, arguments);
@@ -1357,6 +1497,32 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       return setLinkAttribute(this, lower, null, true);
     return Reflect.apply(nativeRemoveAttribute, this, [name]);
   });
+  function turnstileScriptSource(value) {
+    // Turnstile discovers its API script via currentScript.src or a script
+    // scan, matching the canonical HTTPS origin. Project only that read for
+    // an existing native route. The DOM attribute and native getter retain
+    // the local URL used to load it; assignments still go through resourceUrl.
+    var alias = routes.get("https://challenges.cloudflare.com");
+    if (!active || !alias || !value) return value;
+    try {
+      var url = new NativeURL(value);
+      if (
+        url.origin === alias &&
+        !url.username &&
+        !url.password &&
+        /^\/turnstile\/v0(?:\/[^/]+)*\/api\.js$/.test(url.pathname)
+      )
+        return (
+          "https://challenges.cloudflare.com" +
+          url.pathname +
+          url.search +
+          url.hash
+        );
+    } catch (_) {
+      // Preserve native reflection for absent or unparseable attributes.
+    }
+    return value;
+  }
   function mapSetter(object, name, mapper) {
     if (!object) return;
     var descriptor = Object.getOwnPropertyDescriptor(object, name);
@@ -1473,10 +1639,15 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
         resourceUrl(this, name, value),
       ]);
     };
+    var getter = descriptor.get;
+    if (entry[0] === "HTMLScriptElement" && getter)
+      getter = function () {
+        return turnstileScriptSource(Reflect.apply(descriptor.get, this, []));
+      };
     Object.defineProperty(
       object,
       name,
-      Object.assign({}, descriptor, { set: setter }),
+      Object.assign({}, descriptor, { get: getter, set: setter }),
     );
     restores.push(function () {
       if (Object.getOwnPropertyDescriptor(object, name)?.set === setter)
@@ -1787,6 +1958,10 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     // interception and must never create permission in the parent application.
     capabilities: Object.freeze({
       version: 6,
+      browserCompatibility: Object.freeze({
+        hideWebdriverRequested: hideWebdriver,
+        webdriverMasked: webdriverMasked,
+      }),
       ...(googleSession
         ? {
             googleSession: Object.freeze({

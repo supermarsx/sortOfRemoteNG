@@ -5,11 +5,14 @@ import type { ConnectionSession } from "../../types/connection/connection";
 import type { WebAutomationDocument } from "../../types/recording/webAutomation";
 import { webPopupTabs } from "../../utils/protocol/webPopupTabs";
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
+import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 
 interface Options {
   session: ConnectionSession;
   sessions: readonly ConnectionSession[];
   enabled: boolean;
+  /** Only controls new supported TacticalRMM tabs; existing children keep their lease. */
+  popupPolicy?: "tabs" | "block";
   iframe: RefObject<HTMLIFrameElement | null>;
   getDocument: () => WebAutomationDocument | null;
   getProxyUrl: () => string;
@@ -64,10 +67,11 @@ export function useWebPopupTabs(options: Options) {
       } else if (present && !child.activationScheduled) {
         child.activationScheduled = true;
         requestAnimationFrame(() => {
-          if (
-            latest.current.sessions.some((session) => session.id === child.id)
-          )
-            webPopupTabs.focus(child.id);
+          const session = latest.current.sessions.find(
+            (session) => session.id === child.id,
+          );
+          if (session)
+            activateNewToolTab(session, (id) => webPopupTabs.focus(id));
         });
       }
     }
@@ -147,6 +151,8 @@ export function useWebPopupTabs(options: Options) {
       }
       if (message.action !== "open") return;
       try {
+        if (current.popupPolicy === "block")
+          throw new Error("New TacticalRMM popup tabs are blocked.");
         const source = current.session;
         const assertOwner = captureSessionDatabaseAccess(source);
         const sourceWindow = frame.contentWindow;

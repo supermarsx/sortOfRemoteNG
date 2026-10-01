@@ -189,6 +189,7 @@ describe("redirect review decision", () => {
       offer: vi.fn(),
     };
     const mgr = {
+      iframeRef: { current: null },
       redirectReview: manager,
       handleRefresh: reload,
       loadError: manager.error,

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PORKBUN_LOGIN_SELECTORS,
@@ -7,10 +7,7 @@ import {
 import { DEFAULT_HTTP_FORM_AUTOMATION } from "../../src/utils/connection/httpFormAutomation";
 import { porkbunLoginHtml } from "./fixtures/porkbunLogin";
 
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 const selectors = {
   username: PORKBUN_LOGIN_SELECTORS.usernameSelector,
   password: PORKBUN_LOGIN_SELECTORS.passwordSelector,

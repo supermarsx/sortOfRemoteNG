@@ -1,0 +1,9 @@
+{
+  "profiles": { "chatgpt": "https://chatgpt.com" },
+  "loginOrigins": [
+    "https://auth.openai.com",
+    "https://challenges.cloudflare.com"
+  ],
+  "resourceOrigins": [],
+  "profileOrigins": {}
+}

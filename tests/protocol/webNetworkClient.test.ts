@@ -36,6 +36,9 @@ const config = () => ({
   mappings: [] as Array<{ upstreamOrigin: string; proxyOrigin: string }>,
 });
 interface ClientConfiguration extends ReturnType<typeof config> {
+  browserCompatibility?: { hideWebdriver: boolean };
+  exchangeCookies?: boolean;
+  ptispApi?: { version: number; apiOrigins: string[]; proxyUrl: string };
   cloudflareChallenge?: {
     version: number;
     upstreamOrigin: string;
@@ -82,6 +85,10 @@ interface Controller {
   dispose(): void;
   capabilities: {
     version: number;
+    browserCompatibility: {
+      hideWebdriverRequested: boolean;
+      webdriverMasked: boolean;
+    };
     tacticalRmmApi: boolean;
     tacticalRmmApiOrigins: readonly string[];
     fetchInterception: boolean;
@@ -207,6 +214,143 @@ function cancelBrowserDefaultAfterRouting() {
   });
 }
 
+describe("opt-in browser indicator compatibility", () => {
+  function driver(value: unknown, configurable = true) {
+    Object.defineProperty(navigator, "webdriver", {
+      configurable,
+      enumerable: true,
+      get: () => value,
+    });
+    return Object.getOwnPropertyDescriptor(navigator, "webdriver");
+  }
+
+  it("does not alter the automation indicator by default", () => {
+    const original = driver(true);
+    expect(start().capabilities.browserCompatibility).toEqual({
+      hideWebdriverRequested: false,
+      webdriverMasked: false,
+    });
+    expect(Object.getOwnPropertyDescriptor(navigator, "webdriver")).toEqual(
+      original,
+    );
+  });
+
+  it("masks only a true indicator, keeps proxy enforcement, and restores on disposal", () => {
+    const original = driver(true);
+    const client = start({
+      ...config(),
+      browserCompatibility: { hideWebdriver: true },
+    });
+    expect(navigator.webdriver).toBe(false);
+    expect(client.capabilities.browserCompatibility).toEqual({
+      hideWebdriverRequested: true,
+      webdriverMasked: true,
+    });
+    expect(() =>
+      client.mapUrl("https://unapproved.example/script.js", "resource"),
+    ).toThrow(/origin-not-approved/);
+    expect(client.mapUrl("/asset.js", "resource")).toBe(`${proxy}/asset.js`);
+    client.dispose();
+    expect(Object.getOwnPropertyDescriptor(navigator, "webdriver")).toEqual(
+      original,
+    );
+    expect(navigator.webdriver).toBe(true);
+  });
+
+  it.each([false, undefined])("leaves native %s unchanged", (value) => {
+    const original = driver(value);
+    const client = start({
+      ...config(),
+      browserCompatibility: { hideWebdriver: true },
+    });
+    expect(client.capabilities.browserCompatibility.webdriverMasked).toBe(
+      false,
+    );
+    expect(Object.getOwnPropertyDescriptor(navigator, "webdriver")).toEqual(
+      original,
+    );
+  });
+
+  it("does not fail routing when the native indicator is non-configurable", () => {
+    driver(true, false);
+    const client = start({
+      ...config(),
+      browserCompatibility: { hideWebdriver: true },
+    });
+    expect(navigator.webdriver).toBe(true);
+    expect(client.capabilities.browserCompatibility.webdriverMasked).toBe(
+      false,
+    );
+    expect(client.mapUrl("/asset.js", "resource")).toBe(`${proxy}/asset.js`);
+  });
+
+  it("does not overwrite a later site-owned descriptor during cleanup", () => {
+    driver(true);
+    const client = start({
+      ...config(),
+      browserCompatibility: { hideWebdriver: true },
+    });
+    const replacement = driver("site-owned");
+    client.dispose();
+    expect(Object.getOwnPropertyDescriptor(navigator, "webdriver")).toEqual(
+      replacement,
+    );
+  });
+
+  it("continues cleanup if the site freezes the installed descriptor", () => {
+    driver(true);
+    const client = start({
+      ...config(),
+      browserCompatibility: { hideWebdriver: true },
+    });
+    Object.defineProperty(navigator, "webdriver", { configurable: false });
+    expect(() => client.dispose()).not.toThrow();
+    expect(window.fetch).toBe(fetch);
+  });
+
+  it("restores an inherited indicator without leaving an own property", () => {
+    const prototype = Object.create(Object.getPrototypeOf(navigator));
+    Object.defineProperty(prototype, "webdriver", { get: () => true });
+    Object.setPrototypeOf(navigator, prototype);
+    const client = start({
+      ...config(),
+      browserCompatibility: { hideWebdriver: true },
+    });
+    expect(navigator.webdriver).toBe(false);
+    client.dispose();
+    expect(Object.prototype.hasOwnProperty.call(navigator, "webdriver")).toBe(
+      false,
+    );
+    expect(navigator.webdriver).toBe(true);
+  });
+
+  it.each([
+    null,
+    true,
+    {},
+    { hideWebdriver: "true" },
+    { hideWebdriver: true, unrestricted: true },
+  ])("rejects invalid configuration before changing identity: %j", (value) => {
+    driver(true);
+    expect(() =>
+      install({ ...config(), browserCompatibility: value }, report),
+    ).toThrow(/browser compatibility/);
+    expect(navigator.webdriver).toBe(true);
+  });
+
+  it("validates routes before changing identity", () => {
+    driver(true);
+    expect(() =>
+      start({
+        ...config(),
+        browserCompatibility: { hideWebdriver: true },
+        mappings: [{ upstreamOrigin: upstream, proxyOrigin: proxy }],
+      }),
+    ).toThrow(/Duplicate/);
+    expect(navigator.webdriver).toBe(true);
+  });
+});
+
 describe("proxy routing compatibility client (not native egress proof)", () => {
   const controlUrl = "https://global.quickconnect.to/Serv.php";
   const controlProxy = proxy + "/__sortofremoteng_quickconnect_control_v1";
@@ -244,6 +388,140 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     };
   };
   const tacticalApiProxy = proxy + "/__sortofremoteng_tactical_rmm_api_v1";
+  const ptispConfig = (): ClientConfiguration => ({
+    ...config(),
+    sourceOrigin: "https://my.ptisp.pt",
+    requestGeneration: "0123456789abcdef0123456789abcdef",
+    ptispApi: {
+      version: 2,
+      apiOrigins: ["https://api3.ptisp.pt"],
+      proxyUrl: proxy + "/__sortofremoteng_ptisp_api_v1",
+    },
+  });
+  it("routes PTisp login and page-owned Basic authorization through only its API alias", async () => {
+    start(ptispConfig());
+    const destination =
+      "https://api3.ptisp.pt/user/security/fixture%40example.test/login?raw=%2F+";
+    const expected = new URL(ptispConfig().ptispApi!.proxyUrl);
+    expected.searchParams.set("destination", destination);
+    expected.searchParams.set("__sorng_ptisp_document_v1", "3");
+    expected.searchParams.set(
+      "__sorng_generation_v1",
+      ptispConfig().requestGeneration!,
+    );
+    const body = JSON.stringify({
+      password: "fixture-password",
+      authcode: "",
+      remmemberme: false,
+    });
+    await window.fetch(destination, { method: "POST", body });
+    expect(fetch).toHaveBeenCalledWith(expected.href, { method: "POST", body });
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "https://api3.ptisp.pt/user/info");
+    xhr.setRequestHeader("Authorization", "Basic Zml4dHVyZTpoYXNo");
+    xhr.send();
+    expect(
+      new URL(xhrOpen.mock.calls[0][1] as string).searchParams.get(
+        "destination",
+      ),
+    ).toBe("https://api3.ptisp.pt/user/info");
+    expect(xhrHeader).toHaveBeenCalledWith(
+      "Authorization",
+      "Basic Zml4dHVyZTpoYXNo",
+    );
+    expect(controller!.capabilities.tacticalRmmApi).toBe(false);
+    expect(controller!.capabilities.tacticalRmmApiOrigins).toEqual([]);
+  });
+  it("denies PTisp API grant on generic profiles and denies other transports/origins without leaking login paths", () => {
+    start();
+    expect(() =>
+      controller!.mapUrl("https://api3.ptisp.pt/user/info", "fetch"),
+    ).toThrow("origin-not-approved");
+    controller!.dispose();
+    start(ptispConfig());
+    for (const destination of [
+      "http://api3.ptisp.pt/user/info",
+      "https://api3.ptisp.pt:8443/user/info",
+      "https://api3.ptisp.pt.evil.test/user/info",
+      "https://api.ptisp.pt/user/info",
+      "https://api3.ptisp.pt./user/info",
+      "https://api4.ptisp.pt/user/info",
+    ])
+      expect(() => controller!.mapUrl(destination, "xhr")).toThrow(
+        "origin-not-approved",
+      );
+    for (const kind of [
+      "navigation",
+      "resource",
+      "form",
+      "websocket",
+      "eventsource",
+      "beacon",
+    ])
+      expect(() =>
+        controller!.mapUrl(
+          "https://api3.ptisp.pt/user/security/secret-email/login?token=secret-query",
+          kind,
+        ),
+      ).toThrow("origin-not-approved");
+    expect(() =>
+      controller!.mapUrl(
+        "https://user:secret@api3.ptisp.pt/user/info",
+        "fetch",
+      ),
+    ).toThrow("url-credentials");
+    expect(() =>
+      controller!.mapUrl("https://api3.ptisp.pt/user/info#secret", "fetch"),
+    ).toThrow("invalid-url");
+    expect(JSON.stringify(report.mock.calls)).not.toMatch(
+      /secret-email|secret-query|user:secret/,
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(xhrOpen).not.toHaveBeenCalled();
+    controller!.dispose();
+    expect(() =>
+      controller!.mapUrl("https://api3.ptisp.pt/user/info", "fetch"),
+    ).toThrow("document-closed");
+  });
+  it("rejects forged PTisp manifests and Tactical co-grants", () => {
+    for (const sourceOrigin of [
+      "https://other.ptisp.pt",
+      "http://my.ptisp.pt",
+      "https://my.ptisp.pt:8443",
+      "https://my.ptisp.pt.evil.test",
+    ])
+      expect(() => start({ ...ptispConfig(), sourceOrigin })).toThrow(
+        "Invalid PTisp API route configuration",
+      );
+    for (const apiOrigins of [
+      [],
+      ["https://api4.ptisp.pt"],
+      ["https://api3.ptisp.pt", "https://evil.test"],
+      ["https://api3.ptisp.pt/"],
+    ])
+      expect(() =>
+        start({
+          ...ptispConfig(),
+          ptispApi: { ...ptispConfig().ptispApi!, apiOrigins },
+        }),
+      ).toThrow("Invalid PTisp API route configuration");
+    expect(() =>
+      start({
+        ...ptispConfig(),
+        tacticalRmmApi: {
+          version: 2,
+          apiOrigins: ["https://api3.ptisp.pt"],
+          proxyUrl: tacticalApiProxy,
+        },
+      }),
+    ).toThrow("Invalid PTisp API route configuration");
+    expect(() =>
+      start({
+        ...ptispConfig(),
+        ptispApi: { ...ptispConfig().ptispApi!, proxyUrl: tacticalApiProxy },
+      }),
+    ).toThrow("Invalid PTisp API route configuration");
+  });
   const tacticalConfig = (): ClientConfiguration => ({
     ...config(),
     tacticalRmmApi: {
@@ -264,45 +542,72 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       proxyOrigin: challengeProxy,
     },
   });
-  it("routes Cloudflare challenge scripts, frames and requests through the exact isolated alias", () => {
-    start(cloudflareConfig());
-    const script = document.createElement("script");
-    script.src =
-      "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-    expect(script.src).toBe(
-      `${challengeProxy}/turnstile/v0/api.js?render=explicit`,
-    );
-    const frame = document.createElement("iframe");
-    frame.src =
-      "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/widget";
-    expect(frame.src).toBe(
-      `${challengeProxy}/cdn-cgi/challenge-platform/widget`,
-    );
-    expect(
-      controller!.mapUrl(
-        "https://challenges.cloudflare.com/check?q=a%2Fb",
-        "fetch",
-      ),
-    ).toBe(`${challengeProxy}/check?q=a%2Fb`);
-    for (const denied of [
-      "http://challenges.cloudflare.com/",
-      "https://challenges.cloudflare.com:8443/",
-      "https://challenges.cloudflare.com.evil.test/",
-      "https://api.cloudflare.com/",
-    ])
-      expect(() => controller!.mapUrl(denied, "fetch")).toThrow(
-        "origin-not-approved",
+  it.each(["https://dash.cloudflare.com", "https://porkbun.com"])(
+    "installs the native challenge route for %s and proxies scripts, frames, fetch and XHR",
+    async (sourceOrigin) => {
+      start({ ...cloudflareConfig(), sourceOrigin });
+      const script = document.createElement("script");
+      script.src =
+        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      expect(script.getAttribute("src")).toBe(
+        `${challengeProxy}/turnstile/v0/api.js?render=explicit`,
       );
-  });
-  it("never invents challenge routing from a Cloudflare source hostname alone", () => {
-    start({ ...config(), sourceOrigin: "https://dash.cloudflare.com" });
-    expect(() =>
-      controller!.mapUrl(
-        "https://challenges.cloudflare.com/turnstile/v0/api.js",
-        "resource",
-      ),
-    ).toThrow("origin-not-approved");
-  });
+      expect(script.src).toBe(
+        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
+      );
+      const frame = document.createElement("iframe");
+      frame.src =
+        "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/widget";
+      expect(frame.src).toBe(
+        `${challengeProxy}/cdn-cgi/challenge-platform/widget`,
+      );
+      expect(
+        controller!.mapUrl(
+          "https://challenges.cloudflare.com/check?q=a%2Fb",
+          "fetch",
+        ),
+      ).toBe(`${challengeProxy}/check?q=a%2Fb`);
+      await window.fetch("https://challenges.cloudflare.com/check?q=a%2Fb");
+      expect(fetch).toHaveBeenCalledWith(
+        `${challengeProxy}/check?q=a%2Fb`,
+        undefined,
+      );
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "https://challenges.cloudflare.com/turnstile/response");
+      xhr.send("fixture");
+      expect(xhrOpen).toHaveBeenCalledWith(
+        "POST",
+        `${challengeProxy}/turnstile/response`,
+      );
+      await window.fetch(`${sourceOrigin}/login`);
+      expect(fetch).toHaveBeenLastCalledWith(`${proxy}/login`, undefined);
+      for (const denied of [
+        "http://challenges.cloudflare.com/",
+        "https://challenges.cloudflare.com:8443/",
+        "https://challenges.cloudflare.com.evil.test/",
+        "https://api.cloudflare.com/",
+        "https://challenges.fed.cloudflare.com/",
+        "https://challenges.cloudflare-cn.com/",
+        "https://js.stripe.com/v3/",
+        "https://fonts.googleapis.com/css2?family=Roboto",
+      ])
+        expect(() => controller!.mapUrl(denied, "fetch")).toThrow(
+          "origin-not-approved",
+        );
+    },
+  );
+  it.each(["https://dash.cloudflare.com", "https://porkbun.com"])(
+    "never invents challenge routing from %s alone",
+    (sourceOrigin) => {
+      start({ ...config(), sourceOrigin });
+      expect(() =>
+        controller!.mapUrl(
+          "https://challenges.cloudflare.com/turnstile/v0/api.js",
+          "resource",
+        ),
+      ).toThrow("origin-not-approved");
+    },
+  );
   it.each([
     { version: 2 },
     { upstreamOrigin: "https://api.cloudflare.com" },
@@ -318,10 +623,149 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     };
     expect(() => start(settings)).toThrow();
   });
-  it("rejects granting Cloudflare routes to a different application origin", () => {
-    expect(() =>
-      start({ ...cloudflareConfig(), sourceOrigin: upstream }),
-    ).toThrow("Cloudflare");
+  it.each([
+    upstream,
+    "http://porkbun.com",
+    "https://porkbun.com:444",
+    "https://www.porkbun.com",
+    "https://api.porkbun.com",
+    "https://porkbun.com.attacker.test",
+    "https://challenges.cloudflare.com",
+    "https://dash.cloudflare.com.attacker.test",
+  ])(
+    "rejects granting Cloudflare routes to unreviewed source %s",
+    (sourceOrigin) => {
+      expect(() => start({ ...cloudflareConfig(), sourceOrigin })).toThrow(
+        "Cloudflare",
+      );
+    },
+  );
+  it.each(["parser", "property", "attribute"])(
+    "preserves Turnstile %s script discovery while the native src stays proxied",
+    async (insertion) => {
+      const nativeSrc = Object.getOwnPropertyDescriptor(
+        HTMLScriptElement.prototype,
+        "src",
+      )!;
+      const path =
+        "/turnstile/v0/g/fixture/api.js?render=explicit&onload=ready&opaque=a%2Fb+space";
+      const canonical = `https://challenges.cloudflare.com${path}`;
+      const local = `${challengeProxy}${path}`;
+      start(cloudflareConfig());
+      let script: HTMLScriptElement;
+      if (insertion === "parser") {
+        document.body.innerHTML = `<script src="${local}"></script>`;
+        script = document.querySelector("script")!;
+      } else {
+        script = document.createElement("script");
+        if (insertion === "property") script.src = canonical;
+        else script.setAttribute("src", canonical);
+        document.body.appendChild(script);
+      }
+      script.async = true;
+      // Turnstile first checks currentScript.src, then scans script elements
+      // with the same HTTPS host/path matcher (api.js inspected 2026-10-01).
+      const apiSource =
+        /^https:\/\/challenges\.cloudflare\.com\/turnstile\/v0(?:\/.*)?\/api\.js/u;
+      vi.spyOn(document, "currentScript", "get").mockReturnValue(script);
+      expect(
+        apiSource.test((document.currentScript as HTMLScriptElement).src),
+      ).toBe(true);
+      expect(
+        [...document.querySelectorAll("script")].find((candidate) =>
+          apiSource.test(candidate.src),
+        ),
+      ).toBe(script);
+      expect(script.src).toBe(canonical);
+      expect(new URL(script.src).searchParams.get("onload")).toBe("ready");
+      expect(script.async).toBe(true);
+      expect(script.getAttribute("src")).toBe(local);
+      expect(nativeSrc.get!.call(script)).toBe(local);
+      const clone = script.cloneNode(true) as HTMLScriptElement;
+      expect(clone.src).toBe(canonical);
+      expect(clone.getAttribute("src")).toBe(local);
+      clone.src = script.src;
+      expect(nativeSrc.get!.call(clone)).toBe(local);
+      await window.fetch(script.src);
+      expect(fetch).toHaveBeenCalledWith(local, undefined);
+      controller!.dispose();
+      expect(script.src).toBe(local);
+      expect(
+        Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, "src"),
+      ).toEqual(nativeSrc);
+    },
+  );
+  it.each(["challenge-frame", "hosted-session"])(
+    "uses the existing %s route for Turnstile discovery and keeps its source isolated",
+    async (context) => {
+      const sourceOrigin =
+        context === "challenge-frame"
+          ? "https://challenges.cloudflare.com"
+          : "https://claude.ai";
+      const alias = context === "challenge-frame" ? proxy : challengeProxy;
+      start({
+        ...config(),
+        sourceOrigin,
+        ...(context === "hosted-session"
+          ? {
+              googleSession: {
+                version: 1,
+                nativeCookies: true,
+                routes: [
+                  {
+                    upstreamOrigin: sourceOrigin,
+                    proxyOrigin: proxy,
+                    documents: true,
+                  },
+                  {
+                    upstreamOrigin: "https://challenges.cloudflare.com",
+                    proxyOrigin: alias,
+                    documents: false,
+                  },
+                ],
+              },
+            }
+          : {}),
+      });
+      const script = document.createElement("script");
+      script.src =
+        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      expect(script.src).toBe(
+        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
+      );
+      expect(script.getAttribute("src")).toBe(
+        `${alias}/turnstile/v0/api.js?render=explicit`,
+      );
+      await window.fetch(script.src);
+      expect(fetch.mock.calls[0][0]).toBe(
+        `${alias}/turnstile/v0/api.js?render=explicit`,
+      );
+      expect(() =>
+        controller!.mapUrl("https://porkbun.com/login", "fetch"),
+      ).toThrow("origin-not-approved");
+    },
+  );
+  it("projects only the exact granted Turnstile API script, never another resource or alias", () => {
+    start(cloudflareConfig());
+    for (const url of [
+      `${challengeProxy}/turnstile/v0/api.js.map`,
+      `${challengeProxy}/turnstile/v1/api.js`,
+      `${challengeProxy}/cdn-cgi/challenge-platform/script.js`,
+      `${proxy}/turnstile/v0/api.js`,
+      `${otherProxy}/turnstile/v0/api.js`,
+    ]) {
+      document.body.innerHTML = `<script src="${url}"></script>`;
+      expect(document.querySelector("script")!.src).toBe(url);
+    }
+    const image = document.createElement("img");
+    image.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    expect(image.src).toBe(`${challengeProxy}/turnstile/v0/api.js`);
+    controller!.dispose();
+    start();
+    document.body.innerHTML = `<script src="${challengeProxy}/turnstile/v0/api.js"></script>`;
+    expect(document.querySelector("script")!.src).toBe(
+      `${challengeProxy}/turnstile/v0/api.js`,
+    );
   });
   const meshProxy = "http://p22222222222222222222222222222222.localhost:43123";
   const meshConfig = (): ClientConfiguration => ({
@@ -462,6 +906,61 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       ],
     },
   });
+  it.each([
+    ["https://www.canva.com", "https://static.canva.com"],
+    ["https://www.instagram.com", "https://static.cdninstagram.com"],
+  ])(
+    "routes the two-origin hosted catalog for %s without granting CDN navigation or foreign login",
+    async (sourceOrigin, assetOrigin) => {
+      const assetProxy =
+        "http://p22222222222222222222222222222222.localhost:43123";
+      start({
+        ...config(),
+        sourceOrigin,
+        googleSession: {
+          version: 1,
+          nativeCookies: true,
+          routes: [
+            {
+              upstreamOrigin: sourceOrigin,
+              proxyOrigin: proxy,
+              documents: true,
+            },
+            {
+              upstreamOrigin: assetOrigin,
+              proxyOrigin: assetProxy,
+              documents: false,
+            },
+          ],
+        },
+      });
+      expect(controller!.capabilities.googleSession).toMatchObject({
+        nativeCookies: true,
+        documentCookieBridge: true,
+        origins: [sourceOrigin, assetOrigin],
+      });
+      expect(controller!.mapUrl(`${assetOrigin}/login.js`, "resource")).toBe(
+        `${assetProxy}/login.js`,
+      );
+      for (const origin of [
+        assetOrigin,
+        "https://accounts.google.com",
+        "https://www.facebook.com",
+      ]) {
+        expect(() =>
+          controller!.mapUrl(`${origin}/login`, "navigation"),
+        ).toThrow("origin-not-approved");
+      }
+      await window.fetch(`${sourceOrigin}/api/session`, {
+        credentials: "include",
+      });
+      const [url, options] = fetch.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${proxy}/api/session`);
+      expect(
+        new Headers(options.headers).get("X-Sorng-Google-Credentials"),
+      ).toBe("include");
+    },
+  );
   it("carries the native-issued document generation onto same-proxy navigation", () => {
     const generation = "0123456789abcdef0123456789abcdef";
     start({ ...config(), requestGeneration: generation });
@@ -626,6 +1125,310 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       ).toBe("0123456789abcdef0123456789abcdef");
     },
   );
+  describe("Exchange native request credential signalling", () => {
+    const header = "X-Sorng-Exchange-Credentials";
+
+    it.each([undefined, "same-origin", "include", "omit"] as const)(
+      "preserves fetch credential mode %s and signals the native jar",
+      async (credentials) => {
+        start({ ...config(), exchangeCookies: true });
+        await window.fetch(`${upstream}/owa/auth.owa`, {
+          method: "POST",
+          body: "fixture=value",
+          credentials,
+          headers: { [header]: "include", "Content-Type": "text/plain" },
+        });
+        const [url, options] = fetch.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe(`${proxy}/owa/auth.owa`);
+        expect(options.credentials).toBe(credentials);
+        expect(options.body).toBe("fixture=value");
+        expect(new Headers(options.headers).get(header)).toBe(
+          credentials === "omit" ? "omit" : "include",
+        );
+        expect(
+          new Headers(options.headers).has("X-Sorng-Google-Credentials"),
+        ).toBe(false);
+        expect(xhrSend).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([upstream, proxy])(
+      "preserves Request bodies and effective init credentials for %s",
+      async (origin) => {
+        start({ ...config(), exchangeCookies: true });
+        const input = new Request(`${origin}/owa/auth.owa`, {
+          method: "POST",
+          body: "fixture=value",
+          credentials: "include",
+          headers: { "X-Fixture": "retained" },
+        });
+        await window.fetch(input, { credentials: "omit" });
+        const [request, options] = fetch.mock.calls[0] as [
+          Request,
+          RequestInit | undefined,
+        ];
+        expect(request.url).toBe(`${proxy}/owa/auth.owa`);
+        expect(request.credentials).toBe("omit");
+        expect(await request.text()).toBe("fixture=value");
+        const headers = new Headers(options?.headers ?? request.headers);
+        expect(headers.get(header)).toBe("omit");
+        expect(headers.get("X-Fixture")).toBe("retained");
+      },
+    );
+
+    it.each([false, true])(
+      "includes same-origin XHR cookies with withCredentials=%s",
+      (withCredentials) => {
+        start({ ...config(), exchangeCookies: true });
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${upstream}/owa/auth.owa`, false);
+        xhr.withCredentials = withCredentials;
+        xhr.send("fixture=value");
+        expect(xhrOpen).toHaveBeenLastCalledWith(
+          "POST",
+          `${proxy}/owa/auth.owa`,
+          false,
+        );
+        expect(xhrHeader).toHaveBeenLastCalledWith(header, "include");
+        expect(xhrSend).toHaveBeenLastCalledWith("fixture=value");
+      },
+    );
+
+    it.each([undefined, false])(
+      "does not activate request signalling when flag=%s",
+      async (exchangeCookies) => {
+        start({ ...config(), exchangeCookies });
+        await window.fetch("/ecp/");
+        expect(
+          (fetch.mock.calls[0][1] as RequestInit | undefined)?.headers,
+        ).toBeUndefined();
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", "/ecp/");
+        xhr.send();
+        expect(xhrHeader).not.toHaveBeenCalled();
+      },
+    );
+
+    it("does not signal other approved proxies, including a reused XHR", async () => {
+      start({
+        ...config(),
+        exchangeCookies: true,
+        mappings: [
+          { upstreamOrigin: "https://other.example", proxyOrigin: otherProxy },
+        ],
+      });
+      await window.fetch("https://other.example/api", {
+        credentials: "include",
+      });
+      expect((fetch.mock.calls[0][1] as RequestInit).headers).toBeUndefined();
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", "/ecp/");
+      xhr.send();
+      expect(xhrHeader).toHaveBeenLastCalledWith(header, "include");
+      xhrHeader.mockClear();
+      xhr.open("GET", "https://other.example/api");
+      xhr.withCredentials = true;
+      xhr.send();
+      expect(xhrHeader).not.toHaveBeenCalled();
+      await expect(
+        window.fetch("https://unapproved.example/api"),
+      ).rejects.toThrow("origin-not-approved");
+    });
+  });
+
+  describe("explicit native Exchange cookie bridge", () => {
+    function rejectingBrowserCookies() {
+      vi.spyOn(document, "cookie", "get").mockReturnValue("");
+      const rejected = vi
+        .spyOn(document, "cookie", "set")
+        .mockImplementation(() => {});
+      Object.defineProperty(navigator, "cookieEnabled", {
+        configurable: true,
+        value: false,
+      });
+      return rejected;
+    }
+    function nativeJar() {
+      const calls: Array<{
+        method: string;
+        url: string;
+        async: boolean;
+        path: string;
+        body: unknown;
+      }> = [];
+      const jar = new Map<string, string>();
+      const failure = { mode: "" };
+      vi.stubGlobal(
+        "XMLHttpRequest",
+        class {
+          method = "";
+          url = "";
+          async = true;
+          path = "";
+          status = 200;
+          responseText = "";
+          open(method: string, url: string, async: boolean) {
+            this.method = method;
+            this.url = url;
+            this.async = async;
+          }
+          setRequestHeader(name: string, value: string) {
+            expect(name).toBe("X-Sorng-Exchange-Cookie-Path");
+            this.path = value;
+          }
+          send(body: unknown) {
+            calls.push({
+              method: this.method,
+              url: this.url,
+              async: this.async,
+              path: this.path,
+              body,
+            });
+            if (failure.mode === "throw")
+              throw new Error("native endpoint unavailable");
+            if (failure.mode === "reject") {
+              this.status = 403;
+              return;
+            }
+            if (this.method === "POST") {
+              const assignment = String(body);
+              const pair = assignment.split(";", 1)[0];
+              const index = pair.indexOf("=");
+              if (/Max-Age=0|expires=Thu, 01 Jan 1970/i.test(assignment))
+                jar.delete(pair.slice(0, index));
+              else jar.set(pair.slice(0, index), pair.slice(index + 1));
+            }
+            this.responseText = [...jar]
+              .map(([key, value]) => `${key}=${value}`)
+              .join("; ");
+          }
+        },
+      );
+      return { calls, jar, failure };
+    }
+    it.each([null, "0123456789abcdef0123456789abcdef"])(
+      "roundtrips the cookie probe synchronously via the native jar, generation=%s",
+      (generation) => {
+        const rejected = rejectingBrowserCookies();
+        document.cookie = "browser-probe=lost";
+        expect(document.cookie).toBe("");
+        rejected.mockClear();
+        const native = nativeJar();
+        vi.stubGlobal(
+          "location",
+          new URL(`${proxy}/owa/auth/logon.aspx?url=%2Fecp%2F`),
+        );
+        start({
+          ...config(),
+          exchangeCookies: true,
+          requestGeneration: generation,
+        });
+        // This is the first site-script work after installation, not an async repair.
+        window.eval(
+          "document.cookie='ecp-probe=accepted; Path=/owa/; Secure';",
+        );
+        expect(document.cookie).toBe("ecp-probe=accepted");
+        document.cookie = "ecp-probe=; Path=/owa/; Max-Age=0";
+        expect(document.cookie).toBe("");
+        expect(native.jar.size).toBe(0);
+        expect(rejected).not.toHaveBeenCalled();
+        expect(navigator.cookieEnabled).toBe(false);
+        const endpoint = `${proxy}/__sortofremoteng_exchange_cookie_v1${generation ? `?__sorng_generation_v1=${generation}` : ""}`;
+        expect(native.calls.map((c) => c.method)).toEqual([
+          "POST",
+          "GET",
+          "POST",
+          "GET",
+        ]);
+        for (const call of native.calls)
+          expect(call).toMatchObject({
+            url: endpoint,
+            async: false,
+            path: "/owa/auth/logon.aspx",
+          });
+        expect(native.calls[0].body).toBe(
+          "ecp-probe=accepted; Path=/owa/; Secure",
+        );
+        expect(native.calls[1].body).toBeNull();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(report).not.toHaveBeenCalled();
+        // Existing origin restrictions are unchanged by enabling a cookie jar.
+        expect(() =>
+          controller!.mapUrl("https://foreign.example/ecp/", "fetch"),
+        ).toThrow("origin-not-approved");
+      },
+    );
+    it("reads the current document path on each operation and restores the original descriptor", () => {
+      const rejected = rejectingBrowserCookies();
+      const original = Object.getOwnPropertyDescriptor(document, "cookie");
+      const native = nativeJar();
+      start({ ...config(), exchangeCookies: true });
+      const bridge = Object.getOwnPropertyDescriptor(document, "cookie")!;
+      document.cookie = "fixture=one";
+      vi.stubGlobal("location", new URL(`${proxy}/ecp/`));
+      expect(document.cookie).toBe("fixture=one");
+      expect(native.calls[native.calls.length - 1]?.path).toBe("/ecp/");
+      controller!.dispose();
+      expect(Object.getOwnPropertyDescriptor(document, "cookie")).toEqual(
+        original,
+      );
+      document.cookie = "fixture=ignored";
+      expect(document.cookie).toBe("");
+      expect(rejected).toHaveBeenCalledWith("fixture=ignored");
+      const count = native.calls.length;
+      expect(bridge.get!.call(document)).toBe("");
+      expect(() => bridge.set!.call(document, "late=ignored")).not.toThrow();
+      expect(native.calls).toHaveLength(count);
+    });
+    it.each(["throw", "reject"])(
+      "keeps native failures silent without browser or upstream fallback: %s",
+      (mode) => {
+        const rejected = rejectingBrowserCookies();
+        const native = nativeJar();
+        native.failure.mode = mode;
+        start({ ...config(), exchangeCookies: true });
+        expect(() => {
+          document.cookie = "fixture=not-stored";
+        }).not.toThrow();
+        expect(document.cookie).toBe("");
+        expect(native.jar.size).toBe(0);
+        expect(rejected).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(report).not.toHaveBeenCalled();
+      },
+    );
+    it.each([undefined, false])(
+      "does not infer activation from Exchange paths when flag=%s",
+      (exchangeCookies) => {
+        const rejected = rejectingBrowserCookies();
+        const native = nativeJar();
+        vi.stubGlobal("location", new URL(`${proxy}/ecp/`));
+        start({ ...config(), exchangeCookies });
+        document.cookie = "fixture=lost";
+        expect(document.cookie).toBe("");
+        expect(rejected).toHaveBeenCalled();
+        expect(native.calls).toHaveLength(0);
+      },
+    );
+    it("rejects insecure sources and non-boolean activation", () => {
+      expect(() =>
+        start({
+          ...config(),
+          sourceOrigin: "http://device.example",
+          exchangeCookies: true,
+        }),
+      ).toThrow("Invalid Exchange cookie");
+      expect(() =>
+        start({ ...config(), exchangeCookies: "true" as unknown as boolean }),
+      ).toThrow("Invalid Exchange cookie");
+    });
+    it("rejects a document from another proxy origin", () => {
+      vi.stubGlobal("location", new URL(`${otherProxy}/ecp/`));
+      expect(() => start({ ...config(), exchangeCookies: true })).toThrow(
+        "document mismatch",
+      );
+    });
+  });
   it("routes exact Google origins with credential mode markers and no direct fallback", async () => {
     start(googleConfig());
     expect(controller!.capabilities.googleSession).toMatchObject({
@@ -1275,6 +2078,10 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     start(quickConfig());
     expect(controller!.capabilities).toEqual({
       version: 6,
+      browserCompatibility: {
+        hideWebdriverRequested: false,
+        webdriverMasked: false,
+      },
       tacticalRmmApi: false,
       tacticalRmmApiOrigins: [],
       fetchInterception: true,
@@ -1308,6 +2115,10 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     start();
     expect(controller!.capabilities).toEqual({
       version: 6,
+      browserCompatibility: {
+        hideWebdriverRequested: false,
+        webdriverMasked: false,
+      },
       tacticalRmmApi: false,
       tacticalRmmApiOrigins: [],
       fetchInterception: true,

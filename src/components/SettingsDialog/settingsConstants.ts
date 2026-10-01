@@ -27,6 +27,7 @@ import {
   RefreshCw,
   LucideIcon,
   Database,
+  Network,
 } from "lucide-react";
 import { DEFAULT_PASSWORD_POLICY } from "../../types/security/passwordPolicy";
 import {
@@ -38,6 +39,11 @@ import {
 } from "../../types/settings/settings";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../ui/display/loadingElement/defaults";
 import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
+import {
+  normalizeWebBrowserSettings,
+  normalizeInternalProxySettings,
+} from "../../utils/settings/webBrowserSettings";
+import { normalizeWebsiteDarkModeSettings } from "../../utils/connection/websiteDarkMode";
 
 /* ═══════════════════════════════════════════════════════════════
    Tab definition
@@ -89,7 +95,8 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "webBrowser", labelKey: "Web Browser", icon: Globe },
 
   // ── Networking ──
-  { id: "proxy", labelKey: "Proxy", icon: Wifi },
+  { id: "internalProxy", labelKey: "Internal Proxy", icon: Network },
+  { id: "proxy", labelKey: "Upstream Proxy", icon: Wifi },
   { id: "vpn", labelKey: "VPN", icon: Shield },
 
   // ── Storage & sync ──
@@ -156,6 +163,7 @@ export const SETTINGS_TAB_ID_LIST = [
   "rdpDefaults",
   "sshTerminal",
   "webBrowser",
+  "internalProxy",
   "proxy",
   "vpn",
   "backup",
@@ -373,7 +381,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   rdpDefaults: ["rdpDefaults"],
   backup: ["backup"],
   cloudSync: ["cloudSync"],
-  proxy: ["globalProxy", "proxyRequestLogLimit"],
+  proxy: ["globalProxy"],
   vpn: ["vpnSettings"],
   advanced: [
     "enableTabDetachment",
@@ -406,12 +414,14 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   diagnostics: ["diagnostics"],
   backend: ["backendConfig"],
   sshTerminal: ["sshTerminal"],
-  webBrowser: [
+  webBrowser: ["webBrowser", "websiteDarkMode", "confirmDeleteAllBookmarks"],
+  internalProxy: [
+    "internalProxy",
     "proxyKeepaliveEnabled",
     "proxyKeepaliveIntervalSeconds",
     "proxyAutoRestart",
     "proxyMaxAutoRestarts",
-    "confirmDeleteAllBookmarks",
+    "proxyRequestLogLimit",
   ],
 };
 
@@ -420,6 +430,14 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
    ═══════════════════════════════════════════════════════════════ */
 
 export const DEFAULT_VALUES: Partial<GlobalSettings> = {
+  webBrowser: normalizeWebBrowserSettings(undefined),
+  websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
+  internalProxy: normalizeInternalProxySettings(undefined),
+  proxyKeepaliveEnabled: true,
+  proxyKeepaliveIntervalSeconds: 10,
+  proxyAutoRestart: true,
+  proxyMaxAutoRestarts: 5,
+  confirmDeleteAllBookmarks: true,
   language: "en-US",
   theme: "dark",
   colorScheme: "blue",

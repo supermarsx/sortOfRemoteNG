@@ -29,6 +29,13 @@ export function getReviewedApplicationProfile(
   | "cpanel"
   | "cloudflare"
   | "porkbun"
+  | "ptisp"
+  | "exchange-ecp"
+  | "adobe-admin-console"
+  | "instagram"
+  | "canva"
+  | "chatgpt"
+  | "claude"
   | "freepbx"
   | undefined {
   const settings = normalizeHttpApplicationSettings(
@@ -39,6 +46,14 @@ export function getReviewedApplicationProfile(
   if (settings.id === "cpanel") return "cpanel";
   if (settings.id === "cloudflare") return "cloudflare";
   if (settings.id === "porkbun") return "porkbun";
+  if (settings.id === "ptisp") return "ptisp";
+  if (settings.id === "exchange-ecp") return "exchange-ecp";
+  if (settings.id === "adobe-admin-console") return "adobe-admin-console";
+  if (settings.id === "instagram") return "instagram";
+  // Routing capability only: Canva does not grant a reviewed credential flow.
+  if (settings.id === "canva") return "canva";
+  if (settings.id === "chatgpt") return "chatgpt";
+  if (settings.id === "claude") return "claude";
   if (settings.id === "freepbx") return "freepbx";
   return getFirstPartyGoogleHostedApplicationUrl(settings.id)
     ? "google-hosted"
@@ -128,8 +143,19 @@ export interface HttpApplicationLogin {
     | "synology-form"
     | "google-form"
     | "cloudflare-form"
+    | "adobe-form"
+    | "chatgpt-form"
+    | "claude-form"
     | "yealink-servlet";
-  loginFlow?: "bitwarden" | "synology" | "google" | "yealink" | "cloudflare";
+  loginFlow?:
+    | "bitwarden"
+    | "synology"
+    | "google"
+    | "yealink"
+    | "cloudflare"
+    | "adobe"
+    | "chatgpt"
+    | "claude";
   autoLogin: boolean;
   selectors?: HttpAutoLoginSelectors;
 }
@@ -143,6 +169,9 @@ const STAGED_LOGIN_UPSTREAM_MODES: Record<
   synology: "synology-form",
   google: "google-form",
   cloudflare: "cloudflare-form",
+  adobe: "adobe-form",
+  chatgpt: "chatgpt-form",
+  claude: "claude-form",
   yealink: "yealink-servlet",
 };
 
@@ -218,6 +247,24 @@ export function normalizeHttpApplicationSelectors(
   return Object.keys(result).length ? result : undefined;
 }
 
+/** Read email only; never read/copy password fields, even from a vault result. */
+export function resolveHttpApplicationEmail(
+  connection: Partial<Connection> | null | undefined,
+  vaultCredentials?: { username: string },
+): string {
+  if (
+    normalizeConnectionCredentialSource(connection?.credentialSource)?.kind ===
+    "vault"
+  )
+    return typeof vaultCredentials?.username === "string"
+      ? vaultCredentials.username
+      : "";
+  const dedicated = connection?.basicAuthUsername;
+  if (dedicated != null && typeof dedicated !== "string") return "";
+  if (dedicated) return dedicated;
+  return typeof connection?.username === "string" ? connection.username : "";
+}
+
 /** Prepare one protected proxy session; never mutate or re-save the connection. */
 export function resolveHttpApplicationLogin(
   connection: Partial<Connection> | null | undefined,
@@ -263,10 +310,25 @@ export function resolveHttpApplicationLogin(
   const profile = getHttpApplicationProfile(settings.id)!;
   if (settings.loginMode === "manual")
     return { credentials: null, upstreamAuthMode: "none", autoLogin: false };
-  const credentials = credentialsFor({
-    ...connection,
-    authType: "basic",
-  });
+  if (
+    (profile.id === "chatgpt" || profile.id === "claude") &&
+    (connection.httpFormAutomation !== undefined ||
+      connection.httpAutoMfa?.enabled)
+  )
+    throw new Error(
+      "This bounded login flow does not support advanced form automation or automatic MFA. Clear those options or use manual login.",
+    );
+  const credentials = profile.emailOnly
+    ? deferred
+      ? null
+      : {
+          username: resolveHttpApplicationEmail(connection, vaultCredentials),
+          password: "",
+        }
+    : credentialsFor({
+        ...connection,
+        authType: "basic",
+      });
   if (!credentials && !deferred)
     throw new Error(
       "Application login requires this connection's saved website credentials. Review Application settings.",
@@ -277,9 +339,14 @@ export function resolveHttpApplicationLogin(
       upstreamAuthMode: settings.loginMode,
       autoLogin: false,
     };
-  if (!deferred && (!credentials?.username || !credentials.password))
+  if (
+    !deferred &&
+    (!credentials?.username || (!profile.emailOnly && !credentials.password))
+  )
     throw new Error(
-      "Automatic form login requires both the website username and password.",
+      profile.emailOnly
+        ? "Automatic email assistance requires the website email."
+        : "Automatic form login requires both the website username and password.",
     );
   if (profile.loginFlow) {
     if (

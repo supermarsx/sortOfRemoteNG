@@ -1,15 +1,13 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_HTTP_FORM_AUTOMATION,
   normalizeHttpFormAutomation,
 } from "../../src/utils/connection/httpFormAutomation";
 import type { HttpFormAutomation } from "../../src/types/connection/httpFormAutomation";
+import { browserFormAutomation } from "../../src/utils/protocol/browserCompatibility";
 
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 type Result = { ok: boolean; reason: string };
 type Client = {
   bootstrap(
@@ -131,6 +129,25 @@ describe("actual advanced form client", () => {
     expect(submit).toHaveBeenCalledOnce();
     expect(credentials).toEqual({ username: null, password: null });
     await vi.advanceTimersByTimeAsync(60000);
+    expect(submit).toHaveBeenCalledOnce();
+  });
+  it("honors the largest combined browser delay and still submits before expiry", async () => {
+    const submit = show();
+    const pending = client.bootstrap(
+      creds(),
+      selectors,
+      browserFormAutomation(undefined, false, 30000, 22000),
+    );
+    await vi.advanceTimersByTimeAsync(29999);
+    expect(field("pass").value).toBe("");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(field("pass").value).toBe("fixture-secret");
+    await vi.advanceTimersByTimeAsync(21999);
+    expect(submit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await pending).toMatchObject({ reason: "submitted" });
+    expect(submit).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(8000);
     expect(submit).toHaveBeenCalledOnce();
   });
   it("fills only explicit text, hidden and selected option values, preserving site CSRF", async () => {

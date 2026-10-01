@@ -46,6 +46,7 @@ import {
 } from "../../utils/connection/databaseManager";
 
 interface Options {
+  effectivePolicy?: import("../../types/connection/httpProxyPolicy").HttpProxyPolicy;
   activityContext?: SessionActivityContext;
   connection: Connection | undefined;
   ownerDatabaseId: string | undefined;

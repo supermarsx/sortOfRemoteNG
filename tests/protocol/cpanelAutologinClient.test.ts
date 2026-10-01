@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const source = readFileSync(
-  "src-tauri/crates/sorng-protocols/src/autologin_client.js",
-  "utf8",
-);
+const source = loadAutologinClient();
 const selectors = {
   username_selector: 'form#login_form input#user[name="user"]',
   password_selector: 'form#login_form input#pass[name="pass"][type="password"]',
@@ -306,19 +303,19 @@ describe("cPanel auto-login readiness", () => {
         }
       },
     );
-    vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(
-      function (this: HTMLFormElement) {
-        const query = new URLSearchParams(
-          Array.from(new FormData(this).entries()).map(([name, value]) => [
-            name,
-            String(value),
-          ]),
-        );
-        const encoded = query.toString();
-        navigationUrl = `${this.action}${encoded ? `?${encoded}` : ""}`;
-        navigationTarget = this.target;
-      },
-    );
+    vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(function (
+      this: HTMLFormElement,
+    ) {
+      const query = new URLSearchParams(
+        Array.from(new FormData(this).entries()).map(([name, value]) => [
+          name,
+          String(value),
+        ]),
+      );
+      const encoded = query.toString();
+      navigationUrl = `${this.action}${encoded ? `?${encoded}` : ""}`;
+      navigationTarget = this.target;
+    });
     document.querySelector("form")!.onsubmit = (event) => {
       event.preventDefault();
       const action = (event.currentTarget as HTMLFormElement).action;

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   assertRoute: vi.fn(),
   verify: vi.fn(),
   dispatch: vi.fn(),
+  settingsReady: true,
   connection: {} as Connection,
   global: undefined as string | undefined,
   redirectOptions: undefined as
@@ -39,7 +40,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
 vi.mock("../../src/contexts/SettingsContext", () => ({
   useSettings: () => ({
     settings: { httpsTrustPolicy: "tofu", httpsCaTrustMode: "system" },
-    settingsReady: false,
+    settingsReady: mocks.settingsReady,
   }),
 }));
 vi.mock("../../src/contexts/ToastContext", () => ({
@@ -104,6 +105,7 @@ const starts = () =>
   );
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.settingsReady = true;
   mocks.global = undefined;
   mocks.connection = {
     id: "target",
@@ -136,6 +138,30 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("HTTP path consumers", () => {
+  it("waits for saved settings before resolving the route, checking TLS or starting the proxy", async () => {
+    mocks.settingsReady = false;
+    const hook = renderHook(() => useWebBrowser(session));
+    await act(async () => {});
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.verify).not.toHaveBeenCalled();
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "get_tls_certificate_info",
+      expect.anything(),
+    );
+    expect(starts()).toHaveLength(0);
+
+    mocks.settingsReady = true;
+    hook.rerender();
+    await waitFor(() => expect(starts()).toHaveLength(1));
+    expect(mocks.resolve).toHaveBeenCalledTimes(1);
+    expect(mocks.verify).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "get_tls_certificate_info",
+      expect.objectContaining({ proxyUrl: upstream }),
+    );
+    expect(starts()[0][1].config.upstream_proxy_url).toBe(upstream);
+  });
+
   it("reloads a same-ID edited profile by stopping the old listener before TLS and startup", async () => {
     let endpoint = upstream;
     mocks.resolve.mockImplementation(async () => {

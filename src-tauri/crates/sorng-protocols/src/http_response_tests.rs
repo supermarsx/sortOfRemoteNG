@@ -24,6 +24,8 @@ mod quickconnect_control_tests;
 mod quickconnect_tests;
 #[path = "http_redirect_tests.rs"]
 mod redirect_tests;
+#[path = "http_proxy_transport_deadline_tests.rs"]
+mod transport_settings_tests;
 #[path = "http_upstream_cookie_tests.rs"]
 mod upstream_cookie_tests;
 
@@ -518,6 +520,7 @@ async fn freepbx_cookie_compatibility_is_early_profile_scoped_and_respects_scrip
             expected,
             "profile={profile:?}, armed={armed}"
         );
+        assert_eq!(body.contains("freepbx-navbar-requires-login"), expected);
         assert!(!body.contains("fixture-secret"));
         if expected {
             assert!(
@@ -1145,7 +1148,7 @@ async fn actual_policy_blocks_bootstrap_and_external_scripts_and_applies_private
         }],
         ..HttpProxyPolicy::default()
     };
-    let proxy = proxy_with_policy(
+    let proxy = proxy_with_policy_and_network(
         format!("http://{address}/"),
         client(),
         UpstreamAuthMode::Header,
@@ -1157,6 +1160,9 @@ async fn actual_policy_blocks_bootstrap_and_external_scripts_and_applies_private
             ),
             ("X-Custom".into(), "private-custom".into()),
         ]),
+        Arc::new(ProxyNetworkState::default().with_browser_compatibility(BrowserCompatibility {
+            hide_webdriver: true,
+        })),
     )
     .await;
     // Even a stale armed slot must not mint a new page nonce or ship code.
@@ -1171,6 +1177,7 @@ async fn actual_policy_blocks_bootstrap_and_external_scripts_and_applies_private
     assert!(csp.contains("form-action 'self'"));
     let text = response.text().await.unwrap();
     assert!(!text.contains("proxy_document_start"));
+    assert!(!text.contains("installWebNetworkClient("));
     assert!(!text.contains("__sortofremoteng_autologin"));
     assert!(!text.contains("synthetic-secret"));
     assert!(proxy.state.auto_login_nonce.read().unwrap().is_none());

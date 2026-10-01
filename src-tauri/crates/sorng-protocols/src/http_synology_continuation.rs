@@ -297,12 +297,15 @@ history.replaceState(history.state,'',stamp(location.href));
 }
 
 /// Carry only already-admitted local proof across the upstream's directory
-/// canonicalization. Never stamp foreign redirects or infer proof from Location.
+/// canonicalization or reviewed Exchange login transition. Never stamp foreign
+/// redirects or infer proof from Location.
 fn preserve_directory_redirect_proof(
     response: &mut axum::response::Response,
     source: &str,
     proxy_origin: &str,
     generation: Option<&str>,
+    method: &axum::http::Method,
+    reviewed_exchange: bool,
 ) {
     if !matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
         return;
@@ -322,12 +325,21 @@ fn preserve_directory_redirect_proof(
     else {
         return;
     };
+    let directory_redirect = matches!(*method, axum::http::Method::GET | axum::http::Method::HEAD)
+        && !source.path().ends_with('/')
+        && destination.path() == format!("{}/", source.path())
+        && destination.query() == source.query();
+    let exchange_redirect = super::exchange_ecp::preserves_redirect(
+        reviewed_exchange,
+        method,
+        response.status().as_u16(),
+        &source,
+        &destination,
+    );
     if destination.origin() != source.origin()
         || !destination.username().is_empty()
         || destination.password().is_some()
-        || source.path().ends_with('/')
-        || destination.path() != format!("{}/", source.path())
-        || destination.query() != source.query()
+        || (!directory_redirect && !exchange_redirect)
         || destination.fragment().is_some()
     {
         return;
@@ -459,17 +471,19 @@ async fn dispatch(
         (state, None)
     };
     request.extensions_mut().insert(state.clone());
-    let directory_source = matches!(
+    let redirect_method = request.method().clone();
+    let directory_source = (matches!(
         *request.method(),
         axum::http::Method::GET | axum::http::Method::HEAD
-    )
-    .then(|| {
-        request
-            .uri()
-            .path_and_query()
-            .map_or("/", |value| value.as_str())
-            .to_string()
-    });
+    ) || (state.network.has_exchange_ecp_login()
+        && *request.method() == axum::http::Method::POST))
+        .then(|| {
+            request
+                .uri()
+                .path_and_query()
+                .map_or("/", |value| value.as_str())
+                .to_string()
+        });
     // Explicit stops cancel in-flight work immediately. Listener replacement
     // first closes admission and gives already-dispatched requests a bounded
     // opportunity to apply response cookies before retiring the network.
@@ -493,6 +507,8 @@ async fn dispatch(
                     &source,
                     &state.proxy_origin,
                     generation.as_deref(),
+                    &redirect_method,
+                    state.network.has_exchange_ecp_login(),
                 );
             }
             match generation {
@@ -664,3 +680,122 @@ impl ProxySessionManager {
 #[cfg(test)]
 #[path = "http_synology_continuation_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod exchange_ecp_proof_tests {
+    use super::*;
+
+    #[test]
+    fn exchange_ecp_redirect_proof_is_carried_only_across_reviewed_method_status_routes() {
+        const ORIGIN: &str = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
+        const NAV: &str = "0123456789abcdef0123456789abcdef";
+        const GENERATION: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        for (method, status, source, target, reviewed, allowed) in [
+            (
+                axum::http::Method::GET,
+                302,
+                "/ECP/",
+                "/OWA/Auth/Logon.aspx?url=%2Fecp%2F&raw=%2f+%20",
+                true,
+                true,
+            ),
+            (
+                axum::http::Method::POST,
+                303,
+                "/OWA/Auth.owa",
+                "/ECP/?raw=%2f+%20",
+                true,
+                true,
+            ),
+            (
+                axum::http::Method::POST,
+                302,
+                "/owa/auth.owa",
+                "/owa/auth/logon.aspx?reason=2",
+                true,
+                true,
+            ),
+            (
+                axum::http::Method::GET,
+                302,
+                "/ecp/",
+                "/owa/auth/logon.aspx",
+                false,
+                false,
+            ),
+            (
+                axum::http::Method::POST,
+                307,
+                "/owa/auth.owa",
+                "/ecp/",
+                true,
+                false,
+            ),
+            (
+                axum::http::Method::POST,
+                308,
+                "/owa/auth.owa",
+                "/ecp/",
+                true,
+                false,
+            ),
+            (
+                axum::http::Method::POST,
+                302,
+                "/owa/auth.owa",
+                "/other",
+                true,
+                false,
+            ),
+            (
+                axum::http::Method::POST,
+                302,
+                "/other",
+                "/other/",
+                true,
+                false,
+            ),
+            (
+                axum::http::Method::GET,
+                302,
+                "/ecp/",
+                "https://evil.test/owa/auth/logon.aspx",
+                true,
+                false,
+            ),
+        ] {
+            let target = if target.starts_with('/') {
+                format!("{ORIGIN}{target}")
+            } else {
+                target.into()
+            };
+            let mut response = axum::http::Response::builder()
+                .status(status)
+                .header("Location", &target)
+                .body(axum::body::Body::empty())
+                .unwrap();
+            preserve_directory_redirect_proof(
+                &mut response,
+                &format!("{source}?__sorng_navigation_v1={NAV}"),
+                ORIGIN,
+                Some(GENERATION),
+                &method,
+                reviewed,
+            );
+            let location = response.headers()["location"].to_str().unwrap();
+            if allowed {
+                assert!(location.starts_with(&target));
+                let url = reqwest::Url::parse(location).unwrap();
+                assert!(url
+                    .query_pairs()
+                    .any(|(key, value)| key == "__sorng_navigation_v1" && value == NAV));
+                assert!(url
+                    .query_pairs()
+                    .any(|(key, value)| key == GENERATION_MARKER && value == GENERATION));
+                assert_eq!(response.headers()["cache-control"], "no-store");
+            } else {
+                assert_eq!(location, target);
+            }
+        }
+    }
+}

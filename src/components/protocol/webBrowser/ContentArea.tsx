@@ -12,6 +12,7 @@ import TrustCheckStatus from "./TrustCheckStatus";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
   const reviewing = !!(mgr.redirectReview?.review || mgr.redirectReview?.error);
+  const zoom = (mgr.browserSettings?.defaultZoomPercent ?? 100) / 100;
   useLayoutEffect(() => {
     // attachIframe hides synchronously before changing src. Reconcile after
     // every commit so a batched navigation, explicit off, or recovery cannot
@@ -23,7 +24,7 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
   });
   return (
     <div
-      className="flex-1 min-h-0 relative"
+      className="flex-1 min-h-0 relative overflow-hidden"
       aria-busy={mgr.isLoading}
       style={
         mgr.websiteDarkBootstrap
@@ -58,6 +59,7 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
 
       {mgr.isLoading &&
         mgr.showLoadingIndicator &&
+        mgr.browserSettings?.showLoadingProgress !== false &&
         !mgr.trustPrompt &&
         !mgr.loadError && (
           <div
@@ -108,14 +110,17 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
               : undefined
           }
           title={mgr.session.name}
-          style={
-            mgr.websiteDarkBootstrap
+          style={{
+            zoom,
+            width: `${100 / zoom}%`,
+            height: `${100 / zoom}%`,
+            ...(mgr.websiteDarkBootstrap
               ? {
                   backgroundColor: mgr.websiteDarkBootstrap.backgroundColor,
-                  colorScheme: "dark",
+                  colorScheme: "dark" as const,
                 }
-              : undefined
-          }
+              : {}),
+          }}
           onLoad={(event) => {
             // Current target only; queued load events still need the
             // controller's document-message/readiness identity checks.

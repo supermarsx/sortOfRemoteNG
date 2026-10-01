@@ -634,6 +634,8 @@ export interface GlobalSettings {
   settingsDialog: SettingsDialogConfig;
 
   // ── Web Browser / HTTP proxy settings ──
+  webBrowser?: import("./webBrowser").WebBrowserSettingsConfig;
+  internalProxy?: import("./webBrowser").InternalProxySettings;
   /** In-memory diagnostic requests retained; zero disables and clears this log only. */
   proxyRequestLogLimit: number;
 

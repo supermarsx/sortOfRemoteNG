@@ -3,6 +3,22 @@ export const EMPTY_WEB_FRAME_SANDBOX = "";
 export const PROXY_WEB_FRAME_SANDBOX =
   "allow-same-origin allow-scripts allow-forms";
 
+export interface WebBrowserFramePermissions {
+  allowDownloads?: boolean;
+  allowPageDialogs?: boolean;
+}
+
+/** Optional capabilities never authorize popups, top navigation or new origins. */
+function proxyFrameSandbox(permissions: WebBrowserFramePermissions) {
+  return [
+    PROXY_WEB_FRAME_SANDBOX,
+    permissions.allowDownloads === true ? "allow-downloads" : "",
+    permissions.allowPageDialogs === true ? "allow-modals" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** Attribute state only: never reads a cross-origin document's location. */
 export function isEmptyWebBrowserFrame(iframe: HTMLIFrameElement) {
   const src = iframe.getAttribute("src")?.trim();
@@ -63,17 +79,18 @@ export function navigateWebBrowserFrame(
   iframe: HTMLIFrameElement,
   url: string,
   protectedProxyUrls: string | readonly string[],
+  permissions: WebBrowserFramePermissions = {},
 ) {
   assertWebBrowserFrameNavigation(
     url,
     protectedProxyUrls,
     iframe.ownerDocument.location.origin,
   );
-  const alreadyEnabled =
-    iframe.getAttribute("sandbox") === PROXY_WEB_FRAME_SANDBOX;
+  const sandbox = proxyFrameSandbox(permissions);
+  const alreadyEnabled = iframe.getAttribute("sandbox") === sandbox;
   // The already-active opaque blank stays opaque. These flags take effect on
   // the next cross-origin proxy document, preserving cookies and form scripts.
-  iframe.setAttribute("sandbox", PROXY_WEB_FRAME_SANDBOX);
+  iframe.setAttribute("sandbox", sandbox);
   // A matching URL in a restricted frame still needs a new document for the
   // changed sandbox flags to apply. Ordinary approved rerenders remain idle.
   if (!alreadyEnabled || iframe.getAttribute("src") !== url) iframe.src = url;

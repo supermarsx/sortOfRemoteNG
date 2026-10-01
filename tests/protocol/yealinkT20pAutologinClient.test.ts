@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
+import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const markup = readFileSync("tests/fixtures/yealink-t20p.html", "utf8");
 const source = ["yealink_autologin_client.js", "autologin_client.js"]
   .map((name) =>
-    readFileSync(`src-tauri/crates/sorng-protocols/src/${name}`, "utf8"),
+    name === "autologin_client.js"
+      ? loadAutologinClient()
+      : readFileSync(`src-tauri/crates/sorng-protocols/src/${name}`, "utf8"),
   )
   .join("\n");
 type Result = { ok: boolean; reason: string; via?: string };

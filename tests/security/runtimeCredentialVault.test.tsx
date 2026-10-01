@@ -126,6 +126,127 @@ beforeEach(() => {
   };
 });
 describe("runtime database vault boundary", () => {
+  it("Claude login discloses only username through the real hook, including username-only entries", async () => {
+    const input = fixture({
+      protocol: "https",
+      hostname: "claude.ai",
+      port: 443,
+      httpApplication: { version: 1, id: "claude", loginMode: "form" },
+    });
+    const snapshot = await input.api.list(input.api.scope!);
+    snapshot.entries[0].availableFacets = ["username"];
+    vi.mocked(input.api.list).mockResolvedValue(snapshot);
+    vi.mocked(input.api.resolve).mockImplementation(
+      async (_snapshot, _id, fields) => {
+        expect(fields).toEqual(["username"]);
+        return { username: "email@example.test" };
+      },
+    );
+    const hook = renderHook(() =>
+      useRuntimeCredentialVault(input.session, input.connection),
+    );
+    const result = await hook.result.current(input.assertCurrent);
+    expect(input.api.resolve).toHaveBeenCalledExactlyOnceWith(snapshot, id, [
+      "username",
+    ]);
+    expect(result?.facets).toEqual({ username: "email@example.test" });
+    expect(input.assertCurrent).toHaveBeenCalled();
+    expect(input.target.assertAccessible).toHaveBeenCalled();
+    input.api.resolve = vi.fn();
+    await hook.result.current(input.assertCurrent, true);
+    expect(input.api.resolve).not.toHaveBeenCalled();
+    expect(result?.assertCurrent).not.toThrow();
+  });
+  it.each(["manual", undefined] as const)(
+    "Claude mode %s never automatically decrypts vault facets",
+    async (loginMode) => {
+      const input = fixture({
+        protocol: "https",
+        hostname: "claude.ai",
+        port: 443,
+        httpApplication: {
+          version: 1,
+          id: "claude",
+          loginMode,
+        } as Connection["httpApplication"],
+      });
+      const hook = renderHook(() =>
+        useRuntimeCredentialVault(input.session, input.connection),
+      );
+      expect((await hook.result.current(input.assertCurrent))?.facets).toEqual(
+        {},
+      );
+      await hook.result.current(input.assertCurrent, true);
+      expect(input.api.resolve).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["chatgpt", "wordpress"])(
+    "retains username/password disclosure for %s",
+    async (profile) => {
+      const input = fixture({
+        protocol: "https",
+        httpApplication: { version: 1, id: profile, loginMode: "form" },
+      });
+      await resolveRuntimeVaultCredential(input);
+      expect(input.api.resolve).toHaveBeenCalledWith(expect.anything(), id, [
+        "username",
+        "password",
+      ]);
+    },
+  );
+  it("rejects invalid Claude mode before disclosure and still revokes stale email attempts", async () => {
+    const invalid = fixture({
+      protocol: "https",
+      httpApplication: { version: 1, id: "claude", loginMode: "basic" },
+    });
+    await expect(resolveRuntimeVaultCredential(invalid)).rejects.toThrow(
+      /invalid/,
+    );
+    expect(invalid.api.resolve).not.toHaveBeenCalled();
+    const input = fixture({
+      protocol: "https",
+      hostname: "claude.ai",
+      httpApplication: { version: 1, id: "claude", loginMode: "form" },
+    });
+    let release!: (value: { username: string }) => void;
+    vi.mocked(input.api.resolve).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const hook = renderHook(
+      ({ connection }) => useRuntimeCredentialVault(input.session, connection),
+      { initialProps: { connection: input.connection } },
+    );
+    const pending = hook.result.current(input.assertCurrent);
+    await vi.waitFor(() => expect(input.api.resolve).toHaveBeenCalled());
+    hook.rerender({
+      connection: {
+        ...input.connection,
+        httpApplication: { version: 1, id: "claude", loginMode: "manual" },
+      },
+    });
+    release({ username: "email@example.test" });
+    await expect(pending).rejects.toThrow(/cancelled/);
+  });
+  it("blocks an email-only vault login when its owning database is locked", async () => {
+    const input = fixture({
+      protocol: "https",
+      hostname: "claude.ai",
+      httpApplication: { version: 1, id: "claude", loginMode: "form" },
+    });
+    state.target!.assertAccessible = () => {
+      throw new Error("owner locked");
+    };
+    const hook = renderHook(() =>
+      useRuntimeCredentialVault(input.session, input.connection),
+    );
+    await expect(hook.result.current(input.assertCurrent)).rejects.toThrow(
+      "owner locked",
+    );
+    expect(input.api.resolve).not.toHaveBeenCalled();
+  });
   it("keeps vault seeds out of manual-controller metadata and revokes generated codes on owner/entry changes", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-11T12:00:10Z"));

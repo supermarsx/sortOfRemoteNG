@@ -1,87 +1,110 @@
-//! Web auto-login (t20) — the injected CLIENT fill+submit asset (e5).
+//! Dependency-free auto-login assets embedded into the native proxy.
 //!
-//! This module owns the full client routine that defines
-//! `window.__sorng_autologin.fetchCredsAndRun(nonce, selectors)`. It is the e5
-//! half of the e3↔e5 seam described in [`crate::themed_autologin`]:
-//!
-//! - [`crate::themed_autologin::autologin_client_script`] injects a small inline
-//!   bootstrap that, at run time, checks for
-//!   `window.__sorng_autologin.fetchCredsAndRun` and **defers to it** when
-//!   present (otherwise it runs a conservative inline fallback so the seam works
-//!   standalone).
-//! - This module provides exactly that global, as a robust, framework-aware
-//!   routine lifted from the e1 spike (`.orchestration/scratch/t20-e1/
-//!   autologin-fill.js`): native-setter value writes + bubbling `input`/`change`
-//!   events (the React/Vue controlled-input fix), authoritative selector
-//!   overrides, same-origin iframe walking, one-shot fill+submit, and a no-op on
-//!   MFA/CAPTCHA pages.
-//!
-//! ## Delivery
-//!
-//! The JS lives in a sibling file [`autologin_client.js`] and is embedded at
-//! compile time via `include_str!`, then wrapped in a `<script>` element by
-//! [`autologin_client_asset_script`]. For the asset's global to be available to
-//! the e3 bootstrap, this `<script>` must be spliced into the served HTML
-//! **before** the e3 bootstrap script — i.e. it must appear first in the
-//! `injected_scripts` string at the `</body>` injection site.
-//!
-//! ## Wiring hook for e3 (one line, intentionally left to e3's owner)
-//!
-//! e3 owns `http.rs` / `themed_autologin.rs` / `lib.rs`; e5 does not edit them.
-//! To put this asset ahead of the e3 bootstrap, e3 prepends it at the existing
-//! injection site in `http.rs` (around the `injected_scripts` `format!`):
-//!
-//! ```ignore
-//! // in http.rs, where `injected_scripts` is built (only when armed):
-//! let autologin_asset = if /* auto-login armed */ {
-//!     crate::autologin_asset::autologin_client_asset_script()
-//! } else {
-//!     ""
-//! };
-//! let injected_scripts =
-//!     format!("{}{}{}", nav_script, autologin_asset, autologin_script);
-//! ```
-//!
-//! and declares the module in `lib.rs`:
-//!
-//! ```ignore
-//! pub mod autologin_asset;
-//! ```
-//!
-//! Until that one-line wiring lands, the e3 bootstrap's conservative inline
-//! fallback keeps auto-login functional; once it lands, the bootstrap defers to
-//! this richer routine automatically (no other e3 change required).
+//! Private source fragments are assembled inside the coordinator's IIFE in the
+//! order below. Dedicated staged clients precede the coordinator. The resulting
+//! script must be injected before the nonce-only bootstrap in themed_autologin.
+//! No imports, build dependency, runtime file reads or credential literals are
+//! required. See autologin/README.md for module ownership and lifecycle seams.
 
-/// The raw client routine source (defines `window.__sorng_autologin`).
-///
-/// Embedded at compile time so it ships inside the binary with no runtime file
-/// dependency. Validated with `node --check`.
+use crate::http::UpstreamAuthMode;
+
+/// Coordinator template; use the assembled source when executing the client.
 pub const AUTOLOGIN_CLIENT_JS: &str = include_str!("autologin_client.js");
+pub const AUTOLOGIN_MODULES_JS: &str = concat!(
+    include_str!("autologin/common/dom.js"),
+    include_str!("autologin/apps/freepbx.js"),
+    include_str!("autologin/apps/porkbun.js"),
+    include_str!("autologin/apps/cpanel.js"),
+    include_str!("autologin/apps/joomla.js"),
+    include_str!("autologin/apps/exchange_ecp.js"),
+    include_str!("autologin/apps/instagram.js"),
+    include_str!("autologin/forms/generic.js"),
+    include_str!("autologin/forms/options.js"),
+    include_str!("autologin/common/guards.js"),
+    include_str!("autologin/forms/advanced.js"),
+    include_str!("autologin/forms/readiness.js"),
+);
 pub const BITWARDEN_CLIENT_JS: &str = include_str!("bitwarden_autologin_client.js");
 pub const SYNOLOGY_CLIENT_JS: &str = include_str!("synology_autologin_client.js");
 pub const GOOGLE_CLIENT_JS: &str = include_str!("google_autologin_client.js");
 pub const CLOUDFLARE_CLIENT_JS: &str = include_str!("cloudflare_autologin_client.js");
 pub const YEALINK_CLIENT_JS: &str = include_str!("yealink_autologin_client.js");
+pub const ADOBE_CLIENT_JS: &str = include_str!("adobe_autologin_client.js");
+pub const AI_CHAT_CLIENT_JS: &str = include_str!("ai_chat_autologin_client.js");
+pub const CHATGPT_CLIENT_JS: &str = include_str!("chatgpt_autologin_client.js");
+pub const CLAUDE_CLIENT_JS: &str = include_str!("claude_autologin_client.js");
 
-/// The full e5 client asset wrapped in a `<script>` element, ready to splice
-/// into served HTML **ahead of** the e3 bootstrap so its
-/// `window.__sorng_autologin.fetchCredsAndRun` global is defined before the
-/// bootstrap looks for it.
-///
-/// Returns a `&'static str` (built once) — the asset carries no per-page state
-/// (the nonce + selectors are passed to `fetchCredsAndRun` by the e3 bootstrap),
-/// so it never needs templating and never embeds a credential.
+/// Assemble private modules without adding another global scope.
+pub fn assembled_autologin_client() -> String {
+    AUTOLOGIN_CLIENT_JS.replace("/*__SORNG_AUTOLOGIN_MODULES__*/", AUTOLOGIN_MODULES_JS)
+}
+
+/// Legacy complete bundle for compatibility fixtures. Served pages use the
+/// mode-scoped variant below instead of sending every staged adapter.
+/// The owned String contains code only; per-page credentials are fetched later.
 pub fn autologin_client_asset_script() -> String {
+    let client = assembled_autologin_client();
     format!(
-        "<script>{}{}{}{}{}{}</script>",
+        "<script>{}{}{}{}{}{}{}{}{}{}</script>",
         BITWARDEN_CLIENT_JS,
         SYNOLOGY_CLIENT_JS,
         GOOGLE_CLIENT_JS,
         CLOUDFLARE_CLIENT_JS,
         YEALINK_CLIENT_JS,
-        AUTOLOGIN_CLIENT_JS
+        ADOBE_CLIENT_JS,
+        AI_CHAT_CLIENT_JS,
+        CHATGPT_CLIENT_JS,
+        CLAUDE_CLIENT_JS,
+        client
     )
 }
+
+/// Select code from native authority only, never a page URL, DOM or response
+/// string. Bitwarden's bootstrap has no flow hint: its native credential
+/// metadata selects the handler after redemption, so its adapter is still
+/// required here. The exhaustive match forces new modes to declare their code.
+fn staged_autologin_clients(mode: UpstreamAuthMode) -> &'static [&'static str] {
+    match mode {
+        UpstreamAuthMode::BitwardenForm => &[BITWARDEN_CLIENT_JS],
+        UpstreamAuthMode::SynologyForm => &[SYNOLOGY_CLIENT_JS],
+        UpstreamAuthMode::GoogleForm => &[GOOGLE_CLIENT_JS],
+        UpstreamAuthMode::CloudflareForm => &[CLOUDFLARE_CLIENT_JS],
+        UpstreamAuthMode::YealinkServlet => &[YEALINK_CLIENT_JS],
+        UpstreamAuthMode::AdobeForm => &[ADOBE_CLIENT_JS],
+        UpstreamAuthMode::ChatgptForm => &[AI_CHAT_CLIENT_JS, CHATGPT_CLIENT_JS],
+        UpstreamAuthMode::ClaudeForm => &[AI_CHAT_CLIENT_JS, CLAUDE_CLIENT_JS],
+        UpstreamAuthMode::Basic
+        | UpstreamAuthMode::Digest
+        | UpstreamAuthMode::Header
+        | UpstreamAuthMode::None
+        | UpstreamAuthMode::PfSenseV1
+        | UpstreamAuthMode::Unknown => &[],
+    }
+}
+
+/// Code-only asset for an already-authorized page bootstrap. The caller retains
+/// the nonempty-bootstrap gate: selecting a mode never arms or grants a page.
+/// Dependencies precede the selected adapter, which precedes the unchanged
+/// generic modules/coordinator. No per-page state is cached in this asset.
+pub fn autologin_client_asset_script_for_mode(mode: UpstreamAuthMode) -> String {
+    let staged = staged_autologin_clients(mode);
+    let client = assembled_autologin_client();
+    let capacity = "<script></script>".len()
+        + client.len()
+        + staged.iter().map(|source| source.len()).sum::<usize>();
+    let mut script = String::with_capacity(capacity);
+    script.push_str("<script>");
+    for source in staged {
+        script.push_str(source);
+    }
+    script.push_str(&client);
+    script.push_str("</script>");
+    script
+}
+
+#[cfg(test)]
+#[path = "autologin_asset_scoped_tests.rs"]
+mod scoped_tests;
 
 #[cfg(test)]
 mod tests {
@@ -89,7 +112,7 @@ mod tests {
 
     #[test]
     fn asset_defines_the_global_seam() {
-        // The embedded routine must define the exact global the e3 bootstrap
+        // The assembled routine must define the exact global the bootstrap
         // checks for, and expose the fetch entrypoint.
         assert!(AUTOLOGIN_CLIENT_JS.contains("window.__sorng_autologin"));
         assert!(AUTOLOGIN_CLIENT_JS.contains("fetchCredsAndRun"));
@@ -112,9 +135,25 @@ mod tests {
 
     #[test]
     fn asset_marks_itself_full_for_bootstrap_deferral() {
-        // The `__full` marker lets the e3 bootstrap / any re-injection know the
+        // The `__full` marker lets the bootstrap / any re-injection know the
         // complete asset is present and defer to it without clobbering it.
         assert!(AUTOLOGIN_CLIENT_JS.contains("__full"));
+    }
+
+    #[test]
+    fn private_modules_are_assembled_inside_the_coordinator() {
+        let client = assembled_autologin_client();
+        assert!(!client.contains("/*__SORNG_AUTOLOGIN_MODULES__*/"));
+        assert!(client.contains("function findLoginForm("));
+        assert!(client.contains("function openFreepbxAdmin("));
+        assert!(client.contains("function submitCpanelForm("));
+        assert!(
+            client.find("(function ()").unwrap() < client.find("function findLoginForm(").unwrap()
+        );
+        assert!(
+            client.find("function findLoginForm(").unwrap()
+                < client.find("window.__sorng_autologin =").unwrap()
+        );
     }
 
     #[test]

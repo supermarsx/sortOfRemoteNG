@@ -36,6 +36,10 @@ import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../types/connection/sessionQui
 import { normalizeSessionQuickActions } from "../connection/sessionQuickActions";
 import { normalizeWebsiteDarkModeSettings } from "../connection/websiteDarkMode";
 import {
+  normalizeWebBrowserSettings,
+  normalizeInternalProxySettings,
+} from "./webBrowserSettings";
+import {
   normalizeHttpsCaTrustMode,
   validateHttpsCaTrustMode,
 } from "../security/httpsCaTrust";
@@ -522,6 +526,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showRecordingManagerIcon: true,
   sessionQuickActions: { ...DEFAULT_SESSION_QUICK_ACTIONS },
   websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
+  webBrowser: normalizeWebBrowserSettings(undefined),
+  internalProxy: normalizeInternalProxySettings(undefined),
   macros: {
     defaultStepDelayMs: 200,
     confirmBeforeReplay: true,
@@ -1198,6 +1204,8 @@ export class SettingsManager {
       websiteDarkMode: normalizeWebsiteDarkModeSettings(
         normalizedStored.websiteDarkMode,
       ),
+      webBrowser: normalizeWebBrowserSettings(normalizedStored.webBrowser),
+      internalProxy: normalizeInternalProxySettings(normalizedStored.internalProxy),
       allowSshExternalLinks: normalizedStored.allowSshExternalLinks === true,
       ...sshReconnectSettings,
       sshTerminal: mergeSSHTerminalConfig(
@@ -1357,6 +1365,10 @@ export class SettingsManager {
       safePatch.websiteDarkMode = normalizeWebsiteDarkModeSettings(
         safePatch.websiteDarkMode,
       );
+    if ("webBrowser" in safePatch)
+      safePatch.webBrowser = normalizeWebBrowserSettings(safePatch.webBrowser);
+    if ("internalProxy" in safePatch)
+      safePatch.internalProxy = normalizeInternalProxySettings(safePatch.internalProxy);
     if (safePatch.restApi) {
       const restApi = { ...safePatch.restApi } as Record<string, unknown>;
       delete restApi.apiKey;

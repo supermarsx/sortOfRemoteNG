@@ -1,6 +1,10 @@
 use super::http::*;
 
 #[cfg(test)]
+#[path = "http_proxy_transport_command_tests.rs"]
+mod transport_settings_tests;
+
+#[cfg(test)]
 #[path = "http_quickconnect_live_diagnostic_tests.rs"]
 mod quickconnect_live_diagnostic_tests;
 
@@ -103,6 +107,7 @@ fn proxy_client_builder(
     ca_target_host: Option<&str>,
 ) -> Result<reqwest::Client, String> {
     proxy_client_builder_with_cookies(
+        &ProxyTransportSettings::default(),
         verify_ssl,
         accepted_cert_fingerprint,
         min_tls,
@@ -119,6 +124,7 @@ fn proxy_client_builder(
 // partially initialized options object.
 #[allow(clippy::too_many_arguments)]
 fn proxy_client_builder_with_cookies(
+    transport_settings: &ProxyTransportSettings,
     verify_ssl: bool,
     accepted_cert_fingerprint: Option<&str>,
     min_tls: &str,
@@ -128,7 +134,8 @@ fn proxy_client_builder_with_cookies(
     cookies: Option<Arc<crate::http::attempt::AttemptCookieStore>>,
     retain_cookies: bool,
 ) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder()
+    let mut builder = transport_settings
+        .apply_to_client_builder(reqwest::Client::builder())?
         // Route ownership is explicit. Ambient process proxy variables must
         // not disagree with certificate inspection's selected direct route.
         .no_proxy()
@@ -138,11 +145,6 @@ fn proxy_client_builder_with_cookies(
         .no_brotli()
         .no_deflate()
         .no_zstd()
-        .timeout(std::time::Duration::from_secs(120))
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .pool_idle_timeout(std::time::Duration::from_secs(20))
-        .pool_max_idle_per_host(4)
-        .tcp_keepalive(std::time::Duration::from_secs(30))
         // The request mediator validates every redirect BEFORE resending.
         .redirect(reqwest::redirect::Policy::none())
         .min_tls_version(resolve_min_tls_version(min_tls));
@@ -544,6 +546,9 @@ pub async fn start_basic_auth_proxy(
     _service: tauri::State<'_, HttpServiceState>,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
+    // Reject malformed budgets before even creating cleanup guards: their
+    // Drop implementations can consume continuation state.
+    config.transport_settings.validate()?;
     let _pending_continuation = PendingContinuationGuard {
         sessions: (*sessions).clone(),
         id: config.continuation_id.clone(),
@@ -595,6 +600,13 @@ pub async fn start_basic_auth_proxy(
     if let Some(attempt) = &attempt {
         attempt.strip_deferred_login_config(&mut config);
     }
+    // Native continuation ownership retains the original transport snapshot,
+    // including legacy handoffs which omit settings in their IPC config.
+    let transport_settings = attempt
+        .as_ref()
+        .map_or(config.transport_settings, |attempt| {
+            *attempt.transport_settings()
+        });
 
     // Each browser tab owns its unique returned session_id. connection_id is
     // metadata, not an eviction key: opening another tab for a saved connection
@@ -603,6 +615,7 @@ pub async fn start_basic_auth_proxy(
     // Build an async reqwest client for this session with connection keep-alive
     // and reasonable timeouts to avoid stale-connection errors.
     let client = proxy_client_builder_with_cookies(
+        &transport_settings,
         verify_ssl,
         accepted_cert_fingerprint.as_deref(),
         &min_tls,
@@ -612,30 +625,33 @@ pub async fn start_basic_auth_proxy(
         attempt.as_ref().map(|attempt| attempt.cookie_store()),
         true,
     )?;
-    let tactical_rmm_api =
-        if config.reviewed_application_profile == Some(ReviewedApplicationProfile::TacticalRmm) {
-            // The provider API is a separate, stateless TLS security domain. It
-            // inherits only the network proxy and minimum TLS floor, never the
-            // dashboard's certificate bypass/pin or either origin's cookies.
-            let api_client = proxy_client_builder_with_cookies(
-                true,
-                None,
-                &min_tls,
-                upstream_proxy_url.as_deref(),
-                false,
-                None,
-                None,
-                false,
-            )?;
-            crate::http::tactical_rmm::TacticalRmmApiRoute::new(
-                config.reviewed_application_profile,
-                &validated_target,
-                config.reviewed_application_api_origin.as_deref(),
-                api_client,
-            )
-        } else {
-            None
-        };
+    let tactical_rmm_api = if matches!(
+        config.reviewed_application_profile,
+        Some(ReviewedApplicationProfile::TacticalRmm | ReviewedApplicationProfile::Ptisp)
+    ) {
+        // The provider API is a separate, stateless TLS security domain. It
+        // inherits only the network proxy and minimum TLS floor, never the
+        // dashboard's certificate bypass/pin or either origin's cookies.
+        let api_client = proxy_client_builder_with_cookies(
+            &transport_settings,
+            true,
+            None,
+            &min_tls,
+            upstream_proxy_url.as_deref(),
+            false,
+            None,
+            None,
+            false,
+        )?;
+        crate::http::tactical_rmm::TacticalRmmApiRoute::new(
+            config.reviewed_application_profile,
+            &validated_target,
+            config.reviewed_application_api_origin.as_deref(),
+            api_client,
+        )
+    } else {
+        None
+    };
 
     // t96 Route A: sign in to a Yealink phone natively, before the frame loads
     // a single byte, and hold its web session for this arm. Exactly one
@@ -683,6 +699,7 @@ pub async fn start_basic_auth_proxy(
             &validated_target,
             &protected_endpoint.origin,
             proxy_client_builder_with_cookies(
+                &transport_settings,
                 true,
                 None,
                 &min_tls,
@@ -703,6 +720,7 @@ pub async fn start_basic_auth_proxy(
             config.reviewed_application_mesh_origin.as_deref(),
             &protected_endpoint.origin,
             proxy_client_builder_with_cookies(
+                &transport_settings,
                 true,
                 None,
                 &min_tls,
@@ -717,12 +735,13 @@ pub async fn start_basic_auth_proxy(
         None
     };
     let google =
-        if config.reviewed_application_profile == Some(ReviewedApplicationProfile::GoogleHosted) {
+        if crate::http::google::GoogleSession::supports(config.reviewed_application_profile) {
             crate::http::google::GoogleSession::new(
                 config.reviewed_application_profile,
                 &validated_target,
                 &protected_endpoint.origin,
                 proxy_client_builder_with_cookies(
+                    &transport_settings,
                     verify_ssl,
                     accepted_cert_fingerprint.as_deref(),
                     &min_tls,
@@ -733,6 +752,7 @@ pub async fn start_basic_auth_proxy(
                     false,
                 )?,
                 proxy_client_builder_with_cookies(
+                    &transport_settings,
                     true,
                     None,
                     &min_tls,
@@ -748,6 +768,8 @@ pub async fn start_basic_auth_proxy(
         };
     let network = Arc::new(
         ProxyNetworkState::with_origin(&protected_endpoint.origin)?
+            .with_browser_compatibility(config.browser_compatibility)
+            .with_transport_settings(transport_settings)?
             .with_reviewed_public_routes(
                 upstream_proxy_url
                     .as_deref()
@@ -759,7 +781,8 @@ pub async fn start_basic_auth_proxy(
             .with_google_routes(google)
             .with_tactical_mesh(tactical_mesh)
             .with_cloudflare_challenge(cloudflare_challenge)
-            .with_reviewed_application_profile(config.reviewed_application_profile),
+            .with_reviewed_application_profile(config.reviewed_application_profile)
+            .with_exchange_cookies(&target_origin)?,
     );
     let google_routes = network.google_routes();
 
@@ -990,6 +1013,7 @@ pub fn continue_synology_proxy_session(
         tls.clone(),
         |entry, destination, successor| {
             proxy_client_builder_with_cookies(
+                entry.network.transport_settings(),
                 tls.verify_ssl,
                 tls.accepted_cert_fingerprint.as_deref(),
                 &entry.min_tls_version,
@@ -1328,12 +1352,18 @@ pub async fn restart_proxy_session(
         min_tls,
         previous_attempt,
         website_dark_mode,
+        transport_settings,
+        browser_compatibility,
         recovery_token,
     ) = {
         let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         if !mgr.sessions.contains_key(&session_id) {
             return Err(format!("Session {} not found", session_id));
         }
+        mgr.sessions[&session_id]
+            .network
+            .transport_settings()
+            .validate()?;
         let recovery_token = mgr.begin_proxy_recovery(&session_id)?;
         let entry = mgr
             .sessions
@@ -1359,6 +1389,8 @@ pub async fn restart_proxy_session(
             entry.min_tls_version.clone(),
             entry.attempt.clone(),
             entry.website_dark_mode.clone(),
+            *entry.network.transport_settings(),
+            entry.network.browser_compatibility(),
             recovery_token,
         )
     };
@@ -1414,6 +1446,7 @@ pub async fn restart_proxy_session(
     // Build a fresh reqwest client; preserve only this exact-origin attempt jar.
     let validated_target = validate_proxy_target_url(&target_url)?;
     let client = proxy_client_builder_with_cookies(
+        &transport_settings,
         verify_ssl,
         accepted_cert_fingerprint.as_deref(),
         &min_tls,
@@ -1442,6 +1475,7 @@ pub async fn restart_proxy_session(
             &validated_target,
             &protected_endpoint.origin,
             proxy_client_builder_with_cookies(
+                &transport_settings,
                 true,
                 None,
                 &min_tls,
@@ -1462,6 +1496,7 @@ pub async fn restart_proxy_session(
             reviewed_application_mesh_origin.as_deref(),
             &protected_endpoint.origin,
             proxy_client_builder_with_cookies(
+                &transport_settings,
                 true,
                 None,
                 &min_tls,
@@ -1475,9 +1510,48 @@ pub async fn restart_proxy_session(
     } else {
         None
     };
-    let tactical_rmm_api =
-        if reviewed_application_profile == Some(ReviewedApplicationProfile::TacticalRmm) {
-            let api_client = proxy_client_builder_with_cookies(
+    let tactical_rmm_api = if matches!(
+        reviewed_application_profile,
+        Some(ReviewedApplicationProfile::TacticalRmm | ReviewedApplicationProfile::Ptisp)
+    ) {
+        let api_client = proxy_client_builder_with_cookies(
+            &transport_settings,
+            true,
+            None,
+            &min_tls,
+            upstream_proxy_url.as_deref(),
+            false,
+            None,
+            None,
+            false,
+        )?;
+        crate::http::tactical_rmm::TacticalRmmApiRoute::new(
+            reviewed_application_profile,
+            &validated_target,
+            reviewed_application_api_origin.as_deref(),
+            api_client,
+        )
+    } else {
+        None
+    };
+    let mut google = if crate::http::google::GoogleSession::supports(reviewed_application_profile) {
+        crate::http::google::GoogleSession::new(
+            reviewed_application_profile,
+            &validated_target,
+            &protected_endpoint.origin,
+            proxy_client_builder_with_cookies(
+                &transport_settings,
+                verify_ssl,
+                accepted_cert_fingerprint.as_deref(),
+                &min_tls,
+                upstream_proxy_url.as_deref(),
+                require_ca_verification,
+                validated_target.host_str(),
+                None,
+                false,
+            )?,
+            proxy_client_builder_with_cookies(
+                &transport_settings,
                 true,
                 None,
                 &min_tls,
@@ -1486,51 +1560,18 @@ pub async fn restart_proxy_session(
                 None,
                 None,
                 false,
-            )?;
-            crate::http::tactical_rmm::TacticalRmmApiRoute::new(
-                reviewed_application_profile,
-                &validated_target,
-                reviewed_application_api_origin.as_deref(),
-                api_client,
-            )
-        } else {
-            None
-        };
-    let mut google =
-        if reviewed_application_profile == Some(ReviewedApplicationProfile::GoogleHosted) {
-            crate::http::google::GoogleSession::new(
-                reviewed_application_profile,
-                &validated_target,
-                &protected_endpoint.origin,
-                proxy_client_builder_with_cookies(
-                    verify_ssl,
-                    accepted_cert_fingerprint.as_deref(),
-                    &min_tls,
-                    upstream_proxy_url.as_deref(),
-                    require_ca_verification,
-                    validated_target.host_str(),
-                    None,
-                    false,
-                )?,
-                proxy_client_builder_with_cookies(
-                    true,
-                    None,
-                    &min_tls,
-                    upstream_proxy_url.as_deref(),
-                    false,
-                    None,
-                    None,
-                    false,
-                )?,
-            )?
-        } else {
-            None
-        };
+            )?,
+        )?
+    } else {
+        None
+    };
     if let (Some(google), Some(state)) = (&mut google, google_cookie_state) {
         google.restore_cookie_state(state);
     }
     let network = Arc::new(
         ProxyNetworkState::with_origin(&protected_endpoint.origin)?
+            .with_browser_compatibility(browser_compatibility)
+            .with_transport_settings(transport_settings)?
             .with_reviewed_public_routes(
                 upstream_proxy_url
                     .as_deref()
@@ -1542,7 +1583,8 @@ pub async fn restart_proxy_session(
             .with_google_routes(google)
             .with_tactical_mesh(tactical_mesh)
             .with_cloudflare_challenge(cloudflare_challenge)
-            .with_reviewed_application_profile(reviewed_application_profile),
+            .with_reviewed_application_profile(reviewed_application_profile)
+            .with_exchange_cookies(&target_origin)?,
     );
     let google_routes = network.google_routes();
 
@@ -2418,9 +2460,18 @@ mod http_authentication_diagnostic_tests {
             .await
             .unwrap();
         });
-        let client =
-            proxy_client_builder_with_cookies(true, None, "1.2", None, false, None, None, false)
-                .unwrap();
+        let client = proxy_client_builder_with_cookies(
+            &ProxyTransportSettings::default(),
+            true,
+            None,
+            "1.2",
+            None,
+            false,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
         client.get(&target).send().await.unwrap();
         client.get(&target).send().await.unwrap();
         assert_eq!(*cookie_seen.lock().unwrap(), [false, false]);

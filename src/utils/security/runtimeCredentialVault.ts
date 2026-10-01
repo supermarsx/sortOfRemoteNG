@@ -23,6 +23,10 @@ import {
 import { stableJsonStringify } from "../core/stableJsonStringify";
 import { parseCanonicalWebAuthority } from "../connection/sanitizeHostname";
 import { normalizeHttpRedirectOrigin } from "../protocol/httpTrustedRedirectDestinations";
+import {
+  getHttpApplicationProfile,
+  normalizeHttpApplicationSettings,
+} from "../connection/httpApplicationProfiles";
 
 export function getVaultRuntimeUnsupportedMessage(
   connection: Partial<Connection>,
@@ -220,13 +224,25 @@ export async function resolveRuntimeVaultCredential(
   )
     throw new Error("Unsupported vault disclosure purpose.");
   if (intent === "deviceTrust") synologyDeviceTrustTarget(connection);
+  const website =
+    (connection.protocol === "http" || connection.protocol === "https") &&
+    !isSynologyFileConnection(connection);
+  const application = website
+    ? normalizeHttpApplicationSettings(connection.httpApplication)
+    : undefined;
+  if (intent === "login" && application?.invalid)
+    throw new Error(
+      "The website application profile is invalid. No vault credential was released.",
+    );
+  const emailOnly =
+    !!application &&
+    !application.invalid &&
+    getHttpApplicationProfile(application.id)?.emailOnly === true;
   const { snapshot, row, check } = await openRuntimeVaultEntry(
     input,
     source.credentialId,
   );
-  const manual =
-    (connection.protocol === "http" || connection.protocol === "https") &&
-    connection.httpApplication?.loginMode === "manual";
+  const manual = website && application?.loginMode === "manual";
   const requested: DatabaseCredentialFacet[] =
     intent === "manual-copy-username" || intent === "manual-type-username"
       ? ["username"]
@@ -242,9 +258,12 @@ export async function resolveRuntimeVaultCredential(
               ? []
               : manual && !isSynologyFileConnection(connection)
                 ? []
-                : connection.protocol === "ssh" && connection.authType === "key"
-                  ? ["username", "privateKey"]
-                  : ["username", "password"];
+                : emailOnly
+                  ? ["username"]
+                  : connection.protocol === "ssh" &&
+                      connection.authType === "key"
+                    ? ["username", "privateKey"]
+                    : ["username", "password"];
   if (intent === "login" && connection.protocol === "ssh") {
     if (connection.authType === "key") {
       for (const facet of ["passphrase", "password"] as const)

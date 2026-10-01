@@ -1,0 +1,19 @@
+{
+  "profiles": {
+    "adobe-admin-console": "https://adminconsole.adobe.com"
+  },
+  "loginOrigins": [
+    "https://auth.services.adobe.com",
+    "https://ims-na1.adobelogin.com"
+  ],
+  "resourceOrigins": [
+    "https://adobeid-na1.services.adobe.com",
+    "https://auth-api.services.adobe.com",
+    "https://auth-api-i.services.adobe.com",
+    "https://static.adobelogin.com",
+    "https://wwwimages2.adobe.com",
+    "https://bps-il.adobe.io",
+    "https://p13n.adobe.io"
+  ],
+  "profileOrigins": {}
+}

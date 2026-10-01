@@ -120,6 +120,10 @@ describe("source-reviewed dashboard presets", () => {
     HOSTED_DASHBOARD_PROFILES.filter(
       (p) =>
         p.hostedLoginUrl &&
+        p.id !== "ptisp" &&
+        p.id !== "instagram" &&
+        p.id !== "chatgpt" &&
+        p.id !== "claude" &&
         !FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS.includes(
           p.id as (typeof FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS)[number],
         ),

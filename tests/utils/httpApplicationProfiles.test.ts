@@ -31,10 +31,10 @@ const connection = (
 
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(97);
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(99);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(97);
+    ).toBe(99);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -47,6 +47,8 @@ describe("HTTP application profile policy", () => {
       "bitwarden-self-hosted",
       "vaultwarden",
       "nextcloud",
+      "chatgpt",
+      "claude",
       "gitlab-self-hosted",
       "google-account",
       "google-cloud-console",
@@ -54,9 +56,12 @@ describe("HTTP application profile policy", () => {
       "google-business-profile",
       "google-search-console",
       "google-ads",
+      "instagram",
       "youtube",
+      "ptisp",
       "sqlpad",
       "gmail",
+      "adobe-admin-console",
       "matomo",
       "plausible",
       "odoo",
@@ -74,6 +79,7 @@ describe("HTTP application profile policy", () => {
       "guacamole",
       "github",
       "gitea",
+      "exchange-ecp",
       "brevo",
       "wordpress",
       "joomla",

@@ -1,4 +1,8 @@
 import type { HttpApplicationProfile } from "./httpApplicationProfiles";
+import { PTISP_PROFILE } from "./ptispProfile";
+import { INSTAGRAM_PROFILE } from "./instagramProfile";
+import { CHATGPT_PROFILE } from "./chatgptProfile";
+import { CLAUDE_PROFILE } from "./claudeProfile";
 
 const interactive =
   "Interactive sign-in only; saved credentials, API keys and automatic 2FA are not supplied. Use Open original sign-in for SSO, passkeys, security keys, CAPTCHA or unsupported embedded-browser sign-in. The system browser has separate cookies and uses the operating system network route.";
@@ -89,20 +93,8 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "management",
     "Original Contabo Customer Panel. The separate new.contabo.com interface uses different credentials; this preset does not transfer or rebind them.",
   ),
-  hosted(
-    "chatgpt",
-    "ChatGPT",
-    "https://chatgpt.com/",
-    "business",
-    "ChatGPT website account. An OpenAI API key is not a ChatGPT browser login.",
-  ),
-  hosted(
-    "claude",
-    "Claude",
-    "https://claude.ai/",
-    "business",
-    "Claude website with Google or email-link sign-in; no dedicated Claude password is assumed. An Anthropic API key is not a website login.",
-  ),
+  CHATGPT_PROFILE,
+  CLAUDE_PROFILE,
   hosted(
     "openrouter",
     "OpenRouter",
@@ -186,13 +178,7 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "business",
     "Facebook account sign-in; account verification and Meta security checkpoints remain interactive.",
   ),
-  hosted(
-    "instagram",
-    "Instagram",
-    "https://www.instagram.com/accounts/login/",
-    "business",
-    "Instagram account sign-in; linked-account, verification and security checkpoints remain interactive.",
-  ),
+  INSTAGRAM_PROFILE,
   hosted(
     "hpe-greenlake",
     "HPE GreenLake dashboard",
@@ -235,13 +221,7 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "management",
     "European OVHcloud Control Panel. Other regional control-panel origins require their own connection; no silent regional credential forwarding.",
   ),
-  hosted(
-    "ptisp",
-    "PTisp customer area",
-    "https://my.ptisp.pt/",
-    "management",
-    "myPTisp customer account, hosting and billing area; not a hosted server's account.",
-  ),
+  PTISP_PROFILE,
   hosted(
     "marcaria",
     "Marcaria",

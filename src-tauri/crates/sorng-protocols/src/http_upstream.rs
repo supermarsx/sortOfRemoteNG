@@ -291,21 +291,24 @@ pub(super) async fn send(
 ) -> Result<reqwest::Response, UpstreamError> {
     // Keep one overall budget for authentication + all redirect hops, rather
     // than multiplying the client's timeout for each reissued request.
-    tokio::time::timeout(std::time::Duration::from_secs(120), async {
-        if let Some(google) = &state.network.google {
-            let url = reqwest::Url::parse(input_url)
-                .map_err(|_| UpstreamError::Policy("Invalid Google request URL"))?;
-            let include_credentials = headers
-                .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case("x-sorng-google-credentials"))
-                .is_none_or(|(_, value)| value == "include");
-            google
-                .send(method, &url, headers, body, include_credentials)
-                .await
-        } else {
-            send_inner(state, method, input_url, headers, body, false).await
-        }
-    })
+    tokio::time::timeout(
+        state.network.transport_settings().request_timeout(),
+        async {
+            if let Some(google) = &state.network.google {
+                let url = reqwest::Url::parse(input_url)
+                    .map_err(|_| UpstreamError::Policy("Invalid Google request URL"))?;
+                let include_credentials = headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("x-sorng-google-credentials"))
+                    .is_none_or(|(_, value)| value == "include");
+                google
+                    .send(method, &url, headers, body, include_credentials)
+                    .await
+            } else {
+                send_inner(state, method, input_url, headers, body, false).await
+            }
+        },
+    )
     .await
     .map_err(|_| UpstreamError::Deadline)?
 }
@@ -316,7 +319,7 @@ pub(super) async fn send_websocket(
     headers: &[(String, String)],
 ) -> Result<reqwest::Response, UpstreamError> {
     tokio::time::timeout(
-        std::time::Duration::from_secs(15),
+        state.network.transport_settings().connect_timeout(),
         send_inner(state, &reqwest::Method::GET, input_url, headers, &[], true),
     )
     .await
@@ -382,13 +385,33 @@ async fn send_inner(
     };
     let mut method = method.clone();
     let mut body = body.to_vec();
+    let initial_url = url.clone();
+    let exchange = state.network.exchange_cookies.as_ref();
+    let exchange_include = if exchange.is_some() {
+        let modes: Vec<_> = headers
+            .iter()
+            .filter(|(name, _)| {
+                name.eq_ignore_ascii_case(super::exchange_cookies::CREDENTIALS_HEADER)
+            })
+            .map(|(_, value)| value.as_str())
+            .collect();
+        match modes.as_slice() {
+            [] | ["include"] => true,
+            ["omit"] => false,
+            _ => return Err(UpstreamError::Policy("Invalid Exchange credentials mode.")),
+        }
+    } else {
+        false
+    };
     let native_cookies_only = state
         .attempt
         .as_ref()
         .is_some_and(|attempt| attempt.native_cookies_only());
     let browser_cookies: Vec<_> = headers
         .iter()
-        .filter(|(name, _)| !native_cookies_only && name.eq_ignore_ascii_case("cookie"))
+        .filter(|(name, _)| {
+            exchange.is_none() && !native_cookies_only && name.eq_ignore_ascii_case("cookie")
+        })
         .map(|(_, value)| value.as_str())
         .collect();
     let mesh = state
@@ -416,6 +439,22 @@ async fn send_inner(
         {
             return Err(UpstreamError::Policy("The upstream redirected outside this connection's approved origin. Credentials were not sent. Open the destination as a separate connection and review its trust."));
         }
+        // The reviewed Exchange form embeds an absolute ECP destination. HTML
+        // rewriting maps it to loopback; undo only that field, revalidating on
+        // every POST hop before any credentials/body bytes leave the proxy.
+        if let std::borrow::Cow::Owned(mapped) = super::exchange_ecp::prepare_body(
+            state.network.has_exchange_ecp_login(),
+            &method,
+            &url,
+            &state.target_origin,
+            &state.proxy_origin,
+            headers,
+            &body,
+        )
+        .map_err(UpstreamError::Policy)?
+        {
+            body = mapped;
+        }
         let request = |authorization: Option<String>, cookies: &RedirectCookieOverlay| {
             let mut request = client.request(method.clone(), url.clone());
             if websocket {
@@ -430,6 +469,7 @@ async fn send_inner(
             let merged_cookies = state
                 .attempt
                 .as_ref()
+                .filter(|_| !tactical_api_request)
                 .and_then(|attempt| attempt.merged_request_cookies(&url, &effective_cookies));
             let mesh_cookies = mesh
                 .map(|route| {
@@ -443,6 +483,13 @@ async fn send_inner(
                 .transpose()
                 .map_err(UpstreamError::Policy)?;
             for (name, value) in headers {
+                // A renderer's cookie mode is consumed locally, never exposed
+                // as an application header (including on non-Exchange routes).
+                if name.eq_ignore_ascii_case(super::exchange_cookies::CREDENTIALS_HEADER)
+                    || name.eq_ignore_ascii_case("x-sorng-exchange-cookie-path")
+                {
+                    continue;
+                }
                 if name.eq_ignore_ascii_case("referer")
                     && match redirect_referrer {
                         RedirectReferrerPolicy::Suppress => true,
@@ -454,7 +501,8 @@ async fn send_inner(
                     continue;
                 }
                 if name.eq_ignore_ascii_case("cookie")
-                    && (mesh_cookies.is_some()
+                    && (exchange.is_some()
+                        || mesh_cookies.is_some()
                         || native_cookies_only
                         || merged_cookies.is_some()
                         || changed_cookie.is_some())
@@ -469,7 +517,16 @@ async fn send_inner(
                 }
                 request = request.header(name, value);
             }
-            if let Some(cookies) = mesh_cookies {
+            if let Some(exchange) = exchange {
+                let cookies = if exchange_include {
+                    exchange
+                        .cookie_header(&url)
+                        .map_err(UpstreamError::Policy)?
+                } else {
+                    reqwest::header::HeaderValue::from_static("")
+                };
+                request = request.header(reqwest::header::COOKIE, cookies);
+            } else if let Some(cookies) = mesh_cookies {
                 if !cookies.is_empty() {
                     request = request.header(reqwest::header::COOKIE, cookies);
                 }
@@ -492,11 +549,16 @@ async fn send_inner(
             Ok::<_, UpstreamError>(request)
         };
         let mut response = request(None, &cookie_overlay)?.send().await?;
+        if let Some(exchange) = exchange {
+            exchange
+                .observe_response(&mut response, exchange_include)
+                .map_err(UpstreamError::Policy)?;
+        }
         if let Some(mesh) = mesh {
             mesh.observe_cookies(&state.network, &state.proxy_origin, &response)
                 .map_err(UpstreamError::Policy)?;
         }
-        if !websocket && !tactical_api_request {
+        if exchange.is_none() && !websocket && !tactical_api_request {
             cookie_overlay.observe(
                 &response,
                 state.upstream_auth_mode == UpstreamAuthMode::Digest,
@@ -531,7 +593,12 @@ async fn send_inner(
                 response = request(Some(authorization), &cookie_overlay)?
                     .send()
                     .await?;
-                if !websocket {
+                if let Some(exchange) = exchange {
+                    exchange
+                        .observe_response(&mut response, exchange_include)
+                        .map_err(UpstreamError::Policy)?;
+                }
+                if exchange.is_none() && !websocket {
                     cookie_overlay.observe(&response, true)?;
                 }
                 if response.status() != reqwest::StatusCode::UNAUTHORIZED {
@@ -547,7 +614,7 @@ async fn send_inner(
         }
         let status = response.status();
         if !matches!(status.as_u16(), 301 | 302 | 303 | 307 | 308) {
-            if !websocket && !tactical_api_request {
+            if exchange.is_none() && !websocket && !tactical_api_request {
                 cookie_overlay.synchronize_browser(&mut response)?;
             }
             return Ok(response);
@@ -584,6 +651,14 @@ async fn send_inner(
             ));
         }
         if next.origin() != url.origin() {
+            if tactical_api_request
+                && state
+                    .tactical_rmm_api
+                    .as_ref()
+                    .is_some_and(|route| !route.is_tactical())
+            {
+                return Err(UpstreamError::Policy("The application API redirected outside its approved origin. No further request was sent."));
+            }
             return Err(UpstreamError::CrossOriginRedirect(Box::new(
                 CrossOriginRedirect {
                     destination: next,
@@ -612,13 +687,33 @@ async fn send_inner(
         // consume it here, /admin serves /admin/ HTML while assets/x still
         // resolves to /assets/x. Preserve only this monotonic, first-hop
         // canonicalization; other redirects retain the native hop budget.
-        if redirect == 0
-            && !tactical_api_request
-            && matches!(method, reqwest::Method::GET | reqwest::Method::HEAD)
-            && !url.path().ends_with('/')
-            && next.path() == format!("{}/", url.path())
-            && next.query() == url.query()
-            && next.fragment().is_none()
+        let exchange_form_post = state.network.has_exchange_ecp_login()
+            && initial_url.scheme() == "https"
+            && method == reqwest::Method::POST
+            && url.path().eq_ignore_ascii_case("/owa/auth.owa");
+        let exchange_login_redirect = initial_url.scheme() == "https"
+            && super::exchange_ecp::preserves_redirect(
+                state.network.has_exchange_ecp_login(),
+                &method,
+                status.as_u16(),
+                if exchange_form_post {
+                    &url
+                } else {
+                    &initial_url
+                },
+                &next,
+            );
+        if exchange_form_post && !exchange_login_redirect {
+            return Err(UpstreamError::Policy("The Exchange ECP login returned an unsupported redirect. Submitted credentials were not replayed."));
+        }
+        if !tactical_api_request
+            && (exchange_login_redirect
+                || (redirect == 0
+                    && matches!(method, reqwest::Method::GET | reqwest::Method::HEAD)
+                    && !url.path().ends_with('/')
+                    && next.path() == format!("{}/", url.path())
+                    && next.query() == url.query()
+                    && next.fragment().is_none()))
         {
             let mut local = reqwest::Url::parse(&state.proxy_origin)
                 .map_err(|_| UpstreamError::Policy("Invalid proxy origin."))?;
@@ -626,7 +721,9 @@ async fn send_inner(
             local.set_query(next.query());
             let location = reqwest::header::HeaderValue::from_str(local.as_str())
                 .map_err(|_| UpstreamError::Policy("Invalid local redirect."))?;
-            cookie_overlay.synchronize_browser(&mut response)?;
+            if exchange.is_none() {
+                cookie_overlay.synchronize_browser(&mut response)?;
+            }
             response
                 .headers_mut()
                 .insert(reqwest::header::LOCATION, location);

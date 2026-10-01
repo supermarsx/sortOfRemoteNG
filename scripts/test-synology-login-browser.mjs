@@ -17,6 +17,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { loadAutologinClient } from "../tests/helpers/autologinAsset.ts";
 
 const { values: options } = parseArgs({
   options: {
@@ -60,11 +61,11 @@ const protocols = "src-tauri/crates/sorng-protocols/src/";
 const text = (file) => readFile(path.join(repo, file), "utf8");
 const assets = {
   helper: await text(DSM_LOGIN_ASSET_PATHS.helper),
-  client: await text(DSM_LOGIN_ASSET_PATHS.client),
+  client: loadAutologinClient(repo),
   bridge: await text(DSM_LOGIN_ASSET_PATHS.bridge),
   automation: await text(DSM_LOGIN_ASSET_PATHS.automation),
-  bitwarden: await text(protocols + "bitwarden_autologin_client.js"),
   darkMode: await text(protocols + "web_dark_mode_client.js"),
+  popup: await text(protocols + "web_popup_client.js"),
   network: await text(protocols + "web_network_client.js"),
 };
 
@@ -73,25 +74,35 @@ const assets = {
 const NAVIGATION_MARKER = "__sorng_navigation_v1";
 const productionShapes = {
   "http.rs": [
+    "crate::autologin_asset::autologin_client_asset_script_for_mode(",
+    "crate::themed_autologin::autologin_asset_mode(&state)",
     'format!("{}{}{}", nav_script, autologin_asset, autologin_script)',
     "proxy_response::inject_page_scripts(&body_str, &injected_scripts)",
-    "final_body = proxy_response::inject_readiness(",
+    "let readiness_script = proxy_response::readiness_script(",
+    "let insertion = proxy_response::early_script_insertion(&body_str);",
   ],
   "autologin_asset.rs": [
-    '"<script>{}{}{}</script>",',
-    "BITWARDEN_CLIENT_JS, SYNOLOGY_CLIENT_JS, AUTOLOGIN_CLIENT_JS",
+    // Legacy compatibility fixtures still have the complete ten-part bundle.
+    '"<script>{}{}{}{}{}{}{}{}{}{}</script>",',
+    // Actual Synology pages ship only their native-selected staged adapter.
+    "pub fn autologin_client_asset_script_for_mode(mode: UpstreamAuthMode)",
+    "UpstreamAuthMode::SynologyForm => &[SYNOLOGY_CLIENT_JS]",
+    "let staged = staged_autologin_clients(mode);",
+    "script.push_str(source);",
+    "script.push_str(&client);",
+    "let client = assembled_autologin_client();",
   ],
   "themed_autologin.rs": [
     "try{{window.__sorng_autologin.fetchCredsAndRun(NONCE,SEL{flow_hint});return;}}catch(_){{report({{ok:false,reason:'autologin-client-failed'}});return;}}",
-    `flow_hint = if synology { ", 'synology'" } else { "" },`,
+    `Some("synology") => ", 'synology'".to_string(),`,
     "if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded',go);}}else{{go();}}",
   ],
   "http_response.rs": [
     `const NAVIGATION_MARKER: &str = "${NAVIGATION_MARKER}";`,
-    "{network_client}\nwindow.addEventListener('beforeunload',function(){{emit('proxy_navigation_start');}});\n{dark_mode_client}\n{automation_client}\nemit('proxy_document_start');\n{synology_progress_client}\nfunction ready(){{emit('proxy_dom_ready');}}",
+    "{network_client}\nwindow.addEventListener('beforeunload',function(){{emit('proxy_navigation_start');}});\n{dark_mode_client}\n{automation_client}\nemit('proxy_document_start');\n{popup_title_client}\n{synology_progress_client}\nfunction ready(){{emit('proxy_dom_ready');}}",
   ],
   "http_network_client.rs": [
-    "p.networkRouting = installWebNetworkClient({},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}}).capabilities;",
+    "var sorngNetworkClient=installWebNetworkClient({},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}},function(detail){{try{{window.parent.postMessage(Object.assign({{}},detail,{{type:'proxy_web_popup',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}}),'*');}}catch(_){{}}}});Object.defineProperty(window,'__sorng_map_navigation',{{configurable:true,value:function(url){{return sorngNetworkClient.mapUrl(url,'navigation');}}}});p.networkRouting=sorngNetworkClient.capabilities;",
   ],
 };
 for (const [file, fragments] of Object.entries(productionShapes)) {
@@ -500,6 +511,11 @@ function networkConfig(scenario) {
     version: 1,
     sessionId: scenario.sessionIdentity,
     documentSequence: scenario.sequence,
+    requestGeneration: scenario.navigationToken,
+    popupParentDocument: null,
+    popupTabs: false,
+    exchangeCookies: false,
+    browserCompatibility: { hideWebdriver: false },
     sourceOrigin:
       scenario.network === "quickconnect"
         ? "https://192-168-50-100.example-nas.direct.quickconnect.to:5001"
@@ -552,7 +568,7 @@ function dsmDocument(scenario) {
   const upstream = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Synology DiskStation</title><style>${DSM_STYLE}</style></head><body><img class="login-wallpaper" alt="" src="${WALLPAPER_PATH}"><script>${application}</script></body></html>`;
   const navScript =
     "<script>try{window.parent.postMessage({type:'proxy_navigate',url:location.href},'*')}catch(e){}</script>";
-  const asset = `<script>${assets.bitwarden}${assets.helper}${assets.client}</script>`;
+  const asset = `<script>${assets.helper}${assets.client}</script>`;
   const bootstrap = `<script>(function(){
 'use strict';
 var NONCE=${JSON.stringify(scenario.readinessNonce)};
@@ -574,11 +590,12 @@ if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded'
     documentSequence: scenario.sequence,
   });
   const readiness = `<script>(function(){'use strict';var p=${identity};
-var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){return v.split('=')[0]!=='${NAVIGATION_MARKER}';}).join('&');
+var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){return v.split('=')[0]!=='${NAVIGATION_MARKER}'&&v.split('=')[0]!=='__sorng_generation_v1'&&v.split('=')[0]!=='__sorng_google_hop_v1';}).join('&');
 u.search=q?'?'+q:'';try{history.replaceState(history.state,'',u.href);}catch(_){}
 function emit(type){p.type=type;p.url=u.href;try{window.parent.postMessage(p,'*');}catch(_){}}
+${assets.popup}
 ${assets.network}
-p.networkRouting = installWebNetworkClient(${scriptJson(networkConfig(scenario))},function(detail){try{window.parent.postMessage(Object.assign({},detail,{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}),'*');}catch(_){}}).capabilities;
+var sorngNetworkClient=installWebNetworkClient(${scriptJson(networkConfig(scenario))},function(detail){try{window.parent.postMessage(Object.assign({},detail,{type:'sorng_web_network_blocked',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}),'*');}catch(_){}},function(detail){try{window.parent.postMessage(Object.assign({},detail,{type:'proxy_web_popup',version:1,sessionId:p.sessionId,documentSequence:p.documentSequence,navigationToken:p.navigationToken,documentToken:p.documentToken,url:u.href}),'*');}catch(_){}});Object.defineProperty(window,'__sorng_map_navigation',{configurable:true,value:function(url){return sorngNetworkClient.mapUrl(url,'navigation');}});p.networkRouting=sorngNetworkClient.capabilities;
 window.addEventListener('beforeunload',function(){emit('proxy_navigation_start');});
 ${assets.darkMode}
 ${assets.automation}
@@ -594,8 +611,10 @@ if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded'
     asset +
     bootstrap +
     upstream.slice(bodyEnd);
-  const head = html.indexOf("<head>") + "<head>".length;
-  return html.slice(0, head) + readiness + html.slice(head);
+  // This controlled template has only harmless meta tags before its title;
+  // native early_script_insertion preserves those tags before readiness.
+  const early = html.indexOf("<title>");
+  return html.slice(0, early) + readiness + html.slice(early);
 }
 
 function hostDocument(scenario) {

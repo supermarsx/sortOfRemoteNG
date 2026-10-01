@@ -9,10 +9,12 @@ const SecurityInfoBar: React.FC<SectionProps> = ({ mgr }) => (
     className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
   >
     {mgr.isSecure ? (
-      <div className="flex items-center space-x-1 text-success">
-        <Shield size={12} />
-        <span>Secure connection (HTTPS)</span>
-      </div>
+      mgr.browserSettings?.showSecurityInfo !== false && (
+        <div className="flex items-center space-x-1 text-success">
+          <Shield size={12} />
+          <span>Secure connection (HTTPS)</span>
+        </div>
+      )
     ) : (
       <div className="flex items-center space-x-1 text-warning">
         <AlertTriangle size={12} />
@@ -30,13 +32,26 @@ const SecurityInfoBar: React.FC<SectionProps> = ({ mgr }) => (
           Certificate expired
         </span>
       )}
-    <span className="text-[var(--color-textMuted)]">•</span>
-    <span className="min-w-0 break-all text-[var(--color-textSecondary)]">
-      Connected to {mgr.session.hostname}
-    </span>
-    {mgr.sharedSession && (
+    {mgr.browserSettings?.showSecurityInfo !== false && (
+      <>
+        <span className="text-[var(--color-textMuted)]">•</span>
+        <span className="min-w-0 break-all text-[var(--color-textSecondary)]">
+          Connected to {mgr.session.hostname}
+        </span>
+      </>
+    )}
+    {mgr.browserSettings?.showSecurityInfo !== false && mgr.sharedSession && (
       <span className="text-[var(--color-textMuted)]">
         • Shared browser session
+      </span>
+    )}
+    {mgr.automaticLoginNotice && (
+      <span
+        role="status"
+        className="text-[var(--color-textSecondary)]"
+        title={mgr.automaticLoginNotice.detail}
+      >
+        {mgr.automaticLoginNotice.text}
       </span>
     )}
     {mgr.deferredLogin ? (
@@ -62,6 +77,7 @@ const SecurityInfoBar: React.FC<SectionProps> = ({ mgr }) => (
         </button>
       </>
     ) : (
+      mgr.browserSettings?.showSecurityInfo !== false &&
       mgr.hasAuth && (
         <>
           <span className="text-[var(--color-textMuted)]">•</span>

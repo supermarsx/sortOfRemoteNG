@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { TextEncoder } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_WEBSITE_DARK_THEME } from "../../src/utils/connection/websiteDarkMode";
+import { porkbunLoginHtml } from "./fixtures/porkbunLogin";
 
 const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_dark_mode_client.js",
@@ -98,6 +99,50 @@ afterEach(() => {
 });
 
 describe("post-install dark-engine readiness recovery", () => {
+  it("keeps the cover until a body exists even with the CSS palette ready", async () => {
+    const body = document.body;
+    body.remove();
+    try {
+      await runtime.controller.set({
+        enabled: true,
+        cssOnly: true,
+        theme: theme(),
+      });
+      await vi.advanceTimersByTimeAsync(PAINT_BUDGET);
+      expect(document.documentElement).not.toHaveAttribute(
+        "data-sorng-dark-presented",
+      );
+      expect(runtime.signals).toEqual([]);
+      document.documentElement.append(body);
+      await vi.advanceTimersByTimeAsync(PAINT_BUDGET + 20);
+      expectCssReady();
+    } finally {
+      if (!body.isConnected) document.documentElement.append(body);
+    }
+  });
+
+  it.each([false, true])(
+    "reveals the protected Porkbun form while a later script stalls parsing (cssOnly=%s)",
+    async (cssOnly) => {
+      document.body.innerHTML = porkbunLoginHtml;
+      vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
+      if (!cssOnly) fakeReader();
+      const pending = runtime.controller.set({
+        enabled: true,
+        cssOnly,
+        theme: theme(),
+      });
+      await vi.advanceTimersByTimeAsync(
+        cssOnly ? PAINT_BUDGET : READINESS_DEADLINE + PAINT_BUDGET,
+      );
+      expect(await pending).toBe("cssOnly");
+      expect(document.readyState).toBe("loading");
+      expectCssReady();
+      expect(document.getElementById("loginUsername")).toBeInTheDocument();
+      expect(document.getElementById("loginPassword")).toBeInTheDocument();
+    },
+  );
+
   it.each(["dynamic", "dynamicFilter"])(
     "recovers a permanently nonempty engine fallback in %s and reports paint once",
     async (mode) => {

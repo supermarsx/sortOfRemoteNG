@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import ProxySettings from "../../src/components/SettingsDialog/sections/ProxySettings";
+import InternalProxyRequestLog from "../../src/components/SettingsDialog/sections/InternalProxyRequestLog";
 import { defaultSettings } from "../../src/contexts/SettingsContext";
 import {
   SettingsManager,
@@ -16,10 +16,9 @@ describe("proxy request log settings draft", () => {
   it("does not clear logs while editing an empty field; requires explicit bounded Apply", () => {
     const updateSettings = vi.fn();
     render(
-      <ProxySettings
+      <InternalProxyRequestLog
         settings={defaultSettings}
         updateSettings={updateSettings}
-        updateProxy={vi.fn()}
       />,
     );
     const input = screen.getByLabelText("Proxy request log limit");
@@ -47,10 +46,9 @@ describe("proxy request log settings draft", () => {
   it("shows retryable runtime failure without claiming the draft is applied", () => {
     const retry = vi.fn();
     render(
-      <ProxySettings
+      <InternalProxyRequestLog
         settings={defaultSettings}
         updateSettings={vi.fn()}
-        updateProxy={vi.fn()}
         requestLogSync={{
           pending: false,
           appliedLimit: 50,
@@ -70,11 +68,10 @@ describe("proxy request log settings draft", () => {
   it("disables changes while settings are locked or loading", () => {
     const updateSettings = vi.fn();
     render(
-      <ProxySettings
+      <InternalProxyRequestLog
         settings={defaultSettings}
         settingsReady={false}
         updateSettings={updateSettings}
-        updateProxy={vi.fn()}
       />,
     );
     expect(screen.getByLabelText("Proxy request log limit")).toBeDisabled();

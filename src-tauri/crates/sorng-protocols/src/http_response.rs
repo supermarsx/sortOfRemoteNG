@@ -509,6 +509,8 @@ pub(super) struct ReadinessNetworkContext<'a> {
     pub(super) popup_parent_sequence: Option<u64>,
     pub(super) tactical_mesh: Option<serde_json::Value>,
     pub(super) cloudflare_challenge: Option<serde_json::Value>,
+    pub(super) exchange_cookies: bool,
+    pub(super) browser_compatibility: super::BrowserCompatibility,
 }
 
 pub(super) fn inject_readiness(
@@ -547,7 +549,11 @@ pub(super) fn readiness_script(
         .replace('\u{2029}', "\\u2029");
     let popup_title_client = network
         .popup_parent_sequence
-        .filter(|_| network.tactical_rmm_api.is_some())
+        .filter(|_| {
+            network
+                .tactical_rmm_api
+                .is_some_and(|route| route.is_tactical())
+        })
         .map(|parent| {
             format!(
                 "var popupTitleParentSequence={parent};\n{}",
@@ -585,6 +591,8 @@ if(document.readyState==='loading'){{document.addEventListener('DOMContentLoaded
             network.popup_parent_sequence,
             network.tactical_mesh,
             network.cloudflare_challenge,
+            network.exchange_cookies,
+            network.browser_compatibility,
         ),
     );
     Some(script)
@@ -988,6 +996,8 @@ mod tests {
                     popup_parent_sequence: None,
                     tactical_mesh: None,
                     cloudflare_challenge: None,
+                    exchange_cookies: false,
+                    browser_compatibility: super::super::BrowserCompatibility::default(),
                 },
             );
             assert!(result.starts_with("<!DOCTYPE html>"));

@@ -52,6 +52,9 @@ const importedProfile = (value: unknown) =>
  * `yealink` stays on the pre-profile `"none"` until the backend gate opens, so
  * a mode the shipped Rust enum cannot deserialize is never emitted. */
 const STAGED_UPSTREAM_MODES = {
+  chatgpt: "chatgpt-form",
+  claude: "claude-form",
+  adobe: "adobe-form",
   bitwarden: "bitwarden-form",
   synology: "synology-form",
   google: "google-form",

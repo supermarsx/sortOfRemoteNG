@@ -9,6 +9,37 @@ import {
 
 const proxy = "http://p0123456789abcdef0123456789abcdef.localhost:43081/";
 describe("website iframe navigation sandbox boundary", () => {
+  it("grants only explicit download/dialog capabilities after validating a proxy destination", () => {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);
+    expect(() =>
+      navigateWebBrowserFrame(iframe, "https://unapproved.example/", proxy, {
+        allowDownloads: true,
+        allowPageDialogs: true,
+      }),
+    ).toThrow();
+    expect(iframe).toHaveAttribute("sandbox", "");
+    navigateWebBrowserFrame(iframe, proxy, proxy, {
+      allowDownloads: true,
+      allowPageDialogs: true,
+    });
+    expect(iframe).toHaveAttribute(
+      "sandbox",
+      `${PROXY_WEB_FRAME_SANDBOX} allow-downloads allow-modals`,
+    );
+    clearWebBrowserFrame(iframe);
+    expect(iframe).toHaveAttribute("sandbox", "");
+  });
+
+  it("reloads an unchanged target when capabilities are revoked", () => {
+    const iframe = document.createElement("iframe");
+    navigateWebBrowserFrame(iframe, proxy, proxy, { allowDownloads: true });
+    const navigation = vi.fn();
+    Object.defineProperty(iframe, "src", { set: navigation });
+    navigateWebBrowserFrame(iframe, proxy, proxy, { allowDownloads: false });
+    expect(navigation).toHaveBeenCalledExactlyOnceWith(proxy);
+    expect(iframe).toHaveAttribute("sandbox", PROXY_WEB_FRAME_SANDBOX);
+  });
   it("does not navigate an already restricted implicit initial document", () => {
     const iframe = document.createElement("iframe");
     iframe.setAttribute("sandbox", EMPTY_WEB_FRAME_SANDBOX);

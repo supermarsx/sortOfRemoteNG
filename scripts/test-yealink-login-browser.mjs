@@ -28,6 +28,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { loadAutologinClient } from "../tests/helpers/autologinAsset.ts";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -436,10 +437,11 @@ async function main() {
     return 2;
   }
   for (const [file, fragments] of Object.entries(PRODUCTION_SHAPES)) {
-    const source = (await readFile(path.join(repo, file), "utf8")).replace(
-      /\r\n/gu,
-      "\n",
-    );
+    const source = (
+      file === AUTOLOGIN_CLIENT
+        ? loadAutologinClient(repo)
+        : await readFile(path.join(repo, file), "utf8")
+    ).replace(/\r\n/gu, "\n");
     for (const fragment of fragments)
       if (!source.includes(fragment)) {
         console.error(

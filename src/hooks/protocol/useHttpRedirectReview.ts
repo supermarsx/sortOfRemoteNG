@@ -394,8 +394,8 @@ export function useHttpRedirectReview(options: Options) {
         current.review.receiptId !== manuallyRememberedReceipt.current &&
         (captured.continueSynologyInSession || captured.continueInTab) &&
         captured.enabled &&
-        (captured.connection?.httpProxyPolicy?.allowCrossOriginRedirects ===
-          true ||
+        ((captured.effectivePolicy ?? captured.connection?.httpProxyPolicy)
+          ?.allowCrossOriginRedirects === true ||
           current.trust.defaultTrusted === true) &&
         normalizeRedirectAuthentication(
           captured.connection?.httpRedirectAuthentication,

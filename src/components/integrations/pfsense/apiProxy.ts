@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { SettingsManager } from "../../../utils/settings/settingsManager";
+import { normalizeInternalProxySettings } from "../../../utils/settings/webBrowserSettings";
 
 export interface PfsenseApiProxyResponse {
   local_port: number;
@@ -108,6 +110,9 @@ export async function startPfsenseApiProxy(
         upstream_auth_mode: "pfSenseV1",
         upstream_proxy_url: input.upstreamProxyUrl,
         local_port: 0,
+        transport_settings: normalizeInternalProxySettings(
+          SettingsManager.getInstance().getSettings().internalProxy,
+        ),
         verify_ssl: !input.acceptInvalidCerts,
         accepted_cert_fingerprint: null,
         connection_id: input.connectionId,

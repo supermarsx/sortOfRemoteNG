@@ -428,6 +428,7 @@ async fn mediator_with_attempt(
     // EXACT production builder; strict standard certificate validation, no
     // stored exceptions, ambient proxy, additional upstream proxy, or auth.
     let client = proxy_client_builder_with_cookies(
+        &ProxyTransportSettings::default(),
         true,
         None,
         "1.2",
