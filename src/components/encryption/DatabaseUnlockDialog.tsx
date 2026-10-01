@@ -1,10 +1,13 @@
-import { useRef, useState, type ReactNode } from "react";
-import { LockKeyhole, type LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { LoaderCircle, LockKeyhole, type LucideIcon } from "lucide-react";
 import { Modal, ModalBody, ModalFooter } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { ManagedDatabaseUnlockForm } from "./ManagedDatabaseUnlockForm";
 import type { DatabaseProtectionStatus } from "../../types/encryption/databaseProtection";
 import type { DatabaseOpenObserver } from "../../types/connection/databaseOpening";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { singleOsVaultUnlockSlot } from "../../utils/connection/databaseUnlockMethods";
+import { isDatabaseOpenCancellation } from "../../utils/connection/databaseOpening";
 
 /** Explicit database authentication, not the global master-key/privacy gate. */
 export function DatabaseUnlockDialog({
@@ -87,6 +90,75 @@ export function ManagedDatabaseUnlockDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const vaultSlotId = singleOsVaultUnlockSlot(status)?.id;
+  const scope = JSON.stringify([
+    databaseId,
+    status.securityRevision,
+    vaultSlotId,
+  ]);
+  const [vaultFailure, setVaultFailure] = useState<{
+    scope: string;
+    message: string;
+  } | null>(null);
+  const current = useRef({
+    scope,
+    onUnlockComplete,
+    onUnlockProgress,
+    onClose,
+  });
+  current.current = { scope, onUnlockComplete, onUnlockProgress, onClose };
+  useEffect(() => {
+    if (!vaultSlotId) return;
+    let active = true;
+    const isCurrent = () => active && current.current.scope === scope;
+    // This dialog is mounted by an explicit Open/Unlock action, never by the
+    // lock/expiry overlay. Defer one microtask so StrictMode's discarded effect
+    // cannot start a second native vault request.
+    void Promise.resolve().then(async () => {
+      if (!isCurrent()) return;
+      setVaultFailure(null);
+      current.current.onUnlockProgress?.("unlocking");
+      try {
+        await DatabaseManager.getInstance().unlockManagedDatabase(
+          databaseId,
+          vaultSlotId,
+          undefined,
+          { isCurrent },
+        );
+        if (!isCurrent()) return;
+        if (current.current.onUnlockComplete)
+          await current.current.onUnlockComplete();
+        else current.current.onClose();
+      } catch (error) {
+        if (!isCurrent()) return;
+        if (isDatabaseOpenCancellation(error)) {
+          current.current.onUnlockProgress?.("cancelled");
+          current.current.onClose();
+          return;
+        }
+        current.current.onUnlockProgress?.("waiting-unlock");
+        setVaultFailure({
+          scope,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [databaseId, scope, vaultSlotId]);
+  const failure =
+    vaultFailure?.scope === scope ? vaultFailure.message : undefined;
+  if (vaultSlotId && failure === undefined)
+    return (
+      <p
+        role="status"
+        className="flex items-center gap-2 px-3 py-2 text-sm text-[var(--color-textMuted)]"
+      >
+        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Unlocking {databaseName} with this device's OS vault…
+      </p>
+    );
   return (
     <DatabaseUnlockDialog
       title={`Unlock ${databaseName}`}
@@ -102,11 +174,13 @@ export function ManagedDatabaseUnlockDialog({
       <ManagedDatabaseUnlockForm
         databaseId={databaseId}
         status={status}
+        initialError={failure}
+        preferPassword={failure !== undefined}
         onBusyChange={(value) => {
           busyRef.current = value;
           setBusy(value);
         }}
-        onUnlockComplete={onUnlockComplete}
+        onUnlockComplete={onUnlockComplete ?? onClose}
         onUnlockProgress={onUnlockProgress}
       />
     </DatabaseUnlockDialog>

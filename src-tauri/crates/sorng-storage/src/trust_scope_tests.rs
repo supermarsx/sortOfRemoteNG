@@ -228,6 +228,17 @@ async fn reviewed_scope_move_preserves_decisions_suppresses_replay_and_never_swi
     let after = rt.read_file(&path).unwrap();
     let mut expected = before_record;
     expected.host = "server:443".into();
+    let timestamps = after.records["https:server:443"]
+        .timestamps
+        .as_ref()
+        .unwrap();
+    let prior = expected.timestamps.as_ref().unwrap();
+    assert_eq!(timestamps.created_at, prior.created_at);
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(&timestamps.updated_at).unwrap()
+            > chrono::DateTime::parse_from_rfc3339(&prior.updated_at).unwrap()
+    );
+    expected.timestamps = Some(timestamps.clone());
     assert_eq!(
         serde_json::to_value(&after.records["https:server:443"]).unwrap(),
         serde_json::to_value(expected).unwrap()

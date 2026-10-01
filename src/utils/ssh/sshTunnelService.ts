@@ -75,6 +75,7 @@ export interface SSHTunnelConfig {
   portForwardId?: string;
   // Created timestamp
   createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface SSHTunnelCreateParams {
@@ -125,6 +126,7 @@ interface PersistedSSHTunnel {
   autoConnect: boolean;
   allowNonLoopbackBind?: boolean;
   createdAt: string;
+  updatedAt: string;
 }
 
 const sanitizePersistedTunnels = (
@@ -146,11 +148,22 @@ const sanitizePersistedTunnels = (
       typeof tunnel.localPort !== "number" ||
       !["local", "remote", "dynamic"].includes(String(tunnel.type)) ||
       typeof tunnel.autoConnect !== "boolean" ||
-      typeof tunnel.createdAt !== "string"
+      typeof tunnel.createdAt !== "string" ||
+      !Number.isFinite(Date.parse(tunnel.createdAt)) ||
+      (tunnel.updatedAt !== undefined &&
+        (typeof tunnel.updatedAt !== "string" ||
+          !Number.isFinite(Date.parse(tunnel.updatedAt)) ||
+          Date.parse(tunnel.updatedAt) < Date.parse(tunnel.createdAt)))
     ) {
       throw new Error("Stored SSH tunnels contain invalid fields");
     }
+    const createdAt = new Date(tunnel.createdAt).toISOString();
+    const updatedAt = new Date(
+      (tunnel.updatedAt as string | undefined) ?? createdAt,
+    ).toISOString();
     changed ||=
+      createdAt !== tunnel.createdAt ||
+      updatedAt !== tunnel.updatedAt ||
       "status" in tunnel ||
       "error" in tunnel ||
       "actualLocalPort" in tunnel ||
@@ -199,7 +212,8 @@ const sanitizePersistedTunnels = (
       ...(typeof tunnel.allowNonLoopbackBind === "boolean"
         ? { allowNonLoopbackBind: tunnel.allowNonLoopbackBind }
         : {}),
-      createdAt: tunnel.createdAt,
+      createdAt,
+      updatedAt,
     };
   });
   return { value: tunnels, changed };
@@ -248,11 +262,12 @@ class SSHTunnelService {
         ...tunnel,
         status: "disconnected",
         createdAt: new Date(tunnel.createdAt),
+        updatedAt: new Date(tunnel.updatedAt),
       });
     }
     if (result.sanitized) {
       this.migrationWarning =
-        "Runtime state and secret-bearing fields were removed during SSH tunnel migration.";
+        "SSH tunnel data was normalized: timestamps were migrated and any runtime state or secret-bearing fields were removed.";
     }
     this.notifyListeners();
   }
@@ -293,6 +308,7 @@ class SSHTunnelService {
         autoConnect: tunnel.autoConnect,
         allowNonLoopbackBind: tunnel.allowNonLoopbackBind,
         createdAt: tunnel.createdAt.toISOString(),
+        updatedAt: tunnel.updatedAt.toISOString(),
       }),
     );
     await tunnelStore.save(data);
@@ -337,6 +353,7 @@ class SSHTunnelService {
     return this.enqueueMutation(async () => {
       await this.ensureLoaded();
       const id = `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const now = new Date();
 
       const tunnel: SSHTunnelConfig = {
         id,
@@ -355,7 +372,8 @@ class SSHTunnelService {
         status: "disconnected",
         autoConnect: params.autoConnect ?? false,
         allowNonLoopbackBind: params.allowNonLoopbackBind ?? false,
-        createdAt: new Date(),
+        createdAt: now,
+        updatedAt: now,
       };
 
       this.validateTunnel(tunnel);
@@ -457,6 +475,10 @@ class SSHTunnelService {
           ...(tunnel.pendingCredentialRefs ?? []),
           tunnel.credentialRef,
         ];
+      if (JSON.stringify(updated) !== JSON.stringify(tunnel))
+        updated.updatedAt = new Date(
+          Math.max(Date.now(), tunnel.updatedAt.getTime() + 1),
+        );
       try {
         await this.saveTunnels(next);
       } catch (error) {
@@ -490,7 +512,13 @@ class SSHTunnelService {
 
         // Commit intent before touching secrets. A failed final save leaves a
         // durable, non-connectable record whose cleanup can safely be retried.
-        const deleting = { ...tunnel, pendingDeletion: true };
+        const deleting = {
+          ...tunnel,
+          pendingDeletion: true,
+          updatedAt: tunnel.pendingDeletion
+            ? tunnel.updatedAt
+            : new Date(Math.max(Date.now(), tunnel.updatedAt.getTime() + 1)),
+        };
         const marked = new Map(this.tunnels);
         marked.set(id, deleting);
         await this.saveTunnels(marked);
@@ -847,6 +875,9 @@ class SSHTunnelService {
       tunnel.pendingCredentialRefs = tunnel.pendingCredentialRefs!.filter(
         (ref) => ref !== reference,
       );
+      tunnel.updatedAt = new Date(
+        Math.max(Date.now(), tunnel.updatedAt.getTime() + 1),
+      );
       await this.saveTunnels(this.tunnels);
     }
   }
@@ -864,6 +895,9 @@ class SSHTunnelService {
       // deletion-only records, never silently successful, connectable tunnels.
       const recovery = {
         ...original,
+        updatedAt: new Date(
+          Math.max(Date.now(), original.updatedAt.getTime() + 1),
+        ),
         credentialRef: creating ? undefined : original.credentialRef,
         pendingDeletion: creating || original.pendingDeletion,
         pendingCredentialRefs: [

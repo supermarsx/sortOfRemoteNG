@@ -353,12 +353,14 @@ pub async fn trust_import_database(
     document: TrustExportDocument,
     mode: Option<TrustImportMode>,
     expected_records: Option<Vec<TrustRecord>>,
+    expected_document: Option<TrustExportDocument>,
 ) -> Result<TrustImportOutcome, String> {
-    runtime()?.import_reviewed(
+    runtime()?.import_reviewed_document(
         database_id.as_deref(),
         document,
         mode.unwrap_or(TrustImportMode::Merge),
         expected_records,
+        expected_document,
     )
 }
 

@@ -125,6 +125,102 @@ async fn migration_preserves_revocation_forget_scope_and_active_database() {
 }
 
 #[tokio::test]
+async fn migration_stamps_old_source_and_destination_records_before_receipt_readback() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
+    let (root, rt, payload) = fixture();
+    let source_path = root.path().join(LEGACY_TRUST_FILE);
+    let mut source = load_trust_store_data(&source_path).unwrap();
+    for record in source.records.values_mut() {
+        record.timestamps = None;
+    }
+    persist_trust_store_data(&source_path, &source).unwrap();
+    let source_bytes = std::fs::read(&source_path).unwrap();
+
+    let path = rt.trust_file_path("db").unwrap();
+    let mut preserved = record("revoked:22", "newer");
+    preserved.timestamps = None;
+    preserved.first_trusted = Some("2016-01-01T00:00:00Z".into());
+    preserved.stats.last_verified = Some("2024-01-01T00:00:00Z".into());
+    preserved.revoked = true;
+    let destination = TrustStoreData {
+        records: HashMap::from([("ssh:revoked:22".into(), preserved.clone())]),
+        ..Default::default()
+    };
+    write_value(&path, &serde_json::to_value(&destination).unwrap());
+
+    assert_eq!(migrate(&rt, &payload).await.unwrap().status, "migrated");
+    let migrated = rt.strict_trust("db").unwrap().unwrap();
+    assert!(migrated
+        .records
+        .values()
+        .all(|record| record.timestamps.is_some()));
+    let mut after = migrated.records["ssh:revoked:22"].clone();
+    let timestamps = after.timestamps.take().unwrap();
+    assert_eq!(timestamps.created_at, "2016-01-01T00:00:00+00:00");
+    assert_eq!(timestamps.updated_at, "2024-01-01T00:00:00+00:00");
+    assert_eq!(timestamps.created_at_source, TrustTimestampSource::Inferred);
+    assert_eq!(timestamps.updated_at_source, TrustTimestampSource::Inferred);
+    assert_eq!(
+        serde_json::to_value(after).unwrap(),
+        serde_json::to_value(preserved).unwrap()
+    );
+    assert!(rt.legacy_status().unwrap().can_delete_legacy);
+    let before_noop = std::fs::read(&path).unwrap();
+    assert_eq!(
+        migrate(&rt, &payload).await.unwrap().status,
+        "already-verified"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before_noop);
+    assert_eq!(std::fs::read(&source_path).unwrap(), source_bytes);
+}
+
+#[tokio::test]
+async fn verified_legacy_receipt_survives_durable_timestamp_migration_without_churn() {
+    let _fixture = crate::STORAGE_FIXTURE.lock().await;
+    let (_root, rt, payload) = fixture();
+    migrate(&rt, &payload).await.unwrap();
+    let path = rt.trust_file_path("db").unwrap();
+    let mut old = rt.strict_trust("db").unwrap().unwrap();
+    for record in old.records.values_mut() {
+        record.timestamps = None;
+    }
+    // Recreate a store and receipt produced before timestamp metadata existed.
+    assert_eq!(
+        decision_digest(&old).unwrap(),
+        old.legacy_migration_receipt
+            .as_ref()
+            .unwrap()
+            .decision_digest
+    );
+    write_value(&path, &serde_json::to_value(&old).unwrap());
+    let before = std::fs::read(&path).unwrap();
+    assert_eq!(
+        migrate(&rt, &payload).await.unwrap().status,
+        "already-verified"
+    );
+    let migrated = rt.strict_trust("db").unwrap().unwrap();
+    assert!(migrated
+        .records
+        .values()
+        .all(|record| record.timestamps.is_some()));
+    assert_eq!(
+        migrated.legacy_migration_receipt,
+        old.legacy_migration_receipt
+    );
+    assert!(rt.legacy_status().unwrap().can_delete_legacy);
+    let after = std::fs::read(&path).unwrap();
+    assert_ne!(before, after);
+    let backup = std::fs::read(sdbf::sibling(&path, "bak")).unwrap();
+    assert_eq!(backup, before);
+    assert_eq!(
+        migrate(&rt, &payload).await.unwrap().status,
+        "already-verified"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), after);
+    assert_eq!(std::fs::read(sdbf::sibling(&path, "bak")).unwrap(), backup);
+}
+
+#[tokio::test]
 async fn migration_receipt_ignores_verification_statistics_but_rejects_decision_or_payload_drift() {
     let _fixture = crate::STORAGE_FIXTURE.lock().await;
     let (_root, rt, payload) = fixture();
@@ -357,12 +453,19 @@ async fn migration_preserves_authenticated_destination_protection() {
 #[tokio::test]
 async fn migration_rechecks_expired_access_before_write_and_already_verified_return() {
     let _fixture = crate::STORAGE_FIXTURE.lock().await;
-    for existing in [false, true] {
+    for (existing, missing_timestamps) in [(false, false), (true, false), (true, true)] {
         let (root, rt, payload) = fixture();
         if existing {
             migrate(&rt, &payload).await.unwrap();
         }
         let destination = rt.trust_file_path("db").unwrap();
+        if missing_timestamps {
+            let mut old = rt.strict_trust("db").unwrap().unwrap();
+            for record in old.records.values_mut() {
+                record.timestamps = None;
+            }
+            write_value(&destination, &serde_json::to_value(old).unwrap());
+        }
         let before = std::fs::read(&destination).ok();
         let source = std::fs::read(root.path().join(LEGACY_TRUST_FILE)).unwrap();
         let coordinator = sorng_encryption::settings_coordinator::lock().await;

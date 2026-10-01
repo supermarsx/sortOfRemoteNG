@@ -39,6 +39,13 @@ export const trust: TrustExportDocument = {
         last_seen: NOW,
       },
       description: "Retained trust metadata",
+      timestamps: {
+        version: 1,
+        created_at: "2026-09-26T00:00:00+00:00",
+        updated_at: "2026-09-26T00:00:00+00:00",
+        created_at_source: "inferred",
+        updated_at_source: "inferred",
+      },
       history: [],
       revoked: true,
     },

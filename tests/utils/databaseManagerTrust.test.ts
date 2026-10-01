@@ -110,6 +110,10 @@ function nativeInvoke(command: string, args: any = {}): unknown {
       };
     case "database_protection_lock":
       return { locked: true, notificationPending: false, warnings: [] };
+    case "database_protection_save":
+      expect(args.expectedData).toEqual(native.data.get(args.databaseId));
+      native.data.set(args.databaseId, structuredClone(args.data));
+      return { committed: true, securityRevision: "rev-1", warnings: [] };
 
     // ── trust runtime (t62-e1b command surface) ──
     case "trust_set_active_database": {

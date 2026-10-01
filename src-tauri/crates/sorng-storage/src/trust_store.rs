@@ -265,6 +265,61 @@ pub enum Identity {
     Ssh(SshHostKeyIdentity),
 }
 
+/// Whether a date is exact native metadata, historical evidence, or unknown.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustTimestampSource {
+    Recorded,
+    Inferred,
+    Unknown,
+}
+
+/// Record lifecycle metadata, independent of certificate validity and trust expiry.
+/// Inferred dates are historical evidence, not exact creation/update times;
+/// unknown dates use epoch and must never decide a sync conflict on their own.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TrustRecordTimestamps {
+    pub version: u32,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_at_source: TrustTimestampSource,
+    pub updated_at_source: TrustTimestampSource,
+}
+
+impl TrustRecordTimestamps {
+    fn recorded(now: &str) -> Self {
+        Self {
+            version: 1,
+            created_at: now.into(),
+            updated_at: now.into(),
+            created_at_source: TrustTimestampSource::Recorded,
+            updated_at_source: TrustTimestampSource::Recorded,
+        }
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        let parse = |value: &str| {
+            if value.len() > 128 {
+                return Err("invalid trust record timestamp".to_string());
+            }
+            chrono::DateTime::parse_from_rfc3339(value)
+                .map_err(|_| "invalid trust record timestamp".to_string())
+        };
+        let created = parse(&self.created_at)?;
+        let updated = parse(&self.updated_at)?;
+        let epoch = chrono::DateTime::<Utc>::UNIX_EPOCH;
+        if self.version != 1
+            || updated < created
+            || (self.created_at_source == TrustTimestampSource::Unknown && created != epoch)
+            || (self.updated_at_source == TrustTimestampSource::Unknown && updated != epoch)
+        {
+            return Err("invalid trust record timestamp metadata".into());
+        }
+        Ok(())
+    }
+}
+
 /// A trust record associating a host with a memorized identity.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrustRecord {
@@ -304,6 +359,138 @@ pub struct TrustRecord {
     /// Tags for organizing / filtering
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Absent only in older stores/imports; materialized durably on native access.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamps: Option<TrustRecordTimestamps>,
+}
+
+fn infer_record_timestamps(record: &TrustRecord) -> TrustRecordTimestamps {
+    let mut evidence = Vec::new();
+    let mut add = |value: &str| {
+        if value.len() <= 128 {
+            if let Ok(date) = chrono::DateTime::parse_from_rfc3339(value) {
+                evidence.push(date.with_timezone(&Utc));
+            }
+        }
+    };
+    let identity_dates = |identity: &Identity| match identity {
+        Identity::Tls(cert) => (cert.first_seen.clone(), cert.last_seen.clone()),
+        Identity::Ssh(key) => (key.first_seen.clone(), key.last_seen.clone()),
+    };
+    let (first, last) = identity_dates(&record.identity);
+    add(&first);
+    add(&last);
+    for value in [
+        &record.first_trusted,
+        &record.stats.last_verified,
+        &record.stats.last_mismatch,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        add(value);
+    }
+    for entry in &record.history {
+        let (first, last) = identity_dates(&entry.identity);
+        add(&first);
+        add(&last);
+        add(&entry.changed_at);
+    }
+    let source = if evidence.is_empty() {
+        TrustTimestampSource::Unknown
+    } else {
+        TrustTimestampSource::Inferred
+    };
+    TrustRecordTimestamps {
+        version: 1,
+        created_at: evidence
+            .iter()
+            .min()
+            .copied()
+            .unwrap_or(chrono::DateTime::UNIX_EPOCH)
+            .to_rfc3339(),
+        updated_at: evidence
+            .iter()
+            .max()
+            .copied()
+            .unwrap_or(chrono::DateTime::UNIX_EPOCH)
+            .to_rfc3339(),
+        created_at_source: source,
+        updated_at_source: source,
+    }
+}
+
+fn migrate_record_timestamps(data: &mut TrustStoreData) -> bool {
+    let mut changed = false;
+    for record in data.records.values_mut() {
+        if record.timestamps.is_none() {
+            record.timestamps = Some(infer_record_timestamps(record));
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// Internal write intent, never a caller-controlled wire flag. Metadata adoption
+/// is selected only after the full-document CAS for a reviewed replacement.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TrustTimestampWriteMode {
+    LocalEdit,
+    AdoptReviewedDocument,
+}
+
+/// Called under the existing backend I/O lease. Timestamps are not trust
+/// authority: compare record contents, preserve creation, and stamp real edits.
+fn prepare_record_timestamps(
+    current: &TrustStoreData,
+    data: &mut TrustStoreData,
+) -> Result<(), String> {
+    validate_trust_store_data(data)?;
+    migrate_record_timestamps(data);
+    // Scope moves re-key a record while retaining its content. Only pair a
+    // uniquely matching removed record, so separate endpoints never inherit
+    // one another's creation metadata accidentally.
+    let moved_signature = |record: &TrustRecord| -> Result<String, String> {
+        let mut value = serde_json::to_value(record).map_err(|e| e.to_string())?;
+        value.as_object_mut().unwrap().remove("host");
+        serde_json::to_string(&value).map_err(|e| e.to_string())
+    };
+    let mut removed = HashMap::new();
+    for (key, record) in &current.records {
+        if !data.records.contains_key(key) {
+            removed
+                .entry(moved_signature(record)?)
+                .and_modify(|record| *record = None)
+                .or_insert(Some(record));
+        }
+    }
+    for (key, record) in &mut data.records {
+        let previous = match current.records.get(key) {
+            Some(previous) => Some(previous),
+            None => removed.get(&moved_signature(record)?).copied().flatten(),
+        };
+        let Some(previous) = previous else { continue };
+        let mut before = serde_json::to_value(previous).map_err(|e| e.to_string())?;
+        let mut after = serde_json::to_value(&*record).map_err(|e| e.to_string())?;
+        before.as_object_mut().unwrap().remove("timestamps");
+        after.as_object_mut().unwrap().remove("timestamps");
+        let mut timestamps = previous
+            .timestamps
+            .clone()
+            .unwrap_or_else(|| infer_record_timestamps(previous));
+        if before != after {
+            let last = chrono::DateTime::parse_from_rfc3339(&timestamps.updated_at)
+                .map_err(|_| "invalid trust record timestamp")?
+                .with_timezone(&Utc);
+            let next = last
+                .checked_add_signed(chrono::Duration::nanoseconds(1))
+                .ok_or("trust record timestamp overflow")?;
+            timestamps.updated_at = Utc::now().max(next).to_rfc3339();
+            timestamps.updated_at_source = TrustTimestampSource::Recorded;
+        }
+        record.timestamps = Some(timestamps);
+    }
+    Ok(())
 }
 
 /// Result of verifying an identity against the trust store.
@@ -411,6 +598,13 @@ impl StoreBackend {
     /// the freshly loaded data; when it returns `true` the data is
     /// persisted before the lock is released.
     fn with_data<R>(&self, f: impl FnOnce(&mut TrustStoreData) -> (R, bool)) -> Result<R, String> {
+        self.with_data_snapshot(f).map(|(out, _)| out)
+    }
+
+    fn with_data_snapshot<R>(
+        &self,
+        f: impl FnOnce(&mut TrustStoreData) -> (R, bool),
+    ) -> Result<(R, TrustStoreData), String> {
         match self {
             StoreBackend::Legacy(path) => {
                 let path = path
@@ -418,11 +612,21 @@ impl StoreBackend {
                     .map_err(|_| "trust store lock poisoned".to_string())?;
                 let mut data = load_trust_store_data(&path)?;
                 let normalized = normalize_automatically_restored_records(&mut data);
+                let migrated = migrate_record_timestamps(&mut data);
+                let current = data.clone();
                 let (out, dirty) = f(&mut data);
-                if dirty || normalized {
+                if dirty {
+                    prepare_record_timestamps(&current, &mut data)?;
+                }
+                if normalized
+                    || migrated
+                    || (dirty
+                        && serde_json::to_value(&current).map_err(|e| e.to_string())?
+                            != serde_json::to_value(&data).map_err(|e| e.to_string())?)
+                {
                     persist_trust_store_data(&path, &data)?;
                 }
-                Ok(out)
+                Ok((out, data))
             }
             StoreBackend::Shared | StoreBackend::ScopedShared { .. } => {
                 let rt = runtime()?;
@@ -457,12 +661,12 @@ impl StoreBackend {
                 }
                 let (out, dirty) = f(&mut data);
                 if dirty {
-                    rt.persist_active(&data)?;
+                    data = rt.persist_active(&data)?;
                     if let Some(ref mut baseline) = baseline {
                         **baseline = Some(serde_json::to_value(&data).map_err(|e| e.to_string())?);
                     }
                 }
-                Ok(out)
+                Ok((out, data))
             }
         }
     }
@@ -471,11 +675,12 @@ impl StoreBackend {
         self.with_data(|data| (data.clone(), false))
     }
 
-    fn store(&self, data: &TrustStoreData) -> Result<(), String> {
-        self.with_data(|current| {
+    fn store(&self, data: &TrustStoreData) -> Result<TrustStoreData, String> {
+        self.with_data_snapshot(|current| {
             *current = data.clone();
             ((), true)
         })
+        .map(|(_, data)| data)
     }
 }
 
@@ -495,10 +700,11 @@ impl TrustStoreService {
         // Commands and synchronous verifiers reload before use. Construction
         // stays infallible for Tauri state registration, while corrupt state
         // still fails closed on first access.
-        let data = load_trust_store_data(&path).unwrap_or_default();
+        let backend = StoreBackend::Legacy(Arc::new(std::sync::Mutex::new(path)));
+        let data = backend.load().unwrap_or_default();
         Arc::new(Mutex::new(TrustStoreService {
             data,
-            backend: StoreBackend::Legacy(Arc::new(std::sync::Mutex::new(path))),
+            backend,
             shared_baseline: None,
         }))
     }
@@ -573,14 +779,15 @@ impl TrustStoreService {
             if serde_json::to_value(&current).map_err(|e| e.to_string())? != *baseline {
                 return Err("Trust records changed; refresh and review the action again".into());
             }
-            rt.persist_active(&self.data)?;
+            self.data = rt.persist_active(&self.data)?;
             self.shared_baseline = Some((
                 database_id.clone(),
                 serde_json::to_value(&self.data).map_err(|e| e.to_string())?,
             ));
             return Ok(());
         }
-        self.backend.store(&self.data)
+        self.data = self.backend.store(&self.data)?;
+        Ok(())
     }
 
     /// Reload validated persisted state before an operation from the external
@@ -730,12 +937,16 @@ impl TrustStoreService {
         if self.data.records.contains_key(&key) || self.data.legacy_suppressed_keys.contains(&key) {
             return Ok(());
         }
-        let now = Utc::now().to_rfc3339();
         let history = history
             .into_iter()
             .map(|identity| IdentityHistoryEntry {
+                // Preserve historical evidence; the migration date is not
+                // evidence of when the old identity was originally recorded.
+                changed_at: match &identity {
+                    Identity::Tls(cert) => cert.last_seen.clone(),
+                    Identity::Ssh(key) => key.last_seen.clone(),
+                },
                 identity,
-                changed_at: now.clone(),
                 reason: IdentityChangeReason::Migrated,
                 approved_by: approved_by.clone(),
                 note: note.clone(),
@@ -756,10 +967,11 @@ impl TrustStoreService {
                 host_policy: None,
                 host_policy_config: None,
                 stats: VerificationStats::default(),
-                first_trusted: Some(now),
+                first_trusted: None,
                 trust_expires: None,
                 revoked: false,
                 tags: vec![],
+                timestamps: None,
             },
         );
         self.persist()
@@ -881,18 +1093,19 @@ impl TrustStoreService {
             .records
             .get_mut(&key)
             .ok_or_else(|| "Trust record not found".to_string())?;
-        record.revoked = true;
-
-        let entry = IdentityHistoryEntry {
-            identity: record.identity.clone(),
-            changed_at: Utc::now().to_rfc3339(),
-            reason: IdentityChangeReason::ReinstatedAfterRevoke,
-            approved_by: Some("system".to_string()),
-            note: Some("Identity revoked".to_string()),
-            verification_count: record.stats.total_checks,
-            trust_score: record.stats.trust_score,
-        };
-        record.history.push(entry);
+        if !record.revoked {
+            record.revoked = true;
+            let entry = IdentityHistoryEntry {
+                identity: record.identity.clone(),
+                changed_at: Utc::now().to_rfc3339(),
+                reason: IdentityChangeReason::ReinstatedAfterRevoke,
+                approved_by: Some("system".to_string()),
+                note: Some("Identity revoked".to_string()),
+                verification_count: record.stats.total_checks,
+                trust_score: record.stats.trust_score,
+            };
+            record.history.push(entry);
+        }
         self.persist()
     }
 
@@ -1215,10 +1428,11 @@ fn trust_identity_in_data(
                 host_policy: None,
                 host_policy_config: None,
                 stats: VerificationStats::default(),
-                first_trusted: Some(now_str),
+                first_trusted: Some(now_str.clone()),
                 trust_expires,
                 revoked: false,
                 tags: vec![],
+                timestamps: Some(TrustRecordTimestamps::recorded(&now_str)),
             },
         );
     }
@@ -1407,6 +1621,9 @@ fn validate_trust_store_data(data: &TrustStoreData) -> Result<(), String> {
             return Err("invalid trust-store trust score".to_string());
         }
         metadata::validate_description(record.description.as_deref())?;
+        if let Some(timestamps) = &record.timestamps {
+            timestamps.validate()?;
+        }
     }
     Ok(())
 }
@@ -1708,7 +1925,8 @@ pub enum TrustImportMode {
     /// one was seen more recently; never let an unrevoked import overwrite
     /// a revoked record; policy untouched.
     Merge,
-    /// Drop everything and take the document verbatim (records + policy).
+    /// Replace records + policy. Full-document CAS also adopts their metadata;
+    /// ordinary imports retain existing creation metadata and stamp edits.
     Replace,
 }
 
@@ -2059,7 +2277,9 @@ impl TrustRuntime {
     fn read_file(&self, canonical: &Path) -> Result<TrustStoreData, String> {
         self.with_current_key(|key| {
             let mut data = self.read_file_with_key(canonical, key)?;
-            if normalize_automatically_restored_records(&mut data) {
+            let normalized = normalize_automatically_restored_records(&mut data);
+            let migrated = migrate_record_timestamps(&mut data);
+            if normalized || migrated {
                 self.write_file_with_key(canonical, &data, key)?;
             }
             Ok(data)
@@ -2144,8 +2364,43 @@ impl TrustRuntime {
     /// Validate + serialise + (encrypt) + `safe_write`. Without a cached
     /// sub-key the write is plaintext only when master encryption is not
     /// configured; otherwise it fails closed (no plaintext downgrade).
-    fn write_file(&self, canonical: &Path, data: &TrustStoreData) -> Result<(), String> {
-        self.with_current_key(|key| self.write_file_with_key(canonical, data, key))
+    /// Caller holds I/O. Returns the stamped snapshot for caches/readback CAS.
+    fn write_file(
+        &self,
+        canonical: &Path,
+        data: &TrustStoreData,
+    ) -> Result<TrustStoreData, String> {
+        self.write_file_with_timestamp_mode(canonical, data, TrustTimestampWriteMode::LocalEdit)
+    }
+
+    fn write_file_with_timestamp_mode(
+        &self,
+        canonical: &Path,
+        data: &TrustStoreData,
+        timestamp_mode: TrustTimestampWriteMode,
+    ) -> Result<TrustStoreData, String> {
+        self.with_current_key(|key| {
+            let current = self.read_file_with_key(canonical, key)?;
+            let mut data = data.clone();
+            match timestamp_mode {
+                TrustTimestampWriteMode::LocalEdit => {
+                    prepare_record_timestamps(&current, &mut data)?;
+                }
+                TrustTimestampWriteMode::AdoptReviewedDocument => {
+                    validate_trust_store_data(&data)?;
+                    // A reviewed snapshot has its own lifecycle. Never stamp
+                    // receipt time onto it; infer only absent legacy metadata.
+                    migrate_record_timestamps(&mut data);
+                }
+            }
+            if !canonical.exists()
+                || serde_json::to_value(&current).map_err(|e| e.to_string())?
+                    != serde_json::to_value(&data).map_err(|e| e.to_string())?
+            {
+                self.write_file_with_key(canonical, &data, key)?;
+            }
+            Ok(data)
+        })
     }
 
     fn write_file_with_key(
@@ -2198,7 +2453,7 @@ impl TrustRuntime {
     }
 
     /// Persist the active database's records. Callers hold the io guard.
-    fn persist_active(&self, data: &TrustStoreData) -> Result<(), String> {
+    fn persist_active(&self, data: &TrustStoreData) -> Result<TrustStoreData, String> {
         let path = self.active_path()?;
         self.write_file(&path, data)
     }
@@ -2385,20 +2640,72 @@ impl TrustRuntime {
         mode: TrustImportMode,
         expected_records: Option<Vec<TrustRecord>>,
     ) -> Result<TrustImportOutcome, String> {
+        self.import_reviewed_document(database_id, document, mode, expected_records, None)
+    }
+
+    /// Full-document CAS includes policy and identities under the same I/O lease.
+    /// Only a matching full-document review plus Replace adopts incoming dates.
+    /// Validation/CAS errors do not commit even a pending local migration.
+    pub fn import_reviewed_document(
+        &self,
+        database_id: Option<&str>,
+        document: TrustExportDocument,
+        mode: TrustImportMode,
+        expected_records: Option<Vec<TrustRecord>>,
+        expected_document: Option<TrustExportDocument>,
+    ) -> Result<TrustImportOutcome, String> {
         if document.version != TRUST_EXPORT_VERSION {
             return Err(format!(
                 "unsupported trust export version {}",
                 document.version
             ));
         }
+        let timestamp_mode = if expected_document.is_some() && mode == TrustImportMode::Replace {
+            TrustTimestampWriteMode::AdoptReviewedDocument
+        } else {
+            TrustTimestampWriteMode::LocalEdit
+        };
+        let mut incoming_keys = std::collections::HashSet::new();
         // Reject malformed descriptions even if merge would skip an existing
         // identity; import never silently accepts an out-of-contract payload.
         for record in &document.records {
+            if timestamp_mode == TrustTimestampWriteMode::AdoptReviewedDocument
+                && !incoming_keys.insert(TrustStoreService::record_key(
+                    &record.record_type,
+                    &record.host,
+                ))
+            {
+                return Err(
+                    "Duplicate trust record in reviewed replacement; no changes written".into(),
+                );
+            }
             metadata::validate_description(record.description.as_deref())?;
+            if let Some(timestamps) = &record.timestamps {
+                timestamps.validate()?;
+            }
         }
         let _io = self.io_guard()?;
         let path = self.resolve_db(database_id)?;
-        let current = self.read_file(&path)?;
+        // Match export's logical view without its durable read repair: a stale
+        // review or invalid incoming record must leave the destination intact.
+        let mut current = self.with_current_key(|key| self.read_file_with_key(&path, key))?;
+        normalize_automatically_restored_records(&mut current);
+        migrate_record_timestamps(&mut current);
+        if let Some(expected) = expected_document {
+            let mut records: Vec<TrustRecord> = current.records.values().cloned().collect();
+            records.sort_by(|a, b| (&a.record_type, &a.host).cmp(&(&b.record_type, &b.host)));
+            let actual = TrustExportDocument {
+                version: TRUST_EXPORT_VERSION,
+                records,
+                policy: current.policy.clone(),
+                policy_config: current.policy_config.clone(),
+            };
+            if serde_json::to_value(&expected).map_err(|_| "Invalid trust expectation")?
+                != serde_json::to_value(&actual).map_err(|_| "Invalid current trust document")?
+            {
+                return Err("Destination trust document changed; review the import again".into());
+            }
+        }
         if let Some(expected_records) = expected_records {
             if database_id != self.active_database_id().as_deref() {
                 return Err("Trust database changed; refresh and review the import again".into());
@@ -2430,7 +2737,14 @@ impl TrustRuntime {
             TrustImportMode::Merge => current,
         };
         let outcome = merge_records_into(&mut data, document.records, mode);
-        self.write_file(&path, &data)?;
+        if timestamp_mode == TrustTimestampWriteMode::AdoptReviewedDocument
+            && normalize_automatically_restored_records(&mut data)
+        {
+            return Err("Reviewed replacement would restore a forgotten identity without approval; no changes written".into());
+        }
+        // One validated document commit, with no fallible post-commit work
+        // that could report an error after successfully applying the import.
+        self.write_file_with_timestamp_mode(&path, &data, timestamp_mode)?;
         Ok(outcome)
     }
 
@@ -2563,6 +2877,9 @@ fn legacy_data_for_connections(
             if !keep {
                 continue;
             }
+            if record.timestamps.is_none() {
+                record.timestamps = Some(infer_record_timestamps(&record));
+            }
             if record.history.len() < MAX_HISTORY_ENTRIES {
                 record.history.push(migrated_history_entry(
                     &record,
@@ -2581,22 +2898,13 @@ fn legacy_data_for_connections(
         if data.records.contains_key(&key) {
             continue;
         }
-        let now = Utc::now().to_rfc3339();
         let non_empty = |s: String| if s.is_empty() { None } else { Some(s) };
         let identity = Identity::Tls(Box::new(CertIdentity {
             fingerprint: entry.fingerprint.trim().to_ascii_lowercase(),
             subject: non_empty(entry.subject),
             issuer: non_empty(entry.issuer),
-            first_seen: if entry.first_seen.is_empty() {
-                now.clone()
-            } else {
-                entry.first_seen
-            },
-            last_seen: if entry.last_seen.is_empty() {
-                now.clone()
-            } else {
-                entry.last_seen
-            },
+            first_seen: entry.first_seen,
+            last_seen: entry.last_seen,
             valid_from: non_empty(entry.valid_from),
             valid_to: non_empty(entry.valid_to),
             pem: non_empty(entry.pem),
@@ -2634,11 +2942,22 @@ fn legacy_data_for_connections(
             host_policy: None,
             host_policy_config: None,
             stats: VerificationStats::default(),
-            first_trusted: Some(now),
+            first_trusted: None,
             trust_expires: None,
             revoked: false,
             tags: vec![],
+            timestamps: None,
         };
+        record.timestamps = Some(infer_record_timestamps(&record));
+        if let Identity::Tls(cert) = &mut record.identity {
+            let epoch = chrono::DateTime::<Utc>::UNIX_EPOCH.to_rfc3339();
+            if cert.first_seen.is_empty() {
+                cert.first_seen = epoch.clone();
+            }
+            if cert.last_seen.is_empty() {
+                cert.last_seen = epoch;
+            }
+        }
         record.history.push(migrated_history_entry(
             &record,
             "migrated from legacy rdp-cert-trust.json",
@@ -4122,5 +4441,724 @@ mod runtime_tests {
         rt.delete_store("dst").unwrap();
         assert!(!path.exists() && !sdbf::sibling(&path, "bak").exists());
         assert!(rt.delete_store("../evil").is_err());
+    }
+
+    fn historical_record(kind: &str) -> TrustRecord {
+        serde_json::from_value(serde_json::json!({
+            "host": "history.test:443", "record_type": kind,
+            "identity": {
+                "kind": if kind == "ssh" { "ssh" } else { "tls" },
+                "fingerprint": "aa", "first_seen": "2020-01-01T00:00:00Z",
+                "last_seen": "2021-01-01T00:00:00Z"
+            },
+            "user_approved": true, "nickname": null, "history": [],
+            "first_trusted": "2019-01-01T00:00:00Z"
+        }))
+        .unwrap()
+    }
+
+    fn assert_timestamp_advanced(before: &TrustRecordTimestamps, after: &TrustRecordTimestamps) {
+        assert_eq!(after.created_at, before.created_at);
+        assert_eq!(after.created_at_source, before.created_at_source);
+        assert_eq!(after.updated_at_source, TrustTimestampSource::Recorded);
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&after.updated_at).unwrap()
+                > chrono::DateTime::parse_from_rfc3339(&before.updated_at).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn timestamps_migrate_all_record_types_durably_once_from_historical_evidence() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "db");
+        let rt = &guard.runtime;
+        let path = rt.trust_file_path("db").unwrap();
+        let mut old = TrustStoreData::default();
+        for kind in ["https", "certificate", "rdp", "tls", "ssh"] {
+            let mut record = historical_record(kind);
+            record.history.push(IdentityHistoryEntry {
+                identity: record.identity.clone(),
+                changed_at: "2018-01-01T03:00:00+03:00".into(),
+                reason: IdentityChangeReason::Initial,
+                approved_by: None,
+                note: None,
+                verification_count: 0,
+                trust_score: 0,
+            });
+            record.stats.last_verified = Some("2023-01-01T00:00:00Z".into());
+            record.stats.last_mismatch = Some("2024-01-01T00:00:00Z".into());
+            old.records
+                .insert(format!("{kind}:history.test:443"), record);
+        }
+        sdbf::safe_write(&path, &serde_json::to_vec(&old).unwrap()).unwrap();
+        let exported = rt.export(Some("db")).unwrap();
+        assert_eq!(exported.records.len(), 5);
+        for record in &exported.records {
+            let dates = record.timestamps.as_ref().unwrap();
+            assert_eq!(dates.created_at, "2018-01-01T00:00:00+00:00");
+            assert_eq!(dates.updated_at, "2024-01-01T00:00:00+00:00");
+            assert_eq!(dates.created_at_source, TrustTimestampSource::Inferred);
+            assert_eq!(dates.updated_at_source, TrustTimestampSource::Inferred);
+            let mut without_dates = record.clone();
+            without_dates.timestamps = None;
+            assert_eq!(
+                serde_json::to_value(&without_dates).unwrap(),
+                serde_json::to_value(
+                    &old.records[&format!("{}:{}", record.record_type, record.host)]
+                )
+                .unwrap()
+            );
+        }
+        let bytes = std::fs::read(&path).unwrap();
+        let persisted: TrustStoreData =
+            serde_json::from_slice(sdbf::parse_and_verify(&bytes).unwrap()).unwrap();
+        assert!(persisted
+            .records
+            .values()
+            .all(|record| record.timestamps.is_some()));
+        let backup = std::fs::read(sdbf::sibling(&path, "bak")).unwrap();
+        assert_eq!(
+            serde_json::to_value(rt.export(Some("db")).unwrap()).unwrap(),
+            serde_json::to_value(&exported).unwrap()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(std::fs::read(sdbf::sibling(&path, "bak")).unwrap(), backup);
+        rt.set_active(None, None).unwrap();
+        rt.set_active(Some("db".into()), None).unwrap();
+        assert_eq!(
+            serde_json::to_value(rt.export(None).unwrap()).unwrap(),
+            serde_json::to_value(exported).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn timestamps_unknown_legacy_dates_use_epoch_and_never_migration_time() {
+        let mut record = historical_record("tls");
+        record.first_trusted = None;
+        if let Identity::Tls(cert) = &mut record.identity {
+            cert.first_seen.clear();
+            cert.last_seen = "invalid".into();
+            cert.valid_from = Some("2000-01-01T00:00:00Z".into());
+        }
+        record.trust_expires = Some("2099-01-01T00:00:00Z".into());
+        let dates = infer_record_timestamps(&record);
+        assert_eq!(dates.created_at, "1970-01-01T00:00:00+00:00");
+        assert_eq!(dates.created_at_source, TrustTimestampSource::Unknown);
+        assert_eq!(dates.updated_at_source, TrustTimestampSource::Unknown);
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("legacy.json");
+        let old = TrustStoreData {
+            records: HashMap::from([("tls:history.test:443".into(), record.clone())]),
+            ..Default::default()
+        };
+        persist_trust_store_data(&path, &old).unwrap();
+        let service = TrustStoreService::new(path.to_string_lossy().into_owned());
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            load_trust_store_data(&path).unwrap().records["tls:history.test:443"]
+                .timestamps
+                .as_ref(),
+            Some(&dates)
+        );
+        let mut service = service.lock().await;
+        service.reload_from_disk().unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        service
+            .migrate_legacy_identity(
+                "imported:443".into(),
+                "tls".into(),
+                record.identity,
+                true,
+                vec![],
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service
+                .get_stored_identity("imported:443", "tls")
+                .await
+                .unwrap()
+                .timestamps,
+            Some(dates)
+        );
+    }
+
+    #[tokio::test]
+    async fn timestamps_cover_edits_stats_revoke_and_noops_without_losing_creation() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "db");
+        let rt = &guard.runtime;
+        let path = rt.trust_file_path("db").unwrap();
+        SyncTrustStore::shared()
+            .trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+        let created = rt
+            .export(None)
+            .unwrap()
+            .records
+            .remove(0)
+            .timestamps
+            .unwrap();
+        assert_eq!(created.created_at_source, TrustTimestampSource::Recorded);
+        assert_eq!(created.created_at, created.updated_at);
+        let service = TrustStoreService::shared();
+        let mut service = service.lock().await;
+        service.reload_from_disk().unwrap();
+        let mut previous = created.clone();
+        for action in 0..7 {
+            match action {
+                0 => service
+                    .update_trust_record_nickname("h:443", "tls", Some("label".into()))
+                    .await
+                    .unwrap(),
+                1 => service
+                    .set_host_policy("h:443", "tls", Some(TrustPolicy::Strict), None)
+                    .await
+                    .unwrap(),
+                2 => service
+                    .set_record_tags("h:443", "tls", vec!["tag".into()])
+                    .await
+                    .unwrap(),
+                3 => {
+                    service
+                        .verify_identity("h:443", "tls", tls_identity("aa"))
+                        .await
+                        .unwrap();
+                }
+                4 => {
+                    service
+                        .verify_identity("h:443", "tls", tls_identity("bb"))
+                        .await
+                        .unwrap();
+                }
+                5 => service.revoke_identity("h:443", "tls").await.unwrap(),
+                _ => service.reinstate_identity("h:443", "tls").await.unwrap(),
+            }
+            let next = rt
+                .export(None)
+                .unwrap()
+                .records
+                .remove(0)
+                .timestamps
+                .unwrap();
+            assert_timestamp_advanced(&previous, &next);
+            assert_eq!(
+                service.data.records["tls:h:443"].timestamps.as_ref(),
+                Some(&next)
+            );
+            previous = next;
+        }
+        let before_noops = std::fs::read(&path).unwrap();
+        service
+            .update_trust_record_nickname("h:443", "tls", Some("label".into()))
+            .await
+            .unwrap();
+        service
+            .set_host_policy("h:443", "tls", Some(TrustPolicy::Strict), None)
+            .await
+            .unwrap();
+        service
+            .set_record_tags("h:443", "tls", vec!["tag".into()])
+            .await
+            .unwrap();
+        service.reinstate_identity("h:443", "tls").await.unwrap();
+        service.set_trust_policy(TrustPolicy::Tofu).await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), before_noops);
+        service.revoke_identity("h:443", "tls").await.unwrap();
+        let revoked = std::fs::read(&path).unwrap();
+        service.revoke_identity("h:443", "tls").await.unwrap();
+        assert!(matches!(
+            SyncTrustStore::shared()
+                .verify_identity_blocking("h:443", "tls", tls_identity("aa"))
+                .unwrap(),
+            TrustVerifyResult::Revoked { .. }
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), revoked);
+    }
+
+    #[tokio::test]
+    async fn timestamps_import_preserves_creation_and_noop_cas_but_stamps_real_changes() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "db");
+        let rt = &guard.runtime;
+        let path = rt.trust_file_path("db").unwrap();
+        let old = TrustExportDocument {
+            version: TRUST_EXPORT_VERSION,
+            records: vec![historical_record("ssh")],
+            policy: TrustPolicy::Strict,
+            policy_config: Default::default(),
+        };
+        rt.import(None, old, TrustImportMode::Replace).unwrap();
+        let initial = rt.export(None).unwrap();
+        let original_dates = initial.records[0].timestamps.as_ref().unwrap();
+        assert_eq!(
+            original_dates.created_at_source,
+            TrustTimestampSource::Inferred
+        );
+        let bytes = std::fs::read(&path).unwrap();
+        rt.import_reviewed_document(
+            None,
+            initial.clone(),
+            TrustImportMode::Replace,
+            None,
+            Some(initial.clone()),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        let mut changed = initial.clone();
+        changed.records[0].nickname = Some("import label".into());
+        changed.records[0].timestamps =
+            Some(TrustRecordTimestamps::recorded("2099-01-01T00:00:00Z"));
+        rt.import_reviewed(
+            Some("db"),
+            changed,
+            TrustImportMode::Replace,
+            Some(initial.records.clone()),
+        )
+        .unwrap();
+        let after = rt.export(None).unwrap();
+        assert_timestamp_advanced(
+            original_dates,
+            after.records[0].timestamps.as_ref().unwrap(),
+        );
+        assert!(rt
+            .import_reviewed_document(
+                None,
+                initial.clone(),
+                TrustImportMode::Replace,
+                None,
+                Some(initial)
+            )
+            .is_err());
+        let bytes = std::fs::read(&path).unwrap();
+        let mut malformed = after.clone();
+        malformed.records[0].timestamps.as_mut().unwrap().version = 2;
+        assert!(rt.import(None, malformed, TrustImportMode::Merge).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn timestamps_advance_monotonically_when_clock_is_behind_and_ignore_metadata_only_edits() {
+        let mut record = historical_record("tls");
+        record.timestamps = Some(TrustRecordTimestamps::recorded("2099-01-01T00:00:00Z"));
+        let original = record.timestamps.clone().unwrap();
+        let current = TrustStoreData {
+            records: HashMap::from([("tls:history.test:443".into(), record)]),
+            ..Default::default()
+        };
+        let mut data = current.clone();
+        data.records
+            .get_mut("tls:history.test:443")
+            .unwrap()
+            .timestamps = None;
+        prepare_record_timestamps(&current, &mut data).unwrap();
+        assert_eq!(
+            data.records["tls:history.test:443"].timestamps.as_ref(),
+            Some(&original)
+        );
+        data.records
+            .get_mut("tls:history.test:443")
+            .unwrap()
+            .nickname = Some("edit".into());
+        prepare_record_timestamps(&current, &mut data).unwrap();
+        assert_timestamp_advanced(
+            &original,
+            data.records["tls:history.test:443"]
+                .timestamps
+                .as_ref()
+                .unwrap(),
+        );
+    }
+
+    #[tokio::test]
+    async fn timestamps_migrate_encrypted_store_only_after_local_unlock() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let state = Arc::new(EncryptionState::new());
+        let test_key = [73u8; 32];
+        state
+            .install(MasterDek::from_bytes(&test_key).unwrap())
+            .await;
+        let guard = install_runtime_for_tests(dir.path().join("databases"), Some(state.clone()));
+        let rt = &guard.runtime;
+        rt.activate_database(Some("db".into()), &[]).await.unwrap();
+        let path = rt.trust_file_path("db").unwrap();
+        let old = TrustStoreData {
+            records: HashMap::from([("tls:history.test:443".into(), historical_record("tls"))]),
+            ..Default::default()
+        };
+        {
+            let _io = rt.io_guard().unwrap();
+            rt.with_current_key(|key| rt.write_file_with_key(&path, &old, key))
+                .unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+        state.lock().await;
+        assert!(rt.export(None).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        state
+            .install(MasterDek::from_bytes(&test_key).unwrap())
+            .await;
+        assert!(rt.export(None).unwrap().records[0].timestamps.is_some());
+        let after = std::fs::read(&path).unwrap();
+        assert_ne!(after, before);
+        assert!(is_envelope_blob(sdbf::parse_and_verify(&after).unwrap()));
+        rt.export(None).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), after);
+    }
+
+    #[test]
+    fn timestamp_metadata_validator_matches_shared_frontend_fixtures() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/trustRecordTimestampValidation.json"
+        )))
+        .unwrap();
+        for fixture in fixtures.as_array().unwrap() {
+            let valid = serde_json::from_value::<TrustRecordTimestamps>(fixture["value"].clone())
+                .is_ok_and(|metadata| metadata.validate().is_ok());
+            assert_eq!(
+                valid,
+                fixture["valid"].as_bool().unwrap(),
+                "{}",
+                fixture["name"]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_timestamp_fixtures_match_inference_durable_reads_and_reviewed_replace() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "db");
+        let rt = &guard.runtime;
+        let path = rt.trust_file_path("db").unwrap();
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/legacyTrustRecordTimestamps.json"
+        )))
+        .unwrap();
+        for fixture in fixtures.as_array().unwrap() {
+            let mut record: TrustRecord =
+                serde_json::from_value(fixture["record"].clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(infer_record_timestamps(&record)).unwrap(),
+                fixture["expected"],
+                "{}",
+                fixture["name"]
+            );
+            let data = TrustStoreData {
+                records: HashMap::from([(
+                    TrustStoreService::record_key(&record.record_type, &record.host),
+                    record.clone(),
+                )]),
+                ..Default::default()
+            };
+            sdbf::safe_write(&path, &serde_json::to_vec(&data).unwrap()).unwrap();
+            let current = rt.export(None).unwrap();
+            assert_eq!(
+                serde_json::to_value(&current.records[0].timestamps).unwrap(),
+                fixture["expected"]
+            );
+            record.nickname = Some("remote legacy payload".into());
+            let remote = TrustExportDocument {
+                records: vec![record.clone()],
+                ..current.clone()
+            };
+            rt.import_reviewed_document(
+                None,
+                remote,
+                TrustImportMode::Replace,
+                None,
+                Some(current),
+            )
+            .unwrap();
+            record.timestamps = Some(serde_json::from_value(fixture["expected"].clone()).unwrap());
+            assert_eq!(
+                serde_json::to_value(&rt.export(None).unwrap().records[0]).unwrap(),
+                serde_json::to_value(record).unwrap()
+            );
+        }
+        let mut record = historical_record("tls");
+        record.first_trusted = None;
+        if let Identity::Tls(cert) = &mut record.identity {
+            cert.first_seen = format!("2020-01-01T00:00:00.{}Z", "1".repeat(107));
+            cert.last_seen.clear();
+        }
+        assert_eq!(
+            infer_record_timestamps(&record).created_at,
+            "2020-01-01T00:00:00.111111111+00:00"
+        );
+        if let Identity::Tls(cert) = &mut record.identity {
+            cert.first_seen.insert(20, '1');
+        }
+        assert_eq!(
+            infer_record_timestamps(&record).created_at_source,
+            TrustTimestampSource::Unknown
+        );
+    }
+
+    #[tokio::test]
+    async fn cloud_reviewed_replace_round_trips_remote_payload_and_dates_without_drift() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "db");
+        let rt = &guard.runtime;
+        SyncTrustStore::shared()
+            .trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+        let initial = rt.export(None).unwrap();
+        let mut remote = initial.clone();
+        remote.policy = TrustPolicy::AlwaysAsk;
+        remote.policy_config.expiry_days = Some(7);
+        remote.records[0].nickname = Some("remote label".into());
+        remote.records[0].revoked = true;
+        remote.records[0].timestamps = Some(TrustRecordTimestamps {
+            version: 1,
+            created_at: "2015-01-01T03:00:00.123456789+03:00".into(),
+            updated_at: "2025-01-01T00:00:00.987654321+00:00".into(),
+            created_at_source: TrustTimestampSource::Inferred,
+            updated_at_source: TrustTimestampSource::Recorded,
+        });
+        let path = rt.trust_file_path("db").unwrap();
+        let original_bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            rt.import_reviewed_document(
+                None,
+                remote.clone(),
+                TrustImportMode::Replace,
+                None,
+                Some(initial)
+            )
+            .unwrap(),
+            TrustImportOutcome {
+                imported: 1,
+                skipped: 0
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(rt.export(None).unwrap()).unwrap(),
+            serde_json::to_value(&remote).unwrap()
+        );
+        assert_eq!(
+            std::fs::read(sdbf::sibling(&path, "bak")).unwrap(),
+            original_bytes
+        );
+        // Metadata-only remote changes are also adopted, while repeated exact
+        // snapshots do not rotate the storage ladder or synthesize newer dates.
+        let mut dates_only = remote.clone();
+        dates_only.records[0]
+            .timestamps
+            .as_mut()
+            .unwrap()
+            .updated_at = "2025-02-01T00:00:00.123456+00:00".into();
+        rt.import_reviewed_document(
+            None,
+            dates_only.clone(),
+            TrustImportMode::Replace,
+            None,
+            Some(remote),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(rt.export(None).unwrap()).unwrap(),
+            serde_json::to_value(&dates_only).unwrap()
+        );
+        let bytes = std::fs::read(&path).unwrap();
+        let backup = std::fs::read(sdbf::sibling(&path, "bak")).unwrap();
+        rt.import_reviewed_document(
+            None,
+            dates_only.clone(),
+            TrustImportMode::Replace,
+            None,
+            Some(dates_only),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(std::fs::read(sdbf::sibling(&path, "bak")).unwrap(), backup);
+        assert!(matches!(
+            SyncTrustStore::shared()
+                .verify_identity_blocking("h:443", "tls", tls_identity("aa"))
+                .unwrap(),
+            TrustVerifyResult::Revoked { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn incoming_dates_require_both_full_document_review_and_replace() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "db");
+        let rt = &guard.runtime;
+        SyncTrustStore::shared()
+            .trust_identity_blocking("h:443".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+        for (index, (mode, full_review)) in [
+            (TrustImportMode::Replace, false),
+            (TrustImportMode::Merge, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let current = rt.export(Some("db")).unwrap();
+            let previous = current.records[0].timestamps.clone().unwrap();
+            let mut incoming = current.clone();
+            incoming.records[0].nickname = Some(format!("ordinary import {index}"));
+            if let Identity::Tls(cert) = &mut incoming.records[0].identity {
+                cert.last_seen = format!("2098-01-0{}T00:00:00Z", index + 1);
+            }
+            incoming.records[0].timestamps =
+                Some(TrustRecordTimestamps::recorded("2099-01-01T00:00:00Z"));
+            rt.import_reviewed_document(
+                Some("db"),
+                incoming,
+                mode,
+                None,
+                full_review.then_some(current),
+            )
+            .unwrap();
+            let after = rt.export(None).unwrap();
+            assert_eq!(
+                after.records[0].nickname,
+                Some(format!("ordinary import {index}"))
+            );
+            assert_timestamp_advanced(&previous, after.records[0].timestamps.as_ref().unwrap());
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_reviewed_replacements_do_not_commit_pending_migrations_or_partial_records() {
+        let _fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "db");
+        let rt = &guard.runtime;
+        let path = rt.trust_file_path("db").unwrap();
+        let mut old = TrustStoreData {
+            records: HashMap::from([("tls:history.test:443".into(), historical_record("tls"))]),
+            ..Default::default()
+        };
+        mark_forgotten_keys(&mut old, ["tls:forgotten:443".into()]).unwrap();
+        sdbf::safe_write(&path, &serde_json::to_vec(&old).unwrap()).unwrap();
+        let mut logical = old.clone();
+        migrate_record_timestamps(&mut logical);
+        let reviewed = TrustExportDocument {
+            version: TRUST_EXPORT_VERSION,
+            records: logical.records.into_values().collect(),
+            policy: logical.policy,
+            policy_config: logical.policy_config,
+        };
+        let before = std::fs::read(&path).unwrap();
+        for failure in [
+            "stale",
+            "invalid",
+            "dates",
+            "duplicate",
+            "approval",
+            "records-cas",
+        ] {
+            let mut expected = reviewed.clone();
+            let mut incoming = reviewed.clone();
+            incoming.records[0].nickname = Some("must not persist".into());
+            let mut expected_records = None;
+            match failure {
+                "stale" => expected.policy = TrustPolicy::Strict,
+                "invalid" => {
+                    let mut invalid = historical_record("tls");
+                    invalid.host = "bad:443".into();
+                    invalid.tags = vec!["x".repeat(257)];
+                    incoming.records.push(invalid);
+                }
+                "dates" => incoming.records[0].timestamps.as_mut().unwrap().version = 2,
+                "duplicate" => incoming.records.push(incoming.records[0].clone()),
+                "approval" => {
+                    let mut forgotten = historical_record("tls");
+                    forgotten.host = "forgotten:443".into();
+                    forgotten.user_approved = false;
+                    incoming.records.push(forgotten);
+                }
+                "records-cas" => expected_records = Some(vec![]),
+                _ => unreachable!(),
+            }
+            assert!(
+                rt.import_reviewed_document(
+                    Some("db"),
+                    incoming,
+                    TrustImportMode::Replace,
+                    expected_records,
+                    Some(expected)
+                )
+                .is_err(),
+                "{failure}"
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), before, "{failure}");
+            assert!(!sdbf::sibling(&path, "bak").exists(), "{failure}");
+        }
+        // A failed attempt to stage the one document write is an error, never
+        // an imported/skipped success with some records already applied.
+        std::fs::create_dir(sdbf::sibling(&path, "tmp")).unwrap();
+        let mut incoming = reviewed.clone();
+        incoming.records[0].nickname = Some("cannot stage".into());
+        assert!(rt
+            .import_reviewed_document(
+                None,
+                incoming,
+                TrustImportMode::Replace,
+                None,
+                Some(reviewed)
+            )
+            .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn cloud_import_document_cas_preserves_new_identities_and_policy() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "cloud");
+        let rt = guard.runtime.clone();
+        let original = rt.export(Some("cloud")).unwrap();
+        let mut policy_edit = original.clone();
+        policy_edit.policy = TrustPolicy::Strict;
+        rt.import_reviewed_document(
+            Some("cloud"),
+            policy_edit.clone(),
+            TrustImportMode::Replace,
+            None,
+            Some(original.clone()),
+        )
+        .unwrap();
+        assert!(rt
+            .import_reviewed_document(
+                Some("cloud"),
+                original.clone(),
+                TrustImportMode::Replace,
+                None,
+                Some(original)
+            )
+            .is_err());
+        let reviewed = rt.export(Some("cloud")).unwrap();
+        assert_eq!(
+            serde_json::to_value(&reviewed.policy).unwrap(),
+            serde_json::to_value(&policy_edit.policy).unwrap()
+        );
+        SyncTrustStore::shared()
+            .trust_identity_blocking("new:443".into(), "tls".into(), tls_identity("aa"), true)
+            .unwrap();
+        assert!(rt
+            .import_reviewed_document(
+                Some("cloud"),
+                reviewed.clone(),
+                TrustImportMode::Replace,
+                None,
+                Some(reviewed)
+            )
+            .is_err());
+        assert_eq!(rt.export(Some("cloud")).unwrap().records.len(), 1);
     }
 }

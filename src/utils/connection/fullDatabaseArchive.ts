@@ -3,7 +3,14 @@ import type {
   ConnectionDatabase,
 } from "../../types/connection/connection";
 import type { StorageData } from "../storage/storage";
-import type { TrustExportDocument } from "../auth/trustStore";
+import type {
+  TrustExportDocument,
+  TrustExportRecord,
+} from "../auth/trustStore";
+import {
+  inferLegacyTrustRecordTimestamps,
+  isValidTrustRecordTimestamps,
+} from "../auth/trustRecordTimestamps";
 import type { DocumentReference } from "../../types/documents/document";
 import { prepareConnectionForExport } from "../../components/ImportExport/advancedProtocolPortability";
 import {
@@ -16,6 +23,10 @@ import { normalizeDatabaseSettings } from "../documents/documentTypePolicy";
 import { verifyDocumentAttachments } from "../documents/documentAttachments";
 import { normalizeRecycleBin } from "./recycleBin";
 import {
+  normalizeRecordLedger,
+  reconcileRecordLedger,
+} from "../storage/recordLedger";
+import {
   normalizeHttpAutomation,
   normalizeSshQuickActions,
 } from "./sessionQuickActions";
@@ -27,7 +38,10 @@ import {
 
 export const FULL_DATABASE_ARCHIVE_FORMAT = "sorng-full-database" as const;
 export const MAX_FULL_DATABASE_ARCHIVE_BYTES = 48 * 1024 * 1024;
-export interface FullDatabaseArchive extends Required<StorageData> {
+export interface FullDatabaseArchive extends Required<
+  Omit<StorageData, "recordMetadata">
+> {
+  recordMetadata?: StorageData["recordMetadata"];
   format: typeof FULL_DATABASE_ARCHIVE_FORMAT;
   version: 1;
   collection: Pick<
@@ -174,9 +188,15 @@ function normalizeTrust(value: unknown): TrustExportDocument {
       !identity.fingerprint
     )
       return fail();
+    if (row.timestamps != null && !isValidTrustRecordTimestamps(row.timestamps))
+      return fail();
     const key = JSON.stringify([row.record_type, row.host]);
     if (keys.has(key)) return fail();
     keys.add(key);
+    if (row.timestamps == null)
+      row.timestamps = inferLegacyTrustRecordTimestamps(
+        row as unknown as TrustExportRecord,
+      );
   }
   return raw as unknown as TrustExportDocument;
 }
@@ -401,6 +421,7 @@ export async function normalizeFullDatabaseArchive(
             "documents",
             "credentialVault",
             "trustRecords",
+            "recordMetadata",
           ].includes(key),
       ) ||
       !identifier(collection.id) ||
@@ -514,8 +535,18 @@ export async function normalizeFullDatabaseArchive(
       documents: normalizeDatabaseDocuments(raw.documents),
       credentialVault,
       trustRecords: normalizeTrust(raw.trustRecords),
+      ...(raw.recordMetadata === undefined
+        ? {}
+        : { recordMetadata: normalizeRecordLedger(raw.recordMetadata) }),
     };
     validateClosure(result);
+    // Archive normalizers materialize default sections and strip device-only
+    // credentials. Reconcile against that portable body, not the source blob.
+    result.recordMetadata = await reconcileRecordLedger(
+      fullDatabaseArchiveData(result),
+      result.recordMetadata,
+      { mode: "migrate" },
+    );
     if (
       new TextEncoder().encode(JSON.stringify(result)).length >
       MAX_FULL_DATABASE_ARCHIVE_BYTES

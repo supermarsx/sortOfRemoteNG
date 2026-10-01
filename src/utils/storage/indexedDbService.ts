@@ -94,6 +94,22 @@ export class IndexedDbService {
   }
 
   static async getItemStrict<T>(key: string): Promise<T | null> {
+    const raw = await this.getRawItemStrict(key);
+    // Corrupt JSON is a strict error, never a reason to reconnect or retry.
+    return raw === undefined ? null : (JSON.parse(raw) as T);
+  }
+
+  /** UTF-8 bytes of the stored JSON, not IndexedDB's physical allocation.
+   * Read-only: no parsing, unlocking, serialization or legacy migration.
+   */
+  static async getItemByteLengthStrict(key: string): Promise<number | null> {
+    const raw = await this.getRawItemStrict(key);
+    return raw === undefined ? null : new TextEncoder().encode(raw).byteLength;
+  }
+
+  private static async getRawItemStrict(
+    key: string,
+  ): Promise<string | undefined> {
     let raw: string | undefined;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const promise = this.getDB();
@@ -118,8 +134,7 @@ export class IndexedDbService {
         if (attempt === 1) throw error;
       }
     }
-    // Corrupt JSON is a strict error, never a reason to reconnect or retry.
-    return raw === undefined ? null : (JSON.parse(raw) as T);
+    return raw;
   }
 
   static async setItem<T>(key: string, value: T): Promise<void> {

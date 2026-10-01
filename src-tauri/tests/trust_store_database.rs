@@ -91,6 +91,7 @@ fn record(host: &str, record_type: &str, identity: Identity) -> TrustRecord {
         trust_expires: None,
         revoked: false,
         tags: vec![],
+        timestamps: None,
     }
 }
 

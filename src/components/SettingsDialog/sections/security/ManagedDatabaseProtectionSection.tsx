@@ -18,6 +18,7 @@ import {
 import { useConnections } from "../../../../contexts/useConnections";
 import { ManagedDatabaseUnlockDialog } from "../../../encryption/DatabaseUnlockDialog";
 import { ConfirmDialog } from "../../../ui/dialogs/ConfirmDialog";
+import { Select } from "../../../ui/forms/Select";
 
 export function ManagedDatabaseProtectionSection({
   database,
@@ -260,33 +261,32 @@ export function ManagedDatabaseProtectionSection({
                   ))}
                 </ul>
               )}
-              <label className="block text-xs">
-                Data cipher
-                <select
-                  aria-label="Database data cipher"
-                  aria-describedby="database-data-cipher-help"
-                  className="sor-form-input mt-1 block w-full"
+              <fieldset
+                className="min-w-0 text-xs"
+                aria-describedby="database-data-cipher-help"
+              >
+                <legend>Data cipher</legend>
+                <Select
+                  label="Database data cipher"
+                  variant="settings"
+                  className="mt-1 w-full"
                   value={cipher}
                   disabled={busy}
-                  onChange={(event) =>
-                    setCipher(event.target.value as DatabaseCipher)
-                  }
-                >
-                  {capabilities?.ciphers.map((item) => (
-                    <option
-                      key={item.id}
-                      value={item.id}
-                      disabled={!item.available || !isDatabaseCipher(item.id)}
-                    >
-                      {DATABASE_CIPHER_LABELS[item.id] ??
-                        `Unsupported cipher (${item.id})`}
-                      {!item.available
+                  onChange={(value) => {
+                    if (isDatabaseCipher(value)) setCipher(value);
+                  }}
+                  options={(capabilities?.ciphers ?? []).map((item) => ({
+                    value: item.id,
+                    label:
+                      (DATABASE_CIPHER_LABELS[item.id] ??
+                        `Unsupported cipher (${item.id})`) +
+                      (!item.available
                         ? ` — ${item.reason ?? "unavailable"}`
-                        : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                        : ""),
+                    disabled: !item.available || !isDatabaseCipher(item.id),
+                  }))}
+                />
+              </fieldset>
               <p
                 id="database-data-cipher-help"
                 className="text-xs text-[var(--color-textMuted)]"

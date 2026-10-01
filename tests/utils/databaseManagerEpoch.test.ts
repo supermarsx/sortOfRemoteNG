@@ -142,6 +142,8 @@ describe("database credential epochs", () => {
   it("reads current data for authorization without advancing a writer's CAS baseline", async () => {
     const manager = DatabaseManager.getInstance();
     await manager.selectDatabase(collection.id, "fixture-password");
+    // Opening may commit the timestamp migration; authorization reads may not.
+    bridge.invoke.mockClear();
     const captured = manager.captureCurrentDatabaseDataTarget()!;
     expect(await captured.readCurrent!()).toMatchObject(data);
     encrypted = await encryptWithPassword(
@@ -186,6 +188,7 @@ describe("database credential epochs", () => {
   it("invalidates a captured old-password target on close and on global lock", async () => {
     const manager = DatabaseManager.getInstance();
     await manager.selectDatabase(collection.id, "fixture-password");
+    bridge.invoke.mockClear();
     const captured = manager.captureCurrentDatabaseDataTarget();
     expect(captured).not.toBeNull();
     manager.invalidatePendingDatabaseOperations();

@@ -1314,7 +1314,10 @@ export class SettingsManager {
   ): Partial<GlobalSettings> {
     const safePatch = { ...patch } as Partial<GlobalSettings> & {
       restApi?: GlobalSettings["restApi"] & Record<string, unknown>;
+      recordTimestamps?: unknown;
     };
+    // Native-owned history must never enter optimistic state or write patches.
+    delete safePatch.recordTimestamps;
     if ("showDocumentsIcon" in safePatch)
       safePatch.showDocumentsIcon = safePatch.showDocumentsIcon !== false;
     if ("showCredentialVaultIcon" in safePatch)
@@ -1630,8 +1633,9 @@ export class SettingsManager {
     const {
       iconLibrary: _library,
       proxyRequestLogLimit: _logLimit,
+      recordTimestamps: _recordTimestamps,
       ...ordinary
-    } = settings;
+    } = settings as Partial<GlobalSettings> & { recordTimestamps?: unknown };
     this.settings = { ...this.settings, ...ordinary };
   }
 

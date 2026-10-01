@@ -525,13 +525,15 @@ describe("native managed database sessions", () => {
       connections: [],
       settings: {},
       timestamp: expect.any(Number),
+      recordMetadata: expect.objectContaining({ version: 1 }),
     });
     const change = bridge.invoke.mock.calls.find(
       ([cmd]) => cmd === "database_protection_change",
     )![1];
     expect(change.databaseId).not.toBe(sourceId);
     expect(change.initializeEmptyDestination).toBe(true);
-    expect(change.legacyVerifiedData).toEqual(copiedData);
+    expect(change.legacyVerifiedData).toMatchObject(copiedData);
+    expect(change.legacyVerifiedData.recordMetadata.version).toBe(1);
     expect(change.target.keepSlotIds).toEqual([]);
     expect(manager.getCurrentDatabase()).toBeNull();
   });

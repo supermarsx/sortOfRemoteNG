@@ -149,13 +149,33 @@ describe("shared database action safety", () => {
       { type: "metadata", namePattern: "Vault {name}-{index}", index: 2 },
       context,
     );
-    expect(manager.updateDatabase).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "b",
-        name: "Vault Beta-2",
-        isEncrypted: true,
-      }),
+    expect(manager.updateDatabase).toHaveBeenCalledWith({
+      id: "b",
+      name: "Vault Beta-2",
+      description: undefined,
+    });
+    expect(manager.changeDatabasePassword).not.toHaveBeenCalled();
+    expect(manager.removePasswordFromDatabase).not.toHaveBeenCalled();
+  });
+
+  it("updates current-database metadata without flushing its connection payload", async () => {
+    const { context, manager } = fixture(alpha);
+    context.flushCurrent = vi.fn(async () => {
+      throw new Error(
+        "Invalid record ledger: runtime object. Existing metadata was retained.",
+      );
+    });
+    await performDatabaseAction(
+      "a",
+      { type: "metadata", description: "Renamed metadata", index: 1 },
+      context,
     );
+    expect(context.flushCurrent).not.toHaveBeenCalled();
+    expect(manager.updateDatabase).toHaveBeenCalledWith({
+      id: "a",
+      name: alpha.name,
+      description: "Renamed metadata",
+    });
   });
 });
 

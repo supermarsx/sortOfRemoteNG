@@ -10,6 +10,8 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 import type { DatabaseProtectionStatus } from "../../types/encryption/databaseProtection";
 import type { DatabaseOpenObserver } from "../../types/connection/databaseOpening";
 import { isDatabaseOpenCancellation } from "../../utils/connection/databaseOpening";
+import { Select } from "../ui/forms/Select";
+import { defaultDatabaseUnlockSlotId } from "../../utils/connection/databaseUnlockMethods";
 
 export function ManagedDatabaseUnlockForm({
   databaseId,
@@ -18,6 +20,8 @@ export function ManagedDatabaseUnlockForm({
   onUnlockComplete,
   onBusyChange,
   onUnlockProgress,
+  initialError,
+  preferPassword = false,
 }: {
   databaseId: string;
   status: DatabaseProtectionStatus;
@@ -25,13 +29,16 @@ export function ManagedDatabaseUnlockForm({
   onUnlockComplete?: () => void | Promise<void>;
   onBusyChange?: (busy: boolean) => void;
   onUnlockProgress?: DatabaseOpenObserver;
+  initialError?: string;
+  preferPassword?: boolean;
 }) {
   const manager = DatabaseManager.getInstance();
-  const [slotId, setSlotId] = useState(
-    () =>
-      status.slots.find((slot) => slot.type === "password")?.id ??
-      status.slots[0]?.id ??
-      "",
+  const defaultSlotId = defaultDatabaseUnlockSlotId(status, preferPassword);
+  const [menuContainer, setMenuContainer] = useState<HTMLFormElement | null>(
+    null,
+  );
+  const [slotId, setSlotId] = useState(() =>
+    defaultDatabaseUnlockSlotId(status, preferPassword),
   );
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,19 +56,21 @@ export function ManagedDatabaseUnlockForm({
   }, []);
   useLayoutEffect(() => {
     setPassword("");
-    setError(null);
-    setSlotId(
-      status.slots.find((slot) => slot.type === "password")?.id ??
-        status.slots[0]?.id ??
-        "",
-    );
-  }, [scope, status.slots]);
+    setError(initialError ?? null);
+    setSlotId(defaultSlotId);
+  }, [scope, status.slots, defaultSlotId, initialError]);
   useLayoutEffect(() => {
     if (disabled) setPassword("");
   }, [disabled]);
   const selected = status.slots.find((slot) => slot.id === slotId);
   const supported =
     selected?.type === "password" || selected?.type === "os-vault";
+  const hasMethodChoice =
+    status.slots.filter(
+      (slot) => slot.type === "password" || slot.type === "os-vault",
+    ).length > 1;
+  const methodLabel = (slot: DatabaseProtectionStatus["slots"][number]) =>
+    `${slot.label || slot.id} (${slot.type === "os-vault" ? "OS vault · this device" : slot.type})`;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (
@@ -120,31 +129,39 @@ export function ManagedDatabaseUnlockForm({
   const inputClass =
     "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm disabled:opacity-50";
   return (
-    <form onSubmit={(event) => void submit(event)} className="space-y-3">
-      <label className="block text-sm">
-        Database unlock method
-        <select
-          value={slotId}
-          onChange={(event) => {
-            setSlotId(event.target.value);
-            setPassword("");
-            setError(null);
-          }}
-          disabled={disabled || busy}
-          className={inputClass}
-        >
-          {status.slots.map((slot) => (
-            <option
-              key={slot.id}
-              value={slot.id}
-              disabled={slot.type !== "password" && slot.type !== "os-vault"}
-            >
-              {slot.label || slot.id} (
-              {slot.type === "os-vault" ? "OS vault · this device" : slot.type})
-            </option>
-          ))}
-        </select>
-      </label>
+    <form
+      ref={setMenuContainer}
+      onSubmit={(event) => void submit(event)}
+      className="space-y-3"
+    >
+      {hasMethodChoice && (
+        <label className="block text-sm">
+          Database unlock method
+          <Select
+            label="Database unlock method"
+            variant="form"
+            portalContainer={menuContainer}
+            value={slotId}
+            onChange={(value) => {
+              setSlotId(value);
+              setPassword("");
+              setError(null);
+            }}
+            disabled={disabled || busy}
+            className="w-full"
+            options={status.slots.map((slot) => ({
+              value: slot.id,
+              label: methodLabel(slot),
+              disabled: slot.type !== "password" && slot.type !== "os-vault",
+            }))}
+          />
+        </label>
+      )}
+      {!hasMethodChoice && selected && (
+        <p className="text-sm text-[var(--color-textMuted)]">
+          {methodLabel(selected)}
+        </p>
+      )}
       {selected?.type === "password" && (
         <label className="block text-sm">
           Database password

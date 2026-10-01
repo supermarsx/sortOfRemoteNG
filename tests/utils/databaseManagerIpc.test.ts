@@ -146,7 +146,8 @@ describe("DatabaseManager (IPC path)", () => {
     } as const;
     await manager.saveDatabaseData(col.id, data as any);
     const loaded = await manager.loadDatabaseData(col.id);
-    expect(loaded).toEqual(data);
+    expect(loaded).toMatchObject(data);
+    expect(loaded?.recordMetadata?.version).toBe(1);
     expect(
       invokeSpy.mock.calls.some(
         (c) =>
@@ -178,7 +179,8 @@ describe("DatabaseManager (IPC path)", () => {
 
     // And the load path must produce the original cleartext back.
     const loaded = await manager.loadDatabaseData(col.id, password);
-    expect(loaded).toEqual(data);
+    expect(loaded).toMatchObject(data);
+    expect(loaded?.recordMetadata?.version).toBe(1);
   });
 
   it("loadDatabaseData logs a recovery action when source !== 'current'", async () => {

@@ -75,7 +75,10 @@ describe("database security commit contract", () => {
     await expect(first.loadDatabaseData(row.id)).rejects.toThrow(
       "security changed",
     );
-    expect(await first.loadDatabaseData(row.id)).toEqual(data);
+    const { recordMetadata, ...payload } =
+      (await first.loadDatabaseData(row.id))!;
+    expect(payload).toEqual(data);
+    expect(recordMetadata?.version).toBe(1);
     expect(first.getCurrentDatabase()?.isEncrypted).toBe(false);
     await first.saveCurrentDatabaseData({ ...data, timestamp: 43 });
     expect(await IndexedDbService.getItemStrict(dataKey)).toMatchObject({
@@ -197,12 +200,13 @@ describe("database security commit contract", () => {
         first.saveCurrentDatabaseData({ ...data, timestamp: 98 }),
       ).rejects.toThrow(/security changed|access expired/);
       expect(first.getUnlockedDatabaseIds()).toEqual([]);
-      expect(
-        await second.loadDatabaseData(
+      const { recordMetadata, ...payload } =
+        (await second.loadDatabaseData(
           row.id,
           operation === "change" ? "new-password" : undefined,
-        ),
-      ).toEqual(data);
+        ))!;
+      expect(payload).toEqual(data);
+      expect(recordMetadata?.version).toBe(1);
     },
   );
 

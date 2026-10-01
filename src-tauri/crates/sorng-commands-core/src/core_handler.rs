@@ -177,6 +177,7 @@ define_command_group!(
         app_shell_commands::factory_reset,
         api_capability_commands::get_api_capabilities,
         cpu_commands::get_cpu_aes_capabilities,
+        database_files::get_database_file_sizes,
         app_shell_commands::get_launch_args,
         runtime_capability_commands::get_runtime_capabilities,
         app_shell_commands::get_system_memory_info,
@@ -1641,6 +1642,13 @@ mod tests {
             1,
             "the encryption-status probe must route to exactly one handler"
         );
+    }
+
+    #[test]
+    fn database_size_metadata_is_recognized_and_registered_once() {
+        assert!(is_command("get_database_file_sizes"));
+        assert!(GROUP_A_COMMANDS.contains(&"get_database_file_sizes"));
+        assert_eq!(command_route_count("get_database_file_sizes"), 1);
     }
 
     #[test]

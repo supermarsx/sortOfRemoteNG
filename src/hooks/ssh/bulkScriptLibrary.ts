@@ -1,4 +1,5 @@
 import type { SavedBulkScript } from "../../data/defaultBulkScripts";
+import type { RecordLedger } from "../../utils/storage/recordLedger";
 import {
   AppDataJsonStore,
   containsLikelySecretText,
@@ -41,6 +42,7 @@ export interface BulkScriptLibrarySnapshot {
   active: BulkScript[];
   trash: BulkScript[];
   config: BulkScriptLibraryConfig;
+  recordMetadata?: RecordLedger;
 }
 
 export const DEFAULT_BULK_SCRIPT_LIBRARY_CONFIG: BulkScriptLibraryConfig = {
@@ -376,10 +378,14 @@ export const sanitizeBulkScriptLibrary = (
   };
 };
 
+// Bulk SSH's separate active/trash/config library is app-wide data.
+// It is not the database's terminalScripts collection; do not silently reassign
+// it on database open or flatten its trash/config into terminal script entries.
 export const bulkScriptsStore = new AppDataJsonStore<BulkScriptLibrarySnapshot>(
   {
     key: "ssh.bulk-scripts",
     legacyLocalStorageKey: "bulkSshScripts",
+    trackRecords: true,
     sanitize: sanitizeBulkScriptLibrary,
   },
 );

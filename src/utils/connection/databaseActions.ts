@@ -214,8 +214,11 @@ export function performDatabaseAction(
             throw new Error(`A database named ${updated.name} already exists.`);
           }
         }
-        await flushDatabaseIfCurrent(id, context);
-        await manager.updateDatabase(updated);
+        await manager.updateDatabase({
+          id,
+          name: updated.name,
+          description: updated.description,
+        });
         return {
           status: "success",
           message: "Metadata updated; encryption unchanged",

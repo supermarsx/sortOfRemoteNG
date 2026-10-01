@@ -20,7 +20,10 @@ import type {
   DatabaseSelectHandler,
 } from "../../types/connection/databaseOpening";
 import { useDatabaseOpenNotification } from "./useDatabaseOpenNotification";
-import { isDatabaseOpenCancellation } from "../../utils/connection/databaseOpening";
+import {
+  databaseAccessErrorMessage,
+  isDatabaseOpenCancellation,
+} from "../../utils/connection/databaseOpening";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -101,13 +104,7 @@ function getCollectionActionError(
  * generic message.
  */
 function getActionError(error: unknown, fallbackMessage: string): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  if (typeof error === "string" && error.trim()) {
-    return error;
-  }
-  return fallbackMessage;
+  return databaseAccessErrorMessage(error, fallbackMessage);
 }
 
 // ─── Hook ──────────────────────────────────────────────────────────
@@ -394,10 +391,11 @@ export function useDatabaseSelector(
       return;
     }
 
-    const wantsEncryption = editPassword.enableEncryption;
-    const wantsPasswordChange = Boolean(editPassword.next);
+    const isManaged = editingCollection.protectionFormat === "sorng-db";
+    const wantsEncryption = isManaged || editPassword.enableEncryption;
+    const wantsPasswordChange = !isManaged && Boolean(editPassword.next);
 
-    if (wantsEncryption) {
+    if (!isManaged && wantsEncryption) {
       if (!editingCollection.isEncrypted && !wantsPasswordChange) {
         setError(
           t("databaseCenter.collections.errors.passwordRequiredToEncrypt"),
@@ -422,7 +420,11 @@ export function useDatabaseSelector(
           return;
         }
       }
-    } else if (editingCollection.isEncrypted && !editPassword.current) {
+    } else if (
+      !isManaged &&
+      editingCollection.isEncrypted &&
+      !editPassword.current
+    ) {
       setError(
         t(
           "databaseCenter.collections.errors.currentPasswordRequiredToRemoveEncryption",
@@ -439,7 +441,14 @@ export function useDatabaseSelector(
       const securityWarnings: string[] = [];
       let securityCleanupPending = false;
 
-      if (databaseManager.getCurrentDatabase()?.id === editingCollection.id) {
+      const changesSecurity =
+        !isManaged &&
+        (editingCollection.isEncrypted !== wantsEncryption ||
+          (wantsEncryption && wantsPasswordChange));
+      if (
+        changesSecurity &&
+        databaseManager.getCurrentDatabase()?.id === editingCollection.id
+      ) {
         // Re-encryption must never race a pending snapshot captured with the
         // previous password.
         await flushPendingSave();
@@ -486,7 +495,11 @@ export function useDatabaseSelector(
         );
         return;
       }
-      await databaseManager.updateDatabase(updatedCollection);
+      await databaseManager.updateDatabase({
+        id: editingCollection.id,
+        name: editingCollection.name,
+        description: editingCollection.description,
+      });
       setCollections(
         collections.map((c) =>
           c.id === editingCollection.id ? updatedCollection : c,
@@ -502,9 +515,10 @@ export function useDatabaseSelector(
       setError(securityWarnings.join(" "));
     } catch (error) {
       setError(
-        error instanceof Error
-          ? error.message
-          : t("databaseCenter.collections.errors.updateFailed"),
+        getActionError(
+          error,
+          t("databaseCenter.collections.errors.updateFailed"),
+        ),
       );
     }
   };
@@ -786,7 +800,10 @@ export function useDatabaseSelector(
           ? ""
           : getCollectionActionError(
               error,
-              t("databaseCenter.collections.errors.accessFailed"),
+              t(
+                "databaseCenter.errors.openFailed",
+                "Failed to access collection.",
+              ),
               t("databaseCenter.collections.errors.invalidPassword"),
             ),
       );

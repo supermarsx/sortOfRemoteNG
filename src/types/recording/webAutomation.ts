@@ -31,6 +31,7 @@ export interface WebAutomationLibrary {
   version: 1;
   scripts: BrowserScript[];
   macros: WebInteractionMacro[];
+  recordMetadata?: import("../../utils/storage/recordLedger").RecordLedger;
   /** Informational sidecar; executable payloads remain strictly unchanged. */
   provenance?: Record<
     string,

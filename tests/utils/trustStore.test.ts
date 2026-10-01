@@ -1,4 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import legacyTimestampFixtures from "../fixtures/legacyTrustRecordTimestamps.json";
+import timestampValidationFixtures from "../fixtures/trustRecordTimestampValidation.json";
+import {
+  inferLegacyTrustRecordTimestamps,
+  isValidTrustRecordTimestamps,
+} from "../../src/utils/auth/trustRecordTimestamps";
 
 const native = vi.hoisted(() => ({
   records: [] as Array<Record<string, any>>,
@@ -44,7 +50,44 @@ import {
 import type {
   CertIdentity,
   SshHostKeyIdentity,
+  TrustExportRecord,
 } from "../../src/utils/auth/trustStore";
+
+describe("legacy trust timestamp inference shared with native", () => {
+  it.each(legacyTimestampFixtures)("$name", ({ record, expected }) => {
+    const before = structuredClone(record);
+    expect(
+      inferLegacyTrustRecordTimestamps(record as TrustExportRecord),
+    ).toEqual(expected);
+    expect(record).toEqual(before);
+    expect(isValidTrustRecordTimestamps(expected)).toBe(true);
+  });
+
+  it.each(timestampValidationFixtures)(
+    "validates $name",
+    ({ value, valid }) => {
+      expect(isValidTrustRecordTimestamps(value)).toBe(valid);
+    },
+  );
+
+  it("bounds evidence at 128 UTF-8 bytes and never invokes native storage", () => {
+    const record: TrustExportRecord = {
+      host: "fixture:443",
+      record_type: "tls",
+      user_approved: false,
+      identity: { first_seen: `2020-01-01T00:00:00.${"1".repeat(107)}Z` },
+    };
+    native.invoke.mockClear();
+    expect(inferLegacyTrustRecordTimestamps(record).created_at).toBe(
+      "2020-01-01T00:00:00.111111111+00:00",
+    );
+    record.identity.first_seen = `2020-01-01T00:00:00.${"1".repeat(108)}Z`;
+    expect(inferLegacyTrustRecordTimestamps(record).created_at_source).toBe(
+      "unknown",
+    );
+    expect(native.invoke).not.toHaveBeenCalled();
+  });
+});
 
 const makeSshIdentity = (fingerprint: string): SshHostKeyIdentity => ({
   fingerprint,
@@ -173,6 +216,97 @@ describe("native-backed trustStore", () => {
     native.invoke.mockReset();
     installNativeMock();
     resetTrustStoreCacheForTests();
+  });
+
+  it("retains timestamp provenance and returns detached metadata from the cache", async () => {
+    const timestamps = {
+      version: 1,
+      created_at: "1970-01-01T00:00:00+00:00",
+      updated_at: "2025-02-01T00:00:00Z",
+      created_at_source: "unknown",
+      updated_at_source: "recorded",
+    };
+    native.records = [
+      {
+        ...nativeRecord({
+          host: "history.test:443",
+          recordType: "tls",
+          userApproved: true,
+          identity: {
+            kind: "tls",
+            fingerprint: "aa",
+            first_seen: "2020-01-01T00:00:00Z",
+            last_seen: "2025-01-01T00:00:00Z",
+          },
+        }),
+        timestamps,
+      },
+    ];
+    await ensureTrustStoreReady();
+    const displayed = getAllTrustRecords()[0];
+    expect(displayed.timestamps).toEqual(timestamps);
+    displayed.timestamps!.created_at = "2099-01-01T00:00:00Z";
+    expect(getAllTrustRecords()[0].timestamps).toEqual(timestamps);
+    native.records[0].timestamps.updated_at_source = "inferred";
+    await refreshTrustStoreRecords();
+    expect(getAllTrustRecords()[0].timestamps?.updated_at_source).toBe(
+      "inferred",
+    );
+  });
+
+  it("does not invent timestamp metadata for older native responses", async () => {
+    native.records = [
+      nativeRecord({
+        host: "history.test:443",
+        recordType: "tls",
+        userApproved: true,
+        identity: {
+          kind: "tls",
+          fingerprint: "aa",
+          first_seen: "2020-01-01T00:00:00Z",
+          last_seen: "2025-01-01T00:00:00Z",
+        },
+      }),
+    ];
+    await ensureTrustStoreReady();
+    expect(getAllTrustRecords()[0].timestamps).toBeUndefined();
+  });
+
+  it.each([
+    { version: 2 },
+    { created_at: "invalid" },
+    { created_at_source: "guessed" },
+    { created_at_source: "unknown" },
+    { updated_at: "2000-01-01T00:00:00Z" },
+    { extra: "unexpected" },
+  ])("rejects malformed native timestamp metadata: %j", async (invalid) => {
+    native.records = [
+      {
+        ...nativeRecord({
+          host: "history.test:443",
+          recordType: "tls",
+          userApproved: true,
+          identity: {
+            kind: "tls",
+            fingerprint: "aa",
+            first_seen: "2020-01-01T00:00:00Z",
+            last_seen: "2025-01-01T00:00:00Z",
+          },
+        }),
+        timestamps: {
+          version: 1,
+          created_at: "2020-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+          created_at_source: "inferred",
+          updated_at_source: "recorded",
+          ...invalid,
+        },
+      },
+    ];
+    await expect(ensureTrustStoreReady()).rejects.toThrow(
+      "The native Trust Center is unavailable",
+    );
+    expect(getAllTrustRecords()).toEqual([]);
   });
 
   it("uses the scoped native HTTPS proof command and never persists a CA decision", async () => {

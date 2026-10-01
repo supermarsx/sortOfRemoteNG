@@ -10,6 +10,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { onCurrentDatabaseChange } from "../connection/databaseManager";
 import { validateTrustDescription } from "../security/trustMetadata";
+import { isValidTrustRecordTimestamps } from "./trustRecordTimestamps";
 
 export type TrustPolicy = "tofu" | "always-ask" | "always-trust" | "strict";
 
@@ -68,6 +69,17 @@ export type TrustIdentityFor<T extends TrustRecordType> = T extends "ssh"
   ? SshHostKeyIdentity
   : CertIdentity;
 
+export type TrustTimestampSource = "recorded" | "inferred" | "unknown";
+
+/** Native lifecycle metadata; inferred/unknown dates are not sync authority. */
+export interface TrustRecordTimestamps {
+  version: 1;
+  created_at: string;
+  updated_at: string;
+  created_at_source: TrustTimestampSource;
+  updated_at_source: TrustTimestampSource;
+}
+
 export interface TrustRecord {
   /** Display form, including the port. IPv6 hosts are bracketed. */
   host: string;
@@ -86,6 +98,8 @@ export interface TrustRecord {
   tags?: string[];
   /** Exact native security decision captured for reviewed scope changes. */
   scopeDecision?: TrustScopeDecision;
+  /** Absent in older native responses; unknown dates use epoch, never now. */
+  timestamps?: TrustRecordTimestamps;
 }
 
 export type TrustVerifyResult =
@@ -176,7 +190,13 @@ export interface TrustExportRecord {
   trust_expires?: string | null;
   revoked?: boolean;
   tags?: string[];
+  timestamps?: TrustRecordTimestamps | null;
 }
+
+export {
+  inferLegacyTrustRecordTimestamps,
+  isValidTrustRecordTimestamps,
+} from "./trustRecordTimestamps";
 
 /**
  * Portable trust export for one database (t62 / D6). Key material is public
@@ -193,7 +213,10 @@ export interface TrustExportDocument {
 /**
  * `merge` keeps an existing record for the same `type:host` unless the
  * imported one was seen more recently, and never lets an unrevoked import
- * overwrite a revoked record. `replace` takes the document verbatim.
+ * overwrite a revoked record. `replace` replaces records and policy while
+ * native storage preserves creation metadata for existing keys and stamps edits.
+ * A matching full-document CAS review plus `replace` instead adopts the incoming
+ * metadata exactly, inferring only missing legacy timestamps for cloud sync.
  */
 export type TrustImportMode = "merge" | "replace";
 
@@ -341,6 +364,7 @@ interface NativeTrustRecord {
   host_policy_config?: NativeTrustPolicyConfig | null;
   trust_expires?: string | null;
   revoked?: boolean;
+  timestamps?: TrustRecordTimestamps | null;
 }
 
 interface NativeTrustVerifyResult {
@@ -800,6 +824,7 @@ function cloneRecord(record: TrustRecord): TrustRecord {
     identity: cloneIdentity(record.identity),
     history: record.history?.map((identity) => cloneIdentity(identity)),
     tags: record.tags ? [...record.tags] : undefined,
+    timestamps: record.timestamps ? { ...record.timestamps } : undefined,
     scopeDecision: record.scopeDecision
       ? structuredClone(record.scopeDecision)
       : undefined,
@@ -1049,6 +1074,16 @@ function nativeScopeDecision(record: NativeTrustRecord): TrustScopeDecision {
   };
 }
 
+function mapNativeTimestamps(
+  value: unknown,
+): TrustRecordTimestamps | undefined {
+  if (value == null) return undefined;
+  if (!isValidTrustRecordTimestamps(value)) {
+    throw new Error("Malformed native trust record timestamps");
+  }
+  return { ...value };
+}
+
 function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {
   if (
     !isObject(nativeRecord) ||
@@ -1094,6 +1129,7 @@ function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {
       scopeDecision: nativeScopeDecision(nativeRecord),
       nickname: boundedNativeString(nativeRecord.nickname, MAX_NICKNAME_LENGTH),
       description: validateTrustDescription(nativeRecord.description),
+      timestamps: mapNativeTimestamps(nativeRecord.timestamps),
       history: history.length > 0 ? history : undefined,
       revoked: nativeRecord.revoked === true,
       hostPolicy: VALID_TRUST_POLICIES.has(

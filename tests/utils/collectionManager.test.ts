@@ -91,7 +91,10 @@ describe("DatabaseManager", () => {
       "Source (Copy)",
       "Sibling",
     ]);
-    expect(await manager.loadDatabaseData(duplicate.id)).toEqual(sourceData);
+    const { recordMetadata, ...payload } =
+      (await manager.loadDatabaseData(duplicate.id))!;
+    expect(payload).toEqual(sourceData);
+    expect(recordMetadata?.version).toBe(1);
   });
 
   it("duplicates the active encrypted collection using the cached password", async () => {
@@ -114,9 +117,10 @@ describe("DatabaseManager", () => {
 
     expect(duplicate.name).toBe("Secure (Copy)");
     expect(duplicate.isEncrypted).toBe(true);
-    expect(await manager.loadDatabaseData(duplicate.id, "secret")).toEqual(
-      sourceData,
-    );
+    const { recordMetadata, ...payload } =
+      (await manager.loadDatabaseData(duplicate.id, "secret"))!;
+    expect(payload).toEqual(sourceData);
+    expect(recordMetadata?.version).toBe(1);
   });
 
   it("duplicates another encrypted collection when the source password is provided", async () => {
@@ -143,9 +147,10 @@ describe("DatabaseManager", () => {
     expect(
       (await manager.getAllDatabases()).map((collection) => collection.name),
     ).toEqual(["Vault", "Vault (Copy)", "Sibling"]);
-    expect(await manager.loadDatabaseData(duplicate.id, "secret")).toEqual(
-      sourceData,
-    );
+    const { recordMetadata, ...payload } =
+      (await manager.loadDatabaseData(duplicate.id, "secret"))!;
+    expect(payload).toEqual(sourceData);
+    expect(recordMetadata?.version).toBe(1);
   });
 
   it("throws DatabaseNotFoundError when selecting missing collection", async () => {
@@ -263,9 +268,10 @@ describe("DatabaseManager", () => {
     expect(() => target?.save(updated as any)).toThrow("access expired");
     await manager.captureCurrentDatabaseDataTarget()?.save(updated as any);
 
-    await expect(
-      manager.loadDatabaseData(secure.id, "new-secret"),
-    ).resolves.toEqual(updated);
+    const { recordMetadata, ...payload } =
+      (await manager.loadDatabaseData(secure.id, "new-secret"))!;
+    expect(payload).toEqual(updated);
+    expect(recordMetadata?.version).toBe(1);
     await expect(
       manager.loadDatabaseData(secure.id, "old-secret"),
     ).rejects.toBeInstanceOf(InvalidPasswordError);

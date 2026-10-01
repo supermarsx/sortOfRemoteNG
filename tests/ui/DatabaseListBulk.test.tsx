@@ -12,6 +12,10 @@ import { ImportExportNavigationContext } from "../../src/components/ImportExport
 import { useDatabaseSelector } from "../../src/hooks/connection/useDatabaseSelector";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
 
+vi.mock("../../src/hooks/connection/useDatabaseSizes", () => ({
+  useDatabaseSizes: () => ({ sizes: {}, loading: false, refresh: () => {} }),
+}));
+
 const mock = vi.hoisted(() => ({
   getAllDatabases: vi.fn(),
   getCurrentDatabase: vi.fn(),

@@ -16,6 +16,53 @@ vi.mock("../../src/utils/security/passwordPolicy", () => ({
 }));
 
 describe("full database portable archive", () => {
+  it("upgrades legacy trust dates deterministically without changing the source", async () => {
+    const legacyTrust = structuredClone(trust);
+    delete legacyTrust.records[0].timestamps;
+    const archive = await buildFullDatabaseArchive(
+      collection,
+      await fullData(),
+      legacyTrust,
+    );
+    expect(archive.trustRecords).toEqual(trust);
+    expect(legacyTrust.records[0]).not.toHaveProperty("timestamps");
+    expect((await normalizeFullDatabaseArchive(archive)).trustRecords).toEqual(
+      trust,
+    );
+  });
+  it("preserves trust dates and rejects unsupported or inconsistent metadata", async () => {
+    const records = structuredClone(trust);
+    const dates = {
+      version: 1 as const,
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      created_at_source: "inferred" as const,
+      updated_at_source: "recorded" as const,
+    };
+    records.records[0].timestamps = dates;
+    const archive = await buildFullDatabaseArchive(
+      collection,
+      await fullData(),
+      records,
+    );
+    expect(archive.trustRecords.records[0].timestamps).toEqual(dates);
+    expect((await normalizeFullDatabaseArchive(archive)).trustRecords).toEqual(
+      records,
+    );
+    for (const patch of [
+      { version: 2 },
+      { created_at: "not-a-date" },
+      { updated_at: "2024-01-01T00:00:00Z" },
+      { created_at_source: "invented" },
+      { unexpected: true },
+    ]) {
+      const invalid = structuredClone(archive);
+      Object.assign(invalid.trustRecords.records[0].timestamps!, patch);
+      await expect(normalizeFullDatabaseArchive(invalid)).rejects.toMatchObject(
+        { code: "format" },
+      );
+    }
+  });
   it.each(["", null, false, 0, [], {}])(
     "rejects malformed direct profile declarations %j",
     async (id) => {

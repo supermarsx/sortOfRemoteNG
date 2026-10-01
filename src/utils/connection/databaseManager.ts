@@ -3,6 +3,12 @@ import {
   ConnectionDatabase,
 } from "../../types/connection/connection";
 import { StorageData } from "../storage/storage";
+import {
+  normalizeRecordLedger,
+  reconcileRecordLedger,
+  snapshotRecordPayload,
+  type RecordLedger,
+} from "../storage/recordLedger";
 import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
 import {
@@ -730,6 +736,17 @@ export class DatabaseManager {
     const managed = collection.protectionFormat === "sorng-db";
     const data = await this.loadDatabaseData(id, options.currentPassword);
     if (!data) throw new DatabaseNotFoundError();
+    if (options.initializeWithData) {
+      options = {
+        ...options,
+        initializeWithData: structuredClone(options.initializeWithData),
+      };
+      options.initializeWithData!.recordMetadata = await reconcileRecordLedger(
+        options.initializeWithData!,
+        normalizeRecordLedger(options.initializeWithData!.recordMetadata),
+        { mode: "migrate" },
+      );
+    }
     const invoke = await getInvoke();
     if (!invoke)
       throw new Error("Managed protection requires the desktop app.");
@@ -931,6 +948,59 @@ export class DatabaseManager {
   }
   private readonly loadedRepresentations = new WeakMap<StorageData, unknown>();
   private readonly latestLoadedRepresentations = new Map<string, unknown>();
+  private readonly loadedRecordBaselines = new WeakMap<
+    StorageData,
+    RecordLedger
+  >();
+  private readonly latestRecordBaselines = new Map<
+    string,
+    { representation: unknown; ledger: RecordLedger }
+  >();
+
+  /** Dates are derived only after local decryption, never from ciphertext mtime. */
+  private async rememberRecordBaseline(
+    id: string,
+    data: StorageData,
+    representation: unknown,
+    preserveBaseline = false,
+  ): Promise<void> {
+    const epoch = this.captureDatabaseEpoch(id);
+    const ledger = await reconcileRecordLedger(
+      data,
+      normalizeRecordLedger(data.recordMetadata),
+      { mode: "migrate" },
+    );
+    this.assertDatabaseEpoch(id, epoch);
+    this.loadedRecordBaselines.set(data, ledger);
+    if (!preserveBaseline)
+      this.latestRecordBaselines.set(id, { representation, ledger });
+  }
+
+  /** Versioned lazy migration. The original encrypted representation remains the CAS guard. */
+  private async migrateRecordTimestamps(
+    id: string,
+    data: StorageData,
+    password?: string,
+  ): Promise<void> {
+    const ledger = this.loadedRecordBaselines.get(data);
+    if (
+      !ledger ||
+      JSON.stringify(ledger) === JSON.stringify(data.recordMetadata)
+    )
+      return;
+    const expectedData = this.loadedRepresentations.get(data);
+    if (expectedData === undefined)
+      throw new Error(
+        "Record migration requires the exact loaded database snapshot.",
+      );
+    await this.saveDatabaseData(
+      id,
+      data,
+      password,
+      this.loadedSecurityRevisions.get(data),
+      { expectedData, recordMetadataMode: "migrate" },
+    );
+  }
   private readonly loadedSecurityRevisions = new WeakMap<StorageData, string>();
   private readonly indexSnapshots = new WeakMap<
     ConnectionDatabase[],
@@ -973,6 +1043,7 @@ export class DatabaseManager {
     this.openedDatabaseIds.clear();
     this.credentialSecurityRevisions.clear();
     this.latestLoadedRepresentations.clear();
+    this.latestRecordBaselines.clear();
     this.currentPassword = null;
     for (const id of this.managedAccess.keys())
       this.suspendManagedDatabase(id, "global-lock");
@@ -1449,6 +1520,8 @@ export class DatabaseManager {
     }
 
     const loaded = await this.loadDatabaseData(id, resolvedPassword);
+    if (loaded)
+      await this.migrateRecordTimestamps(id, loaded, resolvedPassword);
     // A database load can be slow. Flush edits made to the outgoing UI while
     // it was in flight before advancing the mutable current-database pointer.
     if (switchingDatabase) {
@@ -1501,6 +1574,7 @@ export class DatabaseManager {
     const passwordAtCapture = this.currentPassword || undefined;
     const revisionAtCapture = this.credentialSecurityRevisions.get(databaseId);
     let expectedData = this.latestLoadedRepresentations.get(databaseId);
+    let recordBaseline = this.latestRecordBaselines.get(databaseId)?.ledger;
     const resolvePassword = () => {
       this.assertDatabaseEpoch(databaseId, epoch);
       if (revisionAtCapture === undefined)
@@ -1525,7 +1599,10 @@ export class DatabaseManager {
           resolvePassword(),
           revisionAtCapture,
         ).then((data) => {
-          if (data) expectedData = this.loadedRepresentations.get(data);
+          if (data) {
+            expectedData = this.loadedRepresentations.get(data);
+            recordBaseline = this.loadedRecordBaselines.get(data);
+          }
           return data;
         }),
       verifyCurrent: async () => {
@@ -1577,9 +1654,10 @@ export class DatabaseManager {
           data,
           password,
           revisionAtCapture,
-          { expectedData },
+          { expectedData, recordBaseline },
         ).then(() => {
           expectedData = this.loadedRepresentations.get(data);
+          recordBaseline = this.loadedRecordBaselines.get(data);
         });
       },
     };
@@ -1963,6 +2041,7 @@ export class DatabaseManager {
   private forgetUnlockedDatabase(databaseId: string): void {
     this.openedDatabaseIds.delete(databaseId);
     this.latestLoadedRepresentations.delete(databaseId);
+    this.latestRecordBaselines.delete(databaseId);
     clearTimeout(this.managedTimers.get(databaseId));
     this.managedTimers.delete(databaseId);
     this.managedSessions.delete(databaseId);
@@ -2082,20 +2161,36 @@ export class DatabaseManager {
     return { ...safe, name: safe.name ?? "[Redacted connection]" };
   }
 
-  async updateDatabase(collection: ConnectionDatabase): Promise<void> {
+  async updateDatabase(
+    collection: Pick<ConnectionDatabase, "id" | "name" | "description"> &
+      Partial<Pick<ConnectionDatabase, "isEncrypted" | "lastAccessed">>,
+  ): Promise<void> {
     const collections = await this.getAllDatabases();
     const expectedIndex =
       this.indexSnapshots.get(collections) ?? structuredClone(collections);
     const index = collections.findIndex((c) => c.id === collection.id);
     if (index >= 0) {
-      if (collections[index].isEncrypted !== collection.isEncrypted) {
+      if (
+        collection.isEncrypted !== undefined &&
+        collections[index].isEncrypted !== collection.isEncrypted
+      ) {
         throw new Error(
           "Database encryption changes require the dedicated security transaction.",
         );
       }
       collections[index] = {
-        ...collection,
-        securityRevision: collections[index].securityRevision,
+        // Metadata edits must retain the latest protection and private index
+        // fields, even when the editor holds an older/partial row.
+        ...collections[index],
+        name: collection.name,
+        description: Object.prototype.hasOwnProperty.call(
+          collection,
+          "description",
+        )
+          ? collection.description
+          : collections[index].description,
+        lastAccessed:
+          collection.lastAccessed ?? collections[index].lastAccessed,
         updatedAt: new Date().toISOString(),
       };
       await this.saveDatabases(collections, expectedIndex);
@@ -2351,19 +2446,35 @@ export class DatabaseManager {
   // Collection data management
   async saveDatabaseData(
     collectionId: string,
-    data: StorageData,
+    inputData: StorageData,
     password?: string,
     expectedSecurityRevision?: string,
-    contentExpectation?: { expectedData: unknown },
+    contentExpectation?: {
+      expectedData: unknown;
+      /** Pinned history belonging to this exact snapshot, not a later reader. */
+      recordBaseline?: RecordLedger;
+      recordMetadataMode?: "migrate" | "adopt";
+    },
   ): Promise<void> {
+    // Freeze the caller's draft before asynchronous hashing/encryption.
+    const data = snapshotRecordPayload(inputData);
     assertNoSynologyRedirectRuntimeContext(data);
     if (data.databaseSettings !== undefined)
       normalizeDatabaseSettings(data.databaseSettings);
     // Capture before ANY await; a later read must not bless an older writer.
     const expectedData = contentExpectation
       ? contentExpectation.expectedData
-      : (this.loadedRepresentations.get(data) ??
+      : (this.loadedRepresentations.get(inputData) ??
         this.latestLoadedRepresentations.get(collectionId));
+    const cachedLedger = this.latestRecordBaselines.get(collectionId);
+    let recordBaseline =
+      contentExpectation?.recordBaseline ??
+      this.loadedRecordBaselines.get(inputData) ??
+      (cachedLedger &&
+      JSON.stringify(cachedLedger.representation) ===
+        JSON.stringify(expectedData)
+        ? cachedLedger.ledger
+        : undefined);
     const epoch = this.captureDatabaseEpoch(collectionId);
     let revision =
       expectedSecurityRevision ??
@@ -2375,6 +2486,41 @@ export class DatabaseManager {
     if (revision !== undefined)
       this.assertSecurityRevision(collectionId, revision, collection);
     if (!collection) throw new DatabaseNotFoundError();
+    if (!recordBaseline && expectedData && typeof expectedData === "object") {
+      recordBaseline = await reconcileRecordLedger(
+        expectedData,
+        normalizeRecordLedger((expectedData as StorageData).recordMetadata),
+        { mode: "migrate" },
+      );
+    }
+    if (
+      !recordBaseline &&
+      expectedData != null &&
+      !contentExpectation?.recordMetadataMode
+    )
+      throw new Error(
+        "Record history baseline is unavailable. Reload the database before saving.",
+      );
+    const mode = contentExpectation?.recordMetadataMode;
+    data.recordMetadata = await reconcileRecordLedger(
+      data,
+      mode === "adopt"
+        ? normalizeRecordLedger(data.recordMetadata)
+        : recordBaseline,
+      { mode: mode ? "migrate" : "write" },
+    );
+    this.assertDatabaseEpoch(collectionId, epoch);
+    const rememberCommitted = (representation: unknown) => {
+      this.loadedRepresentations.set(
+        inputData,
+        structuredClone(representation),
+      );
+      this.loadedRecordBaselines.set(inputData, data.recordMetadata!);
+      this.latestRecordBaselines.set(collectionId, {
+        representation: structuredClone(representation),
+        ledger: data.recordMetadata!,
+      });
+    };
     if (collection.protectionFormat === "sorng-db") {
       this.assertDatabaseEpoch(collectionId, epoch);
       const session = this.requireManagedSession(collectionId);
@@ -2397,32 +2543,48 @@ export class DatabaseManager {
           this.suspendManagedDatabase(collectionId, "security-changed");
         throw error;
       }
-      this.assertDatabaseEpoch(collectionId, epoch);
       if (!outcome.committed) {
+        this.assertDatabaseEpoch(collectionId, epoch);
         this.suspendManagedDatabase(collectionId, "security-changed");
         throw new Error("Native database save was not committed.");
       }
-      if (outcome.securityRevision !== session.securityRevision) {
-        this.suspendManagedDatabase(collectionId, "security-changed");
-        throw new Error(
-          "Native save returned an unexpected security revision.",
+      try {
+        this.assertDatabaseEpoch(collectionId, epoch);
+        if (outcome.securityRevision !== session.securityRevision) {
+          this.suspendManagedDatabase(collectionId, "security-changed");
+          throw new Error(
+            "Native save returned an unexpected security revision.",
+          );
+        }
+        if (outcome.cleanupPending || outcome.warnings.length) {
+          try {
+            SettingsManager.getInstance().logAction(
+              "warn",
+              "Database saved; recovery cleanup needs attention",
+              undefined,
+              outcome.warnings.join(" "),
+            );
+          } catch {
+            /* The save is committed even if the notification fails. */
+          }
+        }
+        this.loadedRepresentations.set(data, structuredClone(data));
+        this.latestLoadedRepresentations.set(
+          collectionId,
+          structuredClone(data),
+        );
+        rememberCommitted(data);
+        return;
+      } catch (error) {
+        throw Object.assign(
+          error instanceof Error
+            ? error
+            : new Error(
+                "Database was saved but finalization failed. Reload before retrying.",
+              ),
+          { kind: "partial" as const },
         );
       }
-      if (outcome.cleanupPending || outcome.warnings.length) {
-        try {
-          SettingsManager.getInstance().logAction(
-            "warn",
-            "Database saved; recovery cleanup needs attention",
-            undefined,
-            outcome.warnings.join(" "),
-          );
-        } catch {
-          /* The save is committed even if the notification fails. */
-        }
-      }
-      this.loadedRepresentations.set(data, structuredClone(data));
-      this.latestLoadedRepresentations.set(collectionId, structuredClone(data));
-      return;
     }
     if (collection?.isEncrypted && !password) {
       throw new InvalidPasswordError(
@@ -2481,6 +2643,7 @@ export class DatabaseManager {
         collectionId,
         structuredClone(payload),
       );
+      rememberCommitted(payload);
       return;
     }
 
@@ -2523,6 +2686,7 @@ export class DatabaseManager {
       collectionId,
       structuredClone(payload),
     );
+    rememberCommitted(payload);
   }
 
   async loadDatabaseData(
@@ -2576,6 +2740,12 @@ export class DatabaseManager {
           collectionId,
           structuredClone(result.data),
         );
+      await this.rememberRecordBaseline(
+        collectionId,
+        result.data,
+        structuredClone(result.data),
+        options?.preserveBaseline,
+      );
       return result.data;
     }
     let stored: any = null;
@@ -2693,6 +2863,12 @@ export class DatabaseManager {
               structuredClone(stored),
             );
           this.loadedSecurityRevisions.set(parsed, revision);
+          await this.rememberRecordBaseline(
+            collectionId,
+            parsed,
+            stored,
+            options?.preserveBaseline,
+          );
           return parsed;
         } catch (error) {
           if (error instanceof SyntaxError) {
@@ -2731,6 +2907,12 @@ export class DatabaseManager {
             collectionId,
             structuredClone(stored),
           );
+        await this.rememberRecordBaseline(
+          collectionId,
+          stored,
+          structuredClone(stored),
+          options?.preserveBaseline,
+        );
         return stored as StorageData;
       }
     } catch (error) {
@@ -3124,6 +3306,13 @@ export class DatabaseManager {
       this.currentDatabase = updated;
     }
     this.rememberUnlockedDatabase(updated, newPassword);
+    // The content is unchanged by rekeying, but its exact storage representation
+    // and access generation changed. Carry the verified history into the new
+    // generation before publishing it to autosave consumers.
+    this.latestRecordBaselines.set(collectionId, {
+      representation: structuredClone(payload),
+      ledger: this.loadedRecordBaselines.get(data)!,
+    });
     this.latestLoadedRepresentations.set(
       collectionId,
       structuredClone(payload),

@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
@@ -17,16 +17,23 @@ function wrapper({ children }: { children: React.ReactNode }) {
   return <ConnectionProvider>{children}</ConnectionProvider>;
 }
 
-/** Flush the 500ms debounce timer and all pending micro-tasks. */
-async function flushSave() {
-  // Advance past the 500ms debounce
+/** Trigger autosave by debounce, then await its observable durable outcome. */
+async function flushSave(
+  result: { current: ReturnType<typeof useConnections> },
+  expectedError: string | null = null,
+) {
   await act(async () => {
-    vi.advanceTimersByTime(600);
+    await vi.advanceTimersByTimeAsync(600);
   });
-  // Flush any remaining micro-tasks from the async save
-  await act(async () => {
-    await vi.runAllTimersAsync();
-  });
+  // WebCrypto hashing completes outside fake timers. Do not start an explicit
+  // flush here: these tests must still prove the debounce initiates persistence.
+  await waitFor(() =>
+    expect(result.current.persistence).toEqual({
+      dirty: expectedError !== null,
+      saving: false,
+      error: expectedError,
+    }),
+  );
 }
 
 describe("ConnectionProvider auto-save", () => {
@@ -268,23 +275,27 @@ describe("ConnectionProvider auto-save", () => {
       result.current.dispatch({ type: "SET_CONNECTIONS", payload: [conn] });
     });
 
-    await flushSave();
+    expect(result.current.persistence.dirty).toBe(true);
+    await flushSave(result);
 
     let stored = await IndexedDbService.getItem<StorageData>(
       `mremote-database-${collectionId}`,
     );
-    expect(stored!.connections).toHaveLength(1);
+    expect(stored!.connections).toEqual([conn]);
+    expect(stored!.recordMetadata?.version).toBe(1);
 
     await act(async () => {
       result.current.dispatch({ type: "SET_CONNECTIONS", payload: [] });
     });
 
-    await flushSave();
+    expect(result.current.persistence.dirty).toBe(true);
+    await flushSave(result);
 
     stored = await IndexedDbService.getItem<StorageData>(
       `mremote-database-${collectionId}`,
     );
     expect(stored!.connections).toEqual([]);
+    expect(stored!.recordMetadata?.version).toBe(1);
   });
 
   it("auto-saves after updating a connection", async () => {
@@ -308,19 +319,21 @@ describe("ConnectionProvider auto-save", () => {
     await act(async () => {
       result.current.dispatch({ type: "SET_CONNECTIONS", payload: [conn] });
     });
-    await flushSave();
+    expect(result.current.persistence.dirty).toBe(true);
+    await flushSave(result);
 
     const updated = { ...conn, name: "renamed" };
     await act(async () => {
       result.current.dispatch({ type: "UPDATE_CONNECTION", payload: updated });
     });
-    await flushSave();
+    expect(result.current.persistence.dirty).toBe(true);
+    await flushSave(result);
 
     const stored = await IndexedDbService.getItem<StorageData>(
       `mremote-database-${collectionId}`,
     );
-    expect(stored!.connections).toHaveLength(1);
-    expect(stored!.connections[0].name).toBe("renamed");
+    expect(stored!.connections).toEqual([updated]);
+    expect(stored!.recordMetadata?.version).toBe(1);
   });
 
   it("auto-saves after adding a connection", async () => {
@@ -344,13 +357,14 @@ describe("ConnectionProvider auto-save", () => {
     await act(async () => {
       result.current.dispatch({ type: "ADD_CONNECTION", payload: conn });
     });
-    await flushSave();
+    expect(result.current.persistence.dirty).toBe(true);
+    await flushSave(result);
 
     const stored = await IndexedDbService.getItem<StorageData>(
       `mremote-database-${collectionId}`,
     );
-    expect(stored!.connections).toHaveLength(1);
-    expect(stored!.connections[0].id).toBe("a1");
+    expect(stored!.connections).toEqual([conn]);
+    expect(stored!.recordMetadata?.version).toBe(1);
   });
 
   it("persists the latest state after multiple rapid updates", async () => {
@@ -390,12 +404,14 @@ describe("ConnectionProvider auto-save", () => {
         payload: [conn1, conn2],
       });
     });
-    await flushSave();
+    expect(result.current.persistence.dirty).toBe(true);
+    await flushSave(result);
 
     const stored = await IndexedDbService.getItem<StorageData>(
       `mremote-database-${collectionId}`,
     );
-    expect(stored!.connections).toHaveLength(2);
+    expect(stored!.connections).toEqual([conn1, conn2]);
+    expect(stored!.recordMetadata?.version).toBe(1);
   });
 
   it("flushes pending changes immediately without waiting for debounce", async () => {
@@ -500,7 +516,7 @@ describe("ConnectionProvider auto-save", () => {
     await act(async () => {
       result.current.dispatch({ type: "SET_CONNECTIONS", payload: [conn] });
     });
-    await flushSave();
+    await flushSave(result, "DB write failed");
 
     expect(result.current.persistence).toEqual({
       dirty: true,

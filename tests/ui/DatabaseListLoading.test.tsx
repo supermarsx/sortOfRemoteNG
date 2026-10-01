@@ -6,6 +6,10 @@ import type { Mgr } from "../../src/components/database/list/types";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
 import type { LoadingCollection } from "../../src/hooks/connection/useDatabaseSelector";
 
+vi.mock("../../src/hooks/connection/useDatabaseSizes", () => ({
+  useDatabaseSizes: () => ({ sizes: {}, loading: false, refresh: () => {} }),
+}));
+
 // Mutable across tests so the D3 invariant can flip `animationsEnabled` off.
 // `vi.hoisted` because vi.mock factories are hoisted above the imports and
 // would otherwise read `settings` in its temporal dead zone.

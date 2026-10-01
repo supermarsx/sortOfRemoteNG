@@ -1,0 +1,117 @@
+[
+  {
+    "name": "nanosecond chronology cannot be rounded to milliseconds",
+    "valid": false,
+    "value": {
+      "version": 1,
+      "created_at": "2020-01-01T00:00:00.000000002Z",
+      "updated_at": "2020-01-01T00:00:00.000000001Z",
+      "created_at_source": "recorded",
+      "updated_at_source": "recorded"
+    }
+  },
+  {
+    "name": "leap second precedes next minute",
+    "valid": true,
+    "value": {
+      "version": 1,
+      "created_at": "2016-12-31T23:59:60.999999999Z",
+      "updated_at": "2017-01-01T00:00:00Z",
+      "created_at_source": "inferred",
+      "updated_at_source": "recorded"
+    }
+  },
+  {
+    "name": "leap second cannot update the following minute",
+    "valid": false,
+    "value": {
+      "version": 1,
+      "created_at": "2017-01-01T00:00:00Z",
+      "updated_at": "2016-12-31T23:59:60.999999999Z",
+      "created_at_source": "recorded",
+      "updated_at_source": "recorded"
+    }
+  },
+  {
+    "name": "unknown means exact epoch even at nanosecond precision",
+    "valid": false,
+    "value": {
+      "version": 1,
+      "created_at": "1970-01-01T00:00:00.000000001Z",
+      "updated_at": "2020-01-01T00:00:00Z",
+      "created_at_source": "unknown",
+      "updated_at_source": "recorded"
+    }
+  },
+  {
+    "name": "unknown epoch permits equivalent offset notation",
+    "valid": true,
+    "value": {
+      "version": 1,
+      "created_at": "1970-01-01T01:00:00+01:00",
+      "updated_at": "1970-01-01T00:00:00Z",
+      "created_at_source": "unknown",
+      "updated_at_source": "unknown"
+    }
+  },
+  {
+    "name": "unsupported metadata version",
+    "valid": false,
+    "value": {
+      "version": 2,
+      "created_at": "2020-01-01T00:00:00Z",
+      "updated_at": "2020-01-01T00:00:00Z",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "unknown fields rejected",
+    "valid": false,
+    "value": {
+      "version": 1,
+      "created_at": "2020-01-01T00:00:00Z",
+      "updated_at": "2020-01-01T00:00:00Z",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred",
+      "extra": true
+    }
+  },
+  {
+    "name": "calendar rollover is not valid evidence",
+    "valid": false,
+    "value": {
+      "version": 1,
+      "created_at": "2023-02-29T00:00:00Z",
+      "updated_at": "2024-01-01T00:00:00Z",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "unrecognized source",
+    "valid": false,
+    "value": {
+      "version": 1,
+      "created_at": "2020-01-01T00:00:00Z",
+      "updated_at": "2020-01-01T00:00:00Z",
+      "created_at_source": "guessed",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "missing required field",
+    "valid": false,
+    "value": {
+      "version": 1,
+      "created_at": "2020-01-01T00:00:00Z",
+      "updated_at": "2020-01-01T00:00:00Z",
+      "created_at_source": "inferred"
+    }
+  },
+  {
+    "name": "null is missing metadata not validated metadata",
+    "valid": false,
+    "value": null
+  }
+]

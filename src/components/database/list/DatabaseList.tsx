@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -10,6 +10,7 @@ import {
   FolderOpen,
   Lock,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   Unlock,
@@ -26,6 +27,13 @@ import { useSettings } from "../../../contexts/SettingsContext";
 import { DatabaseBulkControls } from "./DatabaseBulkControls";
 import { DatabaseUnlockDialog } from "../../encryption/DatabaseUnlockDialog";
 import { useImportExportNavigation } from "../../ImportExport/navigation";
+import { DatabaseManager } from "../../../utils/connection/databaseManager";
+import type { DatabaseProtectionStatus } from "../../../types/encryption/databaseProtection";
+import { useDatabaseSizes } from "../../../hooks/connection/useDatabaseSizes";
+import {
+  formatDatabaseBytes,
+  type DatabaseSize,
+} from "../../../utils/connection/databaseSize";
 
 interface DatabaseListProps {
   mgr: Mgr;
@@ -52,6 +60,7 @@ interface DatabaseListProps {
 function DatabaseList({ mgr }: DatabaseListProps) {
   const { t } = useTranslation();
   const navigateImportExport = useImportExportNavigation();
+  const databaseSizes = useDatabaseSizes(mgr.collections);
   const [searchFilter, setSearchFilter] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<ConnectionDatabase | null>(
     null,
@@ -222,6 +231,8 @@ function DatabaseList({ mgr }: DatabaseListProps) {
               key={collection.id}
               collection={collection}
               mgr={mgr}
+              size={databaseSizes.sizes[collection.id]}
+              sizeLoading={databaseSizes.loading}
               highlighted={mgr.highlightedCollectionId === collection.id}
               onDelete={() => setDeleteConfirm(collection)}
             />
@@ -242,6 +253,15 @@ function DatabaseList({ mgr }: DatabaseListProps) {
             </span>
           </>
         )}
+        <button
+          type="button"
+          onClick={databaseSizes.refresh}
+          disabled={databaseSizes.loading || stats.total === 0}
+          className="sor-btn-secondary-sm ml-auto"
+        >
+          <RefreshCw size={12} aria-hidden="true" />
+          {t("databaseCenter.collections.refreshSizes", "Refresh sizes")}
+        </button>
       </div>
 
       <ConfirmDialog
@@ -271,9 +291,83 @@ function DatabaseList({ mgr }: DatabaseListProps) {
 
 // ─── Row ──────────────────────────────────────────────────────────────
 
+function DatabaseSizeLabel({
+  size,
+  loading,
+}: {
+  size?: DatabaseSize;
+  loading: boolean;
+}) {
+  const { t } = useTranslation();
+  let label: string;
+  let detail: string;
+  if (loading && !size) {
+    label = t("databaseCenter.collections.sizeLoading", "Size loading…");
+    detail = label;
+  } else if (
+    size?.status === "measured" &&
+    typeof size.bytes === "number" &&
+    Number.isSafeInteger(size.bytes) &&
+    size.bytes >= 0
+  ) {
+    const formatted = formatDatabaseBytes(size.bytes);
+    label = size.source === "browser-json" ? `JSON · ${formatted}` : formatted;
+    const source =
+      size.source === "stored-file"
+        ? t(
+            "databaseCenter.collections.sizeStoredFile",
+            "stored-file: current database file, including encryption envelopes",
+          )
+        : size.source === "browser-json"
+          ? t(
+              "databaseCenter.collections.sizeBrowserJson",
+              "browser-json: stored UTF-8 JSON size; not disk allocation",
+            )
+          : t("databaseCenter.collections.sizeSourceUnknown", "Source unknown");
+    detail = `${size.bytes} bytes · ${source}`;
+  } else {
+    const status =
+      size?.status === "missing"
+        ? t("databaseCenter.collections.sizeMissing", "Database file missing")
+        : t("databaseCenter.collections.sizeUnavailable", "Size unavailable");
+    const reason =
+      size?.reason ||
+      (size?.status === "missing"
+        ? t(
+            "databaseCenter.collections.sizeMissingReason",
+            "No stored database was found.",
+          )
+        : t(
+            "databaseCenter.collections.sizeUnavailableReason",
+            "Could not measure the stored database.",
+          ));
+    label = `${status} · ${reason}`;
+    detail = label;
+  }
+  if (loading && size) {
+    label += ` · ${t("databaseCenter.collections.sizeRefreshing", "Refreshing…")}`;
+    detail += ` · ${t(
+      "databaseCenter.collections.sizeRefreshingDetail",
+      "Refreshing size; showing the last measurement.",
+    )}`;
+  }
+  return (
+    <span
+      className="min-w-0 truncate tabular-nums"
+      data-testid="database-size"
+      title={detail}
+      aria-label={`${t("databaseCenter.collections.size", "Database size")}: ${label}. ${detail}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 interface DatabaseRowProps {
   collection: ConnectionDatabase;
   mgr: Mgr;
+  size?: DatabaseSize;
+  sizeLoading: boolean;
   highlighted: boolean;
   onDelete: () => void;
 }
@@ -281,6 +375,8 @@ interface DatabaseRowProps {
 const DatabaseRow: React.FC<DatabaseRowProps> = ({
   collection,
   mgr,
+  size,
+  sizeLoading,
   highlighted,
   onDelete,
 }) => {
@@ -404,14 +500,18 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
                 {collection.description}
               </p>
             )}
-            {loadingCopy ? (
-              <p className="text-[10px] text-primary mt-0.5">{loadingCopy}</p>
-            ) : (
-              <p className="text-[10px] text-[var(--color-textMuted)] mt-0.5">
-                {t("databaseCenter.collections.lastAccessed")}:{" "}
-                {new Date(collection.lastAccessed).toLocaleDateString()}
-              </p>
-            )}
+            <p className="flex items-baseline gap-1 text-[10px] text-[var(--color-textMuted)] mt-0.5">
+              {loadingCopy ? (
+                <span className="text-primary">{loadingCopy}</span>
+              ) : (
+                <span className="shrink-0">
+                  {t("databaseCenter.collections.lastAccessed")}:{" "}
+                  {new Date(collection.lastAccessed).toLocaleDateString()}
+                </span>
+              )}
+              <span aria-hidden="true">{" · "}</span>
+              <DatabaseSizeLabel size={size} loading={sizeLoading} />
+            </p>
           </div>
         </button>
 
@@ -669,6 +769,74 @@ const CreateDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
 
 // ── Edit ─────────────────────────────────────────────────────────────
 
+const ManagedEditProtection: React.FC<{ database: ConnectionDatabase }> = ({
+  database,
+}) => {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<DatabaseProtectionStatus | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setStatus(null);
+    setFailed(false);
+    void DatabaseManager.getInstance()
+      .getDatabaseProtectionStatus(database.id)
+      .then(
+        (value) => {
+          if (active) setStatus(value);
+        },
+        () => {
+          if (active) setFailed(true);
+        },
+      );
+    return () => {
+      active = false;
+    };
+  }, [database.id, database.securityRevision]);
+  const labels = {
+    "os-vault": t("databaseCenter.collections.protectionOsVault", "OS vault"),
+    password: t("databaseCenter.collections.protectionPassword", "Password"),
+    "webauthn-prf": t(
+      "databaseCenter.collections.protectionSecurityKey",
+      "Security key",
+    ),
+    biometric: t("databaseCenter.collections.protectionBiometric", "Biometric"),
+  };
+  return (
+    <div
+      className="space-y-1 text-xs text-[var(--color-textSecondary)]"
+      role="status"
+    >
+      <p>
+        {t(
+          "databaseCenter.collections.managedEncryption",
+          "Encrypted with managed protection.",
+        )}
+      </p>
+      {status?.kind === "managed" && (
+        <p>
+          {t("databaseCenter.collections.unlockMethods", "Unlock methods")}:{" "}
+          {status.slots.map((slot) => labels[slot.type]).join(", ")}
+        </p>
+      )}
+      {failed && (
+        <p>
+          {t(
+            "databaseCenter.collections.protectionUnavailable",
+            "Unlock methods could not be inspected.",
+          )}
+        </p>
+      )}
+      <p>
+        {t(
+          "databaseCenter.collections.managedMetadataHelp",
+          "Changing the name or description keeps encryption and unlock methods unchanged. No password is needed. Manage protection in Database Security settings.",
+        )}
+      </p>
+    </div>
+  );
+};
+
 const EditDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
   mgr,
   onClose,
@@ -676,8 +844,9 @@ const EditDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
   const { t } = useTranslation();
   if (!mgr.editingCollection) return null;
   const editing = mgr.editingCollection;
+  const isManaged = editing.protectionFormat === "sorng-db";
   const showPasswordRow =
-    editing.isEncrypted || mgr.editPassword.enableEncryption;
+    !isManaged && (editing.isEncrypted || mgr.editPassword.enableEncryption);
 
   return (
     <CardShell
@@ -726,77 +895,89 @@ const EditDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
           rows={2}
         />
       </div>
-      <label className="flex items-center gap-2 cursor-pointer">
-        <Checkbox
-          checked={mgr.editPassword.enableEncryption}
-          onChange={(v: boolean) =>
-            mgr.setEditPassword((prev) => ({ ...prev, enableEncryption: v }))
-          }
-        />
-        <span className="text-xs text-[var(--color-textSecondary)]">
-          {t("databaseCenter.collections.encryptToggle")}
-        </span>
-      </label>
+      {isManaged ? (
+        <ManagedEditProtection database={editing} />
+      ) : (
+        <label className="flex items-center gap-2 cursor-pointer">
+          <Checkbox
+            checked={mgr.editPassword.enableEncryption}
+            onChange={(v: boolean) =>
+              mgr.setEditPassword((prev) => ({ ...prev, enableEncryption: v }))
+            }
+          />
+          <span className="text-xs text-[var(--color-textSecondary)]">
+            {t("databaseCenter.collections.encryptToggle")}
+          </span>
+        </label>
+      )}
       {showPasswordRow && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="space-y-1">
-            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-              {t("databaseCenter.collections.currentPasswordLabel")}
-            </label>
-            <PasswordInput
-              value={mgr.editPassword.current}
-              onChange={(e) =>
-                mgr.setEditPassword((prev) => ({
-                  ...prev,
-                  current: e.target.value,
-                }))
-              }
-              className="sor-form-input-xs w-full"
-              placeholder={
-                t(
-                  "databaseCenter.collections.currentPasswordPlaceholder",
-                ) as string
-              }
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-              {t("databaseCenter.collections.newPasswordLabel")}
-            </label>
-            <PasswordInput
-              value={mgr.editPassword.next}
-              onChange={(e) =>
-                mgr.setEditPassword((prev) => ({
-                  ...prev,
-                  next: e.target.value,
-                }))
-              }
-              className="sor-form-input-xs w-full"
-              placeholder={
-                t("databaseCenter.collections.newPasswordPlaceholder") as string
-              }
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
-              {t("databaseCenter.collections.confirmPasswordShortLabel")}
-            </label>
-            <PasswordInput
-              value={mgr.editPassword.confirm}
-              onChange={(e) =>
-                mgr.setEditPassword((prev) => ({
-                  ...prev,
-                  confirm: e.target.value,
-                }))
-              }
-              className="sor-form-input-xs w-full"
-              placeholder={
-                t(
-                  "databaseCenter.collections.confirmPasswordPlaceholder",
-                ) as string
-              }
-            />
-          </div>
+          {editing.isEncrypted && (
+            <div className="space-y-1">
+              <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+                {t("databaseCenter.collections.currentPasswordLabel")}
+              </label>
+              <PasswordInput
+                value={mgr.editPassword.current}
+                onChange={(e) =>
+                  mgr.setEditPassword((prev) => ({
+                    ...prev,
+                    current: e.target.value,
+                  }))
+                }
+                className="sor-form-input-xs w-full"
+                placeholder={
+                  t(
+                    "databaseCenter.collections.currentPasswordPlaceholder",
+                  ) as string
+                }
+              />
+            </div>
+          )}
+          {mgr.editPassword.enableEncryption && (
+            <>
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+                  {t("databaseCenter.collections.newPasswordLabel")}
+                </label>
+                <PasswordInput
+                  value={mgr.editPassword.next}
+                  onChange={(e) =>
+                    mgr.setEditPassword((prev) => ({
+                      ...prev,
+                      next: e.target.value,
+                    }))
+                  }
+                  className="sor-form-input-xs w-full"
+                  placeholder={
+                    t(
+                      "databaseCenter.collections.newPasswordPlaceholder",
+                    ) as string
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+                  {t("databaseCenter.collections.confirmPasswordShortLabel")}
+                </label>
+                <PasswordInput
+                  value={mgr.editPassword.confirm}
+                  onChange={(e) =>
+                    mgr.setEditPassword((prev) => ({
+                      ...prev,
+                      confirm: e.target.value,
+                    }))
+                  }
+                  className="sor-form-input-xs w-full"
+                  placeholder={
+                    t(
+                      "databaseCenter.collections.confirmPasswordPlaceholder",
+                    ) as string
+                  }
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
     </CardShell>

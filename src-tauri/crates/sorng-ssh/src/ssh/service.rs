@@ -904,6 +904,7 @@ pub fn preview_known_hosts(path: Option<String>) -> Result<KnownHostsPreview, St
                 trust_expires: None,
                 revoked,
                 tags: vec![],
+                timestamps: None,
             });
         }
     }

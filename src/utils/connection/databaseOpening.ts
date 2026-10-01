@@ -1,3 +1,17 @@
+/** Retain actionable storage/ledger/native failures without blaming credentials. */
+export function databaseAccessErrorMessage(
+  error: unknown,
+  fallback: string,
+): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  return message.trim() || fallback;
+}
+
 /** Only cancellation/access revocation is informational; wrong credentials and
  * damaged storage remain failures. Never place backend text in a loading toast. */
 export function isDatabaseOpenCancellation(error: unknown): boolean {

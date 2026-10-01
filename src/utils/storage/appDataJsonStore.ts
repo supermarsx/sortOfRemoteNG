@@ -1,6 +1,11 @@
 import { getInvoke, type TauriInvoke } from "../tauri/invoke";
 import { IndexedDbService } from "./indexedDbService";
 import {
+  normalizeRecordLedger,
+  reconcileRecordLedger,
+  type RecordLedger,
+} from "./recordLedger";
+import {
   assertMacroLibraryReadAccess,
   readMacroLibraryWhenReady,
   readAppDataWhenReady,
@@ -19,13 +24,55 @@ export interface DurableLoadResult<T> {
   sanitized: boolean;
 }
 
-interface AppDataJsonStoreOptions<T> {
+export interface AppDataJsonStoreOptions<T> {
   key: string;
   legacyLocalStorageKey?: string;
   sanitize: (value: unknown) => SanitizedValue<T>;
   requireNative?: boolean;
   /** Macro-family policy and rotation, not the generic connections artifact. */
   backend?: "app-data" | "macro-library";
+  /** Embed record history in object snapshots, in the same CAS as their data. */
+  trackRecords?: boolean;
+}
+
+export interface AppDataJsonStoreUpdateOptions {
+  /** Adopt reviewed remote history, rejecting mismatches and CAS conflicts. */
+  adoptRecordMetadata?: boolean;
+}
+
+/** The CAS succeeded; a later failure must not be treated as a safe replay. */
+export class AppDataJsonStoreCommittedError extends Error {
+  readonly kind = "partial";
+  constructor() {
+    super(
+      "Library write committed but verification or finalization failed. Reload before retrying; no rollback was attempted.",
+    );
+    this.name = "AppDataJsonStoreCommittedError";
+  }
+}
+
+const isObjectSnapshot = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Keep ledger metadata outside strict domain sanitizers, without doing I/O. */
+export function sanitizeWithRecordMetadata<T>(
+  value: unknown,
+  sanitize: (value: unknown) => SanitizedValue<T>,
+): SanitizedValue<T> {
+  const { recordMetadata, ...domain } = isObjectSnapshot(value) ? value : {};
+  const metadata = normalizeRecordLedger(recordMetadata);
+  const sanitized = sanitize(isObjectSnapshot(value) ? domain : value);
+  if (!isObjectSnapshot(sanitized.value))
+    throw new Error("Record tracking requires an object snapshot.");
+  return {
+    value: {
+      ...sanitized.value,
+      ...(metadata ? { recordMetadata: metadata } : {}),
+    },
+    changed:
+      sanitized.changed ||
+      JSON.stringify(recordMetadata) !== JSON.stringify(metadata),
+  };
 }
 
 const mutationQueues = new Map<string, Promise<void>>();
@@ -70,14 +117,70 @@ export class AppDataJsonStore<T> {
   private readonly sanitizeValue: (value: unknown) => SanitizedValue<T>;
   private readonly requireNative: boolean;
   private readonly storageBackend: "app-data" | "macro-library";
+  private readonly trackRecords: boolean;
 
   constructor(options: AppDataJsonStoreOptions<T>) {
     this.key = options.key;
     this.legacyLocalStorageKey = options.legacyLocalStorageKey;
-    this.sanitizeValue = options.sanitize;
+    this.trackRecords = options.trackRecords === true;
+    this.sanitizeValue = this.trackRecords
+      ? (value) => sanitizeWithRecordMetadata(value, options.sanitize)
+      : options.sanitize;
     this.storageBackend = options.backend ?? "app-data";
     this.requireNative =
       options.requireNative === true || this.storageBackend === "macro-library";
+  }
+
+  private async migrateValue(value: unknown): Promise<SanitizedValue<T>> {
+    const sanitized = this.sanitizeValue(value);
+    if (!this.trackRecords) return sanitized;
+    const metadata = normalizeRecordLedger(
+      (sanitized.value as Record<string, unknown>).recordMetadata,
+    );
+    const recordMetadata = await reconcileRecordLedger(
+      sanitized.value,
+      metadata,
+      { mode: "migrate" },
+    );
+    return {
+      ...sanitized,
+      value: { ...sanitized.value, recordMetadata },
+    };
+  }
+
+  private async prepareWrite(
+    value: T,
+    previous?: RecordLedger,
+    adoptRecordMetadata = false,
+  ): Promise<SanitizedValue<T>> {
+    const sanitized = this.sanitizeValue(value);
+    if (!this.trackRecords) {
+      if (adoptRecordMetadata)
+        throw new Error("Remote record metadata requires record tracking.");
+      return sanitized;
+    }
+    const incoming = normalizeRecordLedger(
+      (sanitized.value as Record<string, unknown>).recordMetadata,
+    );
+    const domain = { ...sanitized.value } as Record<string, unknown>;
+    delete domain.recordMetadata;
+    const recordMetadata = await reconcileRecordLedger(
+      domain,
+      adoptRecordMetadata ? incoming : previous,
+      { mode: adoptRecordMetadata ? "migrate" : "write" },
+    );
+    if (
+      adoptRecordMetadata &&
+      incoming !== undefined &&
+      JSON.stringify(incoming) !== JSON.stringify(recordMetadata)
+    )
+      throw new Error(
+        "Remote record metadata does not match the reviewed data.",
+      );
+    return {
+      ...sanitized,
+      value: { ...sanitized.value, recordMetadata },
+    };
   }
 
   private async backend(): Promise<TauriInvoke | null> {
@@ -119,10 +222,11 @@ export class AppDataJsonStore<T> {
       const legacyRaw = this.readLegacy();
       if (legacyRaw === null) return { value: null, sanitized: false };
 
-      const sanitized = this.sanitizeValue(
+      const sanitized = await this.migrateValue(
         parseJson(this.legacyLocalStorageKey ?? this.key, legacyRaw),
       );
       const replacement = JSON.stringify(sanitized.value);
+      assertMacroLibraryReadAccess(access);
       const committed = await this.compareAndSwap(invoke, null, replacement);
       assertMacroLibraryReadAccess(access);
       if (!committed) {
@@ -145,23 +249,54 @@ export class AppDataJsonStore<T> {
 
       this.removeLegacy();
       emitChanged(this.key);
-      return { value: sanitized.value, sanitized: sanitized.changed };
+      return {
+        value: sanitized.value,
+        sanitized: sanitized.changed || this.trackRecords,
+      };
     });
   }
 
   async save(value: T): Promise<SanitizedValue<T>> {
     return enqueue(this.key, async () => {
-      const sanitized = this.sanitizeValue(value);
-      const replacement = JSON.stringify(sanitized.value);
       const invoke = await this.backend();
 
       for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
         const expected = await this.readRaw(invoke);
-        if (await this.compareAndSwap(invoke, expected, replacement)) {
-          this.removeLegacy();
-          emitChanged(this.key);
-          return sanitized;
+        const current =
+          this.trackRecords && expected !== null
+            ? (await this.migrateValue(parseJson(this.key, expected))).value
+            : null;
+        const sanitized = await this.prepareWrite(
+          value,
+          this.durableMetadata(current),
+        );
+        const replacement = JSON.stringify(sanitized.value);
+        const unchanged = replacement === expected;
+        if (
+          unchanged ||
+          (await this.compareAndSwap(invoke, expected, replacement))
+        ) {
+          try {
+            if (
+              this.trackRecords &&
+              (await this.readRaw(invoke)) !== replacement
+            )
+              throw new Error(
+                "Library write could not be verified. Reload before retrying.",
+              );
+            this.removeLegacy();
+            if (!unchanged) emitChanged(this.key);
+            return sanitized;
+          } catch (error) {
+            if (!unchanged) throw new AppDataJsonStoreCommittedError();
+            throw error;
+          }
         }
+        // A whole snapshot cannot be safely rebased onto a concurrent edit.
+        if (this.trackRecords)
+          throw new Error(
+            "Library changed in another window. Reload before retrying.",
+          );
       }
 
       throw new Error(
@@ -170,10 +305,11 @@ export class AppDataJsonStore<T> {
     });
   }
 
-  /** Apply a synchronous edit to the latest value, retrying only refused CAS writes. */
+  /** Rebase local edits on refused CAS writes; reviewed remote replacements never retry. */
   async update(
     transform: (current: T | null) => T,
     access?: MacroLibraryReadAccess,
+    options: AppDataJsonStoreUpdateOptions = {},
   ): Promise<SanitizedValue<T>> {
     return enqueue(this.key, async () => {
       assertMacroLibraryReadAccess(access);
@@ -185,32 +321,56 @@ export class AppDataJsonStore<T> {
         const current =
           expected === null
             ? null
-            : this.sanitizeValue(parseJson(this.key, expected)).value;
-        const sanitized = this.sanitizeValue(transform(current));
+            : (await this.migrateValue(parseJson(this.key, expected))).value;
+        // Capture history before a transform can mutate its input in place.
+        const previous = this.durableMetadata(current);
+        assertMacroLibraryReadAccess(access);
+        const sanitized = await this.prepareWrite(
+          transform(current),
+          previous,
+          options.adoptRecordMetadata,
+        );
         const replacement = JSON.stringify(sanitized.value);
         assertMacroLibraryReadAccess(access);
-        const committed = await this.compareAndSwap(
-          invoke,
-          expected,
-          replacement,
-        );
-        assertMacroLibraryReadAccess(access);
-        if (!committed) continue;
+        const unchanged = replacement === expected;
+        const committed =
+          unchanged ||
+          (await this.compareAndSwap(invoke, expected, replacement));
+        if (!committed) {
+          assertMacroLibraryReadAccess(access);
+          if (options.adoptRecordMetadata)
+            throw new Error(
+              "Library changed in another window. Reload and review before cloud apply.",
+            );
+          continue;
+        }
         // A failed verification must never reapply the edit: the write may
         // already have committed or a different window may have advanced it.
-        const verified = await this.readRaw(invoke);
-        assertMacroLibraryReadAccess(access);
-        if (verified !== replacement)
-          throw new Error(
-            "Library write could not be verified. Reload before retrying; legacy data was retained.",
-          );
-        emitChanged(this.key);
-        return sanitized;
+        try {
+          assertMacroLibraryReadAccess(access);
+          const verified = await this.readRaw(invoke);
+          assertMacroLibraryReadAccess(access);
+          if (verified !== replacement)
+            throw new Error(
+              "Library write could not be verified. Reload before retrying; legacy data was retained.",
+            );
+          if (!unchanged) emitChanged(this.key);
+          return sanitized;
+        } catch (error) {
+          if (!unchanged) throw new AppDataJsonStoreCommittedError();
+          throw error;
+        }
       }
       throw new Error(
         "Library changed in another window. Reload before retrying.",
       );
     });
+  }
+
+  private durableMetadata(value: T | null): RecordLedger | undefined {
+    return this.trackRecords && isObjectSnapshot(value)
+      ? normalizeRecordLedger(structuredClone(value.recordMetadata))
+      : undefined;
   }
 
   private async normalizeDurable(
@@ -221,8 +381,9 @@ export class AppDataJsonStore<T> {
     let raw = initialRaw;
     for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
       assertMacroLibraryReadAccess(access);
-      const sanitized = this.sanitizeValue(parseJson(this.key, raw));
+      const sanitized = await this.migrateValue(parseJson(this.key, raw));
       const replacement = JSON.stringify(sanitized.value);
+      assertMacroLibraryReadAccess(access);
       if (!sanitized.changed && replacement === raw) {
         return { value: sanitized.value, sanitized: false };
       }
@@ -278,10 +439,20 @@ export class AppDataJsonStore<T> {
       );
     }
 
-    const current = await this.readRaw(null);
-    if (current !== expected) return false;
-    await IndexedDbService.setItemStrict(this.key, replacement);
-    return true;
+    return IndexedDbService.transactItemsStrict([this.key], (values) => {
+      const value = values[this.key];
+      const current =
+        value === null
+          ? null
+          : typeof value === "string"
+            ? value
+            : JSON.stringify(value);
+      const matches = current === expected;
+      return {
+        set: matches ? { [this.key]: replacement } : {},
+        result: matches,
+      };
+    });
   }
 
   private readLegacy(): string | null {

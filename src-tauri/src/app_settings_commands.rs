@@ -19,6 +19,9 @@
 //! The reader still merges arbitrary root-level keys (e.g. the
 //! updater object) regardless of which format produced the blob,
 //! preserving the old contract.
+//! `recordTimestamps` is the exception: its versioned record history belongs to
+//! this native boundary, travels only inside the whole settings artifact, and
+//! cannot be supplied as a settings patch.
 
 use serde_json::Value;
 use sorng_encryption::artifacts::settings as artifact_settings;
@@ -27,6 +30,9 @@ use sorng_encryption::password_wrap::Argon2Params;
 use sorng_encryption::EncryptionState;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{Manager, State};
+
+#[path = "app_settings_timestamps.rs"]
+mod app_settings_timestamps;
 
 const SETTINGS_FILENAME: &str = "settings.json";
 const SETTINGS_ENC_FILENAME: &str = "settings.enc";
@@ -224,7 +230,10 @@ async fn migrate_rest_api_secrets_locked(
         .cloned()
         .unwrap_or_else(|| serde_json::json!({}));
     write_app_settings_locked(dir, enc_state, serde_json::json!({ "restApi": rest })).await?;
-    Ok(sanitized)
+    // Return the committed snapshot, including native-owned record metadata.
+    read_app_settings_inner(dir, enc_state)
+        .await?
+        .ok_or_else(|| "settings disappeared after legacy-secret migration".into())
 }
 
 /// Read settings and perform any legacy-secret migration while the caller
@@ -236,9 +245,15 @@ async fn read_app_settings_secure_locked(
     let Some(settings) = read_app_settings_inner(dir, enc_state).await? else {
         return Ok(None);
     };
-    migrate_rest_api_secrets_locked(dir, enc_state, settings)
-        .await
-        .map(Some)
+    let settings = migrate_rest_api_secrets_locked(dir, enc_state, settings).await?;
+    if app_settings_timestamps::migration_needed(&settings)? {
+        // An empty patch seeds legacy history without treating the read as an
+        // edit. The existing coordinator, policy, representation and verified
+        // atomic writer protect metadata and content as one settings artifact.
+        write_app_settings_locked(dir, enc_state, serde_json::json!({})).await?;
+        return read_app_settings_inner(dir, enc_state).await;
+    }
+    Ok(Some(settings))
 }
 
 pub(crate) async fn read_app_settings_secure_inner(
@@ -279,6 +294,12 @@ pub async fn read_app_settings_inner(
 ) -> Result<Option<Value>, String> {
     let require_encrypted =
         enc_state.resolve_write_policy(sorng_encryption::ArtifactKind::Settings, false)?;
+    // A cold password-protected profile may be read before its policy has been
+    // primed. Its durable key receipt must not be mistaken for fresh plaintext
+    // storage, especially now that a secure read can migrate timestamp metadata.
+    if dir.join(DEK_ENC_FILENAME).exists() && !enc_state.is_unlocked().await {
+        return Err("master encryption is locked; unlock before reading settings".into());
+    }
     let enc_path = dir.join(SETTINGS_ENC_FILENAME);
     let plain_path = dir.join(SETTINGS_FILENAME);
 
@@ -294,7 +315,9 @@ pub async fn read_app_settings_inner(
         let value = artifact_settings::read(enc_state, &bytes)
             .await
             .map_err(|e| format!("decode settings.enc: {e}"))?;
-        return Ok(value.or(Some(serde_json::json!({}))));
+        let value = value.ok_or("settings.enc did not contain a settings document")?;
+        app_settings_timestamps::validate(&value)?;
+        return Ok(Some(value));
     }
 
     match std::fs::read_to_string(&plain_path) {
@@ -306,6 +329,7 @@ pub async fn read_app_settings_inner(
             }
             let value: Value =
                 serde_json::from_str(&s).map_err(|e| format!("parse settings.json: {e}"))?;
+            app_settings_timestamps::validate(&value)?;
             Ok(Some(value))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -354,9 +378,56 @@ pub async fn write_app_settings(
     enc_state: State<'_, EncryptionState>,
     patch: Value,
     expected_icon_library: Option<Value>,
+    expected_patch: Option<Value>,
 ) -> Result<u64, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    if let Some(expected) = expected_patch {
+        return write_cloud_preferences_inner(&dir, &enc_state, patch, expected).await;
+    }
     write_app_settings_reviewed_inner(&dir, &enc_state, patch, expected_icon_library).await
+}
+
+/// Portable presentation preferences only. Compare under the same coordinator
+/// used by ordinary saves, encryption transitions and other application windows.
+pub async fn write_cloud_preferences_inner(
+    dir: &std::path::Path,
+    enc_state: &EncryptionState,
+    patch: Value,
+    expected: Value,
+) -> Result<u64, String> {
+    fn valid_preferences(value: &Value) -> bool {
+        value.as_object().is_some_and(|object| {
+            object.iter().all(|(key, value)| match key.as_str() {
+                "language" | "theme" | "colorScheme" => {
+                    value.as_str().is_some_and(|s| s.len() <= 64)
+                }
+                "animationsEnabled" => value.is_boolean(),
+                "sidebarWidth" => value
+                    .as_f64()
+                    .is_some_and(|n| n.is_finite() && (0.0..=4096.0).contains(&n)),
+                _ => false,
+            })
+        })
+    }
+    if !valid_preferences(&patch) || !valid_preferences(&expected) {
+        return Err("Cloud settings contain unsupported preferences; nothing was saved".into());
+    }
+    let _write_guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
+    let current = read_app_settings_inner(dir, enc_state)
+        .await?
+        .unwrap_or(serde_json::json!({}));
+    let keys = patch
+        .as_object()
+        .unwrap()
+        .keys()
+        .chain(expected.as_object().unwrap().keys());
+    if keys
+        .into_iter()
+        .any(|key| current.get(key) != expected.get(key))
+    {
+        return Err("Preferences changed during cloud sync; nothing was saved. Sync again to review the conflict".into());
+    }
+    write_app_settings_locked(dir, enc_state, patch).await
 }
 
 fn normalized_icon_library(value: Option<&Value>) -> Value {
@@ -400,6 +471,7 @@ pub async fn write_app_settings_reviewed_inner(
     patch: Value,
     expected_icon_library: Option<Value>,
 ) -> Result<u64, String> {
+    app_settings_timestamps::reject_patch(&patch)?;
     reject_rest_api_secret_patch(&patch)?;
     let _write_guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
     let current = read_app_settings_inner(dir, enc_state).await?;
@@ -583,12 +655,16 @@ async fn write_app_settings_locked(
     patch: Value,
 ) -> Result<u64, String> {
     enc_state.resolve_write_policy(sorng_encryption::ArtifactKind::Settings, false)?;
+    app_settings_timestamps::reject_patch(&patch)?;
     reject_rest_api_secret_patch(&patch)?;
     if let Some(policy) = patch.get("passwordPolicy") {
         sorng_encryption::password_policy::parse(Some(policy))?;
         if dir.join(DEK_ENC_FILENAME).exists() && !enc_state.is_unlocked().await {
             return Err("Unlock storage before changing password policy.".into());
         }
+    }
+    if dir.join(DEK_ENC_FILENAME).exists() && !enc_state.is_unlocked().await {
+        return Err("master encryption is locked; artifact writes are blocked".into());
     }
     // Reserve before any fallible filesystem work. Failed writes may leave a
     // harmless gap, but a durable commit can never be followed by a generation
@@ -622,11 +698,23 @@ async fn write_app_settings_locked(
             Err(e) => return Err(e.to_string()),
         }
     };
-    let merged = merge_root(existing, &patch)?;
+    app_settings_timestamps::validate(&existing)?;
+    let mut merged = merge_root(existing.clone(), &patch)?;
+    app_settings_timestamps::reconcile(&existing, &mut merged, &app_settings_timestamps::now()?)?;
     let write_encrypted = enc_state.resolve_write_policy(
         sorng_encryption::ArtifactKind::Settings,
         encrypted_on_disk || (state_unlocked && !plaintext_on_disk),
     )?;
+
+    // Preserve bytes (including encrypted nonces) on no-op saves. Still return
+    // the established commit-generation acknowledgement. Do not skip a pending
+    // representation transition or cleanup of a stale plaintext shadow.
+    if merged == existing
+        && ((write_encrypted && encrypted_on_disk && !plaintext_on_disk)
+            || (!write_encrypted && plaintext_on_disk && !encrypted_on_disk))
+    {
+        return Ok(commit_generation);
+    }
 
     if write_encrypted {
         let mode = current_master_key_storage(dir).await?;
@@ -691,13 +779,13 @@ async fn write_app_settings_locked(
         tokio::task::spawn_blocking(move || atomic_write(&output_path, body.as_bytes()))
             .await
             .map_err(|e| format!("settings.json write task join: {e}"))??;
+        let verified: Value =
+            serde_json::from_slice(&std::fs::read(&plain_path).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        if verified != merged {
+            return Err("plaintext settings verification failed".into());
+        }
         if encrypted_on_disk {
-            let verified: Value =
-                serde_json::from_slice(&std::fs::read(&plain_path).map_err(|e| e.to_string())?)
-                    .map_err(|e| e.to_string())?;
-            if verified != merged {
-                return Err("plaintext settings verification failed".into());
-            }
             std::fs::remove_file(&enc_path).map_err(|e| {
                 format!("settings written but obsolete encrypted peer could not be removed: {e}")
             })?;
@@ -717,6 +805,572 @@ mod tests {
     use std::pin::Pin;
     use std::task::Poll;
     use tempfile::tempdir;
+
+    fn timestamp_fixture_modified_time(path: &std::path::Path) -> std::time::SystemTime {
+        let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(946_684_800);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(old))
+            .unwrap();
+        std::fs::metadata(path).unwrap().modified().unwrap()
+    }
+
+    #[tokio::test]
+    async fn timestamps_secure_read_migrates_plaintext_once_and_preserves_unknown_settings() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let path = tmp.path().join(SETTINGS_FILENAME);
+        let legacy = serde_json::json!({"theme":"dark", "updater":{"custom":"preserved"},
+            "proxyProfiles":[{"id":"proxy","password":"private-password"}],
+            "cloudSync":{"syncTargets":[{"id":"target","token":"private-token"}]}});
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let mut migrated = read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        let metadata = migrated
+            .as_object_mut()
+            .unwrap()
+            .remove("recordTimestamps")
+            .unwrap();
+        assert_eq!(migrated, legacy);
+        assert_eq!(metadata["version"], 1);
+        assert_eq!(
+            metadata["records"]["/key:theme"]["createdAt"],
+            "1970-01-01T00:00:00.000Z"
+        );
+        assert!(!metadata.to_string().contains("private-password"));
+        assert!(!metadata.to_string().contains("private-token"));
+        let bytes = std::fs::read(&path).unwrap();
+        let modified = timestamp_fixture_modified_time(&path);
+        read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .unwrap();
+        write_app_settings_inner(tmp.path(), &state, serde_json::json!({"theme":"dark"}))
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            modified
+        );
+        assert!(!tmp.path().join(SETTINGS_ENC_FILENAME).exists());
+    }
+
+    #[tokio::test]
+    async fn timestamps_encrypted_read_migrates_and_locked_read_cannot_mutate_either_peer() {
+        let tmp = tempdir().unwrap();
+        let state = unlocked_state_with_password_receipt(tmp.path()).await;
+        let document = serde_json::json!({"theme":"dark","profiles":[{"id":"private-profile"}]});
+        let blob = artifact_settings::write(
+            &state,
+            &document,
+            MasterKeyStorage::Password,
+            Argon2Params::OWASP,
+            [0; SALT_LEN],
+        )
+        .await
+        .unwrap();
+        let path = tmp.path().join(SETTINGS_ENC_FILENAME);
+        std::fs::write(&path, &blob).unwrap();
+        let migrated = read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(migrated["recordTimestamps"]["version"], 1);
+        let committed = std::fs::read(&path).unwrap();
+        let modified = timestamp_fixture_modified_time(&path);
+        read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .unwrap();
+        write_app_settings_inner(tmp.path(), &state, serde_json::json!({"theme":"dark"}))
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), committed);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            modified
+        );
+        std::fs::write(tmp.path().join(SETTINGS_FILENAME), br#"{"theme":"shadow"}"#).unwrap();
+        let locked = EncryptionState::new();
+        assert!(read_app_settings_secure_inner(tmp.path(), &locked)
+            .await
+            .is_err());
+        assert!(write_app_settings_inner(
+            tmp.path(),
+            &locked,
+            serde_json::json!({"theme":"light"})
+        )
+        .await
+        .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), committed);
+        assert_eq!(
+            std::fs::read(tmp.path().join(SETTINGS_FILENAME)).unwrap(),
+            br#"{"theme":"shadow"}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn timestamps_previously_unlocked_plaintext_profile_is_not_migrated_while_locked() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        state
+            .install(MasterDek::from_bytes(&[0x53; 32]).unwrap())
+            .await;
+        state.lock().await;
+        let path = tmp.path().join(SETTINGS_FILENAME);
+        let legacy = br#"{"theme":"dark"}"#;
+        std::fs::write(&path, legacy).unwrap();
+        assert!(read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), legacy);
+        // The cold state must fail closed even before policy priming runs.
+        std::fs::write(tmp.path().join(DEK_ENC_FILENAME), b"password-receipt").unwrap();
+        let cold = EncryptionState::new();
+        assert!(read_app_settings_secure_inner(tmp.path(), &cold)
+            .await
+            .is_err());
+        assert!(
+            write_app_settings_inner(tmp.path(), &cold, serde_json::json!({"theme":"light"}))
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), legacy);
+    }
+
+    #[tokio::test]
+    async fn timestamps_reserved_patch_and_bad_metadata_fail_before_migration_or_cas_side_effects()
+    {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let path = tmp.path().join(SETTINGS_FILENAME);
+        let legacy = br#"{"theme":"dark","restApi":{"apiKey":""}}"#;
+        std::fs::write(&path, legacy).unwrap();
+        let patch = serde_json::json!({"recordTimestamps":null,"theme":"light"});
+        assert!(
+            write_app_settings_reviewed_inner(tmp.path(), &state, patch.clone(), None)
+                .await
+                .is_err()
+        );
+        assert!(write_app_settings_inner(tmp.path(), &state, patch.clone())
+            .await
+            .is_err());
+        assert!(
+            write_cloud_preferences_inner(tmp.path(), &state, patch, serde_json::json!({}))
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), legacy);
+        // Cloud CAS must still run before a migration even for a legacy file.
+        assert!(write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"light"}),
+            serde_json::json!({"theme":"stale"})
+        )
+        .await
+        .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), legacy);
+        for metadata in [
+            Value::Null,
+            serde_json::json!({"version":2,"records":{}}),
+            serde_json::json!({"version":1,"records":{"/key:theme":{}}}),
+        ] {
+            let malformed = serde_json::to_vec(
+                &serde_json::json!({"theme":"dark", "recordTimestamps":metadata,
+                "restApi":{"apiKey":""}}),
+            )
+            .unwrap();
+            std::fs::write(&path, &malformed).unwrap();
+            assert!(read_app_settings_secure_inner(tmp.path(), &state)
+                .await
+                .is_err());
+            assert!(write_app_settings_inner(
+                tmp.path(),
+                &state,
+                serde_json::json!({"theme":"light"})
+            )
+            .await
+            .is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), malformed);
+        }
+    }
+
+    #[tokio::test]
+    async fn timestamps_cloud_cas_updates_only_selected_preferences_and_preserves_private_history()
+    {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let path = tmp.path().join(SETTINGS_FILENAME);
+        std::fs::write(
+            &path,
+            br#"{"theme":"dark","language":"en","cloudSync":{"token":"private"}}"#,
+        )
+        .unwrap();
+        let before = read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"light"}),
+            serde_json::json!({"theme":"dark"}),
+        )
+        .await
+        .unwrap();
+        let after = read_app_settings_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        let key = "recordTimestamps";
+        assert_eq!(
+            before[key]["records"]["/key:language"],
+            after[key]["records"]["/key:language"]
+        );
+        assert_eq!(
+            before[key]["records"]["/key:cloudSync"],
+            after[key]["records"]["/key:cloudSync"]
+        );
+        assert_eq!(
+            before[key]["records"]["/key:theme"]["createdAt"],
+            after[key]["records"]["/key:theme"]["createdAt"]
+        );
+        assert_eq!(
+            after[key]["records"]["/key:theme"]["updatedAtOrigin"],
+            "recorded"
+        );
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"system"}),
+            serde_json::json!({"theme":"dark"})
+        )
+        .await
+        .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[tokio::test]
+    async fn timestamps_corrupt_history_and_future_schema_never_rewrite_plain_or_encrypted_files() {
+        for encrypted in [false, true] {
+            let tmp = tempdir().unwrap();
+            let state = unlocked_state_with_password_receipt(tmp.path()).await;
+            let legacy = serde_json::json!({"theme":"dark","restApi":{"apiKey":""}});
+            let mut valid = legacy.clone();
+            app_settings_timestamps::reconcile(&legacy, &mut valid, "2026-10-01T10:00:00.000Z")
+                .unwrap();
+            for corruption in 0..6 {
+                let mut document = valid.clone();
+                let record = &mut document["recordTimestamps"]["records"]["/key:theme"];
+                match corruption {
+                    0 => record["createdAt"] = serde_json::json!("2026-10-01T11:00:00.000Z"),
+                    1 => record["updatedAtOrigin"] = serde_json::json!("recorded"),
+                    2 => record["history"][0]["operation"] = serde_json::json!("restored"),
+                    3 => record["deletedAt"] = serde_json::json!("1970-01-01T00:00:00.000Z"),
+                    4 => {
+                        record["history"][0]["snapshot"] =
+                            serde_json::json!({"password":"never-echo-this-body"})
+                    }
+                    _ => document["recordTimestamps"]["version"] = serde_json::json!(2),
+                }
+                let (filename, bytes) = if encrypted {
+                    (
+                        SETTINGS_ENC_FILENAME,
+                        artifact_settings::write(
+                            &state,
+                            &document,
+                            MasterKeyStorage::Password,
+                            Argon2Params::OWASP,
+                            [0; SALT_LEN],
+                        )
+                        .await
+                        .unwrap(),
+                    )
+                } else {
+                    (SETTINGS_FILENAME, serde_json::to_vec(&document).unwrap())
+                };
+                let path = tmp.path().join(filename);
+                std::fs::write(&path, &bytes).unwrap();
+                let error = read_app_settings_secure_inner(tmp.path(), &state)
+                    .await
+                    .unwrap_err();
+                assert!(!error.contains("never-echo-this-body"));
+                assert!(write_app_settings_reviewed_inner(
+                    tmp.path(),
+                    &state,
+                    serde_json::json!({"theme":"light"}),
+                    None
+                )
+                .await
+                .is_err());
+                assert!(write_app_settings_inner(
+                    tmp.path(),
+                    &state,
+                    serde_json::json!({"theme":"light"})
+                )
+                .await
+                .is_err());
+                assert!(write_cloud_preferences_inner(
+                    tmp.path(),
+                    &state,
+                    serde_json::json!({"theme":"light"}),
+                    serde_json::json!({"theme":"dark"})
+                )
+                .await
+                .is_err());
+                assert_eq!(std::fs::read(&path).unwrap(), bytes);
+                assert!(!tmp
+                    .path()
+                    .join(if encrypted {
+                        SETTINGS_FILENAME
+                    } else {
+                        SETTINGS_ENC_FILENAME
+                    })
+                    .exists());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn timestamps_native_migration_and_edits_accept_repeated_scoped_reference_ids() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let refs = serde_json::json!([
+            {"kind":"script","id":"shared","scope":{"kind":"app"}},
+            {"kind":"macro","id":"shared","scope":{"kind":"app"}},
+            {"kind":"script","id":"shared","scope":{"kind":"database","databaseId":"one"}}
+        ]);
+        let legacy = serde_json::json!({"sshQuickActions":{"items":refs}, "httpAutomation":{"items":refs},
+            "documents":{"references":[{"databaseId":"one","kind":"document","id":"same"},
+                {"databaseId":"two","kind":"document","id":"same"}]}});
+        std::fs::write(
+            tmp.path().join(SETTINGS_FILENAME),
+            serde_json::to_vec(&legacy).unwrap(),
+        )
+        .unwrap();
+        let before = read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        write_app_settings_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"sshQuickActions":{"items":[]}}),
+        )
+        .await
+        .unwrap();
+        let after = read_app_settings_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after["httpAutomation"], legacy["httpAutomation"]);
+        assert_eq!(after["documents"], legacy["documents"]);
+        let metadata = &after["recordTimestamps"]["records"];
+        assert!(metadata
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|path| !path.contains("/id:")));
+        assert_eq!(
+            metadata["/key:sshQuickActions"]["createdAt"],
+            before["recordTimestamps"]["records"]["/key:sshQuickActions"]["createdAt"]
+        );
+        assert_eq!(
+            metadata["/key:sshQuickActions"]["updatedAtOrigin"],
+            "recorded"
+        );
+    }
+
+    #[tokio::test]
+    async fn timestamps_status_ticks_persist_without_ledger_churn_and_config_edits_are_recorded() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let legacy = serde_json::json!({"cloudSync":{"frequency":"custom","customIntervalMinutes":1,
+            "syncTargets":[{"id":"target","label":"Original"}],"providerStatus":{},"targetStatus":{}}});
+        std::fs::write(
+            tmp.path().join(SETTINGS_FILENAME),
+            serde_json::to_vec(&legacy).unwrap(),
+        )
+        .unwrap();
+        let before = read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut cloud = before["cloudSync"].clone();
+        for tick in 0..64 {
+            cloud["providerStatus"] = serde_json::json!({"sftp":{"lastSyncTime":tick}});
+            cloud["targetStatus"] = serde_json::json!({"target":{"lastSyncTime":tick}});
+            cloud["lastSyncTime"] = serde_json::json!(tick);
+            cloud["lastSyncStatus"] =
+                serde_json::json!(if tick % 2 == 0 { "success" } else { "failed" });
+            cloud["lastSyncError"] = serde_json::json!(format!("status-only-{tick}"));
+            write_app_settings_inner(tmp.path(), &state, serde_json::json!({"cloudSync":cloud}))
+                .await
+                .unwrap();
+            let stored = read_app_settings_secure_inner(tmp.path(), &state)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(stored["cloudSync"], cloud);
+            assert_eq!(stored["recordTimestamps"], before["recordTimestamps"]);
+        }
+        cloud["frequency"] = serde_json::json!("hourly");
+        cloud["syncTargets"][0]["label"] = serde_json::json!("Renamed");
+        write_app_settings_inner(tmp.path(), &state, serde_json::json!({"cloudSync":cloud}))
+            .await
+            .unwrap();
+        let after = read_app_settings_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after["cloudSync"], cloud);
+        for key in [
+            "/key:cloudSync",
+            "/key:cloudSync/key:frequency",
+            "/key:cloudSync/key:syncTargets/id:s:target",
+        ] {
+            let record = &after["recordTimestamps"]["records"][key];
+            assert_eq!(record["history"].as_array().unwrap().len(), 2);
+            assert_eq!(record["updatedAtOrigin"], "recorded");
+        }
+    }
+
+    #[tokio::test]
+    async fn timestamps_writes_after_clock_rollback_keep_creation_and_append_tied_history() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        let future = "2099-01-01T00:00:00.000Z";
+        let mut document = serde_json::json!({"profiles":[{"id":"p","label":"Before"}]});
+        app_settings_timestamps::reconcile(&serde_json::json!({}), &mut document, future).unwrap();
+        std::fs::write(
+            tmp.path().join(SETTINGS_FILENAME),
+            serde_json::to_vec(&document).unwrap(),
+        )
+        .unwrap();
+        let update_generation = write_app_settings_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"profiles":[{"id":"p","label":"After"}]}),
+        )
+        .await
+        .unwrap();
+        let delete_generation =
+            write_app_settings_inner(tmp.path(), &state, serde_json::json!({"profiles":[]}))
+                .await
+                .unwrap();
+        assert!(delete_generation > update_generation);
+        let after = read_app_settings_secure_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        let record = &after["recordTimestamps"]["records"]["/key:profiles/id:s:p"];
+        assert_eq!(record["createdAt"], future);
+        assert_eq!(record["updatedAt"], future);
+        assert_eq!(record["deletedAt"], future);
+        assert_eq!(record["history"][1]["operation"], "updated");
+        assert_eq!(record["history"][2]["operation"], "deleted");
+    }
+
+    #[tokio::test]
+    async fn cloud_preferences_compare_exact_base_and_preserve_private_siblings() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        write_app_settings_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"dark","cloudSync":{"enabled":false}}),
+        )
+        .await
+        .unwrap();
+        write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"light"}),
+            serde_json::json!({"theme":"dark"}),
+        )
+        .await
+        .unwrap();
+        let stale = write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"system"}),
+            serde_json::json!({"theme":"dark"}),
+        )
+        .await
+        .unwrap_err();
+        assert!(stale.contains("changed"));
+        let value = read_app_settings_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(value["theme"], "light");
+        assert_eq!(value["cloudSync"]["enabled"], false);
+        assert!(write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"cloudSync":{"enabled":true}}),
+            serde_json::json!({})
+        )
+        .await
+        .is_err());
+        assert!(write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"iconLibrary":{}}),
+            serde_json::json!({})
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn cloud_preferences_detect_new_keys_and_unselected_base_changes() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        write_app_settings_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"dark","language":"en"}),
+        )
+        .await
+        .unwrap();
+        assert!(write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"light"}),
+            serde_json::json!({"theme":"dark","language":"fr"})
+        )
+        .await
+        .is_err());
+        assert!(write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"theme":"light"}),
+            serde_json::json!({})
+        )
+        .await
+        .is_err());
+        write_cloud_preferences_inner(
+            tmp.path(),
+            &state,
+            serde_json::json!({"colorScheme":"blue"}),
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            read_app_settings_inner(tmp.path(), &state)
+                .await
+                .unwrap()
+                .unwrap()["colorScheme"],
+            "blue"
+        );
+    }
 
     fn icon_library(label: &str) -> Value {
         serde_json::json!({"version":1,"customIcons":[],"builtInOverrides":{
@@ -1375,6 +2029,11 @@ mod tests {
             .unwrap();
         for index in 0..24 {
             assert_eq!(value[format!("key-{index}")], index);
+            assert_eq!(
+                value["recordTimestamps"]["records"][format!("/key:key-{index}")]
+                    ["createdAtOrigin"],
+                "recorded"
+            );
         }
         assert!(
             std::fs::read_dir(&dir)
@@ -1412,6 +2071,11 @@ mod tests {
             .unwrap();
         for index in 0..24 {
             assert_eq!(value[format!("key-{index}")], index);
+            assert_eq!(
+                value["recordTimestamps"]["records"][format!("/key:key-{index}")]
+                    ["createdAtOrigin"],
+                "recorded"
+            );
         }
     }
 

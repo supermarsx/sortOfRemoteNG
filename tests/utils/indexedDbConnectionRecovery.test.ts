@@ -49,6 +49,41 @@ beforeEach(async () => {
 });
 
 describe("IndexedDB connection recovery", () => {
+  it("counts raw UTF-8 bytes without decoding, reserializing, migrating or modifying records", async () => {
+    const db = connection();
+    const raw = '  { "name": "東京 é" }  ';
+    db.get
+      .mockResolvedValueOnce(raw)
+      .mockResolvedValueOnce("not json")
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce("");
+    mocks.openDB.mockResolvedValue(db);
+    localStorage.setItem("mremote-legacy-size", "{}");
+    expect(await IndexedDbService.getItemByteLengthStrict("db")).toBe(
+      Buffer.byteLength(raw, "utf8"),
+    );
+    expect(await IndexedDbService.getItemByteLengthStrict("opaque")).toBe(8);
+    expect(
+      await IndexedDbService.getItemByteLengthStrict("missing"),
+    ).toBeNull();
+    expect(await IndexedDbService.getItemByteLengthStrict("empty")).toBe(0);
+    expect(db.put).not.toHaveBeenCalled();
+    expect(db.delete).not.toHaveBeenCalled();
+    expect(localStorage.getItem("mremote-legacy-size")).toBe("{}");
+  });
+
+  it("reopens once for a byte-length read on a closed connection", async () => {
+    const old = connection();
+    const fresh = connection();
+    old.get.mockRejectedValue(closed());
+    fresh.get.mockResolvedValue('"é"');
+    mocks.openDB.mockResolvedValueOnce(old).mockResolvedValue(fresh);
+    expect(await IndexedDbService.getItemByteLengthStrict("db")).toBe(4);
+    expect(mocks.openDB).toHaveBeenCalledTimes(2);
+    expect(old.close).toHaveBeenCalledOnce();
+    expect(fresh.put).not.toHaveBeenCalled();
+  });
+
   it("shares one pending open across concurrent initializers and reads", async () => {
     const pending = deferred<ReturnType<typeof connection>>();
     const db = connection();

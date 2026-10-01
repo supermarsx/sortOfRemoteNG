@@ -67,6 +67,7 @@ use tauri::{AppHandle, Manager};
 // `sibling`) lives in `sorng_storage::sdbf` since t62 so the per-database
 // trust store can share it. Re-exported here so every existing caller and
 // this module's tests compile unchanged.
+use sorng_storage::database_size::{self, DatabaseFileSize};
 use sorng_storage::database_transaction;
 pub use sorng_storage::sdbf::*;
 
@@ -715,6 +716,20 @@ async fn encrypted_load(
 // ══════════════════════════════════════════════════════════════════
 // Tauri command surface
 // ══════════════════════════════════════════════════════════════════
+
+/// Current on-disk database sizes, available even while databases are locked.
+#[tauri::command]
+pub async fn get_database_file_sizes(
+    app: AppHandle,
+    database_ids: Vec<String>,
+) -> Result<Vec<DatabaseFileSize>, String> {
+    database_size::validate_database_ids(&database_ids)?;
+    if database_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let dir = databases_dir(&app).map_err(|_| "database size metadata unavailable".to_string())?;
+    database_size::get_database_file_sizes(&dir, database_ids).await
+}
 
 /// Read the list of `ConnectionDatabase` metadata from
 /// `<app_data>/databases/index.json`. Returns an empty vec on first

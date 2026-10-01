@@ -189,9 +189,10 @@ describe("cross-window database credential revision races", () => {
     expect((failure as Error).message).toContain(retained.name);
     expect((failure as Error).message).toContain(retained.id);
     expect((failure as Error).message).toContain("Review it before retrying");
-    expect(await second.loadDatabaseData(retained.id, oldPassword)).toEqual(
-      data,
-    );
+    const { recordMetadata, ...payload } =
+      (await second.loadDatabaseData(retained.id, oldPassword))!;
+    expect(payload).toEqual(data);
+    expect(recordMetadata?.version).toBe(1);
     await assertRotatedSourceIsIntact(second);
   });
 

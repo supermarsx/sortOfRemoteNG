@@ -54,7 +54,10 @@ import { useConnections } from "./contexts/useConnections";
 import { collectConnectionSubtreeIds } from "./utils/connection/recycleBin";
 import { ToastProvider } from "./contexts/ToastContext";
 import type { DatabaseOpenObserver } from "./types/connection/databaseOpening";
-import { isDatabaseOpenCancellation } from "./utils/connection/databaseOpening";
+import {
+  databaseAccessErrorMessage,
+  isDatabaseOpenCancellation,
+} from "./utils/connection/databaseOpening";
 import { useDatabaseOpenNotification } from "./hooks/connection/useDatabaseOpenNotification";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { SessionFullscreenProvider } from "./contexts/SessionFullscreenProvider";
@@ -772,9 +775,12 @@ const AppContent: React.FC = () => {
           );
         } else {
           showAlert(
-            t(
-              "databaseCenter.errors.accessFailed",
-              "Failed to access collection. Please check your password.",
+            databaseAccessErrorMessage(
+              error,
+              t(
+                "databaseCenter.errors.openFailed",
+                "Failed to access collection.",
+              ),
             ),
           );
         }

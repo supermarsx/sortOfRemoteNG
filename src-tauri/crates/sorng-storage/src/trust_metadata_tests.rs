@@ -83,6 +83,7 @@ async fn metadata_edit_is_one_atomic_write_for_tls_and_ssh_without_changing_trus
     for kind in ["https", "ssh"] {
         let before = record(kind);
         save_record(runtime, before.clone());
+        let before = runtime.export(Some("db")).unwrap().records.remove(0);
         let disk_before = std::fs::read(&path).unwrap();
         let metadata = edit(&before);
         assert_eq!(
@@ -93,6 +94,16 @@ async fn metadata_edit_is_one_atomic_write_for_tls_and_ssh_without_changing_trus
         let mut expected = before.clone();
         expected.tags = metadata.tags;
         expected.description = metadata.description;
+        let prior = before.timestamps.as_ref().unwrap();
+        let next = after.timestamps.as_ref().unwrap();
+        assert_eq!(next.created_at, prior.created_at);
+        assert_eq!(next.created_at_source, prior.created_at_source);
+        assert_eq!(next.updated_at_source, TrustTimestampSource::Recorded);
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&next.updated_at).unwrap()
+                > chrono::DateTime::parse_from_rfc3339(&prior.updated_at).unwrap()
+        );
+        expected.timestamps = after.timestamps.clone();
         assert_eq!(
             serde_json::to_value(&after).unwrap(),
             serde_json::to_value(&expected).unwrap()

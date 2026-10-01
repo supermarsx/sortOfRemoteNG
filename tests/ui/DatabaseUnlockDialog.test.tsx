@@ -7,7 +7,9 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import { ManagedDatabaseUnlockDialog } from "../../src/components/encryption/DatabaseUnlockDialog";
+import { ManagedDatabaseUnlockForm } from "../../src/components/encryption/ManagedDatabaseUnlockForm";
 import type { DatabaseProtectionStatus } from "../../src/types/encryption/databaseProtection";
 
 const fixture = vi.hoisted(() => ({ unlock: vi.fn() }));
@@ -28,9 +30,15 @@ const status: DatabaseProtectionStatus = {
       label: "Recovery password",
       deviceBound: false,
     },
-    { id: "vault", type: "os-vault", label: "This device", deviceBound: true },
   ],
 };
+const vaultSlot = {
+  id: "vault",
+  type: "os-vault" as const,
+  label: "This device",
+  deviceBound: true,
+};
+const withVault = { ...status, slots: [...status.slots, vaultSlot] };
 beforeEach(() => {
   fixture.unlock.mockReset().mockResolvedValue(undefined);
 });
@@ -97,6 +105,7 @@ describe("database authentication popup", () => {
       target: { value: "fixture-secret" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    expect(screen.getByLabelText("Database password")).toBeDisabled();
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(dialog.parentElement!);
     fireEvent.click(
@@ -109,26 +118,51 @@ describe("database authentication popup", () => {
     await act(async () => resolve());
     expect(completed).toHaveBeenCalledOnce();
   });
-  it("offers vault use only after explicit selection and keeps an auth failure in the popup", async () => {
+  it("tries the vault first and falls back to the password form without retrying automatically", async () => {
     const progress = vi.fn();
     fixture.unlock.mockRejectedValueOnce(new Error("Vault access unavailable"));
     render(
       <ManagedDatabaseUnlockDialog
         databaseId="work"
         databaseName="Work database"
-        status={status}
+        status={withVault}
         onClose={vi.fn()}
         onUnlockProgress={progress}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Database unlock method"), {
-      target: { value: "vault" },
-    });
-    expect(fixture.unlock).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText("Database password")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     await screen.findByText("Vault access unavailable");
-    expect(progress.mock.calls).toEqual([["unlocking"], ["failed"]]);
+    expect(fixture.unlock).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Database password")).toBeInTheDocument();
+    const method = screen.getByRole("combobox", {
+      name: "Database unlock method",
+    });
+    expect(method).toHaveClass("sor-form-select", "sor-select-trigger");
+    expect(screen.getByRole("dialog").querySelector("select")).toBeNull();
+    fireEvent.click(method);
+    expect(screen.getByRole("dialog")).toContainElement(
+      screen.getByRole("listbox"),
+    );
+    expect(
+      screen.getByRole("listbox").closest(".sor-select-dropdown"),
+    ).toHaveClass("sor-popover-panel");
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "This device (OS vault · this device)",
+      }),
+    );
+    expect(fixture.unlock).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText("Database password")).toBeNull();
+    fixture.unlock.mockRejectedValueOnce(new Error("Vault still unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    await screen.findByText("Vault still unavailable");
+    expect(fixture.unlock).toHaveBeenCalledTimes(2);
+    expect(progress.mock.calls).toEqual([
+      ["unlocking"],
+      ["waiting-unlock"],
+      ["unlocking"],
+      ["failed"],
+    ]);
     expect(fixture.unlock).toHaveBeenCalledWith("work", "vault", undefined, {
       isCurrent: expect.any(Function),
     });
@@ -138,5 +172,247 @@ describe("database authentication popup", () => {
         screen.getByRole("button", { name: "Cancel database unlock" }),
       ).not.toBeDisabled(),
     );
+  });
+
+  it("keeps unsupported unlock methods disabled in the themed menu", () => {
+    render(
+      <ManagedDatabaseUnlockForm
+        databaseId="work"
+        preferPassword
+        status={{
+          ...withVault,
+          slots: [
+            ...withVault.slots,
+            {
+              id: "biometric",
+              type: "biometric",
+              label: "Fingerprint",
+              deviceBound: true,
+            },
+          ],
+        }}
+      />,
+    );
+    const method = screen.getByRole("combobox", {
+      name: "Database unlock method",
+    });
+    fireEvent.click(method);
+    const unsupported = screen.getByRole("option", {
+      name: "Fingerprint (biometric)",
+    });
+    expect(unsupported).toHaveAttribute("aria-disabled", "true");
+    fireEvent.mouseDown(unsupported);
+    expect(method).toHaveTextContent("Recovery password (password)");
+    expect(screen.getByLabelText("Database password")).toBeInTheDocument();
+    expect(fixture.unlock).not.toHaveBeenCalled();
+    fireEvent.keyDown(method, { key: "ArrowDown" });
+    fireEvent.keyDown(method, { key: "Enter" });
+    expect(method).toHaveTextContent("This device (OS vault · this device)");
+    expect(fixture.unlock).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    "unlocks through the OS vault without a dialog (with recovery password: %s)",
+    async (recovery) => {
+      const completed = vi.fn();
+      const progress = vi.fn();
+      render(
+        <StrictMode>
+          <ManagedDatabaseUnlockDialog
+            databaseId="work"
+            databaseName="Work"
+            status={recovery ? withVault : { ...status, slots: [vaultSlot] }}
+            onClose={vi.fn()}
+            onUnlockComplete={completed}
+            onUnlockProgress={progress}
+          />
+        </StrictMode>,
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByRole("status")).toHaveTextContent("OS vault");
+      await waitFor(() => expect(completed).toHaveBeenCalledOnce());
+      expect(fixture.unlock).toHaveBeenCalledExactlyOnceWith(
+        "work",
+        "vault",
+        undefined,
+        { isCurrent: expect.any(Function) },
+      );
+      expect(progress).toHaveBeenCalledWith("unlocking");
+      expect(screen.queryByRole("combobox")).toBeNull();
+    },
+  );
+
+  it("ignores a vault completion after the explicit unlock UI is unmounted", async () => {
+    let resolve!: () => void;
+    fixture.unlock.mockImplementation(
+      () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    );
+    const completed = vi.fn();
+    const view = render(
+      <ManagedDatabaseUnlockDialog
+        databaseId="work"
+        databaseName="Work"
+        status={withVault}
+        onClose={vi.fn()}
+        onUnlockComplete={completed}
+      />,
+    );
+    await waitFor(() => expect(fixture.unlock).toHaveBeenCalledOnce());
+    const isCurrent = fixture.unlock.mock.calls[0][3].isCurrent;
+    expect(isCurrent()).toBe(true);
+    view.unmount();
+    expect(isCurrent()).toBe(false);
+    await act(async () => resolve());
+    expect(completed).not.toHaveBeenCalled();
+  });
+
+  it("does not unlock from the lock/expiry form until the user presses Unlock", async () => {
+    render(<ManagedDatabaseUnlockForm databaseId="work" status={withVault} />);
+    expect(fixture.unlock).not.toHaveBeenCalled();
+    expect(screen.getByRole("combobox")).toHaveTextContent("OS vault");
+    expect(screen.queryByLabelText("Database password")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    await waitFor(() => expect(fixture.unlock).toHaveBeenCalledOnce());
+    expect(fixture.unlock).toHaveBeenCalledWith("work", "vault", undefined, {
+      isCurrent: expect.any(Function),
+    });
+  });
+
+  it("invalidates an old vault request when the database or protection revision changes", async () => {
+    let resolveOld!: () => void;
+    fixture.unlock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    const oldCompleted = vi.fn();
+    const newCompleted = vi.fn();
+    const { rerender } = render(
+      <ManagedDatabaseUnlockDialog
+        databaseId="work"
+        databaseName="Work"
+        status={withVault}
+        onClose={vi.fn()}
+        onUnlockComplete={oldCompleted}
+      />,
+    );
+    await waitFor(() => expect(fixture.unlock).toHaveBeenCalledOnce());
+    const isOldCurrent = fixture.unlock.mock.calls[0][3].isCurrent;
+    rerender(
+      <ManagedDatabaseUnlockDialog
+        databaseId="other"
+        databaseName="Other"
+        status={{ ...withVault, securityRevision: "r2" }}
+        onClose={vi.fn()}
+        onUnlockComplete={newCompleted}
+      />,
+    );
+    expect(isOldCurrent()).toBe(false);
+    await waitFor(() => expect(newCompleted).toHaveBeenCalledOnce());
+    await act(async () => resolveOld());
+    expect(oldCompleted).not.toHaveBeenCalled();
+    expect(newCompleted).toHaveBeenCalledOnce();
+    expect(fixture.unlock).toHaveBeenCalledTimes(2);
+    expect(fixture.unlock).toHaveBeenLastCalledWith(
+      "other",
+      "vault",
+      undefined,
+      {
+        isCurrent: expect.any(Function),
+      },
+    );
+  });
+
+  it("allows recovery password authentication after a vault failure", async () => {
+    fixture.unlock.mockRejectedValueOnce(new Error("No key on this device"));
+    const completed = vi.fn();
+    render(
+      <ManagedDatabaseUnlockDialog
+        databaseId="work"
+        databaseName="Work"
+        status={withVault}
+        onClose={vi.fn()}
+        onUnlockComplete={completed}
+      />,
+    );
+    const password = await screen.findByLabelText("Database password");
+    fireEvent.change(password, {
+      target: { value: "fixture-recovery-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    await waitFor(() => expect(completed).toHaveBeenCalledOnce());
+    expect(fixture.unlock).toHaveBeenCalledTimes(2);
+    expect(fixture.unlock).toHaveBeenLastCalledWith(
+      "work",
+      "password",
+      "fixture-recovery-password",
+      { isCurrent: expect.any(Function) },
+    );
+    expect(password).toHaveValue("");
+  });
+
+  it("hides the selector for a vault-only form and permits an explicit retry after failure", async () => {
+    fixture.unlock.mockRejectedValueOnce(new Error("Vault unavailable"));
+    const close = vi.fn();
+    render(
+      <ManagedDatabaseUnlockDialog
+        databaseId="work"
+        databaseName="Work"
+        status={{ ...status, slots: [vaultSlot] }}
+        onClose={close}
+      />,
+    );
+    await screen.findByText("Vault unavailable");
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByLabelText("Database password")).toBeNull();
+    expect(fixture.unlock).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    await waitFor(() => expect(fixture.unlock).toHaveBeenCalledTimes(2));
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("does not guess between multiple enrolled OS vault slots", () => {
+    render(
+      <ManagedDatabaseUnlockDialog
+        databaseId="work"
+        databaseName="Work"
+        status={{
+          ...withVault,
+          slots: [
+            ...withVault.slots,
+            { ...vaultSlot, id: "other-vault", label: "Other device" },
+          ],
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(fixture.unlock).not.toHaveBeenCalled();
+  });
+
+  it("closes an abandoned vault request without reopening a password prompt", async () => {
+    fixture.unlock.mockRejectedValueOnce(
+      new DOMException("Cancelled", "AbortError"),
+    );
+    const close = vi.fn();
+    const progress = vi.fn();
+    render(
+      <ManagedDatabaseUnlockDialog
+        databaseId="work"
+        databaseName="Work"
+        status={withVault}
+        onClose={close}
+        onUnlockProgress={progress}
+      />,
+    );
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(progress).toHaveBeenLastCalledWith("cancelled");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(fixture.unlock).toHaveBeenCalledOnce();
   });
 });

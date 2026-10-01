@@ -1,0 +1,227 @@
+[
+  {
+    "name": "all historical evidence with offset and nanosecond extrema",
+    "record": {
+      "host": "fixture:443",
+      "record_type": "tls",
+      "user_approved": true,
+      "identity": {
+        "kind": "tls",
+        "fingerprint": "aa",
+        "first_seen": "2021-01-01T00:00:00Z",
+        "last_seen": "2022-01-01T00:00:00Z"
+      },
+      "first_trusted": "2020-01-01T00:00:00Z",
+      "history": [
+        {
+          "identity": {
+            "kind": "tls",
+            "fingerprint": "old",
+            "first_seen": "2018-01-01T01:30:00.000000001+01:30",
+            "last_seen": "2019-01-01T00:00:00Z"
+          },
+          "changed_at": "2018-01-01T00:00:00.000000002Z",
+          "reason": "initial",
+          "verification_count": 0,
+          "trust_score": 0
+        }
+      ],
+      "stats": {
+        "total_checks": 2,
+        "match_count": 1,
+        "mismatch_count": 1,
+        "last_verified": "2024-01-01T00:00:00.123456788Z",
+        "last_mismatch": "2024-01-01T00:00:00.123456789Z",
+        "trust_score": 0
+      }
+    },
+    "expected": {
+      "version": 1,
+      "created_at": "2018-01-01T00:00:00.000000001+00:00",
+      "updated_at": "2024-01-01T00:00:00.123456789+00:00",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "millisecond and microsecond auto precision with excess fraction truncation",
+    "record": {
+      "host": "fixture:22",
+      "record_type": "ssh",
+      "user_approved": true,
+      "history": [],
+      "timestamps": null,
+      "identity": {
+        "kind": "ssh",
+        "fingerprint": "aa",
+        "first_seen": "2020-01-01t01:00:00.12+01:00",
+        "last_seen": "2020-01-01 00:00:00.123456000999z"
+      }
+    },
+    "expected": {
+      "version": 1,
+      "created_at": "2020-01-01T00:00:00.120+00:00",
+      "updated_at": "2020-01-01T00:00:00.123456+00:00",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "no evidence uses unknown epoch and ignores certificate validity and expiry",
+    "record": {
+      "host": "fixture:443",
+      "record_type": "https",
+      "user_approved": false,
+      "history": [],
+      "identity": {
+        "kind": "tls",
+        "fingerprint": "aa",
+        "first_seen": "",
+        "last_seen": "2024-02-30T00:00:00Z",
+        "valid_from": "2000-01-01T00:00:00Z",
+        "valid_to": "2099-01-01T00:00:00Z"
+      },
+      "first_trusted": "2020-01-01",
+      "trust_expires": "2099-01-01T00:00:00Z"
+    },
+    "expected": {
+      "version": 1,
+      "created_at": "1970-01-01T00:00:00+00:00",
+      "updated_at": "1970-01-01T00:00:00+00:00",
+      "created_at_source": "unknown",
+      "updated_at_source": "unknown"
+    }
+  },
+  {
+    "name": "history change time and zero fractional formatting",
+    "record": {
+      "host": "fixture:443",
+      "record_type": "certificate",
+      "user_approved": true,
+      "identity": {
+        "kind": "tls",
+        "fingerprint": "aa",
+        "first_seen": "invalid",
+        "last_seen": "2024-02-29T23:59:59.0000000000-00:00"
+      },
+      "history": [
+        {
+          "identity": {
+            "kind": "tls",
+            "fingerprint": "old",
+            "first_seen": "",
+            "last_seen": ""
+          },
+          "changed_at": "2015-01-01T00:00:00Z",
+          "reason": "migrated",
+          "verification_count": 0,
+          "trust_score": 0
+        }
+      ]
+    },
+    "expected": {
+      "version": 1,
+      "created_at": "2015-01-01T00:00:00+00:00",
+      "updated_at": "2024-02-29T23:59:59+00:00",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "UTC date rollover and year below one hundred",
+    "record": {
+      "host": "fixture:3389",
+      "record_type": "rdp",
+      "user_approved": true,
+      "history": [],
+      "identity": {
+        "kind": "tls",
+        "fingerprint": "aa",
+        "first_seen": "0099-01-01T00:15:00+00:30",
+        "last_seen": "0099-01-01T23:30:00-01:00"
+      }
+    },
+    "expected": {
+      "version": 1,
+      "created_at": "0098-12-31T23:45:00+00:00",
+      "updated_at": "0099-01-02T00:30:00+00:00",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "leap second nanoseconds sort before the next minute",
+    "record": {
+      "host": "fixture:443",
+      "record_type": "tls",
+      "user_approved": true,
+      "history": [],
+      "identity": {
+        "kind": "tls",
+        "fingerprint": "aa",
+        "first_seen": "2016-12-31T23:59:60.123456789Z",
+        "last_seen": "2017-01-01T00:00:00Z"
+      }
+    },
+    "expected": {
+      "version": 1,
+      "created_at": "2016-12-31T23:59:60.123456789+00:00",
+      "updated_at": "2017-01-01T00:00:00+00:00",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "nanosecond ordering before epoch and unicode negative offset",
+    "record": {
+      "host": "fixture:22",
+      "record_type": "ssh",
+      "user_approved": true,
+      "history": [],
+      "identity": {
+        "kind": "ssh",
+        "fingerprint": "aa",
+        "first_seen": "1969-12-31T23:59:59.999999998Z",
+        "last_seen": "1969-12-31T22:59:59.999999999\u221201:00"
+      }
+    },
+    "expected": {
+      "version": 1,
+      "created_at": "1969-12-31T23:59:59.999999998+00:00",
+      "updated_at": "1969-12-31T23:59:59.999999999+00:00",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  },
+  {
+    "name": "invalid time offset and trailing whitespace are ignored",
+    "record": {
+      "host": "fixture:443",
+      "record_type": "tls",
+      "user_approved": true,
+      "history": [],
+      "identity": {
+        "kind": "tls",
+        "fingerprint": "aa",
+        "first_seen": "2024-01-01T24:00:00Z",
+        "last_seen": "2024-01-01T00:00:00+24:00"
+      },
+      "first_trusted": "2024-01-01T00:00:00Z\n",
+      "stats": {
+        "total_checks": 1,
+        "match_count": 1,
+        "mismatch_count": 0,
+        "last_verified": "2023-01-01T00:00:00.000001Z",
+        "last_mismatch": "2024-01-01T00:00:61Z",
+        "trust_score": 0
+      }
+    },
+    "expected": {
+      "version": 1,
+      "created_at": "2023-01-01T00:00:00.000001+00:00",
+      "updated_at": "2023-01-01T00:00:00.000001+00:00",
+      "created_at_source": "inferred",
+      "updated_at_source": "inferred"
+    }
+  }
+]

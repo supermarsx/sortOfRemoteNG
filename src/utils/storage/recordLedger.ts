@@ -1,0 +1,745 @@
+/** Private database metadata. No payload bodies or historical copies belong here. */
+export type RecordStampSource = "record" | "inferred" | "observed";
+
+export interface RecordStamp {
+  createdAt: string;
+  updatedAt: string;
+  createdAtSource: RecordStampSource;
+  updatedAtSource: RecordStampSource;
+  /** Opaque token; consumers must not interpret or increment it. */
+  revision: string;
+  contentHash: string;
+  deletedAt?: string;
+}
+
+export interface RecordChange {
+  record: string;
+  revision: string;
+  parentRevision?: string;
+  timestamp: string;
+  kind: "migrate" | "create" | "update" | "delete" | "restore";
+}
+
+export interface RecordLedger {
+  version: 1;
+  records: Record<string, RecordStamp>;
+  journal: RecordChange[];
+}
+
+type Json = null | boolean | number | string | Json[] | JsonObject;
+interface JsonObject {
+  [key: string]: Json;
+}
+type Dates = Pick<
+  RecordStamp,
+  "createdAt" | "updatedAt" | "createdAtSource" | "updatedAtSource"
+>;
+
+// Bounds apply to the complete ledger, including tombstones and old journal
+// entries. Reaching one rejects the operation; history is never truncated.
+const MAX_RECORDS = 200_000;
+const MAX_JOURNAL = 1_000_000;
+const MAX_DEPTH = 64;
+const MAX_NODES = 4_000_000;
+const MAX_METADATA_BYTES = 128 * 1024 * 1024;
+const MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
+const MAX_HASH_BYTES = 256 * 1024 * 1024;
+const MAX_PATH = 4096;
+const EPOCH = "1970-01-01T00:00:00.000Z";
+const forbidden = new Set(["__proto__", "prototype", "constructor"]);
+const dictionaries = new Set([
+  "settings",
+  "databaseSettings",
+  "colorTags",
+  "provenance",
+  "modifiedDefaults",
+]);
+const recordArrays = new Set([
+  "$/connections",
+  "$/tabGroups",
+  "$/documents/documents",
+  "$/documents/attachments",
+  "$/documents/people",
+  "$/documents/tickets",
+  "$/credentialVault/entries",
+  "$/recycleBin/entries",
+  "$/automationLibrary/terminalScripts/customScripts",
+  "$/automationLibrary/terminalScripts/modifiedDefaults",
+  "$/automationLibrary/terminalMacros",
+  "$/automationLibrary/website/scripts",
+  "$/automationLibrary/website/macros",
+  // The same libraries can also be persisted as standalone global payloads.
+  "$/terminalScripts/customScripts",
+  "$/terminalScripts/modifiedDefaults",
+  "$/terminalMacros",
+  "$/website/scripts",
+  "$/website/macros",
+  "$/scripts",
+  "$/macros",
+]);
+function invalid(reason: string): never {
+  // Deliberately never interpolate keys, IDs, or values from private payloads.
+  throw new Error(
+    `Invalid record ledger: ${reason}. Existing metadata was retained.`,
+  );
+}
+const isObject = (value: Json): value is JsonObject =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Clone data descriptors only: do not invoke getters, toJSON, or runtime APIs. */
+function jsonSnapshot(
+  value: unknown,
+  maxBytes: number,
+  skipRootMetadata = false,
+  serializeDates = false,
+): Json {
+  let nodes = 0;
+  let bytes = 0;
+  const ancestors = new Set<object>();
+  const charge = (amount: number) => {
+    bytes += amount;
+    if (bytes > maxBytes) invalid("JSON byte limit exceeded");
+  };
+  const copy = (input: unknown, depth: number): Json => {
+    if (++nodes > MAX_NODES || depth > MAX_DEPTH)
+      invalid("JSON complexity limit exceeded");
+    if (input === null || typeof input === "boolean") {
+      charge(5);
+      return input;
+    }
+    if (typeof input === "string") {
+      if (input.length > maxBytes) invalid("JSON byte limit exceeded");
+      charge(byteLength(JSON.stringify(input)));
+      return input;
+    }
+    if (typeof input === "number" && Number.isFinite(input)) {
+      charge(24);
+      return input;
+    }
+    if (!input || typeof input !== "object") invalid("non-JSON value");
+    const array = Array.isArray(input);
+    const proto = Object.getPrototypeOf(input);
+    // Runtime connection timestamps are Dates. Convert them only at the
+    // persistence boundary; ledger validation itself remains JSON-only.
+    if (serializeDates && proto === Date.prototype) {
+      if (
+        Reflect.ownKeys(input).length !== 0 ||
+        !Number.isFinite(Date.prototype.getTime.call(input))
+      )
+        invalid("invalid runtime date");
+      return copy(Date.prototype.toISOString.call(input), depth);
+    }
+    if (
+      array
+        ? proto !== Array.prototype
+        : proto !== Object.prototype && proto !== null
+    )
+      invalid("runtime object");
+    if (
+      array &&
+      (input as unknown[]).length >
+        (maxBytes === MAX_METADATA_BYTES ? MAX_JOURNAL : MAX_NODES)
+    )
+      invalid("JSON array count limit exceeded");
+    if (ancestors.has(input)) invalid("cyclic JSON");
+    ancestors.add(input);
+    const keys = Reflect.ownKeys(input);
+    if (keys.length > MAX_NODES - nodes)
+      invalid("JSON complexity limit exceeded");
+    const output: JsonObject | Json[] = array ? [] : Object.create(null);
+    let items = 0;
+    for (const key of keys.sort((a, b) =>
+      String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0,
+    )) {
+      if (typeof key !== "string" || forbidden.has(key))
+        invalid("unsafe JSON key");
+      if (array && key === "length") continue;
+      if (key.length > MAX_PATH) invalid("JSON key limit exceeded");
+      const descriptor = Object.getOwnPropertyDescriptor(input, key)!;
+      if (!descriptor.enumerable || !("value" in descriptor))
+        invalid("non-data JSON property");
+      if (skipRootMetadata && depth === 0 && key === "recordMetadata") continue;
+      // Match JSON.stringify for optional object properties. Array omissions
+      // have positional meaning and are rejected, as are sparse arrays.
+      if (!array && descriptor.value === undefined) continue;
+      charge(byteLength(JSON.stringify(key)) + 2);
+      if (array) {
+        if (
+          !/^(0|[1-9]\d*)$/.test(key) ||
+          Number(key) >= (input as unknown[]).length
+        )
+          invalid("non-JSON array property");
+        (output as Json[])[Number(key)] = copy(descriptor.value, depth + 1);
+        items++;
+      } else {
+        (output as JsonObject)[key] = copy(descriptor.value, depth + 1);
+      }
+    }
+    if (array && items !== (input as unknown[]).length)
+      invalid("sparse JSON array");
+    ancestors.delete(input);
+    charge(2);
+    return output;
+  };
+  return copy(value, 0);
+}
+
+/** Freeze a runtime draft as persisted JSON without invoking getters/toJSON. */
+export function snapshotRecordPayload<T extends object>(value: T): T {
+  const descriptor = Object.getOwnPropertyDescriptor(value, "recordMetadata");
+  const metadata = normalizeRecordLedger(
+    descriptor && "value" in descriptor ? descriptor.value : undefined,
+  );
+  const payload = object(jsonSnapshot(value, MAX_PAYLOAD_BYTES, true, true));
+  if (metadata !== undefined)
+    payload.recordMetadata = metadata as unknown as Json;
+  return payload as T;
+}
+
+function byteLength(value: string): number {
+  return /[^\x20-\x7e]/.test(value)
+    ? new TextEncoder().encode(value).byteLength
+    : value.length;
+}
+
+function hasControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
+}
+
+/** Zoned instants or ISO calendar dates (UTC midnight); numeric legacy times are ms. */
+function timestamp(value: Json | undefined): string | undefined {
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) return undefined;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) &&
+      date.getUTCFullYear() >= 0 &&
+      date.getUTCFullYear() <= 9999
+      ? date.toISOString()
+      : undefined;
+  }
+  if (typeof value !== "string") return undefined;
+  // Existing script/connection fixtures also persist ISO calendar dates. Their
+  // UTC interpretation is deterministic; timezone-free date-times are not.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) value += "T00:00:00.000Z";
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/.exec(
+      value,
+    );
+  if (!match) return undefined;
+  const [, y, m, d, h, min, s, , zone] = match;
+  const year = Number(y),
+    month = Number(m),
+    day = Number(d);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > days[month - 1] ||
+    Number(h) > 23 ||
+    Number(min) > 59 ||
+    Number(s) > 59 ||
+    (zone !== "Z" &&
+      (Number(zone.slice(1, 3)) > 23 || Number(zone.slice(4)) > 59))
+  )
+    return undefined;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? timestamp(time) : undefined;
+}
+
+function utc(value: Json | undefined): string {
+  if (typeof value !== "string" || !value.endsWith("Z"))
+    invalid("UTC timestamp required");
+  return timestamp(value) ?? invalid("invalid timestamp");
+}
+
+function source(value: Json | undefined): RecordStampSource {
+  if (value === "record" || value === "inferred" || value === "observed")
+    return value;
+  return invalid("invalid timestamp provenance");
+}
+
+function token(value: Json | undefined): string {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > 256 ||
+    hasControlCharacters(value)
+  )
+    invalid("invalid revision");
+  return value;
+}
+
+function object(
+  value: Json | undefined,
+  fields?: readonly string[],
+): JsonObject {
+  if (value === undefined || !isObject(value)) invalid("object required");
+  if (fields && Object.keys(value).some((key) => !fields.includes(key)))
+    invalid("unexpected metadata field");
+  return value;
+}
+
+function encode(value: string): string {
+  try {
+    return encodeURIComponent(value);
+  } catch {
+    return invalid("invalid identity encoding");
+  }
+}
+
+function recordKey(value: Json | undefined): string {
+  if (typeof value !== "string" || value.length > MAX_PATH)
+    invalid("invalid record path");
+  if (value === "$") return value;
+  const parts = value.split("/");
+  if (
+    parts.shift() !== "$" ||
+    parts.length === 0 ||
+    parts[0].startsWith("@") ||
+    parts[0] === "recordMetadata" ||
+    parts[0] === "timestamp"
+  )
+    invalid("invalid record path");
+  for (const part of parts) {
+    const identity = part.startsWith("@");
+    const encoded = identity ? part.slice(1) : part;
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(encoded);
+    } catch {
+      return invalid("invalid record path encoding");
+    }
+    if (
+      encode(decoded) !== encoded ||
+      forbidden.has(decoded) ||
+      (identity &&
+        (!decoded.trim() ||
+          decoded.length > 512 ||
+          hasControlCharacters(decoded)))
+    )
+      invalid("invalid record path segment");
+  }
+  return value;
+}
+
+/** Undefined means legacy absence. Present corrupt/future metadata always throws. */
+export function normalizeRecordLedger(
+  value: unknown,
+): RecordLedger | undefined {
+  if (value === undefined) return undefined;
+  const raw = object(jsonSnapshot(value, MAX_METADATA_BYTES), [
+    "version",
+    "records",
+    "journal",
+  ]);
+  if (raw.version !== 1) invalid("unsupported version");
+  const rawRecords = object(raw.records);
+  const keys = Object.keys(rawRecords);
+  if (!keys.includes("$") || keys.length > MAX_RECORDS)
+    invalid("record count limit or missing root");
+  if (!Array.isArray(raw.journal) || raw.journal.length > MAX_JOURNAL)
+    invalid("journal limit or invalid journal");
+  const records: Record<string, RecordStamp> = Object.create(null);
+  for (const key of keys) {
+    recordKey(key);
+    const stamp = object(rawRecords[key], [
+      "createdAt",
+      "updatedAt",
+      "createdAtSource",
+      "updatedAtSource",
+      "revision",
+      "contentHash",
+      "deletedAt",
+    ]);
+    const createdAt = utc(stamp.createdAt),
+      updatedAt = utc(stamp.updatedAt);
+    if (createdAt > updatedAt) invalid("timestamps out of order");
+    if (
+      typeof stamp.contentHash !== "string" ||
+      !/^[a-f0-9]{64}$/.test(stamp.contentHash)
+    )
+      invalid("invalid content hash");
+    records[key] = {
+      createdAt,
+      updatedAt,
+      createdAtSource: source(stamp.createdAtSource),
+      updatedAtSource: source(stamp.updatedAtSource),
+      revision: token(stamp.revision),
+      contentHash: stamp.contentHash,
+    };
+    if ("deletedAt" in stamp) {
+      const deletedAt = utc(stamp.deletedAt);
+      if (key === "$" || deletedAt !== updatedAt)
+        invalid("invalid tombstone timestamp");
+      records[key].deletedAt = deletedAt;
+    }
+  }
+  const latest = new Map<string, RecordChange>();
+  const revisions = new Set<string>();
+  const journal: RecordChange[] = [];
+  for (const entry of raw.journal) {
+    const change = object(entry, [
+      "record",
+      "revision",
+      "parentRevision",
+      "timestamp",
+      "kind",
+    ]);
+    const key = recordKey(change.record),
+      revision = token(change.revision),
+      time = utc(change.timestamp);
+    const stamp = records[key];
+    if (!stamp || revisions.has(revision))
+      invalid("unknown record or duplicate revision");
+    const prior = latest.get(key);
+    const kind = change.kind;
+    if (!prior) {
+      if (
+        (kind !== "create" && kind !== "migrate") ||
+        "parentRevision" in change ||
+        time < stamp.createdAt
+      )
+        invalid("invalid initial history");
+      if (
+        kind === "create"
+          ? stamp.createdAtSource !== "observed" || stamp.createdAt !== time
+          : stamp.createdAtSource === "observed"
+      )
+        invalid("inconsistent creation provenance");
+    } else {
+      if (
+        token(change.parentRevision) !== prior.revision ||
+        time <= prior.timestamp ||
+        (prior.kind === "delete"
+          ? kind !== "restore"
+          : kind !== "update" && kind !== "delete")
+      )
+        invalid("broken revision history");
+    }
+    const event: RecordChange = {
+      record: key,
+      revision,
+      timestamp: time,
+      kind: kind as RecordChange["kind"],
+    };
+    if (prior) event.parentRevision = prior.revision;
+    journal.push(event);
+    latest.set(key, event);
+    revisions.add(revision);
+  }
+  for (const [key, stamp] of Object.entries(records)) {
+    const last = latest.get(key);
+    if (
+      !last ||
+      last.revision !== stamp.revision ||
+      last.timestamp !== stamp.updatedAt ||
+      (last.kind === "delete") !== (stamp.deletedAt !== undefined) ||
+      (last.kind === "migrate"
+        ? stamp.updatedAtSource === "observed"
+        : last.kind === "create"
+          ? stamp.updatedAtSource !== "observed"
+          : stamp.updatedAtSource === "record")
+    )
+      invalid("stamp does not match history");
+    if (key !== "$") {
+      const parts = key.split("/");
+      if (!records[`$/${parts[1]}`]) invalid("missing section record");
+      while (parts.length > 1) {
+        parts.pop();
+        if (records[parts.join("/")]?.deletedAt && !stamp.deletedAt)
+          invalid("live record beneath tombstone");
+      }
+    }
+  }
+  return { version: 1, records, journal };
+}
+
+function legacyDates(value: Json, enclosing: string): Dates {
+  const raw = isObject(value) ? value : {};
+  const created =
+    timestamp(raw.createdAt) ??
+    timestamp(raw.created_at) ??
+    timestamp(raw.first_trusted);
+  const updated = timestamp(raw.updatedAt) ?? timestamp(raw.updated_at);
+  const fallback = timestamp(raw.timestamp) ?? enclosing;
+  if (created && updated && created > updated)
+    invalid("record timestamps out of order");
+  return {
+    createdAt: created ?? (updated && updated < fallback ? updated : fallback),
+    updatedAt: updated ?? (created && created > fallback ? created : fallback),
+    createdAtSource: created ? "record" : "inferred",
+    updatedAtSource: updated ? "record" : "inferred",
+  };
+}
+
+interface Candidate {
+  key: string;
+  value: Json;
+  dates: Dates;
+}
+
+function enumerate(payload: JsonObject, prior?: RecordLedger): Candidate[] {
+  const candidates = new Map<string, Candidate>();
+  const knownArrays = new Set(recordArrays);
+  // Losing all IDs in a formerly identified collection is corruption, not a
+  // request to turn each old record into a tombstone plus anonymous content.
+  for (const key of Object.keys(prior?.records ?? {})) {
+    const parts = key.split("/");
+    for (let index = 1; index < parts.length; index++) {
+      if (parts[index].startsWith("@"))
+        knownArrays.add(parts.slice(0, index).join("/"));
+    }
+  }
+  const add = (key: string, value: Json, dates: Dates) => {
+    recordKey(key);
+    if (candidates.has(key)) invalid("duplicate record identity");
+    if (candidates.size >= MAX_RECORDS) invalid("record count limit exceeded");
+    candidates.set(key, { key, value, dates });
+  };
+  const walk = (
+    value: Json,
+    path: string | undefined,
+    enclosing: string,
+    field: string,
+  ) => {
+    const dates = legacyDates(value, enclosing);
+    if (Array.isArray(value)) {
+      // Quick actions reference another owner. The same ID may legitimately
+      // occur in the app, this database and a foreign database (or both kinds).
+      // Document links likewise refer to scoped entities, rather than owning ID.
+      if (
+        (path !== undefined &&
+          /\/(?:sshQuickActions|httpAutomation)\/items$/.test(path)) ||
+        (field === "items" &&
+          value.every(
+            (item) =>
+              isObject(item) &&
+              (item.kind === "script" || item.kind === "macro") &&
+              typeof item.id === "string" &&
+              Object.keys(item).every(
+                (key) => key === "kind" || key === "id" || key === "scope",
+              ),
+          )) ||
+        (field === "references" &&
+          value.every(
+            (item) =>
+              isObject(item) &&
+              typeof item.databaseId === "string" &&
+              typeof item.kind === "string" &&
+              typeof item.id === "string",
+          ))
+      )
+        return;
+      const needsIds =
+        (path !== undefined &&
+          (knownArrays.has(path) ||
+            /^\$\/documents\/documents\/@[^/]+\/blocks(?:\/@[^/]+\/workbook\/sheets)?$/.test(
+              path,
+            ))) ||
+        value.some((item) => isObject(item) && "id" in item);
+      const identities = new Set<string>();
+      for (const item of value) {
+        if (!needsIds) {
+          // An anonymous ancestor has no stable address. Its entire subtree is
+          // covered by the nearest recorded parent, never an invented index ID.
+          walk(item, undefined, dates.updatedAt, "");
+          continue;
+        }
+        if (
+          !isObject(item) ||
+          typeof item.id !== "string" ||
+          !item.id.trim() ||
+          item.id.length > 512 ||
+          forbidden.has(item.id) ||
+          hasControlCharacters(item.id)
+        )
+          invalid("missing or invalid stable ID");
+        if (identities.has(item.id)) invalid("duplicate stable ID");
+        identities.add(item.id);
+        const child =
+          path === undefined ? undefined : `${path}/@${encode(item.id)}`;
+        if (child !== undefined)
+          add(child, item, legacyDates(item, dates.updatedAt));
+        walk(item, child, dates.updatedAt, "");
+      }
+    } else if (isObject(value)) {
+      for (const [name, child] of Object.entries(value)) {
+        const childPath =
+          path === undefined ? undefined : `${path}/${encode(name)}`;
+        if (
+          childPath !== undefined &&
+          (path === "$" || dictionaries.has(field))
+        )
+          add(childPath, child, legacyDates(child, dates.updatedAt));
+        walk(child, childPath, dates.updatedAt, name);
+      }
+    }
+  };
+  // The volatile root timestamp informs legacy inference, but is never hashed
+  // or enumerated. Nested fields named timestamp/recordMetadata remain content.
+  const rootDates = legacyDates(payload, EPOCH);
+  const content = { ...payload };
+  delete content.timestamp;
+  delete content.recordMetadata;
+  add("$", content, rootDates);
+  walk(content, "$", rootDates.updatedAt, "");
+  return [...candidates.values()].sort((a, b) =>
+    a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+  );
+}
+
+async function sha256(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+function nextTime(now: string, prior: string): string {
+  return (
+    timestamp(Math.max(Date.parse(now), Date.parse(prior) + 1)) ??
+    invalid("timestamp overflow")
+  );
+}
+
+/**
+ * Pure reconciliation: no storage, networking, mutation, random IDs, or bodies in
+ * history. Paths use URI-encoded property segments and /@<encoded string ID>.
+ * Default mode is migrate. Stale migration metadata is reconciled deterministically
+ * with inferred update times; only write mode observes the clock. Explicit
+ * previous is authoritative, but embedded root recordMetadata is always validated.
+ */
+export async function reconcileRecordLedger(
+  value: unknown,
+  previous?: RecordLedger,
+  options?: { mode?: "migrate" | "write"; now?: string },
+): Promise<RecordLedger> {
+  const metadata =
+    value && typeof value === "object"
+      ? Object.getOwnPropertyDescriptor(value, "recordMetadata")
+      : undefined;
+  const embedded = normalizeRecordLedger(
+    metadata && "value" in metadata ? metadata.value : undefined,
+  );
+  const payload = object(jsonSnapshot(value, MAX_PAYLOAD_BYTES, true));
+  const prior = normalizeRecordLedger(previous) ?? embedded;
+  const mode = options?.mode ?? "migrate";
+  if (mode !== "migrate" && mode !== "write")
+    invalid("unsupported reconciliation mode");
+  const now =
+    options?.now === undefined
+      ? mode === "write"
+        ? new Date().toISOString()
+        : EPOCH
+      : utc(options.now);
+  const candidates = enumerate(payload, prior);
+  const records: Record<string, RecordStamp> = Object.assign(
+    Object.create(null),
+    prior?.records,
+  );
+  const journal = prior ? [...prior.journal] : [];
+  let recordCount = Object.keys(records).length;
+  const present = new Set(candidates.map((candidate) => candidate.key));
+  const missing = Object.keys(records)
+    .filter((key) => !present.has(key) && !records[key].deletedAt)
+    .sort();
+  let hashedBytes = 0;
+  const append = async (
+    key: string,
+    contentHash: string,
+    dates: Dates,
+    kind: RecordChange["kind"],
+  ) => {
+    if (journal.length >= MAX_JOURNAL) invalid("journal limit exceeded");
+    const before = records[key];
+    if (!before && ++recordCount > MAX_RECORDS)
+      invalid("record count limit exceeded");
+    const revision = await sha256(
+      JSON.stringify([
+        "record-ledger-v1",
+        key,
+        contentHash,
+        kind,
+        before?.revision ?? null,
+        dates.createdAt,
+        dates.updatedAt,
+        dates.createdAtSource,
+        dates.updatedAtSource,
+      ]),
+    );
+    records[key] = { ...dates, revision, contentHash };
+    if (kind === "delete") records[key].deletedAt = dates.updatedAt;
+    const change: RecordChange = {
+      record: key,
+      revision,
+      timestamp: dates.updatedAt,
+      kind,
+    };
+    if (before) change.parentRevision = before.revision;
+    journal.push(change);
+  };
+  for (const candidate of candidates) {
+    const serialized = JSON.stringify(candidate.value);
+    hashedBytes += byteLength(serialized);
+    if (hashedBytes > MAX_HASH_BYTES) invalid("hash work limit exceeded");
+    const contentHash = await sha256(serialized);
+    const before = records[candidate.key];
+    if (before && !before.deletedAt && before.contentHash === contentHash)
+      continue;
+    const dates: Dates =
+      mode === "migrate"
+        ? before
+          ? {
+              createdAt: before.createdAt,
+              createdAtSource: before.createdAtSource,
+              updatedAt: nextTime(candidate.dates.updatedAt, before.updatedAt),
+              updatedAtSource: "inferred",
+            }
+          : candidate.dates
+        : {
+            createdAt: before?.createdAt ?? now,
+            createdAtSource: before?.createdAtSource ?? "observed",
+            updatedAt: before ? nextTime(now, before.updatedAt) : now,
+            updatedAtSource: "observed",
+          };
+    await append(
+      candidate.key,
+      contentHash,
+      dates,
+      !before
+        ? mode === "migrate"
+          ? "migrate"
+          : "create"
+        : before.deletedAt
+          ? "restore"
+          : "update",
+    );
+  }
+  for (const key of missing) {
+    const before = records[key];
+    await append(
+      key,
+      before.contentHash,
+      {
+        createdAt: before.createdAt,
+        createdAtSource: before.createdAtSource,
+        updatedAt: nextTime(
+          mode === "migrate" ? candidates[0].dates.updatedAt : now,
+          before.updatedAt,
+        ),
+        updatedAtSource: mode === "migrate" ? "inferred" : "observed",
+      },
+      "delete",
+    );
+  }
+  // Check aggregate metadata bounds and all cross-record/history invariants
+  // before handing a replacement back to the integrating storage layer.
+  return normalizeRecordLedger({ version: 1, records, journal })!;
+}

@@ -4,11 +4,25 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagedDatabaseProtectionSection } from "../../src/components/SettingsDialog/sections/security/ManagedDatabaseProtectionSection";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
+import {
+  DATABASE_CIPHER_LABELS,
+  type DatabaseCipher,
+} from "../../src/types/encryption/databaseProtection";
+
+async function chooseCipher(cipher: DatabaseCipher) {
+  fireEvent.click(
+    await screen.findByRole("combobox", { name: "Database data cipher" }),
+  );
+  fireEvent.mouseDown(
+    screen.getByRole("option", {
+      name: DATABASE_CIPHER_LABELS[cipher],
+    }),
+  );
+}
 const fixture = vi.hoisted(() => ({
   manager: {} as Record<string, ReturnType<typeof vi.fn>>,
   flush: vi.fn(),
@@ -83,7 +97,72 @@ beforeEach(() => {
   };
 });
 describe("managed protection controls", () => {
-  it("opens a popup explicitly and completes onOpen once even if ready state rerenders its parent before unlock returns", async () => {
+  it("uses the themed menu, skips unsupported ciphers, and disables it during a change", async () => {
+    fixture.manager.getDatabaseProtectionCapabilities.mockResolvedValue({
+      schemaVersion: 1,
+      ciphers: [
+        { id: "aes-256-gcm", available: true },
+        { id: "unknown-cipher", available: true },
+        {
+          id: "twofish-256-eax",
+          available: false,
+          reason: "Unavailable in this build",
+        },
+        { id: "chacha20-poly1305", available: true },
+      ],
+      protectors: [],
+    });
+    let resolve!: () => void;
+    fixture.manager.changeManagedDatabaseProtection.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = () =>
+            done({ committed: true, cleanupPending: false, warnings: [] });
+        }),
+    );
+    const { container } = render(
+      <ManagedDatabaseProtectionSection database={database} />,
+    );
+    const selector = await screen.findByRole("combobox", {
+      name: "Database data cipher",
+    });
+    expect(selector).toHaveClass("sor-settings-select", "sor-select-trigger");
+    expect(container.querySelector("select")).toBeNull();
+    expect(
+      screen.getByRole("group", { name: "Data cipher" }),
+    ).toHaveAccessibleDescription(/only this database's inner payload cipher/);
+    fireEvent.click(selector);
+    expect(
+      screen.getByRole("listbox").closest(".sor-select-dropdown"),
+    ).toHaveClass("sor-popover-panel");
+    for (const name of [/Unsupported cipher/, /Twofish-256-EAX/]) {
+      const option = screen.getByRole("option", { name });
+      expect(option).toHaveAttribute("aria-disabled", "true");
+      fireEvent.mouseDown(option);
+      expect(selector).toHaveTextContent("AES-256-GCM (recommended)");
+    }
+    fireEvent.keyDown(selector, { key: "ArrowDown" });
+    fireEvent.keyDown(selector, { key: "Enter" });
+    expect(selector).toHaveTextContent("ChaCha20-Poly1305");
+    expect(
+      fixture.manager.changeManagedDatabaseProtection,
+    ).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review protection change" }),
+    );
+    fireEvent.click(screen.getByTestId("confirm-yes"));
+    await waitFor(() =>
+      expect(
+        fixture.manager.changeManagedDatabaseProtection,
+      ).toHaveBeenCalledOnce(),
+    );
+    expect(selector).toBeDisabled();
+    fireEvent.click(selector);
+    expect(screen.queryByRole("listbox")).toBeNull();
+    await act(async () => resolve());
+    expect(selector).toBeEnabled();
+  });
+  it("uses OS vault on explicit Unlock and completes onOpen once even if ready state rerenders its parent before unlock returns", async () => {
     fixture.manager.isDatabaseUnlocked.mockReturnValue(false);
     let resolve!: () => void;
     fixture.manager.unlockManagedDatabase.mockImplementation(
@@ -96,19 +175,19 @@ describe("managed protection controls", () => {
     const { rerender } = render(
       <ManagedDatabaseProtectionSection database={database} onOpen={onOpen} />,
     );
+    expect(fixture.manager.unlockManagedDatabase).not.toHaveBeenCalled();
     fireEvent.click(
       await screen.findByRole("button", { name: "Unlock database" }),
     );
-    const dialog = screen.getByRole("dialog", {
-      name: "Unlock Fixture database",
-    });
-    fireEvent.change(within(dialog).getByLabelText("Database password"), {
-      target: { value: "fixture-password" },
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Unlock database" }),
+    await waitFor(() =>
+      expect(
+        fixture.manager.unlockManagedDatabase,
+      ).toHaveBeenCalledExactlyOnceWith("fixture", "v1", undefined, {
+        isCurrent: expect.any(Function),
+      }),
     );
-    expect(fixture.manager.unlockManagedDatabase).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("OS vault");
     fixture.manager.isDatabaseUnlocked.mockReturnValue(true);
     rerender(
       <ManagedDatabaseProtectionSection
@@ -116,12 +195,11 @@ describe("managed protection controls", () => {
         onOpen={onOpen}
       />,
     );
-    expect(
-      screen.getByRole("dialog", { name: "Unlock Fixture database" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("status")).toHaveTextContent("OS vault");
     await act(async () => resolve());
     await waitFor(() => expect(onOpen).toHaveBeenCalledOnce());
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
   it.each([
     [
@@ -148,9 +226,7 @@ describe("managed protection controls", () => {
         slots,
       });
       render(<ManagedDatabaseProtectionSection database={database} />);
-      fireEvent.change(await screen.findByLabelText("Database data cipher"), {
-        target: { value: "twofish-256-eax" },
-      });
+      await chooseCipher("twofish-256-eax");
       fireEvent.click(
         screen.getByRole("button", { name: "Review protection change" }),
       );
@@ -186,16 +262,13 @@ describe("managed protection controls", () => {
       );
     },
   );
-  it.each(["twofish-256-eax", "serpent-256-eax"])(
+  it.each(["twofish-256-eax", "serpent-256-eax"] as const)(
     "reviews %s with accurate scope and sends the exact target only after confirmation",
     async (dataCipher) => {
       render(<ManagedDatabaseProtectionSection database={database} />);
       const selector = await screen.findByLabelText("Database data cipher");
-      expect(selector).toHaveValue("aes-256-gcm");
-      expect(
-        screen.getByRole("option", { name: "AES-256-GCM (recommended)" }),
-      ).toBeInTheDocument();
-      fireEvent.change(selector, { target: { value: dataCipher } });
+      expect(selector).toHaveTextContent("AES-256-GCM (recommended)");
+      await chooseCipher(dataCipher);
       expect(
         screen.getByText(/Twofish and Serpent use EAX authentication/),
       ).toHaveTextContent(
@@ -243,12 +316,16 @@ describe("managed protection controls", () => {
       dataCipher: "serpent-256-eax",
     });
     render(<ManagedDatabaseProtectionSection database={database} />);
-    expect(await screen.findByLabelText("Database data cipher")).toHaveValue(
-      "serpent-256-eax",
-    );
+    const selector = await screen.findByLabelText("Database data cipher");
+    expect(selector).toHaveTextContent("Serpent-256-EAX");
+    fireEvent.click(selector);
     expect(
       screen.getByRole("option", { name: /Serpent-256-EAX/ }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: /Serpent-256-EAX/ }),
+    );
+    expect(selector).toHaveTextContent("Serpent-256-EAX");
     expect(
       screen.getByRole("button", { name: "Review protection change" }),
     ).toBeDisabled();
@@ -258,9 +335,7 @@ describe("managed protection controls", () => {
   });
   it("reviews cipher changes before invoking and retains all old slots", async () => {
     render(<ManagedDatabaseProtectionSection database={database} />);
-    fireEvent.change(await screen.findByLabelText("Database data cipher"), {
-      target: { value: "chacha20-poly1305" },
-    });
+    await chooseCipher("chacha20-poly1305");
     fireEvent.click(
       screen.getByRole("button", { name: "Review protection change" }),
     );

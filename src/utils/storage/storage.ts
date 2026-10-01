@@ -34,6 +34,8 @@ const fromBase64 = (str: string): Uint8Array => {
 };
 
 export interface StorageData {
+  /** Versioned per-record dates and causal history, inside this payload's protection. */
+  recordMetadata?: import("./recordLedger").RecordLedger;
   connections: Connection[];
   settings: Record<string, unknown>;
   timestamp: number;

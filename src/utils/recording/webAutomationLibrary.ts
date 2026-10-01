@@ -8,6 +8,7 @@ import type {
 import {
   AppDataJsonStore,
   containsLikelySecretText,
+  sanitizeWithRecordMetadata,
 } from "../storage/appDataJsonStore";
 import {
   normalizeAutomationProvenanceMap,
@@ -143,6 +144,13 @@ export function normalizeWebAutomationItem(value: unknown): WebAutomationItem {
 export function normalizeWebAutomationLibrary(
   value: unknown,
 ): WebAutomationLibrary {
+  return sanitizeWithRecordMetadata(value, (domain) => ({
+    value: normalizeWebAutomationDomain(domain),
+    changed: false,
+  })).value;
+}
+
+function normalizeWebAutomationDomain(value: unknown): WebAutomationLibrary {
   const raw = record(value, ["version", "scripts", "macros", "provenance"]);
   if (
     raw.version !== 1 ||
@@ -180,6 +188,7 @@ export const webAutomationStore = new AppDataJsonStore<WebAutomationLibrary>({
   key: WEB_AUTOMATION_STORE_KEY,
   backend: "macro-library",
   requireNative: true,
+  trackRecords: true,
   sanitize(value) {
     const normalized = normalizeWebAutomationLibrary(value);
     return {

@@ -95,6 +95,9 @@ fn decision_digest(data: &TrustStoreData) -> Result<String, String> {
         for record in records.values_mut().filter_map(Value::as_object_mut) {
             record.remove("stats");
             record.remove("history");
+            // Lifecycle bookkeeping changes during verification and metadata
+            // migration; it is not part of the security decision this binds.
+            record.remove("timestamps");
             if let Some(identity) = record.get_mut("identity").and_then(Value::as_object_mut) {
                 for field in ["firstSeen", "lastSeen", "first_seen", "last_seen"] {
                     identity.remove(field);
@@ -489,6 +492,7 @@ impl TrustRuntime {
         let scope_digest = digest(&json!(ids))?;
         let current_data = self.strict_trust(database_id)?;
         let mut data = current_data.clone().unwrap_or_default();
+        let timestamps_migrated = migrate_record_timestamps(&mut data);
         let mut outcome = TrustLegacyMigrationOutcome {
             database_id: database_id.into(),
             status: "migrated".into(),
@@ -514,6 +518,9 @@ impl TrustRuntime {
                 &source.digest,
             )?;
             validate_access()?;
+            if timestamps_migrated {
+                self.write_verified_migration(database_id, &data)?;
+            }
             outcome.status = "already-verified".into();
             return Ok(outcome);
         }
@@ -569,6 +576,7 @@ impl TrustRuntime {
         if outcome.preserved_records > 0 {
             outcome.warnings.push("Existing destination identities, policies, revocations and expiry decisions were preserved.".into());
         }
+        migrate_record_timestamps(&mut data);
         let source_digest = source.digest;
         data.legacy_migration_receipt = Some(TrustLegacyMigrationReceipt {
             version: 1,
@@ -579,21 +587,33 @@ impl TrustRuntime {
             decision_digest: decision_digest(&data)?,
         });
         validate_trust_store_data(&data)?;
-        let path = self.trust_file_path(database_id)?;
         self.revalidate_migration_snapshot(database_id, revision, &payload_digest, &source_digest)?;
         validate_access()?;
-        self.write_file(&path, &data)?;
+        self.write_verified_migration(database_id, &data)?;
+        Ok(outcome)
+    }
+
+    /// Caller holds migration I/O and has revalidated both source and access.
+    fn write_verified_migration(
+        &self,
+        database_id: &str,
+        data: &TrustStoreData,
+    ) -> Result<(), String> {
+        let path = self.trust_file_path(database_id)?;
+        // The native write boundary owns final lifecycle metadata. Compare
+        // readback with exactly that persisted snapshot, not the input clone.
+        let stamped = self.write_file(&path, data)?;
         let verified = self
             .strict_trust(database_id)?
             .ok_or("Migration write could not be verified")?;
         if serde_json::to_value(verified).map_err(|_| "Could not verify migrated trust")?
-            != serde_json::to_value(data).map_err(|_| "Could not verify trust migration")?
+            != serde_json::to_value(stamped).map_err(|_| "Could not verify trust migration")?
         {
             return Err(
                 "Migration destination readback did not match; legacy sources were retained".into(),
             );
         }
-        Ok(outcome)
+        Ok(())
     }
 
     fn revalidate_migration_snapshot(
