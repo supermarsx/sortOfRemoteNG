@@ -73,6 +73,29 @@ const behaviorSettings = {
 } as unknown as GlobalSettings;
 
 describe("Behavior settings section accents", () => {
+  it("defaults old settings to foreground and saves independent new-tab controls", () => {
+    const updateSettings = vi.fn();
+    render(
+      <BehaviorSettings
+        settings={behaviorSettings}
+        updateSettings={updateSettings}
+      />,
+    );
+    const editor = screen.getByLabelText(
+      /Open connection configuration tabs in background/,
+    );
+    const tools = screen.getByLabelText(/Open other tool tabs in background/);
+    expect(editor).not.toBeChecked();
+    expect(tools).not.toBeChecked();
+    fireEvent.click(editor);
+    fireEvent.click(tools);
+    expect(updateSettings).toHaveBeenNthCalledWith(1, {
+      openConnectionEditorInBackground: true,
+    });
+    expect(updateSettings).toHaveBeenNthCalledWith(2, {
+      openToolInBackground: true,
+    });
+  });
   it("does not offer browser autocomplete even when imported settings enabled it", () => {
     render(
       <BehaviorSettings settings={behaviorSettings} updateSettings={vi.fn()} />,

@@ -5,6 +5,7 @@ import {
   RECORDING_PLAYER_PROTOCOL,
 } from "../../components/app/toolSession";
 import type { SavedRDPRecording } from "../../types/recording/macroTypes";
+import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 
 export function useRecordingPlayerSession(
   onActivateSession?: (sessionId: string) => void,
@@ -28,6 +29,8 @@ export function useRecordingPlayerSession(
         // Reserve before dispatch so two clicks in the same React turn cannot duplicate the tab.
         sessionsRef.current = [...sessionsRef.current, session];
         dispatch({ type: "ADD_SESSION", payload: session });
+        activateNewToolTab(session, onActivateSession);
+        return;
       }
       onActivateSession(session.id);
     },

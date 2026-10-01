@@ -12,6 +12,7 @@ import {
   type RdpInternalsSnapshot,
 } from "../../utils/rdp/rdpInternalsStore";
 import type { RDPClientMgr } from "./useRDPClient";
+import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 
 /** Bridges the existing client, never creates or attaches a second native viewer. */
 export function useRDPInternalsBridge(
@@ -111,6 +112,8 @@ export function useRDPInternalsBridge(
         // Also reserve locally so two clicks before React commits cannot add twice.
         sessionsRef.current = [...sessionsRef.current, tab];
         dispatch({ type: "ADD_SESSION", payload: tab });
+        activateNewToolTab(tab, onActivateSession);
+        return;
       }
       onActivateSession?.(tab.id);
     },

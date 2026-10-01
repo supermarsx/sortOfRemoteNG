@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import { createIconExplorerSession } from "../../components/app/toolSession";
 import type { ConnectionSession } from "../../types/connection/connection";
+import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 
 /** One independent explorer per host window; repeated activation focuses it. */
 export function useIconExplorerSession(
@@ -17,6 +18,8 @@ export function useIconExplorerSession(
     if (!sessions.current.some((item) => item.id === candidate.id)) {
       sessions.current = [...sessions.current, candidate];
       dispatch({ type: "ADD_SESSION", payload: candidate });
+      activateNewToolTab(candidate, onActivateSession);
+      return;
     }
     onActivateSession(candidate.id);
   }, [dispatch, onActivateSession, source]);

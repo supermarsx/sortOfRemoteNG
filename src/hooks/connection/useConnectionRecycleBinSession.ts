@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import { createConnectionRecycleBinSession } from "../../components/app/toolSession";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 
 export function useConnectionRecycleBinSession(
   onActivateSession?: (sessionId: string) => void,
@@ -21,6 +22,8 @@ export function useConnectionRecycleBinSession(
     if (!sessions.current.some((session) => session.id === candidate.id)) {
       sessions.current = [...sessions.current, candidate];
       dispatch({ type: "ADD_SESSION", payload: candidate });
+      activateNewToolTab(candidate, onActivateSession);
+      return;
     }
     onActivateSession(candidate.id);
   }, [databaseId, dispatch, onActivateSession]);

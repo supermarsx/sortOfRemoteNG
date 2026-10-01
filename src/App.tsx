@@ -85,6 +85,7 @@ import {
   isToolProtocol,
 } from "./components/app/toolSession";
 import { generateId } from "./utils/core/id";
+import { activateNewToolTab } from "./utils/session/activateNewToolTab";
 import { useTooltipSystem } from "./hooks/window/useTooltipSystem";
 import { useWindowControls } from "./hooks/window/useWindowControls";
 import { useWindowTheme } from "./hooks/window/useWindowTheme";
@@ -386,7 +387,7 @@ const AppContent: React.FC = () => {
           // still focus the same new tab.
           sessionsRef.current = [...sessionsRef.current, session];
           dispatch({ type: "ADD_SESSION", payload: session });
-          requestAnimationFrame(() => setActiveSessionId(session.id));
+          activateNewToolTab(session, setActiveSessionId);
         }
       }) as React.Dispatch<React.SetStateAction<boolean>>;
     },
@@ -879,7 +880,7 @@ const AppContent: React.FC = () => {
       initialParentId: parentId,
     });
     dispatch({ type: "ADD_SESSION", payload: session });
-    requestAnimationFrame(() => setActiveSessionId(session.id));
+    activateNewToolTab(session, setActiveSessionId);
   };
 
   const handleEditConnection = (connection: Connection) => {
@@ -900,7 +901,7 @@ const AppContent: React.FC = () => {
       name: `Edit: ${connection.name}`,
     });
     dispatch({ type: "ADD_SESSION", payload: session });
-    requestAnimationFrame(() => setActiveSessionId(session.id));
+    activateNewToolTab(session, setActiveSessionId);
   };
 
   const handleDeleteConnection = (connection: Connection) => {
@@ -1103,7 +1104,7 @@ const AppContent: React.FC = () => {
         hostname: "",
       };
       dispatch({ type: "ADD_SESSION", payload: settingsSession });
-      setActiveSessionId(settingsSession.id);
+      activateNewToolTab(settingsSession, setActiveSessionId);
     },
     [dispatch, setActiveSessionId, state.sessions, focusDetachedWindow],
   );
@@ -1121,7 +1122,7 @@ const AppContent: React.FC = () => {
         hostname: connection.hostname,
       };
       dispatch({ type: "ADD_SESSION", payload: diagSession });
-      setActiveSessionId(diagSession.id);
+      activateNewToolTab(diagSession, setActiveSessionId);
     },
     [dispatch, setActiveSessionId],
   );

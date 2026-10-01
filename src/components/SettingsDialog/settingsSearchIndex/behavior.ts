@@ -145,6 +145,50 @@ export const BEHAVIOR_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Behavior",
   },
   {
+    key: "openConnectionEditorInBackground",
+    label: "Open connection configuration tabs in background",
+    description:
+      "Choose whether new connection configuration and bulk editor tabs receive focus. Disabled by default; existing editors are still selected when opened again.",
+    tags: [
+      "connection",
+      "configuration",
+      "config",
+      "editor",
+      "bulk editor",
+      "tab",
+      "focus",
+      "background",
+      "foreground",
+    ],
+    synonyms: [
+      "focus new config",
+      "activate connection editor",
+      "switch to editor",
+      "open behind",
+    ],
+    section: "behavior",
+    sectionLabel: "Behavior",
+  },
+  {
+    key: "openToolInBackground",
+    label: "Open other tool tabs in background",
+    description:
+      "Choose whether new settings, diagnostics, documents and other tool tabs receive focus. Disabled by default. Connection editors and Windows management tools use separate settings; explicit background opening takes priority.",
+    tags: [
+      "tool",
+      "other tabs",
+      "settings",
+      "diagnostics",
+      "documents",
+      "focus",
+      "background",
+      "foreground",
+    ],
+    synonyms: ["activate new tools", "switch to new tab", "open behind"],
+    section: "behavior",
+    sectionLabel: "Behavior",
+  },
+  {
     key: "openWinmgmtToolInBackground",
     label: "Open Windows management tools in background",
     description:

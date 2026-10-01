@@ -143,6 +143,15 @@ describe("settings search — language", () => {
 });
 
 describe("settings search — behavior", () => {
+  it("finds editor and other tool focus controls", () => {
+    expectFinds("focus new config", "openConnectionEditorInBackground");
+    expectFinds(
+      "activate connection editor",
+      "openConnectionEditorInBackground",
+    );
+    expectFinds("activate new tools", "openToolInBackground");
+    expectFinds("other tabs", "openToolInBackground");
+  });
   it("finds the five settings that had no index entry before t75", () => {
     expectFinds("delete tab group", "confirmDeleteTabGroup");
     expectFinds("drag and drop rdp", "enableFileDragDropToRdp");

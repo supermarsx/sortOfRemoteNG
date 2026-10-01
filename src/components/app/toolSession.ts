@@ -264,7 +264,12 @@ export const sessionManagerNavigation = (
 
 export const createToolSession = (
   toolKey: ToolKey,
-  opts?: { connectionId?: string; name?: string; initialParentId?: string },
+  opts?: {
+    connectionId?: string;
+    name?: string;
+    initialParentId?: string;
+    openInBackground?: boolean;
+  },
 ): ConnectionSession => ({
   id: generateId(),
   connectionId:
@@ -275,6 +280,9 @@ export const createToolSession = (
   startTime: new Date(),
   protocol: getToolProtocol(toolKey),
   hostname: "",
+  ...(opts?.openInBackground !== undefined
+    ? { openInBackground: opts.openInBackground }
+    : {}),
   ...(toolKey === "actionLog"
     ? { sessionManagerView: sessionManagerNavigation(toolKey) }
     : {}),

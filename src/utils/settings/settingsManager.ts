@@ -376,6 +376,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   // Tab Behavior
   openConnectionInBackground: false,
+  openConnectionEditorInBackground: false,
+  openToolInBackground: false,
   openWinmgmtToolInBackground: false,
   switchTabOnActivity: false,
   closeTabOnDisconnect: false,

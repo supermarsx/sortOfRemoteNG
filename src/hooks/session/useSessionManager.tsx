@@ -77,6 +77,7 @@ import {
 import { recordForcedSessionCleanupEvidence } from "../../utils/session/forcedSessionCleanupLedger";
 import { disconnectSynologySession } from "../../utils/session/synologySessionLifecycle";
 import { isSynologyFileConnection } from "../../types/protocols/synology";
+import { useNewToolTabFocus } from "./useNewToolTabFocus";
 
 export function usesGenericSessionTimer(protocol: string): boolean {
   return usesLegacyGenericTimer(protocol);
@@ -292,6 +293,9 @@ export const useSessionManager = () => {
   const scriptEngine = ScriptEngine.getInstance();
 
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
+  useNewToolTabFocus(state.sessions, setActiveSessionId, () =>
+    settingsManager.getSettings(),
+  );
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
   // Keep a ref to the latest state so timer callbacks can read current sessions

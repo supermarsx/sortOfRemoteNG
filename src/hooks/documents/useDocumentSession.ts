@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import type { ConnectionSession } from "../../types/connection/connection";
 import { generateId } from "../../utils/core/id";
+import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 
 export const DOCUMENTS_PROTOCOL = "tool:documents";
 
@@ -88,6 +89,8 @@ export function useDocumentSession(onActivateSession?: (id: string) => void) {
           documentsWorkspace: request,
         };
         dispatch({ type: "ADD_SESSION", payload: session });
+        activateNewToolTab(session, onActivateSession);
+        return;
       }
       onActivateSession?.(id);
     },

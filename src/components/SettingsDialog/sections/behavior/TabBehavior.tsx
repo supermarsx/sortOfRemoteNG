@@ -1,7 +1,19 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { Layers, Clock, Monitor, ShieldAlert, Zap, History } from "lucide-react";
-import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Layers,
+  Clock,
+  Monitor,
+  ShieldAlert,
+  Zap,
+  History,
+} from "lucide-react";
+import {
+  Card,
+  SectionHeader,
+  SliderRow,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
@@ -14,9 +26,27 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
         onChange={(v) => u({ openConnectionInBackground: v })}
         icon={<Layers size={16} />}
         label="Open new connections in background"
-        description="New tabs open without switching to them"
+        description="New connection sessions open without switching to them"
         settingKey="openConnectionInBackground"
         infoTooltip="When enabled, new connection tabs open behind the current tab instead of immediately switching focus to them."
+      />
+      <Toggle
+        checked={s.openConnectionEditorInBackground ?? false}
+        onChange={(v) => u({ openConnectionEditorInBackground: v })}
+        icon={<Layers size={16} />}
+        label="Open connection configuration tabs in background"
+        description="Connection editors and bulk editors open without switching to them"
+        settingKey="openConnectionEditorInBackground"
+        infoTooltip="When disabled (the default), new connection configuration tabs receive focus. This is separate from connecting to a session. Opening an existing editor still selects it."
+      />
+      <Toggle
+        checked={s.openToolInBackground ?? false}
+        onChange={(v) => u({ openToolInBackground: v })}
+        icon={<Layers size={16} />}
+        label="Open other tool tabs in background"
+        description="Settings, diagnostics, documents and other tools open without switching"
+        settingKey="openToolInBackground"
+        infoTooltip="When disabled (the default), new tool tabs receive focus. Connection editors and Windows management tools have separate settings. Explicit background opening takes priority; selecting an existing tool still focuses it."
       />
       <Toggle
         checked={s.openWinmgmtToolInBackground}

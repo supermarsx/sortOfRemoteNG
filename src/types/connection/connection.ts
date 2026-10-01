@@ -1637,6 +1637,8 @@ export interface SessionVpnLeaseCleanupQuarantine {
 
 export interface ConnectionSession {
   id: string;
+  /** Explicit opening intent (e.g. Ctrl/middle-click); only consulted for a new tab. */
+  openInBackground?: boolean;
   connectionId: string;
   name: string;
   status:

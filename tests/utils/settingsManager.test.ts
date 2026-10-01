@@ -69,6 +69,38 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
   fakeStoredSettings = { ...(fakeStoredSettings ?? {}), ...seed };
 }
 
+describe("tab opening preferences", () => {
+  it("adds foreground editor/tool defaults while preserving legacy background choices", async () => {
+    seedStoredSettings({
+      openConnectionInBackground: true,
+      openWinmgmtToolInBackground: true,
+    });
+    const settings = await SettingsManager.getInstance().loadSettings();
+    expect(settings).toMatchObject({
+      openConnectionInBackground: true,
+      openWinmgmtToolInBackground: true,
+      openConnectionEditorInBackground: false,
+      openToolInBackground: false,
+    });
+  });
+
+  it("persists both new settings through the known-settings allowlist and reload", async () => {
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+    await manager.saveSettings({
+      openConnectionEditorInBackground: true,
+      openToolInBackground: true,
+    });
+    SettingsManager.resetInstance();
+    expect(await SettingsManager.getInstance().loadSettings()).toMatchObject({
+      openConnectionEditorInBackground: true,
+      openToolInBackground: true,
+      openConnectionInBackground: false,
+      openWinmgmtToolInBackground: false,
+    });
+  });
+});
+
 describe("folder icon appearance persistence", () => {
   it("persists website appearance and custom presets without granting connection consent", async () => {
     const manager = SettingsManager.getInstance();

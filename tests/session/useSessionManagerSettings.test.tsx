@@ -167,6 +167,42 @@ describe("useSessionManager settings effects", () => {
       expect(usesGenericSessionTimer(option.value), option.value).toBe(false);
     }
   });
+  it("focuses a newly dispatched editor after commit without changing background session behavior", () => {
+    SettingsManager.getInstance().applyInMemory({
+      openConnectionInBackground: true,
+    });
+    const { result, rerender } = renderHook(() => useSessionManager());
+    const editor = makeSession({
+      id: "editor",
+      protocol: "tool:connectionEditor",
+    });
+    connectionMocks.state = { ...connectionMocks.state, sessions: [editor] };
+    rerender();
+    expect(result.current.activeSessionId).toBe("editor");
+    const ssh = makeSession({ id: "background-ssh" });
+    connectionMocks.state = {
+      ...connectionMocks.state,
+      sessions: [editor, ssh],
+    };
+    rerender();
+    expect(result.current.activeSessionId).toBe("editor");
+  });
+
+  it("keeps a new editor in the background when explicitly configured", () => {
+    SettingsManager.getInstance().applyInMemory({
+      openConnectionEditorInBackground: true,
+    });
+    const { result, rerender } = renderHook(() => useSessionManager());
+    act(() => result.current.setActiveSessionId("existing"));
+    connectionMocks.state = {
+      ...connectionMocks.state,
+      sessions: [
+        makeSession({ id: "editor", protocol: "tool:connectionEditor" }),
+      ],
+    };
+    rerender();
+    expect(result.current.activeSessionId).toBe("existing");
+  });
   it("omits ignored local vault facets from onDisconnect automation", async () => {
     const connection = makeConnection({
       id: "conn-existing",

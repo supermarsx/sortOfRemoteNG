@@ -5,6 +5,7 @@ import {
   type SecurityTool,
 } from "../../components/app/toolSession";
 import type { ConnectionSession } from "../../types/connection/connection";
+import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 
 export interface SecurityToolCallbacks {
   onOpenCredentialVault?: () => void;
@@ -38,6 +39,6 @@ export function useSecurityToolSession(
     }
     sessions.current = [...sessions.current, candidate];
     dispatch({ type: "ADD_SESSION", payload: candidate });
-    onActivateSession(candidate.id);
+    activateNewToolTab(candidate, onActivateSession);
   }, [tool, dispatch, onActivateSession, source, databaseId]);
 }
