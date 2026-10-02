@@ -9,6 +9,8 @@ export type ArchiveDependencyReason =
   | "external-route"
   | "external-credential"
   | "connection"
+  | "ssh-owner"
+  | "ssh-source"
   | "tab-group"
   | "document"
   | "external-document"
@@ -57,6 +59,10 @@ const remedies: Record<ArchiveDependencyReason, string> = {
     "This authentication reference points outside the database vault. Review the connection's authentication settings and move the required credential into this database where supported.",
   connection:
     "The referenced connection is missing. Restore it in this database or select an existing connection in the route settings.",
+  "ssh-owner":
+    "This saved SSH link has no owning database or belongs to another database. In the inline tunnel or jump-host settings, reselect an SSH source from this database. Copy an external source into this database first if needed; do not just change its owner ID.",
+  "ssh-source":
+    "The saved SSH source is missing or is not an SSH connection. Restore the source in this database or select an existing SSH connection in the inline tunnel or jump-host settings.",
   "tab-group":
     "The default tab group is missing. Select an existing tab group in the connection editor or reset its default tab group.",
   document:

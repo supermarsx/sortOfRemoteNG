@@ -190,6 +190,48 @@ async function openPlainDatabase() {
 }
 
 describe("full database manager archive boundary", () => {
+  it("captures a database-local SSH source for sync and rebinds it on protected archive restore", async () => {
+    const source = privateData.get(collection.id)!;
+    source.connections[2].security = {
+      tunnelChain: [
+        {
+          id: "inline-ssh",
+          type: "ssh-tunnel",
+          enabled: true,
+          sshTunnel: {
+            connectionId: "host",
+            ownerDatabaseId: collection.id,
+            forwardType: "local",
+          },
+        },
+      ],
+    };
+    const original = structuredClone(source);
+    const encrypted = await exported();
+    const manager = DatabaseManager.getInstance();
+    const captured = await captureCloudSyncPayload({
+      ...defaultCloudSyncConfig,
+      selectedItems: [`database:${collection.id}`],
+      encryptBeforeSync: true,
+    });
+    expect(await upgradeCloudSyncPayload(captured)).toEqual(captured);
+    const restored = await manager.importDatabase(encrypted, {
+      importPassword: PASSWORD,
+      collectionName: "Restored inline SSH database",
+      protectionTarget: target,
+    });
+    expect(restored.id).not.toBe(collection.id);
+    expect(
+      privateData.get(restored.id)!.connections[2].security!.tunnelChain![0]
+        .sshTunnel,
+    ).toEqual({
+      connectionId: "host",
+      ownerDatabaseId: restored.id,
+      forwardType: "local",
+    });
+    expect(privateData.get(collection.id)).toEqual(original);
+  });
+
   it("round trips the intended cloud body and trust without export-time or local-label drift", async () => {
     rows[0].name = "Actual local display name";
     rows[0].description = "Local description that is not the database ID";

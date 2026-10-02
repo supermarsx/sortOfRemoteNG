@@ -23,6 +23,10 @@ import { normalizeDatabaseSettings } from "../documents/documentTypePolicy";
 import { verifyDocumentAttachments } from "../documents/documentAttachments";
 import { normalizeRecycleBin } from "./recycleBin";
 import {
+  isIncludedSshReference,
+  mapArchiveSshReferences,
+} from "./archiveSshReferences";
+import {
   ArchiveDependencyCollector,
   archiveDependencyPath,
   formatArchiveDependencyDiagnostics,
@@ -222,10 +226,11 @@ function normalizeTrust(value: unknown): TrustExportDocument {
   return raw as unknown as TrustExportDocument;
 }
 
-// These IDs name app/OS stores, not StorageData. Keeping them would silently
-// bind the archive to whatever happens to have that ID on another computer.
+// These IDs normally name app/OS stores, not StorageData. The sole exception is
+// a schema-owned inline SSH owner whose included target is checked below and
+// whose owner is rebound by the whole-database restore helper.
 const EXTERNAL_REFERENCES = new Set([
-  // The restore format cannot rebind app-local SSH source database ownership.
+  // App-local proxy-profile source ownership is not part of this format.
   "sshConnectionId",
   "sshConnectionDatabaseId",
   "ownerDatabaseId",
@@ -285,6 +290,33 @@ function validateClosure(archive: FullDatabaseArchive): void {
   const websiteScripts = new Set(library.website.scripts.map((row) => row.id));
   const websiteMacros = new Set(library.website.macros.map((row) => row.id));
   const groups = new Set(archive.tabGroups.map((row) => row.id));
+  const checkedSshReferences = new WeakSet<object>();
+  for (const { row, path } of rows)
+    mapArchiveSshReferences(row, (reference, routePath) => {
+      if (
+        !present(reference.connectionId) &&
+        !present(reference.ownerDatabaseId)
+      )
+        return reference;
+      checkedSshReferences.add(reference);
+      if (reference.ownerDatabaseId !== archive.collection.id)
+        collector.add(
+          row.id,
+          `${path}.${routePath}.ownerDatabaseId`,
+          "ssh-owner",
+          reference.connectionId,
+        );
+      else if (
+        !isIncludedSshReference(reference, archive.collection.id, connections)
+      )
+        collector.add(
+          row.id,
+          `${path}.${routePath}.connectionId`,
+          "ssh-source",
+          reference.connectionId,
+        );
+      return reference;
+    });
   const visitRoute = (
     value: unknown,
     recordId: string,
@@ -306,7 +338,9 @@ function validateClosure(archive: FullDatabaseArchive): void {
     // These exact schema fields are scalar request/metadata dictionaries, not
     // reference containers. A header called connectionId is just a header.
     if (
-      (relativePath === "httpHeaders" &&
+      (["httpHeaders", "sshConnectionConfigOverride.environment"].includes(
+        relativePath,
+      ) &&
         Object.values(value).every((item) => typeof item === "string")) ||
       (relativePath === "integration.providerFields" &&
         Object.values(value).every(
@@ -337,6 +371,7 @@ function validateClosure(archive: FullDatabaseArchive): void {
       if (
         EXTERNAL_REFERENCES.has(key) &&
         present(item) &&
+        !(key === "ownerDatabaseId" && checkedSshReferences.has(value)) &&
         key !== "proxyProfileId" &&
         key !== "tunnelProfileId"
       )
@@ -349,6 +384,7 @@ function validateClosure(archive: FullDatabaseArchive): void {
         );
       if (
         key === "connectionId" &&
+        !checkedSshReferences.has(value) &&
         present(item) &&
         (typeof item !== "string" || !connections.has(item))
       )

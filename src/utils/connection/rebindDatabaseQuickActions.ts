@@ -2,6 +2,10 @@ import type { Connection } from "../../types/connection/connection";
 import type { StorageData } from "../storage/storage";
 import { stripHttpTrustedRedirectDestinations } from "../protocol/httpTrustedRedirectDestinations";
 import { rebindDatabaseDocuments } from "../documents/documentRefs";
+import {
+  isIncludedSshReference,
+  mapArchiveSshReferences,
+} from "./archiveSshReferences";
 import type { QuickActionReference } from "../../types/connection/sessionQuickActions";
 import {
   normalizeHttpAutomation,
@@ -40,6 +44,12 @@ export function rebindDatabaseQuickActions(
     sourceDatabaseId === destinationDatabaseId
   )
     return data;
+  const connections = new Map(
+    [
+      ...data.connections,
+      ...(data.recycleBin?.entries.map((entry) => entry.connection) ?? []),
+    ].map((connection) => [connection.id, connection]),
+  );
   const refs = (items: QuickActionReference[]) =>
     items.map((item) =>
       item.scope?.kind === "database" &&
@@ -54,7 +64,13 @@ export function rebindDatabaseQuickActions(
         : item,
     );
   const connection = (value: Connection): Connection => {
-    const next = { ...value };
+    const next = {
+      ...mapArchiveSshReferences(value, (reference) =>
+        isIncludedSshReference(reference, sourceDatabaseId, connections)
+          ? { ...reference, ownerDatabaseId: destinationDatabaseId }
+          : reference,
+      ),
+    };
     // Malformed optional settings remain repairable, never replaced by defaults.
     try {
       if (value.sshQuickActions !== undefined) {

@@ -114,6 +114,76 @@ beforeEach(() => {
 });
 
 describe("archive diagnostics through cloud sync", () => {
+  it.each(["ssh-owner", "ssh-source", "external-script", "external-document"])(
+    "retains actionable per-record %s diagnostics at the real sync caller without writes",
+    async (reason) => {
+      const data = await fullData();
+      let path: string;
+      let remedy: string;
+      if (reason === "ssh-owner" || reason === "ssh-source") {
+        data.connections[2].security = {
+          tunnelChain: [
+            {
+              id: "route",
+              type: "ssh-tunnel",
+              enabled: true,
+              sshTunnel: {
+                connectionId: reason === "ssh-source" ? "missing-ssh" : "host",
+                ...(reason === "ssh-source"
+                  ? { ownerDatabaseId: collection.id }
+                  : {}),
+                forwardType: "local",
+              },
+            },
+          ],
+        };
+        path = `connections[2].security.tunnelChain[0].sshTunnel.${reason === "ssh-owner" ? "ownerDatabaseId" : "connectionId"}`;
+        remedy = "inline tunnel or jump-host settings";
+      } else if (reason === "external-script") {
+        data.connections[2].sshQuickActions = {
+          version: 1,
+          items: [{ kind: "macro", id: "app-macro", scope: { kind: "app" } }],
+        };
+        path = "connections[2].sshQuickActions.items[0]";
+        remedy = "reselect the database-owned item";
+      } else {
+        const block = data.documents!.documents[0].blocks[2];
+        if (block.type !== "reference") throw new Error("fixture");
+        block.reference = {
+          scope: "app",
+          databaseId: collection.id,
+          kind: "document",
+          id: "document",
+        };
+        path = "documents.documents[0].blocks[2].reference";
+        remedy = "Copy the required target into this database and reselect it";
+      }
+      const original = structuredClone(data);
+      state.read.mockImplementation(() =>
+        buildFullDatabaseArchive(collection, data, trust),
+      );
+      const result = await syncCloudTarget(target, config());
+      expect(result.status).toBe("failed");
+      expect(result.message).toContain(path);
+      expect(result.message).toContain(
+        `record "${reason === "external-document" ? "document" : "local"}"`,
+      );
+      expect(result.message).toContain(remedy);
+      expect(result.message).not.toMatch(/PRIVATE_|fixture\.test|JBSWY/);
+      expect(
+        cloudSyncStatusUpdate(config(), [result]).targetStatus?.[target.id]
+          .lastSyncError,
+      ).toBe(result.message);
+      expect(
+        state.invoke.mock.calls.some(([command]) =>
+          command.startsWith("cloud_sync_"),
+        ),
+      ).toBe(false);
+      expect(state.restore).not.toHaveBeenCalled();
+      expect(data).toEqual(original);
+    },
+  );
+
   it("keeps capture diagnostics in the target result and persisted status without transport or restore", async () => {
     const error = await dependencyError();
     state.read.mockRejectedValue(error);

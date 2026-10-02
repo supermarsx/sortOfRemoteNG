@@ -5,6 +5,8 @@ import {
   normalizeFullDatabaseArchive,
 } from "../../src/utils/connection/fullDatabaseArchive";
 import { MAX_ARCHIVE_DEPENDENCY_ISSUES } from "../../src/utils/connection/archiveDependencyDiagnostics";
+import { rebindDatabaseQuickActions } from "../../src/utils/connection/rebindDatabaseQuickActions";
+import { fullDatabaseArchiveData } from "../../src/utils/connection/fullDatabaseArchive";
 import {
   collection,
   connection,
@@ -25,6 +27,250 @@ async function rejection(
 }
 
 describe("full database archive dependency diagnostics", () => {
+  it.each([false, true])(
+    "preserves SSH environment variable names that resemble dependencies (recycled=%s)",
+    async (recycled) => {
+      const data = await fullData();
+      const row = recycled
+        ? data.recycleBin!.entries[0].connection
+        : data.connections[2];
+      row.sshConnectionConfigOverride = {
+        environment: {
+          connectionId: "remote-service-id",
+          ownerDatabaseId: "remote-application-setting",
+          privateKey: "PRIVATE_ENVIRONMENT_VALUE",
+          proxyProfileId: "remote-proxy-label",
+        },
+      };
+      const original = structuredClone(data);
+      const archive = await buildFullDatabaseArchive(collection, data, trust);
+      const normalized = await normalizeFullDatabaseArchive(archive);
+      expect(
+        (recycled
+          ? normalized.recycleBin.entries[0].connection
+          : normalized.connections[2]
+        ).sshConnectionConfigOverride,
+      ).toEqual(row.sshConnectionConfigOverride);
+      expect(data).toEqual(original);
+    },
+  );
+
+  it("does not exempt reference containers hidden inside an SSH environment dictionary", async () => {
+    const data = await fullData();
+    Object.assign(data.connections[2], {
+      sshConnectionConfigOverride: {
+        environment: { PRIVATE_FIELD: { credentialRef: "PRIVATE_REFERENCE" } },
+      },
+    });
+    const error = await rejection(
+      buildFullDatabaseArchive(collection, data, trust),
+    );
+    expect(error.code).toBe("dependencies");
+    expect(error.message).toContain("credentialRef");
+    expect(error.message).not.toMatch(/PRIVATE_/);
+  });
+
+  it.each([false, true])(
+    "exports and rebinds included inline SSH owners without modifying source data (recycled=%s)",
+    async (recycled) => {
+      const data = await fullData();
+      const row = recycled
+        ? data.recycleBin!.entries[0].connection
+        : data.connections[2];
+      row.security = {
+        tunnelChain: [
+          {
+            id: "inline-ssh",
+            type: "ssh-tunnel",
+            enabled: true,
+            sshTunnel: {
+              connectionId: "host",
+              ownerDatabaseId: collection.id,
+              forwardType: "local",
+              jumpHosts: [
+                {
+                  host: "fixture.test",
+                  connectionId: "host",
+                  ownerDatabaseId: collection.id,
+                },
+              ],
+            },
+          },
+        ],
+      };
+      const original = structuredClone(data);
+      const archive = await buildFullDatabaseArchive(collection, data, trust);
+      const copied = rebindDatabaseQuickActions(
+        fullDatabaseArchiveData(archive),
+        collection.id,
+        "copy-db",
+      );
+      const copiedRow = recycled
+        ? copied.recycleBin!.entries[0].connection
+        : copied.connections[2];
+      expect(copiedRow.security!.tunnelChain![0].sshTunnel).toMatchObject({
+        connectionId: "host",
+        ownerDatabaseId: "copy-db",
+        jumpHosts: [{ connectionId: "host", ownerDatabaseId: "copy-db" }],
+      });
+      await expect(
+        buildFullDatabaseArchive(
+          { ...collection, id: "copy-db" },
+          copied,
+          trust,
+        ),
+      ).resolves.toBeDefined();
+      expect(data).toEqual(original);
+      expect(
+        (recycled
+          ? archive.recycleBin.entries[0].connection
+          : archive.connections[2]
+        ).security,
+      ).toEqual(row.security);
+    },
+  );
+
+  it.each([
+    "foreign-owner",
+    "missing-target",
+    "folder-target",
+    "wrong-protocol",
+    "wrong-schema",
+  ])("retains and rejects an unsafe SSH owner reference (%s)", async (kind) => {
+    const data = await fullData();
+    const ownerDatabaseId =
+      kind === "foreign-owner" ? "other-db" : collection.id;
+    const connectionId =
+      kind === "missing-target"
+        ? "absent"
+        : kind === "folder-target"
+          ? "folder"
+          : "host";
+    if (kind === "wrong-protocol") data.connections[1].protocol = "https";
+    data.connections[2].security = {
+      tunnelChain: [
+        {
+          id: "inline-ssh",
+          type: kind === "wrong-schema" ? "proxy" : "ssh-tunnel",
+          enabled: true,
+          sshTunnel: { connectionId, ownerDatabaseId, forwardType: "local" },
+        },
+      ],
+    };
+    const original = structuredClone(data);
+    const error = await rejection(
+      buildFullDatabaseArchive(collection, data, trust),
+    );
+    expect(error.code).toBe("dependencies");
+    expect(error.diagnostics?.issues[0].recordId).toBe("local");
+    expect(
+      rebindDatabaseQuickActions(data, collection.id, "copy-db").connections[2]
+        .security,
+    ).toEqual(data.connections[2].security);
+    expect(data).toEqual(original);
+  });
+
+  it("whole-database rebinding never moves app-wide or foreign libraries into the database", async () => {
+    const data = await fullData();
+    data.connections[1].sshQuickActions = structuredClone(
+      data.connections[1].sshQuickActions!,
+    );
+    data.connections[1].sshQuickActions!.items.push(
+      { kind: "script", id: "same-id" },
+      { kind: "macro", id: "same-id", scope: { kind: "app" } },
+      {
+        kind: "script",
+        id: "same-id",
+        scope: { kind: "database", databaseId: "other-db" },
+      },
+    );
+    const block = data.documents!.documents[0].blocks[2];
+    if (block.type !== "reference") throw new Error("fixture");
+    block.reference = {
+      scope: "app",
+      databaseId: collection.id,
+      kind: "document",
+      id: "document",
+    };
+    const original = structuredClone(data);
+    const copied = rebindDatabaseQuickActions(data, collection.id, "copy-db");
+    expect(copied.connections[1].sshQuickActions!.items).toEqual([
+      {
+        kind: "script",
+        id: "script",
+        scope: { kind: "database", databaseId: "copy-db" },
+      },
+      { kind: "script", id: "same-id" },
+      { kind: "macro", id: "same-id" },
+      {
+        kind: "script",
+        id: "same-id",
+        scope: { kind: "database", databaseId: "other-db" },
+      },
+    ]);
+    expect(copied.documents!.documents[0].blocks[2]).toEqual(block);
+    expect(copied.automationLibrary).toEqual(data.automationLibrary);
+    const error = await rejection(
+      buildFullDatabaseArchive({ ...collection, id: "copy-db" }, copied, trust),
+    );
+    expect(error.diagnostics?.issues.map((issue) => issue.reason)).toEqual([
+      "external-script",
+      "external-script",
+      "external-script",
+      "external-document",
+    ]);
+    expect(data).toEqual(original);
+  });
+
+  it.each([
+    "missing-owner",
+    "foreign-owner",
+    "missing-source",
+    "non-ssh-source",
+  ])(
+    "gives record-specific SSH repair instructions without changing the link (%s)",
+    async (kind) => {
+      const data = await fullData();
+      const reference = {
+        connectionId: kind === "missing-source" ? "absent-source" : "host",
+        ...(kind === "missing-owner"
+          ? {}
+          : {
+              ownerDatabaseId:
+                kind === "foreign-owner" ? "other-db" : collection.id,
+            }),
+        forwardType: "local" as const,
+      };
+      if (kind === "non-ssh-source") data.connections[1].protocol = "https";
+      data.connections[2].security = {
+        tunnelChain: [
+          {
+            id: "route",
+            type: "ssh-tunnel",
+            enabled: true,
+            sshTunnel: reference,
+          },
+        ],
+      };
+      const original = structuredClone(data);
+      const error = await rejection(
+        buildFullDatabaseArchive(collection, data, trust),
+      );
+      const ownerIssue = kind.endsWith("owner");
+      expect(error.diagnostics?.issues).toEqual([
+        {
+          recordId: "local",
+          path: `connections[2].security.tunnelChain[0].sshTunnel.${ownerIssue ? "ownerDatabaseId" : "connectionId"}`,
+          reason: ownerIssue ? "ssh-owner" : "ssh-source",
+          targetId: reference.connectionId,
+        },
+      ]);
+      expect(error.message).toContain("inline tunnel or jump-host settings");
+      expect(error.message).not.toMatch(/PRIVATE_|fixture\.test/);
+      expect(data).toEqual(original);
+    },
+  );
+
   it.each([false, true])(
     "preserves HTTP headers whose names resemble references (recycled=%s)",
     async (recycled) => {
