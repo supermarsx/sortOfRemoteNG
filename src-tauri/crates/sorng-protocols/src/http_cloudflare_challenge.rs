@@ -16,6 +16,20 @@ use std::{
 pub(super) const SOURCE: &str = "https://dash.cloudflare.com";
 pub(super) const UPSTREAM: &str = "https://challenges.cloudflare.com";
 
+/// Blob workers inherit the creator's complete CSP (including connect-src and
+/// script-src). Do not allow network worker URLs or change any egress sources.
+/// Script-blocked/inline-only pages must retain their explicit policy.
+pub(super) fn blob_worker_csp(policy: String) -> String {
+    if policy
+        .split(';')
+        .any(|part| part.trim().starts_with("script-src 'self'"))
+    {
+        policy.replace("worker-src 'none'", "worker-src blob:")
+    } else {
+        policy
+    }
+}
+
 /// Closed profile/source pairs, never inferred from a page or a redirect.
 pub(super) fn reviewed_source(profile: Option<ReviewedApplicationProfile>) -> Option<&'static str> {
     match profile {
@@ -628,7 +642,7 @@ impl CloudflareChallenge {
             .map(|alias| alias.origin.as_str())
             .collect::<Vec<_>>()
             .join(" ");
-        policy
+        blob_worker_csp(policy)
             .replace("script-src 'self'", &format!("script-src 'self' {origins}"))
             .replace("frame-src 'self'", &format!("frame-src 'self' {origins}"))
             .replace("child-src 'self'", &format!("child-src 'self' {origins}"))
@@ -636,6 +650,25 @@ impl CloudflareChallenge {
                 "connect-src 'self'",
                 &format!("connect-src 'self' {origins}"),
             )
+    }
+
+    /// Fetch Metadata on a source navigation describes the embedding localhost
+    /// iframe, not a navigation at the HTTPS dashboard. Omit that incompatible
+    /// topology rather than inventing top-level/user-activation headers. Keep
+    /// the native engine's actual UA and client hints, and subresource metadata.
+    pub(super) fn source_headers(
+        &self,
+        incoming: &axum::http::HeaderMap,
+        forwarded: &mut Vec<(String, String)>,
+    ) {
+        if super::proxy_response::is_document_request(incoming, None) {
+            forwarded.retain(|(name, _)| {
+                !matches!(
+                    name.as_str(),
+                    "sec-fetch-dest" | "sec-fetch-mode" | "sec-fetch-site" | "sec-fetch-user"
+                )
+            });
+        }
     }
 
     /// Dispatch before the ordinary credential/router middleware. None means
@@ -914,7 +947,10 @@ impl CloudflareChallenge {
             bytes = text.into_bytes();
         }
         let authority = alias.origin.trim_start_matches("http://");
-        let csp = super::network::content_security_policy(&state.proxy_policy, authority);
+        let csp = blob_worker_csp(super::network::content_security_policy(
+            &state.proxy_policy,
+            authority,
+        ));
         let mut builder = Response::builder()
             .status(status.as_u16())
             .header("cache-control", "no-store")

@@ -36,6 +36,7 @@ const config = () => ({
   mappings: [] as Array<{ upstreamOrigin: string; proxyOrigin: string }>,
 });
 interface ClientConfiguration extends ReturnType<typeof config> {
+  blobWorkers?: boolean;
   browserCompatibility?: { hideWebdriver: boolean };
   exchangeCookies?: boolean;
   ptispApi?: { version: number; apiOrigins: string[]; proxyUrl: string };
@@ -3457,6 +3458,39 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       navigator.serviceWorker.register(`${upstream}/worker.js`),
     ).rejects.toThrow();
     expect(window.open(upstream)).toBeNull();
+    expect(constructed).toEqual([]);
+  });
+  it.each([
+    "https://dash.cloudflare.com",
+    "https://porkbun.com",
+    "https://challenges.cloudflare.com",
+  ])(
+    "preserves the native worker API for CSP-contained challenge document %s",
+    (sourceOrigin) => {
+      const NativeWorker = window.Worker;
+      start({ ...config(), sourceOrigin, blobWorkers: true });
+      expect(window.Worker).toBe(NativeWorker);
+      const url = `blob:${proxy}/d439c003-80cf-4610-8174-9b57f51f3977`;
+      const worker = new Worker(new URL(url), { name: "challenge" });
+      expect(worker).toBeInstanceOf(NativeWorker);
+      expect(constructed).toEqual([
+        { kind: "Worker", args: [new URL(url), { name: "challenge" }] },
+      ]);
+      // The real WebView probe separately tests the browser's CSP enforcement;
+      // jsdom cannot attest it and the constructor is intentionally unwrapped.
+      expect(() => new SharedWorker(url)).toThrow();
+      expect(constructed).toHaveLength(1);
+      controller!.dispose();
+      expect(window.Worker).toBe(NativeWorker);
+    },
+  );
+  it("does not infer blob worker permission from a hostname", () => {
+    start({ ...config(), sourceOrigin: "https://dash.cloudflare.com" });
+    expect(() => new Worker(`blob:${proxy}/local`)).toThrow();
+    controller!.dispose();
+    expect(() => start({ ...config(), blobWorkers: true })).toThrow(
+      /Invalid blob worker/,
+    );
     expect(constructed).toEqual([]);
   });
   it("rewrites supported resource properties, attributes, srcset and CSS before their native setter", () => {

@@ -446,6 +446,9 @@ async fn root(fixture: &FixtureProxy) -> String {
         .to_owned();
     let html = response.text().await.unwrap();
     let cfg = config(&html);
+    assert_eq!(cfg["blobWorkers"], true);
+    assert!(csp.contains("worker-src blob:"));
+    assert!(!csp.contains("worker-src 'self'"));
     assert_eq!(
         cfg["browserCompatibility"],
         serde_json::json!({"hideWebdriver": fixture.state.network.browser_compatibility().hide_webdriver})
@@ -900,8 +903,14 @@ async fn browser_compatibility_reaches_cloudflare_source_and_challenge_alias_wit
             .await
             .unwrap();
         assert_eq!(response.status(), 200);
+        let header_csp = response.headers()["content-security-policy"]
+            .to_str()
+            .unwrap();
+        assert!(header_csp.contains("worker-src blob:"));
+        assert!(!header_csp.contains("https:"));
         let html = response.text().await.unwrap();
         let cfg = config(&html);
+        assert_eq!(cfg["blobWorkers"], true);
         assert_eq!(
             cfg["browserCompatibility"],
             serde_json::json!({"hideWebdriver": hide_webdriver})

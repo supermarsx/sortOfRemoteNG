@@ -398,3 +398,76 @@ fn cloudflare_challenge_has_no_direct_network_or_frame_permission() {
         None
     ));
 }
+
+#[test]
+fn cloudflare_blob_workers_inherit_local_only_network_policy() {
+    for scripts in [
+        PageScripts::Allow,
+        PageScripts::InlineOnly,
+        PageScripts::Block,
+    ] {
+        let policy = HttpProxyPolicy {
+            page_scripts: scripts,
+            ..Default::default()
+        };
+        let original = network::content_security_policy(
+            &policy,
+            "p0123456789abcdef0123456789abcdef.localhost:43123",
+        );
+        let csp = cloudflare_challenge::blob_worker_csp(original.clone());
+        if scripts == PageScripts::Allow {
+            assert_eq!(
+                csp,
+                original.replace("worker-src 'none'", "worker-src blob:")
+            );
+        } else {
+            assert_eq!(csp, original);
+        }
+        assert!(!csp.contains("https:"));
+        assert!(!csp.contains("worker-src 'self'"));
+        assert!(!csp.contains("worker-src data:"));
+    }
+}
+
+#[test]
+fn cloudflare_source_navigation_does_not_forward_local_iframe_metadata() {
+    let challenge = cloudflare_challenge::CloudflareChallenge::new(
+        Some(ReviewedApplicationProfile::Cloudflare),
+        &reqwest::Url::parse(LOGIN).unwrap(),
+        "http://p0123456789abcdef0123456789abcdef.localhost:43123",
+        client(),
+    )
+    .unwrap()
+    .unwrap();
+    for document in [false, true] {
+        let mut incoming = axum::http::HeaderMap::new();
+        let original: Vec<(String, String)> = [
+            ("sec-fetch-dest", if document { "iframe" } else { "empty" }),
+            ("sec-fetch-mode", if document { "navigate" } else { "cors" }),
+            ("sec-fetch-site", "cross-site"),
+            ("sec-fetch-user", "?1"),
+            ("user-agent", "native-fixture-agent"),
+            ("sec-ch-ua-platform", "\"Windows\""),
+            ("origin", "https://dash.cloudflare.com"),
+            ("cookie", "synthetic=fixture"),
+        ]
+        .into_iter()
+        .map(|(name, value)| {
+            incoming.insert(
+                axum::http::HeaderName::from_static(name),
+                value.parse().unwrap(),
+            );
+            (name.to_string(), value.to_string())
+        })
+        .collect();
+        let mut forwarded = original.clone();
+        challenge.source_headers(&incoming, &mut forwarded);
+        assert_eq!(
+            forwarded,
+            original
+                .into_iter()
+                .filter(|(name, _)| !document || !name.starts_with("sec-fetch-"))
+                .collect::<Vec<_>>()
+        );
+    }
+}

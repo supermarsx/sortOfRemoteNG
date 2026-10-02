@@ -2642,6 +2642,9 @@ async fn axum_proxy_handler_inner(
         &state.proxy_origin,
         &state.target_origin,
     );
+    if let Some(challenge) = &state.network.cloudflare_challenge {
+        challenge.source_headers(req.headers(), &mut fwd_headers);
+    }
     let google_credentials_preflight = state.network.google.is_some()
         && req.method() == axum::http::Method::OPTIONS
         && req

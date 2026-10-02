@@ -91,6 +91,16 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     proxyOrigin = origin(configuration.proxyOrigin, true);
   if (new NativeURL(rootLocation).origin !== proxyOrigin)
     throw new TypeError("Network route document mismatch");
+  var allowBlobWorkers = configuration.blobWorkers === true;
+  if (
+    (configuration.blobWorkers !== undefined &&
+      typeof configuration.blobWorkers !== "boolean") ||
+    (allowBlobWorkers &&
+      sourceOrigin !== "https://dash.cloudflare.com" &&
+      sourceOrigin !== "https://porkbun.com" &&
+      sourceOrigin !== "https://challenges.cloudflare.com")
+  )
+    throw new TypeError("Invalid blob worker capability");
   if (configuration.browserCompatibility !== undefined) {
     var compatibility = configuration.browserCompatibility;
     if (
@@ -1196,7 +1206,16 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       restrictedContextInterception = false;
     }
   });
-  ["Worker", "SharedWorker", "WebTransport"].forEach(function (name) {
+  // A blob worker inherits the response CSP of its creator. Only native-issued
+  // challenge documents opt in, with worker-src blob: and connect/script sources
+  // still confined to local proxy aliases. Network-backed worker scripts remain
+  // denied by worker-src blob:. Preserve the real native API: a constructor
+  // wrapper is not needed for containment and changes the browser environment.
+  // Native route revocation still ends access to the owning proxy session.
+  (allowBlobWorkers
+    ? ["SharedWorker", "WebTransport"]
+    : ["Worker", "SharedWorker", "WebTransport"]
+  ).forEach(function (name) {
     if (typeof window[name] === "function")
       restrictedContextInterception =
         replace(window, name, function () {

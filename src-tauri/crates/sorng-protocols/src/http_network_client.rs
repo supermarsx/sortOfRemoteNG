@@ -999,6 +999,8 @@ pub(super) fn bootstrap(
         "popupParentDocument": popup_parent_sequence,
         "popupTabs": tactical_rmm_api.is_some_and(|route| route.is_tactical()),
         "exchangeCookies": exchange_cookies && google.is_none(),
+        "blobWorkers": policy.page_scripts == PageScripts::Allow
+            && (cloudflare_challenge.is_some() || source_origin == super::cloudflare_challenge::UPSTREAM),
         "browserCompatibility": { "hideWebdriver": browser_compatibility.hide_webdriver },
         "sourceOrigin": source_origin, "proxyOrigin": proxy_origin, "mappings": [],
         "fontAssets": super::font_assets::manifest(proxy_origin)
