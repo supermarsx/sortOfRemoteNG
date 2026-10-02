@@ -48,10 +48,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.len() < 2
         || args[0] != "--live"
-        || args.len() > 3
-        || (args.len() == 3 && args[2] != "--dark")
+        || args.len() > 4
+        || args[2..]
+            .iter()
+            .any(|arg| arg != "--dark" && arg != "--check-workers")
     {
-        return Err("Usage: --live google|cloudflare|porkbun [--dark]".into());
+        return Err("Usage: --live google|cloudflare|porkbun [--dark] [--check-workers]".into());
     }
     let (site, target, application) = match args[1].as_str() {
         "google" => (
@@ -67,7 +69,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "porkbun" => ("porkbun", "https://porkbun.com/account/login", "porkbun"),
         _ => return Err("Unknown live site".into()),
     };
-    let dark = args.len() == 3;
+    let dark = args.iter().any(|arg| arg == "--dark");
+    let check_workers = args.iter().any(|arg| arg == "--check-workers");
+    if check_workers && site != "cloudflare" {
+        return Err("--check-workers is a separate Cloudflare CSP diagnostic".into());
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -89,7 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build(&events)?;
     let messages = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
     let ipc_messages = messages.clone();
-    let webview = WebViewBuilder::new_with_web_context(&mut context)
+    let builder = WebViewBuilder::new_with_web_context(&mut context)
         .with_incognito(true)
         // No webdriver, UA override, remote-debugging port or disabled web security.
         .with_initialization_script_for_main_only(include_str!("live_browser/observe.js"), false)
@@ -106,8 +112,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     pending.push((url.origin().ascii_serialization(), value));
                 }
             }
-        })
-        .build(&window)?;
+        });
+    let builder = if check_workers {
+        builder.with_initialization_script_for_main_only(
+            include_str!("live_browser/worker_check.js"),
+            false,
+        )
+    } else {
+        builder
+    };
+    let webview = builder.build(&window)?;
     let core = unsafe { webview.controller().CoreWebView2()? };
     let failed = Arc::new(AtomicBool::new(false));
     let denied = Arc::new(Mutex::new(BTreeMap::<String, usize>::new()));
@@ -328,10 +342,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let error_count = entry.error_count.load(Ordering::SeqCst);
     drop(manager);
     let observed = !snapshots.is_empty() && request_count > 0;
+    let worker_check_passed = snapshots.iter().any(|snapshot| {
+        [
+            "workerCheckComplete",
+            "workerComputation",
+            "workerFetchBlocked",
+            "workerSocketBlocked",
+            "workerScriptBlocked",
+        ]
+        .iter()
+        .all(|key| snapshot[*key] == true)
+    });
     let mut report = json!({"schemaVersion":1,"site":site,"darkMode":dark,
         "engine":"Windows WebView2", "engineVersion":wry::webview_version().ok(),
         "layer":"production-proxy-native-guard-real-webview",
         "authenticatedLogin":"not-run-no-credentials", "observed":observed,
+        "workerCheckRequested":check_workers,"workerCheckPassed":check_workers && worker_check_passed,
         "guardFailed":failed.load(Ordering::SeqCst), "activations":activation_count,
         "activationErrors":activation_errors, "documentSequence":current_sequence,
         "elapsedMs":started.elapsed().as_millis() as u64,
@@ -373,7 +399,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     report["temporaryProfileRemoved"] = json!(removed);
     println!("SORNG_LIVE_BROWSER_RESULT={report}");
-    if !observed || failed.load(Ordering::SeqCst) || !removed || activation_errors > 0 {
+    if !observed
+        || failed.load(Ordering::SeqCst)
+        || !removed
+        || activation_errors > 0
+        || (check_workers && !worker_check_passed)
+    {
         return Err("Live probe incomplete or cleanup/guard failed; see sanitized report".into());
     }
     Ok(())
@@ -405,8 +436,16 @@ fn safe_snapshot(input: &serde_json::Value) -> serde_json::Value {
         "darkPresented",
         "challenge",
         "turnstile",
+        "humanVerificationPrompt",
+        "cookiesRequired",
+        "verificationFailed",
         "insecureBrowser",
         "accessDenied",
+        "workerCheckComplete",
+        "workerComputation",
+        "workerFetchBlocked",
+        "workerSocketBlocked",
+        "workerScriptBlocked",
     ] {
         if let Some(value) = input[key].as_bool() {
             out[key] = Value::Bool(value);

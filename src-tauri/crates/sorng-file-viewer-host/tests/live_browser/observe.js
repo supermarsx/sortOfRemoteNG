@@ -83,6 +83,17 @@
     return total;
   }
   function snapshot() {
+    const workerCheck = {};
+    for (const key of [
+      "workerCheckComplete",
+      "workerComputation",
+      "workerFetchBlocked",
+      "workerSocketBlocked",
+      "workerScriptBlocked",
+    ]) {
+      const value = window.__sorng_worker_check?.[key];
+      if (typeof value === "boolean") workerCheck[key] = value;
+    }
     const body = document.body;
     // Only bounded length and fixed phrase booleans leave this function.
     // No input values, storage, cookies, innerHTML, raw text, title or URLs.
@@ -156,6 +167,16 @@
           'input[autocomplete="one-time-code"], input[name*="captcha" i]:not([type="hidden"]), input[name*="recovery" i], [data-challengetype*="captcha" i], #twoFactorLoginContainer, #twoFactorLoginContainerEmail, #twoFactorLoginContainerEmailNoCookie, #modal_forceCcaptcha',
         ) > 0,
       turnstile,
+      humanVerificationPrompt:
+        lower.includes("verify you are human") ||
+        lower.includes("verifying you are human"),
+      cookiesRequired:
+        lower.includes("enable cookies") ||
+        lower.includes("enable javascript and cookies"),
+      verificationFailed:
+        lower.includes("verification failed") ||
+        lower.includes("unable to verify") ||
+        lower.includes("verification is taking longer"),
       insecureBrowser:
         lower.includes("this browser or app may not be secure") ||
         lower.includes("browser is not supported") ||
@@ -168,6 +189,7 @@
           lower,
         ),
       ...errors,
+      ...workerCheck,
     };
   }
   function report() {

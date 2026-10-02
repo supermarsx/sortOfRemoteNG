@@ -146,24 +146,71 @@ The six-case matrix ran against the real public services with Windows WebView2
 default per-connection network policy. Every normal run removed its temporary
 profile after closing the browser. Results are opening-stage evidence only:
 
-| Site | Dark off | Dark bootstrap on | Remaining evidence gap |
-| --- | --- | --- | --- |
-| Google Analytics / Google sign-in | Email field visible, no observed script/CSP errors | Same; dark shield released | Identifier submission, password, MFA, authentication, reload |
-| Porkbun | Username/password visible; Turnstile present | Same; dark shield released | Human verification and authenticated login; two resource/CSP blocks remain |
-| Cloudflare Dashboard | 403 managed challenge, no login fields after 45 seconds | Same; dark shield released | Challenge completion and every login stage |
+| Site                              | Dark off                                                | Dark bootstrap on          | Remaining evidence gap                                                     |
+| --------------------------------- | ------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
+| Google Analytics / Google sign-in | Email field visible, no observed script/CSP errors      | Same; dark shield released | Identifier submission, password, MFA, authentication, reload               |
+| Porkbun                           | Username/password visible; Turnstile present            | Same; dark shield released | Human verification and authenticated login; two resource/CSP blocks remain |
+| Cloudflare Dashboard              | 403 managed challenge, no login fields after 45 seconds | Same; dark shield released | Challenge completion and every login stage                                 |
 
 A focused Cloudflare rerun recorded `Worker` / `unsupported-network-context`
 from the **production injected network layer**. This is an app-side compatibility
-blocker even though no uncaught script/CSP error was reported. The source blocks
-Worker/SharedWorker/WebTransport construction in `web_network_client.js`; a
-future repair needs guarded worker execution and mediated worker requests, not
-an unrestricted constructor or direct-network escape. Removing this blocker is
-not proof that Cloudflare will accept a rewritten-origin proxy session.
+blocker even though no uncaught script/CSP error was reported. The following
+repair removes that particular blocker; it does not establish challenge clearance.
 
 Local receipts: `.artifacts/browser-live.json` (complete matrix) and
 `.artifacts/browser-live-cloudflare-diagnostic.json` (categorized block).
 The runner correctly exits nonzero for the unresolved Cloudflare cases. The
 anonymous probe never asserts successful account login or challenge clearance.
+
+#### Repair verification on 2026-10-02
+
+The same six live cases were repeated with WebView2 146.0.3856.84. Google still
+renders its identifier field and Porkbun still renders username/password, with
+dark bootstrap off and on. Cloudflare still shows its managed challenge after
+45 seconds in both cases: three upstream requests (two 200, one 403), no login
+fields, and no recorded bootstrap, script, CSP or injected-network blocks.
+Temporary profiles were removed. The matrix deliberately exits nonzero.
+Receipt: `.artifacts/browser-live-repairs.json`.
+
+The closed Cloudflare/Porkbun challenge profile now permits **blob workers only**
+through CSP and preserves the native `Worker` constructor. Network worker URLs
+remain prohibited; blob workers inherit the creator's local-only connect/script
+policy. Shared workers, service workers and other unsupported network contexts
+remain blocked. There is no direct-network fallback. Source navigation no longer
+forwards Fetch Metadata describing the localhost embedding iframe; no fabricated
+top-level/user-activation headers or alternate User-Agent are added.
+
+An opt-in real WebView regression captures the native constructor before page
+injection and verifies local worker computation plus actual CSP rejection of
+external `fetch`, WebSocket and `importScripts` calls. It checks violation events,
+not merely failed DNS resolution. All four checks passed:
+
+```powershell
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-file-viewer-host --test native_live_browser --locked -- --live cloudflare --check-workers
+```
+
+The worker probe is separate from challenge readiness: its success is not a
+successful challenge. It records only fixed booleans and never executes during
+ordinary live runs. Do not build this executable concurrently with another live
+invocation on Windows.
+
+Cloudflare explicitly excludes challenge pages embedded in cross-origin iframes
+and challenges served under a different domain from the requested one. The
+current alias-based iframe viewer has both characteristics. This documented
+architecture mismatch remains after the worker repair; the probe does not
+identify Cloudflare's private decision logic. See
+[Cloudflare challenge limitations](https://developers.cloudflare.com/cloudflare-challenges/concepts/how-challenges-work/#limitations).
+An origin-preserving top-level browser surface using the mandatory app proxy is
+still architectural work, not an implemented or verified fallback.
+
+Google's password-stage transport also has a new native fixture. It exercises
+identifier GET, unchanged RPC POST, and continuation GET through the production
+Axum handler and a synthetic CONNECT/TLS peer, including cookies and returned
+password-form HTML. Reviewed Accounts `batchexecute` continuation URLs carried
+inside JSON are now mapped to existing document aliases while retaining XSSI
+guards, length framing and opaque fields. This fixes a source-discovered gap;
+the public live probe has not submitted an identifier and therefore **does not
+verify the user's missing-password-field failure or authenticated login**.
 
 ### Full application and authenticated acceptance
 

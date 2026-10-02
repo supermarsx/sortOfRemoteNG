@@ -205,7 +205,7 @@ function observer(options = {}) {
     createTreeWalker() {
       if (options.failRead) throw new Error("synthetic DOM read failure");
       const nodes = [
-        { nodeValue: "Sign in", parentElement: body },
+        { nodeValue: options.bodyText ?? "Sign in", parentElement: body },
         {
           nodeValue: "DO_NOT_REPORT_TOKEN",
           parentElement: { closest: () => ({}) },
@@ -261,6 +261,44 @@ test("primary observer reports through parent without child IPC, storage, networ
   assert.equal(message.snapshot.bodyVisible, true);
   assert.equal(message.snapshot.bodyTextLength, "Sign in".length);
   assert.doesNotMatch(JSON.stringify(message), /DO_NOT_REPORT_TOKEN|Sign in/u);
+});
+
+test("worker diagnostic observation allows only fixed booleans", () => {
+  const probe = observer({
+    window: {
+      __sorng_worker_check: {
+        workerComputation: true,
+        workerFetchBlocked: false,
+        workerScriptBlocked: "DO_NOT_REPORT_TOKEN",
+        unknown: "DO_NOT_REPORT_TOKEN",
+      },
+    },
+  });
+  const snapshot = probe.posts[0].message.snapshot;
+  assert.equal(snapshot.workerComputation, true);
+  assert.equal(snapshot.workerFetchBlocked, false);
+  assert.equal("workerScriptBlocked" in snapshot, false);
+  assert.equal("unknown" in snapshot, false);
+  assert.ok(!JSON.stringify(probe.posts).includes("DO_NOT_REPORT_TOKEN"));
+});
+
+test("challenge explanations are fixed booleans, never captured page text", () => {
+  for (const [bodyText, key] of [
+    ["Verify you are human", "humanVerificationPrompt"],
+    ["Enable JavaScript and cookies", "cookiesRequired"],
+    ["Verification is taking longer", "verificationFailed"],
+  ]) {
+    const probe = observer({ bodyText: `${bodyText} DO_NOT_REPORT_TOKEN` });
+    const snapshot = probe.posts[0].message.snapshot;
+    for (const field of [
+      "humanVerificationPrompt",
+      "cookiesRequired",
+      "verificationFailed",
+    ])
+      assert.equal(snapshot[field], field === key);
+    assert.ok(!JSON.stringify(probe.posts).includes("DO_NOT_REPORT_TOKEN"));
+    assert.ok(!JSON.stringify(probe.posts).includes(bodyText));
+  }
 });
 
 for (const [name, options] of [
