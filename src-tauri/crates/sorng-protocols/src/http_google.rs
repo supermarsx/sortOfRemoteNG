@@ -6,7 +6,7 @@
 //! native cookie jar retains upstream host/domain/path scope, never localhost
 //! scope. No saved headers, passwords, certificate bypass or wildcard grants.
 use super::{AxumProxyState, ReviewedApplicationProfile};
-use reqwest::{header::HeaderValue, Url};
+use reqwest::{header::HeaderValue, ResponseBuilderExt, Url};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
@@ -617,7 +617,131 @@ impl GoogleSession {
                 return Err(Error::Policy("Google redirected outside this session's exact destinations. No request was sent."));
             }
         }
-        Ok(response)
+        self.accounts_rpc_response(response).await
+    }
+
+    /// A post-identifier RPC can return the password/verification continuation
+    /// as data rather than an HTTP Location. JSON is intentionally opaque to
+    /// the generic HTML/CSS/JS editor, so project this closed Accounts endpoint
+    /// here. Otherwise assigning that URL to location hits the native guard;
+    /// it must never be fixed by allowing a direct upstream navigation.
+    pub(super) async fn accounts_rpc_response(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<reqwest::Response, super::upstream::UpstreamError> {
+        use super::upstream::UpstreamError as Error;
+        let url = response.url().clone();
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .map(str::trim);
+        if self.profile != ReviewedApplicationProfile::GoogleHosted
+            || url.origin().ascii_serialization() != "https://accounts.google.com"
+            || !matches!(
+                url.path(),
+                "/v3/signin/_/AccountsSignInUi/data/batchexecute"
+                    | "/signin/_/AccountsSignInUi/data/batchexecute"
+                    | "/_/AccountsSignInUi/data/batchexecute"
+            )
+            || !response.status().is_success()
+            || !content_type.is_some_and(|value| {
+                value.eq_ignore_ascii_case("application/json")
+                    || value.eq_ignore_ascii_case("application/json+protobuf")
+                    || value.eq_ignore_ascii_case("text/plain")
+            })
+        {
+            return Ok(response);
+        }
+        let status = response.status();
+        let version = response.version();
+        let headers = response.headers().clone();
+        // Reuse the production bounded gzip/deflate decoder, never an
+        // unbounded body read or a second request with altered credentials.
+        let bytes = super::proxy_response::read_body(response, &headers, true)
+            .await
+            .map_err(Error::Policy)?;
+        let body = std::str::from_utf8(&bytes)
+            .ok()
+            .and_then(|text| self.rewrite_accounts_rpc(text))
+            .map(String::into_bytes)
+            .unwrap_or(bytes);
+        let mut builder = axum::http::Response::builder()
+            .status(status)
+            .version(version)
+            .url(url);
+        for (name, value) in &headers {
+            if !super::proxy_response::invalidated_header(name.as_str())
+                && name != "transfer-encoding"
+            {
+                builder = builder.header(name, value);
+            }
+        }
+        builder
+            .header("content-length", body.len())
+            .header("cache-control", "no-store")
+            .body(body)
+            .map(reqwest::Response::from)
+            .map_err(|_| Error::Policy("Unable to prepare Google continuation response"))
+    }
+
+    /// Preserve XSSI guards, opaque fields and JSON escaping. Length-prefixed
+    /// batchexecute records need their advertised length adjusted too. Only
+    /// ASCII origin tokens change, so the delta is identical for UTF-8 byte and
+    /// JavaScript UTF-16-unit framing. Unknown/malformed framing stays untouched,
+    /// never partially mapped or used as authorization for another destination.
+    pub(super) fn rewrite_accounts_rpc(&self, text: &str) -> Option<String> {
+        let prefix = text.strip_prefix(")]}'").map_or(0, |_| 4);
+        let start = prefix + text[prefix..].len() - text[prefix..].trim_start().len();
+        if text[start..].starts_with('[') {
+            let value: serde_json::Value = serde_json::from_str(&text[start..]).ok()?;
+            return value
+                .is_array()
+                .then(|| self.rewrite_route_tokens(text, true));
+        }
+        let mut result = text[..start].to_string();
+        let mut cursor = start;
+        let mut frames = 0;
+        while cursor < text.len() {
+            frames += 1;
+            if frames > 1024 {
+                return None;
+            }
+            let line_end = cursor + text[cursor..].find('\n')?;
+            let length_text = text[cursor..line_end].trim_end_matches('\r');
+            if length_text.is_empty() || !length_text.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            let length = length_text.parse::<usize>().ok()?;
+            let payload_start = line_end + 1;
+            let mut stream = serde_json::Deserializer::from_str(&text[payload_start..])
+                .into_iter::<serde_json::Value>();
+            if !stream.next()?.ok()?.is_array() {
+                return None;
+            }
+            let payload_end = payload_start + stream.byte_offset();
+            let payload = &text[payload_start..payload_end];
+            let whitespace = text[payload_end..].len() - text[payload_end..].trim_start().len();
+            let utf16 = payload.encode_utf16().count();
+            if !(payload.len()..=payload.len() + whitespace).contains(&length)
+                && !(utf16..=utf16 + whitespace).contains(&length)
+            {
+                return None;
+            }
+            let mapped = self.rewrite_route_tokens(payload, true);
+            if mapped == payload {
+                result.push_str(&text[cursor..payload_start]);
+            } else {
+                let delta = mapped.len() as isize - payload.len() as isize;
+                result.push_str(&length.checked_add_signed(delta)?.to_string());
+                result.push_str(&text[cursor + length_text.len()..payload_start]);
+            }
+            result.push_str(&mapped);
+            cursor = payload_end + whitespace;
+            result.push_str(&text[payload_end..cursor]);
+        }
+        (frames > 0).then_some(result)
     }
 
     /// Hosted sign-in SDKs can compute redirect_uri from window.location. Restore only an
@@ -840,9 +964,17 @@ impl GoogleSession {
     /// Rewrite URL tokens, not nested continue/followup parameters, arbitrary
     /// substrings or lookalike hosts. Relative URLs retain their normal base.
     pub(super) fn rewrite(&self, text: &str) -> String {
+        self.rewrite_route_tokens(text, false)
+    }
+
+    fn rewrite_route_tokens(&self, text: &str, documents_only: bool) -> String {
         let mut result = text.to_string();
-        for route in &self.routes {
-            for (source, proxy) in [
+        for route in self
+            .routes
+            .iter()
+            .filter(|route| !documents_only || route.documents)
+        {
+            let mut tokens = vec![
                 (route.upstream_origin.clone(), route.proxy_origin.clone()),
                 (
                     route.upstream_origin.replace('/', "\\/"),
@@ -855,7 +987,20 @@ impl GoogleSession {
                         .to_string(),
                     route.proxy_origin.clone(),
                 ),
-            ] {
+            ];
+            if documents_only {
+                // RPC data itself can be a JSON-encoded string, so a slash
+                // escape can be doubled again. Preserve escaping/opaque bytes
+                // rather than parsing and reserializing the vendor payload.
+                for backslashes in [2, 4, 8] {
+                    let slash = format!("{}/", "\\".repeat(backslashes));
+                    tokens.push((
+                        route.upstream_origin.replace('/', &slash),
+                        route.proxy_origin.replace('/', &slash),
+                    ));
+                }
+            }
+            for (source, proxy) in tokens {
                 let mut next = String::with_capacity(result.len());
                 let mut copied = 0;
                 for (start, _) in result.match_indices(&source) {

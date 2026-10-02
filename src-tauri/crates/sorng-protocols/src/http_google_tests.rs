@@ -232,6 +232,254 @@ fn client() -> reqwest::Client {
         .unwrap()
 }
 
+// No public DNS or account submission: every stage terminates at this test's
+// CONNECT/TLS peer. A returned password URL is routing evidence, not sign-in.
+#[tokio::test]
+async fn accounts_post_identifier_rpc_continuation_retains_cookies_and_proxy_routing() {
+    use std::io::Write;
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+
+    async fn head(stream: &mut (impl AsyncRead + Unpin)) -> String {
+        let mut bytes = Vec::new();
+        while !bytes.ends_with(b"\r\n\r\n") {
+            assert!(bytes.len() < 16384);
+            bytes.push(stream.read_u8().await.unwrap());
+        }
+        String::from_utf8(bytes).unwrap()
+    }
+    const RPC: &str = "/v3/signin/_/AccountsSignInUi/data/batchexecute?rpcids=fixture&source-path=%2Fv3%2Fsignin%2Fidentifier";
+    const NEXT: &str = "https://accounts.google.com/v3/signin/challenge/pwd?TL=fixture%2Fopaque+state&continue=https%3A%2F%2Fanalytics.google.com%2F&dup=%2f&dup=%2F";
+    const POST: &[u8] = b"f.req=fixture-not-an-account&at=fixture-only&dup=%2f&dup=%2F";
+    let payload = serde_json::json!([[
+        "wrb.fr",
+        "fixture",
+        serde_json::json!([NEXT, "opaque fixture"]).to_string(),
+        null
+    ]])
+    .to_string();
+    let rpc_body = format!(")]}}'\n\n{}\n{payload}\n", payload.len());
+    let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gzip.write_all(rpc_body.as_bytes()).unwrap();
+    let compressed = gzip.finish().unwrap();
+    let cert = rcgen::generate_simple_self_signed(vec!["accounts.google.com".into()]).unwrap();
+    let der = cert.serialize_der().unwrap();
+    let tls = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(
+        vec![rustls::pki_types::CertificateDer::from(der.clone())],
+        rustls::pki_types::PrivatePkcs8KeyDer::from(cert.serialize_private_key_der()).into(),
+    )
+    .unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = reqwest::Client::builder()
+        .no_proxy()
+        .proxy(reqwest::Proxy::all(format!("http://{}", listener.local_addr().unwrap())).unwrap())
+        .add_root_certificate(reqwest::Certificate::from_der(&der).unwrap())
+        .redirect(reqwest::redirect::Policy::none())
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let peer = tokio::spawn(async move {
+        let mut captured = Vec::new();
+        for stage in 0..3 {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            assert!(head(&mut tcp)
+                .await
+                .starts_with("CONNECT accounts.google.com:443 HTTP/1.1\r\n"));
+            tcp.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+            let mut socket = acceptor.accept(tcp).await.unwrap();
+            let request_head = head(&mut socket).await;
+            let length = request_head
+                .lines()
+                .filter_map(|line| line.split_once(':'))
+                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                .map_or(0, |(_, value)| value.trim().parse::<usize>().unwrap());
+            assert!(length < 1024);
+            let mut request_body = vec![0; length];
+            socket.read_exact(&mut request_body).await.unwrap();
+            captured.push((request_head, request_body));
+            let (extra, body) = match stage {
+                0 => ("Content-Type: text/html\r\nSet-Cookie: __Host-GAPS=fixture-initial; Secure; HttpOnly; Path=/\r\n", b"<input id=identifierId>".to_vec()),
+                1 => ("Content-Type: application/json; charset=utf-8\r\nContent-Encoding: gzip\r\nETag: fixture-old-bytes\r\nDigest: fixture-old-digest\r\nSet-Cookie: __Secure-POSTSESSION=fixture-next; Secure; HttpOnly; Path=/v3/signin\r\nSet-Cookie: __Host-RPCSESSION=fixture-second; Secure; HttpOnly; Path=/\r\nX-Fixture-Repeat: first\r\nX-Fixture-Repeat: second\r\n", compressed.clone()),
+                _ => ("Content-Type: text/html\r\n", b"<input name=Passwd type=password>".to_vec()),
+            };
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            socket.write_all(&body).await.unwrap();
+        }
+        captured
+    });
+    let session = google::GoogleSession::new(
+        Some(ReviewedApplicationProfile::GoogleHosted),
+        &Url::parse("https://analytics.google.com/").unwrap(),
+        PRIMARY_PROXY,
+        upstream.clone(),
+        upstream,
+    )
+    .unwrap()
+    .unwrap();
+    let account = session
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == "https://accounts.google.com")
+        .unwrap()
+        .clone();
+    let mut base = state("https://analytics.google.com");
+    let inner = Arc::get_mut(&mut base).unwrap();
+    inner.network = Arc::new(ProxyNetworkState::default().with_google_routes(Some(session)));
+    inner.upstream_auth_mode = UpstreamAuthMode::None;
+    inner.auto_login_armed.store(false, Ordering::SeqCst);
+    let session = base.network.google.as_ref().unwrap();
+    let identifier = request_for(
+        &account,
+        "/v3/signin/identifier?__sorng_navigation_v1=0123456789abcdef0123456789abcdef",
+    );
+    let identifier = axum_proxy_handler(axum::extract::State(base.clone()), identifier).await;
+    assert_eq!(identifier.status(), axum::http::StatusCode::OK);
+    assert_eq!(base.document_sequence.load(Ordering::SeqCst), 1);
+    let mut incoming = axum::http::HeaderMap::new();
+    incoming.insert(header::ORIGIN, account.proxy_origin.parse().unwrap());
+    incoming.insert(
+        header::REFERER,
+        format!(
+            "{}/v3/signin/identifier?__sorng_generation_v1=private",
+            account.proxy_origin
+        )
+        .parse()
+        .unwrap(),
+    );
+    incoming.insert(
+        header::CONTENT_TYPE,
+        "application/x-www-form-urlencoded;charset=UTF-8"
+            .parse()
+            .unwrap(),
+    );
+    incoming.insert("x-sorng-google-credentials", "include".parse().unwrap());
+    incoming.insert(
+        header::HOST,
+        account
+            .proxy_origin
+            .trim_start_matches("http://")
+            .parse()
+            .unwrap(),
+    );
+    incoming.insert("sec-fetch-dest", "empty".parse().unwrap());
+    incoming.insert("sec-fetch-mode", "cors".parse().unwrap());
+    let mut request = Request::builder()
+        .method("POST")
+        .uri(RPC)
+        .body(Body::from(POST))
+        .unwrap();
+    *request.headers_mut() = incoming;
+    let response = axum_proxy_handler(axum::extract::State(base.clone()), request).await;
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        base.document_sequence.load(Ordering::SeqCst),
+        1,
+        "RPC must not retire the identifier document"
+    );
+    assert!(!response.headers().contains_key(header::SET_COOKIE));
+    assert!(
+        !response.headers().contains_key(header::CONTENT_ENCODING),
+        "RPC continuation must be decoded before mapping"
+    );
+    assert!(!response.headers().contains_key(header::ETAG));
+    assert!(!response.headers().contains_key("digest"));
+    assert_eq!(
+        response
+            .headers()
+            .get_all("x-fixture-repeat")
+            .iter()
+            .map(|value| value.to_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+    let body = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    let (length, data) = body
+        .strip_prefix(")]}'\n\n")
+        .unwrap()
+        .split_once('\n')
+        .unwrap();
+    let data = data.strip_suffix('\n').unwrap();
+    assert_eq!(
+        length.parse::<usize>().unwrap(),
+        data.len(),
+        "RPC frame length must match mapped bytes"
+    );
+    let records: serde_json::Value = serde_json::from_str(data).unwrap();
+    let result: serde_json::Value = serde_json::from_str(records[0][2].as_str().unwrap()).unwrap();
+    let continuation = Url::parse(result[0].as_str().unwrap()).unwrap();
+    assert_eq!(
+        continuation.origin().ascii_serialization(),
+        account.proxy_origin,
+        "post-identifier continuation must stay on the exact native-issued Accounts alias"
+    );
+    assert!(
+        !webview_origins::allows_frame_url(NEXT),
+        "an upstream continuation cannot bypass the native guard"
+    );
+    assert!(webview_origins::allows_frame_url(continuation.as_str()));
+    assert_eq!(continuation.query(), Url::parse(NEXT).unwrap().query());
+    assert_eq!(result[1], "opaque fixture");
+    let request = request_for(&account, &continuation[url::Position::BeforePath..]);
+    let next = axum_proxy_handler(axum::extract::State(base.clone()), request).await;
+    assert_eq!(next.status(), axum::http::StatusCode::OK);
+    let password = axum::body::to_bytes(next.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&password).contains("name=Passwd"));
+    assert_eq!(base.document_sequence.load(Ordering::SeqCst), 2);
+    let captured = tokio::time::timeout(std::time::Duration::from_secs(5), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(captured[1]
+        .0
+        .starts_with(&format!("POST {RPC} HTTP/1.1\r\n")));
+    assert_eq!(captured[1].1, POST);
+    assert!(captured[1]
+        .0
+        .contains("origin: https://accounts.google.com\r\n"));
+    assert!(captured[1]
+        .0
+        .contains("referer: https://accounts.google.com/v3/signin/identifier\r\n"));
+    assert!(captured[1].0.contains("__Host-GAPS=fixture-initial"));
+    assert!(captured[2].0.contains("__Host-GAPS=fixture-initial"));
+    assert!(captured[2].0.contains("__Secure-POSTSESSION=fixture-next"));
+    assert!(captured[2].0.contains("__Host-RPCSESSION=fixture-second"));
+    assert!(!captured
+        .iter()
+        .any(|(head, _)| head.contains("x-sorng-") || head.contains("localhost")));
+    assert!(session
+        .cookie_header(&Url::parse("https://analytics.google.com/").unwrap())
+        .is_none());
+}
+
 fn session(source: &str) -> google::GoogleSession {
     google::GoogleSession::new(
         Some(ReviewedApplicationProfile::GoogleHosted),
@@ -242,6 +490,317 @@ fn session(source: &str) -> google::GoogleSession {
     )
     .unwrap()
     .unwrap()
+}
+
+#[test]
+fn accounts_rpc_frames_preserve_byte_and_utf16_lengths_escaping_and_opaque_queries() {
+    let session = session("https://analytics.google.com/");
+    let account = session
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == "https://accounts.google.com")
+        .unwrap();
+    let next = "https://accounts.google.com/v3/signin/challenge/pwd?TL=%2f%2F+%20&continue=https://www.google.com/&dup=1&dup=2#step";
+    let record = serde_json::json!([[
+        "wrb.fr",
+        "fixture",
+        serde_json::json!([next, "é日本😀", "opaque%2F+%20"]).to_string(),
+        null
+    ]])
+    .to_string();
+    for utf16 in [false, true] {
+        for count_newline in [false, true] {
+            let length = if utf16 {
+                record.encode_utf16().count()
+            } else {
+                record.len()
+            } + usize::from(count_newline);
+            let source = format!(")]}}'\n\n{length}\n{record}\n3\n[]\n");
+            let mapped = session.rewrite_accounts_rpc(&source).unwrap();
+            let lines: Vec<_> = mapped.split('\n').collect();
+            assert_eq!(lines[0], ")]}'");
+            let new_length = if utf16 {
+                lines[3].encode_utf16().count()
+            } else {
+                lines[3].len()
+            } + usize::from(count_newline);
+            assert_eq!(lines[2].parse::<usize>().unwrap(), new_length);
+            assert_eq!(&lines[4..], &["3", "[]", ""]);
+            let result: serde_json::Value = serde_json::from_str(lines[3]).unwrap();
+            let result: serde_json::Value =
+                serde_json::from_str(result[0][2].as_str().unwrap()).unwrap();
+            assert_eq!(
+                result[0],
+                next.replacen("https://accounts.google.com", &account.proxy_origin, 1)
+            );
+            assert_eq!(result[1], "é日本😀");
+            assert_eq!(result[2], "opaque%2F+%20");
+        }
+    }
+    let escaped = r#"["https:\/\/accounts.google.com\/v3\/signin\/challenge\/pwd?TL=%2F+%20"]"#;
+    let escaped = session.rewrite_accounts_rpc(escaped).unwrap();
+    let parsed: Vec<String> = serde_json::from_str(&escaped).unwrap();
+    assert_eq!(
+        parsed,
+        [format!(
+            "{}/v3/signin/challenge/pwd?TL=%2F+%20",
+            account.proxy_origin
+        )]
+    );
+}
+
+#[test]
+fn accounts_rpc_projection_does_not_promote_resource_foreign_or_nested_continue_destinations() {
+    let session = session("https://analytics.google.com/");
+    for url in [
+        "https://accounts.google.com.attacker.test/signin",
+        "https://accounts.google.com@attacker.test/signin",
+        "https://accounts.google.com:444/signin",
+        "http://accounts.google.com/signin",
+        "https://www.gstatic.com/challenge/pwd",
+        "https://unapproved.google.com/signin",
+        "continue=https://accounts.google.com/signin",
+        "https%3A%2F%2Faccounts.google.com%2Fsignin",
+    ] {
+        let source = serde_json::json!([url]).to_string();
+        assert_eq!(session.rewrite_accounts_rpc(&source).unwrap(), source);
+    }
+}
+
+#[test]
+fn accounts_rpc_crlf_leading_whitespace_and_nested_escaped_json_keep_framing() {
+    let session = session("https://analytics.google.com/");
+    let account = session
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == "https://accounts.google.com")
+        .unwrap();
+    let inner = r#"["https:\/\/accounts.google.com\/v3\/signin\/challenge\/pwd?TL=%2F+%20","opaque\\bytes\u00e9"]"#;
+    let payload = format!(
+        " \t{}",
+        serde_json::json!([["wrb.fr", "fixture", inner, "opaque=accounts.google.com"]])
+    );
+    let source = format!(")]}}'\r\n\r\n{}\r\n{payload}\r\n", payload.len() + 2);
+    let mapped = session.rewrite_accounts_rpc(&source).unwrap();
+    let (length, payload) = mapped
+        .strip_prefix(")]}'\r\n\r\n")
+        .unwrap()
+        .split_once("\r\n")
+        .unwrap();
+    assert_eq!(length.parse::<usize>().unwrap(), payload.len());
+    assert!(payload.starts_with(" \t"));
+    assert!(payload.ends_with("\r\n"));
+    let parsed: serde_json::Value = serde_json::from_str(payload).unwrap();
+    let nested = parsed[0][2].as_str().unwrap();
+    assert!(
+        nested.contains(r#"opaque\\bytes\u00e9"#),
+        "opaque JSON escaping changed"
+    );
+    let parsed: serde_json::Value = serde_json::from_str(nested).unwrap();
+    assert_eq!(
+        parsed[0],
+        format!(
+            "{}/v3/signin/challenge/pwd?TL=%2F+%20",
+            account.proxy_origin
+        )
+    );
+    // Another serialization layer doubles every existing escape again.
+    let twice = serde_json::json!([inner]).to_string();
+    let twice = serde_json::json!([twice]).to_string();
+    let mapped = session.rewrite_accounts_rpc(&twice).unwrap();
+    let first: Vec<String> = serde_json::from_str(&mapped).unwrap();
+    let second: Vec<String> = serde_json::from_str(&first[0]).unwrap();
+    let third: Vec<String> = serde_json::from_str(&second[0]).unwrap();
+    assert!(third[0].starts_with(&account.proxy_origin));
+}
+
+#[tokio::test]
+async fn accounts_rpc_decoded_unmapped_body_has_no_stale_encoding_or_integrity_headers() {
+    use std::io::Write;
+    let session = session("https://analytics.google.com/");
+    for payload in [
+        "unknown upstream representation",
+        ")]}'\n3\n[truncated",
+        "[\"opaque fixture\"]",
+    ] {
+        let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gzip.write_all(payload.as_bytes()).unwrap();
+        let compressed = gzip.finish().unwrap();
+        let invalidated = [
+            "content-md5",
+            "digest",
+            "content-digest",
+            "repr-digest",
+            "etag",
+            "content-range",
+            "accept-ranges",
+            "last-modified",
+        ];
+        let mut builder = axum::http::Response::builder()
+            .url(
+                Url::parse(
+                    "https://accounts.google.com/v3/signin/_/AccountsSignInUi/data/batchexecute",
+                )
+                .unwrap(),
+            )
+            .header("content-type", "application/json")
+            .header("content-encoding", "gzip")
+            .header("content-length", compressed.len())
+            .header("cache-control", "public, max-age=3600")
+            .header("x-fixture-repeat", "first")
+            .header("x-fixture-repeat", "second");
+        for key in invalidated {
+            builder = builder.header(key, "old-fixture");
+        }
+        let response = session
+            .accounts_rpc_response(builder.body(compressed).unwrap().into())
+            .await
+            .unwrap_or_else(|_| panic!("fixture response decoding failed"));
+        assert!(!response.headers().contains_key("content-encoding"));
+        for key in invalidated {
+            assert!(!response.headers().contains_key(key), "stale header: {key}");
+        }
+        assert_eq!(
+            response.headers()["content-length"],
+            payload.len().to_string()
+        );
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert_eq!(
+            response
+                .headers()
+                .get_all("x-fixture-repeat")
+                .iter()
+                .map(|value| value.to_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        assert_eq!(response.text().await.unwrap(), payload);
+    }
+}
+
+#[test]
+fn accounts_rpc_unknown_or_truncated_framing_is_never_partially_projected() {
+    let session = session("https://analytics.google.com/");
+    let valid = r#"["https://accounts.google.com/v3/signin/challenge/pwd"]"#;
+    for source in [
+        String::new(),
+        format!("1\n{valid}"),
+        format!("999999999999999999999999\n{valid}"),
+        format!("-1\n{valid}"),
+        format!("{}\n{valid}\n3\n[", valid.len()),
+        format!("{}\n{valid}\ngarbage", valid.len()),
+        format!(")]}}'\n{{\"not\":\"an RPC array\"}}"),
+        format!("{valid} trailing non-JSON"),
+    ] {
+        assert!(session.rewrite_accounts_rpc(&source).is_none());
+    }
+}
+
+#[tokio::test]
+async fn accounts_rpc_response_projection_is_limited_to_successful_accounts_rpc_routes() {
+    let session = session("https://analytics.google.com/");
+    let payload = r#")]}'
+["https://accounts.google.com/v3/signin/challenge/pwd?TL=fixture"]"#;
+    for (url, status, content_type, mapped) in [
+        (
+            "https://accounts.google.com/v3/signin/_/AccountsSignInUi/data/batchexecute",
+            200,
+            "application/json",
+            true,
+        ),
+        (
+            "https://accounts.google.com/signin/_/AccountsSignInUi/data/batchexecute",
+            200,
+            "application/json+protobuf",
+            true,
+        ),
+        (
+            "https://accounts.google.com/_/AccountsSignInUi/data/batchexecute",
+            200,
+            "text/plain",
+            true,
+        ),
+        (
+            "https://accounts.google.com/v3/signin/_/AccountsSignInUi/data/batchexecute",
+            403,
+            "application/json",
+            false,
+        ),
+        (
+            "https://accounts.google.com/v3/signin/_/AccountsSignInUi/data/batchexecute",
+            200,
+            "text/html",
+            false,
+        ),
+        (
+            "https://accounts.google.com/v3/signin/_/AccountsSignInUi/data/other",
+            200,
+            "application/json",
+            false,
+        ),
+        (
+            "https://accounts.google.com/v3/signin/_/AccountsSignInUi/data/batchexecute/extra",
+            200,
+            "application/json",
+            false,
+        ),
+        (
+            "https://analytics.google.com/v3/signin/_/AccountsSignInUi/data/batchexecute",
+            200,
+            "application/json",
+            false,
+        ),
+    ] {
+        let response: reqwest::Response = axum::http::Response::builder()
+            .status(status)
+            .url(Url::parse(url).unwrap())
+            .header("content-type", content_type)
+            .header("content-length", payload.len())
+            .header("etag", "original-fixture")
+            .body(payload)
+            .unwrap()
+            .into();
+        let response = session
+            .accounts_rpc_response(response)
+            .await
+            .unwrap_or_else(|_| panic!("fixture response projection failed"));
+        assert_eq!(response.url().as_str(), url);
+        assert_eq!(response.status().as_u16(), status);
+        assert_eq!(response.headers().contains_key("etag"), !mapped);
+        let expected_length = response.headers()["content-length"]
+            .to_str()
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        let body = response.text().await.unwrap();
+        assert_eq!(body.len(), expected_length);
+        assert_eq!(body.contains(".localhost:"), mapped);
+        if !mapped {
+            assert_eq!(body, payload);
+        }
+    }
+    let adobe = adobe_session();
+    let response: reqwest::Response = axum::http::Response::builder()
+        .url(
+            Url::parse(
+                "https://accounts.google.com/v3/signin/_/AccountsSignInUi/data/batchexecute",
+            )
+            .unwrap(),
+        )
+        .header("content-type", "application/json")
+        .body(payload)
+        .unwrap()
+        .into();
+    assert_eq!(
+        adobe
+            .accounts_rpc_response(response)
+            .await
+            .unwrap_or_else(|_| panic!("non-Google response unexpectedly projected"))
+            .text()
+            .await
+            .unwrap(),
+        payload
+    );
 }
 
 fn expected_routes(source: &str, extras: &[(&str, bool)]) -> BTreeMap<String, bool> {
