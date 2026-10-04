@@ -1,10 +1,7 @@
 import React, { useId, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { CheckboxField, Select, PasswordInput } from "../../ui/forms";
-import {
-  DEFAULT_HTTP_PROXY_POLICY,
-  type HttpProxyPolicy,
-} from "../../../types/connection/httpProxyPolicy";
+import type { HttpProxyPolicy } from "../../../types/connection/httpProxyPolicy";
 import {
   normalizeHttpProxyPolicy,
   normalizeExternalFontOrigins,
@@ -13,6 +10,7 @@ import type { Mgr } from "./types";
 import RedirectAuthenticationOptions from "./RedirectAuthenticationOptions";
 import TrustedRedirectDestinationsSection from "./TrustedRedirectDestinationsSection";
 import SynologyRedirectDefaultsSection from "./SynologyRedirectDefaultsSection";
+import ExternalResourceOriginsEditor from "../../security/ExternalResourceOriginsEditor";
 
 /** Draft-only editor. Native validation is repeated before opening a proxy. */
 export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
@@ -39,11 +37,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           onClick={() =>
             mgr.setFormData((previous) => ({
               ...previous,
-              httpProxyPolicy: {
-                ...DEFAULT_HTTP_PROXY_POLICY,
-                queryParameters: [],
-                externalFontOrigins: [],
-              },
+              httpProxyPolicy: normalizeHttpProxyPolicy(undefined),
             }))
           }
         >
@@ -161,7 +155,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           disabled={policy.sameOriginOnly}
           onChange={(allowExternalFonts) => update({ allowExternalFonts })}
           label="Load external fonts through proxy"
-          description="Opt in to anonymous font requests to the exact HTTPS origins below. No cookies or saved credentials are sent; certificate checks stay enabled."
+          description="Allow anonymous font requests to the exact HTTPS origins below. No cookies or saved credentials are sent; certificate checks stay enabled."
           variant="form"
         />
         <p className="text-xs text-[var(--color-textMuted)]">
@@ -252,6 +246,14 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           </p>
         )}
       </div>
+      <ExternalResourceOriginsEditor
+        origins={policy.externalResourceOrigins ?? []}
+        onChange={(externalResourceOrigins) =>
+          update({ externalResourceOrigins })
+        }
+        sameOriginOnly={policy.sameOriginOnly}
+        pageScripts={policy.pageScripts}
+      />
       <CheckboxField
         checked={policy.allowCrossOriginRedirects === true}
         onChange={(allowCrossOriginRedirects) =>

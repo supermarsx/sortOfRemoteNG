@@ -18,6 +18,8 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     fontAssets = new Map(),
     externalFontOrigins = new Set(),
     externalFontEndpoint = null,
+    externalResourceOrigins = new Map(),
+    externalResourceEndpoint = null,
     navigationOrigins = new Set(),
     quickConnectRpc = null,
     quickConnectDiscovered = null,
@@ -267,6 +269,51 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       externalFontOrigins.add(canonicalFontOrigin);
     }
     externalFontEndpoint = externalFonts.proxyEndpoint;
+  }
+  if (configuration.externalResources != null) {
+    var externalResources = configuration.externalResources;
+    if (
+      typeof externalResources !== "object" ||
+      Array.isArray(externalResources) ||
+      Object.keys(externalResources).some(function (key) {
+        return !["version", "origins", "proxyEndpoint"].includes(key);
+      }) ||
+      externalResources.version !== 1 ||
+      !Array.isArray(externalResources.origins) ||
+      externalResources.origins.length > 16 ||
+      externalResources.proxyEndpoint !==
+        proxyOrigin + "/__sortofremoteng_assets_v1/external-resource"
+    )
+      throw new TypeError("Invalid external resource configuration");
+    for (var resourceOrigin of externalResources.origins) {
+      if (
+        !resourceOrigin ||
+        typeof resourceOrigin !== "object" ||
+        Object.keys(resourceOrigin).some(function (key) {
+          return !["origin", "kinds"].includes(key);
+        }) ||
+        !Array.isArray(resourceOrigin.kinds) ||
+        !resourceOrigin.kinds.length ||
+        resourceOrigin.kinds.length > 2 ||
+        new Set(resourceOrigin.kinds).size !== resourceOrigin.kinds.length ||
+        resourceOrigin.kinds.some(function (kind) {
+          return kind !== "script" && kind !== "stylesheet";
+        })
+      )
+        throw new TypeError("Invalid external resource configuration");
+      var canonicalResourceOrigin = origin(resourceOrigin.origin, false);
+      if (
+        !canonicalResourceOrigin.startsWith("https://") ||
+        canonicalResourceOrigin.includes("*") ||
+        externalResourceOrigins.has(canonicalResourceOrigin)
+      )
+        throw new TypeError("Invalid external resource configuration");
+      externalResourceOrigins.set(
+        canonicalResourceOrigin,
+        new Set(resourceOrigin.kinds),
+      );
+    }
+    externalResourceEndpoint = externalResources.proxyEndpoint;
   }
   // Closed native capabilities, not a foreign-origin route. The control
   // endpoint independently validates discovery commands and never forwards
@@ -549,6 +596,17 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       externalFontOrigins.has(target.origin)
     );
   }
+  function approvedExternalResource(target, kind) {
+    return (
+      target.protocol === "https:" &&
+      !target.username &&
+      !target.password &&
+      target.href.indexOf("#") === -1 &&
+      target.href.length <= 8192 &&
+      externalResourceOrigins.has(target.origin) &&
+      externalResourceOrigins.get(target.origin).has(kind)
+    );
+  }
   function mapUrl(
     value,
     kind,
@@ -715,6 +773,52 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
         return fontAssets.get(target.href);
       }
     }
+    var resourceKind = kind === "script" || kind === "stylesheet" ? kind : null;
+    if (
+      target.origin === proxyOrigin &&
+      target.pathname === "/__sortofremoteng_assets_v1/external-resource"
+    ) {
+      var resourceParameters = target.searchParams,
+        resourceKeys = new Set(),
+        resourceDestination;
+      try {
+        resourceDestination = new NativeURL(
+          resourceParameters.get("destination"),
+        );
+      } catch (_) {
+        throw blocked(kind, "invalid-resource-route");
+      }
+      for (var resourceKey of resourceParameters.keys()) {
+        if (
+          !["destination", "kind", generationKey].includes(resourceKey) ||
+          resourceKeys.has(resourceKey)
+        )
+          throw blocked(kind, "invalid-resource-route");
+        resourceKeys.add(resourceKey);
+      }
+      if (
+        !externalResourceEndpoint ||
+        !resourceKind ||
+        resourceParameters.get("kind") !== resourceKind ||
+        target.href.indexOf("#") !== -1 ||
+        !approvedExternalResource(resourceDestination, resourceKind) ||
+        (resourceParameters.has(generationKey) &&
+          resourceParameters.get(generationKey) !== requestGeneration)
+      )
+        throw blocked(kind, "invalid-resource-route");
+      return target.href;
+    }
+    if (
+      resourceKind &&
+      !routes.has(target.origin) &&
+      !proxies.has(target.origin) &&
+      approvedExternalResource(target, resourceKind)
+    ) {
+      var resourceRoute = new NativeURL(externalResourceEndpoint);
+      resourceRoute.searchParams.set("destination", target.href);
+      resourceRoute.searchParams.set("kind", resourceKind);
+      return resourceRoute.href;
+    }
     var fontKind = externalFontKind(kind);
     if (
       target.origin === proxyOrigin &&
@@ -750,7 +854,12 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
         throw blocked(kind, "invalid-font-route");
       return target.href;
     }
-    if (fontKind && approvedExternalFont(target)) {
+    if (
+      fontKind &&
+      !routes.has(target.origin) &&
+      !proxies.has(target.origin) &&
+      approvedExternalFont(target)
+    ) {
       var fontRoute = new NativeURL(externalFontEndpoint);
       fontRoute.searchParams.set("destination", target.href);
       fontRoute.searchParams.set("kind", fontKind);
@@ -1318,12 +1427,14 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
           : /^(IFRAME|FRAME)$/.test(element.tagName) &&
               configuration.popupParentDocument != null
             ? "document"
-            : element.tagName === "LINK"
-              ? linkKind(
-                  element.getAttribute("rel"),
-                  element.getAttribute("as"),
-                )
-              : "resource",
+            : element.tagName === "SCRIPT"
+              ? "script"
+              : element.tagName === "LINK"
+                ? linkKind(
+                    element.getAttribute("rel"),
+                    element.getAttribute("as"),
+                  )
+                : "resource",
       element.tagName === "IMG" && name.toLowerCase() === "src"
         ? "mesh-desktop-image"
         : /^(SOURCE|AUDIO|VIDEO)$/.test(element.tagName),
@@ -1352,6 +1463,13 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       .trim()
       .split(/\s+/);
     if (tokens.includes("stylesheet")) return "stylesheet";
+    if (
+      tokens.includes("modulepreload") ||
+      (tokens.includes("preload") && String(as).toLowerCase() === "script")
+    )
+      return "script";
+    if (tokens.includes("preload") && String(as).toLowerCase() === "style")
+      return "stylesheet";
     if (tokens.includes("preload") && String(as).toLowerCase() === "font")
       return "font";
     return "resource";
@@ -1386,9 +1504,21 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       if (
         kind === "resource" &&
         incomplete &&
-        (approvedExternalFont(target) || fontAssets.has(target.href))
+        !routes.has(target.origin) &&
+        !proxies.has(target.origin) &&
+        (approvedExternalFont(target) ||
+          fontAssets.has(target.href) ||
+          approvedExternalResource(target, "script") ||
+          approvedExternalResource(target, "stylesheet"))
       )
-        mapUrl(original, "font"); // Validate lifetime even while deferred.
+        mapUrl(
+          original,
+          approvedExternalResource(target, "stylesheet")
+            ? "stylesheet"
+            : approvedExternalResource(target, "script")
+              ? "script"
+              : "font",
+        ); // Validate lifetime even while deferred.
       else mapped = mapUrl(original, kind);
       // Remove before a rel/as transition to avoid loading with the old kind.
       Reflect.apply(nativeRemoveAttribute, element, ["href"]);
@@ -1403,6 +1533,91 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       Reflect.apply(nativeSetAttribute, element, ["href", mapped]);
     if (original !== null)
       fontLinks.set(element, { original: original, mapped: mapped });
+  }
+  // relList mutations do not invoke the reflected rel setter. Validate a
+  // proposed token-list mutation on a detached link, then route the href before
+  // changing the live relationship. Keep token-list identity/native return
+  // values and leave unrelated classList/token-list operations untouched.
+  var linkPrototype = window.HTMLLinkElement?.prototype,
+    relListDescriptor =
+      linkPrototype &&
+      Object.getOwnPropertyDescriptor(linkPrototype, "relList"),
+    linkTokenOwners = new WeakMap();
+  if (
+    relListDescriptor?.get &&
+    relListDescriptor.configurable &&
+    window.DOMTokenList
+  ) {
+    var relListGetter = function () {
+      var tokens = Reflect.apply(relListDescriptor.get, this, []);
+      linkTokenOwners.set(tokens, this);
+      return tokens;
+    };
+    Object.defineProperty(
+      linkPrototype,
+      "relList",
+      Object.assign({}, relListDescriptor, {
+        get: relListGetter,
+        ...(relListDescriptor.set
+          ? {
+              set: function (value) {
+                // Preserve native brand checking, but do not change the live rel first.
+                Reflect.apply(relListDescriptor.get, this, []);
+                setLinkAttribute(this, "rel", value);
+              },
+            }
+          : {}),
+      }),
+    );
+    restores.push(function () {
+      if (
+        Object.getOwnPropertyDescriptor(linkPrototype, "relList")?.get ===
+        relListGetter
+      )
+        Object.defineProperty(linkPrototype, "relList", relListDescriptor);
+    });
+    ["add", "remove", "toggle", "replace"].forEach(function (name) {
+      var native = DOMTokenList.prototype[name];
+      if (typeof native !== "function") return;
+      replace(DOMTokenList.prototype, name, function () {
+        var owner = linkTokenOwners.get(this);
+        if (!owner) return Reflect.apply(native, this, arguments);
+        var proposed = document.createElement("link");
+        Reflect.apply(nativeSetAttribute, proposed, [
+          "rel",
+          owner.getAttribute("rel") || "",
+        ]);
+        var tokens = Reflect.apply(relListDescriptor.get, proposed, []);
+        var result = Reflect.apply(native, tokens, arguments);
+        var nextRel = proposed.getAttribute("rel") || "";
+        if (nextRel !== (owner.getAttribute("rel") || ""))
+          setLinkAttribute(owner, "rel", nextRel);
+        return result;
+      });
+    });
+    var tokenValue = Object.getOwnPropertyDescriptor(
+      DOMTokenList.prototype,
+      "value",
+    );
+    if (tokenValue?.set && tokenValue.configurable) {
+      var tokenValueSetter = function (value) {
+        var owner = linkTokenOwners.get(this);
+        if (owner) return setLinkAttribute(owner, "rel", value);
+        return Reflect.apply(tokenValue.set, this, [value]);
+      };
+      Object.defineProperty(
+        DOMTokenList.prototype,
+        "value",
+        Object.assign({}, tokenValue, { set: tokenValueSetter }),
+      );
+      restores.push(function () {
+        if (
+          Object.getOwnPropertyDescriptor(DOMTokenList.prototype, "value")
+            ?.set === tokenValueSetter
+        )
+          Object.defineProperty(DOMTokenList.prototype, "value", tokenValue);
+      });
+    }
   }
   // srcset descriptors remain native-validated. Complex data-URL candidates
   // are intentionally not guessed; ordinary src still supports local data.
@@ -1516,29 +1731,22 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       return setLinkAttribute(this, lower, null, true);
     return Reflect.apply(nativeRemoveAttribute, this, [name]);
   });
-  function turnstileScriptSource(value) {
-    // Turnstile discovers its API script via currentScript.src or a script
-    // scan, matching the canonical HTTPS origin. Project only that read for
-    // an existing native route. The DOM attribute and native getter retain
-    // the local URL used to load it; assignments still go through resourceUrl.
-    var alias = routes.get("https://challenges.cloudflare.com");
-    if (!active || !alias || !value) return value;
+  function externalScriptSource(value) {
+    // SDKs read currentScript.src to recover public configuration and asset
+    // bases. Reflect the upstream identity only for an authorized script
+    // route; the underlying src attribute and browser request remain local.
+    if (!active || !externalResourceEndpoint || !value) return value;
     try {
       var url = new NativeURL(value);
       if (
-        url.origin === alias &&
-        !url.username &&
-        !url.password &&
-        /^\/turnstile\/v0(?:\/[^/]+)*\/api\.js$/.test(url.pathname)
-      )
-        return (
-          "https://challenges.cloudflare.com" +
-          url.pathname +
-          url.search +
-          url.hash
-        );
+        url.origin === proxyOrigin &&
+        url.pathname === "/__sortofremoteng_assets_v1/external-resource"
+      ) {
+        routeUrl(value, "script"); // Validate kind, origin and generation.
+        return new NativeURL(url.searchParams.get("destination")).href;
+      }
     } catch (_) {
-      // Preserve native reflection for absent or unparseable attributes.
+      // Invalid URLs keep native reflection; this read never grants routing.
     }
     return value;
   }
@@ -1661,7 +1869,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     var getter = descriptor.get;
     if (entry[0] === "HTMLScriptElement" && getter)
       getter = function () {
-        return turnstileScriptSource(Reflect.apply(descriptor.get, this, []));
+        return externalScriptSource(Reflect.apply(descriptor.get, this, []));
       };
     Object.defineProperty(
       object,
@@ -1939,6 +2147,8 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     fontAssets.clear();
     externalFontOrigins.clear();
     externalFontEndpoint = null;
+    externalResourceOrigins.clear();
+    externalResourceEndpoint = null;
     navigationOrigins.clear();
     quickConnectRpc = null;
     quickConnectDiscovered = null;

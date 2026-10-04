@@ -1,4 +1,5 @@
 import { loadAutologinClient } from "../helpers/autologinAsset";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PORKBUN_LOGIN_SELECTORS,
@@ -8,6 +9,32 @@ import { DEFAULT_HTTP_FORM_AUTOMATION } from "../../src/utils/connection/httpFor
 import { porkbunLoginHtml } from "./fixtures/porkbunLogin";
 
 const source = loadAutologinClient();
+const routingSource = readFileSync(
+  "src-tauri/crates/sorng-protocols/src/web_network_client.js",
+  "utf8",
+);
+const proxyOrigin = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
+let routing: { dispose(): void } | undefined;
+function installRouting() {
+  vi.stubGlobal("location", new URL(`${proxyOrigin}/account/login`));
+  vi.spyOn(document, "baseURI", "get").mockReturnValue(
+    `${proxyOrigin}/account/login`,
+  );
+  const install = window.eval(
+    `(function(){${routingSource}\nreturn installWebNetworkClient;})()`,
+  );
+  routing = install(
+    {
+      version: 1,
+      sessionId: "synthetic-porkbun-session",
+      documentSequence: 1,
+      sourceOrigin: "https://porkbun.com",
+      proxyOrigin,
+      mappings: [],
+    },
+    vi.fn(),
+  );
+}
 const selectors = {
   username: PORKBUN_LOGIN_SELECTORS.usernameSelector,
   password: PORKBUN_LOGIN_SELECTORS.passwordSelector,
@@ -84,6 +111,8 @@ beforeEach(() => {
     .__sorng_autologin;
 });
 afterEach(() => {
+  routing?.dispose();
+  routing = undefined;
   client.cancel();
   window.removeEventListener("pagehide", client.cancel);
   window.removeEventListener("unload", client.cancel);
@@ -104,6 +133,144 @@ afterEach(() => {
 });
 
 describe("production password client with public Porkbun DOM (no live account)", () => {
+  it.each(["property", "attribute"])(
+    "recognizes the reviewed dummy action after the production %s URL setter rewrites it",
+    async (setter) => {
+      installRouting();
+      if (setter === "property") form().action = "/blank";
+      else form().setAttribute("action", "/blank");
+      expect(form().getAttribute("action")).toBe(`${proxyOrigin}/blank`);
+      const pending = client.fetchCredsAndRun("synthetic-nonce", selectors);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(fetchCredentials).not.toHaveBeenCalled();
+      button().disabled = false; // Only the website's own challenge callback enables it.
+      await vi.advanceTimersByTimeAsync(61000);
+      expect(await pending).toMatchObject({
+        ok: true,
+        reason: "submitted",
+        via: "porkbun-button-click",
+      });
+      expect(fetchCredentials).toHaveBeenCalledOnce();
+      expect(login).toHaveBeenCalledOnce();
+      expect(field("loginUsername").value).toBe("fixture-user");
+      expect(field("loginPassword").value).toBe("fixture-password");
+      expect(nativeSubmit).not.toHaveBeenCalled();
+      expect(requestSubmit).not.toHaveBeenCalled();
+      expect(form().getAttribute("action")).toBe(`${proxyOrigin}/blank`);
+      expect(form().target).toBe("lame_login_iframe");
+      expect(field("porkcaptcha-token_accountLogin").value).toBe(
+        "fixture-site-managed",
+      );
+      await client.fetchCredsAndRun("another-synthetic-nonce", selectors);
+      expect(fetchCredentials).toHaveBeenCalledOnce();
+      expect(login).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    "https://porkbun.com/blank",
+    "http://p1123456789abcdef0123456789abcdef.localhost:43123/blank",
+    "http://p0123456789abcdef0123456789abcdef.localhost:43124/blank",
+    "https://foreign.example.test/blank",
+    "/blank?next=synthetic",
+    "/blank#fragment",
+    "/blank/",
+    "/other/../blank",
+    "/%62lank",
+    "//foreign.example.test/blank",
+    "",
+  ])("does not broaden the reviewed action to %s", async (action) => {
+    installRouting();
+    // Model parser-supplied markup directly, without repairing the hostile
+    // literal through the network setter before the adapter can inspect it.
+    form().getAttributeNode("action")!.value = action;
+    button().disabled = false;
+    const pending = client.fetchCredsAndRun("synthetic-nonce", selectors);
+    await vi.advanceTimersByTimeAsync(61000);
+    expect(await pending).toMatchObject({
+      ok: false,
+      reason: "form-not-found-timeout",
+    });
+    expect(fetchCredentials).not.toHaveBeenCalled();
+    expect(field("loginUsername").value).toBe("");
+    expect(field("loginPassword").value).toBe("");
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it("rejects a foreign base even when the rewritten action names the local session", async () => {
+    installRouting();
+    form().action = "/blank";
+    vi.spyOn(document, "baseURI", "get").mockReturnValue(
+      "https://foreign.example.test/",
+    );
+    button().disabled = false;
+    const pending = client.fetchCredsAndRun("synthetic-nonce", selectors);
+    await vi.advanceTimersByTimeAsync(61000);
+    expect(await pending).toMatchObject({ ok: false });
+    expect(fetchCredentials).not.toHaveBeenCalled();
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it("retains the raw action fingerprint across the fill delay", async () => {
+    installRouting();
+    button().disabled = false;
+    const pending = run({ ...DEFAULT_HTTP_FORM_AUTOMATION, fillDelayMs: 500 });
+    expect(field("loginUsername").value).toBe("");
+    form().action = "/blank"; // Semantically equivalent, but not the captured raw action.
+    await vi.advanceTimersByTimeAsync(600);
+    expect(await pending).toMatchObject({
+      ok: false,
+      reason: "form-changed-or-unsafe",
+    });
+    expect(field("loginPassword").value).toBe("");
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it("revalidates a rewritten action when delayed credentials arrive and never retries redemption", async () => {
+    installRouting();
+    form().action = "/blank";
+    button().disabled = false;
+    let release!: (value: {
+      ok: boolean;
+      json: () => Promise<Credentials>;
+    }) => void;
+    fetchCredentials.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const pending = client.fetchCredsAndRun("synthetic-nonce", selectors);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(fetchCredentials).toHaveBeenCalledOnce();
+    form().getAttributeNode("action")!.value =
+      "https://foreign.example.test/blank";
+    release({ ok: true, json: async () => credentials() });
+    await vi.advanceTimersByTimeAsync(61000);
+    expect(await pending).toMatchObject({ ok: false });
+    expect(field("loginUsername").value).toBe("");
+    expect(field("loginPassword").value).toBe("");
+    expect(login).not.toHaveBeenCalled();
+    expect(fetchCredentials).toHaveBeenCalledOnce();
+  });
+
+  it("does not redeem on a proxied MFA stage or bypass the site's initialization visibility", async () => {
+    installRouting();
+    form().action = "/blank";
+    button().disabled = false;
+    button().parentElement!.style.display = "none";
+    const pending = client.fetchCredsAndRun("synthetic-nonce", selectors);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetchCredentials).not.toHaveBeenCalled();
+    document.getElementById("twoFactorLoginContainer")!.style.display = "block";
+    button().parentElement!.style.display = "block";
+    await vi.advanceTimersByTimeAsync(61000);
+    expect(await pending).toMatchObject({ ok: false });
+    expect(fetchCredentials).not.toHaveBeenCalled();
+    expect(field("twoFactorLoginCode").value).toBe("");
+    expect(login).not.toHaveBeenCalled();
+  });
+
   it("waits for the site's challenge and handler, then redeems once and clicks Login once", async () => {
     const pending = client.fetchCredsAndRun("fixture-nonce", selectors);
     await vi.advanceTimersByTimeAsync(45000);

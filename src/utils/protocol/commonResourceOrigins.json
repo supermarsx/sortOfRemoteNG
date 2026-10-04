@@ -1,0 +1,12 @@
+[
+  { "origin": "https://js.stripe.com", "kinds": ["script"] },
+  { "origin": "https://www.paypal.com", "kinds": ["script"] },
+  { "origin": "https://js.braintreegateway.com", "kinds": ["script"] },
+  { "origin": "https://ajax.googleapis.com", "kinds": ["script"] },
+  { "origin": "https://apis.google.com", "kinds": ["script"] },
+  {
+    "origin": "https://cdnjs.cloudflare.com",
+    "kinds": ["script", "stylesheet"]
+  },
+  { "origin": "https://cdn.jsdelivr.net", "kinds": ["script", "stylesheet"] }
+]

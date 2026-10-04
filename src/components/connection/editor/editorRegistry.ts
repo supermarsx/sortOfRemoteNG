@@ -2504,6 +2504,8 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "Website password",
           "Account realm",
           "MeshCentral origin",
+          "Secondary mailbox",
+          "Delegated mailbox SMTP address",
           "Selector overrides",
         ],
         valuePaths: [
@@ -2511,6 +2513,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "httpApplication.loginMode",
           "httpApplication.realm",
           "httpApplication.meshOrigin",
+          "httpApplication.exchangeOwaMailbox",
         ],
       },
       {

@@ -1,9 +1,30 @@
-//! Inverse-map only the reviewed Exchange ECP form's destination field.
+//! Inverse-map only the reviewed Exchange ECP/OWA form's destination field.
 //! Never rewrite credentials, flags, unrelated bodies or arbitrary URL values.
 use std::borrow::Cow;
 
-const INVALID: &str = "The Exchange ECP login destination is invalid or outside the saved HTTPS ECP origin. Credentials were not sent.";
-const INVALID_FORM: &str = "The Exchange ECP login requires an uncompressed URL-encoded form with one destination. Credentials were not sent.";
+const INVALID: &str = "The Exchange login destination is invalid or outside the configured application on the saved HTTPS origin. Credentials were not sent.";
+const INVALID_FORM: &str = "The Exchange login requires an uncompressed URL-encoded form with one destination. Credentials were not sent.";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExchangeDestination {
+    Ecp,
+    Owa,
+}
+
+impl ExchangeDestination {
+    fn permits(self, path: &str) -> bool {
+        let path = path.to_ascii_lowercase();
+        match self {
+            Self::Ecp => path == "/ecp" || path.starts_with("/ecp/"),
+            Self::Owa => {
+                (path == "/owa" || path.starts_with("/owa/"))
+                    && path != "/owa/auth"
+                    && !path.starts_with("/owa/auth/")
+                    && !path.starts_with("/owa/auth.")
+            }
+        }
+    }
+}
 
 fn decode_component(input: &[u8]) -> Result<String, &'static str> {
     let mut decoded = Vec::with_capacity(input.len());
@@ -40,6 +61,7 @@ fn destination(
     value: &str,
     saved: &reqwest::Url,
     proxy: &reqwest::Url,
+    application: ExchangeDestination,
 ) -> Result<reqwest::Url, &'static str> {
     // URL parsing normalizes controls/backslashes. Refuse these spellings
     // instead of allowing an IIS/browser parser disagreement about authority.
@@ -77,30 +99,27 @@ fn destination(
         || parsed.password().is_some()
         || parsed.fragment().is_some()
         || (parsed.origin() != saved.origin() && parsed.origin() != proxy.origin())
-        || !is_ecp_path(parsed.path())
+        || !application.permits(parsed.path())
     {
         return Err(INVALID);
     }
     Ok(parsed)
 }
 
-fn is_ecp_path(path: &str) -> bool {
-    let path = path.to_ascii_lowercase();
-    path == "/ecp" || path.starts_with("/ecp/")
-}
-
 /// Reused by upstream forwarding and local redirect-proof continuation. The
 /// caller must separately require the reviewed Exchange profile (and HTTPS on
 /// the upstream leg). This never approves a foreign origin or a generic hop.
 pub(super) fn preserves_redirect(
-    reviewed: bool,
+    application: Option<ExchangeDestination>,
     method: &reqwest::Method,
     status: u16,
     source: &reqwest::Url,
     destination: &reqwest::Url,
 ) -> bool {
-    reviewed
-        && matches!(status, 301 | 302 | 303 | 307 | 308)
+    let Some(application) = application else {
+        return false;
+    };
+    matches!(status, 301 | 302 | 303 | 307 | 308)
         && source.origin() == destination.origin()
         && source.username().is_empty()
         && source.password().is_none()
@@ -112,14 +131,14 @@ pub(super) fn preserves_redirect(
         && !source.path().contains("//")
         && !destination.path().contains("//")
         && ((matches!(*method, reqwest::Method::GET | reqwest::Method::HEAD)
-            && is_ecp_path(source.path())
+            && application.permits(source.path())
             && destination
                 .path()
                 .eq_ignore_ascii_case("/owa/auth/logon.aspx"))
             || (*method == reqwest::Method::POST
                 && matches!(status, 302 | 303)
                 && source.path().eq_ignore_ascii_case("/owa/auth.owa")
-                && (is_ecp_path(destination.path())
+                && (application.permits(destination.path())
                     || destination
                         .path()
                         .eq_ignore_ascii_case("/owa/auth/logon.aspx"))))
@@ -127,7 +146,7 @@ pub(super) fn preserves_redirect(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn prepare_body<'a>(
-    reviewed: bool,
+    application: Option<ExchangeDestination>,
     method: &reqwest::Method,
     request: &reqwest::Url,
     saved_origin: &str,
@@ -135,10 +154,10 @@ pub(super) fn prepare_body<'a>(
     headers: &[(String, String)],
     body: &'a [u8],
 ) -> Result<Cow<'a, [u8]>, &'static str> {
-    if !reviewed
-        || *method != reqwest::Method::POST
-        || !request.path().eq_ignore_ascii_case("/owa/auth.owa")
-    {
+    let Some(application) = application else {
+        return Ok(Cow::Borrowed(body));
+    };
+    if *method != reqwest::Method::POST || !request.path().eq_ignore_ascii_case("/owa/auth.owa") {
         return Ok(Cow::Borrowed(body));
     }
     let saved = reqwest::Url::parse(saved_origin).map_err(|_| INVALID)?;
@@ -194,7 +213,7 @@ pub(super) fn prepare_body<'a>(
     }
     let (start, end) = found.ok_or(INVALID_FORM)?;
     let value = decode_component(&body[start..end])?;
-    let parsed = destination(&value, &saved, &proxy)?;
+    let parsed = destination(&value, &saved, &proxy, application)?;
     if parsed.origin() == saved.origin() && !value.starts_with('/') {
         return Ok(Cow::Borrowed(body));
     }

@@ -222,6 +222,69 @@ describe("useHTTPViewer", () => {
 
   // ── resolveCredentials ─────────────────────────────────────────────────
 
+  it.each(["manual", "form"] as const)(
+    "uses the shared OWA mailbox entry in the legacy %s viewer",
+    async (loginMode) => {
+      const connections = useConnections().state.connections;
+      const original = connections[1];
+      const hostname =
+        "https://secure.example.com/owa/previous@example.test/?view=calendar#week";
+      const profile = { version: 1 as const, id: "exchange-owa", loginMode };
+      try {
+        for (const exchangeOwaMailbox of [
+          undefined,
+          "",
+          "service+invoices@example.test",
+          "../invalid@example.test",
+        ]) {
+          connections[1] = {
+            ...original,
+            hostname,
+            username: "DOMAIN\\admin",
+            password: "synthetic-password",
+            httpApplication: { ...profile, exchangeOwaMailbox },
+          };
+          const hook = renderHook(() =>
+            useHTTPViewer({ ...makeHttpsSession(), hostname }),
+          );
+          try {
+            const invalid = exchangeOwaMailbox?.startsWith("../");
+            const expected = exchangeOwaMailbox
+              ? "https://secure.example.com/owa/service+invoices@example.test/"
+              : hostname;
+            expect(hook.result.current.buildTargetUrl()).toBe(
+              invalid ? "" : expected,
+            );
+            await waitFor(() =>
+              expect(hook.result.current.status).toBe(
+                invalid ? "error" : "connected",
+              ),
+            );
+            if (!invalid) {
+              const mapped = new URL(hook.result.current.proxyUrl);
+              const target = new URL(expected);
+              expect(mapped.pathname + mapped.search + mapped.hash).toBe(
+                target.pathname + target.search + target.hash,
+              );
+              expect(hook.result.current.resolveCredentials()).toEqual(
+                loginMode === "form"
+                  ? {
+                      username: "DOMAIN\\admin",
+                      password: "synthetic-password",
+                    }
+                  : null,
+              );
+            }
+          } finally {
+            hook.unmount();
+          }
+        }
+      } finally {
+        connections[1] = original;
+      }
+    },
+  );
+
   it.each([
     ["chatgpt", "chatgpt.com", "https://chatgpt.com/auth/login"],
     ["claude", "claude.ai", "https://claude.ai/login"],

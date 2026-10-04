@@ -124,6 +124,181 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     });
   });
 
+  describe.each(["manual", "form"] as const)(
+    "OWA mailbox in %s mode",
+    (loginMode) => {
+      const origin = "https://mail.example.test:8443";
+      const owaSession = {
+        ...session,
+        protocol: "https" as const,
+        hostname: "mail.example.test",
+      };
+      const profile = { version: 1, id: "exchange-owa", loginMode } as const;
+      beforeEach(() => {
+        connections.push({
+          id: "conn-1",
+          protocol: "https",
+          hostname: owaSession.hostname,
+          port: 8443,
+          username: "DOMAIN\\admin",
+          password: "synthetic-admin-password",
+          httpVerifySsl: true,
+          httpApplication: {
+            ...profile,
+            exchangeOwaMailbox: "service+invoices@example.test",
+          },
+        });
+        mockResolveEffectiveTrustPolicy.mockReturnValue("tofu");
+        mockVerifyIdentity.mockResolvedValue({ status: "trusted" });
+        mockInvoke.mockImplementation(async (command) =>
+          command === "get_tls_certificate_info"
+            ? {
+                fingerprint: "ab".repeat(32),
+                subject: "CN=mail.example.test",
+                issuer: "CN=Synthetic CA",
+              }
+            : {
+                local_port: 9000,
+                session_id: "proxy-1",
+                proxy_url:
+                  "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
+              },
+        );
+      });
+
+      it("opens the literal @/+ mailbox path while authenticating only the primary account", async () => {
+        const hostname = `${origin}/owa/older@example.test/?view=calendar#week`;
+        connections[0] = { ...connections[0], hostname };
+        const { result } = renderHook(() =>
+          useWebBrowser({ ...owaSession, hostname }),
+        );
+        await waitFor(() =>
+          expect(result.current.proxySessionIdRef.current).toBe("proxy-1"),
+        );
+        expect(result.current.currentUrl).toBe(
+          `${origin}/owa/service+invoices@example.test/`,
+        );
+        expect(result.current.applicationExternalTarget?.url).toBe(
+          result.current.currentUrl,
+        );
+        expect(lastProxyConfig()).toMatchObject({
+          target_url: `${origin}/`,
+          reviewed_application_profile: "exchange-owa",
+          username: loginMode === "form" ? "DOMAIN\\admin" : "",
+          password: loginMode === "form" ? "synthetic-admin-password" : "",
+          upstream_auth_mode: "none",
+          http_auto_login: loginMode === "form",
+          verify_ssl: true,
+        });
+        const frame = document.createElement("iframe");
+        act(() => result.current.attachIframe(frame));
+        expect(new URL(frame.src).pathname).toBe(
+          "/owa/service+invoices@example.test/",
+        );
+        expect(new URL(frame.src).hostname).toMatch(/^p[0-9a-f]+\.localhost$/);
+      });
+
+      it.each([
+        ["mail.example.test", undefined, "/owa/"],
+        [
+          `${origin}/owa/older@example.test/?view=calendar#week`,
+          undefined,
+          "/owa/older@example.test/?view=calendar#week",
+        ],
+        [
+          `${origin}/owa/older@example.test/?view=calendar#week`,
+          "",
+          "/owa/older@example.test/?view=calendar#week",
+        ],
+        [`${origin}/?view=calendar`, " ", "/?view=calendar"],
+      ])(
+        "preserves the saved entry when no target is set: %s / %s",
+        async (hostname, exchangeOwaMailbox, path) => {
+          connections[0] = {
+            ...connections[0],
+            hostname,
+            httpApplication: { ...profile, exchangeOwaMailbox },
+          };
+          const { result } = renderHook(() =>
+            useWebBrowser({ ...owaSession, hostname }),
+          );
+          await waitFor(() =>
+            expect(result.current.proxySessionIdRef.current).toBe("proxy-1"),
+          );
+          expect(result.current.currentUrl).toBe(`${origin}${path}`);
+          expect(result.current.applicationExternalTarget?.url).toBe(
+            `${origin}${path}`,
+          );
+        },
+      );
+
+      it("revokes edits and reloads only the new target, without an automatic credential replay", async () => {
+        const { result, rerender } = renderHook(() =>
+          useWebBrowser(owaSession),
+        );
+        await waitFor(() =>
+          expect(result.current.proxySessionIdRef.current).toBe("proxy-1"),
+        );
+        const starts = () =>
+          mockInvoke.mock.calls.filter(
+            ([command]) => command === "start_basic_auth_proxy",
+          );
+        const frame = document.createElement("iframe");
+        act(() => result.current.attachIframe(frame));
+        connections[0] = { ...connections[0], name: "Unrelated rename" };
+        rerender();
+        expect(result.current.proxySessionIdRef.current).toBe("proxy-1");
+        connections[0] = {
+          ...connections[0],
+          httpApplication: {
+            ...profile,
+            exchangeOwaMailbox: "second@example.test",
+          },
+        };
+        rerender();
+        await waitFor(() =>
+          expect(result.current.proxySessionIdRef.current).toBe(""),
+        );
+        expect(mockInvoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+          sessionId: "proxy-1",
+        });
+        expect(frame.src).toBe("about:blank");
+        expect(starts()).toHaveLength(1);
+        expect(result.current.currentUrl).toBe(
+          `${origin}/owa/second@example.test/`,
+        );
+        expect(result.current.inputUrl).toBe(result.current.currentUrl);
+        await act(async () => {
+          await result.current.handleRestartProxy();
+        });
+        expect(starts()).toHaveLength(2);
+        expect(new URL(frame.src).pathname).toBe("/owa/second@example.test/");
+        connections[0] = { ...connections[0], httpApplication: profile };
+        rerender();
+        await waitFor(() =>
+          expect(result.current.proxySessionIdRef.current).toBe(""),
+        );
+        expect(result.current.currentUrl).toBe(`${origin}/owa/`);
+        expect(starts()).toHaveLength(2);
+      });
+
+      it("blocks an invalid imported mailbox without starting a proxy or disclosing credentials", async () => {
+        connections[0] = {
+          ...connections[0],
+          httpApplication: {
+            ...profile,
+            exchangeOwaMailbox: "../other@example.test",
+          },
+        };
+        const { result } = renderHook(() => useWebBrowser(owaSession));
+        await act(async () => {});
+        expect(result.current.buildTargetUrl()).toBe("");
+        expect(result.current.loadError).toMatch(/invalid/i);
+        expect(lastProxyConfig()).toBeUndefined();
+      });
+    },
+  );
+
   it.each([undefined, "/site/administrator/", "/private-entry/"])(
     "starts Joomla at its reviewed administrator path %s and revokes on path edits",
     async (loginPath) => {

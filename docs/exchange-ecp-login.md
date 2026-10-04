@@ -48,8 +48,10 @@ and the on-premises entry point in
 Windows-integrated authentication (NTLM/Kerberos), ADFS/Entra federation,
 third-party MFA, CAPTCHA, password expiry/change, unsupported customized forms
 and the separate Exchange Online portal are not automated by this form adapter.
-They remain manual; the existing generic Exchange and Exchange OWA profiles are
-unchanged. No automatic MFA challenge is registered for ECP.
+They remain manual. Generic Exchange and Microsoft 365 profiles do not gain
+form automation. The separate [on-premises OWA profile](exchange-owa-login.md)
+uses its own mailbox destination scope. No automatic MFA challenge is
+registered for either Exchange form adapter.
 
 Regression tests use synthetic form and proxy fixtures, including destination
 serialization, cookie probe/login round trips without browser cookies, and

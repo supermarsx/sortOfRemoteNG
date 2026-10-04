@@ -1,5 +1,8 @@
 import {
   DEFAULT_HTTP_PROXY_POLICY,
+  DEFAULT_EXTERNAL_FONT_ORIGINS,
+  DEFAULT_EXTERNAL_RESOURCE_ORIGINS,
+  type HttpExternalResourceOrigin,
   type HttpProxyPolicy,
 } from "../../types/connection/httpProxyPolicy";
 
@@ -55,13 +58,48 @@ export function normalizeExternalFontOrigins(value: unknown): string[] {
   });
 }
 
+export function normalizeExternalResourceOrigins(
+  value: unknown,
+): HttpExternalResourceOrigin[] {
+  if (value === undefined)
+    return DEFAULT_EXTERNAL_RESOURCE_ORIGINS.map((row) => ({
+      origin: row.origin,
+      kinds: [...row.kinds],
+    }));
+  if (!Array.isArray(value) || value.length > 16) return invalid();
+  const origins = normalizeExternalFontOrigins(
+    value.map((row) => {
+      if (
+        !object(row) ||
+        Object.keys(row).some((key) => !["origin", "kinds"].includes(key))
+      )
+        return invalid();
+      return row.origin;
+    }),
+  );
+  return value.map((row, index) => {
+    if (
+      !Array.isArray(row.kinds) ||
+      row.kinds.length < 1 ||
+      row.kinds.length > 2 ||
+      new Set(row.kinds).size !== row.kinds.length ||
+      row.kinds.some(
+        (kind: unknown) => kind !== "script" && kind !== "stylesheet",
+      )
+    )
+      return invalid();
+    return { origin: origins[index], kinds: [...row.kinds] };
+  });
+}
+
 /** Absent legacy policy uses defaults; present malformed state is never repaired silently. */
 export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
   if (value === undefined)
     return {
       ...DEFAULT_HTTP_PROXY_POLICY,
       queryParameters: [],
-      externalFontOrigins: [],
+      externalFontOrigins: [...DEFAULT_EXTERNAL_FONT_ORIGINS],
+      externalResourceOrigins: normalizeExternalResourceOrigins(undefined),
     };
   if (
     !object(value) ||
@@ -74,6 +112,7 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
           "sameOriginOnly",
           "allowExternalFonts",
           "externalFontOrigins",
+          "externalResourceOrigins",
           "allowCrossOriginRedirects",
           "allowHttpDowngradeRedirects",
           "cacheMode",
@@ -126,9 +165,16 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
     pageScripts: value.pageScripts as HttpProxyPolicy["pageScripts"],
     httpsOnly: value.httpsOnly,
     sameOriginOnly: value.sameOriginOnly,
-    allowExternalFonts: value.allowExternalFonts === true,
+    allowExternalFonts:
+      value.allowExternalFonts === undefined ||
+      value.allowExternalFonts === true,
     externalFontOrigins: normalizeExternalFontOrigins(
-      value.externalFontOrigins,
+      value.externalFontOrigins === undefined
+        ? [...DEFAULT_EXTERNAL_FONT_ORIGINS]
+        : value.externalFontOrigins,
+    ),
+    externalResourceOrigins: normalizeExternalResourceOrigins(
+      value.externalResourceOrigins,
     ),
     allowCrossOriginRedirects: value.allowCrossOriginRedirects === true,
     allowHttpDowngradeRedirects: value.allowHttpDowngradeRedirects === true,

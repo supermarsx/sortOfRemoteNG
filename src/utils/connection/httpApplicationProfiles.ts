@@ -15,6 +15,7 @@ import { ANALYTICS_CMS_PROFILES } from "./analyticsCmsProfiles";
 import { FREEPBX_ADMIN_PROFILE } from "./freepbxProfile";
 import { PORKBUN_PROFILE } from "./porkbunProfile";
 import { EXCHANGE_ECP_PROFILE } from "./exchangeEcpProfile";
+import { normalizeExchangeOwaMailbox } from "./exchangeOwaProfile";
 import { ADOBE_ADMIN_CONSOLE_PROFILE } from "./adobeAdminConsoleProfile";
 import { CANVA_PROFILE } from "./canvaProfile";
 
@@ -802,6 +803,12 @@ export function normalizeHttpApplicationSettings(
       : undefined;
   const meshOriginValid =
     raw.meshOrigin === undefined || meshOrigin !== undefined;
+  const exchangeOwaMailbox =
+    id === "exchange-owa"
+      ? normalizeExchangeOwaMailbox(raw.exchangeOwaMailbox)
+      : undefined;
+  const exchangeOwaMailboxValid =
+    raw.exchangeOwaMailbox === undefined || exchangeOwaMailbox !== undefined;
   const valid =
     raw.version === 1 &&
     !!profile &&
@@ -812,6 +819,7 @@ export function normalizeHttpApplicationSettings(
     joomlaVersionValid &&
     apiOriginValid &&
     meshOriginValid &&
+    exchangeOwaMailboxValid &&
     raw.invalid !== true;
   return {
     version: 1,
@@ -819,6 +827,7 @@ export function normalizeHttpApplicationSettings(
     loginMode: validMode ? loginMode : "manual",
     ...(apiOrigin ? { apiOrigin } : {}),
     ...(meshOrigin ? { meshOrigin } : {}),
+    ...(exchangeOwaMailbox ? { exchangeOwaMailbox } : {}),
     ...(id === "proxmox" && realmValid && typeof raw.realm === "string"
       ? { realm: raw.realm }
       : {}),

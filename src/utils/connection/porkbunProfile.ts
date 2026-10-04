@@ -6,9 +6,11 @@ import type {
 export const PORKBUN_LOGIN_URL = "https://porkbun.com/account/login";
 
 /**
- * Public, unauthenticated HTML and /js/skaboink.js reviewed 2026-09-30.
+ * Public, unauthenticated HTML and /js/skaboink.js rechecked 2026-10-02.
  * The Login button is outside loginForm and calls logInExec()/logIn().
  * The form's /blank iframe target is NOT the site's AJAX login endpoint.
+ * Proxy URL setters may serialize /blank to the current local origin + /blank;
+ * that exact equivalent must retain the same action, target and handler guards.
  * Preserve the site's CAPTCHA and AJAX handlers; never submit this form directly.
  */
 export const PORKBUN_LOGIN_SELECTORS = {

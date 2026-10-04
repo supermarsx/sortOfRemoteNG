@@ -20,8 +20,9 @@ dependencies. Execute the assembled client, never the coordinator template.
   retries, and dispose application state with the run.
 - `apps/porkbun.js`: reviewed custom-widget discovery and validation.
 - `apps/joomla.js`: administrator form recognition and manual combined MFA.
-- `apps/exchange_ecp.js`: OWA forms-authentication contract for ECP only;
-  validates the POST/return destination and clicks the site's sign-in handler.
+- `apps/exchange_ecp.js`: shared on-premises Exchange forms authentication;
+  distinct ECP/OWA selectors constrain the return destination to the selected
+  application. Validates the POST and clicks the site's sign-in handler once.
 - `apps/freepbx.js`: reviewed launcher navigation; `openFreepbxAdmin(ov)` uses
   shared `stopped`/`isVisible`, owns its attempt state and receives no secrets.
 

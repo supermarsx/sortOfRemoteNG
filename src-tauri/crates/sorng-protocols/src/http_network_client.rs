@@ -518,14 +518,24 @@ impl ProxyNetworkState {
         self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::Freepbx)
     }
 
-    pub(crate) fn has_exchange_ecp_login(&self) -> bool {
-        self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::ExchangeEcp)
+    pub(crate) fn exchange_login_destination(
+        &self,
+    ) -> Option<super::exchange_ecp::ExchangeDestination> {
+        match self.reviewed_application_profile {
+            Some(super::ReviewedApplicationProfile::ExchangeEcp) => {
+                Some(super::exchange_ecp::ExchangeDestination::Ecp)
+            }
+            Some(super::ReviewedApplicationProfile::ExchangeOwa) => {
+                Some(super::exchange_ecp::ExchangeDestination::Owa)
+            }
+            _ => None,
+        }
     }
 
-    /// Allocate native cookie ownership only for the exact reviewed ECP profile.
+    /// Allocate native cookie ownership only for reviewed on-prem Exchange profiles.
     /// The jar validates the saved HTTPS origin; no cookie values enter page code.
     pub fn with_exchange_cookies(mut self, source_origin: &str) -> Result<Self, String> {
-        if self.has_exchange_ecp_login() {
+        if self.exchange_login_destination().is_some() {
             self.exchange_cookies = Some(Arc::new(
                 super::exchange_cookies::ExchangeCookies::new(source_origin)
                     .map_err(str::to_owned)?,
@@ -1007,6 +1017,9 @@ pub(super) fn bootstrap(
     });
     if let Some(capability) = super::external_fonts::manifest(policy, proxy_origin) {
         config["externalFonts"] = capability;
+    }
+    if let Some(capability) = super::external_resources::manifest(policy, proxy_origin) {
+        config["externalResources"] = capability;
     }
     if let Some(capability) =
         super::quickconnect_control::manifest(policy, source_origin, proxy_origin)

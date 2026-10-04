@@ -368,6 +368,7 @@ describe("SessionTabs accessibility", () => {
       makeSession("saved-override", "ssh"),
       makeSession("database-brand", "postgresql"),
       makeSession("cloud-brand", "azure"),
+      makeSession("tactical-website", "https"),
       makeSession("integration-brand", "integration:nginx"),
       makeSession("settings-tool", "tool:settings", "tool-settings"),
     ];
@@ -376,6 +377,9 @@ describe("SessionTabs accessibility", () => {
       makeConnection("saved-override", "ssh", { icon: "star" }),
       makeConnection("database-brand", "postgresql"),
       makeConnection("cloud-brand", "azure"),
+      makeConnection("tactical-website", "https", {
+        httpApplication: { version: 1, id: "tacticalrmm", loginMode: "manual" },
+      }),
       makeConnection("integration-brand", "integration:nginx", {
         integration: { descriptorKey: "nginx" },
       }),
@@ -388,6 +392,7 @@ describe("SessionTabs accessibility", () => {
       "saved-override": "star",
       "database-brand": "postgresql",
       "cloud-brand": "azure",
+      "tactical-website": "tacticalrmm",
       "integration-brand": "nginx",
       "settings-tool": "tool:settings",
     } as const;

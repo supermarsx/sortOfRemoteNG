@@ -1,15 +1,31 @@
-/* Exchange ECP forms authentication. Private module, no credentials retained. */
-function exchangeEcpSelectors(ov) {
-  return !!(
+/* Shared Exchange ECP/OWA FBA. Distinct selectors retain destination scope. */
+function exchangeFormsDestinationPath(ov) {
+  if (
     ov &&
     ov.username === 'form[name="logonForm"] input#username[name="username"]' &&
     ov.password ===
       'form[name="logonForm"] input#password[name="password"][type="password"]' &&
     ov.submit === 'form[name="logonForm"] .signinbutton[role="button"]'
-  );
+  )
+    return "/ecp";
+  if (
+    ov &&
+    ov.username ===
+      'form[name="logonForm"][method="post" i] input#username[name="username"]' &&
+    ov.password ===
+      'form[name="logonForm"][method="post" i] input#password[name="password"][type="password"]' &&
+    ov.submit ===
+      'form[name="logonForm"][method="post" i] .signinbutton[role="button"]'
+  )
+    return "/owa";
+  return null;
 }
 
-function exchangeEcpDestination(field) {
+function exchangeEcpSelectors(ov) {
+  return exchangeFormsDestinationPath(ov) !== null;
+}
+
+function exchangeEcpDestination(field, returnPath) {
   var value = field.value;
   if (!value || value.length > 8192 || /[\u0000-\u0020\u007f\s\\]/.test(value))
     throw new Error("unsafe-form-action");
@@ -22,11 +38,13 @@ function exchangeEcpDestination(field) {
   )
     throw new Error("unsafe-form-action");
   var url = new URL(value, document.baseURI);
+  var path = url.pathname.toLowerCase();
   if (
     url.username ||
     url.password ||
     url.hash ||
-    !/^\/ecp(?:\/|$)/i.test(url.pathname) ||
+    !(path === returnPath || path.indexOf(returnPath + "/") === 0) ||
+    (returnPath === "/owa" && /^\/owa\/auth(?:[/.]|$)/.test(path)) ||
     /%|\/\//.test(url.pathname)
   )
     throw new Error("unsafe-form-action");
@@ -94,7 +112,7 @@ function exchangeEcpFingerprint(target) {
   )
     throw new Error("unsafe-form-action");
   return [
-    exchangeEcpDestination(destination),
+    exchangeEcpDestination(destination, target.exchangeEcp.returnPath),
     context,
     form.enctype,
     submit.getAttribute("onclick"),
@@ -104,8 +122,8 @@ function exchangeEcpFingerprint(target) {
 function exchangeEcpTarget(root, ov, user, pw) {
   if (!exchangeEcpSelectors(ov) || root !== document || !user || !pw.form)
     return null;
-  // ECP redirects here before disclosing a credential. Do not automate the
-  // mailbox OWA login, expired-password pages or a federated login lookalike.
+  // Both applications redirect here. The configured selectors constrain the
+  // return destination; never automate expiry or federated login lookalikes.
   if (location.pathname.toLowerCase() !== "/owa/auth/logon.aspx") return null;
   var reasons = new URL(location.href).searchParams.getAll("reason");
   if (
@@ -171,6 +189,7 @@ function exchangeEcpTarget(root, ov, user, pw) {
     form: form,
     submit: button,
     exchangeEcp: {
+      returnPath: exchangeFormsDestinationPath(ov),
       destination: form.querySelector('input[name="destination"]'),
       click: button.onclick,
       login: window.clkLgn,
@@ -185,6 +204,7 @@ function sameExchangeEcpHandler(target, found) {
     !target.exchangeEcp ||
     !!(
       found.exchangeEcp &&
+      found.exchangeEcp.returnPath === target.exchangeEcp.returnPath &&
       found.exchangeEcp.destination === target.exchangeEcp.destination &&
       found.exchangeEcp.click === target.exchangeEcp.click &&
       found.exchangeEcp.login === target.exchangeEcp.login

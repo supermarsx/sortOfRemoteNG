@@ -38,6 +38,14 @@ providers will accept it. Browser identity spoofs are not evidence of acceptance
 requests, including redirects and secondary resources, must still traverse the
 app proxy; neither current testing nor a future design permits direct fallback.
 
+The legacy mediator's anonymous external-resource route supports approved classic
+scripts and stylesheets, but does not yet preserve the base URL for CDN ES modules
+with relative imports. Mapping a module entry or `modulepreload` URL alone is not
+proof that its dependency graph loads: relative imports currently resolve against
+the local resource endpoint. This remains a compatibility limitation to cover with
+a real module-loading fixture; the origin-preserving foundation is not yet wired
+to website tabs and does not fix that limitation in the current mode.
+
 ### Origin-preserving upgrade contract
 
 The approved rollout is Windows, Linux and macOS **together**, with macOS 14+

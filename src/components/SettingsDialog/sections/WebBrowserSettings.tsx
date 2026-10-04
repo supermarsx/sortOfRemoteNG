@@ -10,7 +10,10 @@ import {
 } from "lucide-react";
 import type { GlobalSettings } from "../../../types/settings/settings";
 import type { WebBrowserSettingsConfig } from "../../../types/settings/webBrowser";
-import type { HttpProxyPolicy } from "../../../types/connection/httpProxyPolicy";
+import {
+  DEFAULT_EXTERNAL_FONT_ORIGINS,
+  type HttpProxyPolicy,
+} from "../../../types/connection/httpProxyPolicy";
 import { normalizeWebBrowserSettings } from "../../../utils/settings/webBrowserSettings";
 import { MAX_BROWSER_FORM_COMBINED_DELAY_MS } from "../../../utils/connection/httpFormAutomation";
 import { normalizeExternalFontOrigins } from "../../../utils/connection/httpProxyPolicy";
@@ -23,6 +26,7 @@ import {
 } from "../../ui/settings/SettingsPrimitives";
 import { BrowserNumberRow, BrowserSelectRow } from "../BrowserSettingsFields";
 import WebsiteAppearanceSection from "./WebsiteAppearanceSection";
+import ExternalResourceOriginsEditor from "../../security/ExternalResourceOriginsEditor";
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
@@ -417,6 +421,33 @@ function WebBrowserSettingsContent({
                 {fontError}
               </p>
             )}
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary"
+              disabled={policy.sameOriginOnly}
+              onClick={() => {
+                if (
+                  updatePolicy({
+                    allowExternalFonts: true,
+                    externalFontOrigins: [...DEFAULT_EXTERNAL_FONT_ORIGINS],
+                  })
+                )
+                  setFontError(null);
+              }}
+            >
+              Restore common fonts
+            </button>
+          </div>
+          <div data-setting-key="webBrowser.defaultPolicy.externalResourceOrigins">
+            <ExternalResourceOriginsEditor
+              origins={policy.externalResourceOrigins ?? []}
+              onChange={(externalResourceOrigins) =>
+                updatePolicy({ externalResourceOrigins })
+              }
+              sameOriginOnly={policy.sameOriginOnly}
+              pageScripts={policy.pageScripts}
+              variant="settings"
+            />
           </div>
           <p className="flex items-start gap-2 border-t border-[var(--color-border)] pt-3 text-xs leading-relaxed text-[var(--color-textMuted)]">
             <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />

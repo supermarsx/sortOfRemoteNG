@@ -10,13 +10,14 @@ function porkbunSelectors(ov) {
   );
 }
 
-// Public /account/login + skaboink.js reviewed 2026-09-30. The button is a
+// Public /account/login + skaboink.js rechecked 2026-10-02. The button is a
 // sibling of the form, not a form-associated submitter. Its website handler
 // owns CAPTCHA, AJAX and subsequent challenges; /blank is only a dummy target.
 // This exception requires the complete reviewed selectors, never heuristics.
 function porkbunTarget(root, ov, user, pw) {
   if (!porkbunSelectors(ov) || root !== document) return null;
   var form = pw.form;
+  var action = form && form.getAttribute("action");
   var container = document.querySelector("#accountLoginContainer");
   var buttons = document.querySelectorAll(ov.submit);
   var button = buttons.length === 1 ? buttons[0] : null;
@@ -46,7 +47,11 @@ function porkbunTarget(root, ov, user, pw) {
     button.getAttribute("aria-disabled") === "true" ||
     button.matches(":disabled") ||
     !isVisible(button) ||
-    form.getAttribute("action") !== "/blank" ||
+    // The proxy's action property/attribute setters serialize /blank to an
+    // absolute local URL. Accept exactly that equivalent, not other paths,
+    // origins, query strings or URL-parser repairs. Shared target fingerprints
+    // still reject an action change after the target is captured for filling.
+    (action !== "/blank" && action !== location.origin + "/blank") ||
     (form.getAttribute("method") || "").toLowerCase() !== "post" ||
     form.getAttribute("target") !== "lame_login_iframe" ||
     !form.hasAttribute("data-pbrf") ||

@@ -1,6 +1,7 @@
 //! Cloudflare challenge acceptance is entirely loopback TLS behind a synthetic CONNECT proxy.
 use super::*;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use reqwest::Url;
 
 const SOURCE: &str = "https://dash.cloudflare.com";
 const CHALLENGE: &str = "https://challenges.cloudflare.com";
@@ -285,6 +286,11 @@ async fn peer(reject_proxy: bool) -> Peer {
                     socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
                     return;
                 }
+                if mesh && request.starts_with("GET /turnstile/v0/api.js?") {
+                    let body = turnstile_api_fixture();
+                    socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+                    return;
+                }
                 let body = if mesh { "<!doctype html><html><head></head><body><script src=\"https://challenges.cloudflare.com/a%20b.js\"></script>control</body></html>" } else { "<!doctype html><html><head><script src=\"https://challenges.cloudflare.com/turnstile/v0/api.js\"></script></head><body><iframe src=\"//challenges.cloudflare.com/frame\"></iframe></body></html>" };
                 let cookie = if mesh { "mesh_session=mesh-only; Domain=.cloudflare.com; Path=/; HttpOnly" }
                     else { "dashboard_session=dashboard-only; Path=/; HttpOnly" };
@@ -305,6 +311,237 @@ async fn peer(reject_proxy: bool) -> Peer {
         seen,
         started,
         task,
+    }
+}
+
+// A minimal reproduction of script discovery and origin derivation, not the
+// vendor's challenge implementation. No credentials, site keys or tokens.
+fn turnstile_api_fixture() -> String {
+    // Independent literal from the public API's discovery declaration. Do not
+    // generate this input from the production matcher: transcription or SDK
+    // changes must be able to make the fixture fail.
+    r#"var discover=RegExp("^https:\\/\\/(?:challenges(?:\\.fed)?\\.cloudflare\\.com|challenges\\.cloudflare-cn\\.com)\\/turnstile\\/v0(?:\\/.*)?\\/api\\.js","u");var base="https://challenges.cloudflare.com";var scriptUrl=new URL(document.currentScript.src);var targetOrigin=scriptUrl.origin;"#.into()
+}
+
+#[test]
+fn cloudflare_challenge_api_discovery_adapter_is_exact_and_preserves_verification_logic() {
+    let alias = "http://p33333333333333333333333333333333.localhost:43123";
+    let source = turnstile_api_fixture();
+    let expected_pattern = format!(
+        r"^{}\/turnstile\/v0(?:\/.*)?\/api\.js",
+        regex::escape(alias)
+    );
+    let expected = format!(
+        "RegExp({},\"u\")",
+        serde_json::to_string(&expected_pattern).unwrap()
+    );
+    for path in [
+        "/turnstile/v0/api.js?render=explicit",
+        "/turnstile/v0/g/fixture/api.js",
+    ] {
+        let url = Url::parse(&format!("{CHALLENGE}{path}")).unwrap();
+        let output = cloudflare_challenge::repair_api_script_discovery(
+            &source,
+            &url,
+            Some("application/javascript; charset=utf-8"),
+            alias,
+        );
+        assert!(output.contains(&expected));
+        // No fake message, token, success callback or widened matcher appears.
+        assert_eq!(
+            output.split(';').skip(1).collect::<Vec<_>>(),
+            source.split(';').skip(1).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            cloudflare_challenge::repair_api_script_discovery(
+                &output,
+                &url,
+                Some("application/javascript"),
+                alias
+            ),
+            output
+        );
+    }
+    let matcher = regex::Regex::new(&expected_pattern).unwrap();
+    assert!(matcher.is_match(&format!("{alias}/turnstile/v0/api.js?render=explicit")));
+    for url in [
+        format!("{CHALLENGE}/turnstile/v0/api.js"),
+        format!("{alias}.evil.test/turnstile/v0/api.js"),
+        format!("{alias}/turnstile/v1/api.js"),
+        format!("{alias}/cdn-cgi/challenge-platform/api.js"),
+    ] {
+        assert!(!matcher.is_match(&url));
+    }
+}
+
+#[test]
+fn cloudflare_challenge_api_discovery_adapter_ignores_unreviewed_responses_and_vendor_drift() {
+    let alias = "http://p33333333333333333333333333333333.localhost:43123";
+    let source = turnstile_api_fixture();
+    for url in [
+        "http://challenges.cloudflare.com/turnstile/v0/api.js",
+        "https://challenges.cloudflare.com:8443/turnstile/v0/api.js",
+        "https://challenges.cloudflare.com.evil.test/turnstile/v0/api.js",
+        "https://user:password@challenges.cloudflare.com/turnstile/v0/api.js",
+        "https://porkbun.com/turnstile/v0/api.js",
+        "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/api.js",
+        "https://challenges.cloudflare.com/turnstile/v1/api.js",
+        "https://challenges.cloudflare.com/turnstile/v0/api.js.map",
+        "https://challenges.cloudflare.com/turnstile/v0//api.js",
+    ] {
+        assert_eq!(
+            cloudflare_challenge::repair_api_script_discovery(
+                &source,
+                &Url::parse(url).unwrap(),
+                Some("application/javascript"),
+                alias
+            ),
+            source
+        );
+    }
+    let url = Url::parse(&format!("{CHALLENGE}/turnstile/v0/api.js")).unwrap();
+    for content_type in [
+        None,
+        Some("text/html"),
+        Some("text/css"),
+        Some("application/json"),
+    ] {
+        assert_eq!(
+            cloudflare_challenge::repair_api_script_discovery(&source, &url, content_type, alias),
+            source
+        );
+    }
+    for bad_alias in [
+        "https://challenges.cloudflare.com",
+        "http://localhost:43123",
+        "http://pevil.localhost:43123",
+        "http://p33333333333333333333333333333333.localhost:43123/",
+        "http://p33333333333333333333333333333333.localhost:43123?value=1",
+    ] {
+        assert_eq!(
+            cloudflare_challenge::repair_api_script_discovery(
+                &source,
+                &url,
+                Some("application/javascript"),
+                bad_alias
+            ),
+            source
+        );
+    }
+    for changed in [
+        source.replace("^https:", "^https?:"),
+        format!("{source}{source}"),
+    ] {
+        assert_eq!(
+            cloudflare_challenge::repair_api_script_discovery(
+                &changed,
+                &url,
+                Some("application/javascript"),
+                alias
+            ),
+            changed
+        );
+    }
+}
+
+#[tokio::test]
+async fn cloudflare_challenge_api_response_uses_one_origin_for_discovery_frames_and_messages() {
+    for profile in [
+        ReviewedApplicationProfile::Cloudflare,
+        ReviewedApplicationProfile::Porkbun,
+    ] {
+        let peer = peer(false).await;
+        let fixture = fixture_with_profile(&peer, peer.trusted.clone(), Some(profile)).await;
+        let alias = root(&fixture).await;
+        let response = request(
+            &fixture,
+            &alias,
+            "/turnstile/v0/api.js?render=explicit&onload=ready",
+        )
+        .send()
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers()["content-type"], "application/javascript");
+        let body = response.text().await.unwrap();
+        let rewritten = cloudflare_challenge::repair_api_script_discovery(
+            &cloudflare_challenge::rewrite(&turnstile_api_fixture(), &alias),
+            &Url::parse(&format!("{CHALLENGE}/turnstile/v0/api.js")).unwrap(),
+            Some("application/javascript"),
+            &alias,
+        );
+        assert_eq!(body, rewritten);
+        assert!(body.contains(&format!("var base=\"{alias}\"")));
+        assert!(!body.contains("https://challenges.cloudflare.com"));
+        assert!(peer
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|request| request
+                .starts_with("GET /turnstile/v0/api.js?render=explicit&onload=ready ")));
+    }
+}
+
+#[tokio::test]
+async fn cloudflare_challenge_hosted_api_response_preserves_the_local_discovery_origin() {
+    for (profile, source) in [
+        (ReviewedApplicationProfile::Claude, "https://claude.ai"),
+        (ReviewedApplicationProfile::Chatgpt, "https://chatgpt.com"),
+    ] {
+        let peer = peer(false).await;
+        let seed = proxy(source.into(), peer.trusted.clone()).await;
+        let origin = format!("http://p{}.localhost:48765", uuid::Uuid::new_v4().simple());
+        let hosted = google::GoogleSession::new(
+            Some(profile),
+            &Url::parse(source).unwrap(),
+            &origin,
+            peer.trusted.clone(),
+            peer.trusted.clone(),
+        )
+        .unwrap()
+        .unwrap();
+        let alias = hosted
+            .routes
+            .iter()
+            .find(|route| route.upstream_origin == CHALLENGE)
+            .unwrap()
+            .proxy_origin
+            .clone();
+        let state = Arc::new(AxumProxyState {
+            network: Arc::new(ProxyNetworkState::default().with_google_routes(Some(hosted))),
+            proxy_origin: origin.clone(),
+            proxy_authority: origin.trim_start_matches("http://").into(),
+            upstream_auth_mode: UpstreamAuthMode::None,
+            ..(*seed.state).clone()
+        });
+        state.document_sequence.store(1, Ordering::SeqCst);
+        state.network.document_issued(1, true);
+        let request = axum::http::Request::builder()
+            .uri("/turnstile/v0/api.js?render=explicit&onload=ready")
+            .header("host", alias.trim_start_matches("http://"))
+            .header("sec-fetch-dest", "script")
+            .header("sec-fetch-mode", "no-cors")
+            .body(Body::empty())
+            .unwrap();
+        let response = axum_proxy_handler(axum::extract::State(state), request).await;
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers()["content-type"], "application/javascript");
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        // Independent expectation: discovery and the SDK's message target must
+        // both use this route's alias, not the parent's alias or HTTPS origin.
+        let escaped_alias = alias.replace('.', "\\.");
+        let expected_pattern = format!("^{escaped_alias}\\/turnstile\\/v0(?:\\/.*)?\\/api\\.js");
+        assert!(body.contains(&serde_json::to_string(&expected_pattern).unwrap()));
+        assert!(body.contains(&format!("var base=\"{alias}\"")));
+        assert!(!body.contains(CHALLENGE));
+        assert!(!body.contains(&origin));
+        assert_eq!(peer.connects.lock().unwrap().len(), 1);
+        assert!(peer.seen.lock().unwrap()[0]
+            .starts_with("GET /turnstile/v0/api.js?render=explicit&onload=ready "));
     }
 }
 

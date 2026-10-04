@@ -305,7 +305,7 @@ fn preserve_directory_redirect_proof(
     proxy_origin: &str,
     generation: Option<&str>,
     method: &axum::http::Method,
-    reviewed_exchange: bool,
+    reviewed_exchange: Option<super::exchange_ecp::ExchangeDestination>,
 ) {
     if !matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
         return;
@@ -475,7 +475,7 @@ async fn dispatch(
     let directory_source = (matches!(
         *request.method(),
         axum::http::Method::GET | axum::http::Method::HEAD
-    ) || (state.network.has_exchange_ecp_login()
+    ) || (state.network.exchange_login_destination().is_some()
         && *request.method() == axum::http::Method::POST))
         .then(|| {
             request
@@ -508,7 +508,7 @@ async fn dispatch(
                     &state.proxy_origin,
                     generation.as_deref(),
                     &redirect_method,
-                    state.network.has_exchange_ecp_login(),
+                    state.network.exchange_login_destination(),
                 );
             }
             match generation {
@@ -780,7 +780,7 @@ mod exchange_ecp_proof_tests {
                 ORIGIN,
                 Some(GENERATION),
                 &method,
-                reviewed,
+                reviewed.then_some(super::super::exchange_ecp::ExchangeDestination::Ecp),
             );
             let location = response.headers()["location"].to_str().unwrap();
             if allowed {

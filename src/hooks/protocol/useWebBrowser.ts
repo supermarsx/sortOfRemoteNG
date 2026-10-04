@@ -129,6 +129,7 @@ import {
   normalizeHttpApplicationSettings,
 } from "../../utils/connection/httpApplicationProfiles";
 import { getHttpApplicationExternalTarget } from "../../utils/auth/httpApplicationExternal";
+import { resolveExchangeOwaInitialUrl } from "../../utils/connection/exchangeOwaProfile";
 import {
   normalizeHttpProxyPolicy,
   validateHttpCustomHeaders,
@@ -863,7 +864,7 @@ export function useWebBrowser(
         throw new Error("Saved connection contains an invalid web port.");
       }
 
-      const target = useCanonicalGoogle
+      let target = useCanonicalGoogle
         ? new URL(canonicalGoogle.href)
         : new URL(`${protocol}://${authority.hostname}/`);
       target.port = port === defaultPort ? "" : String(port);
@@ -893,6 +894,16 @@ export function useWebBrowser(
       // Enter the reviewed SPA route directly. An empty hash would let initial
       // router startup look like a navigation revocation between the two grants.
       if (profile?.loginFlow === "bitwarden") target.hash = "/login";
+      if (profileSettings?.id === "exchange-owa") {
+        if (profileSettings.invalid)
+          throw new Error("The Exchange OWA application settings are invalid.");
+        target = new URL(
+          resolveExchangeOwaInitialUrl(
+            target.toString(),
+            profileSettings.exchangeOwaMailbox,
+          ),
+        );
+      }
       const redirected = getRuntimeWebNavigation(runtimeNavigationKey);
       // Runtime connection handoffs replace the connection authority. A native
       // in-session continuation deliberately does not: its tab-local target is
@@ -3167,11 +3178,24 @@ export function useWebBrowser(
         connection?.httpApplication?.meshOrigin &&
       previous.profile?.joomlaVersion ===
         connection?.httpApplication?.joomlaVersion &&
+      previous.profile?.exchangeOwaMailbox ===
+        connection?.httpApplication?.exchangeOwaMailbox &&
       previous.auth.error === applicationAuth.error &&
       sameHttpApplicationLogin(previous.auth.login, applicationAuth.login)
     )
       return;
     if (handoffTargetRef.current === session.connectionId) return;
+    if (
+      connection?.httpApplication?.id === "exchange-owa" &&
+      (previous.profile?.id !== "exchange-owa" ||
+        previous.profile?.exchangeOwaMailbox !==
+          connection.httpApplication.exchangeOwaMailbox)
+    ) {
+      // Reload must use the edited mailbox, not the last page in the old one.
+      // Updating these fields does not navigate or re-arm the credential grant.
+      setCurrentUrl(targetResolution.url);
+      setInputUrl(targetResolution.url);
+    }
     cancelPendingContinuation();
     navGenRef.current += 1;
     trustResolveRef.current?.(false);
@@ -3200,6 +3224,7 @@ export function useWebBrowser(
     applyNavigationFailure,
     clearFrame,
     cancelPendingContinuation,
+    targetResolution.url,
   ]);
 
   // Wait for the initial theme decision instead of turning settings startup

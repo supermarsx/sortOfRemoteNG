@@ -5,9 +5,19 @@ import {
   getConnectionEditorSearchDescriptors,
   getConnectionEditorTabs,
   navigateToConnectionEditorSearchDescriptor,
+  type ConnectionEditorSearchFieldDescriptor,
 } from "../../src/components/connection/editor/editorRegistry";
 
 describe("connection editor registry", () => {
+  it("makes the delegated OWA mailbox setting and saved address searchable", () => {
+    const field =
+      CONNECTION_EDITOR_SEARCH_DESCRIPTORS.flatMap<ConnectionEditorSearchFieldDescriptor>(
+        (section) => section.fields,
+      ).find((field) => field.id === "http-application");
+    expect(field?.copy).toContain("Secondary mailbox");
+    expect(field?.valuePaths).toContain("httpApplication.exchangeOwaMailbox");
+    expect(field?.protocolSubtabId).toBe("application");
+  });
   it("registers the stable editor tab order and filters connection-only tabs", () => {
     expect(CONNECTION_EDITOR_TABS.map((tab) => tab.id)).toEqual([
       "general",

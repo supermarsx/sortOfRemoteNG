@@ -44,7 +44,7 @@ fn force_surface_coverage(background: &str, text: &str) -> String {
     // Keep structural surfaces dark after the temporary loading palette retires,
     // including panels added by an SPA with no cPanel DOM markers.
     format!(
-        "html:root body :is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']){{background-color:{background}!important;color:{text}!important;background-image:none!important;transition:none!important}}"
+        "html:root body :is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog'],[role~='listbox'],[role~='menu'],[role~='tooltip'],[popover],.ms-Callout,.ms-Callout-main,.ms-Suggestions,.ms-ContextualMenu,.ui-autocomplete){{background-color:{background}!important;color:{text}!important;background-image:none!important;transition:none!important}}"
     )
 }
 
@@ -218,7 +218,7 @@ mod tests {
             .split_once("}@layer sorng-dark-surface{")
             .unwrap()
             .0;
-        let baseline = "html:root body :is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']){background-color:#102030!important;color:#d0e0f0!important;background-image:none!important;transition:none!important}";
+        let baseline = "html:root body :is(main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog'],[role~='listbox'],[role~='menu'],[role~='tooltip'],[popover],.ms-Callout,.ms-Callout-main,.ms-Suggestions,.ms-ContextualMenu,.ui-autocomplete){background-color:#102030!important;color:#d0e0f0!important;background-image:none!important;transition:none!important}";
         assert!(force.contains(baseline));
         assert!(force.contains("html:root,html:root body,html:root frameset{background-color:#102030!important;color:#d0e0f0!important;background-image:none!important;transition:none!important}"));
         assert!(!force.contains("data-sorng-dark-ready"));

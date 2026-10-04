@@ -3,19 +3,22 @@ import {
   normalizeHttpProxyPolicy,
   validateHttpCustomHeaders,
 } from "../../src/utils/connection/httpProxyPolicy";
+import { DEFAULT_EXTERNAL_FONT_ORIGINS } from "../../src/types/connection/httpProxyPolicy";
 
 describe("HTTP proxy policy validation", () => {
-  it("defaults external fonts off for legacy policies and clones origin arrays", () => {
+  it("defaults missing font settings to common hosts and clones origin arrays", () => {
     const legacy = normalizeHttpProxyPolicy(undefined);
     delete legacy.allowExternalFonts;
     delete legacy.externalFontOrigins;
     expect(normalizeHttpProxyPolicy(legacy)).toMatchObject({
-      allowExternalFonts: false,
-      externalFontOrigins: [],
+      allowExternalFonts: true,
+      externalFontOrigins: [...DEFAULT_EXTERNAL_FONT_ORIGINS],
     });
     const first = normalizeHttpProxyPolicy(undefined);
     first.externalFontOrigins!.push("https://fonts.example.com");
-    expect(normalizeHttpProxyPolicy(undefined).externalFontOrigins).toEqual([]);
+    expect(normalizeHttpProxyPolicy(undefined).externalFontOrigins).toEqual([
+      ...DEFAULT_EXTERNAL_FONT_ORIGINS,
+    ]);
     const copy = normalizeHttpProxyPolicy(first);
     expect(copy.externalFontOrigins).toEqual(first.externalFontOrigins);
     expect(copy.externalFontOrigins).not.toBe(first.externalFontOrigins);

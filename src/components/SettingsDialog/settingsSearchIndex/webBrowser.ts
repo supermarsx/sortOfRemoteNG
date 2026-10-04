@@ -221,7 +221,7 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     key: "webBrowser.defaultPolicy.sameOriginOnly",
     label: "Restrict to the same origin",
     description:
-      "Restrict mediated redirects, resources and forms; overrides external fonts.",
+      "Restrict mediated redirects, resources and forms; overrides external fonts, scripts and stylesheets.",
     tags: [
       "same origin",
       "resources",
@@ -256,7 +256,7 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     key: "webBrowser.defaultPolicy.externalFontOrigins",
     label: "External font origin",
     description:
-      "Up to 16 unique exact HTTPS origins for font stylesheets and files.",
+      "Up to 16 unique exact HTTPS origins for font stylesheets and files. Restore common fonts to enable the four common font hosts.",
     tags: [
       "fonts",
       "origins",
@@ -264,6 +264,35 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "stylesheet",
       "https",
       "validation",
+      "restore defaults",
+      "google fonts",
+      "cdnjs",
+      "jsdelivr",
+    ],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
+    key: "webBrowser.defaultPolicy.externalResourceOrigins",
+    label: "External scripts and stylesheets",
+    description:
+      "Allow anonymous proxied requests to exact HTTPS origins for scripts or stylesheets. Add or remove origins, or restore common resource defaults. Same-origin and script restrictions still apply.",
+    tags: [
+      "cdn",
+      "javascript",
+      "css",
+      "scripts",
+      "stylesheets",
+      "origins",
+      "allowlist",
+      "https",
+      "restore defaults",
+      "stripe",
+      "paypal",
+      "braintree",
+      "google",
+      "cdnjs",
+      "jsdelivr",
     ],
     section: "webBrowser",
     sectionLabel: "Web Browser",

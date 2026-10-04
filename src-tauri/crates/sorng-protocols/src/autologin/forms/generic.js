@@ -136,7 +136,9 @@ function submitForm(target, ov, readinessProfile) {
     // clkLgn owns Exchange's validation and hidden fields. No native-submit
     // or Enter fallback, and no persistent/private-computer setting changes.
     target.submit.click();
-    return "exchange-ecp-button-click";
+    return target.exchangeEcp.returnPath === "/owa"
+      ? "exchange-owa-button-click"
+      : "exchange-ecp-button-click";
   }
 
   if (target.porkbun) {

@@ -1,0 +1,4 @@
+{
+  "scriptDiscoveryPattern": "^https:\\/\\/(?:challenges(?:\\.fed)?\\.cloudflare\\.com|challenges\\.cloudflare-cn\\.com)\\/turnstile\\/v0(?:\\/.*)?\\/api\\.js",
+  "apiPathPattern": "\\/turnstile\\/v0(?:\\/.*)?\\/api\\.js"
+}

@@ -118,6 +118,44 @@ fn assert_form_forwarded(request: &CapturedPost, mime: &str) {
 }
 
 #[tokio::test]
+async fn buffered_proxy_frames_empty_entity_methods_without_changing_bodyless_reads() {
+    let upstream = capture_upstream().await;
+    let proxy = cpanel_proxy(&upstream).await;
+    for method in [
+        reqwest::Method::POST,
+        reqwest::Method::PUT,
+        reqwest::Method::PATCH,
+        reqwest::Method::GET,
+        reqwest::Method::HEAD,
+        reqwest::Method::OPTIONS,
+        reqwest::Method::DELETE,
+    ] {
+        let response = client()
+            .request(method.clone(), format!("{}/api/empty", proxy.base))
+            .header("Host", &proxy.state.proxy_authority)
+            .header("Origin", &proxy.state.proxy_origin)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = response.bytes().await.unwrap();
+        let requests = upstream.requests.lock().unwrap();
+        let request = requests.last().unwrap();
+        assert_eq!(request.method, method);
+        assert!(request.body.is_empty());
+        assert!(!request.headers.contains_key("transfer-encoding"));
+        if matches!(
+            method,
+            reqwest::Method::POST | reqwest::Method::PUT | reqwest::Method::PATCH
+        ) {
+            assert_eq!(request.headers["content-length"], "0");
+        } else {
+            assert!(!request.headers.contains_key("content-length"));
+        }
+    }
+}
+
+#[tokio::test]
 async fn cpanel_document_and_xhr_posts_preserve_form_bytes_type_and_length() {
     let upstream = capture_upstream().await;
     let proxy = cpanel_proxy(&upstream).await;

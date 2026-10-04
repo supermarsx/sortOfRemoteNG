@@ -57,6 +57,147 @@ afterEach(() => {
 });
 
 describe("site-independent dark preemption", () => {
+  it.each([
+    'role="listbox"',
+    'role="listbox presentation"',
+    'role="menu"',
+    'role="tooltip"',
+    'popover="auto"',
+    'class="ms-Callout"',
+    'class="ms-Callout-main"',
+    'class="ms-Suggestions"',
+    'class="ms-ContextualMenu"',
+    'class="ui-autocomplete"',
+  ])(
+    "keeps late search/popover surfaces opaque without re-covering the page: %s",
+    async (attributes) => {
+      document.body.innerHTML =
+        '<input type="search" aria-controls="suggestions">';
+      await enable();
+      await vi.advanceTimersByTimeAsync(120);
+      const input = document.querySelector("input")!;
+      input.focus();
+      const popup = document.createElement("div");
+      popup.innerHTML = `<div id="suggestions" ${attributes} style="background-color:white"></div>`;
+      const surface = popup.firstElementChild as HTMLElement;
+      surface.innerHTML = Array.from(
+        { length: 200 },
+        (_, index) => `<div role="option">Suggestion ${index}</div>`,
+      ).join("");
+      document.body.append(popup);
+      await mutations();
+
+      // Assert the opaque force rule, not the generic transparent fallback.
+      // These DOM tests do not pretend jsdom implements cascade layers.
+      const rule = /html:root body (:is\([^{}]+\))\{([^}]+)\}/.exec(
+        bootstrap().textContent!,
+      )!;
+      expect(surface.matches(rule[1])).toBe(true);
+      expect(surface.firstElementChild!.matches(rule[1])).toBe(false);
+      input.setAttribute("role", "combobox");
+      expect(input.matches(rule[1])).toBe(false);
+      expect(rule[2]).toContain("background-color:#181a1b!important");
+      expect(rule[2]).toContain("color:#e8e6e3!important");
+      expect(proxySource).toContain(
+        `html:root body ${rule[1]}{{background-color:{background}!important`,
+      );
+      expect(presented()).toBe(true);
+      expect(document.activeElement).toBe(input);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(runtime.signals).toEqual(["proxy_dark_ready"]);
+      surface.firstElementChild!.addEventListener("click", () => {
+        input.value = "Suggestion 0";
+      });
+      (surface.firstElementChild as HTMLElement).click();
+      expect(input.value).toBe("Suggestion 0");
+      await runtime.controller.set({ enabled: false });
+      expect(document.getElementById("__sorng_dark_bootstrap_v1")).toBeNull();
+      expect(surface.style.backgroundColor).toBe("white");
+    },
+  );
+
+  it("includes shadow-root suggestion lists in the opaque palette", async () => {
+    const root = document
+      .getElementById("siif-shell")!
+      .attachShadow({ mode: "open" });
+    root.innerHTML =
+      '<div role="listbox"><div role="option">Suggestion</div></div>';
+    await enable();
+    await vi.advanceTimersByTimeAsync(120);
+    const css = root.querySelector("style")!.textContent!;
+    const rule = /(:is\([^{}]+\))\{background-color:#181a1b!important/.exec(
+      css,
+    )!;
+    expect(root.querySelector('[role="listbox"]')!.matches(rule[1])).toBe(true);
+    expect(root.querySelector('[role="option"]')!.matches(rule[1])).toBe(false);
+    await runtime.controller.set({ enabled: false });
+    expect(root.querySelector("style")).toBeNull();
+  });
+
+  it.each([
+    "transform:translateY(1px)",
+    "transform:translateY(1px)!important",
+    "--message:'Hello!'",
+  ])(
+    "does not re-cover search or scrolling for harmless styles: %s",
+    async (style) => {
+      document.body.innerHTML =
+        '<input type="search"><section id="results"></section>';
+      await enable();
+      await vi.advanceTimersByTimeAsync(120);
+      expect(runtime.signals).toEqual(["proxy_dark_ready"]);
+      const input = document.querySelector("input")!;
+      input.focus();
+      const results = document.getElementById("results")!;
+      results.innerHTML = Array.from(
+        { length: 200 },
+        () => `<div style="${style}"><span>Result</span></div>`,
+      ).join("");
+      await mutations();
+      expect(presented()).toBe(true);
+      expect(runtime.signals).toEqual(["proxy_dark_ready"]);
+      for (const item of Array.from(results.children)) {
+        (item as HTMLElement).style.transform = "translateY(50px)";
+      }
+      await mutations();
+      expect(presented()).toBe(true);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(runtime.signals).toEqual(["proxy_dark_ready"]);
+      expect(document.activeElement).toBe(input);
+    },
+  );
+
+  it.each([64, 65])(
+    "shields only when more than the repair budget of competing surfaces remains (%i)",
+    async (count) => {
+      await enable();
+      await vi.advanceTimersByTimeAsync(120);
+      const subtree = document.createElement("section");
+      subtree.innerHTML =
+        Array.from(
+          { length: count },
+          () =>
+            '<div><span style="background-color:white!important">Result</span></div>',
+        ).join("") + '<img style="background-color:white!important">';
+      document.body.append(subtree);
+      await mutations();
+      expect(presented()).toBe(count === 64);
+      expect(runtime.signals).toEqual(
+        count === 64
+          ? ["proxy_dark_ready"]
+          : ["proxy_dark_ready", "proxy_dark_pending"],
+      );
+      await vi.advanceTimersByTimeAsync(200);
+      expect(presented()).toBe(true);
+      expect(
+        Array.from(subtree.querySelectorAll("span")).every(
+          (surface) => surface.style.backgroundColor === "rgb(24, 26, 27)",
+        ),
+      ).toBe(true);
+      expect(subtree.querySelector("img")!.style.backgroundColor).toBe("white");
+    },
+  );
+
   it("repairs owned shadow stylesheet text-node damage and releases the cover", async () => {
     const root = document
       .getElementById("siif-shell")!

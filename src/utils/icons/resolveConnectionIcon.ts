@@ -10,6 +10,7 @@ import {
   type ConnectionIconKey,
 } from "./connectionIconCatalog";
 import { FOLDER_OPEN_ICONS } from "./catalog/folders";
+import { normalizeHttpApplicationSettings } from "../connection/httpApplicationProfiles";
 import {
   getRuntimeIconEntry,
   type SelectableConnectionIconKey,
@@ -61,7 +62,12 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
 });
 
 export type EffectiveConnectionIconSource =
-  "override" | "folder" | "integration" | "protocol" | "fallback";
+  | "override"
+  | "folder"
+  | "integration"
+  | "application"
+  | "protocol"
+  | "fallback";
 
 export type ConnectionIconOverrideState = "unset" | "valid" | "unknown";
 
@@ -97,7 +103,10 @@ export function getExpandedFolderIcon(
   );
 }
 
-export type ConnectionIconInput = Pick<Connection, "icon" | "integration"> & {
+export type ConnectionIconInput = Pick<
+  Connection,
+  "icon" | "integration" | "httpApplication"
+> & {
   isGroup?: boolean;
   /** Accept unknown future protocol strings so callers can reach the fallback. */
   protocol: string;
@@ -133,8 +142,8 @@ export function getProtocolDefaultIconKey(
 
 /**
  * Resolve one effective connection icon with a deterministic precedence:
- * valid explicit override → folder default → matching integration default → built-in
- * protocol default → generic monitor fallback.
+ * valid explicit override → folder default → matching integration default →
+ * supported application default → built-in protocol default → generic monitor fallback.
  *
  * Unknown persisted keys are retained only as diagnostic metadata and never
  * used for component lookup. Passing no descriptor (or a descriptor for a
@@ -203,6 +212,27 @@ export function resolveEffectiveConnectionIcon(
       integrationKey,
       savedOverride || undefined,
     );
+  }
+
+  // Tactical RMM's website is represented by its saved profile, not a native
+  // protocol. This is display-only: never write an icon or infer an app from a URL.
+  // Other applications retain their existing explicit-suggestion behavior.
+  if (
+    (connection.protocol === "http" || connection.protocol === "https") &&
+    connection.httpApplication?.id === "tacticalrmm"
+  ) {
+    const application = normalizeHttpApplicationSettings(
+      connection.httpApplication,
+    );
+    if (application?.id === "tacticalrmm" && !application.invalid) {
+      return buildResult(
+        "tacticalrmm",
+        "application",
+        overrideState,
+        integrationKey,
+        savedOverride || undefined,
+      );
+    }
   }
 
   const protocolKey = getProtocolDefaultIconKey(connection.protocol);

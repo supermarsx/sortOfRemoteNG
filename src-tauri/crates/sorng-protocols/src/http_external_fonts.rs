@@ -14,16 +14,24 @@ const MAX_URL: usize = 2048;
 const MAX_CSS: usize = 256 * 1024;
 const BLOCKED: &str = "https://external-font-blocked.invalid/";
 
-fn clean_url(value: &str) -> bool {
+pub(super) fn clean_url(value: &str) -> bool {
+    clean_url_with_limit(value, MAX_URL)
+}
+
+pub(super) fn clean_url_with_limit(value: &str, limit: usize) -> bool {
     !value.is_empty()
-        && value.len() <= MAX_URL
+        && value.len() <= limit
         && !value
             .chars()
             .any(|c| c.is_control() || c.is_whitespace() || c == '\\')
 }
 
-fn https_url(value: &str) -> Option<Url> {
-    if !clean_url(value) || value.contains('#') {
+pub(super) fn https_url(value: &str) -> Option<Url> {
+    https_url_with_limit(value, MAX_URL)
+}
+
+pub(super) fn https_url_with_limit(value: &str, limit: usize) -> Option<Url> {
+    if !clean_url_with_limit(value, limit) || value.contains('#') {
         return None;
     }
     let (_, authority) = value.split_once("://")?;
@@ -95,15 +103,17 @@ pub(super) fn manifest(policy: &HttpProxyPolicy, proxy_origin: &str) -> Option<s
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
+pub(super) enum Kind {
     Font,
     Stylesheet,
+    Script,
 }
 impl Kind {
     fn name(self) -> &'static str {
         match self {
             Self::Font => "font",
             Self::Stylesheet => "stylesheet",
+            Self::Script => "script",
         }
     }
 }
@@ -463,24 +473,40 @@ pub(super) async fn handle(
     }
 }
 
-fn resolved(value: &str, base: &Url) -> Option<Url> {
-    if !clean_url(value) || value.contains('#') {
+pub(super) fn resolved(value: &str, base: &Url) -> Option<Url> {
+    resolved_with_limit(value, base, MAX_URL)
+}
+
+pub(super) fn resolved_with_limit(value: &str, base: &Url, limit: usize) -> Option<Url> {
+    if !clean_url_with_limit(value, limit) || value.contains('#') {
         return None;
     }
     if value.contains("://") {
-        return https_url(value);
+        return https_url_with_limit(value, limit);
     }
     if value.starts_with("//") {
-        return https_url(&format!("https:{value}"));
+        return https_url_with_limit(&format!("https:{value}"), limit);
     }
     let url = base.join(value).ok()?;
-    https_url(url.as_str())
+    https_url_with_limit(url.as_str(), limit)
 }
 
 fn mapped(value: &str, base: &Url, proxy: &str, origins: &[String], kind: Kind) -> Option<String> {
+    if kind == Kind::Script {
+        return None;
+    }
     let url = resolved(value, base)?;
     approved(url.as_str(), origins)?;
     Some(local_url(&url, kind, proxy))
+}
+
+pub(super) fn policy_mapper<'a>(
+    policy: &HttpProxyPolicy,
+    base: &'a Url,
+    proxy: &'a str,
+) -> impl Fn(&str, Kind) -> Option<String> + 'a {
+    let origins = effective_origins(policy).unwrap_or_default();
+    move |value, kind| mapped(value, base, proxy, &origins, kind)
 }
 
 fn css_safe_url(value: &str) -> String {
@@ -495,6 +521,44 @@ fn css_safe_url(value: &str) -> String {
 
 fn identifier(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte >= 128 || matches!(byte, b'_' | b'-')
+}
+
+// Consume a complete CSS identifier, including escapes and the optional
+// whitespace terminating a hexadecimal escape. This lets selectors such as
+// .sm\:block and .\31 0 survive without treating escaped function/at-rule
+// names as ordinary text (they could conceal url(), image-set(), or @import).
+fn css_identifier(text: &str, start: usize) -> Option<(usize, bool)> {
+    let bytes = text.as_bytes();
+    let mut i = start;
+    let mut escaped = false;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            escaped = true;
+            i += 1;
+            if bytes.get(i)?.is_ascii_control() {
+                return None;
+            }
+            if bytes[i].is_ascii_hexdigit() {
+                let begin = i;
+                while i < begin + 6 && bytes.get(i).is_some_and(u8::is_ascii_hexdigit) {
+                    i += 1;
+                }
+                if bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
+                    if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+            } else {
+                i += text[i..].chars().next()?.len_utf8();
+            }
+        } else if identifier(bytes[i]) {
+            i += text[i..].chars().next()?.len_utf8();
+        } else {
+            break;
+        }
+    }
+    Some((i, escaped))
 }
 
 fn whitespace(bytes: &[u8], mut i: usize) -> usize {
@@ -520,11 +584,23 @@ fn css_string(text: &str, i: usize) -> Option<(usize, usize, usize)> {
     if !matches!(quote, b'\'' | b'"') {
         return None;
     }
-    let end = i + 1 + text[i + 1..].find(quote as char)?;
-    if text[i + 1..end].chars().any(char::is_control) {
-        return None;
+    let mut end = i + 1;
+    while let Some(byte) = text.as_bytes().get(end) {
+        if *byte == quote {
+            return Some((i + 1, end, end + 1));
+        }
+        if byte.is_ascii_control() {
+            return None;
+        }
+        if *byte == b'\\' {
+            end += 1;
+            if text.as_bytes().get(end)?.is_ascii_control() {
+                return None;
+            }
+        }
+        end += 1;
     }
-    Some((i + 1, end, end + 1))
+    None
 }
 
 fn css_url(text: &str, i: usize) -> Option<(usize, usize, usize)> {
@@ -557,7 +633,27 @@ fn rewrite_css(
     origins: &[String],
     external: bool,
 ) -> Option<String> {
-    if text.contains(['\\', '\0']) || external && text.contains('<') {
+    // Preserve the typography-only parser's existing strict grammar.
+    if text.contains('\\') || external && text.contains('<') {
+        return None;
+    }
+    rewrite_css_with(text, external, &|value, kind| {
+        mapped(value, base, proxy, origins, kind).or_else(|| {
+            external.then(|| {
+                resolved(value, base)
+                    .map(|url| css_safe_url(url.as_str()))
+                    .unwrap_or_else(|| BLOCKED.into())
+            })
+        })
+    })
+}
+
+pub(super) fn rewrite_css_with(
+    text: &str,
+    external: bool,
+    map: &impl Fn(&str, Kind) -> Option<String>,
+) -> Option<String> {
+    if text.contains('\0') {
         return None;
     }
     let lower = text.to_ascii_lowercase();
@@ -576,22 +672,33 @@ fn rewrite_css(
             continue;
         }
         let boundary = i == 0 || !identifier(bytes[i - 1]);
-        if external && boundary && identifier(bytes[i]) {
-            let mut end = i + 1;
-            while bytes.get(end).is_some_and(|byte| identifier(*byte)) {
-                end += 1;
+        if boundary && (identifier(bytes[i]) || bytes[i] == b'\\') {
+            let (end, escaped) = css_identifier(text, i)?;
+            if escaped {
+                if bytes.get(end) == Some(&b'(') || (i > 0 && bytes[i - 1] == b'@') {
+                    return None;
+                }
+                i = end;
+                continue;
             }
             // These functions can treat plain strings as resource URLs.
             // Refuse unsupported grammar rather than letting a relative
             // string resolve against the authenticated source application's
             // loopback origin. Ordinary strings/local() do not fetch URLs.
-            if bytes.get(end) == Some(&b'(')
+            if external
+                && bytes.get(end) == Some(&b'(')
                 && matches!(
                     &lower[i..end],
                     "image-set" | "-webkit-image-set" | "image" | "src"
                 )
             {
                 return None;
+            }
+            // Consume non-URL identifiers as complete UTF-8 tokens. Revisiting
+            // continuation bytes would not be a valid string slicing boundary.
+            if &lower[i..end] != "url" || bytes.get(end) != Some(&b'(') {
+                i = end;
+                continue;
             }
         }
         let import = bytes[i] == b'@'
@@ -615,13 +722,7 @@ fn rewrite_css(
         };
         let (from, to, end) = range;
         let value = &text[from..to];
-        let replacement = mapped(value, base, proxy, origins, kind).or_else(|| {
-            external.then(|| {
-                resolved(value, base)
-                    .map(|url| css_safe_url(url.as_str()))
-                    .unwrap_or_else(|| BLOCKED.into())
-            })
-        });
+        let replacement = map(value, kind);
         if let Some(replacement) = replacement {
             output.push_str(&text[copied..from]);
             output.push_str(&replacement);
@@ -756,6 +857,12 @@ fn html_encode(value: &str) -> String {
 }
 
 fn rewrite_html(text: &str, base: &Url, proxy: &str, origins: &[String]) -> String {
+    rewrite_html_with(text, &|value, kind| {
+        mapped(value, base, proxy, origins, kind)
+    })
+}
+
+pub(super) fn rewrite_html_with(text: &str, map: &impl Fn(&str, Kind) -> Option<String>) -> String {
     let lower = text.to_ascii_lowercase();
     let mut i = 0;
     let mut edits = Vec::new();
@@ -783,13 +890,24 @@ fn rewrite_html(text: &str, base: &Url, proxy: &str, origins: &[String]) -> Stri
                 let rel = value("rel").unwrap_or_default().to_ascii_lowercase();
                 if rel.split_ascii_whitespace().any(|v| v == "stylesheet") {
                     Some(Kind::Stylesheet)
-                } else if rel.split_ascii_whitespace().any(|v| v == "preload")
-                    && value("as").is_some_and(|v| v.eq_ignore_ascii_case("font"))
-                {
-                    Some(Kind::Font)
+                } else if rel.split_ascii_whitespace().any(|v| v == "modulepreload") {
+                    Some(Kind::Script)
+                } else if rel.split_ascii_whitespace().any(|v| v == "preload") {
+                    match value("as")
+                        .unwrap_or_default()
+                        .to_ascii_lowercase()
+                        .as_str()
+                    {
+                        "font" => Some(Kind::Font),
+                        "style" => Some(Kind::Stylesheet),
+                        "script" => Some(Kind::Script),
+                        _ => None,
+                    }
                 } else {
                     None
                 }
+            } else if name == "script" {
+                Some(Kind::Script)
             } else {
                 None
             };
@@ -797,10 +915,12 @@ fn rewrite_html(text: &str, base: &Url, proxy: &str, origins: &[String]) -> Stri
                 let Some(value) = html_decode(&tag[a.start..a.end]) else {
                     continue;
                 };
-                let replacement = if a.name.eq_ignore_ascii_case("href") {
-                    kind.and_then(|kind| mapped(&value, base, proxy, origins, kind))
+                let replacement = if (name == "link" && a.name.eq_ignore_ascii_case("href"))
+                    || (name == "script" && a.name.eq_ignore_ascii_case("src"))
+                {
+                    kind.and_then(|kind| map(&value, kind))
                 } else if a.name.eq_ignore_ascii_case("style") {
-                    rewrite_css(&value, base, proxy, origins, false).filter(|s| s != &value)
+                    rewrite_css_with(&value, false, map).filter(|s| s != &value)
                 } else {
                     None
                 };
@@ -847,9 +967,7 @@ fn rewrite_html(text: &str, base: &Url, proxy: &str, origins: &[String]) -> Stri
                             .is_some_and(|b| b.is_ascii_whitespace() || matches!(b, b'/' | b'>'))
                     {
                         if name == "style" {
-                            if let Some(css) =
-                                rewrite_css(&text[end..at], base, proxy, origins, false)
-                            {
+                            if let Some(css) = rewrite_css_with(&text[end..at], false, map) {
                                 if css != text[end..at] {
                                     edits.push((end, at, css));
                                 }
@@ -918,7 +1036,16 @@ mod tests {
     fn external_font_policy_is_backwards_compatible_canonical_and_bounded() {
         let old = r#"{"version":1,"pageScripts":"allow","httpsOnly":false,"sameOriginOnly":false,"cacheMode":"normal","queryParameters":[]}"#;
         let decoded: HttpProxyPolicy = serde_json::from_str(old).unwrap();
-        assert!(!decoded.allow_external_fonts && decoded.external_font_origins.is_empty());
+        assert!(decoded.allow_external_fonts);
+        assert_eq!(
+            decoded.external_font_origins,
+            [
+                "https://fonts.googleapis.com",
+                "https://fonts.gstatic.com",
+                "https://cdnjs.cloudflare.com",
+                "https://cdn.jsdelivr.net"
+            ]
+        );
         let target = Url::parse("https://source.example").unwrap();
         let policy = policy();
         assert!(policy.validate(&target).is_ok());
@@ -982,7 +1109,7 @@ mod tests {
         policy.same_origin_only = false;
         policy.allow_external_fonts = false;
         assert!(manifest(&policy, "http://proxy.local").is_none());
-        assert!(manifest(&HttpProxyPolicy::default(), "http://proxy.local").is_none());
+        assert!(manifest(&HttpProxyPolicy::default(), "http://proxy.local").is_some());
     }
 
     #[test]

@@ -18,6 +18,10 @@ import {
   SETTINGS_TAB_IDS,
 } from "../../src/components/SettingsDialog/settingsConstants";
 import { SETTINGS_SEARCH_INDEX } from "../../src/components/SettingsDialog/settingsSearchIndex";
+import {
+  DEFAULT_EXTERNAL_FONT_ORIGINS,
+  DEFAULT_EXTERNAL_RESOURCE_ORIGINS,
+} from "../../src/types/connection/httpProxyPolicy";
 
 function setup(
   section: "browser" | "internal" = "browser",
@@ -60,6 +64,123 @@ function number(label: string, value: string) {
 }
 
 describe("Web Browser settings", () => {
+  it("shows common font and resource defaults without writing on render", () => {
+    const { update } = setup("browser", { webBrowser: undefined });
+    expect(
+      screen.getByRole("checkbox", { name: /Allow external fonts/ }),
+    ).toBeChecked();
+    const fonts = screen.getByRole("list", { name: "Saved font origins" });
+    expect(within(fonts).getAllByRole("listitem")).toHaveLength(4);
+    for (const origin of DEFAULT_EXTERNAL_FONT_ORIGINS)
+      expect(within(fonts).getByText(origin)).toBeVisible();
+    const resources = screen.getByRole("list", {
+      name: "Saved external resource origins",
+    });
+    for (const row of DEFAULT_EXTERNAL_RESOURCE_ORIGINS)
+      expect(within(resources).getByText(row.origin)).toBeVisible();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("preserves explicit font opt-outs and empty resource lists until the matching restore action", () => {
+    const config = normalizeWebBrowserSettings(undefined);
+    Object.assign(config.defaultPolicy, {
+      allowExternalFonts: false,
+      externalFontOrigins: [],
+      externalResourceOrigins: [],
+      pageScripts: "block",
+    });
+    const { update } = setup("browser", { webBrowser: config });
+    expect(
+      screen.getByRole("checkbox", { name: /Allow external fonts/ }),
+    ).not.toBeChecked();
+    expect(
+      screen.queryByRole("list", { name: "Saved font origins" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("list", { name: "Saved external resource origins" }),
+    ).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Restore common fonts" }),
+    );
+    expect(update.mock.lastCall?.[0].webBrowser.defaultPolicy).toMatchObject({
+      allowExternalFonts: true,
+      externalFontOrigins: [...DEFAULT_EXTERNAL_FONT_ORIGINS],
+      externalResourceOrigins: [],
+      pageScripts: "block",
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Restore common resource defaults" }),
+    );
+    expect(
+      update.mock.lastCall?.[0].webBrowser.defaultPolicy
+        .externalResourceOrigins,
+    ).toEqual(DEFAULT_EXTERNAL_RESOURCE_ORIGINS);
+    expect(update.mock.lastCall?.[0].webBrowser.defaultPolicy.pageScripts).toBe(
+      "block",
+    );
+  });
+
+  it("edits script and stylesheet defaults without changing font opt-outs or security controls", () => {
+    const config = normalizeWebBrowserSettings(undefined);
+    Object.assign(config.defaultPolicy, {
+      allowExternalFonts: false,
+      externalFontOrigins: [],
+      externalResourceOrigins: [],
+      httpsOnly: true,
+      pageScripts: "inline-only",
+    });
+    const { update } = setup("browser", { webBrowser: config });
+    const input = screen.getByLabelText("External resource origin");
+    expect(input).toHaveClass("sor-settings-input");
+    expect(
+      screen.getByText(/External script grants are inactive/),
+    ).toBeVisible();
+    fireEvent.change(input, {
+      target: { value: "HTTPS://Assets.Example.test:443/" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Stylesheets" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add resource origin" }),
+    );
+    expect(update.mock.lastCall?.[0].webBrowser.defaultPolicy).toMatchObject({
+      externalResourceOrigins: [
+        { origin: "https://assets.example.test", kinds: ["stylesheet"] },
+      ],
+      externalFontOrigins: [],
+      allowExternalFonts: false,
+      httpsOnly: true,
+      pageScripts: "inline-only",
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Restrict to the same origin/ }),
+    );
+    expect(input).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Restore common resource defaults" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Restore common fonts" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", {
+        name: "Remove resource origin https://assets.example.test",
+      }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Restrict to the same origin/ }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove resource origin https://assets.example.test",
+      }),
+    );
+    expect(
+      update.mock.lastCall?.[0].webBrowser.defaultPolicy
+        .externalResourceOrigins,
+    ).toEqual([]);
+  });
+
   it("rejects a combined delay budget that cannot leave form detection time", () => {
     const { update } = setup();
     number("Minimum autofill delay (ms)", "30000");
@@ -241,6 +362,7 @@ describe("Web Browser settings", () => {
 
   it("uses themed font controls and keeps saved origins readable while inactive", () => {
     const config = normalizeWebBrowserSettings(undefined);
+    config.defaultPolicy.allowExternalFonts = false;
     const origin = "https://fonts.example.com";
     config.defaultPolicy.externalFontOrigins = [origin];
     const { update } = setup("browser", { webBrowser: config });
@@ -281,7 +403,10 @@ describe("Web Browser settings", () => {
   });
 
   it("validates exact font origins, normalizes them, rejects duplicates and supports removal", () => {
-    const { update } = setup();
+    const config = normalizeWebBrowserSettings(undefined);
+    config.defaultPolicy.allowExternalFonts = false;
+    config.defaultPolicy.externalFontOrigins = [];
+    const { update } = setup("browser", { webBrowser: config });
     expect(screen.getByLabelText("External font origin")).toBeDisabled();
     fireEvent.click(
       screen.getByRole("checkbox", { name: /Allow external fonts/ }),

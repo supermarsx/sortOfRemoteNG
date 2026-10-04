@@ -31,6 +31,7 @@ export function getReviewedApplicationProfile(
   | "porkbun"
   | "ptisp"
   | "exchange-ecp"
+  | "exchange-owa"
   | "adobe-admin-console"
   | "instagram"
   | "canva"
@@ -48,6 +49,7 @@ export function getReviewedApplicationProfile(
   if (settings.id === "porkbun") return "porkbun";
   if (settings.id === "ptisp") return "ptisp";
   if (settings.id === "exchange-ecp") return "exchange-ecp";
+  if (settings.id === "exchange-owa") return "exchange-owa";
   if (settings.id === "adobe-admin-console") return "adobe-admin-console";
   if (settings.id === "instagram") return "instagram";
   // Routing capability only: Canva does not grant a reviewed credential flow.
@@ -310,6 +312,17 @@ export function resolveHttpApplicationLogin(
   const profile = getHttpApplicationProfile(settings.id)!;
   if (settings.loginMode === "manual")
     return { credentials: null, upstreamAuthMode: "none", autoLogin: false };
+  if (
+    settings.id === "exchange-owa" &&
+    (Object.keys(
+      normalizeHttpApplicationSelectors(connection.httpAutoLoginSelectors) ??
+        {},
+    ).length ||
+      connection.httpAutoMfa?.enabled)
+  )
+    throw new Error(
+      "Exchange OWA uses its reviewed form selectors and interactive MFA. Clear Advanced selectors and automatic MFA or use manual login.",
+    );
   if (
     (profile.id === "chatgpt" || profile.id === "claude") &&
     (connection.httpFormAutomation !== undefined ||

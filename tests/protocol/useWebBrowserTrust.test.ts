@@ -391,8 +391,25 @@ describe("HTTPS certificate and native trust stages", () => {
     expect(config.proxy_policy).toEqual({
       ...(mocks.credentialOverrides.httpProxyPolicy as object),
       allowCrossOriginRedirects: false,
-      allowExternalFonts: false,
-      externalFontOrigins: [],
+      allowExternalFonts: true,
+      externalFontOrigins: [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net",
+      ],
+      externalResourceOrigins: [
+        { origin: "https://js.stripe.com", kinds: ["script"] },
+        { origin: "https://www.paypal.com", kinds: ["script"] },
+        { origin: "https://js.braintreegateway.com", kinds: ["script"] },
+        { origin: "https://ajax.googleapis.com", kinds: ["script"] },
+        { origin: "https://apis.google.com", kinds: ["script"] },
+        {
+          origin: "https://cdnjs.cloudflare.com",
+          kinds: ["script", "stylesheet"],
+        },
+        { origin: "https://cdn.jsdelivr.net", kinds: ["script", "stylesheet"] },
+      ],
       allowHttpDowngradeRedirects: false,
     });
     expect(config.custom_headers).toEqual({

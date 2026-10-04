@@ -51,6 +51,26 @@ const props: ComponentProps<typeof ConnectionTreeRow> = {
 
 afterEach(cleanup);
 describe("connection tree status presentation", () => {
+  it("renders Tactical RMM's brand for a saved website with no explicit icon", () => {
+    const { container } = render(
+      <ConnectionTreeRow
+        {...props}
+        connection={{
+          ...props.connection,
+          icon: undefined,
+          httpApplication: {
+            version: 1,
+            id: "tacticalrmm",
+            loginMode: "manual",
+          },
+        }}
+      />,
+    );
+    expect(
+      container.querySelector('svg[aria-label="Tactical RMM icon"]'),
+    ).toHaveClass("lucide-tactical-rmm");
+  });
+
   it("keeps the configured icon neutral through connection state changes; only the indicator changes", () => {
     const { container, rerender } = render(<ConnectionTreeRow {...props} />);
     const initialIcon = container.querySelector("svg[aria-label]")!;

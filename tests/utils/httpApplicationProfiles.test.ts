@@ -61,6 +61,7 @@ describe("HTTP application profile policy", () => {
       "ptisp",
       "sqlpad",
       "gmail",
+      "exchange-owa",
       "adobe-admin-console",
       "matomo",
       "plausible",

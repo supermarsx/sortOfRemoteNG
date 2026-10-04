@@ -72,7 +72,10 @@ mod tls_test_fixture;
 #[path = "http_web_automation.rs"]
 mod web_automation;
 pub use dark_mode::WebsiteDarkModeBootstrap;
-pub use proxy_policy::{validate_custom_headers, CacheMode, HttpProxyPolicy, PageScripts};
+pub use proxy_policy::{
+    validate_custom_headers, CacheMode, ExternalResourceKind, ExternalResourceOrigin,
+    HttpProxyPolicy, PageScripts,
+};
 #[path = "http_cloudflare_challenge.rs"]
 pub mod cloudflare_challenge;
 #[path = "http_exchange_cookies.rs"]
@@ -81,6 +84,8 @@ mod exchange_cookies;
 mod exchange_ecp;
 #[path = "http_external_fonts.rs"]
 mod external_fonts;
+#[path = "http_external_resources.rs"]
+mod external_resources;
 #[path = "http_font_assets.rs"]
 mod font_assets;
 #[path = "http_google.rs"]
@@ -779,6 +784,8 @@ pub enum ReviewedApplicationProfile {
     Ptisp,
     #[serde(rename = "exchange-ecp")]
     ExchangeEcp,
+    #[serde(rename = "exchange-owa")]
+    ExchangeOwa,
 }
 
 pub fn same_origin_redirect_limit(profile: Option<BrowserRedirectProfile>) -> usize {
@@ -2010,6 +2017,7 @@ mod proxy_access_guard_tests {
 enum ObservedLocalRoute {
     Font,
     ExternalFont,
+    ExternalResource,
     QuickConnectDiscovery,
     QuickConnectDiscovered,
     QuickConnectRedirect,
@@ -2099,6 +2107,7 @@ fn observe_local_response(
     let path = match route {
         ObservedLocalRoute::Font => font_assets::PREFIX,
         ObservedLocalRoute::ExternalFont => external_fonts::PATH,
+        ObservedLocalRoute::ExternalResource => external_resources::PATH,
         ObservedLocalRoute::QuickConnectDiscovery => quickconnect_control::PATH,
         ObservedLocalRoute::QuickConnectDiscovered => quickconnect_control::DISCOVERED_PATH,
         ObservedLocalRoute::QuickConnectRedirect => quickconnect::PATH,
@@ -2125,6 +2134,7 @@ fn observe_local_response(
     });
     let phase = match route {
         ObservedLocalRoute::Font | ObservedLocalRoute::ExternalFont => "font",
+        ObservedLocalRoute::ExternalResource => "external_resource",
         ObservedLocalRoute::QuickConnectRedirect => "quickconnect_redirect",
         _ => "quickconnect_request",
     };
@@ -2138,6 +2148,8 @@ fn observe_local_response(
                 ObservedLocalRoute::Font | ObservedLocalRoute::ExternalFont
             ) {
                 "font_response"
+            } else if matches!(route, ObservedLocalRoute::ExternalResource) {
+                "external_resource_response"
             } else if review_pending && status >= 400 {
                 "http_redirect_review"
             } else if review_pending {
@@ -2420,7 +2432,10 @@ async fn axum_proxy_handler_inner(
         // Closed public binary capability: never send this reserved path,
         // browser credentials or source query policies to the NAS.
         let external = req.uri().path() == external_fonts::PATH;
-        let response = if external {
+        let resource = req.uri().path() == external_resources::PATH;
+        let response = if resource {
+            external_resources::handle(state.clone(), req).await
+        } else if external {
             external_fonts::handle(state.clone(), req).await
         } else {
             font_assets::handle(state.clone(), req).await
@@ -2428,7 +2443,9 @@ async fn axum_proxy_handler_inner(
         return observe_local_response(
             &state,
             &method,
-            if external {
+            if resource {
+                ObservedLocalRoute::ExternalResource
+            } else if external {
                 ObservedLocalRoute::ExternalFont
             } else {
                 ObservedLocalRoute::Font
@@ -3266,13 +3283,6 @@ async fn axum_proxy_handler_inner(
                 && !state.target_origin.is_empty()
             {
                 let text = String::from_utf8_lossy(&raw_bytes);
-                let text = external_fonts::rewrite(
-                    &text,
-                    content_type.as_deref(),
-                    &response_url,
-                    &state.proxy_origin,
-                    &state.proxy_policy,
-                );
                 let text = if let Some(google) = &state.network.google {
                     google.rewrite(&text)
                 } else {
@@ -3283,6 +3293,15 @@ async fn axum_proxy_handler_inner(
                     )
                 };
                 let text = font_assets::rewrite(&text, &state.proxy_origin);
+                // Hosted-session challenge aliases use this response pipeline
+                // instead of the standalone Cloudflare transport. Keep their
+                // script discovery and message origins consistent as well.
+                let text = cloudflare_challenge::repair_api_script_discovery(
+                    &text,
+                    &response_url,
+                    content_type.as_deref(),
+                    &state.proxy_origin,
+                );
                 // Parser-inserted tags must already target the alias before
                 // browser loading; JS property wrappers cannot catch them.
                 let text = if let Some(alias) = cloudflare_challenge
@@ -3293,6 +3312,15 @@ async fn axum_proxy_handler_inner(
                 } else {
                     text
                 };
+                // Existing source/Google/challenge aliases take precedence
+                // over anonymous grants, matching the renderer mapper order.
+                let text = external_resources::rewrite(
+                    &text,
+                    content_type.as_deref(),
+                    &response_url,
+                    &state.proxy_origin,
+                    &state.proxy_policy,
+                );
                 // Apply the versioned adapter last: its deliberately bound
                 // upstream discovery origin must not be rewritten to loopback.
                 proxy_response::repair_quickconnect_redirect(

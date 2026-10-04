@@ -28,6 +28,45 @@ pub struct QueryParameter {
     pub value: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExternalResourceKind {
+    Script,
+    Stylesheet,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExternalResourceOrigin {
+    pub origin: String,
+    pub kinds: Vec<ExternalResourceKind>,
+}
+
+fn default_external_fonts_enabled() -> bool {
+    true
+}
+
+fn default_external_font_origins() -> Vec<String> {
+    [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect()
+}
+
+fn default_external_resource_origins() -> Vec<ExternalResourceOrigin> {
+    // A single reviewed catalog drives both native and renderer defaults.
+    // Invalid build-time data fails closed; tests enforce catalog validity.
+    serde_json::from_str(include_str!(
+        "../../../../src/utils/protocol/commonResourceOrigins.json"
+    ))
+    .unwrap_or_default()
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpProxyPolicy {
@@ -40,10 +79,13 @@ pub struct HttpProxyPolicy {
     /// Separate opt-in to review (never automatically follow) an HTTP handoff.
     #[serde(default)]
     pub allow_http_downgrade_redirects: bool,
-    #[serde(default)]
+    #[serde(default = "default_external_fonts_enabled")]
     pub allow_external_fonts: bool,
-    #[serde(default)]
+    #[serde(default = "default_external_font_origins")]
     pub external_font_origins: Vec<String>,
+    /// Absent uses the reviewed catalog; an explicit empty list disables it.
+    #[serde(default = "default_external_resource_origins")]
+    pub external_resource_origins: Vec<ExternalResourceOrigin>,
     /// Renderer-derived, reference-fenced navigation context. This must never
     /// be persisted/imported as an ordinary saved connection policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,6 +117,10 @@ impl std::fmt::Debug for HttpProxyPolicy {
                 &self.external_font_origins.len(),
             )
             .field("query_parameter_count", &self.query_parameters.len())
+            .field(
+                "external_resource_origin_count",
+                &self.external_resource_origins.len(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -88,8 +134,9 @@ impl Default for HttpProxyPolicy {
             same_origin_only: false,
             allow_cross_origin_redirects: false,
             allow_http_downgrade_redirects: false,
-            allow_external_fonts: false,
-            external_font_origins: Vec::new(),
+            allow_external_fonts: default_external_fonts_enabled(),
+            external_font_origins: default_external_font_origins(),
+            external_resource_origins: default_external_resource_origins(),
             synology_quick_connect_defaults: None,
             cache_mode: CacheMode::Normal,
             query_parameters: Vec::new(),
@@ -105,6 +152,8 @@ impl HttpProxyPolicy {
             return Err(invalid());
         }
         super::external_fonts::canonical_origins(&self.external_font_origins)
+            .map_err(|_| invalid())?;
+        super::external_resources::canonical_origins(&self.external_resource_origins)
             .map_err(|_| invalid())?;
         if self.https_only && target.scheme() != "https" {
             return Err("HTTPS-only policy requires an HTTPS connection; no automatic upgrade or insecure fallback was attempted.".into());

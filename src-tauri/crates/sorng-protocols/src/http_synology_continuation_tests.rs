@@ -161,7 +161,7 @@ fn directory_redirect_proof_never_stamps_foreign_or_noncanonical_locations() {
             origin,
             Some("0123456789abcdef0123456789abcdef"),
             &axum::http::Method::GET,
-            false,
+            None,
         );
         assert_eq!(response.headers()["location"], destination);
     }

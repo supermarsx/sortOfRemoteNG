@@ -44,6 +44,7 @@ import {
   puppet,
   rundeck,
   splunk,
+  tacticalrmm,
   teamcity,
   travisci,
 } from "../brand";
@@ -187,6 +188,22 @@ export const DEVOPS_MONITORING_ICONS = [
     meshcentral,
     ["meshcentral", "mesh central", "rmm", "remote management"],
     "MeshCentral connection icon: app-authored mesh/M identifier, not an official project logo.",
+  ),
+  defineIcon(
+    "tacticalrmm",
+    "Tactical RMM",
+    "devops-monitoring",
+    tacticalrmm,
+    [
+      "tacticalrmm",
+      "tactical rmm",
+      "trmm",
+      "amidaware",
+      "rmm",
+      "remote monitoring",
+      "remote management",
+    ],
+    "Tactical RMM publisher wolf contours, adapted to monochrome theme-color facets; no remote image or generic RMM symbol.",
   ),
   defineIcon("llm", "Large language model", "devops-monitoring", BrainCircuit, [
     "llm",

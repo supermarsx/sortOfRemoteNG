@@ -67,6 +67,13 @@ const getSourceCopy = (
       detail: "Recommended by the active integration.",
     };
   }
+  if (effective.source === "application") {
+    return {
+      title: `Automatic · ${effective.label} application`,
+      detail:
+        "Recommended for the saved website application; custom icons still take priority.",
+    };
+  }
   if (effective.source === "protocol") {
     return {
       title: `Automatic · ${connection.protocol.toUpperCase()} protocol`,

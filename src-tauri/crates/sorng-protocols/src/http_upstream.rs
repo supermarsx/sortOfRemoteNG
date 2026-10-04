@@ -439,11 +439,11 @@ async fn send_inner(
         {
             return Err(UpstreamError::Policy("The upstream redirected outside this connection's approved origin. Credentials were not sent. Open the destination as a separate connection and review its trust."));
         }
-        // The reviewed Exchange form embeds an absolute ECP destination. HTML
+        // The reviewed Exchange form embeds an absolute ECP/OWA destination. HTML
         // rewriting maps it to loopback; undo only that field, revalidating on
         // every POST hop before any credentials/body bytes leave the proxy.
         if let std::borrow::Cow::Owned(mapped) = super::exchange_ecp::prepare_body(
-            state.network.has_exchange_ecp_login(),
+            state.network.exchange_login_destination(),
             &method,
             &url,
             &state.target_origin,
@@ -483,6 +483,14 @@ async fn send_inner(
                 .transpose()
                 .map_err(UpstreamError::Policy)?;
             for (name, value) in headers {
+                // Framing belongs to this upstream hop, not the browser leg.
+                // The buffered form may have changed size (Exchange destination
+                // mapping), or a redirect may have discarded the POST body.
+                if name.eq_ignore_ascii_case("content-length")
+                    || name.eq_ignore_ascii_case("transfer-encoding")
+                {
+                    continue;
+                }
                 // A renderer's cookie mode is consumed locally, never exposed
                 // as an application header (including on non-Exchange routes).
                 if name.eq_ignore_ascii_case(super::exchange_cookies::CREDENTIALS_HEADER)
@@ -543,8 +551,19 @@ async fn send_inner(
             if let Some(value) = authorization {
                 request = request.header(reqwest::header::AUTHORIZATION, value);
             }
-            if !body.is_empty() {
-                request = request.body(body.clone());
+            if !body.is_empty()
+                || matches!(
+                    method,
+                    reqwest::Method::POST | reqwest::Method::PUT | reqwest::Method::PATCH
+                )
+            {
+                // An empty reqwest body does not necessarily emit a length on
+                // the wire. IIS/Exchange rejects unframed empty POSTs with 411.
+                // Compute the byte length after rewriting, for every redirect
+                // and authentication hop; never retry a rejected login POST.
+                request = request
+                    .header(reqwest::header::CONTENT_LENGTH, body.len())
+                    .body(body.clone());
             }
             Ok::<_, UpstreamError>(request)
         };
@@ -687,13 +706,13 @@ async fn send_inner(
         // consume it here, /admin serves /admin/ HTML while assets/x still
         // resolves to /assets/x. Preserve only this monotonic, first-hop
         // canonicalization; other redirects retain the native hop budget.
-        let exchange_form_post = state.network.has_exchange_ecp_login()
+        let exchange_form_post = state.network.exchange_login_destination().is_some()
             && initial_url.scheme() == "https"
             && method == reqwest::Method::POST
             && url.path().eq_ignore_ascii_case("/owa/auth.owa");
         let exchange_login_redirect = initial_url.scheme() == "https"
             && super::exchange_ecp::preserves_redirect(
-                state.network.has_exchange_ecp_login(),
+                state.network.exchange_login_destination(),
                 &method,
                 status.as_u16(),
                 if exchange_form_post {
@@ -704,7 +723,7 @@ async fn send_inner(
                 &next,
             );
         if exchange_form_post && !exchange_login_redirect {
-            return Err(UpstreamError::Policy("The Exchange ECP login returned an unsupported redirect. Submitted credentials were not replayed."));
+            return Err(UpstreamError::Policy("The Exchange login returned an unsupported redirect. Submitted credentials were not replayed."));
         }
         if !tactical_api_request
             && (exchange_login_redirect

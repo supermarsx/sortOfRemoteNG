@@ -74,6 +74,46 @@ afterEach(() => {
 });
 
 describe("injected dark-mode extension runtime", () => {
+  it("measures an icon batch before writing outlines to avoid layout thrashing", async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = Array.from(
+      { length: 4 },
+      (_, index) =>
+        `<svg id="glyph-${index}"><path fill="black" d="M0 0h20v20z"/></svg>`,
+    ).join("");
+    const operations: string[] = [];
+    const icons = Array.from(document.querySelectorAll("svg"));
+    for (const icon of icons) {
+      vi.spyOn(icon, "getBoundingClientRect").mockImplementation(() => {
+        operations.push(`read:${icon.id}`);
+        return { width: 20, height: 20 } as DOMRect;
+      });
+      const setProperty = icon.style.setProperty.bind(icon.style);
+      vi.spyOn(icon.style, "setProperty").mockImplementation(
+        (property, value, priority) => {
+          if (property === "filter") operations.push(`write:${icon.id}`);
+          setProperty(property, value, priority);
+        },
+      );
+    }
+    const computedStyle = window.getComputedStyle;
+    vi.spyOn(window, "getComputedStyle").mockImplementation((element) => {
+      if (element.localName === "path")
+        return { fill: "rgb(0, 0, 0)", stroke: "none" } as CSSStyleDeclaration;
+      return computedStyle(element);
+    });
+    await controller.set({ enabled: true, cssOnly: true, theme: theme() });
+    await vi.advanceTimersByTimeAsync(32);
+    expect(operations).toEqual([
+      ...icons.map((icon) => `read:${icon.id}`),
+      ...icons.map((icon) => `write:${icon.id}`),
+    ]);
+    for (const icon of icons)
+      expect(icon.style.filter).toContain("drop-shadow");
+    await controller.set({ enabled: false });
+    for (const icon of icons) expect(icon.style.filter).toBe("");
+  });
+
   it("prepares inline-important structural surfaces before reporting paint readiness", async () => {
     document.body.innerHTML =
       '<section class="surface" style="background-color:white!important;background-image:linear-gradient(white,white)!important;color:black!important">Content</section>';

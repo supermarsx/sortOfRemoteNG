@@ -9,6 +9,7 @@ import {
   _resetInMemorySettingsStore,
 } from "../../src/utils/settings/settingsManager";
 import { _resetInvokeCache } from "../../src/utils/tauri/invoke";
+import { DEFAULT_EXTERNAL_FONT_ORIGINS } from "../../src/types/connection/httpProxyPolicy";
 
 describe("browser and internal proxy preferences", () => {
   it("retains legacy defaults with independent mutable copies", () => {
@@ -31,10 +32,12 @@ describe("browser and internal proxy preferences", () => {
       popupPolicy: "tabs",
       initialLoadTimeoutSeconds: 30,
       documentReadyTimeoutSeconds: 120,
-      defaultPolicy: { pageScripts: "allow", allowExternalFonts: false },
+      defaultPolicy: { pageScripts: "allow", allowExternalFonts: true },
     });
     first.defaultPolicy.externalFontOrigins!.push("https://fonts.example.test");
-    expect(second.defaultPolicy.externalFontOrigins).toEqual([]);
+    expect(second.defaultPolicy.externalFontOrigins).toEqual([
+      ...DEFAULT_EXTERNAL_FONT_ORIGINS,
+    ]);
     expect(normalizeInternalProxySettings(undefined)).toEqual({
       version: 1,
       connectTimeoutSeconds: 15,
@@ -233,5 +236,45 @@ describe("browser proxy settings persistence", () => {
       }),
     ).rejects.toThrow(/Invalid internal proxy/);
     expect(stored.internalProxy).toBeUndefined();
+  });
+
+  it("persists exact resource choices and font opt-outs across a native settings reload", async () => {
+    const manager = SettingsManager.getInstance();
+    const settings = await manager.loadSettings();
+    const resourceOrigins = [
+      { origin: "https://assets.example.test", kinds: ["stylesheet" as const] },
+    ];
+    await manager.saveSettings({
+      webBrowser: {
+        ...settings.webBrowser!,
+        defaultPolicy: {
+          ...settings.webBrowser!.defaultPolicy,
+          allowExternalFonts: false,
+          externalFontOrigins: [],
+          externalResourceOrigins: resourceOrigins,
+        },
+      },
+    });
+    SettingsManager.resetInstance();
+    const reloaded = await SettingsManager.getInstance().loadSettings();
+    expect(reloaded.webBrowser?.defaultPolicy).toMatchObject({
+      allowExternalFonts: false,
+      externalFontOrigins: [],
+      externalResourceOrigins: resourceOrigins,
+    });
+    await SettingsManager.getInstance().saveSettings({
+      webBrowser: {
+        ...reloaded.webBrowser!,
+        defaultPolicy: {
+          ...reloaded.webBrowser!.defaultPolicy,
+          externalResourceOrigins: [],
+        },
+      },
+    });
+    SettingsManager.resetInstance();
+    const disabled = await SettingsManager.getInstance().loadSettings();
+    expect(disabled.webBrowser?.defaultPolicy.externalResourceOrigins).toEqual(
+      [],
+    );
   });
 });

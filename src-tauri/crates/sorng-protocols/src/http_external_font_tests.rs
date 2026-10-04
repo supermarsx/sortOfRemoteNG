@@ -5,6 +5,10 @@ use crate::http::{external_fonts, font_assets::ReviewedFontAssets};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
+// Share the isolated CONNECT/TLS fixture, never a production account/server.
+#[path = "http_external_resource_tests.rs"]
+mod external_resource_tests;
+
 const CDN: &str = "https://fonts.example.invalid";
 const CSS: &str = "https://css.example.invalid";
 
@@ -302,7 +306,10 @@ async fn external_fonts_use_anonymous_connect_tls_and_preserve_only_browser_user
 async fn optout_same_origin_empty_and_invalid_grants_never_contact_upstream() {
     let server = server(HashMap::new()).await;
     let mut policies = vec![
-        HttpProxyPolicy::default(),
+        HttpProxyPolicy {
+            allow_external_fonts: false,
+            ..policy()
+        },
         HttpProxyPolicy {
             same_origin_only: true,
             ..policy()

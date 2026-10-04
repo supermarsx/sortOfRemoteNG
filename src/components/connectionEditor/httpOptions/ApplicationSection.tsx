@@ -23,6 +23,7 @@ import { resolveHttpBasicCredentials } from "../../../utils/auth/httpCredentials
 import type { Mgr } from "./types";
 import ApplicationIconSuggestion from "./ApplicationIconSuggestion";
 import AutomaticMfaSection from "./AutomaticMfaSection";
+import ExchangeOwaMailboxFields from "./ExchangeOwaMailboxFields";
 import { isSynologyFileConnection } from "../../../types/protocols/synology";
 import CredentialSourceSection from "../CredentialSourceSection";
 import { PORKBUN_LOGIN_URL } from "../../../utils/connection/porkbunProfile";
@@ -31,6 +32,7 @@ import { ADOBE_ADMIN_CONSOLE_URL } from "../../../utils/connection/adobeAdminCon
 import { INSTAGRAM_LOGIN_URL } from "../../../utils/connection/instagramProfile";
 import { CANVA_LOGIN_URL } from "../../../utils/connection/canvaProfile";
 import { resolveHttpApplicationEmail } from "../../../utils/auth/httpApplicationLogin";
+import { tacticalrmm } from "../../../utils/icons/brand/tacticalRmmBrandIcon";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -195,6 +197,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       label: item.label,
       disabled: item.capability === "none",
       title: item.description,
+      ...(item.id === "tacticalrmm" ? { icon: tacticalrmm } : {}),
     })),
   ];
   if (settings && !profile)
@@ -285,6 +288,9 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
             formData={mgr.formData}
             setFormData={mgr.setFormData}
           />
+          {profile.id === "exchange-owa" && (
+            <ExchangeOwaMailboxFields mgr={mgr} />
+          )}
           {profile.id === "tacticalrmm" && (
             <div className="max-w-xl space-y-2">
               <label

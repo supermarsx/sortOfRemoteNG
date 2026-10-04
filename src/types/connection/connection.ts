@@ -90,6 +90,8 @@ export interface HttpApplicationSettings {
   loginPath?: string;
   /** Reviewed Joomla form generation; omitted means auto-detect, never MFA consent. */
   joomlaVersion?: "auto" | "3" | "4" | "5" | "6";
+  /** Optional OWA mailbox SMTP address; never the authenticating account. */
+  exchangeOwaMailbox?: string;
   /** Preserves fail-closed status when imported profile metadata is malformed. */
   invalid?: true;
 }

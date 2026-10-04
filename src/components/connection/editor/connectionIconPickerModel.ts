@@ -52,7 +52,7 @@ export const CONNECTION_ICON_CATEGORY_LABELS: Readonly<
 
 export type ConnectionIconPickerConnection = Pick<
   Connection,
-  "icon" | "integration"
+  "icon" | "integration" | "httpApplication"
 > & { protocol: string; isGroup?: boolean };
 
 type CatalogDefinition = ConnectionIconDefinition<ConnectionIconKey>;

@@ -6,13 +6,14 @@ import {
 } from "../connection/httpApplicationProfiles";
 import { parseCanonicalWebAuthority } from "../connection/sanitizeHostname";
 import { validateHttpApplicationTarget } from "./httpApplicationLogin";
+import { resolveExchangeOwaInitialUrl } from "../connection/exchangeOwaProfile";
 
 export interface HttpApplicationExternalTarget {
   label: string;
   url: string;
 }
 
-/** No current page URLs, query parameters, fragments, credentials or proxy URLs. */
+/** No live page URLs, credentials or proxy URLs; only reviewed saved entries. */
 export function getHttpApplicationExternalTarget(
   connection: Partial<Connection> | null | undefined,
   sessionTarget: string,
@@ -54,6 +55,19 @@ export function getHttpApplicationExternalTarget(
     if (target.origin !== savedOrigin || target.username || target.password)
       return null;
     validateHttpApplicationTarget(connection, target.toString());
+    if (settings?.id === "exchange-owa") {
+      const savedEntry = new URL(savedOrigin);
+      savedEntry.pathname = authority.initialPathname ?? "/";
+      savedEntry.search = authority.initialSearch ?? "";
+      savedEntry.hash = authority.initialHash ?? "";
+      return {
+        label: profile!.label,
+        url: resolveExchangeOwaInitialUrl(
+          savedEntry.toString(),
+          settings.exchangeOwaMailbox,
+        ),
+      };
+    }
     const external = new URL(
       profile?.hostedLoginUrl ??
         settings?.loginPath ??

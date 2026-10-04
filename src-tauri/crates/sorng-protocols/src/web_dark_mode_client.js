@@ -235,7 +235,10 @@ function createWebDarkModeController() {
     forcedInlineByElement = new WeakMap();
   }
   var forceSurfaces =
-    "main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog']";
+    "main,section,article,aside,nav,header,footer,dialog,form,table,.container,.container-fluid,.content,.wrapper,.layout,.surface,.card,.panel,.panel-body,.modal-content,.dropdown-menu,[role='main'],[role='dialog'],[role~='listbox'],[role~='menu'],[role~='tooltip'],[popover],.ms-Callout,.ms-Callout-main,.ms-Suggestions,.ms-ContextualMenu,.ui-autocomplete";
+  // Floating suggestions/menus need their own opaque floor; a transparent
+  // generic fallback otherwise exposes the content behind them. Keep these
+  // selectors in the native first-paint palette too, with no layout scans.
   // Site-independent: a custom application need not use one of our known
   // framework selectors to receive persistent forced-dark protection.
   var genericSurface =
@@ -303,7 +306,7 @@ function createWebDarkModeController() {
       element.style.setProperty("filter", entry.value, entry.priority);
     iconFilters.delete(element);
   }
-  function protectIcon(svg, theme) {
+  function protectIcon(svg, theme, updates) {
     if (!svg.isConnected) return;
     var bounds = svg.getBoundingClientRect();
     var shapes = [];
@@ -334,7 +337,9 @@ function createWebDarkModeController() {
       shapes.length > 32 ||
       complex
     ) {
-      restoreIconFilter(svg);
+      updates.push(function () {
+        restoreIconFilter(svg);
+      });
       return;
     }
     var paints = new Set();
@@ -373,7 +378,9 @@ function createWebDarkModeController() {
       (Math.max(foreground, background) + 0.05) /
       (Math.min(foreground, background) + 0.05);
     if (unsafe || paints.size !== 1 || contrast >= 3) {
-      restoreIconFilter(svg);
+      updates.push(function () {
+        restoreIconFilter(svg);
+      });
       return;
     }
     var entry = iconFilters.get(svg);
@@ -390,16 +397,19 @@ function createWebDarkModeController() {
       ") drop-shadow(-0.6px 0 0 " +
       theme.textColor +
       ")";
-    if (!entry) {
-      entry = {
-        value: svg.style.filter,
-        priority: svg.style.getPropertyPriority("filter"),
-      };
-      iconFilters.set(svg, entry);
-    }
-    if (svg.style.filter !== outline)
-      svg.style.setProperty("filter", outline, "important");
-    entry.owned = svg.style.filter;
+    updates.push(function () {
+      if (!svg.isConnected) return;
+      if (!entry) {
+        entry = {
+          value: svg.style.filter,
+          priority: svg.style.getPropertyPriority("filter"),
+        };
+        iconFilters.set(svg, entry);
+      }
+      if (svg.style.filter !== outline)
+        svg.style.setProperty("filter", outline, "important");
+      entry.owned = svg.style.filter;
+    });
   }
   function protectIcons(theme, changes) {
     if (theme.mode === "filter") return;
@@ -436,7 +446,9 @@ function createWebDarkModeController() {
       if (observer) observer.disconnect();
       try {
         var budget = 256,
-          iconBudget = 16;
+          iconBudget = 16,
+          updates = [],
+          measured = new Set();
         for (var entry of iconScans) {
           var root = entry[0],
             scan = entry[1];
@@ -453,15 +465,26 @@ function createWebDarkModeController() {
             scan.first = null;
             budget--;
             if (node.nodeType === 1 && node.localName === "svg") {
+              if (measured.has(node)) continue;
+              measured.add(node);
               iconBudget--;
-              protectIcon(node, desired);
+              protectIcon(node, desired, updates);
             } else if (node.nodeType === 1 && node.matches(iconSurface)) {
-              protectInline(node, "-webkit-text-fill-color", "currentColor");
+              let icon = node;
+              updates.push(function () {
+                protectInline(icon, "-webkit-text-fill-color", "currentColor");
+              });
             }
           }
           if (budget && iconBudget) iconScans.delete(root);
           else break;
         }
+        // Read the bounded batch before writing any icon styles. Alternating
+        // geometry/computed-paint reads with filter writes can force another
+        // layout for each glyph as a live page changes during scrolling.
+        updates.forEach(function (update) {
+          update();
+        });
         iconFilters.forEach(function (_, svg) {
           if (!svg.isConnected) restoreIconFilter(svg);
         });
@@ -535,9 +558,30 @@ function createWebDarkModeController() {
         if (
           node.nodeType !== 1 ||
           !node.isConnected ||
-          engineMutation({ target: node })
+          engineMutation({ target: node }) ||
+          !node.matches(genericSurface) ||
+          !(node.getAttribute("style") || "").includes("!")
         )
           return;
+        var owned = forcedInlineByElement.get(node);
+        var competing = [
+          "background-color",
+          "background-image",
+          "color",
+          "color-scheme",
+          "transition",
+        ].some(function (property) {
+          return (
+            !(property === "background-image" && node.matches(iconSurface)) &&
+            node.style.getPropertyPriority(property) === "important" &&
+            (!owned ||
+              !owned[property] ||
+              node.style.getPropertyValue(property) !== owned[property].owned)
+          );
+        });
+        // Positioning !important, custom values containing "!", and our own
+        // palette writes do not compete with preemption or consume repairs.
+        if (!competing) return;
         if (!genericPaintBudget) {
           exhausted = true;
           return;
@@ -546,29 +590,7 @@ function createWebDarkModeController() {
         if (genericPaintSeen.has(node)) {
           // A site's own observer can rewrite our inline correction. Cover
           // that interval instead of feeding an unbounded microtask loop.
-          if (
-            node.matches(genericSurface) &&
-            [
-              "background-color",
-              "background-image",
-              "color",
-              "color-scheme",
-              "transition",
-            ].some(function (property) {
-              var owned = forcedInlineByElement.get(node);
-              return (
-                !(
-                  property === "background-image" && node.matches(iconSurface)
-                ) &&
-                node.style.getPropertyPriority(property) === "important" &&
-                (!owned ||
-                  !owned[property] ||
-                  node.style.getPropertyValue(property) !==
-                    owned[property].owned)
-              );
-            })
-          )
-            guardDarkPaint();
+          guardDarkPaint();
           return;
         }
         genericPaintSeen.add(node);
@@ -583,10 +605,19 @@ function createWebDarkModeController() {
             var node = record.addedNodes[added];
             visit(node);
             if (node.nodeType === 1 && node.isConnected) {
-              var walker = node.ownerDocument.createTreeWalker(node, 1);
-              while (genericPaintBudget && (node = walker.nextNode()))
-                visit(node);
-              if (!genericPaintBudget && walker.nextNode()) exhausted = true;
+              // The persistent force layer already covers normal stylesheet
+              // and inline declarations. Only inline !important can outrank
+              // it. Virtual lists/search suggestions must not spend the repair
+              // budget (and re-cover the entire page) on unstyled descendants
+              // or harmless positioning updates. The native selector avoids a
+              // JavaScript tree walk over every row; repairs remain bounded.
+              var candidates = node.querySelectorAll('[style*="!"]');
+              for (
+                var candidate = 0;
+                candidate < candidates.length && !exhausted;
+                candidate++
+              )
+                visit(candidates[candidate]);
             }
             if (exhausted) break;
           }

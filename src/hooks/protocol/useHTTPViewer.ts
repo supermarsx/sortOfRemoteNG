@@ -34,7 +34,9 @@ import { validateProtectedProxyUrl } from "./useWebBrowser";
 import {
   getFirstPartyGoogleHostedApplicationUrl,
   getHttpApplicationProfile,
+  normalizeHttpApplicationSettings,
 } from "../../utils/connection/httpApplicationProfiles";
+import { resolveExchangeOwaInitialUrl } from "../../utils/connection/exchangeOwaProfile";
 import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
 import {
   googleAccountsEntryFor,
@@ -145,6 +147,16 @@ export function useHTTPViewer(session: ConnectionSession) {
       target.pathname = authority.initialPathname ?? "/";
       target.search = authority.initialSearch ?? "";
       target.hash = authority.initialHash ?? "";
+      if (connection.httpApplication?.id === "exchange-owa") {
+        const profile = normalizeHttpApplicationSettings(
+          connection.httpApplication,
+        );
+        if (profile?.invalid) return "";
+        return resolveExchangeOwaInitialUrl(
+          target.href,
+          profile?.exchangeOwaMailbox,
+        );
+      }
       if (
         connection.httpApplication?.id === "chatgpt" ||
         connection.httpApplication?.id === "claude"

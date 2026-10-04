@@ -4,6 +4,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { Connection } from "../../src/types/connection/connection";
 import { useHTTPOptions } from "../../src/hooks/connection/useHTTPOptions";
 import ProxyPolicySection from "../../src/components/connectionEditor/httpOptions/ProxyPolicySection";
+import {
+  DEFAULT_HTTP_PROXY_POLICY,
+  DEFAULT_EXTERNAL_FONT_ORIGINS,
+  DEFAULT_EXTERNAL_RESOURCE_ORIGINS,
+} from "../../src/types/connection/httpProxyPolicy";
 vi.mock("../../src/contexts/SettingsContext", () => ({
   useSettings: () => ({ settings: {} }),
 }));
@@ -23,16 +28,110 @@ function Fixture({
   );
 }
 const draft = () => JSON.parse(screen.getByTestId("draft").textContent!);
+const fontOptOut = (): Partial<Connection> => ({
+  protocol: "http",
+  httpProxyPolicy: {
+    ...DEFAULT_HTTP_PROXY_POLICY,
+    allowExternalFonts: false,
+    externalFontOrigins: [],
+  },
+});
 
 describe("Internal proxy controls", () => {
+  it("shows common defaults for absent policies without saving a policy on render", () => {
+    render(<Fixture />);
+    expect(
+      screen.getByRole("checkbox", {
+        name: /Load external fonts through proxy/,
+      }),
+    ).toBeChecked();
+    for (const origin of DEFAULT_EXTERNAL_FONT_ORIGINS)
+      expect(
+        screen.getByRole("button", { name: `Remove font origin ${origin}` }),
+      ).toBeVisible();
+    for (const row of DEFAULT_EXTERNAL_RESOURCE_ORIGINS)
+      expect(
+        screen.getByRole("button", {
+          name: `Remove resource origin ${row.origin}`,
+        }),
+      ).toBeVisible();
+    expect(draft().httpProxyPolicy).toBeUndefined();
+  });
+
+  it("saves exact resource kinds, preserves empty font opt-outs and other policy fields, and reopens the draft", () => {
+    const initial: Partial<Connection> = {
+      ...fontOptOut(),
+      httpProxyPolicy: {
+        ...fontOptOut().httpProxyPolicy!,
+        externalResourceOrigins: [],
+        queryParameters: [{ name: "tenant", value: "synthetic" }],
+      },
+    };
+    const view = render(<Fixture initial={initial} />);
+    expect(draft()).toEqual(initial);
+    expect(
+      screen.queryByRole("list", { name: "Saved external resource origins" }),
+    ).toBeNull();
+    fireEvent.change(screen.getByLabelText("External resource origin"), {
+      target: { value: "https://Assets.Example.test/" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Scripts" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Stylesheets" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add resource origin" }),
+    );
+    expect(draft().httpProxyPolicy).toMatchObject({
+      externalResourceOrigins: [
+        {
+          origin: "https://assets.example.test",
+          kinds: ["script", "stylesheet"],
+        },
+      ],
+      allowExternalFonts: false,
+      externalFontOrigins: [],
+      queryParameters: [{ name: "tenant", value: "synthetic" }],
+    });
+    const saved = draft();
+    view.unmount();
+    render(<Fixture initial={saved} />);
+    expect(draft()).toEqual(saved);
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Same-origin resources and forms/ }),
+    );
+    expect(screen.getByLabelText("External resource origin")).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Restore common resource defaults" }),
+    ).toBeDisabled();
+    expect(draft().httpProxyPolicy.externalResourceOrigins).toEqual(
+      saved.httpProxyPolicy.externalResourceOrigins,
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Same-origin resources and forms/ }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove resource origin https://assets.example.test",
+      }),
+    );
+    expect(draft().httpProxyPolicy.externalResourceOrigins).toEqual([]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Restore common resource defaults" }),
+    );
+    expect(draft().httpProxyPolicy.externalResourceOrigins).toEqual(
+      DEFAULT_EXTERNAL_RESOURCE_ORIGINS,
+    );
+    expect(draft().httpProxyPolicy.allowExternalFonts).toBe(false);
+    expect(draft().httpProxyPolicy.externalFontOrigins).toEqual([]);
+  });
+
   it("opts in to fonts, adds both Google destinations idempotently and reopens saved settings", () => {
-    const view = render(<Fixture />);
+    const view = render(<Fixture initial={fontOptOut()} />);
     const toggle = screen.getByRole("checkbox", {
       name: /Load external fonts through proxy/,
     });
     expect(toggle).not.toBeChecked();
     expect(screen.getByLabelText("External font origin")).toBeDisabled();
-    expect(draft().httpProxyPolicy).toBeUndefined();
+    expect(draft().httpProxyPolicy.allowExternalFonts).toBe(false);
     fireEvent.click(toggle);
     fireEvent.click(screen.getByRole("button", { name: "Add Google Fonts" }));
     fireEvent.click(screen.getByRole("button", { name: "Add Google Fonts" }));
@@ -65,7 +164,7 @@ describe("Internal proxy controls", () => {
     ]);
   });
   it("keeps invalid and duplicate font drafts visible until corrected", () => {
-    render(<Fixture />);
+    render(<Fixture initial={fontOptOut()} />);
     fireEvent.click(
       screen.getByRole("checkbox", {
         name: /Load external fonts through proxy/,
@@ -102,7 +201,7 @@ describe("Internal proxy controls", () => {
     ]);
   });
   it("disables effective font controls under same-origin restrictions and preserves drafts", () => {
-    render(<Fixture />);
+    render(<Fixture initial={fontOptOut()} />);
     const fonts = screen.getByRole("checkbox", {
       name: /Load external fonts through proxy/,
     });
@@ -253,5 +352,11 @@ describe("Internal proxy controls", () => {
       screen.getByRole("button", { name: "Reset proxy controls" }),
     );
     expect(draft().httpProxyPolicy.version).toBe(1);
+    expect(draft().httpProxyPolicy.externalFontOrigins).toEqual(
+      DEFAULT_EXTERNAL_FONT_ORIGINS,
+    );
+    expect(draft().httpProxyPolicy.externalResourceOrigins).toEqual(
+      DEFAULT_EXTERNAL_RESOURCE_ORIGINS,
+    );
   });
 });

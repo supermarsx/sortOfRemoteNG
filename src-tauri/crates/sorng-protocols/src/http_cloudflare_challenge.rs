@@ -88,6 +88,76 @@ pub(super) fn rewrite(text: &str, alias: &str) -> String {
     text
 }
 
+/// URL discovery adapter for the public Turnstile API inspected 2026-10-02.
+/// The SDK derives iframe URLs AND postMessage targets from currentScript.src.
+/// Reflecting a fake HTTPS src while loading a loopback iframe makes its
+/// watchdog time out. Keep native src reflection and adapt only this reviewed
+/// script-discovery pattern to the exact transport alias. No challenge logic,
+/// messages, tokens, browser identity or verification results are changed.
+pub(super) fn repair_api_script_discovery(
+    text: &str,
+    url: &Url,
+    content_type: Option<&str>,
+    alias: &str,
+) -> String {
+    let javascript = content_type
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "application/javascript" | "text/javascript"
+            )
+        });
+    let path = url.path().strip_prefix("/turnstile/v0/");
+    let api_path = path.is_some_and(|path| {
+        path.split('/').all(|part| !part.is_empty()) && path.rsplit('/').next() == Some("api.js")
+    });
+    let valid_alias = Url::parse(alias).ok().is_some_and(|local| {
+        local.scheme() == "http"
+            && local.origin().ascii_serialization() == alias
+            && local.port().is_some_and(|port| port != 0)
+            && local.username().is_empty()
+            && local.password().is_none()
+            && local.host_str().is_some_and(|host| {
+                host.strip_prefix('p')
+                    .and_then(|host| host.strip_suffix(".localhost"))
+                    .is_some_and(|id| {
+                        id.len() == 32
+                            && id
+                                .bytes()
+                                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                    })
+            })
+    });
+    if !javascript
+        || !api_path
+        || url.origin().ascii_serialization() != UPSTREAM
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || !valid_alias
+    {
+        return text.to_string();
+    }
+    static PATTERNS: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+    let patterns = PATTERNS.get_or_init(|| {
+        serde_json::from_str(include_str!("turnstile_script_discovery.json"))
+            .expect("reviewed Turnstile discovery patterns")
+    });
+    let needle =
+        serde_json::to_string(patterns["scriptDiscoveryPattern"].as_str().unwrap()).unwrap();
+    // Vendor drift or ambiguity leaves the script unchanged, not a broad
+    // search/replace of unrelated regexes, origins or challenge code.
+    if text.matches(&needle).count() != 1 {
+        return text.to_string();
+    }
+    let pattern = format!(
+        "^{}{}",
+        regex::escape(alias),
+        patterns["apiPathPattern"].as_str().unwrap()
+    );
+    text.replacen(&needle, &serde_json::to_string(&pattern).unwrap(), 1)
+}
+
 /// Cloudflare's managed page can carry a nonce-only CSP in a meta element. The
 /// proxy must keep that policy, while permitting only the inline blocks it has
 /// inserted into this response. Upstream scripts keep their original nonce.
@@ -915,7 +985,12 @@ impl CloudflareChallenge {
             let Ok(text) = std::str::from_utf8(&bytes) else {
                 return failed();
             };
-            let mut text = rewrite(text, &alias.origin);
+            let mut text = repair_api_script_discovery(
+                &rewrite(text, &alias.origin),
+                &url,
+                content_type,
+                &alias.origin,
+            );
             if super::proxy_response::is_html(content_type) {
                 let bootstrap = super::network::bootstrap(
                     &state.session_id,

@@ -3,6 +3,7 @@ import { PTISP_PROFILE } from "./ptispProfile";
 import { INSTAGRAM_PROFILE } from "./instagramProfile";
 import { CHATGPT_PROFILE } from "./chatgptProfile";
 import { CLAUDE_PROFILE } from "./claudeProfile";
+import { EXCHANGE_OWA_PROFILE } from "./exchangeOwaProfile";
 
 const interactive =
   "Interactive sign-in only; saved credentials, API keys and automatic 2FA are not supplied. Use Open original sign-in for SSO, passkeys, security keys, CAPTCHA or unsupported embedded-browser sign-in. The system browser has separate cookies and uses the operating system network route.";
@@ -288,17 +289,7 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "mailStorage",
     "Microsoft 365 work/school web mail with Microsoft Entra sign-in, tenant policy and interactive MFA. This is not on-premises Exchange OWA.",
   ),
-  {
-    id: "exchange-owa",
-    label: "Exchange Outlook on the web (on-premises)",
-    category: "mailStorage",
-    capability: "manual",
-    requiresHttps: true,
-    loginModes: ["manual"],
-    loginPath: "/owa/",
-    description:
-      "On-premises Exchange OWA at your organization's HTTPS mail host. Forms, Windows authentication, federation and MFA depend on deployment; no universal selectors, delegated Windows identity or Exchange API-session handoff is assumed. Use the original site/system browser for organization sign-in requirements.",
-  },
+  EXCHANGE_OWA_PROFILE,
   ...(
     [
       ["ddwrt", "DD-WRT"],

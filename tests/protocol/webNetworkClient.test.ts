@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import turnstileDiscovery from "../../src-tauri/crates/sorng-protocols/src/turnstile_script_discovery.json";
 
 const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_network_client.js",
@@ -55,6 +56,11 @@ interface ClientConfiguration extends ReturnType<typeof config> {
   externalFonts?: null | {
     version: number;
     origins: string[];
+    proxyEndpoint: string;
+  };
+  externalResources?: null | {
+    version: number;
+    origins: Array<{ origin: string; kinds: string[] }>;
     proxyEndpoint: string;
   };
   synologyQuickConnect?: {
@@ -543,6 +549,23 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       proxyOrigin: challengeProxy,
     },
   });
+  it("keeps Turnstile's stored postMessage target equal to the actual iframe origin", () => {
+    start(cloudflareConfig());
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    // The SDK uses the discovered script URL's origin to construct the frame
+    // URL and stores that origin BEFORE our iframe.src setter executes. A
+    // canonical-HTTPS getter with a local iframe silently loses every message
+    // and eventually triggers the widget watchdog (300030 in the reviewed SDK).
+    const scriptUrl = new URL(script.src);
+    const frameUrl = `${scriptUrl.origin}/cdn-cgi/challenge-platform/widget`;
+    const storedMessageTarget = new URL(frameUrl).origin;
+    const frame = document.createElement("iframe");
+    frame.src = frameUrl;
+    expect(storedMessageTarget).toBe(new URL(frame.src).origin);
+    expect(storedMessageTarget).toBe(challengeProxy);
+    expect(report).not.toHaveBeenCalled();
+  });
   it.each(["https://dash.cloudflare.com", "https://porkbun.com"])(
     "installs the native challenge route for %s and proxies scripts, frames, fetch and XHR",
     async (sourceOrigin) => {
@@ -554,7 +577,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
         `${challengeProxy}/turnstile/v0/api.js?render=explicit`,
       );
       expect(script.src).toBe(
-        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
+        `${challengeProxy}/turnstile/v0/api.js?render=explicit`,
       );
       const frame = document.createElement("iframe");
       frame.src =
@@ -664,10 +687,13 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
         document.body.appendChild(script);
       }
       script.async = true;
-      // Turnstile first checks currentScript.src, then scans script elements
-      // with the same HTTPS host/path matcher (api.js inspected 2026-10-01).
-      const apiSource =
-        /^https:\/\/challenges\.cloudflare\.com\/turnstile\/v0(?:\/.*)?\/api\.js/u;
+      // Native rewrites only the SDK's reviewed discovery pattern, not the
+      // browser getter. Rust tests verify the response-side replacement; this
+      // checks discovery, iframe URLs and exact messaging targets together.
+      const apiSource = new RegExp(
+        `^${challengeProxy.replace(/\./g, "\\.")}${turnstileDiscovery.apiPathPattern}`,
+        "u",
+      );
       vi.spyOn(document, "currentScript", "get").mockReturnValue(script);
       expect(
         apiSource.test((document.currentScript as HTMLScriptElement).src),
@@ -677,13 +703,13 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
           apiSource.test(candidate.src),
         ),
       ).toBe(script);
-      expect(script.src).toBe(canonical);
+      expect(script.src).toBe(local);
       expect(new URL(script.src).searchParams.get("onload")).toBe("ready");
       expect(script.async).toBe(true);
       expect(script.getAttribute("src")).toBe(local);
       expect(nativeSrc.get!.call(script)).toBe(local);
       const clone = script.cloneNode(true) as HTMLScriptElement;
-      expect(clone.src).toBe(canonical);
+      expect(clone.src).toBe(local);
       expect(clone.getAttribute("src")).toBe(local);
       clone.src = script.src;
       expect(nativeSrc.get!.call(clone)).toBe(local);
@@ -731,9 +757,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       const script = document.createElement("script");
       script.src =
         "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-      expect(script.src).toBe(
-        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
-      );
+      expect(script.src).toBe(`${alias}/turnstile/v0/api.js?render=explicit`);
       expect(script.getAttribute("src")).toBe(
         `${alias}/turnstile/v0/api.js?render=explicit`,
       );
@@ -746,7 +770,7 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       ).toThrow("origin-not-approved");
     },
   );
-  it("projects only the exact granted Turnstile API script, never another resource or alias", () => {
+  it("keeps native script reflection for other resources and aliases", () => {
     start(cloudflareConfig());
     for (const url of [
       `${challengeProxy}/turnstile/v0/api.js.map`,
@@ -2617,6 +2641,244 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   const withFonts = () => ({
     ...config(),
     fontAssets: [{ upstreamUrl: fontUrl, proxyUrl: proxy + fontPath }],
+  });
+  describe("native external script and stylesheet manifest", () => {
+    const endpoint = proxy + "/__sortofremoteng_assets_v1/external-resource";
+    const scriptUrl = "https://js.stripe.com/v3/?x=a%2Fb&x=two";
+    const cssUrl =
+      "https://cdn.jsdelivr.net/npm/bootstrap/dist/css/bootstrap.css";
+    const generation = "0123456789abcdef0123456789abcdef";
+    const manifest = () => ({
+      version: 1,
+      origins: [
+        { origin: "https://js.stripe.com", kinds: ["script"] },
+        { origin: "https://cdn.jsdelivr.net", kinds: ["script", "stylesheet"] },
+      ],
+      proxyEndpoint: endpoint,
+    });
+    const options = () => ({
+      ...config(),
+      externalResources: manifest(),
+      requestGeneration: generation,
+    });
+    function routed(destination: string, kind: string, proof = generation) {
+      const url = new URL(endpoint);
+      url.searchParams.set("destination", destination);
+      url.searchParams.set("kind", kind);
+      url.searchParams.set("__sorng_generation_v1", proof);
+      return url.href;
+    }
+    it("rewrites script and stylesheet elements before assignment and preserves SRI", () => {
+      start(options());
+      const script = document.createElement("script");
+      script.integrity = "sha384-fixture";
+      script.src = scriptUrl;
+      expect(script.getAttribute("src")).toBe(routed(scriptUrl, "script"));
+      expect(script.src).toBe(scriptUrl);
+      expect(script.integrity).toBe("sha384-fixture");
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = cssUrl;
+      expect(link.href).toBe(routed(cssUrl, "stylesheet"));
+      expect(controller!.mapUrl(script.getAttribute("src"), "script")).toBe(
+        routed(scriptUrl, "script"),
+      );
+    });
+    it("holds href-first stylesheet assignments inert until the resource kind is known", () => {
+      start(options());
+      const link = document.createElement("link");
+      link.href = cssUrl;
+      expect(link.getAttribute("href")).toBeNull();
+      link.rel = "stylesheet";
+      expect(link.href).toBe(routed(cssUrl, "stylesheet"));
+    });
+    it.each(["add", "toggle", "value", "assignment"])(
+      "activates a deferred stylesheet through relList %s",
+      (operation) => {
+        start(options());
+        const link = document.createElement("link");
+        link.href = cssUrl;
+        const tokens = link.relList;
+        if (operation === "add") tokens.add("stylesheet");
+        if (operation === "toggle")
+          expect(tokens.toggle("stylesheet", true)).toBe(true);
+        if (operation === "value") tokens.value = "stylesheet";
+        if (operation === "assignment")
+          (link as unknown as { relList: string }).relList = "stylesheet";
+        expect(link.relList).toBe(tokens);
+        expect(link.href).toBe(routed(cssUrl, "stylesheet"));
+      },
+    );
+    it("validates token mutations before changing live links and leaves classList native", () => {
+      start(options());
+      const link = document.createElement("link");
+      link.href = cssUrl;
+      expect(() => link.relList.add("style sheet")).toThrow();
+      expect(link.getAttribute("href")).toBeNull();
+      link.relList.add("stylesheet");
+      expect(() => link.relList.replace("stylesheet", "icon")).toThrow();
+      expect(link.rel).toBe("stylesheet");
+      expect(link.href).toBe(routed(cssUrl, "stylesheet"));
+      link.relList.remove("stylesheet");
+      expect(link.getAttribute("href")).toBeNull();
+      expect(link.relList.toggle("stylesheet")).toBe(true);
+      expect(link.href).toBe(routed(cssUrl, "stylesheet"));
+      const div = document.createElement("div");
+      div.classList.add("one");
+      expect(div.classList.replace("one", "two")).toBe(true);
+      div.classList.value = "native";
+      expect(div.className).toBe("native");
+      controller!.dispose();
+      link.relList.value = "icon";
+      expect(link.rel).toBe("icon");
+    });
+    it("does not restart stylesheet loading for no-op relList mutations", () => {
+      start(options());
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = cssUrl;
+      const observer = new MutationObserver(() => {});
+      observer.observe(link, { attributes: true });
+      expect(link.relList.replace("missing", "alternate")).toBe(false);
+      expect(link.relList.toggle("stylesheet", true)).toBe(true);
+      link.relList.add("stylesheet");
+      link.relList.remove("missing");
+      expect(observer.takeRecords()).toEqual([]);
+      expect(link.href).toBe(routed(cssUrl, "stylesheet"));
+      observer.disconnect();
+    });
+    it("keeps existing primary and dedicated session routes ahead of anonymous grants", () => {
+      const input = options();
+      input.externalResources.origins.push({
+        origin: upstream,
+        kinds: ["script", "stylesheet"],
+      });
+      input.mappings.push({
+        upstreamOrigin: "https://js.stripe.com",
+        proxyOrigin: otherProxy,
+      });
+      start(input);
+      expect(controller!.mapUrl(`${upstream}/local.js`, "script")).toBe(
+        `${proxy}/local.js?__sorng_generation_v1=${generation}`,
+      );
+      expect(controller!.mapUrl("/local.js", "script")).toBe(
+        `${proxy}/local.js?__sorng_generation_v1=${generation}`,
+      );
+      expect(controller!.mapUrl(scriptUrl, "script")).toBe(
+        `${otherProxy}/v3/?x=a%2Fb&x=two`,
+      );
+      const link = document.createElement("link");
+      link.href = `${upstream}/local.css`;
+      expect(link.href).toBe(
+        `${proxy}/local.css?__sorng_generation_v1=${generation}`,
+      );
+      link.relList.add("stylesheet");
+      expect(link.href).toBe(
+        `${proxy}/local.css?__sorng_generation_v1=${generation}`,
+      );
+    });
+    it.each(["preload", "modulepreload"])("routes %s script links", (rel) => {
+      start(options());
+      const link = document.createElement("link");
+      link.rel = rel;
+      link.as = "script";
+      link.href = scriptUrl;
+      expect(link.href).toBe(routed(scriptUrl, "script"));
+    });
+    it("routes style preloads and CSS imports without enabling arbitrary CSS image URLs", () => {
+      start(options());
+      const link = document.createElement("link");
+      link.rel = "preload";
+      link.as = "style";
+      link.href = cssUrl;
+      expect(link.href).toBe(routed(cssUrl, "stylesheet"));
+      expect(() => controller!.mapUrl(cssUrl, "css")).toThrow();
+    });
+    it.each([
+      "fetch",
+      "xhr",
+      "navigation",
+      "form",
+      "websocket",
+      "font",
+      "resource",
+    ])("does not widen the grant to %s", (kind) => {
+      start(options());
+      expect(() => controller!.mapUrl(scriptUrl, kind)).toThrow();
+      expect(() =>
+        controller!.mapUrl(routed(scriptUrl, "script"), kind),
+      ).toThrow();
+    });
+    it.each([
+      "http://js.stripe.com/v3",
+      "https://js.stripe.com.evil.test/v3",
+      "https://evil.test/v3",
+      "https://user:secret@js.stripe.com/v3",
+      "https://js.stripe.com/v3#fragment",
+    ])("rejects non-approved URL %s", (url) => {
+      start(options());
+      expect(() => controller!.mapUrl(url, "script")).toThrow();
+    });
+    it("rejects forged, wrong-kind and stale native routes", () => {
+      start(options());
+      for (const url of [
+        routed(scriptUrl, "script") + "&kind=script",
+        routed(scriptUrl, "script") + "&extra=true",
+        routed(scriptUrl, "script", "a".repeat(32)),
+        routed("https://evil.test/file.js", "script"),
+        routed(scriptUrl, "stylesheet"),
+      ])
+        expect(() => controller!.mapUrl(url, "script")).toThrow();
+      expect(() => controller!.mapUrl(scriptUrl, "stylesheet")).toThrow();
+    });
+    it("copies the manifest and revokes the routes on disposal", () => {
+      const input = options();
+      start(input);
+      input.externalResources.origins[0].origin = "https://evil.test";
+      input.externalResources.origins[0].kinds.push("stylesheet");
+      expect(controller!.mapUrl(scriptUrl, "script")).toBe(
+        routed(scriptUrl, "script"),
+      );
+      expect(() => controller!.mapUrl(scriptUrl, "stylesheet")).toThrow();
+      controller!.dispose();
+      expect(() => controller!.mapUrl(scriptUrl, "script")).toThrow();
+    });
+    it.each([undefined, null, { ...manifest(), origins: [] }])(
+      "keeps omitted/disabled manifests closed %#",
+      (externalResources) => {
+        start({ ...config(), externalResources });
+        expect(() => controller!.mapUrl(scriptUrl, "script")).toThrow();
+        expect(() =>
+          controller!.mapUrl(routed(scriptUrl, "script"), "script"),
+        ).toThrow();
+      },
+    );
+    it.each([
+      { ...manifest(), proxyEndpoint: "https://evil.test/" },
+      { ...manifest(), version: 2 },
+      {
+        ...manifest(),
+        origins: [{ origin: "https://*.example", kinds: ["script"] }],
+      },
+      {
+        ...manifest(),
+        origins: [{ origin: "https://js.stripe.com", kinds: ["fetch"] }],
+      },
+      {
+        ...manifest(),
+        origins: [
+          { origin: "https://js.stripe.com", kinds: ["script", "script"] },
+        ],
+      },
+      {
+        ...manifest(),
+        origins: [...manifest().origins, manifest().origins[0]],
+      },
+    ])("rejects malformed native resource manifest %#", (externalResources) => {
+      expect(() =>
+        install({ ...config(), externalResources }, report),
+      ).toThrow();
+    });
   });
   describe("native external font manifest", () => {
     const fontOrigin = "https://fonts.example";
