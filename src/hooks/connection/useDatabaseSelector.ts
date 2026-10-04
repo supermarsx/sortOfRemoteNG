@@ -737,8 +737,8 @@ export function useDatabaseSelector(
         }
         await databaseManager.closeCurrentDatabase();
         await Promise.resolve(onDatabaseClose?.());
-      } else if (collection.isEncrypted) {
-        await databaseManager.lockDatabase(collection.id);
+      } else {
+        await databaseManager.closeDatabase(collection.id);
       }
 
       // Refresh so any `isCurrent`/`isUnlocked` consumers in the row

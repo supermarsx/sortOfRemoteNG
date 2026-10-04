@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { LoaderCircle, LockKeyhole, type LucideIcon } from "lucide-react";
+import { LockKeyhole, type LucideIcon } from "lucide-react";
 import { Modal, ModalBody, ModalFooter } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { ManagedDatabaseUnlockForm } from "./ManagedDatabaseUnlockForm";
@@ -149,16 +149,8 @@ export function ManagedDatabaseUnlockDialog({
   }, [databaseId, scope, vaultSlotId]);
   const failure =
     vaultFailure?.scope === scope ? vaultFailure.message : undefined;
-  if (vaultSlotId && failure === undefined)
-    return (
-      <p
-        role="status"
-        className="flex items-center gap-2 px-3 py-2 text-sm text-[var(--color-textMuted)]"
-      >
-        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-        Unlocking {databaseName} with this device's OS vault…
-      </p>
-    );
+  // The opening toast owns automatic-unlock progress; render only recovery UI.
+  if (vaultSlotId && failure === undefined) return null;
   return (
     <DatabaseUnlockDialog
       title={`Unlock ${databaseName}`}

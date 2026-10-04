@@ -106,6 +106,13 @@ describe("database authentication popup", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
     expect(screen.getByLabelText("Database password")).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Authenticating database…" }),
+    ).toBeDisabled();
+    // A second submit must remain harmless even if it bypasses the disabled button.
+    fireEvent.submit(
+      screen.getByLabelText("Database password").closest("form")!,
+    );
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(dialog.parentElement!);
     fireEvent.click(
@@ -212,32 +219,51 @@ describe("database authentication popup", () => {
   });
 
   it.each([false, true])(
-    "unlocks through the OS vault without a dialog (with recovery password: %s)",
+    "uses only progress callbacks during OS vault unlock, without inline UI (with recovery password: %s)",
     async (recovery) => {
+      let resolve!: () => void;
+      fixture.unlock.mockImplementation(
+        () =>
+          new Promise<void>((done) => {
+            resolve = done;
+          }),
+      );
       const completed = vi.fn();
       const progress = vi.fn();
-      render(
+      const close = vi.fn();
+      const content = () => (
         <StrictMode>
           <ManagedDatabaseUnlockDialog
             databaseId="work"
             databaseName="Work"
             status={recovery ? withVault : { ...status, slots: [vaultSlot] }}
-            onClose={vi.fn()}
+            onClose={close}
             onUnlockComplete={completed}
             onUnlockProgress={progress}
           />
-        </StrictMode>,
+        </StrictMode>
       );
+      const view = render(content());
       expect(screen.queryByRole("dialog")).toBeNull();
-      expect(screen.getByRole("status")).toHaveTextContent("OS vault");
-      await waitFor(() => expect(completed).toHaveBeenCalledOnce());
+      expect(view.container).toBeEmptyDOMElement();
+      await waitFor(() => expect(fixture.unlock).toHaveBeenCalledOnce());
+      // Keep the native operation pending across a parent rerender. StrictMode
+      // and rerenders must not start a duplicate unlock.
+      view.rerender(content());
+      expect(view.container).toBeEmptyDOMElement();
+      expect(completed).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
       expect(fixture.unlock).toHaveBeenCalledExactlyOnceWith(
         "work",
         "vault",
         undefined,
         { isCurrent: expect.any(Function) },
       );
-      expect(progress).toHaveBeenCalledWith("unlocking");
+      expect(progress).toHaveBeenCalledExactlyOnceWith("unlocking");
+      await act(async () => resolve());
+      expect(completed).toHaveBeenCalledOnce();
+      expect(fixture.unlock).toHaveBeenCalledOnce();
+      expect(view.container).toBeEmptyDOMElement();
       expect(screen.queryByRole("combobox")).toBeNull();
     },
   );

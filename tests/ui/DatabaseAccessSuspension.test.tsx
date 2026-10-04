@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 import {
   act,
   cleanup,
@@ -123,7 +124,7 @@ function Harness({ portal = false }: { portal?: boolean }) {
   const guard = useDatabaseAccessSuspension();
   const [draft, setDraft] = useState("saved value");
   return (
-    <>
+    <ToastProvider>
       <div
         data-testid="app-shell"
         hidden={mocks.globalLocked}
@@ -157,7 +158,7 @@ function Harness({ portal = false }: { portal?: boolean }) {
         />
       </div>
       <UnlockScreen />
-    </>
+    </ToastProvider>
   );
 }
 
@@ -321,10 +322,7 @@ describe("managed database access suspension boundary", () => {
       mocks.currentListeners.forEach((listener) => listener());
     });
     expect(screen.queryByText("New database method (password)")).toBeNull();
-    expect(screen.getByRole("button", { name: "Unlock…" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    expect(screen.queryByTestId("database-access-notice")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
     await screen.findByText("New database method (password)");
     await act(async () => resolveOld(protection));
@@ -357,7 +355,7 @@ describe("managed database access suspension boundary", () => {
     expect(mocks.unlock).not.toHaveBeenCalled();
   });
 
-  it("never steals focus on lock and clears entered passwords when unlock options are hidden", async () => {
+  it("never steals focus on lock and clears entered passwords when unlock options close", async () => {
     render(<Harness />);
     const settings = screen.getByRole("button", { name: "Settings" });
     settings.focus();
@@ -367,14 +365,32 @@ describe("managed database access suspension boundary", () => {
     fireEvent.change(await choosePassword(), {
       target: { value: "unsent-secret" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Hide unlock options" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByLabelText("Database password")).toBeNull();
-    expect(screen.getByTestId("database-access-notice")).toBeInTheDocument();
+    expect(screen.queryByTestId("database-access-notice")).toBeNull();
     expect(mocks.unlock).not.toHaveBeenCalled();
+    emit(access("suspended", "locked", "work", "new-lock"));
     fireEvent.click(screen.getByRole("button", { name: "Unlock…" }));
     expect(await choosePassword()).toHaveValue("");
+  });
+
+  it("shows only one dismissible toast per access loss without inserting a layout bar or opening a prompt", async () => {
+    render(<Harness />);
+    emit(access("suspended"));
+    expect(screen.queryByTestId("database-access-notice")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Unlock…" })).toHaveLength(1);
+    emit(access("suspended"));
+    expect(screen.getAllByRole("button", { name: "Unlock…" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Unlock…" })).toBeNull(),
+    );
+    emit(access("suspended"));
+    expect(screen.queryByRole("button", { name: "Unlock…" })).toBeNull();
+    expect(mocks.inspect).not.toHaveBeenCalled();
+    expect(mocks.unlock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("editors")).toHaveAttribute("inert");
   });
 
   it("ignores a completed authentication after its selection form unmounts", async () => {

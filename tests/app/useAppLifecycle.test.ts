@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi, Mock } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { render, renderHook, act, waitFor } from "@testing-library/react";
+import { Activity, createElement } from "react";
 import { useAppLifecycle } from "../../src/hooks/window/useAppLifecycle";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import i18n, { loadLanguage } from "../../src/i18n";
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: vi.fn(() => ({ label: "main" })),
+}));
 
 const lifecycleMocks = vi.hoisted(() => ({
   loadData: vi.fn(),
@@ -62,7 +67,7 @@ describe("useAppLifecycle", () => {
     // Reset mocks
     vi.clearAllMocks();
     lifecycleMocks.loadData.mockReset();
-    lifecycleMocks.loadData.mockResolvedValue(undefined);
+    lifecycleMocks.loadData.mockResolvedValue(true);
     lifecycleMocks.state = { sessions: [], connections: [] };
     sessionStorage.clear();
 
@@ -76,6 +81,7 @@ describe("useAppLifecycle", () => {
         primaryAccentColor: "",
       }),
       logAction: vi.fn(),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
     };
 
     mockThemeManager = {
@@ -127,6 +133,45 @@ describe("useAppLifecycle", () => {
     expect(mockSettingsManager.initialize).toHaveBeenCalled();
     expect(mockThemeManager.loadSavedTheme).toHaveBeenCalled();
     expect(mockThemeManager.injectThemeCSS).toHaveBeenCalled();
+  });
+
+  it("reattaches database tracking after retained-state effect teardown without initializing or restoring twice", async () => {
+    const manager = DatabaseManager.getInstance();
+    const subscribe = vi.spyOn(manager, "onCurrentDatabaseChange");
+    const restore = vi.spyOn(manager, "restoreDatabase");
+    let initialized = false;
+    const show = vi.fn();
+    function Host() {
+      initialized = useAppLifecycle({
+        handleConnect: vi.fn(),
+        setShowDatabasePanel: show,
+      }).isInitialized;
+      return null;
+    }
+    const view = render(
+      createElement(Activity, {
+        mode: "visible",
+        children: createElement(Host),
+      }),
+    );
+    await waitFor(() => expect(initialized).toBe(true));
+    expect(subscribe).toHaveBeenCalledOnce();
+    view.rerender(
+      createElement(Activity, {
+        mode: "hidden",
+        children: createElement(Host),
+      }),
+    );
+    view.rerender(
+      createElement(Activity, {
+        mode: "visible",
+        children: createElement(Host),
+      }),
+    );
+    await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2));
+    expect(mockSettingsManager.initialize).toHaveBeenCalledOnce();
+    expect(restore).not.toHaveBeenCalled();
+    view.unmount();
   });
 
   it("should change language when settings language differs", async () => {
@@ -207,10 +252,15 @@ describe("useAppLifecycle", () => {
       name: "Coverage Collection",
       isEncrypted: false,
     };
+    let current: typeof collection | null = null;
     const databaseManager = {
       getAllDatabases: vi.fn().mockResolvedValue([collection]),
-      selectDatabase: vi.fn().mockResolvedValue(undefined),
-      getCurrentDatabase: vi.fn().mockReturnValue(collection),
+      restoreDatabase: vi.fn(async () => {
+        current = collection;
+      }),
+      getCurrentDatabase: vi.fn(() => current),
+      onCurrentDatabaseChange: vi.fn(() => () => {}),
+      captureStartupRestoreGuard: () => () => true,
     };
     vi.spyOn(DatabaseManager, "getInstance").mockReturnValue(
       databaseManager as any,
@@ -237,8 +287,9 @@ describe("useAppLifecycle", () => {
     });
 
     expect(databaseManager.getAllDatabases).toHaveBeenCalled();
-    expect(databaseManager.selectDatabase).toHaveBeenCalledWith(
+    expect(databaseManager.restoreDatabase).toHaveBeenCalledWith(
       "collection-coverage",
+      { activate: true, isCurrent: expect.any(Function) },
     );
     expect(lifecycleMocks.loadData).toHaveBeenCalledWith("collection-coverage");
     expect(setShowDatabasePanel).not.toHaveBeenCalledWith(true);

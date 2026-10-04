@@ -10,7 +10,7 @@ import {
   Minimize2,
   X as XIcon,
   AppWindow,
-  FolderOpen,
+  Database,
   EyeOff,
   Type,
   MessageSquare,
@@ -114,14 +114,14 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           <Toggle
             checked={settings.autoOpenLastCollection}
             onChange={(v) => updateSettings({ autoOpenLastCollection: v })}
-            icon={<FolderOpen size={16} />}
+            icon={<Database size={16} />}
             label={t(
-              "settings.startup.autoOpenLastCollection",
-              "Auto-open last used connection collection",
+              "settings.startup.restoreOpenDatabases",
+              "Restore previously open databases",
             )}
-            description="Load the most recently used connection collection on launch"
+            description="Reopen your previous databases and return to the active one on launch. Password-protected databases may still need unlocking."
             settingKey="autoOpenLastCollection"
-            infoTooltip="Automatically load the most recently used connection collection on startup"
+            infoTooltip="Remember the databases that were open, not just the last one. Available OS-vault unlock methods are used automatically; passwords are never saved for restoration."
           />
         </Card>
       </div>

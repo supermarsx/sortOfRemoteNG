@@ -5,34 +5,32 @@
  * `useEncryption().lock` callback) on any of the configured signals:
  *
  *  - **Idle timeout** (`lockOnIdle` + `timeoutMinutes`): any DOM
- *    activity event (mousemove, keypress, pointerdown, touchstart,
+ *    activity event (mousemove, keydown, pointerdown, touchstart,
  *    scroll, wheel) resets the timer; after `timeoutMinutes` of no
  *    activity, the lock fires.
  *  - **Window minimise** (`lockOnMinimize`): listens to the Tauri
  *    `tauri://focus` / `tauri://blur` events with a polled
  *    `isMinimized()` follow-up. The `visibilitychange` DOM event
  *    serves as the cross-platform fallback.
- *  - **Window blur** (`lockOnBlur`): pure DOM `window.onblur`,
- *    debounced by 250 ms to avoid locking on transient focus loss
- *    (e.g. a tooltip click).
+ *  - **Window blur** (`lockOnBlur`): debounced by 250 ms, then
+ *    confirmed against native OS focus (document focus in browser
+ *    builds). Moving focus into an embedded frame is not OS blur.
  *  - **Visibility hidden** (`lockOnVisibilityHidden`): the
  *    `document.hidden` flag — useful when the host browser collapses
  *    minimise/blur into a single signal.
  *
  * The hook is a side-effect-only React hook (no return value). Mount
  * once near the root of the app (after the encryption provider so
- * `useEncryption` is ready). Idempotent: every settings change
- * tears down listeners + rebuilds them so toggling fields in
- * Settings → Security takes effect immediately.
+ * `useEncryption` is ready). Policy changes rebuild listeners; an
+ * equivalent settings object does not postpone the idle deadline.
  *
  * The hook is a no-op when:
  *  - encryption is currently locked (nothing to lock),
  *  - encryption is not unlocked yet (status null / not setup),
  *  - `settings.autoLock.enabled` is `false`.
  *
- * Tests cover the predicate that decides whether a given event
- * should trigger lock — the DOM-driven side effects rely on jsdom
- * timers + manual event dispatch.
+ * Tests cover focus confirmation, asynchronous query/listener cleanup,
+ * single-flight locking and policy timers with controlled native events.
  */
 import { useEffect, useRef } from "react";
 import type { AutoLockConfig } from "../../types/settings/settings";
@@ -74,25 +72,44 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
   const enc = useEncryption();
   const lockRef = useRef(enc.lock);
   lockRef.current = enc.lock;
-
   const unlocked = !!enc.status?.unlocked;
+  const armed = shouldArmAutoLock(config, unlocked);
+  const armedRef = useRef(armed);
+  armedRef.current = armed;
+  // Keep admission across effect rewiring while an asynchronous database
+  // save/lock is pending. Concurrent blur/idle/visibility must not start it twice.
+  const lockPendingRef = useRef(false);
+  const timeoutMinutes = config?.timeoutMinutes;
+  const lockOnIdle = config?.lockOnIdle;
+  const lockOnBlur = config?.lockOnBlur;
+  const lockOnMinimize = config?.lockOnMinimize;
+  const lockOnVisibilityHidden = config?.lockOnVisibilityHidden;
 
   useEffect(() => {
-    if (!shouldArmAutoLock(config, unlocked)) return;
+    if (!armed) return;
+    let disposed = false;
 
-    const triggerLock = (reason: "idle" | "blur" | "minimize" | "visibility-hidden") => {
-      // Reading the latest callback through a ref keeps the listener
-      // wiring stable across hook renders.
-      void lockRef.current(reason).catch(() => {
-        // Lock errors are non-fatal — the next event will retry.
-      });
+    const triggerLock = (
+      reason: "idle" | "blur" | "minimize" | "visibility-hidden",
+    ) => {
+      if (disposed || !armedRef.current || lockPendingRef.current) return;
+      lockPendingRef.current = true;
+      void (async () => {
+        try {
+          await lockRef.current(reason);
+        } catch {
+          // The next genuine policy event may retry a failed save/lock.
+        } finally {
+          lockPendingRef.current = false;
+        }
+      })();
     };
 
     const cleanups: Array<() => void> = [];
 
     // ── Idle timer ────────────────────────────────────────────────
-    if (config?.lockOnIdle && config?.timeoutMinutes > 0) {
-      const timeoutMs = config.timeoutMinutes * 60_000;
+    if (lockOnIdle && timeoutMinutes !== undefined && timeoutMinutes > 0) {
+      const timeoutMs = timeoutMinutes * 60_000;
       let handle: ReturnType<typeof setTimeout> | null = null;
 
       const reset = () => {
@@ -111,27 +128,109 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
       });
     }
 
-    // ── Window blur (DOM-level, debounced) ────────────────────────
-    if (config?.lockOnBlur) {
+    // ── DOM + native focus/minimize ──────────────────────────────
+    if (lockOnBlur || lockOnMinimize) {
       let blurTimer: ReturnType<typeof setTimeout> | null = null;
-      const onBlur = () => {
-        if (blurTimer) clearTimeout(blurTimer);
-        blurTimer = setTimeout(() => triggerLock("blur"), BLUR_DEBOUNCE_MS);
+      let blurRevision = 0;
+      let minimizeRevision = 0;
+      const nativeWindow = (async () => {
+        try {
+          const invoke = await getInvoke();
+          if (!invoke || disposed) return null;
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          return disposed ? null : getCurrentWindow();
+        } catch {
+          return null;
+        }
+      })();
+
+      const inspectBlur = async (revision: number) => {
+        const host = await nativeWindow;
+        if (disposed || revision !== blurRevision) return;
+        let focused = document.hasFocus();
+        if (host) {
+          try {
+            focused = await host.isFocused();
+          } catch {
+            focused = document.hasFocus();
+          }
+        }
+        if (!disposed && revision === blurRevision && !focused)
+          triggerLock("blur");
+      };
+      const inspectMinimized = async () => {
+        const revision = ++minimizeRevision;
+        const host = await nativeWindow;
+        if (disposed || revision !== minimizeRevision) return;
+        let minimized: boolean;
+        try {
+          minimized = host ? await host.isMinimized() : document.hidden;
+        } catch {
+          // Preserve the documented visibility fallback for older/web hosts.
+          minimized = document.hidden;
+        }
+        if (!disposed && revision === minimizeRevision && minimized)
+          triggerLock("minimize");
       };
       const onFocus = () => {
-        if (blurTimer) clearTimeout(blurTimer);
+        blurRevision++;
+        minimizeRevision++;
+        if (blurTimer !== null) clearTimeout(blurTimer);
+        blurTimer = null;
+      };
+      const onBlur = () => {
+        if (disposed) return;
+        if (lockOnBlur) {
+          const revision = ++blurRevision;
+          if (blurTimer !== null) clearTimeout(blurTimer);
+          blurTimer = setTimeout(() => {
+            blurTimer = null;
+            void inspectBlur(revision);
+          }, BLUR_DEBOUNCE_MS);
+        }
+        if (lockOnMinimize) void inspectMinimized();
+      };
+      const onVisibility = () => {
+        if (!document.hidden) {
+          // A restore can precede the native focus event/query reply.
+          minimizeRevision++;
+          if (document.hasFocus()) onFocus();
+        } else if (lockOnMinimize) {
+          void inspectMinimized();
+        }
       };
       window.addEventListener("blur", onBlur);
       window.addEventListener("focus", onFocus);
+      document.addEventListener("visibilitychange", onVisibility);
       cleanups.push(() => {
-        if (blurTimer) clearTimeout(blurTimer);
+        onFocus();
         window.removeEventListener("blur", onBlur);
         window.removeEventListener("focus", onFocus);
+        document.removeEventListener("visibilitychange", onVisibility);
       });
+
+      // Native focus edges are necessary when the DOM window was already
+      // blurred by an iframe and therefore emits no second blur on Alt-Tab.
+      // Use this window's listener, not a global event from another window.
+      void (async () => {
+        const host = await nativeWindow;
+        if (!host || disposed) return;
+        try {
+          const unlisten = await host.onFocusChanged(({ payload: focused }) => {
+            if (disposed) return;
+            if (focused) onFocus();
+            else onBlur();
+          });
+          if (disposed) unlisten();
+          else cleanups.push(unlisten);
+        } catch {
+          // DOM listeners and focus/visibility checks remain active.
+        }
+      })();
     }
 
     // ── Document visibility (cross-platform fallback) ─────────────
-    if (config?.lockOnVisibilityHidden) {
+    if (lockOnVisibilityHidden) {
       const onVisibility = () => {
         if (document.hidden) triggerLock("visibility-hidden");
       };
@@ -141,47 +240,8 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
       });
     }
 
-    // ── Tauri window minimise event ───────────────────────────────
-    // The `tauri://blur` listener is set up at the webview level by
-    // the Tauri runtime and fires when the OS window loses focus
-    // *or* is minimised. We follow up with a polled `isMinimized`
-    // check via the windows plugin to avoid locking on plain alt-tab
-    // when only `lockOnMinimize` (not `lockOnBlur`) is configured.
-    if (config?.lockOnMinimize) {
-      let aborted = false;
-      void (async () => {
-        const inv = await getInvoke();
-        if (!inv || aborted) return;
-        try {
-          const { listen } = await import("@tauri-apps/api/event");
-          const unlisten = await listen("tauri://blur", async () => {
-            // Use the windows plugin to confirm "minimised, not just
-            // backgrounded". Falls back to the DOM `document.hidden`
-            // flag when the plugin isn't registered (older builds).
-            try {
-              const { getCurrentWindow } = await import(
-                "@tauri-apps/api/window"
-              );
-              const w = getCurrentWindow();
-              const isMin = await w.isMinimized();
-              if (isMin) triggerLock("minimize");
-            } catch {
-              if (document.hidden) triggerLock("minimize");
-            }
-          });
-          cleanups.push(() => {
-            void unlisten();
-          });
-        } catch {
-          // Event API not available — silently degrade.
-        }
-      })();
-      cleanups.push(() => {
-        aborted = true;
-      });
-    }
-
     return () => {
+      disposed = true;
       cleanups.forEach((fn) => {
         try {
           fn();
@@ -191,13 +251,11 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
       });
     };
   }, [
-    config?.enabled,
-    config?.timeoutMinutes,
-    config?.lockOnIdle,
-    config?.lockOnBlur,
-    config?.lockOnMinimize,
-    config?.lockOnVisibilityHidden,
-    unlocked,
-    config,
+    armed,
+    timeoutMinutes,
+    lockOnIdle,
+    lockOnBlur,
+    lockOnMinimize,
+    lockOnVisibilityHidden,
   ]);
 }

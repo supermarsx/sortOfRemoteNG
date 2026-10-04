@@ -40,6 +40,71 @@ beforeEach(async () => {
 });
 
 describe("database credential epochs", () => {
+  it("restores a side database into memory without selecting it or publishing a trust switch", async () => {
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockDatabase(collection.id, "fixture-password");
+    const change = vi.fn();
+    const unsubscribe = manager.onCurrentDatabaseChange(change);
+    bridge.invoke.mockClear();
+    await manager.restoreDatabase(collection.id, {
+      activate: false,
+      isCurrent: manager.captureStartupRestoreGuard(),
+    });
+    expect(manager.getCurrentDatabase()).toBeNull();
+    expect(
+      (await manager.getMemoryResidentDatabases()).map((row) => row.id),
+    ).toEqual([collection.id]);
+    expect(change).not.toHaveBeenCalled();
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "trust_set_active_database",
+      ),
+    ).toBe(false);
+    unsubscribe();
+  });
+
+  it("does not publish background restoration after global lock during metadata update", async () => {
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockDatabase(collection.id, "fixture-password");
+    const update = manager.updateDatabase.bind(manager);
+    vi.spyOn(manager, "updateDatabase").mockImplementationOnce(async (row) => {
+      await update(row);
+      manager.invalidatePendingDatabaseOperations();
+    });
+    await expect(
+      manager.restoreDatabase(collection.id, {
+        activate: false,
+        isCurrent: manager.captureStartupRestoreGuard(),
+      }),
+    ).rejects.toThrow(/access expired|cancelled/);
+    expect(manager.getCurrentDatabase()).toBeNull();
+    expect(await manager.getMemoryResidentDatabases()).toEqual([]);
+  });
+
+  it("does not create a missing payload while restoring a saved ID", async () => {
+    const manager = DatabaseManager.getInstance();
+    bridge.invoke.mockImplementation(async (command: string) => {
+      if (command === "databases_list")
+        return {
+          value: [{ ...collection, isEncrypted: false }],
+          source: "current",
+        };
+      if (command === "load_database_data") return null;
+      return undefined;
+    });
+    await expect(
+      manager.restoreDatabase(collection.id, {
+        activate: false,
+        isCurrent: manager.captureStartupRestoreGuard(),
+      }),
+    ).rejects.toThrow("Database not found");
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "save_database_data",
+      ),
+    ).toBe(false);
+    expect(manager.getCurrentDatabase()).toBeNull();
+  });
   it("does not let an old empty-index result clear a newly reopened selection", async () => {
     const manager = DatabaseManager.getInstance();
     await manager.selectDatabase(collection.id, "fixture-password");

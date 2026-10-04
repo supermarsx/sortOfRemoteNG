@@ -265,7 +265,13 @@ const AppContent: React.FC = () => {
     useAppLifecycle({
       handleConnect,
       restoreSession,
-      setShowDatabasePanel,
+      setShowDatabasePanel: useCallback((visible: boolean) => {
+        if (visible) {
+          setDatabasePanelInitialTab("collections");
+          toolShowSetters.current.database(true);
+        }
+        setShowDatabasePanel(visible);
+      }, []),
     });
 
   // Extracted hooks
@@ -749,17 +755,8 @@ const AppContent: React.FC = () => {
           `Collection: ${databaseManager.getCurrentDatabase()?.name}`,
         );
 
-        // Save the last opened collection ID for auto-open feature
-        const currentSettings = settingsManager.getSettings();
-        if (currentSettings.autoOpenLastCollection) {
-          await settingsManager.saveSettings(
-            {
-              ...currentSettings,
-              lastOpenedCollectionId: collectionId,
-            },
-            { silent: true },
-          );
-        }
+        // The main-window startup tracker persists successful opens as a narrow
+        // ID-only patch; do not overwrite it with a stale full settings snapshot.
       } catch (error) {
         const cancelled = isDatabaseOpenCancellation(error);
         report(cancelled ? "cancelled" : "failed");
@@ -814,18 +811,9 @@ const AppContent: React.FC = () => {
     // back in line with "no database open".
     dispatch({ type: "SET_CONNECTIONS", payload: [] });
     dispatch({ type: "SET_TAB_GROUPS", payload: [] });
-    try {
-      const current = settingsManager.getSettings();
-      if (current.autoOpenLastCollection && current.lastOpenedCollectionId) {
-        await settingsManager.saveSettings(
-          { ...current, lastOpenedCollectionId: undefined },
-          { silent: true },
-        );
-      }
-    } catch (error) {
-      console.error("Failed to clear lastOpenedCollectionId:", error);
-    }
-  }, [dispatch, settingsManager]);
+    // The startup tracker records the explicit close as []/null where needed;
+    // an undefined legacy ID alone would be dropped by native JSON serialization.
+  }, [dispatch]);
 
   const beforeCurrentDatabaseLock = useCallback(async () => {
     setShowQuickConnect(false);

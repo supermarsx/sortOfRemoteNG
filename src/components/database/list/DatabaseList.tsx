@@ -83,15 +83,6 @@ function DatabaseList({ mgr }: DatabaseListProps) {
     return { total, encrypted };
   }, [mgr.collections]);
 
-  // One announcement for the whole list, not one per row: a switch lights up
-  // two rows (incoming + outgoing) and per-row regions would announce twice.
-  const loading = mgr.loadingCollection;
-  const loadingAnnouncement = loading
-    ? (t(`databaseCenter.collections.loading.${loading.mode}`, {
-        name: loading.name,
-      }) as string)
-    : "";
-
   const anyFormOpen =
     mgr.showCreateForm ||
     Boolean(mgr.editingCollection) ||
@@ -99,15 +90,6 @@ function DatabaseList({ mgr }: DatabaseListProps) {
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-4">
-      <div
-        role="status"
-        aria-live="polite"
-        className="sr-only"
-        data-testid="database-loading-announcement"
-      >
-        {loadingAnnouncement}
-      </div>
-
       {/* Heading + primary action */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
@@ -383,8 +365,8 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
   const { t } = useTranslation();
   const { settings } = useSettings();
   const navigateImportExport = useImportExportNavigation();
-  // Gates motion only. The mode copy, aria-busy, the announcement and the
-  // disabled siblings must survive with animations off.
+  // Progress is announced once by the opening toast. Keep row state and
+  // interaction guards here, even with motion disabled.
   const animEnabled = settings.animationsEnabled;
 
   const loading = mgr.loadingCollection;
@@ -400,18 +382,6 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
   // Rows with no part in the load. Dimming them is the visual half of the
   // hook's re-entrancy guard: a click that can't happen needs no explaining.
   const isBystander = loading !== null && !isLoadingThis && !isHandoff;
-
-  const loadingCopy = isHandoff
-    ? (t("databaseCenter.collections.loading.handoff", {
-        name: collection.name,
-      }) as string)
-    : isLoadingThis && loading
-      ? // The name comes off the loading state, not the row: the collection
-        // can drop out of the list mid-load and the copy still resolves.
-        (t(`databaseCenter.collections.loading.${loading.mode}`, {
-          name: loading.name,
-        }) as string)
-      : null;
 
   const openLabel = collection.isEncrypted
     ? t("databaseCenter.actions.unlock")
@@ -501,14 +471,10 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
               </p>
             )}
             <p className="flex items-baseline gap-1 text-[10px] text-[var(--color-textMuted)] mt-0.5">
-              {loadingCopy ? (
-                <span className="text-primary">{loadingCopy}</span>
-              ) : (
-                <span className="shrink-0">
-                  {t("databaseCenter.collections.lastAccessed")}:{" "}
-                  {new Date(collection.lastAccessed).toLocaleDateString()}
-                </span>
-              )}
+              <span className="shrink-0">
+                {t("databaseCenter.collections.lastAccessed")}:{" "}
+                {new Date(collection.lastAccessed).toLocaleDateString()}
+              </span>
               <span aria-hidden="true">{" · "}</span>
               <DatabaseSizeLabel size={size} loading={sizeLoading} />
             </p>

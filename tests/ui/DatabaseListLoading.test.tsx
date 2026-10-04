@@ -1,6 +1,12 @@
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import en from "../../src/i18n/locales/en-US.json";
 import type { Mgr } from "../../src/components/database/list/types";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
@@ -10,11 +16,12 @@ vi.mock("../../src/hooks/connection/useDatabaseSizes", () => ({
   useDatabaseSizes: () => ({ sizes: {}, loading: false, refresh: () => {} }),
 }));
 
-// Mutable across tests so the D3 invariant can flip `animationsEnabled` off.
-// `vi.hoisted` because vi.mock factories are hoisted above the imports and
-// would otherwise read `settings` in its temporal dead zone.
-const { settings } = vi.hoisted(() => ({
+const { settings, navigate } = vi.hoisted(() => ({
   settings: { animationsEnabled: true },
+  navigate: vi.fn(),
+}));
+vi.mock("../../src/components/ImportExport/navigation", () => ({
+  useImportExportNavigation: () => navigate,
 }));
 
 // Both exports are needed: PasswordInput and LoadingElement pull `default`
@@ -24,12 +31,7 @@ vi.mock("../../src/contexts/SettingsContext", () => ({
   default: React.createContext({ settings }),
 }));
 
-/**
- * Resolves keys against the real en.json and interpolates `{{name}}`, so the
- * copy assertions below test the strings users actually see. If the
- * `collections.loading.*` keys are renamed or dropped, these tests fail rather
- * than silently asserting on raw key names.
- */
+/** Use real labels so assertions catch visible progress copy as well as raw keys. */
 function translate(key: string, opts?: string | Record<string, unknown>) {
   const resolved = key
     .split(".")
@@ -73,12 +75,9 @@ const GAMMA: ConnectionDatabase = { ...ALPHA, id: "gamma", name: "Gamma" };
 
 interface StubOptions {
   loadingCollection?: LoadingCollection | null;
-  /**
-   * id of the currently-open database. Drives the per-row close/lock button.
-   * Deliberately NOT the handoff derivation any more — see the F1 regression
-   * test below.
-   */
+  /** Current may change during a load; only fromId owns the outgoing handoff. */
   currentId?: string | null;
+  encryptedId?: string;
 }
 
 /**
@@ -86,11 +85,17 @@ interface StubOptions {
  * slice of it. The stub supplies that slice and casts — a full literal would be
  * ~60 fields of noise with no extra coverage.
  */
-function makeMgr({ loadingCollection = null, currentId = null }: StubOptions) {
+function makeMgr({
+  loadingCollection = null,
+  currentId = null,
+  encryptedId,
+}: StubOptions = {}) {
   return {
-    collections: [ALPHA, BETA, GAMMA],
+    collections: [ALPHA, BETA, GAMMA].map((collection) => ({
+      ...collection,
+      isEncrypted: collection.id === encryptedId,
+    })),
     loadingCollection,
-    // A function, not a boolean: the handoff derivation calls it per row.
     isCurrentDatabase: (id: string) => id === currentId,
     isDatabaseUnlocked: () => false,
     isWorking: false,
@@ -115,10 +120,6 @@ function makeMgr({ loadingCollection = null, currentId = null }: StubOptions) {
   } as unknown as Mgr;
 }
 
-function renderList(options: StubOptions = {}) {
-  return render(<DatabaseList mgr={makeMgr(options)} onClose={vi.fn()} />);
-}
-
 /** Every row container carries aria-busy (true or false), so it locates rows. */
 function rowFor(name: string): HTMLElement {
   const row = screen.getByText(name).closest("[aria-busy]");
@@ -134,355 +135,258 @@ function rowFor(name: string): HTMLElement {
 function openEntryPoints(row: HTMLElement): HTMLButtonElement[] {
   return Array.from(row.querySelectorAll("button")).filter((button) => {
     const label = button.getAttribute("aria-label") ?? "";
-    return label.startsWith("Open database ") || label === "Open";
+    return (
+      label.startsWith("Open database ") ||
+      label === "Open" ||
+      label === "Unlock"
+    );
   });
 }
 
-const OPENING_ALPHA = "Opening Alpha…";
-const SWITCHING_BETA = "Switching to Beta…";
-const UNLOCKING_ALPHA = "Unlocking Alpha…";
-const UNLOCKING_BETA = "Unlocking Beta…";
-const CLOSING_ALPHA = "Closing Alpha…";
+function expectNoDuplicateProgress(container: HTMLElement) {
+  expect(
+    screen.queryByTestId("database-loading-announcement"),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(container.querySelector("[aria-live]")).toBeNull();
+  expect(container).not.toHaveTextContent(
+    /Opening |Unlocking |Switching to |Closing |databaseCenter\.collections\.loading\./,
+  );
+}
 
 beforeEach(() => {
+  vi.clearAllMocks();
   settings.animationsEnabled = true;
 });
+afterEach(cleanup);
 
-describe("DatabaseList loading treatment", () => {
-  it("renders no loading state when nothing is loading", () => {
-    renderList();
+const scenarios = [
+  { name: "cold open", mode: "open", id: "alpha", currentId: null },
+  { name: "cold unlock", mode: "unlock", id: "alpha", currentId: null },
+  { name: "reopen current", mode: "open", id: "alpha", currentId: "alpha" },
+  { name: "unlock current", mode: "unlock", id: "alpha", currentId: "alpha" },
+  {
+    name: "switch",
+    mode: "switch",
+    id: "beta",
+    currentId: "alpha",
+    fromId: "alpha",
+  },
+  {
+    name: "unlock with handoff",
+    mode: "unlock",
+    id: "beta",
+    currentId: "alpha",
+    fromId: "alpha",
+  },
+] satisfies (LoadingCollection & { currentId: string | null })[];
 
-    expect(document.querySelectorAll('[aria-busy="true"]')).toHaveLength(0);
-    expect(document.querySelectorAll(".animate-row-sweep")).toHaveLength(0);
-    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(0);
-    expect(
-      screen.getByTestId("database-loading-announcement").textContent,
-    ).toBe("");
-  });
+// Toast lifecycle coverage lives in useDatabaseOpenNotification/useDatabaseSelector.
+// These rows must retain their metadata and interaction guards without announcing
+// the same progress again, including when motion is disabled.
+describe.each([true, false])(
+  "DatabaseList progress with animationsEnabled=%s",
+  (animationsEnabled) => {
+    it.each(scenarios)(
+      "$name keeps metadata, a hidden spinner, and disabled entry points",
+      (scenario) => {
+        settings.animationsEnabled = animationsEnabled;
+        const incoming = scenario.id === "alpha" ? ALPHA : BETA;
+        const loadingCollection: LoadingCollection = {
+          id: scenario.id,
+          name: incoming.name,
+          mode: scenario.mode,
+          ...("fromId" in scenario ? { fromId: scenario.fromId } : {}),
+        };
+        const options: StubOptions = {
+          loadingCollection,
+          currentId: scenario.currentId,
+          encryptedId: scenario.mode === "unlock" ? incoming.id : undefined,
+        };
+        const mgr = makeMgr(options);
+        const view = render(<DatabaseList mgr={mgr} onClose={vi.fn()} />);
+        expectNoDuplicateProgress(view.container);
+        expect(
+          view.container.querySelectorAll('[aria-busy="true"]'),
+        ).toHaveLength(1);
+        expect(rowFor(incoming.name)).toHaveAttribute("aria-busy", "true");
+        expect(
+          view.container.querySelectorAll(
+            '[aria-hidden="true"] [role="status"]',
+          ),
+        ).toHaveLength(1);
 
-  it("shows the spinner in place of the database glyph on the loading row", () => {
-    renderList({
-      loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-    });
+        for (const collection of mgr.collections) {
+          const row = rowFor(collection.name);
+          const isIncoming = collection.id === incoming.id;
+          const isHandoff = collection.id === loadingCollection.fromId;
+          expect(row).toHaveAttribute("aria-busy", String(isIncoming));
+          expect(row).toHaveTextContent(
+            "Last accessed: " +
+              new Date(collection.lastAccessed).toLocaleDateString(),
+          );
+          expect(
+            row.querySelector('[aria-hidden="true"] [role="status"]') !== null,
+          ).toBe(isIncoming);
+          expect(row.classList.contains("pointer-events-none")).toBe(
+            !isIncoming && !isHandoff,
+          );
+          expect(row.classList.contains("opacity-50")).toBe(
+            !isIncoming && !isHandoff,
+          );
+          expect(row.classList.contains("animate-row-handoff")).toBe(
+            animationsEnabled && isHandoff,
+          );
+          expect(row.querySelector(".animate-row-sweep") !== null).toBe(
+            animationsEnabled && isIncoming,
+          );
+          const buttons = openEntryPoints(row);
+          expect(buttons).toHaveLength(2);
+          for (const button of buttons) {
+            expect(button).toBeDisabled();
+            fireEvent.click(button);
+          }
+          const exportButton = within(row).getByRole("button", {
+            name: "Export",
+          });
+          expect(exportButton).toBeDisabled();
+          fireEvent.click(exportButton);
+          expect(within(row).queryByText("encrypted") !== null).toBe(
+            collection.isEncrypted,
+          );
+        }
+        expect(mgr.handleSelectCollection).not.toHaveBeenCalled();
+        expect(navigate).not.toHaveBeenCalled();
+        if (scenario.mode === "unlock") {
+          expect(
+            within(rowFor(incoming.name)).getByRole("button", {
+              name: "Unlock",
+            }),
+          ).toBeDisabled();
+        }
+        if (!animationsEnabled)
+          expect(
+            view.container.querySelector('[class*="animate-row-"]'),
+          ).toBeNull();
 
-    const loadingRow = rowFor("Alpha");
-    const idleRow = rowFor("Beta");
-
-    // The spinner root carries role="status" and is deliberately wrapped in
-    // aria-hidden, so it is invisible to role queries — query the DOM directly.
-    expect(
-      loadingRow.querySelector('[aria-hidden="true"] [role="status"]'),
-    ).not.toBeNull();
-    expect(
-      idleRow.querySelector('[aria-hidden="true"] [role="status"]'),
-    ).toBeNull();
-  });
-
-  it("renders the mode copy on the loading row", () => {
-    renderList({
-      loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-    });
-
-    // Twice by design: once on the row, once in the live region.
-    expect(screen.getAllByText(OPENING_ALPHA)).toHaveLength(2);
-    expect(rowFor("Alpha").textContent).toContain(OPENING_ALPHA);
-    expect(rowFor("Beta").textContent).not.toContain(OPENING_ALPHA);
-  });
-
-  it("renders unlock copy for the unlock mode", () => {
-    renderList({
-      loadingCollection: { id: "alpha", name: "Alpha", mode: "unlock" },
-    });
-
-    expect(rowFor("Alpha").textContent).toContain(UNLOCKING_ALPHA);
-  });
-
-  it("marks only the loading row aria-busy", () => {
-    renderList({
-      loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-    });
-
-    expect(document.querySelectorAll('[aria-busy="true"]')).toHaveLength(1);
-    expect(rowFor("Alpha")).toHaveAttribute("aria-busy", "true");
-    expect(rowFor("Beta")).toHaveAttribute("aria-busy", "false");
-  });
-
-  it("disables and dims bystander rows while a load is in flight", () => {
-    renderList({
-      loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-    });
-
-    const bystander = rowFor("Beta");
-    expect(bystander.className).toContain("pointer-events-none");
-    expect(bystander.className).toContain("opacity-50");
-
-    // Both entry points — the row body and the open/unlock icon — must be shut.
-    // Scoped to the row: the icon button's label is a bare "Open" on every row.
-    expect(openEntryPoints(bystander)).toHaveLength(2);
-    for (const button of openEntryPoints(bystander)) {
-      expect(button).toBeDisabled();
-    }
-
-    // The loading row's own entry points are shut too — the guard is global.
-    for (const button of openEntryPoints(rowFor("Alpha"))) {
-      expect(button).toBeDisabled();
-    }
-  });
-
-  it("announces exactly once — one live region, not one per row", () => {
-    renderList({
-      loadingCollection: {
-        id: "beta",
-        name: "Beta",
-        mode: "switch",
-        fromId: "alpha",
+        // Settling the operation removes loading state and restores the same actions.
+        view.rerender(
+          <DatabaseList
+            mgr={makeMgr({
+              ...options,
+              loadingCollection: null,
+              currentId: incoming.id,
+            })}
+            onClose={vi.fn()}
+          />,
+        );
+        expectNoDuplicateProgress(view.container);
+        expect(view.container.querySelector('[aria-busy="true"]')).toBeNull();
+        expect(
+          view.container.querySelector('[class*="animate-row-"]'),
+        ).toBeNull();
+        expect(
+          view.container.querySelector('[aria-hidden="true"] [role="status"]'),
+        ).toBeNull();
+        for (const collection of mgr.collections) {
+          const row = rowFor(collection.name);
+          expect(row).not.toHaveClass("pointer-events-none", "opacity-50");
+          for (const button of openEntryPoints(row))
+            expect(button).toBeEnabled();
+          expect(
+            within(row).getByRole("button", { name: "Export" }),
+          ).toBeEnabled();
+          expect(row).toHaveTextContent("Last accessed:");
+        }
+        expect(
+          within(rowFor(incoming.name)).getByTestId("database-close"),
+        ).toBeInTheDocument();
       },
-      currentId: "alpha",
-    });
-
-    // A switch lights up two rows. Exactly one region may be exposed to AT:
-    // the spinner's own role="status" is aria-hidden, so it must not appear.
-    const regions = screen.getAllByRole("status");
-    expect(regions).toHaveLength(1);
-    expect(regions[0]).toBe(
-      screen.getByTestId("database-loading-announcement"),
     );
-    expect(regions[0]).toHaveAttribute("aria-live", "polite");
-    expect(regions[0].textContent).toBe(SWITCHING_BETA);
-  });
 
-  it("renders handoff copy on the outgoing row during a switch", () => {
-    renderList({
-      loadingCollection: {
-        id: "beta",
-        name: "Beta",
-        mode: "switch",
-        fromId: "alpha",
+    it.each(["switch", "unlock"] as const)(
+      "keeps the fromId handoff when current changes mid-%s",
+      (mode) => {
+        settings.animationsEnabled = animationsEnabled;
+        const options: StubOptions = {
+          loadingCollection: {
+            id: "beta",
+            name: "Beta",
+            mode,
+            fromId: "alpha",
+          },
+          currentId: "alpha",
+          encryptedId: mode === "unlock" ? "beta" : undefined,
+        };
+        const view = render(
+          <DatabaseList mgr={makeMgr(options)} onClose={vi.fn()} />,
+        );
+        expect(
+          within(rowFor("Alpha")).getByTestId("database-close"),
+        ).toBeInTheDocument();
+        view.rerender(
+          <DatabaseList
+            mgr={makeMgr({ ...options, currentId: "beta" })}
+            onClose={vi.fn()}
+          />,
+        );
+        expectNoDuplicateProgress(view.container);
+        expect(rowFor("Alpha")).toHaveAttribute("aria-busy", "false");
+        expect(rowFor("Alpha")).not.toHaveClass(
+          "pointer-events-none",
+          "opacity-50",
+        );
+        expect(rowFor("Alpha").classList.contains("animate-row-handoff")).toBe(
+          animationsEnabled,
+        );
+        expect(rowFor("Beta")).toHaveAttribute("aria-busy", "true");
+        expect(rowFor("Gamma")).toHaveClass(
+          "pointer-events-none",
+          "opacity-50",
+        );
+        expect(
+          within(rowFor("Alpha")).queryByTestId("database-close"),
+        ).not.toBeInTheDocument();
+        expect(
+          within(rowFor("Beta")).getByTestId("database-close"),
+        ).toBeInTheDocument();
+        for (const name of ["Alpha", "Beta", "Gamma"]) {
+          expect(rowFor(name)).toHaveTextContent("Last accessed:");
+          for (const button of openEntryPoints(rowFor(name)))
+            expect(button).toBeDisabled();
+        }
       },
-      currentId: "alpha",
-    });
+    );
+  },
+);
 
-    // Outgoing row hands off; incoming row loads; the third row is a bystander.
-    expect(rowFor("Alpha").textContent).toContain(CLOSING_ALPHA);
-    expect(rowFor("Beta").textContent).toContain(SWITCHING_BETA);
-    expect(rowFor("Gamma").textContent).not.toContain(CLOSING_ALPHA);
-
-    // The outgoing row is handing off, not loading: no spinner, no aria-busy.
-    expect(rowFor("Alpha")).toHaveAttribute("aria-busy", "false");
-    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(1);
-    expect(document.querySelectorAll(".animate-row-sweep")).toHaveLength(1);
-
-    // Handoff copy is row-only — the announcement carries the incoming mode.
-    expect(screen.getAllByText(CLOSING_ALPHA)).toHaveLength(1);
-  });
-
-  // ─── The F1 regression ──────────────────────────────────────────────
-  //
-  // Observed in the real Tauri app: the outgoing row dropped its hand-off
-  // mid-switch and reverted to "Last accessed: …" while the incoming row was
-  // still aria-busy announcing "Switching to Beta…" — the two rows told
-  // contradictory stories for the tail of the switch (≥1130ms in one run).
-  //
-  // The cause was deriving the hand-off row from `mgr.isCurrentDatabase()`.
-  // `databaseManager.selectDatabase` makes the incoming database current
-  // *while the load is still running*, so the outgoing row stopped being
-  // "current" and silently demoted itself to a plain bystander.
-  //
-  // This is the state at that moment: the switch is in flight, `fromId` still
-  // names Alpha, but the manager has already moved on to Beta. The hand-off
-  // must hold. Against the old derivation this test fails.
-  it("keeps the handoff on the outgoing row after the manager flips current mid-load", () => {
-    renderList({
-      loadingCollection: {
-        id: "beta",
-        name: "Beta",
-        mode: "switch",
-        fromId: "alpha",
-      },
-      // The flip: Beta is already current, Alpha no longer is.
-      currentId: "beta",
-    });
-
-    expect(rowFor("Alpha").textContent).toContain(CLOSING_ALPHA);
-    expect(rowFor("Alpha").textContent).not.toContain("Last accessed");
-    expect(rowFor("Alpha").className).toContain("animate-row-handoff");
-    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(1);
-
-    // The outgoing row must not be demoted to a dimmed bystander.
-    expect(rowFor("Alpha").className).not.toContain("pointer-events-none");
-
-    // And the incoming row is still telling its half of the same story.
-    expect(rowFor("Beta")).toHaveAttribute("aria-busy", "true");
-    expect(rowFor("Beta").textContent).toContain(SWITCHING_BETA);
-    expect(
-      screen.getByTestId("database-loading-announcement").textContent,
-    ).toBe(SWITCHING_BETA);
-  });
-
-  // ─── Unlock is a hand-off too ───────────────────────────────────────
-  //
-  // Unlocking an encrypted database while another one is open tears the open
-  // one down, exactly as a plain switch does, so the outgoing row must say so
-  // rather than sitting silently dimmed among the bystanders. The hand-off is
-  // keyed on `fromId`, not on `mode === "switch"` — which is why the incoming
-  // row keeps the more specific "Unlocking…" copy while the outgoing row uses
-  // the same cause-free "Closing…" copy a switch uses.
-  //
-  // Both rows are asserted together on purpose: this is a two-row story, and
-  // either row alone would pass while the pair still contradicted each other.
-  it("tells the handoff story on the outgoing row while an unlock is in flight", () => {
-    renderList({
-      loadingCollection: {
-        id: "beta",
-        name: "Beta",
-        mode: "unlock",
-        fromId: "alpha",
-      },
-      currentId: "alpha",
-    });
-
-    // Outgoing: hands off, and is NOT demoted to a dimmed bystander.
-    expect(rowFor("Alpha").textContent).toContain(CLOSING_ALPHA);
-    expect(rowFor("Alpha").textContent).not.toContain("Last accessed");
-    expect(rowFor("Alpha").className).toContain("animate-row-handoff");
-    expect(rowFor("Alpha").className).not.toContain("pointer-events-none");
-    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(1);
-
-    // Incoming: busy, and announcing the unlock — not "Switching to…".
-    expect(rowFor("Beta")).toHaveAttribute("aria-busy", "true");
-    expect(rowFor("Beta").textContent).toContain(UNLOCKING_BETA);
-    expect(
-      screen.getByTestId("database-loading-announcement").textContent,
-    ).toBe(UNLOCKING_BETA);
-
-    // Uninvolved rows are still bystanders.
-    expect(rowFor("Gamma").className).toContain("pointer-events-none");
-  });
-
-  it("keeps the unlock handoff after the manager flips current mid-load", () => {
-    renderList({
-      loadingCollection: {
-        id: "beta",
-        name: "Beta",
-        mode: "unlock",
-        fromId: "alpha",
-      },
-      // The flip: Beta is already current, Alpha no longer is.
-      currentId: "beta",
-    });
-
-    expect(rowFor("Alpha").textContent).toContain(CLOSING_ALPHA);
-    expect(rowFor("Alpha").className).toContain("animate-row-handoff");
-    expect(rowFor("Beta").textContent).toContain(UNLOCKING_BETA);
-  });
-
-  it("tells no handoff story when unlocking with nothing else open", () => {
-    renderList({
-      loadingCollection: { id: "alpha", name: "Alpha", mode: "unlock" },
-    });
-
-    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(0);
-    expect(rowFor("Alpha").textContent).toContain(UNLOCKING_ALPHA);
-    expect(screen.queryByText(CLOSING_ALPHA)).toBeNull();
-  });
-
-  it("does not treat a re-open of the current database as a handoff", () => {
-    renderList({
-      loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-      currentId: "alpha",
-    });
-
-    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(0);
-    expect(rowFor("Alpha").textContent).toContain(OPENING_ALPHA);
-    expect(rowFor("Alpha").textContent).not.toContain(CLOSING_ALPHA);
-  });
-
-  it("applies motion classes only while animations are enabled", () => {
-    renderList({
-      loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-    });
-
-    expect(document.querySelectorAll(".animate-row-sweep")).toHaveLength(1);
-  });
-
-  // ─── The D3 invariant ───────────────────────────────────────────────
-  //
-  // The animationsEnabled gate covers motion and nothing else. Everything that
-  // carries information — mode copy, aria-busy, the announcement, the disabled
-  // siblings — must survive with animations off. This is the test that stops a
-  // future change from gating the accessible state away along with the motion.
-  describe("with animations disabled", () => {
-    beforeEach(() => {
-      settings.animationsEnabled = false;
-    });
-
-    it("drops every motion class on an open", () => {
-      renderList({
-        loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-      });
-
-      expect(document.querySelectorAll(".animate-row-sweep")).toHaveLength(0);
-      expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(0);
-      expect(document.querySelectorAll('[class*="animate-row-"]')).toHaveLength(
-        0,
-      );
-    });
-
-    it("drops every motion class on a switch, including the handoff", () => {
-      renderList({
-        loadingCollection: {
-          id: "beta",
-          name: "Beta",
-          mode: "switch",
-          fromId: "alpha",
-        },
-        currentId: "alpha",
-      });
-
-      expect(document.querySelectorAll('[class*="animate-row-"]')).toHaveLength(
-        0,
-      );
-    });
-
-    it("keeps the mode copy, aria-busy and the announcement on an open", () => {
-      renderList({
-        loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-      });
-
-      expect(rowFor("Alpha").textContent).toContain(OPENING_ALPHA);
-      expect(rowFor("Alpha")).toHaveAttribute("aria-busy", "true");
-      expect(document.querySelectorAll('[aria-busy="true"]')).toHaveLength(1);
-      expect(
-        screen.getByTestId("database-loading-announcement").textContent,
-      ).toBe(OPENING_ALPHA);
-      expect(screen.getAllByRole("status")).toHaveLength(1);
-    });
-
-    it("keeps the spinner, the handoff copy and the disabled siblings", () => {
-      renderList({
-        loadingCollection: {
-          id: "beta",
-          name: "Beta",
-          mode: "switch",
-          fromId: "alpha",
-        },
-        currentId: "alpha",
-      });
-
-      // LoadingElement self-gates to a static glyph; it must still be mounted
-      // in the icon slot rather than reverting to the Database icon.
-      expect(
-        rowFor("Beta").querySelector('[aria-hidden="true"] [role="status"]'),
-      ).not.toBeNull();
-      expect(rowFor("Alpha").textContent).toContain(CLOSING_ALPHA);
-      expect(rowFor("Beta").textContent).toContain(SWITCHING_BETA);
-      expect(rowFor("Gamma").className).toContain("pointer-events-none");
-      for (const button of openEntryPoints(rowFor("Gamma"))) {
-        expect(button).toBeDisabled();
-      }
-      expect(
-        screen.getByTestId("database-loading-announcement").textContent,
-      ).toBe(SWITCHING_BETA);
-    });
+it("idle rows preserve current/encrypted status and invoke normal open/export actions", () => {
+  const mgr = makeMgr({ currentId: "alpha", encryptedId: "beta" });
+  const { container } = render(<DatabaseList mgr={mgr} onClose={vi.fn()} />);
+  expectNoDuplicateProgress(container);
+  expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  expect(container.querySelector('[class*="animate-row-"]')).toBeNull();
+  expect(
+    container.querySelector('[aria-hidden="true"] [role="status"]'),
+  ).toBeNull();
+  expect(
+    within(rowFor("Alpha")).getByRole("button", { name: "Close" }),
+  ).toBeInTheDocument();
+  expect(within(rowFor("Beta")).getByText("encrypted")).toBeInTheDocument();
+  for (const name of ["Alpha", "Beta", "Gamma"]) {
+    for (const button of openEntryPoints(rowFor(name))) {
+      expect(button).toBeEnabled();
+      fireEvent.click(button);
+    }
+  }
+  expect(mgr.handleSelectCollection).toHaveBeenCalledTimes(6);
+  fireEvent.click(
+    within(rowFor("Beta")).getByRole("button", { name: "Export" }),
+  );
+  expect(navigate).toHaveBeenCalledExactlyOnceWith({
+    tab: "export",
+    format: "json",
+    databaseIds: ["beta"],
+    encrypted: true,
   });
 });

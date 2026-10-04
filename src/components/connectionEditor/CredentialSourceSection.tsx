@@ -20,6 +20,23 @@ import {
 import { Select } from "../ui/forms";
 import { useVaultTotpChoices } from "../../hooks/security/useVaultTotpChoices";
 
+const CONVERSION_FAILURES = {
+  draft:
+    "The connection's credential draft could not be read. No vault write was attempted; local fields were kept. Review the local credentials, then retry.",
+  metadata:
+    "The owning vault's metadata could not be loaded or its owner changed. No vault write was attempted; local fields were kept. Unlock and reload the owning database, then retry.",
+  retained:
+    "The existing credential's retained bindings could not be read. No vault write was attempted; local fields were kept. Reload credentials and review the destination, then retry.",
+  write:
+    "The vault write could not be confirmed. Local fields were kept, but an entry may already have been saved. Reload credentials and review the destination before retrying; do not create a second entry.",
+  verification:
+    "The vault write finished, but its saved values could not be verified. The connection's source and local fields were kept. Reload credentials and review the existing entry before retrying.",
+  disclosure:
+    "The vault credentials could not be read or the connection draft changed. The source and local fields were kept; no vault write was attempted. Unlock and reload the owning database, then retry.",
+  apply:
+    "The credentials were verified, but the connection draft could not be updated. Keep this editor open and review the draft and source before retrying. The reusable vault entry was not removed.",
+} as const;
+
 export default function CredentialSourceSection({
   formData,
   setFormData,
@@ -45,6 +62,13 @@ export default function CredentialSourceSection({
   currentDraft.current = { formData, credentialConversion };
   const alive = useRef(true),
     converting = useRef(false);
+  // Non-secret identity only. An uncertain write must not turn an ordinary
+  // retry into a second reusable credential with a fresh UUID.
+  const pendingCreate = useRef<{
+    key: string;
+    connectionId: string | undefined;
+    id: string;
+  } | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -81,7 +105,14 @@ export default function CredentialSourceSection({
     void api
       .list({ ...api.scope })
       .then((value) => {
-        if (alive && latest.current.key === key) setSnapshot(value);
+        if (alive && latest.current.key === key) {
+          if (
+            value.scope.databaseId !== api.scope?.databaseId ||
+            value.scope.generation !== api.scope?.generation
+          )
+            throw new Error("Credential metadata owner changed.");
+          setSnapshot(value);
+        }
       })
       .catch(() => {
         if (alive && latest.current.key === key) setError(true);
@@ -135,31 +166,38 @@ export default function CredentialSourceSection({
   };
   const convert = async (direction: "vault" | "local") => {
     if (converting.current || !accessible || !api?.scope) return;
+    if (error || (direction === "vault" && (loading || !snapshot))) return;
     converting.current = true;
     setConversionBusy(true);
     setConversionError("");
     setConversionStatus("");
-    const original = currentDraft.current;
-    const draft = original.credentialConversion?.read() ?? original.formData;
-    const draftVersion = JSON.stringify(draft);
-    const scope = { ...api.scope };
-    const check = () => {
-      if (
-        !alive.current ||
-        latest.current.key !== owner.current ||
-        latest.current.key !== key ||
-        credentialVaultScopeKey(api) !== key ||
-        currentDraft.current.formData !== original.formData ||
-        JSON.stringify(
-          currentDraft.current.credentialConversion?.read() ??
-            currentDraft.current.formData,
-        ) !== draftVersion
-      )
-        throw new Error("Credential conversion context changed.");
-    };
+    let stage: keyof typeof CONVERSION_FAILURES = "draft";
     try {
-      check();
-      const review = await api.list(scope);
+      // Managed SSH secrets can throw while being read. Keep capture inside the
+      // error boundary so failure retains the draft and releases the busy guard.
+      const original = currentDraft.current;
+      const draft = original.credentialConversion?.read() ?? original.formData;
+      const draftVersion = JSON.stringify(draft);
+      const scope = { ...api.scope };
+      const check = () => {
+        if (
+          !alive.current ||
+          latest.current.key !== owner.current ||
+          latest.current.key !== key ||
+          credentialVaultScopeKey(latest.current.api) !== key ||
+          currentDraft.current.formData !== original.formData ||
+          JSON.stringify(
+            currentDraft.current.credentialConversion?.read() ??
+              currentDraft.current.formData,
+          ) !== draftVersion
+        )
+          throw new Error("Credential conversion context changed.");
+        return latest.current.api!;
+      };
+      // Provider facades may be replaced after a same-owner write. Read the
+      // current facade at each boundary, retaining the reviewed CAS receipt.
+      stage = "metadata";
+      const review = await check().list(scope);
       check();
       if (
         review.scope.databaseId !== scope.databaseId ||
@@ -168,11 +206,29 @@ export default function CredentialSourceSection({
         throw new Error("Credential owner changed.");
       let patch: Partial<Connection>;
       if (direction === "vault") {
+        stage = "draft";
         if (
           normalizeConnectionCredentialSource(draft.credentialSource)?.kind ===
           "vault"
         )
           throw new Error();
+        const pending =
+          pendingCreate.current?.key === key &&
+          pendingCreate.current.connectionId === draft.id
+            ? pendingCreate.current
+            : null;
+        if (
+          !conversionTarget &&
+          pending &&
+          review.entries.some((row) => row.id === pending.id)
+        ) {
+          setSnapshot(review);
+          setConversionTarget(pending.id);
+          setConversionError(
+            "A previous attempt already saved this vault entry. Review the selected destination before retrying; no new entry was created and local fields were kept.",
+          );
+          return;
+        }
         const facets = localCredentialFacets(draft);
         const existing = conversionTarget
           ? review.entries.find((entry) => entry.id === conversionTarget)
@@ -183,22 +239,28 @@ export default function CredentialSourceSection({
             (facet) =>
               !LOCAL_CREDENTIAL_FACETS.some((local) => local === facet),
           ) ?? [];
+        stage = "retained";
         const retained =
           existing && retainedFacets.length
-            ? await api.resolve(review, existing.id, retainedFacets)
+            ? await check().resolve(review, existing.id, retainedFacets)
             : {};
         check();
+        stage = "draft";
         const now = new Date().toISOString();
         const entry = normalizeDatabaseCredentialEntry({
-          id: existing?.id ?? crypto.randomUUID(),
+          id: existing?.id ?? pending?.id ?? crypto.randomUUID(),
           name: existing?.name ?? conversionName.trim(),
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
           facets: { ...retained, ...facets },
         });
-        await api.compareAndSwap(review, [{ operation: "put", entry }]);
+        if (!existing)
+          pendingCreate.current = { key, connectionId: draft.id, id: entry.id };
+        stage = "write";
+        await check().compareAndSwap(review, [{ operation: "put", entry }]);
+        stage = "verification";
         check();
-        const verified = await api.list(scope);
+        const verified = await check().list(scope);
         check();
         if (
           verified.scope.databaseId !== scope.databaseId ||
@@ -207,7 +269,7 @@ export default function CredentialSourceSection({
           !verified.entries.some((row) => row.id === entry.id)
         )
           throw new Error();
-        const stored = await api.resolve(
+        const stored = await check().resolve(
           verified,
           entry.id,
           LOCAL_CREDENTIAL_FACETS.filter(
@@ -241,6 +303,7 @@ export default function CredentialSourceSection({
         };
         setSnapshot(verified);
       } else {
+        stage = "disclosure";
         const reference = normalizeConnectionCredentialSource(
           draft.credentialSource,
         );
@@ -257,7 +320,7 @@ export default function CredentialSourceSection({
           throw new Error();
         const needed = convertibleVaultFacets(row, draft);
         if (!needed.length) throw new Error();
-        const facets = await api.resolve(review, row.id, needed);
+        const facets = await check().resolve(review, row.id, needed);
         check();
         if (needed.some((facet) => facets[facet] === undefined))
           throw new Error();
@@ -288,8 +351,9 @@ export default function CredentialSourceSection({
       patch.httpAutoMfa = draft.httpAutoMfa
         ? { version: 1, enabled: false }
         : undefined;
+      stage = "apply";
       if (original.credentialConversion)
-        original.credentialConversion.apply(patch);
+        currentDraft.current.credentialConversion!.apply(patch);
       else
         setFormData((previous) =>
           previous === original.formData &&
@@ -298,6 +362,7 @@ export default function CredentialSourceSection({
             ? { ...previous, ...patch }
             : previous,
         );
+      pendingCreate.current = null;
       setChoosing(false);
       setConversionOpen(false);
       setConversionStatus(
@@ -308,7 +373,7 @@ export default function CredentialSourceSection({
     } catch {
       if (alive.current)
         setConversionError(
-          "Conversion could not be completed. The connection's source and local fields were kept. Unlock and reload the owning database, review the destination, then retry. A completed vault write may remain even if verification failed.",
+          `Conversion could not be completed. ${CONVERSION_FAILURES[stage]}`,
         );
     } finally {
       converting.current = false;
@@ -352,7 +417,7 @@ export default function CredentialSourceSection({
       <button
         type="button"
         className="sor-btn sor-btn-secondary"
-        disabled={!accessible || invalid || conversionBusy}
+        disabled={!accessible || invalid || conversionBusy || (vault && error)}
         onClick={() => {
           if (vault) void convert("local");
           else {
@@ -406,6 +471,8 @@ export default function CredentialSourceSection({
             disabled={
               conversionBusy ||
               loading ||
+              error ||
+              !snapshot ||
               !accessible ||
               (!conversionTarget && !conversionName.trim())
             }

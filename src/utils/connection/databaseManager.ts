@@ -12,6 +12,7 @@ import {
 } from "../storage/recordLedger";
 import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
+import { stableJsonStringify } from "../core/stableJsonStringify";
 import {
   DatabaseNotFoundError,
   CorruptedDataError,
@@ -986,7 +987,9 @@ export class DatabaseManager {
     const ledger = this.loadedRecordBaselines.get(data);
     if (
       !ledger ||
-      JSON.stringify(ledger) === JSON.stringify(data.recordMetadata)
+      (data.recordMetadata !== undefined &&
+        stableJsonStringify(ledger) ===
+          stableJsonStringify(data.recordMetadata))
     )
       return;
     const expectedData = this.loadedRepresentations.get(data);
@@ -1480,13 +1483,55 @@ export class DatabaseManager {
     return transition;
   }
 
+  /** Startup never takes over a newer selection, close or global lock. */
+  captureStartupRestoreGuard(): () => boolean {
+    const generation = this.selectionGeneration;
+    const securityEpoch = this.securityEpoch;
+    const revision = this.operationSelectionRevision;
+    return () =>
+      !this.disposed &&
+      generation === this.selectionGeneration &&
+      securityEpoch === this.securityEpoch &&
+      revision === this.operationSelectionRevision;
+  }
+
+  /** Reuses normal access/CAS checks without switching the tree for side databases. */
+  async restoreDatabase(
+    id: string,
+    options: { activate: boolean; isCurrent: () => boolean },
+  ): Promise<void> {
+    const generation = this.selectionGeneration;
+    const transition = this.databaseTransitionQueue
+      .catch(() => undefined)
+      .then(() =>
+        this.selectDatabaseInner(id, undefined, generation, {
+          background: !options.activate,
+          isCurrent: options.isCurrent,
+          requireData: true,
+        }),
+      );
+    this.databaseTransitionQueue = transition.then(
+      () => undefined,
+      () => undefined,
+    );
+    return transition;
+  }
+
   private async selectDatabaseInner(
     id: string,
     password?: string,
     generation = this.selectionGeneration,
+    options: {
+      background?: boolean;
+      isCurrent?: () => boolean;
+      requireData?: boolean;
+    } = {},
   ): Promise<void> {
     const assertSelectionCurrent = () => {
-      if (generation !== this.selectionGeneration)
+      if (
+        generation !== this.selectionGeneration ||
+        options.isCurrent?.() === false
+      )
         throw new Error(
           "Database opening was cancelled because the selection was closed.",
         );
@@ -1495,7 +1540,9 @@ export class DatabaseManager {
     const epoch = this.captureDatabaseEpoch(id);
     const previousDatabaseId = this.currentDatabase?.id ?? null;
     const switchingDatabase =
-      this.currentDatabase !== null && this.currentDatabase.id !== id;
+      !options.background &&
+      this.currentDatabase !== null &&
+      this.currentDatabase.id !== id;
     if (switchingDatabase) {
       await this.beforeDatabaseTransition?.();
     }
@@ -1521,6 +1568,11 @@ export class DatabaseManager {
     }
 
     const loaded = await this.loadDatabaseData(id, resolvedPassword);
+    assertSelectionCurrent();
+    if (options.requireData && !loaded)
+      throw new Error(
+        "The database file is unavailable; startup did not create or replace it.",
+      );
     if (loaded)
       await this.migrateRecordTimestamps(id, loaded, resolvedPassword);
     // A database load can be slow. Flush edits made to the outgoing UI while
@@ -1537,6 +1589,10 @@ export class DatabaseManager {
     if (loaded) await this.assertSnapshotCurrent(id, loaded);
     this.assertDatabaseEpoch(id, epoch);
     assertSelectionCurrent();
+    if (options.background) {
+      this.openedDatabaseIds.add(id);
+      return;
+    }
     // Publish selection only after every asynchronous validation succeeds.
     this.operationSelectionRevision += 1;
     this.currentDatabase = collection;
@@ -1607,26 +1663,38 @@ export class DatabaseManager {
           return data;
         }),
       verifyCurrent: async () => {
-        const baseline = expectedData;
-        if (baseline === undefined)
-          throw new Error(
-            "Database content baseline is unavailable. Reload before running a database action.",
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const baseline = expectedData;
+          if (baseline === undefined)
+            throw new Error(
+              "Database content baseline is unavailable. Reload before running a database action.",
+            );
+          const data = await this.loadDatabaseData(
+            databaseId,
+            resolvePassword(),
+            revisionAtCapture,
+            { preserveBaseline: true },
           );
-        const data = await this.loadDatabaseData(
-          databaseId,
-          resolvePassword(),
-          revisionAtCapture,
-          { preserveBaseline: true },
+          resolvePassword();
+          // This target's own save/load can advance its baseline while the
+          // native read is pending. Re-read against that verified baseline,
+          // never adopt the just-read contents or retry a real external edit.
+          if (baseline !== expectedData) continue;
+          if (
+            !data ||
+            // Native JSON can reorder object keys. Arrays and encrypted
+            // envelope strings still compare exactly; values are not ignored.
+            stableJsonStringify(this.loadedRepresentations.get(data)) !==
+              stableJsonStringify(baseline)
+          )
+            throw new Error(
+              "Database contents changed in another window. Reload and review the library before running an action.",
+            );
+          return;
+        }
+        throw new Error(
+          "Database contents kept changing during verification. Retry after pending saves finish.",
         );
-        resolvePassword();
-        if (
-          !data ||
-          JSON.stringify(this.loadedRepresentations.get(data)) !==
-            JSON.stringify(baseline)
-        )
-          throw new Error(
-            "Database contents changed in another window. Reload and review the library before running an action.",
-          );
       },
       readCurrent: async () => {
         const currentAccess = this.getDatabaseAccessState(databaseId);
@@ -1812,6 +1880,27 @@ export class DatabaseManager {
     // so this is a notification only.
     this.announceDatabaseChange({
       reason: "lock",
+      database: this.currentDatabase,
+      databaseId: id,
+      previousDatabaseId: this.currentDatabase?.id ?? null,
+      connectionIds: [],
+    });
+  }
+
+  /** Explicit picker Close, distinct from security expiry or automatic locking. */
+  async closeDatabase(id: string): Promise<void> {
+    if (this.currentDatabase?.id === id) {
+      await this.closeCurrentDatabase();
+      return;
+    }
+    await this.lockDatabase(id);
+    // A side row may have become selected while its native lock was pending.
+    if (this.currentDatabase?.id === id) {
+      await this.closeCurrentDatabase();
+      return;
+    }
+    this.announceDatabaseChange({
+      reason: "close",
       database: this.currentDatabase,
       databaseId: id,
       previousDatabaseId: this.currentDatabase?.id ?? null,
@@ -2472,8 +2561,9 @@ export class DatabaseManager {
       contentExpectation?.recordBaseline ??
       this.loadedRecordBaselines.get(inputData) ??
       (cachedLedger &&
-      JSON.stringify(cachedLedger.representation) ===
-        JSON.stringify(expectedData)
+      expectedData !== undefined &&
+      stableJsonStringify(cachedLedger.representation) ===
+        stableJsonStringify(expectedData)
         ? cachedLedger.ledger
         : undefined);
     const epoch = this.captureDatabaseEpoch(collectionId);

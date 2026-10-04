@@ -138,33 +138,41 @@ afterEach(() => {
 });
 
 describe("database list stored sizes", () => {
-  it("keeps size as plain metadata on the last-accessed line, including while opening", async () => {
-    const mgr = makeMgr([alpha]);
-    const view = render(<DatabaseList mgr={mgr} onClose={vi.fn()} />);
-    await settle();
-    const size = sizeFor("Alpha");
-    const metadata = size.closest("p");
-    expect(metadata).toHaveTextContent(
-      `databaseCenter.collections.lastAccessed: ${new Date(alpha.lastAccessed).toLocaleDateString()} · 42 B`,
-    );
-    expect(metadata).toHaveClass("text-[var(--color-textMuted)]");
-    expect(size).not.toHaveClass("border", "rounded", "px-1.5", "py-0.5");
-    expect(size).toHaveAttribute("title", expect.stringContaining("42 bytes"));
+  it.each(["open", "unlock", "switch"] as const)(
+    "keeps size and last-accessed metadata during %s",
+    async (mode) => {
+      const mgr = makeMgr([alpha]);
+      const view = render(<DatabaseList mgr={mgr} onClose={vi.fn()} />);
+      await settle();
+      const size = sizeFor("Alpha");
+      const metadata = size.closest("p");
+      expect(metadata).toHaveTextContent(
+        `databaseCenter.collections.lastAccessed: ${new Date(alpha.lastAccessed).toLocaleDateString()} · 42 B`,
+      );
+      expect(metadata).toHaveClass("text-[var(--color-textMuted)]");
+      expect(size).not.toHaveClass("border", "rounded", "px-1.5", "py-0.5");
+      expect(size).toHaveAttribute(
+        "title",
+        expect.stringContaining("42 bytes"),
+      );
 
-    view.rerender(
-      <DatabaseList
-        mgr={{
-          ...mgr,
-          loadingCollection: { id: "alpha", name: "Alpha", mode: "open" },
-        }}
-        onClose={vi.fn()}
-      />,
-    );
-    expect(sizeFor("Alpha").closest("p")).toHaveTextContent(
-      "databaseCenter.collections.loading.open · 42 B",
-    );
-    expect(sizeFor("Alpha").closest("p")).not.toHaveTextContent("lastAccessed");
-  });
+      view.rerender(
+        <DatabaseList
+          mgr={{
+            ...mgr,
+            loadingCollection: { id: "alpha", name: "Alpha", mode },
+          }}
+          onClose={vi.fn()}
+        />,
+      );
+      expect(sizeFor("Alpha").closest("p")).toHaveTextContent(
+        `databaseCenter.collections.lastAccessed: ${new Date(alpha.lastAccessed).toLocaleDateString()} · 42 B`,
+      );
+      expect(sizeFor("Alpha").closest("p")).not.toHaveTextContent(
+        "databaseCenter.collections.loading",
+      );
+    },
+  );
 
   it("batches every database, maps by ID, and measures locked rows without opening them", async () => {
     const pending = deferred();

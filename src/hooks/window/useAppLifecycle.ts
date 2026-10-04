@@ -4,6 +4,9 @@ import { useConnections } from "../../contexts/useConnections";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { StatusChecker } from "../../utils/connection/statusChecker";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { startDatabaseStartupSession } from "../../utils/connection/databaseStartup";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ThemeManager } from "../../utils/settings/themeManager";
 import {
   Connection,
@@ -114,9 +117,36 @@ export const useAppLifecycle = ({
   const restoreInProgressRef = useRef(false);
   const failedRecoveryRowsRef = useRef<PersistedConnectionSession[]>([]);
   const delayedRestoreCancelsRef = useRef<Set<() => void>>(new Set());
+  const databaseStartupRef = useRef<ReturnType<
+    typeof startDatabaseStartupSession
+  > | null>(null);
 
   /** Maximum time (ms) allowed for initialization before BSOD. */
   const INIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+  const attachDatabaseStartup = useCallback(
+    (restoreOnStart: boolean) => {
+      let ownerWindow = false;
+      try {
+        ownerWindow = !isTauri() || getCurrentWindow().label === "main";
+      } catch {
+        // Unknown ownership must not replace the main window's restore set.
+      }
+      const session = startDatabaseStartupSession({
+        manager: databaseManager,
+        settings: settingsManager,
+        loadData,
+        showChooser: () => setShowDatabasePanel(true),
+        isCurrent: () => mountedRef.current,
+        safeMode: Boolean(safeModeRef.current),
+        ownerWindow,
+        restoreOnStart,
+      });
+      databaseStartupRef.current = session;
+      return session;
+    },
+    [databaseManager, settingsManager, loadData, setShowDatabasePanel],
+  );
 
   const initializeApp = useCallback(async () => {
     if (initStarted.current) return;
@@ -260,47 +290,11 @@ export const useAppLifecycle = ({
       if (safeMode) {
         console.log("Safe mode: skipping auto-open collection");
         setShowDatabasePanel(true);
-      } else if (
-        settings.autoOpenLastCollection &&
-        settings.lastOpenedCollectionId
-      ) {
-        try {
-          const collections = await databaseManager.getAllDatabases();
-          const lastCollection = collections.find(
-            (c) => c.id === settings.lastOpenedCollectionId,
-          );
-
-          if (lastCollection) {
-            if (lastCollection.isEncrypted) {
-              console.log(
-                `Last collection "${lastCollection.name}" requires password, showing selector`,
-              );
-              setShowDatabasePanel(true);
-            } else {
-              await databaseManager.selectDatabase(lastCollection.id);
-              await loadData(lastCollection.id);
-              console.log(
-                `Auto-opened last collection: ${lastCollection.name}`,
-              );
-              settingsManager.logAction(
-                "info",
-                "Collection auto-opened",
-                undefined,
-                `Auto-opened last collection: ${lastCollection.name}`,
-              );
-            }
-          } else {
-            console.log(
-              "Last opened collection no longer exists, showing selector",
-            );
-            setShowDatabasePanel(true);
-          }
-        } catch (error) {
-          console.warn("Failed to auto-open last collection:", error);
-          setShowDatabasePanel(true);
-        }
       }
+      await attachDatabaseStartup(true).restore;
       if (!mountedRef.current) return;
+      // Effect cleanup/re-setup may occur while initialization is awaiting restore.
+      if (!databaseStartupRef.current) attachDatabaseStartup(false);
       setInitProgress(100);
       setInitStatus("Ready!");
 
@@ -332,9 +326,8 @@ export const useAppLifecycle = ({
     settingsManager,
     themeManager,
     i18n,
-    loadData,
     setShowDatabasePanel,
-    databaseManager,
+    attachDatabaseStartup,
   ]);
 
   const handleBeforeUnload = useCallback(
@@ -370,7 +363,8 @@ export const useAppLifecycle = ({
 
   useEffect(() => {
     mountedRef.current = true;
-    initializeApp();
+    if (initializedRef.current) attachDatabaseStartup(false);
+    else initializeApp();
 
     // BSOD timeout — if init hasn't completed in 5 minutes, something is fatally wrong
     const timeout = setTimeout(() => {
@@ -391,6 +385,8 @@ export const useAppLifecycle = ({
 
     return () => {
       mountedRef.current = false;
+      databaseStartupRef.current?.dispose();
+      databaseStartupRef.current = null;
       clearTimeout(timeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- mount-only: one-time initialization

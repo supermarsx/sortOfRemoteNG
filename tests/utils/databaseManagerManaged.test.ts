@@ -7,6 +7,9 @@ import {
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
 import type { DatabaseProtectionUnlockResult } from "../../src/types/encryption/databaseProtection";
+import { stableJsonStringify } from "../../src/utils/core/stableJsonStringify";
+import { startDatabaseStartupSession } from "../../src/utils/connection/databaseStartup";
+import type { GlobalSettings } from "../../src/types/settings/settings";
 const bridge = vi.hoisted(() => ({
   invoke: vi.fn(),
   locked: undefined as
@@ -156,6 +159,122 @@ afterEach(() => {
 });
 
 describe("native managed database sessions", () => {
+  it.each(["active", "side"])(
+    "persists explicit managed %s Close rather than treating it as expiry",
+    async (target) => {
+      const manager = DatabaseManager.getInstance();
+      const id = rows[0].id;
+      const other = {
+        ...rows[0],
+        id: "other",
+        isEncrypted: false,
+        protectionFormat: undefined,
+      };
+      rows.push(other);
+      payloads.set(other.id, structuredClone(data));
+      await manager.unlockManagedDatabase(id, "password-slot", "secret");
+      await manager.selectDatabase(id);
+      if (target === "side") await manager.selectDatabase(other.id);
+      const activeId = manager.getCurrentDatabase()!.id;
+      const saved = {
+        autoOpenLastCollection: true,
+        databaseOpenSet: {
+          version: 1,
+          databaseIds: [id, other.id],
+          activeDatabaseId: activeId,
+        },
+      } as GlobalSettings;
+      const settings = {
+        getSettings: () => saved,
+        saveSettings: vi.fn(async (patch: Partial<GlobalSettings>) => {
+          Object.assign(saved, JSON.parse(JSON.stringify(patch)));
+        }),
+      };
+      const task = startDatabaseStartupSession({
+        manager,
+        settings: settings as unknown as SettingsManager,
+        loadData: vi.fn(async () => true),
+        showChooser: vi.fn(),
+        isCurrent: () => true,
+        ownerWindow: true,
+      });
+      await task.restore;
+      const changes = vi.fn();
+      const unsubscribe = manager.onCurrentDatabaseChange(changes);
+      if (target === "side") await manager.closeDatabase(id);
+      else expect(await manager.closeCurrentDatabase()).toBe(id);
+      await vi.waitFor(() =>
+        expect(saved.databaseOpenSet?.databaseIds).toEqual([other.id]),
+      );
+      expect(manager.isDatabaseUnlocked(id)).toBe(false);
+      expect(manager.getCurrentDatabase()?.id ?? null).toBe(
+        target === "side" ? other.id : null,
+      );
+      expect(saved.databaseOpenSet?.activeDatabaseId).toBe(
+        target === "side" ? other.id : null,
+      );
+      expect(changes).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "close" }),
+      );
+      expect(bridge.invoke).toHaveBeenCalledWith(
+        "database_protection_lock",
+        expect.objectContaining({ databaseId: id }),
+      );
+      unsubscribe();
+      task.dispose();
+    },
+  );
+  it("verifies a committed vault after native JSON key ordering without accepting external edits", async () => {
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "database_protection_save") {
+        expect(args.expectedData).toEqual(lease.data);
+        // serde_json::Value round trips JSON objects in key order, not the
+        // insertion order of the frontend's draft or freshly built ledger.
+        lease.data = JSON.parse(stableJsonStringify(args.data));
+      }
+      return original(command, args);
+    });
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret");
+    await manager.selectDatabase(rows[0].id);
+    const target = manager.captureCurrentDatabaseDataTarget()!;
+    const loaded = (await target.load())!;
+    const migrations = bridge.invoke.mock.calls.filter(
+      ([cmd]) => cmd === "database_protection_save",
+    ).length;
+    await manager.selectDatabase(rows[0].id);
+    expect(
+      bridge.invoke.mock.calls.filter(
+        ([cmd]) => cmd === "database_protection_save",
+      ),
+    ).toHaveLength(migrations);
+    await target.save({
+      ...loaded,
+      credentialVault: {
+        version: 1,
+        revision: 1,
+        entries: [
+          {
+            id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            name: "Synthetic account",
+            createdAt: "2026-10-02T00:00:00.000Z",
+            updatedAt: "2026-10-02T00:00:00.000Z",
+            facets: { username: "fixture", password: "SYNTHETIC_PASSWORD" },
+          },
+        ],
+      },
+    });
+    await expect(target.verifyCurrent!()).resolves.toBeUndefined();
+    lease.data = { ...lease.data, timestamp: lease.data.timestamp + 1 };
+    await expect(target.verifyCurrent!()).rejects.toThrow(
+      "changed in another window",
+    );
+    // A failed verification must not silently adopt the other writer's data.
+    await expect(target.verifyCurrent!()).rejects.toThrow(
+      "changed in another window",
+    );
+  });
   it("rejects a protection confirmation captured before a security revision change", async () => {
     const manager = DatabaseManager.getInstance();
     await expect(
@@ -169,6 +288,99 @@ describe("native managed database sessions", () => {
         ([cmd]) => cmd === "database_protection_change",
       ),
     ).toBe(false);
+  });
+  it.each([
+    ["before", false],
+    ["after", false],
+    ["before", true],
+    ["after", true],
+  ] as const)(
+    "rechecks a read taken %s an autosave without adopting an external edit (%s)",
+    async (readWhen, externalEdit) => {
+      const original = bridge.invoke.getMockImplementation()!;
+      bridge.invoke.mockImplementation(async (command, args) => {
+        if (command === "database_protection_save") {
+          expect(args.expectedData).toEqual(lease.data);
+          lease.data = JSON.parse(stableJsonStringify(args.data));
+        }
+        return original(command, args);
+      });
+      const manager = DatabaseManager.getInstance();
+      await manager.unlockManagedDatabase(
+        rows[0].id,
+        "password-slot",
+        "secret",
+      );
+      await manager.selectDatabase(rows[0].id);
+      const target = manager.captureCurrentDatabaseDataTarget()!;
+      const loaded = (await target.load())!;
+      const roundTrip = bridge.invoke.getMockImplementation()!;
+      let release!: () => void;
+      let started!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const requested = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      let reads = 0;
+      bridge.invoke.mockImplementation(async (command, args) => {
+        if (command === "database_protection_load" && ++reads === 1) {
+          const before = structuredClone(lease);
+          started();
+          await gate;
+          if (readWhen === "before") return before;
+        }
+        return roundTrip(command, args);
+      });
+      const verification = target.verifyCurrent!();
+      await requested;
+      await target.save({ ...loaded, settings: { autosaved: true } });
+      if (externalEdit)
+        lease.data = { ...lease.data, settings: { external: true } };
+      release();
+      if (externalEdit)
+        await expect(verification).rejects.toThrow("changed in another window");
+      else await expect(verification).resolves.toBeUndefined();
+      expect(reads).toBe(2);
+      lease.data = { ...lease.data, settings: { external: true } };
+      await expect(target.verifyCurrent!()).rejects.toThrow(
+        "changed in another window",
+      );
+    },
+  );
+  it("bounds verification retries when its own saves keep advancing the baseline", async () => {
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "database_protection_save") {
+        expect(args.expectedData).toEqual(lease.data);
+        lease.data = JSON.parse(stableJsonStringify(args.data));
+      }
+      return original(command, args);
+    });
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret");
+    await manager.selectDatabase(rows[0].id);
+    const target = manager.captureCurrentDatabaseDataTarget()!;
+    await target.load();
+    const roundTrip = bridge.invoke.getMockImplementation()!;
+    let reads = 0;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "database_protection_load") {
+        reads++;
+        await target.save({
+          ...lease.data,
+          timestamp: lease.data.timestamp + 1,
+        });
+      }
+      return roundTrip(command, args);
+    });
+    await expect(target.verifyCurrent!()).rejects.toThrow(
+      "Retry after pending saves finish",
+    );
+    expect(reads).toBe(3);
+    bridge.invoke.mockImplementation(roundTrip);
+    await expect(target.verifyCurrent!()).resolves.toBeUndefined();
   });
   it.each(["database_protection_load", "database_protection_save"])(
     "masks revoked access after %s rejection even without a lock event",

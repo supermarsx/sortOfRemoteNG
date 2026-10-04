@@ -43,6 +43,7 @@ const mockProtectionStatus = vi.fn(async () => ({
 const mockSaveData = vi.fn(async () => {});
 const mockFlushPendingSave = vi.fn(async () => {});
 const mockCloseCurrentDatabase = vi.fn(() => "plain");
+const mockCloseDatabase = vi.fn(async (_id: string) => undefined);
 const mockDeleteDatabase = vi.fn(async () => undefined);
 const mockGetDatabase = vi.fn(async (id: string) => makeCollection({ id }));
 
@@ -56,6 +57,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       isDatabaseUnlocked: mockIsDatabaseUnlocked,
       getDatabaseProtectionStatus: mockProtectionStatus,
       closeCurrentDatabase: mockCloseCurrentDatabase,
+      closeDatabase: mockCloseDatabase,
       deleteDatabase: mockDeleteDatabase,
       getDatabase: mockGetDatabase,
     }),
@@ -221,6 +223,20 @@ describe("database opening toast integration", () => {
     } finally {
       unregister();
     }
+  });
+  it("closes a side database with explicit intent without clearing the active tree", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "active" });
+    const onClose = vi.fn();
+    const { result } = renderSelector(vi.fn(), onClose);
+    await act(() =>
+      result.current.handleCloseCollection(
+        makeCollection({ id: "side", isEncrypted: true }),
+      ),
+    );
+    expect(mockCloseDatabase).toHaveBeenCalledExactlyOnceWith("side");
+    expect(mockCloseCurrentDatabase).not.toHaveBeenCalled();
+    expect(mockFlushPendingSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
   it("waits for authoritative App confirmation and does not duplicate a rapid open", async () => {
     const gate = deferred();

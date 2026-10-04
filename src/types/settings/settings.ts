@@ -195,6 +195,12 @@ export interface GlobalSettings {
   reconnectPreviousSessions: boolean;
   autoOpenLastCollection: boolean;
   lastOpenedCollectionId?: string;
+  /** Local startup intent only; never contains unlock material or database data. */
+  databaseOpenSet?: {
+    version: 1;
+    databaseIds: string[];
+    activeDatabaseId: string | null;
+  };
 
   // Tray Settings
   minimizeToTray: boolean;

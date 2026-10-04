@@ -5,6 +5,7 @@ import PerformanceSettings from "../../src/components/SettingsDialog/sections/Pe
 import ThemeSettings from "../../src/components/SettingsDialog/sections/ThemeSettings";
 import ProxySettings from "../../src/components/SettingsDialog/sections/ProxySettings";
 import StartupSettings from "../../src/components/SettingsDialog/sections/StartupSettings";
+import { STARTUP_SEARCH_ENTRIES } from "../../src/components/SettingsDialog/settingsSearchIndex/startup";
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
 
@@ -271,5 +272,38 @@ describe("Secondary settings section centralization", () => {
     for (const icon of sectionIcons) {
       expect(icon.getAttribute("class")).toContain("text-primary");
     }
+  });
+
+  it("describes database-set restoration while preserving the saved toggle key", () => {
+    const updateSettings = vi.fn();
+    render(
+      <StartupSettings
+        settings={baseSettings}
+        updateSettings={updateSettings}
+      />,
+    );
+    const toggle = screen.getByRole("checkbox", {
+      name: /Restore previously open databases/i,
+    });
+    expect(toggle).toBeChecked();
+    expect(
+      screen.queryByText("Auto-open last used connection collection"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Password-protected databases may still need unlocking/),
+    ).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(updateSettings).toHaveBeenCalledWith({
+      autoOpenLastCollection: false,
+    });
+    expect(
+      STARTUP_SEARCH_ENTRIES.find(
+        (entry) => entry.key === "autoOpenLastCollection",
+      ),
+    ).toMatchObject({
+      label: "Restore previously open databases",
+      labelKey: "settings.startup.restoreOpenDatabases",
+      tags: expect.arrayContaining(["database", "databases", "restore"]),
+    });
   });
 });

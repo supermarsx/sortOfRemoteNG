@@ -15,6 +15,8 @@ import { openDB } from "idb";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
+import { stableJsonStringify } from "../../src/utils/core/stableJsonStringify";
+import type { StorageData } from "../../src/utils/storage/storage";
 import {
   passwordPolicyError,
   type PasswordPurpose,
@@ -103,6 +105,50 @@ afterEach(() => {
 });
 
 describe("DatabaseManager (IPC path)", () => {
+  it.each([undefined, "Fixture-long-password-1!"])(
+    "verifies native reordered objects and exact encrypted strings (password: %s)",
+    async (password) => {
+      installInvoke((cmd, args) => {
+        if (cmd === "save_database_data")
+          return defaultInvoke(cmd, {
+            ...args,
+            data: JSON.parse(stableJsonStringify(args?.data)),
+          });
+        return defaultInvoke(cmd, args);
+      });
+      const manager = new DatabaseManager();
+      const database = await manager.createDatabase(
+        "Round trip",
+        "",
+        Boolean(password),
+        password,
+      );
+      await manager.selectDatabase(database.id, password);
+      const target = manager.captureCurrentDatabaseDataTarget()!;
+      const initial = (await target.load())!;
+      await target.save({ ...initial, settings: { z: "last", a: "first" } });
+      await expect(target.verifyCurrent!()).resolves.toBeUndefined();
+      const stored = fileStore.get(database.id)!;
+      if (typeof stored.value === "string") {
+        // Keep the same cleartext, but re-encrypt to a new persisted envelope.
+        // Storage identity for an encrypted file must still compare exactly.
+        const fresh = (await manager.loadDatabaseData(database.id, password))!;
+        await manager.saveDatabaseData(database.id, fresh, password);
+        expect(fileStore.get(database.id)!.value).not.toBe(stored.value);
+      } else {
+        fileStore.set(database.id, {
+          source: "current",
+          value: {
+            ...(stored.value as StorageData),
+            settings: { z: "edited", a: "first" },
+          },
+        });
+      }
+      await expect(target.verifyCurrent!()).rejects.toThrow(
+        "changed in another window",
+      );
+    },
+  );
   it("getAllDatabases reads through databases_list", async () => {
     const iso = "2026-01-01T00:00:00.000Z";
     const row = {

@@ -363,6 +363,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   reconnectPreviousSessions: false,
   autoOpenLastCollection: true,
   lastOpenedCollectionId: undefined,
+  databaseOpenSet: undefined,
 
   // Tray Settings
   minimizeToTray: false,
@@ -1205,7 +1206,9 @@ export class SettingsManager {
         normalizedStored.websiteDarkMode,
       ),
       webBrowser: normalizeWebBrowserSettings(normalizedStored.webBrowser),
-      internalProxy: normalizeInternalProxySettings(normalizedStored.internalProxy),
+      internalProxy: normalizeInternalProxySettings(
+        normalizedStored.internalProxy,
+      ),
       allowSshExternalLinks: normalizedStored.allowSshExternalLinks === true,
       ...sshReconnectSettings,
       sshTerminal: mergeSSHTerminalConfig(
@@ -1368,7 +1371,9 @@ export class SettingsManager {
     if ("webBrowser" in safePatch)
       safePatch.webBrowser = normalizeWebBrowserSettings(safePatch.webBrowser);
     if ("internalProxy" in safePatch)
-      safePatch.internalProxy = normalizeInternalProxySettings(safePatch.internalProxy);
+      safePatch.internalProxy = normalizeInternalProxySettings(
+        safePatch.internalProxy,
+      );
     if (safePatch.restApi) {
       const restApi = { ...safePatch.restApi } as Record<string, unknown>;
       delete restApi.apiKey;
