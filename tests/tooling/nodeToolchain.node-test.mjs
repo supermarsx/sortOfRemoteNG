@@ -20,7 +20,7 @@ const SETUP_BUN_TAG = "v2.2.0";
 const EXPECTED_SETUP_NODE_COUNTS = {
   "audit.yml": 1,
   "cargo-update.yml": 2,
-  "ci.yml": 9,
+  "ci.yml": 10,
   "coverage.yml": 1,
   "docs-pages.yml": 1,
   "e2e.yml": 1,

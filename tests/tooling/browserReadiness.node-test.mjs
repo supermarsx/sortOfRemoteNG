@@ -235,6 +235,11 @@ test("native suite selection explicitly excludes live Google and has no feature 
     "google_tests",
     "autologin_asset",
     "dark_mode::tests",
+    "origin_browser",
+    "private_forward_proxy",
+    "private_forward_route",
+    "browser_transport",
+    "browser_dns",
   ]);
   for (const id of NATIVE_SUITES) {
     const args = nativeArgs(id);
@@ -275,7 +280,7 @@ test("each native suite must execute tests and native failure does not erase oth
   assert.equal(report.deterministic.status, "passed");
   assert.deepEqual(
     report.native.suites.map((suite) => suite.status),
-    ["passed", "passed", "failed", "passed"],
+    NATIVE_SUITES.map((id) => (id === "autologin_asset" ? "failed" : "passed")),
   );
   assert.equal(report.native.status, "failed");
   assert.equal(report.automatedGate.status, "failed");

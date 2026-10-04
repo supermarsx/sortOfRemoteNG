@@ -754,6 +754,154 @@ async fn authenticates_connect_and_inspects_target_without_local_target_dns() {
 }
 
 #[tokio::test]
+async fn browser_transport_leaves_tls_and_early_tunnel_bytes_to_the_browser() {
+    let (port, peer) = serve(1, |mut socket| async move {
+        assert_eq!(
+            read_request(&mut socket).await,
+            "CONNECT private.invalid:443 HTTP/1.1\r\nHost: private.invalid:443\r\nProxy-Authorization: Basic dXNlcjpwYXNz\r\n\r\n"
+        );
+        // A banner arriving in the same write as CONNECT headers must survive.
+        socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n\0\xffearly").await.unwrap();
+        let mut received = Vec::new();
+        socket.read_to_end(&mut received).await.unwrap();
+        assert_eq!(received, b"browser-owned-tls");
+        socket.write_all(b"final-response").await.unwrap();
+        socket.shutdown().await.unwrap();
+    }).await;
+    let net = RecordingNet::default();
+    let mut stream = connect_browser_transport_with(
+        "private.invalid",
+        443,
+        Some(&format!("http://user:pass@127.0.0.1:{port}")),
+        &net,
+    )
+    .await
+    .unwrap();
+    let mut early = [0; 7];
+    stream.read_exact(&mut early).await.unwrap();
+    assert_eq!(&early, b"\0\xffearly");
+    stream.write_all(b"browser-owned-tls").await.unwrap();
+    stream.shutdown().await.unwrap();
+    let mut last = Vec::new();
+    stream.read_to_end(&mut last).await.unwrap();
+    assert_eq!(last, b"final-response");
+    assert_eq!(*net.resolved.lock().unwrap(), [format!("127.0.0.1:{port}")]);
+    peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn browser_transport_failed_proxy_never_resolves_or_dials_the_destination() {
+    let target = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target_port = target.local_addr().unwrap().port();
+    let (port, peer) = serve(1, |mut socket| async move {
+        read_request(&mut socket).await;
+        socket
+            .write_all(b"HTTP/1.1 407 secret\r\n\r\n")
+            .await
+            .unwrap();
+        drain(&mut socket).await;
+    })
+    .await;
+    let net = RecordingNet::default();
+    let error = match connect_browser_transport_with(
+        "127.0.0.1",
+        target_port,
+        Some(&format!("http://user:secret@127.0.0.1:{port}")),
+        &net,
+    )
+    .await
+    {
+        Ok(_) => panic!("rejected proxy must fail closed"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind, Kind::ProxyAuthRejected);
+    assert!(!error.to_string().contains("secret"));
+    assert_eq!(*net.resolved.lock().unwrap(), [format!("127.0.0.1:{port}")]);
+    assert!(net
+        .dialled
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|address| address.port() == port));
+    assert!(tokio::time::timeout(ms(50), target.accept()).await.is_err());
+    peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn browser_transport_rejects_invalid_routes_before_network_access() {
+    for proxy in [
+        "socks5://127.0.0.1:1080",
+        "http://127.0.0.1:0",
+        "http://user:secret@proxy.invalid/path",
+    ] {
+        match connect_browser_transport_with("private.invalid", 443, Some(proxy), &unused_net())
+            .await
+        {
+            Ok(_) => panic!("unsupported route must not become direct"),
+            Err(error) => assert_eq!(error.kind, Kind::ProxyInvalid),
+        }
+    }
+}
+
+#[tokio::test]
+async fn browser_transport_direct_route_preserves_opaque_bytes_without_target_tls() {
+    let (port, peer) = serve(1, |mut socket| async move {
+        let byte = socket.read_u8().await.unwrap();
+        assert_eq!(byte, 0xff); // This is not a TLS ClientHello from the proxy.
+        socket.write_u8(0xfe).await.unwrap();
+        drain(&mut socket).await;
+    })
+    .await;
+    let mut stream = connect_browser_transport("127.0.0.1", port, None)
+        .await
+        .unwrap();
+    stream.write_u8(0xff).await.unwrap();
+    assert_eq!(stream.read_u8().await.unwrap(), 0xfe);
+    stream.shutdown().await.unwrap();
+    peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn browser_transport_rejects_untrusted_https_proxy_without_global_provider_initialization() {
+    // Unlike test_acceptor(), this fixture must not install a global provider.
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let config = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(
+        vec![rustls::pki_types::CertificateDer::from(
+            cert.serialize_der().unwrap(),
+        )],
+        rustls::pki_types::PrivatePkcs8KeyDer::from(cert.serialize_private_key_der()).into(),
+    )
+    .unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
+    let (port, peer) = serve(1, move |socket| {
+        let acceptor = acceptor.clone();
+        async move {
+            assert!(acceptor.accept(socket).await.is_err());
+        }
+    })
+    .await;
+    let result = connect_browser_transport(
+        "private.invalid",
+        443,
+        Some(&format!("https://localhost:{port}")),
+    )
+    .await;
+    let error = match result {
+        Ok(_) => panic!("untrusted upstream proxy was accepted"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind, Kind::ProxyTlsFailed);
+    assert_eq!(error.stage, Stage::ProxyTls);
+    peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn direct_ip_inspection_returns_real_fingerprint_without_sending_credentials() {
     let acceptor = test_acceptor();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -8,9 +8,7 @@
 // inspection; boxing it would only obscure the IPC contract.
 #![allow(clippy::result_large_err)]
 
-use super::{
-    build_tls_config, capture_peer_certificate_chain, tls_server_name, TlsCertificateInfo,
-};
+use super::{capture_peer_certificate_chain, tls_server_name, TlsCertificateInfo};
 use base64::Engine;
 use serde::Serialize;
 use std::future::Future;
@@ -20,10 +18,11 @@ use std::pin::Pin;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
+use zeroize::Zeroizing;
 
-trait CertificateSocket: AsyncRead + AsyncWrite + Unpin + Send {}
+pub(crate) trait CertificateSocket: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> CertificateSocket for T {}
-type Socket = Box<dyn CertificateSocket>;
+pub(crate) type Socket = Box<dyn CertificateSocket>;
 
 const MAX_CONNECT_HEADER_BYTES: usize = 16 * 1024;
 // Keeps `addresses_tried` bounded; the overall deadline already bounds time.
@@ -175,7 +174,9 @@ pub(super) struct SystemNet;
 impl InspectionNet for SystemNet {
     fn resolve(&self, authority: &str) -> NetFuture<Vec<SocketAddr>> {
         let authority = authority.to_owned();
-        Box::pin(async move { Ok(tokio::net::lookup_host(authority).await?.collect()) })
+        // The blocking OS lookup retains its admission slot after cancellation;
+        // existing stage/overall deadlines also cover waiting for that slot.
+        Box::pin(crate::browser_dns::resolve(authority))
     }
 
     fn dial(&self, address: SocketAddr) -> NetFuture<TcpStream> {
@@ -575,22 +576,26 @@ async fn open_tunnel(
     target: &str,
     proxy: &url::Url,
 ) -> Result<(), TunnelError> {
-    let mut request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n");
+    let mut request = Zeroizing::new(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n"));
     if !proxy.username().is_empty() || proxy.password().is_some() {
-        let credentials = format!(
+        let credentials = Zeroizing::new(format!(
             "{}:{}",
             decode_user_info(proxy.username()),
             decode_user_info(proxy.password().unwrap_or_default())
+        ));
+        let encoded = Zeroizing::new(
+            base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes()),
         );
-        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
-        request.push_str(&format!("Proxy-Authorization: Basic {encoded}\r\n"));
+        request.push_str("Proxy-Authorization: Basic ");
+        request.push_str(&encoded);
+        request.push_str("\r\n");
     }
     request.push_str("\r\n");
     socket
         .write_all(request.as_bytes())
         .await
         .map_err(|_| TunnelError::Protocol)?;
-    let mut header = Vec::with_capacity(512);
+    let mut header = Zeroizing::new(Vec::with_capacity(512));
     while !header.ends_with(b"\r\n\r\n") {
         if header.len() == MAX_CONNECT_HEADER_BYTES {
             return Err(TunnelError::Protocol);
@@ -685,7 +690,7 @@ async fn connect_through_proxy(
             // Inspecting the target certificate must NEVER disable verification of
             // a separate HTTPS proxy's own certificate.
             let config =
-                build_tls_config(true).map_err(|_| attempt.fail(Kind::InspectionUnavailable))?;
+                proxy_tls_config().map_err(|_| attempt.fail(Kind::InspectionUnavailable))?;
             let connector = tokio_rustls::TlsConnector::from(config);
             let handshake = attempt
                 .within(
@@ -726,6 +731,55 @@ async fn connect_through_proxy(
         Ok(Err(TunnelError::Protocol)) => Err(attempt.fail(Kind::ProxyProtocolError)),
         Err(expired) => Err(attempt.expired(expired, Kind::ProxyTunnelTimeout)),
     }
+}
+
+fn proxy_tls_config() -> Result<std::sync::Arc<rustls::ClientConfig>, String> {
+    // A separate browser host may not have initialized a process-wide provider.
+    // Honor an installed one, otherwise choose the workspace's AWS-LC provider
+    // explicitly: builder() can panic when both ring and AWS-LC are enabled.
+    let provider = rustls::crypto::CryptoProvider::get_default()
+        .cloned()
+        .unwrap_or_else(|| std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
+    let config = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|_| "HTTPS proxy TLS configuration unavailable".to_string())?
+        .with_root_certificates(super::native_root_store()?)
+        .with_no_client_auth();
+    Ok(std::sync::Arc::new(config))
+}
+
+/// Open an opaque byte transport without negotiating TLS with the website.
+/// The native browser, not this proxy, owns the destination TLS handshake.
+/// `None` is used only by an explicitly selected direct upstream route; errors
+/// from a configured HTTP(S) proxy never cause another route to be tried.
+pub(crate) async fn connect_browser_transport(
+    host: &str,
+    port: u16,
+    proxy_url: Option<&str>,
+) -> Result<Socket, CertificateInspectionError> {
+    connect_browser_transport_with(host, port, proxy_url, &SystemNet).await
+}
+
+async fn connect_browser_transport_with(
+    host: &str,
+    port: u16,
+    proxy_url: Option<&str>,
+    net: &dyn InspectionNet,
+) -> Result<Socket, CertificateInspectionError> {
+    let route = if proxy_url.is_some() {
+        InspectionRoute::Proxy
+    } else {
+        InspectionRoute::Direct
+    };
+    let mut attempt = Attempt::new(route, InspectionTimeouts::DEFAULT);
+    attempt.target = authority(host, port).map_err(|_| {
+        CertificateInspectionError::from(attempt.fail(InspectionFailureKind::InvalidTarget))
+    })?;
+    match proxy_url {
+        Some(proxy) => connect_through_proxy(&mut attempt, net, proxy).await,
+        None => connect_direct(&mut attempt, net).await,
+    }
+    .map_err(Into::into)
 }
 
 /// Fetch the leaf and chain without sending an HTTP request to the target.

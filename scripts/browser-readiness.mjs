@@ -38,6 +38,11 @@ export const NATIVE_SUITES = Object.freeze([
   "google_tests",
   "autologin_asset",
   "dark_mode::tests",
+  "origin_browser",
+  "private_forward_proxy",
+  "private_forward_route",
+  "browser_transport",
+  "browser_dns",
 ]);
 export function nativeArgs(filter) {
   if (!NATIVE_SUITES.includes(filter))
@@ -58,7 +63,8 @@ export function nativeArgs(filter) {
 }
 const HELP = `Usage: npm run browser:readiness -- [--native] [--report path.json]
 Runs fixed deterministic Vitest suites; --native also runs Cloudflare challenge,
-Google, auto-login asset and first-paint dark-mode fixtures through the native build wrapper.
+Google, auto-login asset, first-paint dark-mode and origin-preserving transport fixtures
+through the native build wrapper. Transport fixtures do not certify native browser hosts.
 The anonymous live Google probe is explicitly excluded. No live login is tested.
 --report writes a nonsecret JSON summary (replaces that report if it exists).
 Exit 0: requested automated layers passed; NOT a live-login readiness result.
@@ -352,7 +358,7 @@ export async function main(args = process.argv.slice(2)) {
   );
   if (options.native)
     console.log(
-      "Scoped native Cloudflare, Google, auto-login asset and dark-mode fixtures requested.",
+      "Scoped native browser, injection, dark-mode and origin-preserving transport fixtures requested.",
     );
   try {
     const report = await runReadiness(options);

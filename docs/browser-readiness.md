@@ -1,3 +1,10 @@
+---
+title: Browser readiness evidence
+eyebrow: Development
+description: Automated browser transport contracts, live acceptance evidence, and cross-platform rollout requirements.
+permalink: /browser-readiness/
+---
+
 # Browser readiness evidence
 
 This gate checks deterministic regressions for Google login, Cloudflare
@@ -24,12 +31,80 @@ proxying or caching it can break verification after updates. Fixing script
 discovery in the current mediator does not remove that vendor limitation. See
 [Cloudflare's client-side rendering guidance](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/).
 
-A future design using an origin-preserving forward proxy and a top-level
-renderer merits separate architectural work and acceptance testing. That is a
-proposal, not an implemented capability or a promise that providers will accept
-it. Browser identity spoofs are not evidence of acceptance. All application
+A replacement using an origin-preserving forward proxy and a top-level
+renderer is being developed separately from the legacy mediator. The native
+transport foundations below are not an enabled browser mode or a promise that
+providers will accept it. Browser identity spoofs are not evidence of acceptance. All application
 requests, including redirects and secondary resources, must still traverse the
 app proxy; neither current testing nor a future design permits direct fallback.
+
+### Origin-preserving upgrade contract
+
+The approved rollout is Windows, Linux and macOS **together**, with macOS 14+
+acceptable for the replacement. The proxy remains private to this application.
+A bundled Chromium runtime is permitted if native engines cannot satisfy the
+same compatibility and isolation requirements; this is not a commitment to a
+particular runtime or evidence of a working host integration.
+
+The transport foundation uses an authenticated loopback HTTP/CONNECT listener with
+an OS-selected port and native-held, per-session credentials. After CONNECT
+admission it relays opaque bytes: the browser owns destination TLS, HTTPS origins,
+cookies, storage, redirects and WSS. An explicit HTTP(S) upstream proxy route
+reuses the existing bounded CONNECT transport, including proxy TLS validation;
+failure never silently becomes a direct route. SOCKS5 routes support explicit
+no-auth or username/password authentication, remote target DNS, bounded
+establishment and cancellation, without authentication downgrade or fallback.
+Native browser routes share a 16-job OS DNS limit. Cancelling a caller does not
+release a running resolver's slot until the OS lookup ends; queued callers stay
+cancellable, numeric endpoints bypass DNS, and results are capped at 64 addresses.
+HTTP(S) upstream proxies currently need to allow CONNECT to the destination
+port, including port 80 for a plain HTTP destination.
+
+Plain HTTP forwarding handles absolute-form requests, streamed fixed-length or
+chunked bodies, `100-continue`, responses and WebSocket upgrades. It preserves
+website URLs, credentials, cookies and response bodies, removes hop-by-hop and
+proxy-authentication headers, and never follows redirects itself. Ambiguous
+framing and unsupported transfer codings are rejected, not guessed. HTTP traffic
+has response-head and no-progress deadlines; upgraded WS/CONNECT streams remain
+usable while quiet until revoked. These rules follow the framing and forwarding
+requirements in [HTTP/1.1](https://httpwg.org/specs/rfc9112.html) and the
+[WebSocket opening handshake](https://www.rfc-editor.org/rfc/rfc6455.html#section-4.1).
+
+The initial HTTP implementation deliberately closes each browser HTTP connection
+after one response, so a pipelined request cannot inherit admission for a
+different destination. Message trailers are discarded. Connection pooling,
+SOCKS4/SSH/chain adapters, browser authentication callbacks, native view hosting
+and enforcement of non-proxy browser traffic are still unimplemented here.
+
+The native session policy defaults to its source origin only. Additional
+HTTP(S) origins can be granted explicitly (bounded to 128 total); there are no
+wildcards or implicit credential-consent grants. Login admission remains
+source-only. The native host must enforce exact schemes for navigation,
+redirects and resources; relay authority checks alone see only host and port.
+
+Before exposing the replacement in settings, every platform must demonstrate:
+
+- An isolated top-level website view inside the connection tab, with no app
+  iframe ancestor or privileged app IPC access; printer child frames retain
+  normal same-origin behavior without disabling browser security.
+- An isolated browser profile and authenticated proxy session bound to the
+  owning database, connection and attempt; closure/revocation cancels traffic.
+- Proxy enforcement before first navigation, including redirects, workers,
+  WSS, DNS, loopback destinations and proxy failure. UDP, QUIC, WebRTC and
+  unsupported routes must not silently bypass the configured network path.
+- Native browser identity, TLS and vendor scripts without localhost rewriting,
+  fake `postMessage` origins or browser-identity spoofing.
+- Origin-bound auto-login and first-paint dark-mode injection without modifying
+  challenge verification or exposing credentials to foreign frames.
+- Actual Google password-stage navigation, Cloudflare human verification,
+  Porkbun login and Kyocera frame navigation on each supported engine; synthetic
+  transport fixtures cannot stand in for these observations.
+
+`browser-transport-contracts` in CI runs the shared deterministic/native fixture
+gate on Windows, Linux and macOS and is required by the rolling-release job.
+It does **not** certify the browser-host requirements above. Until those pass,
+the replacement remains unavailable on all three platforms; a successful
+Windows fixture run does not authorize a Windows-only rollout.
 
 ## Run the automated gate
 
@@ -50,7 +125,7 @@ runner verifies a JSON receipt for every required file and requires at least one
 executed, passing test in each. A missing dependency/file/receipt, skipped test,
 empty selection, failed assertion or unsuccessful child exit cannot pass.
 
-`--native` executes four scoped commands from the repository root, each with
+`--native` executes nine scoped commands from the repository root, each with
 its own status, counts and duration:
 
 ```powershell
@@ -58,6 +133,11 @@ node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.tom
 node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib google_tests --locked -- --skip live_accounts_navigation_distinguishes_malformed_metadata_from_native_identity_and_cookies
 node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib autologin_asset --locked
 node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib dark_mode::tests --locked
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib origin_browser --locked
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib private_forward_proxy --locked
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib private_forward_route --locked
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib browser_transport --locked
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib browser_dns --locked
 ```
 
 The native build wrapper sets up platform build helpers; there are no added
@@ -65,6 +145,10 @@ feature or target overrides. Existing Cargo environment/workspace configuration
 still apply. These cover Cloudflare/Porkbun challenge transport/CSP, Google
 identity/cookie/lifecycle fixtures, selected auto-login asset assembly and the
 first-paint dark-mode CSS/readiness contract.
+The final five selections cover the origin-preserving session contract,
+authenticated HTTP/CONNECT relay, explicit route adapters, the opaque upstream
+transport and cancellation-safe DNS resource bounds. They do not instantiate
+native browser hosts.
 They do not run the whole workspace. The ignored live Google probe is explicitly
 excluded with `--skip` and separately reported `not-run`. Cargo's filtered-out
 tests are outside the declared scope; zero executed tests, failed tests or

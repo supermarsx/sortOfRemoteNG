@@ -50,7 +50,7 @@ log = { workspace = true }
 rand = { workspace = true }
 futures-util = "0.3"
 axum = "0.8"
-hyper = { version = "1", features = ["http1", "server"] }
+hyper = { version = "1", features = ["http1", "server", "client"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 sha1 = "0.10"
 flate2 = "1.0"
