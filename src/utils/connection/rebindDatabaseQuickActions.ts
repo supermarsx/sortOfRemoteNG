@@ -2,6 +2,7 @@ import type { Connection } from "../../types/connection/connection";
 import type { StorageData } from "../storage/storage";
 import { stripHttpTrustedRedirectDestinations } from "../protocol/httpTrustedRedirectDestinations";
 import { rebindDatabaseDocuments } from "../documents/documentRefs";
+import { remapMachineAssignmentReference } from "./machineAssignmentReferences";
 import {
   isIncludedSshReference,
   mapArchiveSshReferences,
@@ -50,6 +51,7 @@ export function rebindDatabaseQuickActions(
       ...(data.recycleBin?.entries.map((entry) => entry.connection) ?? []),
     ].map((connection) => [connection.id, connection]),
   );
+  const connectionIds = new Map([...connections.keys()].map((id) => [id, id]));
   const refs = (items: QuickActionReference[]) =>
     items.map((item) =>
       item.scope?.kind === "database" &&
@@ -88,7 +90,11 @@ export function rebindDatabaseQuickActions(
     } catch {
       /* Preserve invalid source verbatim. */
     }
-    return next;
+    return remapMachineAssignmentReference(next, {
+      sourceDatabaseId,
+      destinationDatabaseId,
+      connectionIds,
+    });
   };
   return {
     ...data,

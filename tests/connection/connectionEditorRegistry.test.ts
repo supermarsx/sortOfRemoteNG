@@ -49,6 +49,7 @@ describe("connection editor registry", () => {
       "organize-icon",
       "organize-tags",
       "notes-description",
+      "notes-machine-assignment",
       "raw-socket-options",
       "rlogin-connection",
       "rlogin-terminal",

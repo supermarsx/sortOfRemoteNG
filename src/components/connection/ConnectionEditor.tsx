@@ -2245,7 +2245,13 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 
             {activeTab === "organize" && <OrganizeSection mgr={mgr} />}
 
-            {activeTab === "notes" && <NotesSection mgr={mgr} />}
+            {activeTab === "notes" && (
+              <NotesSection
+                mgr={mgr}
+                connections={mgr.noteAssignmentConnections}
+                databaseId={mgr.noteAssignmentDatabaseId}
+              />
+            )}
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useConnectionEditor } from "../../src/hooks/connection/useConnectionEditor";
 import type { Connection } from "../../src/types/connection/connection";
 import type { DatabaseCredentialVaultApi } from "../../src/types/security/databaseCredentialVault";
+import type { DatabaseAvailability } from "../../src/contexts/ConnectionContextTypes";
 
 const mocks = vi.hoisted(() => ({
   flush: vi.fn(),
@@ -14,12 +15,16 @@ const mocks = vi.hoisted(() => ({
   createInstance: vi.fn(),
   updateInstance: vi.fn(),
   vault: undefined as DatabaseCredentialVaultApi | undefined,
+  databaseAvailability: undefined as DatabaseAvailability | undefined,
+  getCurrentConnections: vi.fn(),
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: mocks.state,
     dispatchAndFlush: mocks.flush,
     credentialVault: mocks.vault,
+    databaseAvailability: mocks.databaseAvailability,
+    getCurrentConnections: mocks.getCurrentConnections,
   }),
 }));
 vi.mock("../../src/contexts/SettingsContext", () => ({
@@ -107,6 +112,14 @@ beforeEach(() => {
   mocks.settings.autoSaveEnabled = false;
   mocks.state.connections = [];
   mocks.vault = undefined;
+  mocks.databaseAvailability = {
+    status: "ready",
+    databaseId: "db-a",
+    generation: 1,
+  };
+  mocks.getCurrentConnections
+    .mockReset()
+    .mockImplementation(() => mocks.state.connections);
   mocks.flush.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => {
@@ -115,6 +128,132 @@ afterEach(() => {
 });
 
 describe("connection editor draft ownership", () => {
+  it.each(["switch", "lock", "new-generation", "missing-owner"])(
+    "does not save or offer machine targets after %s",
+    async (kind) => {
+      const original = {
+        ...connectionA,
+        machineAssignment: {
+          version: 1 as const,
+          type: "vm" as const,
+          name: "B",
+          connectionRef: { databaseId: "db-a", connectionId: connectionB.id },
+        },
+      };
+      mocks.state.connections = [connectionB];
+      const { result, rerender } = editor(original);
+      expect(result.current.noteAssignmentDatabaseId).toBe("db-a");
+      expect(result.current.noteAssignmentConnections).toEqual([connectionB]);
+      edit(result, "changed.example");
+      mocks.databaseAvailability =
+        kind === "missing-owner"
+          ? undefined
+          : {
+              status: kind === "lock" ? "suspended" : "ready",
+              databaseId: kind === "switch" ? "db-b" : "db-a",
+              generation: 2,
+            };
+      // A same-ID row in another database must not leak into this editor.
+      mocks.state.connections = [{ ...connectionB, name: "Foreign server" }];
+      rerender({ connection: original, open: true });
+      expect(result.current.noteAssignmentDatabaseId).toBeUndefined();
+      expect(result.current.noteAssignmentConnections).toEqual([]);
+      await act(() => result.current.saveNow());
+      expect(mocks.flush).not.toHaveBeenCalled();
+      expect(mocks.toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("owning database changed or is locked"),
+      );
+      expect(result.current.formData.machineAssignment).toEqual(
+        original.machineAssignment,
+      );
+    },
+  );
+
+  it("checks provider ownership immediately before persistence even before a lock rerenders", async () => {
+    const { result } = editor();
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        machineAssignment: {
+          version: 1,
+          type: "server",
+          name: "B",
+          connectionRef: { databaseId: "db-a", connectionId: connectionB.id },
+        },
+      })),
+    );
+    mocks.getCurrentConnections.mockImplementation(() => {
+      throw new Error("Database is locked");
+    });
+    await act(() => result.current.saveNow());
+    expect(mocks.flush).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("Database is locked"),
+    );
+  });
+
+  it("keeps unresolved foreign notes links without resolving against current rows", async () => {
+    const original = {
+      ...connectionA,
+      machineAssignment: {
+        version: 1 as const,
+        type: "vm" as const,
+        name: "Elsewhere",
+        connectionRef: { databaseId: "db-b", connectionId: connectionB.id },
+      },
+    };
+    mocks.state.connections = [connectionB];
+    const { result } = editor(original);
+    edit(result, "changed.example");
+    await act(() => result.current.saveNow());
+    expect(mocks.flush.mock.calls[0][0].payload.machineAssignment).toEqual(
+      original.machineAssignment,
+    );
+  });
+
+  it("saves and reloads a machine assignment with the connection's notes", async () => {
+    const { result, rerender } = editor();
+    const machineAssignment = {
+      version: 1 as const,
+      type: "container" as const,
+      name: "Billing worker",
+      resourceId: "ct-104",
+      host: "PVE-01",
+      connectionRef: { databaseId: "db-a", connectionId: "connection-b" },
+    };
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        description: "Restart after the database",
+        machineAssignment,
+      })),
+    );
+    await act(() => result.current.saveNow());
+    const saved = mocks.flush.mock.calls[0][0].payload as Connection;
+    expect(saved).toMatchObject({
+      id: connectionA.id,
+      hostname: connectionA.hostname,
+      description: "Restart after the database",
+      machineAssignment,
+    });
+    rerender({ connection: saved, open: false });
+    rerender({ connection: saved, open: true });
+    expect(result.current.formData.machineAssignment).toEqual(
+      machineAssignment,
+    );
+    act(() =>
+      result.current.setFormData((draft) => ({
+        ...draft,
+        machineAssignment: undefined,
+      })),
+    );
+    await act(() => result.current.saveNow());
+    const cleared =
+      mocks.flush.mock.calls[mocks.flush.mock.calls.length - 1][0].payload;
+    expect(cleared.machineAssignment).toBeUndefined();
+    expect(cleared.description).toBe("Restart after the database");
+  });
+
   it.each(["gcp", "integration:gdrive"] as const)(
     "uses no endpoint port when selecting %s",
     (protocol) => {

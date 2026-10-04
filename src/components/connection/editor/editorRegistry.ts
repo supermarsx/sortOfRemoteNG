@@ -3025,6 +3025,52 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
       },
     ],
   },
+  {
+    id: "notes-machine-assignment",
+    tabId: "notes",
+    label: "Machine assignment",
+    connectionOnly: true,
+    keywords: [
+      "machine",
+      "server",
+      "container",
+      "vm",
+      "virtual machine",
+      "host",
+      "asset",
+    ],
+    copy: [
+      "Link an existing saved server, container or virtual machine in this connection's notes.",
+    ],
+    fields: [
+      {
+        id: "machine-connection",
+        label: "Linked saved connection",
+        keywords: ["machine assignment", "saved machine", "linked server"],
+        valuePaths: ["machineAssignment.connectionRef.connectionId"],
+      },
+      {
+        id: "machine-type",
+        label: "Machine type",
+        valuePaths: ["machineAssignment.type"],
+      },
+      {
+        id: "machine-name",
+        label: "Machine name",
+        valuePaths: ["machineAssignment.name"],
+      },
+      {
+        id: "machine-resource-id",
+        label: "Machine ID",
+        valuePaths: ["machineAssignment.resourceId"],
+      },
+      {
+        id: "machine-host",
+        label: "Hosting server",
+        valuePaths: ["machineAssignment.host"],
+      },
+    ],
+  },
   RAW_SOCKET_CONNECTION_EDITOR_SEARCH_DESCRIPTOR,
   ...RLOGIN_CONNECTION_EDITOR_SEARCH_DESCRIPTORS,
   POWERSHELL_REMOTING_CONNECTION_EDITOR_SEARCH_DESCRIPTOR,

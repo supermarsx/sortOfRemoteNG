@@ -1,4 +1,5 @@
 import type { Connection } from "../../types/connection/connection";
+import { normalizeMachineAssignment } from "../../types/connection/machineAssignment";
 import { stripHttpTrustedRedirectDestinations } from "../../utils/protocol/httpTrustedRedirectDestinations";
 import { stripSynologyRedirectRuntimeContext } from "../../utils/protocol/synologyRedirectDefaults";
 import {
@@ -27,6 +28,7 @@ export const ADVANCED_PROTOCOL_NATIVE_FIELDS = [
   "PowerShellRemotingSettings",
   "HttpApplication",
   "HttpAutoLoginSelectors",
+  "MachineAssignment",
 ] as const;
 
 export type AdvancedProtocolNativeField =
@@ -390,6 +392,9 @@ export function serializeNativeAdvancedProtocolSettings(
     PowerShellRemotingSettings: stringifySetting(safe.powerShellRemoting),
     HttpApplication: stringifySetting(httpApplication),
     HttpAutoLoginSelectors: stringifySetting(httpAutoLoginSelectors),
+    MachineAssignment: stringifySetting(
+      normalizeMachineAssignment(safe.machineAssignment),
+    ),
   };
 }
 
@@ -542,7 +547,11 @@ export function parseNativeAdvancedProtocolSettings(
   | "powerShellRemoting"
   | "httpApplication"
   | "httpAutoLoginSelectors"
+  | "machineAssignment"
 > {
+  const machineAssignment = normalizeMachineAssignment(
+    parseSetting(getCaseInsensitive(record, "MachineAssignment")),
+  );
   const rawSocketSettings = parseSetting(
     getCaseInsensitive(record, "RawSocketSettings", "RawSettings"),
   );
@@ -590,6 +599,7 @@ export function parseNativeAdvancedProtocolSettings(
     ...(powerShellRemoting !== undefined ? { powerShellRemoting } : {}),
     ...(httpApplication !== undefined ? { httpApplication } : {}),
     ...(httpAutoLoginSelectors !== undefined ? { httpAutoLoginSelectors } : {}),
+    ...(machineAssignment !== undefined ? { machineAssignment } : {}),
   } as Pick<
     Connection,
     | "rawSocketSettings"
@@ -597,6 +607,7 @@ export function parseNativeAdvancedProtocolSettings(
     | "powerShellRemoting"
     | "httpApplication"
     | "httpAutoLoginSelectors"
+    | "machineAssignment"
   >;
 }
 
@@ -625,6 +636,7 @@ export function hasAdvancedProtocolSettings(connection: Connection): boolean {
     connection.rloginSettings !== undefined ||
     connection.powerShellRemoting !== undefined ||
     connection.httpApplication !== undefined ||
-    connection.httpAutoLoginSelectors !== undefined
+    connection.httpAutoLoginSelectors !== undefined ||
+    connection.machineAssignment !== undefined
   );
 }

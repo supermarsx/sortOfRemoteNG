@@ -335,6 +335,9 @@ function validateClosure(archive: FullDatabaseArchive): void {
       return;
     }
     if (!value || typeof value !== "object") return;
+    // A Notes link is advisory, including when its target is missing or foreign.
+    // Exempt only this schema-owned path; route and credential checks stay strict.
+    if (relativePath === "machineAssignment.connectionRef") return;
     // These exact schema fields are scalar request/metadata dictionaries, not
     // reference containers. A header called connectionId is just a header.
     if (

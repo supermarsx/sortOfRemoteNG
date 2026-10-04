@@ -25,6 +25,7 @@ import type { VoipPhoneSettings } from "../voipPhone";
 import type { HttpProxyPolicy } from "./httpProxyPolicy";
 import type { HttpFormAutomation } from "./httpFormAutomation";
 import type { ConnectionCredentialSource } from "../security/databaseCredentialVault";
+import type { ConnectionMachineAssignment } from "./machineAssignment";
 
 import type {
   MysqlDialectHint,
@@ -221,6 +222,8 @@ export interface Connection
   password?: string;
   domain?: string;
   description?: string;
+  /** Optional saved-machine link in notes. Does not change connection behavior. */
+  machineAssignment?: ConnectionMachineAssignment;
   parentId?: string;
   isGroup: boolean;
   expanded?: boolean;

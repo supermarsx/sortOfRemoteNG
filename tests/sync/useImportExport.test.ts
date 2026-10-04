@@ -4702,6 +4702,180 @@ describe("useImportExport", () => {
     expect(cloned.password).toBe("remote-mac-fallback-secret");
   });
 
+  it.each(["included", "omitted", "skipped", "mixed"])(
+    "handleClone remaps Notes targets with per-database provenance (%s)",
+    async (mode) => {
+      const makeConnection = (id: string, name = id): Connection => ({
+        id,
+        name,
+        protocol: "ssh",
+        hostname: "fixture.test",
+        port: 22,
+        isGroup: false,
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
+      });
+      const guest = (id: string, databaseId: string): Connection => ({
+        ...makeConnection(id),
+        machineAssignment: {
+          version: 1,
+          type: "vm",
+          name: "Snapshot label",
+          connectionRef: { databaseId, connectionId: "host" },
+        },
+      });
+      const sourceA = [
+        guest("guest-a", "col-2"),
+        makeConnection("host", "Host A"),
+        guest("foreign", "col-3"),
+      ];
+      const sourceB = [
+        guest("guest-b", "col-3"),
+        makeConnection("host", "Host B"),
+      ];
+      const originalA = structuredClone(sourceA);
+      const originalB = structuredClone(sourceB);
+      mockGetExportableDatabases.mockResolvedValue(
+        ["col-1", "col-2", "col-3", "col-4"].map((id) => ({
+          id,
+          name: id,
+          isEncrypted: false,
+          isCurrent: id === "col-1",
+          isUnlocked: true,
+          isExportable: true,
+        })),
+      );
+      mockReadExportableSnapshot.mockImplementation(async (id: string) => ({
+        collection: { id, name: id, isEncrypted: false },
+        connections:
+          id === "col-2"
+            ? sourceA
+            : id === "col-3"
+              ? sourceB
+              : [makeConnection("host", "Existing host")],
+        settings: {},
+        tabGroups: [],
+        colorTags: {},
+      }));
+      const { result } = renderImportExport({ initialTab: "clone" });
+      await waitFor(() =>
+        expect(result.current.cloneDatabaseOptions).toHaveLength(4),
+      );
+      act(() => {
+        result.current.setCloneSourceMode("selected");
+        result.current.setSelectedCloneSourceDatabaseIds(
+          mode === "mixed" ? ["col-2", "col-3"] : ["col-2"],
+        );
+        result.current.setCloneTargetDatabaseIds(["col-4"]);
+        result.current.setCloneConflictPolicy(
+          mode === "skipped" ? "skip" : "duplicate",
+        );
+        if (mode === "omitted")
+          result.current.updateCloneInclusion({
+            includedConnectionIds: ["col-2:guest-a", "col-2:foreign"],
+          });
+      });
+      await act(async () => {
+        await result.current.handleClone();
+      });
+      expect(result.current.cloneResult?.success).toBe(true);
+      const copied = mockAppendConnectionsToDatabase.mock
+        .calls[0][1] as Connection[];
+      const copiedA = copied.find((row) => row.name === "guest-a")!;
+      const hostA = copied.find((row) => row.name === "Host A");
+      if (mode === "omitted" || mode === "skipped") {
+        expect(hostA).toBeUndefined();
+        expect(copiedA.machineAssignment).toEqual(sourceA[0].machineAssignment);
+      } else {
+        expect(hostA!.id).not.toBe("host");
+        expect(copiedA.machineAssignment?.connectionRef).toEqual({
+          databaseId: "col-4",
+          connectionId: hostA!.id,
+        });
+      }
+      expect(
+        copied.find((row) => row.name === "foreign")!.machineAssignment,
+      ).toEqual(sourceA[2].machineAssignment);
+      if (mode === "mixed") {
+        const hostB = copied.find((row) => row.name === "Host B")!;
+        expect(hostB.id).not.toBe(hostA!.id);
+        expect(
+          copied.find((row) => row.name === "guest-b")!.machineAssignment
+            ?.connectionRef,
+        ).toEqual({ databaseId: "col-4", connectionId: hostB.id });
+      }
+      expect(sourceA).toEqual(originalA);
+      expect(sourceB).toEqual(originalB);
+    },
+  );
+
+  it.each(["single", "array", "mixed", "skipped"])(
+    "confirmImport only rebinds Notes with verified batch provenance (%s)",
+    async (mode) => {
+      const host = { ...mockConnections[0] };
+      const guest: Connection = {
+        ...mockConnections[1],
+        id: "imported-guest",
+        name: "Imported guest",
+        hostname: "imported-guest.fixture.test",
+        machineAssignment: {
+          version: 1,
+          type: "vm",
+          name: "Snapshot label",
+          connectionRef: { databaseId: "source-db", connectionId: host.id },
+        },
+      };
+      const source = [guest, host];
+      mockImportConnections.mockResolvedValue(source);
+      const payload =
+        mode === "array"
+          ? source
+          : mode === "mixed"
+            ? {
+                collection: { id: "decoy-db" },
+                databases: [
+                  { collection: { id: "source-db" }, connections: source },
+                ],
+              }
+            : { collection: { id: "source-db" }, connections: source };
+      const { result } = renderImportExport();
+      await waitFor(() =>
+        expect(result.current.importDatabaseOptions).toHaveLength(1),
+      );
+      await act(async () => {
+        await result.current.handleFileSelect({
+          target: {
+            files: [new File([JSON.stringify(payload)], "notes.json")],
+          },
+        } as unknown as React.ChangeEvent<HTMLInputElement>);
+      });
+      expect(result.current.importResult?.success).toBe(true);
+      act(() =>
+        result.current.updateImportOptions({
+          conflictPolicy: mode === "skipped" ? "skip" : "duplicate",
+        }),
+      );
+      await act(async () => {
+        await result.current.confirmImport();
+      });
+      const copied = mockDispatch.mock.calls
+        .filter(([action]) => action.type === "ADD_CONNECTION")
+        .map(([action]) => action.payload as Connection);
+      const copiedGuest = copied.find((row) => row.name === guest.name)!;
+      expect(copiedGuest).toBeDefined();
+      if (mode === "single") {
+        const copiedHost = copied.find((row) => row.name === host.name)!;
+        expect(copiedHost.id).not.toBe(host.id);
+        expect(copiedGuest.machineAssignment?.connectionRef).toEqual({
+          databaseId: "col-1",
+          connectionId: copiedHost.id,
+        });
+      } else {
+        expect(copiedGuest.machineAssignment).toEqual(guest.machineAssignment);
+      }
+    },
+  );
+
   it("handleClone filters qualified connection ids against each source database", async () => {
     const databases = [
       {

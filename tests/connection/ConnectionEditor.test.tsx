@@ -1082,6 +1082,78 @@ describe("ConnectionEditor", () => {
   });
 
   describe("Notes and Parent Folder", () => {
+    it("wires the owning database's saved-connection picker through the real Notes tab", async () => {
+      const target = {
+        ...mockConnection,
+        id: "machine-target",
+        name: "Saved machine",
+        hostname: "machine.example",
+      };
+      const save = vi.fn().mockResolvedValue(undefined);
+      function ScopedEditor() {
+        const context = useConnections();
+        return (
+          <ConnectionContext.Provider
+            value={{
+              ...context,
+              state: {
+                ...context.state,
+                connections: [mockConnection, target],
+              },
+              databaseAvailability: {
+                status: "ready",
+                databaseId: "notes-db",
+                generation: 1,
+              },
+              getCurrentConnections: () => [mockConnection, target],
+              dispatchAndFlush: save,
+            }}
+          >
+            <ConnectionEditor
+              isOpen
+              onClose={vi.fn()}
+              connection={mockConnection}
+            />
+          </ConnectionContext.Provider>
+        );
+      }
+      render(
+        <ConnectionProvider>
+          <ScopedEditor />
+        </ConnectionProvider>,
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-notes"));
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Linked saved connection" }),
+      );
+      fireEvent.mouseDown(
+        screen.getByRole("option", { name: /Saved machine/ }),
+      );
+      fireEvent.click(screen.getByRole("combobox", { name: "Machine type" }));
+      fireEvent.mouseDown(screen.getByRole("option", { name: "VM" }));
+      fireEvent.click(screen.getByTestId("editor-save"));
+      await waitFor(() =>
+        expect(save).toHaveBeenCalledWith({
+          type: "UPDATE_CONNECTION",
+          payload: expect.objectContaining({
+            id: mockConnection.id,
+            hostname: mockConnection.hostname,
+            description: mockConnection.description,
+            machineAssignment: {
+              version: 1,
+              type: "vm",
+              name: target.name,
+              host: target.hostname,
+              connectionRef: {
+                databaseId: "notes-db",
+                connectionId: target.id,
+              },
+            },
+          }),
+        }),
+      );
+    });
+
     it("edits and persists a folder default in the real Organize tab without rewriting children", async () => {
       const folder = {
         ...mockConnection,

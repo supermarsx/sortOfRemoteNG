@@ -21,6 +21,7 @@
 
 import { Connection } from "../../types/connection/connection";
 import { generateId } from "../../utils/core/id";
+import { remapMachineAssignmentReference } from "../../utils/connection/machineAssignmentReferences";
 
 export type ApplyConflictPolicy = "duplicate" | "rename" | "skip";
 
@@ -30,6 +31,9 @@ export interface ApplyConnectionsOptions {
   addTags: string[];
   /** When false, parents are dropped and only leaves are kept. */
   preserveFolders: boolean;
+  /** Explicit batch provenance; never infer the source from a Notes link. */
+  sourceDatabaseId?: string;
+  destinationDatabaseId?: string;
 }
 
 /**
@@ -67,7 +71,10 @@ export function remapConnectionsForApply(
   const remappedIds = new Map<string, string>();
   for (const item of items) {
     const conn = item.connection;
-    if (item.conflictStatus === "sameId" || options.conflictPolicy === "rename") {
+    if (
+      item.conflictStatus === "sameId" ||
+      options.conflictPolicy === "rename"
+    ) {
       remappedIds.set(conn.id, generateId());
     }
   }
@@ -109,13 +116,47 @@ export function remapConnectionsForApply(
       }
 
       if (options.addTags.length > 0) {
-        next.tags = Array.from(new Set([...(next.tags ?? []), ...options.addTags]));
+        next.tags = Array.from(
+          new Set([...(next.tags ?? []), ...options.addTags]),
+        );
       }
 
       return [next];
     })
     .filter((conn) => options.preserveFolders || !conn.isGroup);
 
+  const { sourceDatabaseId, destinationDatabaseId } = options;
+  if (sourceDatabaseId && destinationDatabaseId) {
+    const includedIds = new Set(remapped.map((connection) => connection.id));
+    const connectionIds = new Map<string, string>();
+    const ambiguousIds = new Set<string>();
+    const seenIds = new Set<string>();
+    for (const { connection } of items) {
+      if (seenIds.has(connection.id)) ambiguousIds.add(connection.id);
+      seenIds.add(connection.id);
+    }
+    for (const { connection, conflictStatus } of items) {
+      if (
+        ambiguousIds.has(connection.id) ||
+        (options.conflictPolicy === "skip" && conflictStatus !== "none") ||
+        (!options.preserveFolders && connection.isGroup)
+      )
+        continue;
+      const id = remappedIds.get(connection.id) ?? connection.id;
+      if (includedIds.has(id)) connectionIds.set(connection.id, id);
+    }
+    return {
+      remapped: remapped.map((connection) =>
+        remapMachineAssignmentReference(connection, {
+          sourceDatabaseId,
+          destinationDatabaseId,
+          connectionIds,
+        }),
+      ),
+      renamed,
+      skipped,
+    };
+  }
   return { remapped, renamed, skipped };
 }
 

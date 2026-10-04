@@ -1,5 +1,6 @@
 import type { Connection } from "../../types/connection/connection";
 import { INTEGRATION_PROTOCOL_PREFIX } from "../../types/connection/connection";
+import { normalizeMachineAssignment } from "../../types/connection/machineAssignment";
 import {
   migrateRawSocketProtocol,
   normalizeRawSocketSettings,
@@ -88,6 +89,11 @@ export function normalizeAdvancedProtocolConnection(
       normalizeHttpTrustedRedirectDestinations(
         input.httpTrustedRedirectDestinations,
       );
+  }
+  if (input.machineAssignment !== undefined) {
+    next.machineAssignment = normalizeMachineAssignment(
+      input.machineAssignment,
+    );
   }
   // Optional automation must not make the rest of a database inaccessible.
   // Preserve malformed data for explicit editor repair; runtime validators

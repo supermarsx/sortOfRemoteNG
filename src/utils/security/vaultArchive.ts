@@ -168,9 +168,15 @@ function withoutLocalAuthenticatorReference<T>(row: T): T {
 function mapReferences(
   value: unknown,
   ids: ReadonlyMap<string, string>,
+  path = "",
 ): unknown {
+  // Credential bundles have no source/destination database provenance. Never
+  // rewrite a Notes link using the unrelated route/credential ID remap.
+  if (path === "machineAssignment.connectionRef") return value;
   if (Array.isArray(value))
-    return value.map((item) => mapReferences(item, ids));
+    return value.map((item, index) =>
+      mapReferences(item, ids, `${path}[${index}]`),
+    );
   if (!value || typeof value !== "object") return value;
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
@@ -201,7 +207,8 @@ function mapReferences(
       if (typeof item !== "string" || !ids.has(item))
         throw new VaultArchiveError("dependencies");
       result[key] = ids.get(item);
-    } else result[key] = mapReferences(item, ids);
+    } else
+      result[key] = mapReferences(item, ids, path ? `${path}.${key}` : key);
   }
   return result;
 }

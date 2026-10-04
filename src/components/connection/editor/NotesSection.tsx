@@ -1,7 +1,9 @@
 import React from "react";
 import { FileText } from "lucide-react";
 import type { ConnectionEditorMgr } from "../../../hooks/connection/useConnectionEditor";
+import type { Connection } from "../../../types/connection/connection";
 import { Textarea } from "../../ui/forms";
+import { MachineAssignmentSection } from "./MachineAssignmentSection";
 
 type NotesSectionManager = Pick<
   ConnectionEditorMgr,
@@ -48,6 +50,23 @@ export const DescriptionSection: React.FC<{ mgr: NotesSectionManager }> = ({
   </div>
 );
 
-export const NotesSection: React.FC<{ mgr: NotesSectionManager }> = ({
-  mgr,
-}) => <DescriptionSection mgr={mgr} />;
+export const NotesSection: React.FC<{
+  mgr: NotesSectionManager;
+  connections?: readonly Connection[];
+  databaseId?: string;
+}> = ({ mgr, connections = [], databaseId }) => (
+  <div className="space-y-4">
+    <DescriptionSection mgr={mgr} />
+    {!mgr.formData.isGroup && (
+      <MachineAssignmentSection
+        assignment={mgr.formData.machineAssignment}
+        connections={connections}
+        databaseId={databaseId}
+        currentConnectionId={mgr.formData.id}
+        onChange={(machineAssignment) =>
+          mgr.setFormData((current) => ({ ...current, machineAssignment }))
+        }
+      />
+    )}
+  </div>
+);

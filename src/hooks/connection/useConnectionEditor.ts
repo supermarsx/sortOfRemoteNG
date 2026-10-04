@@ -846,7 +846,20 @@ export function useConnectionEditor(
   onClose: () => void,
   initialParentId?: string,
 ) {
-  const { state, dispatchAndFlush, credentialVault } = useConnections();
+  const {
+    state,
+    dispatchAndFlush,
+    credentialVault,
+    databaseAvailability,
+    getCurrentConnections,
+  } = useConnections();
+  const noteDatabaseRef = useRef(databaseAvailability);
+  noteDatabaseRef.current = databaseAvailability;
+  const noteEditorScopeRef = useRef(
+    databaseAvailability ? { ...databaseAvailability } : null,
+  );
+  const currentConnectionsReaderRef = useRef(getCurrentConnections);
+  currentConnectionsReaderRef.current = getCurrentConnections;
   const credentialVaultRef = useRef(credentialVault);
   credentialVaultRef.current = credentialVault;
   const credentialEditorScopeRef = useRef(
@@ -1113,6 +1126,9 @@ export function useConnectionEditor(
     // optimistic, not-yet-persisted saves and must not reset the draft/baseline.
     // Switching connection or closing/reopening starts a fresh editing session.
     const connection = incomingConnectionRef.current;
+    noteEditorScopeRef.current = noteDatabaseRef.current
+      ? { ...noteDatabaseRef.current }
+      : null;
     credentialEditorScopeRef.current = credentialVaultRef.current?.scope
       ? { ...credentialVaultRef.current.scope }
       : null;
@@ -1513,6 +1529,32 @@ export function useConnectionEditor(
       latestSaveRequestRef.current = requestId;
 
       const run = async (): Promise<EditorSaveOutcome> => {
+        const assertNotesOwner = () => {
+          if (
+            !request.runtimeConnection.machineAssignment?.connectionRef &&
+            !incomingConnectionRef.current?.machineAssignment?.connectionRef
+          )
+            return;
+          const expected = noteEditorScopeRef.current;
+          const current = noteDatabaseRef.current;
+          if (
+            !expected?.databaseId ||
+            expected.status !== "ready" ||
+            current?.status !== "ready" ||
+            current.databaseId !== expected.databaseId ||
+            current.generation !== expected.generation
+          ) {
+            throw new Error(
+              "The owning database changed or is locked. Reopen this connection editor in its owning database to save the machine assignment.",
+            );
+          }
+          // Consult synchronous provider ownership too: React may not have
+          // published a lock/database switch yet. This never resolves a foreign link.
+          currentConnectionsReaderRef.current?.({
+            databaseId: expected.databaseId,
+            generation: expected.generation,
+          });
+        };
         const isCurrent = () =>
           requestId === latestSaveRequestRef.current &&
           isCurrentEditorRevision(request.revision);
@@ -1522,6 +1564,7 @@ export function useConnectionEditor(
         }
 
         try {
+          assertNotesOwner();
           // Integration secrets must reach the vault before the connection
           // record can durably reference them.
           const prepared = await prepareConnectionForPersistence(
@@ -1533,6 +1576,7 @@ export function useConnectionEditor(
 
           const shouldPersist = request.shouldPersist?.(prepared) ?? true;
           if (shouldPersist) {
+            assertNotesOwner();
             await dispatchAndFlush({
               type: request.actionType,
               payload: prepared.persistentConnection,
@@ -1986,12 +2030,23 @@ export function useConnectionEditor(
     INTEGRATION_PROTOCOL_OPTIONS,
     runtimeCapabilities,
   );
+  const noteAssignmentDatabaseId =
+    databaseAvailability?.status === "ready" &&
+    noteEditorScopeRef.current?.status === "ready" &&
+    databaseAvailability.databaseId === noteEditorScopeRef.current.databaseId &&
+    databaseAvailability.generation === noteEditorScopeRef.current.generation
+      ? databaseAvailability.databaseId
+      : undefined;
 
   return {
     runtimeCapabilities,
     protocolOptions,
     formData,
     setFormData,
+    noteAssignmentConnections: noteAssignmentDatabaseId
+      ? state.connections
+      : [],
+    noteAssignmentDatabaseId,
     credentialConversion: {
       read: () => mergeManagedSshSecrets(formData),
       apply: (patch: Partial<Connection>) => {

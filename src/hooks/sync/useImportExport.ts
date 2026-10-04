@@ -96,6 +96,7 @@ import {
 } from "../../utils/network/vpnProviderCatalog";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import { generateId } from "../../utils/core/id";
+import { remapMachineAssignmentReference } from "../../utils/connection/machineAssignmentReferences";
 import {
   remapConnectionsForApply,
   buildApplyItems,
@@ -224,7 +225,10 @@ interface ExportSidecars {
 }
 
 type ProfileImportResult = ImportResult &
-  Pick<ExportSidecars, "proxyProfiles" | "tunnelProfiles">;
+  Pick<ExportSidecars, "proxyProfiles" | "tunnelProfiles"> & {
+    /** Only single-database native JSON carries an unambiguous batch owner. */
+    sourceDatabaseId?: string;
+  };
 
 class NetworkProfilePortabilityError extends Error {
   constructor() {
@@ -4083,10 +4087,29 @@ ${tableRows}
       let importedTrustRecords: TrustExportDocument | undefined;
       let proxyProfiles: ExportSidecars["proxyProfiles"];
       let tunnelProfiles: ExportSidecars["tunnelProfiles"];
+      let sourceDatabaseId: string | undefined;
       if (detectedFormat === "json") {
         try {
           const parsed = JSON.parse(processedContent);
           assertNoVaultImport(parsed);
+          // Multi-database packages are flattened by the importer. Do not infer
+          // their individual owners from matching IDs or from Notes links.
+          if (
+            !Array.isArray(parsed?.databases) &&
+            Array.isArray(parsed?.connections) &&
+            typeof parsed?.collection?.id === "string" &&
+            parsed.collection.id.length > 0 &&
+            parsed.connections.every(
+              (connection: unknown) =>
+                profileRecord(connection) &&
+                typeof connection.id === "string" &&
+                connection.id.length > 0,
+            ) &&
+            new Set(
+              parsed.connections.map((connection: Connection) => connection.id),
+            ).size === parsed.connections.length
+          )
+            sourceDatabaseId = parsed.collection.id;
           const rawGroups = Array.isArray(parsed)
             ? [{ connections: parsed }]
             : [
@@ -4308,6 +4331,7 @@ ${tableRows}
       return {
         success: true,
         imported: connections.length,
+        sourceDatabaseId,
         proxyProfiles,
         tunnelProfiles,
         errors,
@@ -4591,6 +4615,10 @@ ${tableRows}
           conflictPolicy: importOptions.conflictPolicy,
           addTags,
           preserveFolders: importOptions.preserveFolders,
+          // First update included target IDs in the verified source scope.
+          // Each destination below then receives its own scoped copy.
+          sourceDatabaseId: importResult.sourceDatabaseId,
+          destinationDatabaseId: importResult.sourceDatabaseId,
         });
         const baseConnectionsToImport = applied.remapped;
 
@@ -4833,12 +4861,28 @@ ${tableRows}
         // exports, in which case this is a no-op.
         const importTrustDocument = importResult?.trustRecords ?? null;
         const importIncludeTrust = importOptions.includeTrust;
+        const sourceDatabaseId = importResult.sourceDatabaseId;
+        const importedConnectionIds = new Map(
+          connectionsToImport.map((connection) => [
+            connection.id,
+            connection.id,
+          ]),
+        );
 
         for (const targetDatabase of targetDatabases) {
           await operation.verifyCurrent();
           operation.assertCurrent();
+          const targetConnections = sourceDatabaseId
+            ? connectionsToImport.map((connection) =>
+                remapMachineAssignmentReference(connection, {
+                  sourceDatabaseId,
+                  destinationDatabaseId: targetDatabase.id,
+                  connectionIds: importedConnectionIds,
+                }),
+              )
+            : connectionsToImport;
           if (targetDatabase.id === currentDatabase?.id) {
-            connectionsToImport.forEach((conn) => {
+            targetConnections.forEach((conn) => {
               dispatch({ type: "ADD_CONNECTION", payload: conn });
             });
             // The open database is written through the reducer, so its trust
@@ -4851,7 +4895,7 @@ ${tableRows}
             await appendImportExportDatabase(
               databaseManager,
               targetDatabase.id,
-              connectionsToImport,
+              targetConnections,
               {
                 trustRecords: importTrustDocument,
                 includeTrust: importIncludeTrust,
@@ -5058,7 +5102,9 @@ ${tableRows}
         id.includes(":"),
       );
       const selectedFolderIdSet = new Set(selectedFolderIds);
-      const filtered = sourceDatasets.flatMap((dataset) => {
+      const filterDatasetConnections = (
+        dataset: (typeof sourceDatasets)[number],
+      ) => {
         if (!usesQualifiedConnectionIds && !usesQualifiedFolderIds) {
           return filterConnectionsForExport(
             dataset.connections,
@@ -5099,7 +5145,14 @@ ${tableRows}
           includedConnectionIds: sourceSelectedIds,
           includedFolderIds: sourceSelectedFolderIds,
         });
-      });
+      };
+      const filteredDatasets = sourceDatasets.map((dataset) => ({
+        databaseId: dataset.databaseId,
+        connections: filterDatasetConnections(dataset),
+      }));
+      const filtered = filteredDatasets.flatMap(
+        (dataset) => dataset.connections,
+      );
       assertPortableCredentialSources(filtered);
       const sidecarClone = await cloneSidecarsForConnections(
         filtered,
@@ -5152,21 +5205,41 @@ ${tableRows}
             );
             existing = snapshot?.connections ?? [];
           }
-          const items = buildApplyItems(
-            filteredForApply.map((connection) => {
-              assertDirectProfileReferences(connection);
-              return preserveDirectProfileIntent(
-                connection,
-                prepareConnectionForClone(connection, cloneIncludeCredentials),
-              );
-            }),
-            existing,
-          );
-          const applied = remapConnectionsForApply(items, {
-            conflictPolicy: cloneConflictPolicy,
-            addTags,
-            preserveFolders: clonePreserveFolders,
+          const prepared = filteredForApply.map((connection) => {
+            assertDirectProfileReferences(connection);
+            return preserveDirectProfileIntent(
+              connection,
+              prepareConnectionForClone(connection, cloneIncludeCredentials),
+            );
           });
+          const applied = {
+            remapped: [] as Connection[],
+            renamed: 0,
+            skipped: 0,
+          };
+          let offset = 0;
+          for (const dataset of filteredDatasets) {
+            // Sidecar preparation maps connections one-for-one in source order.
+            // Keep each database's ID namespace separate through conflict remapping.
+            const batch = prepared.slice(
+              offset,
+              offset + dataset.connections.length,
+            );
+            offset += dataset.connections.length;
+            const result = remapConnectionsForApply(
+              buildApplyItems(batch, [...existing, ...applied.remapped]),
+              {
+                conflictPolicy: cloneConflictPolicy,
+                addTags,
+                preserveFolders: clonePreserveFolders,
+                sourceDatabaseId: dataset.databaseId,
+                destinationDatabaseId: targetId,
+              },
+            );
+            applied.remapped.push(...result.remapped);
+            applied.renamed += result.renamed;
+            applied.skipped += result.skipped;
+          }
 
           operation.assertCurrent();
           if (targetId === currentDatabase?.id) {
