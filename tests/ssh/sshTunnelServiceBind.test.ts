@@ -26,9 +26,14 @@ const sshConnection = {
 
 function setupInvoke() {
   invokeMock.mockReset();
-  invokeMock.mockImplementation((cmd: string) => {
+  invokeMock.mockImplementation((cmd: string, args) => {
     if (cmd === "connect_ssh") return Promise.resolve("session-123");
     if (cmd === "setup_port_forward") return Promise.resolve("forward-456");
+    if (cmd === "get_ssh_port_forward")
+      return Promise.resolve({
+        id: args.forwardId,
+        config: lastForwardConfig(),
+      });
     return Promise.resolve(undefined);
   });
 }

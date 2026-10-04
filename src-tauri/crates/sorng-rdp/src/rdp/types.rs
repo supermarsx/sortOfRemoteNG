@@ -201,6 +201,9 @@ pub struct RdpSession {
     pub connection_id: Option<String>,
     pub host: String,
     pub port: u16,
+    /// Original server identity when TCP is dialled through a local tunnel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_identity: Option<super::settings::RdpTargetIdentity>,
     pub username: String,
     pub connected: bool,
     pub desktop_width: u16,

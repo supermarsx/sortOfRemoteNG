@@ -2120,6 +2120,7 @@ describe("RDPClient", () => {
           expect.objectContaining({
             sessionId: "ssh-path-session",
             config: expect.objectContaining({
+              local_port: 0,
               remote_rdp_host: "192.168.1.100",
               remote_rdp_port: 3389,
             }),
@@ -2130,9 +2131,210 @@ describe("RDPClient", () => {
           expect.objectContaining({
             host: "127.0.0.1",
             port: 43189,
+            targetHost: "192.168.1.100",
+            targetPort: 3389,
           }),
         );
       });
+    });
+
+    it("isolates concurrent same-destination RDP tunnels with ephemeral ports and independent cleanup", async () => {
+      (mockConnection as any).security = {
+        tunnelChain: [
+          {
+            id: "shared-bastion",
+            type: "ssh-tunnel",
+            enabled: true,
+            sshTunnel: {
+              host: "bastion.example.test",
+              port: 2200,
+              username: "fixture-user",
+              password: "SYNTHETIC_SSH_PASSWORD",
+              forwardType: "local",
+            },
+          },
+        ],
+      };
+      const allocations = [
+        {
+          sshSessionId: "same-target-ssh-1",
+          tunnel_id: "same-target-tunnel-1",
+          local_port: 43189,
+          backendSessionId: "same-target-rdp-1",
+        },
+        {
+          sshSessionId: "same-target-ssh-2",
+          tunnel_id: "same-target-tunnel-2",
+          local_port: 43190,
+          backendSessionId: "same-target-rdp-2",
+        },
+      ];
+      const finishSetup = new Map<string, () => void>();
+      let sshCount = 0;
+      mockInvoke.mockImplementation(async (command: string, args?: unknown) => {
+        const params = args as
+          { sessionId?: string; port?: number } | undefined;
+        if (command === "list_rdp_sessions") return [];
+        if (command === "detect_keyboard_layout") return 0x0409;
+        if (command === "connect_ssh")
+          return allocations[sshCount++].sshSessionId;
+        if (command === "setup_rdp_tunnel") {
+          const allocation = allocations.find(
+            (item) => item.sshSessionId === params?.sessionId,
+          );
+          if (!allocation) throw new Error("Unexpected synthetic SSH owner");
+          return new Promise<{ tunnel_id: string; local_port: number }>(
+            (resolve) => {
+              finishSetup.set(allocation.sshSessionId, () =>
+                resolve({
+                  tunnel_id: allocation.tunnel_id,
+                  local_port: allocation.local_port,
+                }),
+              );
+            },
+          );
+        }
+        if (command === "connect_rdp") {
+          const allocation = allocations.find(
+            (item) => item.local_port === params?.port,
+          );
+          if (!allocation)
+            throw new Error("RDP did not use a returned tunnel port");
+          return allocation.backendSessionId;
+        }
+        return undefined;
+      });
+      const firstSession = { ...mockSession, id: "same-target-session-1" };
+      const secondSession = { ...mockSession, id: "same-target-session-2" };
+      const first = renderHook(() => useRDPClient(firstSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(finishSetup.has(allocations[0].sshSessionId)).toBe(true),
+      );
+      const second = renderHook(() => useRDPClient(secondSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() => expect(finishSetup.size).toBe(2));
+
+      expect(sshCount).toBe(2);
+      const setupCalls = mockInvoke.mock.calls.filter(
+        ([command]) => command === "setup_rdp_tunnel",
+      );
+      expect(setupCalls).toHaveLength(2);
+      for (const allocation of allocations) {
+        expect(mockInvoke).toHaveBeenCalledWith("setup_rdp_tunnel", {
+          sessionId: allocation.sshSessionId,
+          config: expect.objectContaining({
+            local_port: 0,
+            bind_interface: "127.0.0.1",
+            remote_rdp_host: mockConnection.hostname,
+            remote_rdp_port: mockConnection.port,
+          }),
+        });
+      }
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "connect_rdp"),
+      ).toBe(false);
+
+      // Both setups are in flight. Complete them out of order to catch shared
+      // destination/port bookkeeping leaking one session's listener to another.
+      await act(async () => {
+        finishSetup.get(allocations[1].sshSessionId)!();
+      });
+      await waitFor(() =>
+        expect(second.result.current.rdpSessionId).toBe(
+          allocations[1].backendSessionId,
+        ),
+      );
+      expect(first.result.current.rdpSessionId).toBeNull();
+      await act(async () => {
+        finishSetup.get(allocations[0].sshSessionId)!();
+      });
+      await waitFor(() =>
+        expect(first.result.current.rdpSessionId).toBe(
+          allocations[0].backendSessionId,
+        ),
+      );
+      const connectCalls = mockInvoke.mock.calls.filter(
+        ([command]) => command === "connect_rdp",
+      );
+      expect(connectCalls).toHaveLength(2);
+      expect(
+        connectCalls.map(([, args]) => (args as { port: number }).port),
+      ).toEqual([43190, 43189]);
+      for (const allocation of allocations) {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.objectContaining({
+            host: "127.0.0.1",
+            port: allocation.local_port,
+            targetHost: mockConnection.hostname,
+            targetPort: mockConnection.port,
+          }),
+        );
+      }
+
+      await act(async () => {
+        expect(await first.result.current.handleDisconnect()).toBe(true);
+      });
+      expect(mockInvoke).toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: allocations[0].backendSessionId,
+      });
+      expect(mockInvoke).toHaveBeenCalledWith("stop_rdp_tunnel", {
+        tunnelId: allocations[0].tunnel_id,
+      });
+      expect(mockInvoke).toHaveBeenCalledWith("disconnect_ssh", {
+        sessionId: allocations[0].sshSessionId,
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: allocations[1].backendSessionId,
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith("stop_rdp_tunnel", {
+        tunnelId: allocations[1].tunnel_id,
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith("disconnect_ssh", {
+        sessionId: allocations[1].sshSessionId,
+      });
+      expect(second.result.current.rdpSessionId).toBe(
+        allocations[1].backendSessionId,
+      );
+
+      await act(async () => {
+        expect(await second.result.current.handleDisconnect()).toBe(true);
+      });
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) => command === "stop_rdp_tunnel",
+        ),
+      ).toEqual(
+        allocations.map((allocation) => [
+          "stop_rdp_tunnel",
+          { tunnelId: allocation.tunnel_id },
+        ]),
+      );
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) => command === "disconnect_ssh",
+        ),
+      ).toEqual(
+        allocations.map((allocation) => [
+          "disconnect_ssh",
+          { sessionId: allocation.sshSessionId },
+        ]),
+      );
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) => command === "disconnect_rdp",
+        ),
+      ).toEqual(
+        allocations.map((allocation) => [
+          "disconnect_rdp",
+          { sessionId: allocation.backendSessionId },
+        ]),
+      );
+      first.unmount();
+      second.unmount();
     });
 
     it("blocks proxy-only RDP paths instead of bypassing them", async () => {

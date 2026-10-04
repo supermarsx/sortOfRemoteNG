@@ -1254,6 +1254,9 @@ export function useRDPClient(session: ConnectionSession) {
           {
             sessionId: sshSessionId,
             config: {
+              // Each session owns a distinct listener, even for the same
+              // remote desktop. The native status returns its bound port.
+              local_port: 0,
               remote_rdp_host: targetHost || "localhost",
               remote_rdp_port: targetPort,
               bind_interface: "127.0.0.1",
@@ -1840,6 +1843,8 @@ export function useRDPClient(session: ConnectionSession) {
         connectionId: conn.id,
         host: dialHost,
         port: dialPort,
+        targetHost,
+        targetPort,
         username: vaultFacets
           ? (vaultFacets.username ?? "")
           : conn.username || "",

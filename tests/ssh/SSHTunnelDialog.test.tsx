@@ -65,6 +65,75 @@ describe("SSHTunnelDialog", () => {
   const renderWithProvider = (ui: React.ReactElement) =>
     render(<ConnectionProvider>{ui}</ConnectionProvider>);
 
+  it.each(["local", "dynamic"] as const)(
+    "offers automatic %s listener ports but requires a real remote local destination",
+    async (type) => {
+      const onSave = vi.fn();
+      renderWithProvider(
+        <SSHTunnelDialog
+          isOpen
+          onClose={vi.fn()}
+          onSave={onSave}
+          sshConnections={sshConnections}
+          editingTunnel={{
+            id: "synthetic-tunnel",
+            name: "Fixture",
+            sshConnectionId: "conn-1",
+            type,
+            localPort: 0,
+            autoConnect: false,
+          }}
+        />,
+      );
+      expect(screen.getByLabelText("Local Port")).toHaveValue(0);
+      expect(screen.getByLabelText("Local Port")).toHaveAttribute("min", "0");
+      expect(screen.getByText("0 = automatically assign")).toBeInTheDocument();
+      const save = screen.getByRole("button", { name: "Save Changes" });
+      expect(save).toBeEnabled();
+      fireEvent.click(screen.getByRole("combobox", { name: "Tunnel Type" }));
+      fireEvent.mouseDown(
+        screen.getByRole("option", {
+          name: "Remote (forward remote port to local)",
+        }),
+      );
+      const destination = screen.getByLabelText("Local destination port");
+      expect(destination).toHaveAttribute("min", "1");
+      expect(destination).toHaveAttribute("max", "65535");
+      expect(destination).toBeRequired();
+      expect(screen.getByText(/Required: 1–65535/)).toBeInTheDocument();
+      expect(
+        screen.queryByText("0 = automatically assign"),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText("0 = auto")).not.toBeInTheDocument();
+      expect(save).toBeDisabled();
+      fireEvent.click(save);
+      expect(onSave).not.toHaveBeenCalled();
+      fireEvent.change(destination, { target: { value: "8080" } });
+      fireEvent.click(save);
+      await waitFor(() =>
+        expect(onSave).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "remote", localPort: 8080 }),
+        ),
+      );
+      await waitFor(() => expect(save).toBeEnabled());
+      fireEvent.click(screen.getByRole("combobox", { name: "Tunnel Type" }));
+      fireEvent.mouseDown(
+        screen.getByRole("option", {
+          name:
+            type === "local"
+              ? "Local (forward local port to remote)"
+              : "Dynamic (SOCKS proxy)",
+        }),
+      );
+      expect(screen.getByLabelText("Local Port")).toHaveValue(8080);
+      fireEvent.change(screen.getByLabelText("Local Port"), {
+        target: { value: "0" },
+      });
+      expect(screen.getByText("0 = automatically assign")).toBeInTheDocument();
+      expect(save).toBeEnabled();
+    },
+  );
+
   it("themes standalone credentials, password reveal, and labeled bind controls", () => {
     const { container } = renderWithProvider(
       <SSHTunnelDialog

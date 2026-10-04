@@ -142,8 +142,16 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
     }
   }, [isOpen, editingTunnel, requireBaseReselection]);
 
+  const remoteForward = form.type === "remote";
+  const localPortLabel = remoteForward
+    ? "Local destination port"
+    : "Local Port";
   const valid =
     !!form.name.trim() &&
+    (!remoteForward ||
+      (Number.isInteger(form.localPort) &&
+        (form.localPort ?? 0) >= 1 &&
+        (form.localPort ?? 0) <= 65535)) &&
     (standalone
       ? !!form.host?.trim() &&
         !!form.username?.trim() &&
@@ -364,18 +372,24 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="sor-form-label">Local Port</label>
+                <label className="sor-form-label">
+                  {localPortLabel}
+                  {remoteForward && <span className="text-error"> *</span>}
+                </label>
                 <NumberInput
-                  label="Local Port"
+                  label={localPortLabel}
                   value={form.localPort ?? 0}
                   onChange={(v: number) => setForm({ ...form, localPort: v })}
-                  placeholder="0 = auto"
+                  placeholder={remoteForward ? "1–65535" : "0 = auto"}
                   variant="form"
-                  min={0}
+                  min={remoteForward ? 1 : 0}
                   max={65535}
+                  required={remoteForward}
                 />
                 <p className="text-xs text-[var(--color-textSecondary)] mt-1">
-                  0 = automatically assign
+                  {remoteForward
+                    ? "Required: 1–65535. Port of the existing local service that receives forwarded connections."
+                    : "0 = automatically assign"}
                 </p>
               </div>
 

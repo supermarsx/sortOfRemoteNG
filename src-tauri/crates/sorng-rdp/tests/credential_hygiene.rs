@@ -66,6 +66,7 @@ fn test_session() -> RdpSession {
         connection_id: Some("connection-1".to_string()),
         host: "rdp.example.com".to_string(),
         port: 3389,
+        target_identity: None,
         username: "demo".to_string(),
         connected: true,
         desktop_width: 1280,
@@ -75,6 +76,39 @@ fn test_session() -> RdpSession {
         reconnect_count: 0,
         reconnecting: false,
     }
+}
+
+#[test]
+fn target_identity_session_deserializes_legacy_metadata_without_override() {
+    let legacy = serde_json::to_value(test_session()).unwrap();
+    assert!(legacy.get("targetIdentity").is_none());
+    let session: RdpSession = serde_json::from_value(legacy).unwrap();
+    assert!(session.target_identity.is_none());
+    assert_eq!(session.host, "rdp.example.com");
+    assert_eq!(session.port, 3389);
+}
+
+#[test]
+fn target_identity_session_serialization_keeps_dial_and_server_endpoints_distinct() {
+    let mut session = test_session();
+    session.host = "127.0.0.1".into();
+    session.port = 43189;
+    session.target_identity = Some(
+        sorng_rdp::rdp::settings::RdpTargetIdentity::resolve(
+            &session.host,
+            session.port,
+            Some("rdp.fixture.test"),
+            Some(3391),
+        )
+        .unwrap(),
+    );
+    let encoded = serde_json::to_value(&session).unwrap();
+    assert_eq!(encoded["host"], "127.0.0.1");
+    assert_eq!(encoded["port"], 43189);
+    assert_eq!(encoded["targetIdentity"]["host"], "rdp.fixture.test");
+    assert_eq!(encoded["targetIdentity"]["port"], 3391);
+    let restored: RdpSession = serde_json::from_value(encoded).unwrap();
+    assert_eq!(restored.target_identity, session.target_identity);
 }
 
 #[test]

@@ -105,13 +105,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.settings = {};
   mocks.listen.mockResolvedValue(mocks.unlisten);
-  mocks.invoke.mockImplementation(async (command: string) =>
-    command === "connect_ssh"
-      ? "native-session"
-      : command === "setup_port_forward"
-        ? "native-forward"
-        : undefined,
-  );
+  mocks.invoke.mockImplementation(async (command: string, args) => {
+    if (command === "connect_ssh") return "native-session";
+    if (command === "setup_port_forward") return "native-forward";
+    if (command === "get_ssh_port_forward")
+      return {
+        id: args.forwardId,
+        config: [...mocks.invoke.mock.calls]
+          .reverse()
+          .find(([cmd]) => cmd === "setup_port_forward")![1].config,
+      };
+  });
 });
 
 describe("native SSH tunnel JSON contract", () => {

@@ -134,6 +134,18 @@ pub async fn setup_port_forward(
     redact_result(ssh.setup_port_forward(&session_id, config).await)
 }
 
+/// Return the actual bound endpoint of one forward owned by this SSH session.
+/// The legacy setup command continues returning its ID for existing callers.
+#[tauri::command]
+pub async fn get_ssh_port_forward(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    forward_id: String,
+) -> Result<PortForwardInfo, String> {
+    let ssh = state.lock().await;
+    redact_result(ssh.get_port_forward_info(&session_id, &forward_id))
+}
+
 #[tauri::command]
 pub async fn list_directory(
     state: tauri::State<'_, SshServiceState>,

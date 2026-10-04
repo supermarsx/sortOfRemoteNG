@@ -172,7 +172,9 @@ pub async fn setup_rdp_tunnel(
 ) -> Result<RdpTunnelStatus, String> {
     let mut ssh = state.lock().await;
 
-    let local_port = config.local_port.unwrap_or(13389);
+    // Bind port zero to let the OS atomically reserve a distinct port for
+    // every tunnel, including concurrent tunnels to the same destination.
+    let local_port = config.local_port.unwrap_or(0);
     let bind_interface = config
         .bind_interface
         .clone()
@@ -300,14 +302,7 @@ pub async fn setup_bulk_rdp_tunnels(
     targets: Vec<RdpTunnelConfig>,
 ) -> Result<Vec<RdpTunnelStatus>, String> {
     let mut results = Vec::new();
-    let mut base_port = 13390u16;
-
-    for mut config in targets {
-        if config.local_port.is_none() {
-            config.local_port = Some(base_port);
-            base_port += 1;
-        }
-
+    for config in targets {
         match setup_rdp_tunnel(state.clone(), session_id.clone(), config).await {
             Ok(status) => results.push(status),
             Err(e) => {
@@ -451,7 +446,7 @@ pub async fn setup_vnc_tunnel(
         config.remote_vnc_port
     };
 
-    let local_port = config.local_port.unwrap_or(15900);
+    let local_port = config.local_port.unwrap_or(0);
     let bind_interface = config
         .bind_interface
         .clone()

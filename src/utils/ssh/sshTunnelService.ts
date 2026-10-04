@@ -46,7 +46,7 @@ export interface SSHTunnelConfig {
   /** Persisted before deleting secrets; only deletion retries are allowed. */
   pendingDeletion?: boolean;
   needsCleanup?: boolean;
-  // Local port to bind (0 = auto-assign)
+  // Local/dynamic listener port (0 = auto-assign); remote local destination (>0).
   localPort: number;
   // Remote host to forward to (from the SSH server's perspective)
   // Not used for dynamic tunnels
@@ -106,6 +106,11 @@ interface PortForwardConfig {
   direction: "Local" | "Remote" | "Dynamic";
   // Mirrors Rust serde field `allow_non_loopback_bind` (#[serde(default)] = false).
   allow_non_loopback_bind: boolean;
+}
+
+interface PortForwardInfo {
+  id: string;
+  config: PortForwardConfig;
 }
 
 interface PersistedSSHTunnel {
@@ -752,8 +757,9 @@ class SSHTunnelService {
       assertCurrent();
       options.vault?.assertCurrent();
 
-      // Determine the local port (use requested or find available)
-      const localPort = tunnel.localPort || (await this.findAvailablePort());
+      // Reserve automatic local/dynamic ports in the native listener itself.
+      // A remote forward's local port is its destination, never a new listener.
+      const localPort = tunnel.localPort;
 
       if (
         tunnel.type !== "dynamic" &&
@@ -789,13 +795,40 @@ class SSHTunnelService {
         sessionId,
         config: portForwardConfig,
       });
+      // Retain the native handle before any guard or metadata read can fail.
+      tunnel.portForwardId = portForwardId;
       assertCurrent();
       options.vault?.assertCurrent();
+      const forward = await invoke<PortForwardInfo>("get_ssh_port_forward", {
+        sessionId,
+        forwardId: portForwardId,
+      });
+      assertCurrent();
+      options.vault?.assertCurrent();
+      const actual = forward?.config;
+      if (
+        typeof portForwardId !== "string" ||
+        !portForwardId ||
+        forward?.id !== portForwardId ||
+        !actual ||
+        !Number.isInteger(actual.local_port) ||
+        actual.local_port < 1 ||
+        actual.local_port > 65535 ||
+        (localPort !== 0 && actual.local_port !== localPort) ||
+        actual.direction !== portForwardConfig.direction ||
+        actual.local_host !== portForwardConfig.local_host ||
+        actual.remote_host !== portForwardConfig.remote_host ||
+        actual.remote_port !== portForwardConfig.remote_port ||
+        actual.allow_non_loopback_bind !==
+          portForwardConfig.allow_non_loopback_bind
+      )
+        throw new Error(
+          "The SSH forward's bound port or destination could not be verified. Disconnect and retry with an updated desktop app.",
+        );
 
       tunnel.status = "connected";
-      tunnel.actualLocalPort = localPort;
+      tunnel.actualLocalPort = actual.local_port;
       tunnel.sshSessionId = sessionId;
-      tunnel.portForwardId = portForwardId;
       tunnel.error = undefined;
       this.tunnels.set(id, tunnel);
       this.notifyListeners();
@@ -956,6 +989,10 @@ class SSHTunnelService {
       );
     if (!["local", "remote", "dynamic"].includes(tunnel.type))
       throw new Error("Select a valid SSH tunnel type.");
+    if (tunnel.type === "remote" && !port(tunnel.localPort))
+      throw new Error(
+        "Remote forwarding requires a local destination port between 1 and 65535; automatic ports apply only to local and dynamic listeners.",
+      );
     if (
       tunnel.type !== "dynamic" &&
       (!tunnel.remoteHost?.trim() || !port(tunnel.remotePort))
@@ -983,13 +1020,6 @@ class SSHTunnelService {
       if (result.errors.length) throw new Error("VPN cleanup pending");
       this.vpnOwners.delete(tunnel.id);
     }
-  }
-
-  private async findAvailablePort(): Promise<number> {
-    // Use a simple approach: try ports starting from 10000
-    // The actual binding will happen in the Rust backend
-    // This is just a fallback - ideally the backend returns the actual port
-    return 10000 + Math.floor(Math.random() * 50000);
   }
 
   async disconnectAllTunnels(): Promise<void> {

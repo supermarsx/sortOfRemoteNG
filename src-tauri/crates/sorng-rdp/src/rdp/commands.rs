@@ -411,6 +411,7 @@ mod worker_lifecycle_tests {
                 connection_id: Some(connection_id.to_string()),
                 host: "rdp.test".to_string(),
                 port: 3389,
+                target_identity: None,
                 username: "tester".to_string(),
                 connected: true,
                 desktop_width: 1920,

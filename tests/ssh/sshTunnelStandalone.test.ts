@@ -93,15 +93,24 @@ beforeEach(() => {
       throw new Error("CredDeleteW failed: not found");
     mock.secrets.delete(account);
   });
-  mock.invoke.mockImplementation(async (cmd) =>
-    cmd === "connect_ssh"
-      ? "session"
-      : cmd === "setup_port_forward"
-        ? "forward"
-        : cmd === "release_vpn_leases"
-          ? { errors: [] }
-          : undefined,
-  );
+  mock.invoke.mockImplementation(async (cmd, args) => {
+    if (cmd === "connect_ssh") return "session";
+    if (cmd === "setup_port_forward") return "forward";
+    if (cmd === "get_ssh_port_forward") {
+      const requested = [...mock.invoke.mock.calls]
+        .reverse()
+        .find(
+          ([command, input]) =>
+            command === "setup_port_forward" &&
+            input.sessionId === args.sessionId,
+        )![1].config;
+      return {
+        id: args.forwardId,
+        config: { ...requested, local_port: requested.local_port || 42001 },
+      };
+    }
+    if (cmd === "release_vpn_leases") return { errors: [] };
+  });
   mock.path.mockResolvedValue({
     transport: {
       jump_hosts: [],
@@ -113,6 +122,357 @@ beforeEach(() => {
     },
     redactionSecrets: [],
   });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe("SSH tunnel bound port ownership", () => {
+  it.each(["local", "dynamic"] as const)(
+    "lets native reserve distinct ports for concurrent automatic %s tunnels to the same destination",
+    async (type) => {
+      const s = await service();
+      const a = await s.createTunnel({
+        ...params,
+        localPort: 0,
+        type,
+        remoteHost: "same.internal",
+        remotePort: 3389,
+      });
+      const b = await s.createTunnel({
+        ...params,
+        name: "Second",
+        localPort: 0,
+        type,
+        remoteHost: "same.internal",
+        remotePort: 3389,
+      });
+      const pending = new Map<string, ReturnType<typeof deferred<void>>>();
+      const ports = new Map<string, number>();
+      mock.invoke.mockImplementation(async (cmd, args) => {
+        if (cmd === "connect_ssh")
+          return `session-${ports.size + pending.size + 1}`;
+        if (cmd === "setup_port_forward") {
+          expect(args.config.local_port).toBe(0);
+          const gate = deferred<void>();
+          pending.set(args.sessionId, gate);
+          await gate.promise;
+          return `forward-${args.sessionId}`;
+        }
+        if (cmd === "get_ssh_port_forward") {
+          expect(args.forwardId).toBe(`forward-${args.sessionId}`);
+          const requested = mock.invoke.mock.calls.find(
+            ([command, input]) =>
+              command === "setup_port_forward" &&
+              input.sessionId === args.sessionId,
+          )![1].config;
+          return {
+            id: args.forwardId,
+            config: { ...requested, local_port: ports.get(args.sessionId) },
+          };
+        }
+      });
+      // Separate calls must overlap while native owns both listener allocations.
+      const first = s.connectTunnel(a.id);
+      await vi.waitFor(() => expect(pending.size).toBe(1));
+      const second = s.connectTunnel(b.id);
+      await vi.waitFor(() => expect(pending.size).toBe(2));
+      let port = 42000;
+      for (const [sessionId, gate] of pending) {
+        ports.set(sessionId, ++port);
+        gate.resolve();
+      }
+      const connected = await Promise.all([first, second]);
+      expect(connected.map((t) => t.actualLocalPort)).toEqual([42001, 42002]);
+      expect(connected.map((t) => t.localPort)).toEqual([0, 0]);
+      expect(JSON.stringify(mock.disk)).not.toMatch(
+        /actualLocalPort|42001|42002/,
+      );
+      await s.disconnectAllTunnels();
+    },
+  );
+
+  it("preserves an explicit local port and never silently retries its collision", async () => {
+    const s = await service();
+    const a = await s.createTunnel(params);
+    const b = await s.createTunnel({ ...params, name: "Second" });
+    const original = mock.invoke.getMockImplementation()!;
+    let forwards = 0;
+    let sessions = 0;
+    mock.invoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "connect_ssh") return `session-${++sessions}`;
+      if (cmd === "setup_port_forward") {
+        expect(args.config.local_port).toBe(params.localPort);
+        if (++forwards === 2)
+          throw new Error("Address already in use (os error 10048)");
+      }
+      return original(cmd, args);
+    });
+    expect((await s.connectTunnel(a.id)).actualLocalPort).toBe(
+      params.localPort,
+    );
+    await expect(s.connectTunnel(b.id)).rejects.toThrow("10048");
+    expect(forwards).toBe(2);
+    expect(s.getTunnel(a.id)?.status).toBe("connected");
+    expect(s.getTunnel(b.id)?.sshSessionId).toBeUndefined();
+    expect(mock.invoke).toHaveBeenCalledWith("disconnect_ssh", {
+      sessionId: "session-2",
+    });
+    expect(mock.invoke).not.toHaveBeenCalledWith("disconnect_ssh", {
+      sessionId: "session-1",
+    });
+    expect(
+      mock.invoke.mock.calls.filter(([cmd]) => cmd === "get_ssh_port_forward"),
+    ).toHaveLength(1);
+    await s.disconnectTunnel(a.id);
+  });
+
+  it("keeps a remote forward's local destination port, rather than allocating a listener", async () => {
+    const s = await service();
+    const t = await s.createTunnel({
+      ...params,
+      type: "remote",
+      remoteHost: "127.0.0.1",
+      remotePort: 44000,
+    });
+    expect((await s.connectTunnel(t.id)).actualLocalPort).toBe(
+      params.localPort,
+    );
+    expect(mock.invoke).toHaveBeenCalledWith("setup_port_forward", {
+      sessionId: "session",
+      config: expect.objectContaining({
+        direction: "Remote",
+        local_port: params.localPort,
+        remote_port: 44000,
+      }),
+    });
+    expect(mock.invoke).toHaveBeenCalledWith("get_ssh_port_forward", {
+      sessionId: "session",
+      forwardId: "forward",
+    });
+    await s.disconnectTunnel(t.id);
+  });
+
+  it("rejects an automatic remote local destination before opening SSH", async () => {
+    const s = await service();
+    await expect(
+      s.createTunnel({
+        ...params,
+        type: "remote",
+        localPort: 0,
+        remoteHost: "127.0.0.1",
+        remotePort: 44000,
+      }),
+    ).rejects.toThrow("local destination port");
+    expect(mock.invoke).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    undefined,
+    null,
+    { id: "unrelated", config: {} },
+    { id: "forward" },
+    ...[0, 65536, 1.5, "42001"].map((local_port) => ({
+      id: "forward",
+      config: {
+        local_port,
+        direction: "Dynamic",
+        local_host: "127.0.0.1",
+        remote_host: "127.0.0.1",
+        remote_port: 0,
+        allow_non_loopback_bind: false,
+      },
+    })),
+  ])(
+    "fails closed and disconnects for invalid bound-port metadata %#",
+    async (metadata) => {
+      const s = await service();
+      const t = await s.createTunnel({ ...params, localPort: 0 });
+      const original = mock.invoke.getMockImplementation()!;
+      mock.invoke.mockImplementation(async (cmd, args) =>
+        cmd === "get_ssh_port_forward" ? metadata : original(cmd, args),
+      );
+      await expect(s.connectTunnel(t.id)).rejects.toThrow("bound port");
+      expect(mock.invoke).toHaveBeenCalledWith("disconnect_ssh", {
+        sessionId: "session",
+      });
+      expect(s.getTunnel(t.id)).toMatchObject({
+        status: "error",
+        needsCleanup: false,
+      });
+      expect(s.getTunnel(t.id)?.actualLocalPort).toBeUndefined();
+      expect(s.getTunnel(t.id)?.portForwardId).toBeUndefined();
+    },
+  );
+
+  it("retains the returned forward ID and waits for cleanup when metadata lookup rejects", async () => {
+    const s = await service();
+    const t = await s.createTunnel({ ...params, localPort: 0 });
+    const cleanup = deferred<void>();
+    const original = mock.invoke.getMockImplementation()!;
+    mock.invoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_ssh_port_forward") {
+        expect(s.getTunnel(t.id)?.portForwardId).toBe("forward");
+        throw new Error(`Metadata failed: ${params.password}`);
+      }
+      if (cmd === "disconnect_ssh") return cleanup.promise;
+      return original(cmd, args);
+    });
+    let finished = false;
+    const connected = s.connectTunnel(t.id);
+    const rejected = expect(connected).rejects.toThrow(
+      "Metadata failed: [redacted]",
+    );
+    void connected.then(
+      () => {
+        finished = true;
+      },
+      () => {
+        finished = true;
+      },
+    );
+    await vi.waitFor(() =>
+      expect(mock.invoke).toHaveBeenCalledWith("disconnect_ssh", {
+        sessionId: "session",
+      }),
+    );
+    expect(finished).toBe(false);
+    expect(s.getTunnel(t.id)?.portForwardId).toBe("forward");
+    cleanup.resolve();
+    await rejected;
+    expect(s.getTunnel(t.id)?.sshSessionId).toBeUndefined();
+  });
+
+  it.each(["setup_port_forward", "get_ssh_port_forward"])(
+    "cancels during %s and awaits cleanup without publishing a connected tunnel",
+    async (phase) => {
+      const s = await service();
+      const t = await s.createTunnel({ ...params, localPort: 0 });
+      const gate = deferred<void>();
+      const entered = deferred<void>();
+      const cleanup = deferred<void>();
+      const original = mock.invoke.getMockImplementation()!;
+      mock.invoke.mockImplementation(async (cmd, args) => {
+        if (cmd === phase) {
+          entered.resolve();
+          await gate.promise;
+        }
+        if (cmd === "disconnect_ssh") return cleanup.promise;
+        return original(cmd, args);
+      });
+      let connectedFinished = false;
+      const connected = s.connectTunnel(t.id);
+      const rejected = expect(connected).rejects.toThrow("cancelled");
+      void connected.then(
+        () => {
+          connectedFinished = true;
+        },
+        () => {
+          connectedFinished = true;
+        },
+      );
+      await entered.promise;
+      const disconnected = s.disconnectTunnel(t.id);
+      gate.resolve();
+      await vi.waitFor(() =>
+        expect(mock.invoke).toHaveBeenCalledWith("disconnect_ssh", {
+          sessionId: "session",
+        }),
+      );
+      expect(connectedFinished).toBe(false);
+      expect(s.getTunnel(t.id)?.portForwardId).toBe("forward");
+      expect(s.getTunnel(t.id)?.status).not.toBe("connected");
+      cleanup.resolve();
+      await rejected;
+      await disconnected;
+      expect(s.getTunnel(t.id)?.status).toBe("disconnected");
+      expect(s.getTunnel(t.id)?.actualLocalPort).toBeUndefined();
+      expect(s.getTunnel(t.id)?.portForwardId).toBeUndefined();
+    },
+  );
+
+  it.each(["owner", "vault"])(
+    "rechecks %s after the metadata read and retains cleanup handles on failure",
+    async (guard) => {
+      const s = await service();
+      const t = await s.createTunnel({
+        name: "Saved",
+        sshConnectionId: "base",
+        type: "dynamic",
+      });
+      let revoked = false;
+      const assertAccess = () => {
+        if (revoked) throw new Error("Access revoked");
+      };
+      const vault = {
+        facets: { username: "fixture", password: "synthetic" },
+        assertCurrent: guard === "vault" ? assertAccess : vi.fn(),
+      };
+      const original = mock.invoke.getMockImplementation()!;
+      mock.invoke.mockImplementation(async (cmd, args) => {
+        if (cmd === "get_ssh_port_forward") revoked = true;
+        if (cmd === "disconnect_ssh") throw new Error("cleanup unavailable");
+        return original(cmd, args);
+      });
+      await expect(
+        s.connectTunnel(t.id, base, {
+          assertCurrent: guard === "owner" ? assertAccess : undefined,
+          vault,
+        }),
+      ).rejects.toThrow("Access revoked");
+      expect(s.getTunnel(t.id)).toMatchObject({
+        needsCleanup: true,
+        sshSessionId: "session",
+        portForwardId: "forward",
+        status: "error",
+      });
+      expect(vault.facets).toEqual({});
+      mock.invoke.mockImplementation(original);
+      await s.disconnectTunnel(t.id);
+      expect(s.getTunnel(t.id)?.needsCleanup).toBe(false);
+    },
+  );
+
+  it.each([
+    { id: "different-forward" },
+    { config: { direction: "Remote" } },
+    { config: { local_port: 42002 } },
+    { config: { local_host: "0.0.0.0" } },
+    { config: { remote_host: "different.internal" } },
+    { config: { remote_port: 3388 } },
+    { config: { allow_non_loopback_bind: true } },
+  ])(
+    "rejects metadata that disagrees with the explicit requested forward %#",
+    async (changed) => {
+      const s = await service();
+      const t = await s.createTunnel({
+        ...params,
+        type: "local",
+        remoteHost: "target.internal",
+        remotePort: 3389,
+      });
+      const original = mock.invoke.getMockImplementation()!;
+      mock.invoke.mockImplementation(async (cmd, args) => {
+        const result = await original(cmd, args);
+        if (cmd !== "get_ssh_port_forward") return result;
+        return {
+          ...result,
+          ...changed,
+          config: { ...result.config, ...changed.config },
+        };
+      });
+      await expect(s.connectTunnel(t.id)).rejects.toThrow("bound port");
+      expect(mock.invoke).toHaveBeenCalledWith("disconnect_ssh", {
+        sessionId: "session",
+      });
+      expect(s.getTunnel(t.id)?.actualLocalPort).toBeUndefined();
+    },
+  );
 });
 
 describe("SSH tunnel secure standalone persistence and runtime", () => {

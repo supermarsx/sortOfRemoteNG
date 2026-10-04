@@ -6,6 +6,47 @@ use serde::{Deserialize, Serialize};
 pub const MIN_RDP_FULL_FRAME_SYNC_INTERVAL: u64 = 1;
 pub const MAX_RDP_FULL_FRAME_SYNC_INTERVAL: u64 = 1_000_000;
 
+/// Logical RDP server identity, independent of an SSH/loopback dial endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RdpTargetIdentity {
+    pub host: String,
+    pub port: u16,
+}
+
+impl RdpTargetIdentity {
+    pub fn credssp_server_name(&self) -> crate::ironrdp::connector::ServerName {
+        crate::ironrdp::connector::ServerName::new(&self.host)
+    }
+
+    pub fn resolve(
+        dial_host: &str,
+        dial_port: u16,
+        target_host: Option<&str>,
+        target_port: Option<u16>,
+    ) -> Result<Self, String> {
+        let (host, port) = match (target_host, target_port) {
+            (None, None) => (dial_host, dial_port),
+            (Some(host), Some(port)) => (host, port),
+            _ => return Err("RDP target host and port must be supplied together".into()),
+        };
+        if port == 0
+            || host.is_empty()
+            || host.len() > 253
+            || host.chars().any(|ch| ch.is_whitespace() || ch.is_control())
+            || rustls::pki_types::ServerName::try_from(host.to_owned()).is_err()
+        {
+            return Err(
+                "RDP target identity requires a valid DNS name or IP address and nonzero port"
+                    .into(),
+            );
+        }
+        Ok(Self {
+            host: host.to_owned(),
+            port,
+        })
+    }
+}
+
 // ---- Frontend RDP settings (mirrors TypeScript RdpConnectionSettings) ----
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -143,6 +184,99 @@ mod tests {
         MAX_RDP_FULL_FRAME_SYNC_INTERVAL, MIN_RDP_FULL_FRAME_SYNC_INTERVAL,
     };
     use std::time::Duration;
+
+    #[test]
+    fn target_identity_defaults_to_direct_endpoint() {
+        let settings = ResolvedSettings::from_payload(&RdpSettingsPayload::default(), 1280, 720);
+        let target = settings
+            .resolved_target_identity("rdp.fixture.test", 3390)
+            .unwrap();
+        assert_eq!(target.host, "rdp.fixture.test");
+        assert_eq!(target.port, 3390);
+        assert_eq!(target.credssp_server_name().as_str(), "rdp.fixture.test");
+        assert_eq!(settings._server_cert_validation, "validate");
+    }
+
+    #[test]
+    fn target_identity_survives_retry_clones_without_using_the_loopback_port() {
+        let mut settings =
+            ResolvedSettings::from_payload(&RdpSettingsPayload::default(), 1280, 720);
+        settings.target_identity = Some(
+            super::RdpTargetIdentity::resolve(
+                "127.0.0.1",
+                43189,
+                Some("rdp.fixture.test"),
+                Some(3391),
+            )
+            .unwrap(),
+        );
+        // The auto-detect/reconnect path retains settings with struct-update clones.
+        let retry = ResolvedSettings {
+            enable_credssp: false,
+            ..settings.clone()
+        };
+        let target = retry.resolved_target_identity("127.0.0.1", 53189).unwrap();
+        assert_eq!(target.host, "rdp.fixture.test");
+        assert_eq!(target.port, 3391);
+        assert_eq!(target.credssp_server_name().as_str(), "rdp.fixture.test");
+        assert_eq!(retry._server_cert_validation, "validate");
+    }
+
+    #[test]
+    fn target_identity_rejects_partial_or_ambiguous_overrides() {
+        use super::RdpTargetIdentity;
+        for (host, port) in [(Some("rdp.fixture.test"), None), (None, Some(3389))] {
+            assert!(RdpTargetIdentity::resolve("127.0.0.1", 43189, host, port).is_err());
+        }
+        for host in [
+            "",
+            " rdp.fixture.test",
+            "rdp.fixture.test ",
+            "https://rdp.fixture.test",
+            "rdp.fixture.test:3389",
+            "user@rdp.fixture.test",
+            "rdp.fixture.test/path",
+            "rdp.fixture.test\n",
+            "[::1]",
+        ] {
+            assert!(
+                RdpTargetIdentity::resolve("127.0.0.1", 43189, Some(host), Some(3389)).is_err()
+            );
+        }
+        assert!(
+            RdpTargetIdentity::resolve("127.0.0.1", 43189, Some("rdp.fixture.test"), Some(0))
+                .is_err()
+        );
+        assert!(RdpTargetIdentity::resolve("rdp.fixture.test", 0, None, None).is_err());
+    }
+
+    #[test]
+    fn target_identity_supports_dns_ipv4_ipv6_without_embedding_the_port_in_spn() {
+        for host in ["rdp.fixture.test", "192.0.2.10", "2001:db8::10"] {
+            let target =
+                super::RdpTargetIdentity::resolve("127.0.0.1", 43189, Some(host), Some(3391))
+                    .unwrap();
+            assert_eq!(target.credssp_server_name().as_str(), host);
+            assert_eq!(target.port, 3391);
+        }
+    }
+
+    #[test]
+    fn target_identity_is_not_accepted_from_persisted_rdp_settings() {
+        let payload: RdpSettingsPayload = serde_json::from_value(serde_json::json!({
+            "targetIdentity": {"host": "injected.fixture.test", "port": 1}
+        }))
+        .unwrap();
+        let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
+        assert!(settings.target_identity.is_none());
+        assert_eq!(
+            settings
+                .resolved_target_identity("rdp.fixture.test", 3389)
+                .unwrap()
+                .host,
+            "rdp.fixture.test"
+        );
+    }
 
     fn parse_clipboard_direction(value: &str) -> ClipboardDirection {
         serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
@@ -543,6 +677,8 @@ pub fn parse_keyboard_type(s: &str) -> crate::ironrdp::pdu::gcc::KeyboardType {
 /// Resolved settings used internally by the session runner (all defaults applied).
 #[derive(Clone)]
 pub struct ResolvedSettings {
+    /// Runtime-only: never infer certificate/CredSSP identity from a tunnel.
+    pub target_identity: Option<RdpTargetIdentity>,
     pub width: u16,
     pub height: u16,
     pub color_depth: u32,
@@ -646,6 +782,19 @@ pub struct DriveRedirectionConfig {
 }
 
 impl ResolvedSettings {
+    pub fn resolved_target_identity(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> Result<RdpTargetIdentity, String> {
+        match &self.target_identity {
+            Some(target) => {
+                RdpTargetIdentity::resolve(host, port, Some(&target.host), Some(target.port))
+            }
+            None => RdpTargetIdentity::resolve(host, port, None, None),
+        }
+    }
+
     pub fn from_payload(payload: &RdpSettingsPayload, width: u16, height: u16) -> Self {
         let display = payload.display.as_ref();
         let perf = payload.performance.as_ref();
@@ -685,6 +834,7 @@ impl ResolvedSettings {
         let enable_credssp_nla = sec.and_then(|s| s.enable_nla).unwrap_or(true);
 
         Self {
+            target_identity: None,
             width: w,
             height: h,
             color_depth: display.and_then(|d| d.color_depth).unwrap_or(32),

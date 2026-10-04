@@ -174,6 +174,8 @@ pub async fn connect_rdp(
     app_handle: AppHandle,
     host: String,
     port: u16,
+    target_host: Option<String>,
+    target_port: Option<u16>,
     username: String,
     password: String,
     domain: Option<String>,
@@ -187,6 +189,14 @@ pub async fn connect_rdp(
     // from the session thread to JS -- no base64, no event+invoke round-trip).
     frame_channel: Channel<InvokeResponseBody>,
 ) -> Result<String, String> {
+    // Validate before replacing an existing actor or sending network traffic.
+    // Absent fields retain the legacy direct-connection endpoint identity.
+    let target_identity = crate::rdp::settings::RdpTargetIdentity::resolve(
+        &host,
+        port,
+        target_host.as_deref(),
+        target_port,
+    )?;
     let replacement_selector = if let Some(ref connection_id) = connection_id {
         RdpConnectionSelector::ConnectionId(connection_id.clone())
     } else {
@@ -207,7 +217,8 @@ pub async fn connect_rdp(
     let requested_height = height.unwrap_or(1080);
 
     let payload = rdp_settings.unwrap_or_default();
-    let settings = ResolvedSettings::from_payload(&payload, requested_width, requested_height);
+    let mut settings = ResolvedSettings::from_payload(&payload, requested_width, requested_height);
+    settings.target_identity = Some(target_identity.clone());
     let actual_width = settings.width;
     let actual_height = settings.height;
     let cert_validation_mode =
@@ -218,6 +229,7 @@ pub async fn connect_rdp(
         connection_id: connection_id.clone(),
         host: host.clone(),
         port,
+        target_identity: Some(target_identity),
         username: username.clone(),
         connected: true,
         desktop_width: actual_width,

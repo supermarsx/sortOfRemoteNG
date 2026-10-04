@@ -353,23 +353,28 @@ pub fn tls_upgrade(
     leftover: ::bytes::BytesMut,
     cached_connector: Option<RdpTlsConfig>,
 ) -> Result<(Framed<RdpTlsStream>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
+    let peer_port = stream.peer_addr()?.port();
+    let target = super::settings::RdpTargetIdentity::resolve(server_name, peer_port, None, None)?;
+    tls_upgrade_for_target(stream, &target, leftover, cached_connector)
+}
+
+#[allow(clippy::type_complexity)]
+pub(super) fn tls_upgrade_for_target(
+    stream: TcpStream,
+    target: &super::settings::RdpTargetIdentity,
+    leftover: ::bytes::BytesMut,
+    cached_connector: Option<RdpTlsConfig>,
+) -> Result<(Framed<RdpTlsStream>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
     // Re-use the cached TLS config when available -- building one from
     // scratch loads the system certificate store which is very slow on Windows.
     let tls_config = match cached_connector {
         Some(config) => config,
         None => build_tls_config(true)?,
     };
-    let peer_port = stream
-        .peer_addr()
-        .map(|addr| addr.port())
-        .map_err(|error| format!("Failed to inspect TLS peer address: {error}"))?;
-
-    let server_name = ServerName::try_from(server_name.to_owned())
-        .map_err(|_| format!("Invalid TLS server name: {server_name}"))?;
+    let (server_name, _trust_context) = tls_target_context(target)?;
     let mut client = rustls::ClientConnection::new(tls_config, server_name)
         .map_err(|e| format!("TLS client creation failed: {e}"))?;
     let mut tcp_stream = stream;
-    let _trust_context = cert_trust::enter_tls_handshake_context(peer_port);
     client
         .complete_io(&mut tcp_stream)
         .map_err(|e| format!("TLS handshake failed: {e}"))?;
@@ -378,6 +383,97 @@ pub fn tls_upgrade(
     let server_public_key = extract_server_public_key(&tls_stream)?;
     let framed = Framed::new_with_leftover(tls_stream, leftover);
     Ok((framed, server_public_key))
+}
+
+fn tls_target_context(
+    target: &super::settings::RdpTargetIdentity,
+) -> Result<(ServerName<'static>, cert_trust::TlsHandshakeContextGuard), String> {
+    let target =
+        super::settings::RdpTargetIdentity::resolve(&target.host, target.port, None, None)?;
+    let name = ServerName::try_from(target.host).map_err(|_| "Invalid RDP TLS target identity")?;
+    Ok((name, cert_trust::enter_tls_handshake_context(target.port)))
+}
+
+#[cfg(test)]
+mod target_identity_tests {
+    use super::super::settings::RdpTargetIdentity;
+    use super::*;
+
+    #[test]
+    fn target_identity_tls_context_uses_original_port_and_restores_outer_scope() {
+        let _outer = cert_trust::enter_tls_handshake_context(43189);
+        let target =
+            RdpTargetIdentity::resolve("127.0.0.1", 43189, Some("rdp.fixture.test"), Some(3391))
+                .unwrap();
+        {
+            let (name, _scope) = tls_target_context(&target).unwrap();
+            assert_eq!(name, ServerName::try_from("rdp.fixture.test").unwrap());
+            assert_eq!(cert_trust::current_tls_port(), Some(3391));
+        }
+        assert_eq!(cert_trust::current_tls_port(), Some(43189));
+    }
+
+    #[test]
+    fn target_identity_tls_context_rejects_invalid_runtime_values_without_changing_scope() {
+        let _outer = cert_trust::enter_tls_handshake_context(43189);
+        let invalid = RdpTargetIdentity {
+            host: "https://rdp.fixture.test".into(),
+            port: 3389,
+        };
+        assert!(tls_target_context(&invalid).is_err());
+        assert_eq!(cert_trust::current_tls_port(), Some(43189));
+    }
+
+    #[test]
+    fn target_identity_client_hello_uses_original_sni_over_loopback_only() {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut acceptor = rustls::server::Acceptor::default();
+            loop {
+                assert_ne!(acceptor.read_tls(&mut socket).unwrap(), 0);
+                if let Some(accepted) = acceptor.accept().unwrap() {
+                    return accepted.client_hello().server_name().unwrap().to_owned();
+                }
+            }
+        });
+        let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(rustls::RootCertStore::empty())
+        .with_no_client_auth();
+        let socket = TcpStream::connect(address).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        socket
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let target = RdpTargetIdentity::resolve(
+            "127.0.0.1",
+            address.port(),
+            Some("rdp.fixture.test"),
+            Some(3391),
+        )
+        .unwrap();
+        // No certificate or credentials supplied: the fixture stops after the
+        // ClientHello, so TLS must fail rather than silently trust the endpoint.
+        assert!(tls_upgrade_for_target(
+            socket,
+            &target,
+            Default::default(),
+            Some(Arc::new(config))
+        )
+        .is_err());
+        assert_eq!(server.join().unwrap(), "rdp.fixture.test");
+    }
 }
 
 pub fn extract_server_public_key(

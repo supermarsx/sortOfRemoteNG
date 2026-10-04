@@ -31,7 +31,7 @@ use super::frame_store::SharedFrameStoreState;
 #[cfg(feature = "rdp-multimon")]
 use super::multimon::build_display_control_messages;
 use super::network::{
-    extract_cert_details, extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient,
+    extract_cert_details, extract_cert_fingerprint, tls_upgrade_for_target, BlockingNetworkClient,
 };
 use super::session_state::{ChannelSummary, FailureClass, FrameFlowSummary};
 use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSettings};
@@ -1233,6 +1233,7 @@ fn establish_rdp_connection(
     frame_store: &SharedFrameStoreState,
     log_sink: &LogSink,
 ) -> Result<EstablishedSession, Box<dyn std::error::Error + Send + Sync>> {
+    let target_identity = settings.resolved_target_identity(host, port)?;
     let conn_start = Instant::now();
 
     // -- 0. Pre-flight shutdown check --
@@ -1584,7 +1585,7 @@ fn establish_rdp_connection(
 
     let (tcp_stream, leftover) = framed.into_inner();
     let (mut tls_framed, server_public_key) =
-        tls_upgrade(tcp_stream, host, leftover, cached_tls_connector)?;
+        tls_upgrade_for_target(tcp_stream, &target_identity, leftover, cached_tls_connector)?;
     let tls_ms = t_tls.elapsed().as_millis();
     log::info!("RDP session {session_id}: TLS upgrade took {tls_ms}ms");
     log::info!(
@@ -1602,8 +1603,8 @@ fn establish_rdp_connection(
                 serde_json::to_value(serde_json::json!({
                     "session_id": session_id,
                     "fingerprint": details.fingerprint,
-                    "host": host,
-                    "port": port,
+                    "host": target_identity.host,
+                    "port": target_identity.port,
                     "subject": details.subject,
                     "issuer": details.issuer,
                     "valid_from": details.valid_from,
@@ -1622,8 +1623,8 @@ fn establish_rdp_connection(
                 serde_json::to_value(serde_json::json!({
                     "session_id": session_id,
                     "fingerprint": fp,
-                    "host": host,
-                    "port": port,
+                    "host": target_identity.host,
+                    "port": target_identity.port,
                 }))
                 .unwrap_or_default(),
             );
@@ -1664,7 +1665,7 @@ fn establish_rdp_connection(
         cached_http_client,
         super::cert_trust::ServerCertValidationMode::from_value(&settings._server_cert_validation),
     );
-    let server_name = crate::ironrdp::connector::ServerName::new(host);
+    let server_name = target_identity.credssp_server_name();
 
     let connection_result: ConnectionResult = crate::ironrdp_blocking::connect_finalize(
         upgraded,

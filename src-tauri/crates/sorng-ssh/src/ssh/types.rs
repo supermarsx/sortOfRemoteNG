@@ -555,6 +555,8 @@ pub struct SshSessionInfo {
 pub struct SshSession {
     pub id: String,
     pub session: Session,
+    /// Shared by every channel creator and relay using this native session.
+    pub(crate) channel_open: Arc<super::service::ChannelOpenGate>,
     pub config: SshConnectionConfig,
     pub connected_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
@@ -1002,7 +1004,7 @@ pub struct FtpTunnelStatus {
 /// Configuration for RDP over SSH tunnel
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RdpTunnelConfig {
-    /// Local port for RDP connection (default: dynamically assigned starting from 13389)
+    /// Local port for RDP connection (omitted or zero: OS-assigned available port)
     pub local_port: Option<u16>,
     /// Remote RDP server host (relative to SSH server)
     pub remote_rdp_host: String,
@@ -1071,7 +1073,7 @@ pub struct RdpFileOptions {
 /// Configuration for VNC over SSH tunnel
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VncTunnelConfig {
-    /// Local port for VNC connection (default: dynamically assigned starting from 15900)
+    /// Local port for VNC connection (omitted or zero: OS-assigned available port)
     pub local_port: Option<u16>,
     /// Remote VNC server host (relative to SSH server)
     pub remote_vnc_host: String,

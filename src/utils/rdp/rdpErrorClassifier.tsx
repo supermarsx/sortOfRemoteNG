@@ -5,7 +5,7 @@
  * unit-tested and reused (e.g. in logging / telemetry).
  */
 
-import React from 'react';
+import React from "react";
 import {
   RefreshCw,
   ShieldAlert,
@@ -16,32 +16,33 @@ import {
   Network,
   Shield,
   Timer,
-} from 'lucide-react';
+} from "lucide-react";
 
 /* ── Types ───────────────────────────────────────────────────────── */
 
 export type RDPErrorCategory =
-  | 'duplicate_session'
-  | 'negotiation_failure'
-  | 'credssp_post_auth'
-  | 'credssp_oracle'
-  | 'credentials'
-  | 'timeout'
-  | 'network'
-  | 'tls'
-  | 'unknown';
+  | "duplicate_session"
+  | "negotiation_failure"
+  | "credssp_post_auth"
+  | "credssp_oracle"
+  | "credentials"
+  | "licensing"
+  | "timeout"
+  | "network"
+  | "tls"
+  | "unknown";
 
 export interface DiagnosticCause {
   icon: React.ReactNode;
   title: string;
   description: string;
   remediation: string[];
-  severity: 'high' | 'medium' | 'low';
+  severity: "high" | "medium" | "low";
 }
 
 export interface DiagnosticStepResult {
   name: string;
-  status: 'pass' | 'fail' | 'skip' | 'warn' | 'info';
+  status: "pass" | "fail" | "skip" | "warn" | "info";
   message: string;
   durationMs: number;
   detail: string | null;
@@ -60,262 +61,358 @@ export interface DiagnosticReportResult {
 
 /* ── Classification ──────────────────────────────────────────────── */
 
+function isRdpLicensingFailure(msg: string): boolean {
+  // MS-RDPBCGR 2.2.1.12.1.3: LicensingErrorMessage can also carry the
+  // successful STATUS_VALID_CLIENT notification. Its name alone must not
+  // turn that status into a licensing refusal.
+  const licensingPacket = /\blicens(?:ing|e)[ _-]*error[ _-]*message\b/.test(
+    msg,
+  );
+  const validClient = /\b(?:status_valid_client|validclient)\b/.test(msg);
+  if (licensingPacket) return !validClient;
+  if (/\berrinfo_license_[a-z_]+\b/.test(msg)) return true;
+
+  // InvalidClient is also used by OAuth and other protocols. Require an RDP
+  // licensing context for ambiguous words/codes, and keep failure wording
+  // adjacent to licensing so a successful license step + TLS failure stays TLS.
+  const rdpContext =
+    /\b(?:rdp|rds|remote desktop|rd session host|terminal server)\b/.test(msg);
+  if (!rdpContext) return false;
+  if (/\blicensenolicense(?:server)?\b/.test(msg)) return true;
+  if (
+    /\blicensing\b/.test(msg) &&
+    /\berr_(?:invalid_client|invalid_scope|invalid_productid|invalid_message_len|invalid_mac|invalid_server_certificate|no_license|no_license_server)\b/.test(
+      msg,
+    )
+  )
+    return true;
+  return (
+    /\blicens(?:ing|e) (?:protocol |negotiation |exchange )?(?:failed|failure|error|refused|rejected)\b/.test(
+      msg,
+    ) ||
+    /\berror in (?:the )?licensing protocol\b/.test(msg) ||
+    /\blicen[cs]e servers? (?:is |are )?(?:unavailable|not available)\b/.test(
+      msg,
+    ) ||
+    /\blicensing mode (?:is )?not configured\b/.test(msg) ||
+    /\bno (?:remote desktop )?(?:client access )?licen[cs]es?(?: servers?)? (?:are )?available\b/.test(
+      msg,
+    )
+  );
+}
+
 export function classifyRdpError(raw: string): RDPErrorCategory {
   const msg = raw.toLowerCase();
-  if (msg.includes('already active or connecting')) {
-    return 'duplicate_session';
+  if (msg.includes("already active or connecting")) {
+    return "duplicate_session";
+  }
+  // Inspect the licensing error before generic TLS/credential/timeout words:
+  // connect_finalize diagnostics append tls=... and auth_elapsed=... timings.
+  if (isRdpLicensingFailure(msg)) return "licensing";
+  if (
+    msg.includes("negotiation failure") ||
+    (msg.includes("connect_begin") &&
+      (msg.includes("negotiat") || msg.includes("security"))) ||
+    (msg.includes("requires") && msg.includes("enhanced rdp security")) ||
+    (msg.includes("required protocols") && msg.includes("not enabled"))
+  ) {
+    return "negotiation_failure";
   }
   if (
-    msg.includes('negotiation failure') ||
-    (msg.includes('connect_begin') &&
-      (msg.includes('negotiat') || msg.includes('security'))) ||
-    (msg.includes('requires') && msg.includes('enhanced rdp security')) ||
-    (msg.includes('required protocols') && msg.includes('not enabled'))
+    (msg.includes("10054") || msg.includes("forcibly closed")) &&
+    (msg.includes("connect_finalize") ||
+      msg.includes("nla") ||
+      msg.includes("credssp"))
   ) {
-    return 'negotiation_failure';
+    return "credssp_post_auth";
   }
   if (
-    (msg.includes('10054') || msg.includes('forcibly closed')) &&
-    (msg.includes('connect_finalize') || msg.includes('nla') || msg.includes('credssp'))
+    msg.includes("credssp") &&
+    (msg.includes("oracle") || msg.includes("encryption"))
   ) {
-    return 'credssp_post_auth';
-  }
-  if (msg.includes('credssp') && (msg.includes('oracle') || msg.includes('encryption'))) {
-    return 'credssp_oracle';
-  }
-  if (msg.includes('logon') || msg.includes('password') || msg.includes('credential') || msg.includes('account')) {
-    return 'credentials';
-  }
-  if (msg.includes('tls') || msg.includes('ssl') || msg.includes('certificate')) {
-    return 'tls';
+    return "credssp_oracle";
   }
   if (
-    msg.includes('timed out') ||
-    msg.includes('timeout') ||
-    msg.includes('deadline') ||
-    msg.includes('elapsed') ||
-    (msg.includes('connect') && msg.includes('time'))
+    msg.includes("logon") ||
+    msg.includes("password") ||
+    msg.includes("credential") ||
+    msg.includes("account")
   ) {
-    return 'timeout';
+    return "credentials";
   }
-  if (msg.includes('refused') || msg.includes('unreachable') || msg.includes('dns') || msg.includes('no route') || msg.includes('host not found')) {
-    return 'network';
+  if (
+    msg.includes("tls") ||
+    msg.includes("ssl") ||
+    msg.includes("certificate")
+  ) {
+    return "tls";
   }
-  return 'unknown';
+  if (
+    msg.includes("timed out") ||
+    msg.includes("timeout") ||
+    msg.includes("deadline") ||
+    msg.includes("elapsed") ||
+    (msg.includes("connect") && msg.includes("time"))
+  ) {
+    return "timeout";
+  }
+  if (
+    msg.includes("refused") ||
+    msg.includes("unreachable") ||
+    msg.includes("dns") ||
+    msg.includes("no route") ||
+    msg.includes("host not found")
+  ) {
+    return "network";
+  }
+  return "unknown";
 }
 
 /* ── Diagnostic suggestions ──────────────────────────────────────── */
 
-export function buildRdpDiagnostics(category: RDPErrorCategory): DiagnosticCause[] {
+export function buildRdpDiagnostics(
+  category: RDPErrorCategory,
+): DiagnosticCause[] {
   switch (category) {
-    case 'duplicate_session':
+    case "licensing":
       return [
         {
-          icon: <RefreshCw size={20} className="text-yellow-400" />,
-          title: 'Duplicate connection attempt',
+          icon: (
+            <ShieldAlert size={20} className="text-[var(--color-warning)]" />
+          ),
+          title: "RDP licensing refused",
           description:
-            'Another session to this server with the same credentials is already being established. ' +
-            'This is often caused by React StrictMode\'s double-mount during development, or by rapidly clicking "Connect" twice.',
+            "The RDP licensing exchange was rejected or could not complete. This error alone does not prove that CALs are missing or that the password is wrong. The raw error retains the licensing code and state transition for investigation.",
+          // Microsoft: https://learn.microsoft.com/en-us/troubleshoot/windows-server/remote/cannot-connect-rds-no-license-server
           remediation: [
-            'Click "Retry Connection" below — the stale session will be evicted automatically.',
-            'If this keeps happening in production, ensure only one tab or window is connecting to this host.',
+            "Ask the RDS administrator to run RD Licensing Diagnoser on the RD Session Host and review the licensing events for the failed connection.",
+            "Verify the configured RD license server is activated, its licensing service is running, and the RD Session Host can reach it.",
+            "Verify the effective licensing mode (Per User or Per Device), including Group Policy, matches the deployment and installed licenses.",
+            "Check RDS CAL availability, type, and version compatibility with the RD Session Host and license server.",
+            "If those checks pass, give the administrator the raw licensing error and compare with a supported RDP client to investigate client/server licensing compatibility. Retry after the licensing checks or corrective action.",
           ],
-          severity: 'low',
+          severity: "high",
         },
       ];
 
-    case 'negotiation_failure':
+    case "duplicate_session":
+      return [
+        {
+          icon: <RefreshCw size={20} className="text-yellow-400" />,
+          title: "Duplicate connection attempt",
+          description:
+            "Another session to this server with the same credentials is already being established. " +
+            'This is often caused by React StrictMode\'s double-mount during development, or by rapidly clicking "Connect" twice.',
+          remediation: [
+            'Click "Retry Connection" below — the stale session will be evicted automatically.',
+            "If this keeps happening in production, ensure only one tab or window is connecting to this host.",
+          ],
+          severity: "low",
+        },
+      ];
+
+    case "negotiation_failure":
       return [
         {
           icon: <ShieldAlert size={20} className="text-amber-400" />,
-          title: 'Server requires Enhanced RDP Security (CredSSP / NLA)',
+          title: "Server requires Enhanced RDP Security (CredSSP / NLA)",
           description:
-            'The RDP server requires Enhanced RDP Security with CredSSP (Network Level Authentication) ' +
-            'but the current connection settings do not offer it, or the server rejected the offered ' +
-            'security protocol during X.224 negotiation.',
+            "The RDP server requires Enhanced RDP Security with CredSSP (Network Level Authentication) " +
+            "but the current connection settings do not offer it, or the server rejected the offered " +
+            "security protocol during X.224 negotiation.",
           remediation: [
             'In this connection\'s Security settings, ensure "Use CredSSP / NLA" is enabled.',
             'Try enabling "Auto-detect negotiation" so the app can find a working protocol automatically.',
             'If the server requires HYBRID_EX, enable "Allow Hybrid Extended Security" in Security settings.',
             'On the server, check "Security Layer" in RD Session Host Configuration — if set to "Negotiate" or "SSL (TLS 1.0)", the server should accept TLS without CredSSP.',
           ],
-          severity: 'high',
+          severity: "high",
         },
         {
           icon: <Lock size={20} className="text-yellow-400" />,
-          title: 'Protocol mismatch',
+          title: "Protocol mismatch",
           description:
-            'The client offered a security protocol (e.g. TLS-only, plain) that the server does not support. ' +
-            'Most modern Windows servers require NLA/CredSSP.',
+            "The client offered a security protocol (e.g. TLS-only, plain) that the server does not support. " +
+            "Most modern Windows servers require NLA/CredSSP.",
           remediation: [
             'Switch the negotiation strategy to "NLA First" or "Auto" in the Negotiation settings tab.',
             'On the server, verify Remote Desktop → Advanced → "Require Network Level Authentication" is consistent with your settings.',
           ],
-          severity: 'medium',
+          severity: "medium",
         },
       ];
 
-    case 'credssp_post_auth':
+    case "credssp_post_auth":
       return [
         {
           icon: <KeyRound size={20} className="text-red-400" />,
-          title: 'Incorrect credentials or domain',
+          title: "Incorrect credentials or domain",
           description:
-            'The server accepted the TLS handshake but rejected the NLA/CredSSP credentials. The username, password, or domain may be wrong.',
+            "The server accepted the TLS handshake but rejected the NLA/CredSSP credentials. The username, password, or domain may be wrong.",
           remediation: [
-            'Double-check the username, password, and domain fields on this connection.',
-            'Try the format DOMAIN\\user or user@domain.tld if you haven\'t already.',
-            'Test the credentials by logging into the machine locally or via another RDP client.',
+            "Double-check the username, password, and domain fields on this connection.",
+            "Try the format DOMAIN\\user or user@domain.tld if you haven't already.",
+            "Test the credentials by logging into the machine locally or via another RDP client.",
           ],
-          severity: 'high',
+          severity: "high",
         },
         {
           icon: <UserX size={20} className="text-orange-400" />,
-          title: 'Missing Remote Desktop permission',
+          title: "Missing Remote Desktop permission",
           description:
             'The account may not have the "Allow log on through Remote Desktop Services" user right, or it is not in the Remote Desktop Users group.',
           remediation: [
-            'On the target machine, open System Properties → Remote → Select Users, and add the account.',
+            "On the target machine, open System Properties → Remote → Select Users, and add the account.",
             'Or add the account to the "Remote Desktop Users" local group via Computer Management → Local Users and Groups.',
             'For domain-joined machines, check Group Policy for "Allow log on through Remote Desktop Services".',
           ],
-          severity: 'high',
+          severity: "high",
         },
         {
           icon: <Lock size={20} className="text-yellow-400" />,
-          title: 'Account locked or disabled',
+          title: "Account locked or disabled",
           description:
-            'The Windows account may be locked out (too many failed attempts) or disabled by an administrator.',
+            "The Windows account may be locked out (too many failed attempts) or disabled by an administrator.",
           remediation: [
-            'Check Active Directory or local Computer Management → Users to see if the account is locked / disabled.',
-            'Unlock the account and try again.',
-            'If the account has expired, contact your domain administrator.',
+            "Check Active Directory or local Computer Management → Users to see if the account is locked / disabled.",
+            "Unlock the account and try again.",
+            "If the account has expired, contact your domain administrator.",
           ],
-          severity: 'medium',
+          severity: "medium",
         },
         {
           icon: <ShieldAlert size={20} className="text-purple-400" />,
-          title: 'CredSSP Encryption Oracle Remediation policy',
+          title: "CredSSP Encryption Oracle Remediation policy",
           description:
             'If the server enforces "Force Updated Clients", clients that are not fully patched (or whose policy is set to "Vulnerable") will be rejected after NLA.',
           remediation: [
             'On the server, run gpedit.msc → Computer Configuration → Administrative Templates → System → Credentials Delegation → "Encryption Oracle Remediation".',
             'Set the policy to "Mitigated" or "Vulnerable" temporarily to confirm this is the cause.',
-            'Ensure both client and server have the latest Windows updates for CredSSP (CVE-2018-0886).',
-            'In this app\'s connection settings, try toggling CredSSP off or switching the negotiation strategy.',
+            "Ensure both client and server have the latest Windows updates for CredSSP (CVE-2018-0886).",
+            "In this app's connection settings, try toggling CredSSP off or switching the negotiation strategy.",
           ],
-          severity: 'high',
+          severity: "high",
         },
       ];
 
-    case 'credssp_oracle':
+    case "credssp_oracle":
       return [
         {
           icon: <ShieldAlert size={20} className="text-purple-400" />,
-          title: 'CredSSP Oracle Remediation mismatch',
+          title: "CredSSP Oracle Remediation mismatch",
           description:
-            'The client and server disagree on the CredSSP encryption oracle remediation level.',
+            "The client and server disagree on the CredSSP encryption oracle remediation level.",
           remediation: [
-            'Ensure both machines are fully patched.',
+            "Ensure both machines are fully patched.",
             'Adjust the "Encryption Oracle Remediation" GPO on the server.',
-            'Try disabling CredSSP in this app\'s connection settings and using TLS-only security.',
+            "Try disabling CredSSP in this app's connection settings and using TLS-only security.",
           ],
-          severity: 'high',
+          severity: "high",
         },
       ];
 
-    case 'credentials':
+    case "credentials":
       return [
         {
           icon: <KeyRound size={20} className="text-red-400" />,
-          title: 'Authentication failure',
-          description: 'The server rejected the supplied credentials.',
+          title: "Authentication failure",
+          description: "The server rejected the supplied credentials.",
           remediation: [
-            'Verify the username, password, and domain.',
-            'Ensure the account is not locked or expired.',
+            "Verify the username, password, and domain.",
+            "Ensure the account is not locked or expired.",
           ],
-          severity: 'high',
+          severity: "high",
         },
       ];
 
-    case 'tls':
+    case "tls":
       return [
         {
           icon: <Shield size={20} className="text-blue-400" />,
-          title: 'TLS / Certificate error',
-          description: 'The TLS handshake with the server failed, possibly due to certificate issues.',
+          title: "TLS / Certificate error",
+          description:
+            "The TLS handshake with the server failed, possibly due to certificate issues.",
           remediation: [
-            'Check that the server\'s certificate is valid and trusted.',
+            "Check that the server's certificate is valid and trusted.",
             'Try enabling "Ignore certificate errors" in security settings if available.',
-            'Ensure the server supports TLS 1.2 or higher.',
+            "Ensure the server supports TLS 1.2 or higher.",
           ],
-          severity: 'high',
+          severity: "high",
         },
       ];
 
-    case 'timeout':
+    case "timeout":
       return [
         {
           icon: <Timer size={20} className="text-[var(--color-warning)]" />,
-          title: 'Connection timed out',
+          title: "Connection timed out",
           description:
-            'The connection attempt exceeded the configured timeout. The target machine may be unreachable, ' +
-            'a firewall may be silently dropping packets (instead of rejecting them), or the RDP service is overloaded.',
+            "The connection attempt exceeded the configured timeout. The target machine may be unreachable, " +
+            "a firewall may be silently dropping packets (instead of rejecting them), or the RDP service is overloaded.",
           remediation: [
-            'Verify the target machine is powered on and reachable: try pinging the hostname or IP.',
+            "Verify the target machine is powered on and reachable: try pinging the hostname or IP.",
             'Check that port 3389 (or your custom RDP port) is not blocked by a firewall — silent drops cause timeouts, while active blocks cause "refused" errors.',
-            'Increase the TCP connect timeout in the connection\'s TCP / Socket settings (default is 10 seconds).',
-            'If connecting over a VPN, ensure the VPN tunnel is active and the remote subnet is routable.',
-            'Try connecting by IP address directly to rule out DNS resolution delays.',
-            'On the target, verify Remote Desktop is enabled: System Properties → Remote → Allow remote connections.',
+            "Increase the TCP connect timeout in the connection's TCP / Socket settings (default is 10 seconds).",
+            "If connecting over a VPN, ensure the VPN tunnel is active and the remote subnet is routable.",
+            "Try connecting by IP address directly to rule out DNS resolution delays.",
+            "On the target, verify Remote Desktop is enabled: System Properties → Remote → Allow remote connections.",
           ],
-          severity: 'high',
+          severity: "high",
         },
         {
           icon: <Network size={20} className="text-[var(--color-textMuted)]" />,
-          title: 'Firewall silently dropping traffic',
+          title: "Firewall silently dropping traffic",
           description:
             'Unlike a "connection refused" error (which comes back instantly), a timeout usually indicates ' +
-            'a firewall is silently discarding packets without sending a rejection. This is common with ' +
-            'Windows Firewall, cloud security groups, or network ACLs.',
+            "a firewall is silently discarding packets without sending a rejection. This is common with " +
+            "Windows Firewall, cloud security groups, or network ACLs.",
           remediation: [
             'On the target: ensure Windows Firewall allows inbound TCP 3389 — run: netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389.',
-            'In cloud environments (Azure, AWS, GCP): check the Network Security Group / Security Group rules allow TCP 3389 from your source IP.',
+            "In cloud environments (Azure, AWS, GCP): check the Network Security Group / Security Group rules allow TCP 3389 from your source IP.",
             'Try running "Test-NetConnection <host> -Port 3389" from a machine on the same network to isolate the issue.',
           ],
-          severity: 'medium',
+          severity: "medium",
         },
       ];
 
-    case 'network':
+    case "network":
       return [
         {
-          icon: <Network size={20} className="text-[var(--color-textSecondary)]" />,
-          title: 'Network connectivity issue',
-          description: 'Could not establish a TCP connection to the target host.',
+          icon: (
+            <Network size={20} className="text-[var(--color-textSecondary)]" />
+          ),
+          title: "Network connectivity issue",
+          description:
+            "Could not establish a TCP connection to the target host.",
           remediation: [
-            'Verify the hostname/IP and port are correct.',
-            'Check that port 3389 (or custom port) is open on the target firewall.',
-            'Ensure there is no VPN or network segmentation blocking the path.',
-            'Try pinging the host to verify basic reachability.',
+            "Verify the hostname/IP and port are correct.",
+            "Check that port 3389 (or custom port) is open on the target firewall.",
+            "Ensure there is no VPN or network segmentation blocking the path.",
+            "Try pinging the host to verify basic reachability.",
           ],
-          severity: 'high',
+          severity: "high",
         },
       ];
 
-    case 'unknown':
+    case "unknown":
     default:
       return [
         {
-          icon: <ServerCrash size={20} className="text-[var(--color-textSecondary)]" />,
-          title: 'Unexpected connection failure',
-          description: 'The connection failed for an unrecognised reason. See the full error below for details.',
+          icon: (
+            <ServerCrash
+              size={20}
+              className="text-[var(--color-textSecondary)]"
+            />
+          ),
+          title: "Unexpected connection failure",
+          description:
+            "The connection failed for an unrecognised reason. See the full error below for details.",
           remediation: [
-            'Review the full error message and search for the key phrase online.',
-            'Try different security / negotiation settings on this connection.',
-            'Enable auto-detect negotiation to let the app try multiple protocol configurations.',
+            "Review the full error message and search for the key phrase online.",
+            "Try different security / negotiation settings on this connection.",
+            "Enable auto-detect negotiation to let the app try multiple protocol configurations.",
           ],
-          severity: 'medium',
+          severity: "medium",
         },
       ];
   }
@@ -324,13 +421,14 @@ export function buildRdpDiagnostics(category: RDPErrorCategory): DiagnosticCause
 /* ── Labels ──────────────────────────────────────────────────────── */
 
 export const RDP_ERROR_CATEGORY_LABELS: Record<RDPErrorCategory, string> = {
-  duplicate_session: 'Duplicate Session',
-  negotiation_failure: 'Security Negotiation Failure',
-  credssp_post_auth: 'Post-Authentication Rejection (NLA / CredSSP)',
-  credssp_oracle: 'CredSSP Encryption Oracle Mismatch',
-  credentials: 'Authentication Failure',
-  timeout: 'Connection Timed Out',
-  network: 'Network / Connectivity',
-  tls: 'TLS / Certificate',
-  unknown: 'Connection Error',
+  duplicate_session: "Duplicate Session",
+  negotiation_failure: "Security Negotiation Failure",
+  credssp_post_auth: "Post-Authentication Rejection (NLA / CredSSP)",
+  credssp_oracle: "CredSSP Encryption Oracle Mismatch",
+  credentials: "Authentication Failure",
+  licensing: "RDP Licensing Failure",
+  timeout: "Connection Timed Out",
+  network: "Network / Connectivity",
+  tls: "TLS / Certificate",
+  unknown: "Connection Error",
 };

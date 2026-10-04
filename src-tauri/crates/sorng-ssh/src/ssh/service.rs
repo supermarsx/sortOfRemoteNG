@@ -34,6 +34,11 @@ use super::shell_runtime::{
 use super::types::*;
 use super::PENDING_HOST_KEY_PROMPTS;
 
+#[path = "forward_relay.rs"]
+mod forward_relay;
+pub(crate) use forward_relay::ChannelOpenGate;
+use forward_relay::{relay_nonblocking, ForwardChannel, RelayOwner, SessionOperation};
+
 /// Bounded capacity, in 32 KiB relay chunks, for each direction of an SSH
 /// port-forward / tunnel byte relay. 32 * 32 KiB = 1 MiB in flight per direction
 /// per forward: large enough to keep the SSH channel and TCP window busy, but a
@@ -1726,19 +1731,22 @@ fn validate_script_execution_id(execution_id: Option<String>) -> Result<String, 
 
 fn upload_script_via_scp(
     session: &Session,
+    operation: &SessionOperation,
     remote_path: &str,
     script: &str,
     interpreter: &str,
 ) -> Result<(), String> {
     let full_script = prepare_uploaded_script(script, interpreter);
     let script_bytes = full_script.as_bytes();
-    let mut channel = session
-        .scp_send(
-            Path::new(remote_path),
-            0o700,
-            script_bytes.len() as u64,
-            None,
-        )
+    let mut channel = operation
+        .native_open(|| {
+            session.scp_send(
+                Path::new(remote_path),
+                0o700,
+                script_bytes.len() as u64,
+                None,
+            )
+        })
         .map_err(|e| format!("Failed to open SCP channel for script upload: {}", e))?;
     channel
         .write_all(script_bytes)
@@ -1757,9 +1765,9 @@ fn upload_script_via_scp(
 }
 
 /// Best-effort removal of the uploaded temp script. Expects blocking mode.
-fn remove_remote_script(session: &Session, remote_path: &str) {
+fn remove_remote_script(session: &Session, operation: &SessionOperation, remote_path: &str) {
     session.set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
-    if let Ok(mut rm_ch) = session.channel_session() {
+    if let Ok(mut rm_ch) = operation.native_open(|| session.channel_session()) {
         let rm_cmd = format!(
             "rm -f {}",
             shell_escape::escape(remote_path.to_string().into())
@@ -3884,7 +3892,11 @@ impl SshService {
     }
 
     pub fn is_session_alive(&self, session_id: &str) -> bool {
-        if !self.sessions.contains_key(session_id) {
+        if !self
+            .sessions
+            .get(session_id)
+            .is_some_and(|session| session.channel_open.ensure_healthy().is_ok())
+        {
             return false;
         }
         match self.shells.get(session_id) {
@@ -4065,6 +4077,7 @@ impl SshService {
         let mut session = SshSession {
             id: session_id.clone(),
             session: sess,
+            channel_open: Arc::new(ChannelOpenGate::default()),
             config: config.clone(),
             connected_at: Utc::now(),
             last_activity: Utc::now(),
@@ -4782,42 +4795,17 @@ impl SshService {
             };
             drop(listener);
 
-            stream.set_read_timeout(Some(Duration::from_millis(2))).ok();
-            stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
-
-            let mut buf = [0u8; 32768];
-            loop {
-                // channel → local stream
-                match channel.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if stream.write_all(&buf[..n]).is_err() {
-                            break;
-                        }
-                        stream.flush().ok();
-                    }
-                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
-                    Err(_) => break,
-                }
-
-                // local stream → channel
-                match stream.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if channel.write_all(&buf[..n]).is_err() {
-                            break;
-                        }
-                        channel.flush().ok();
-                    }
-                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
-                    Err(ref e) if e.kind() == ErrorKind::TimedOut => {}
-                    Err(_) => break,
-                }
-
-                if channel.eof() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(1));
+            if stream.set_nonblocking(true).is_err() {
+                return;
+            }
+            let _ = stream.set_nodelay(true);
+            // The owning jump session is already nonblocking. Preserve
+            // partial writes in both directions and never channel.flush():
+            // libssh2 defines that operation as discarding inbound bytes.
+            if let Err(error) =
+                relay_nonblocking(&mut stream, &mut channel, &AtomicBool::new(false))
+            {
+                log::debug!("SSH jump bridge relay ended: {error}");
             }
         });
 
@@ -6336,6 +6324,12 @@ impl SshService {
             return Err("Session not found".to_string());
         }
 
+        let _session_operation = self
+            .sessions
+            .get(session_id)
+            .ok_or("Session not found")?
+            .channel_open
+            .operation()?;
         let shell_pause = self.pause_shell_io(session_id);
         let session = self
             .sessions
@@ -6353,9 +6347,11 @@ impl SshService {
         }
 
         let result = (|| -> Result<super::integration::SshCommandOutput, String> {
-            let mut channel = session.session.channel_session().map_err(|error| {
-                Self::cap_command_error(format!("Failed to create channel: {error}"))
-            })?;
+            let mut channel = _session_operation
+                .native_open(|| session.session.channel_session())
+                .map_err(|error| {
+                    Self::cap_command_error(format!("Failed to create channel: {error}"))
+                })?;
 
             // Keep channel setup blocking, then alternate non-blocking reads
             // across both streams so neither stream can starve the other.
@@ -6533,12 +6529,12 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
+        let _session_operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
-        let mut channel = session
-            .session
-            .channel_session()
+        let mut channel = _session_operation
+            .native_open(|| session.session.channel_session())
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
         channel
@@ -6566,6 +6562,11 @@ impl SshService {
         session_id: &str,
         event_emitter: DynEventEmitter,
     ) -> Result<String, String> {
+        self.sessions
+            .get(session_id)
+            .ok_or("Session not found")?
+            .channel_open
+            .ensure_healthy()?;
         self.prune_finished_shell(session_id);
         if let Some(existing) = self.shells.get(session_id) {
             return Ok(existing.id.clone());
@@ -6584,14 +6585,14 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
+        let _session_operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
         session.session.set_blocking(true);
 
-        let mut channel = session
-            .session
-            .channel_session()
+        let mut channel = _session_operation
+            .native_open(|| session.session.channel_session())
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
         if session.config.agent_forwarding {
@@ -6940,11 +6941,35 @@ impl SshService {
         }
     }
 
+    /// Read live runtime metadata only from the requested owning session.
+    /// In particular, an auto-bound forward reports its actual listener port.
+    pub fn get_port_forward_info(
+        &self,
+        session_id: &str,
+        forward_id: &str,
+    ) -> Result<PortForwardInfo, String> {
+        let session = self.sessions.get(session_id).ok_or("Session not found")?;
+        let forward = session
+            .port_forwards
+            .get(forward_id)
+            .filter(|forward| !forward.handle.is_finished())
+            .ok_or("Port forward is not active in this session")?;
+        Ok(PortForwardInfo {
+            id: forward.id.clone(),
+            config: forward.config.clone(),
+        })
+    }
+
     pub async fn setup_port_forward(
         &mut self,
         session_id: &str,
         config: PortForwardConfig,
     ) -> Result<String, String> {
+        self.sessions
+            .get(session_id)
+            .ok_or("Session not found")?
+            .channel_open
+            .ensure_healthy()?;
         let forward_id = Uuid::new_v4().to_string();
 
         let handle = match config.direction {
@@ -7022,21 +7047,41 @@ impl SshService {
         }
     }
 
+    /// Bind once and retain that exact listener. Port zero asks the OS to
+    /// allocate an available port atomically, not probe one to rebind later.
+    fn bind_forward_listener(
+        config: &PortForwardConfig,
+        kind: &str,
+    ) -> Result<(TcpListener, PortForwardConfig, SocketAddr), String> {
+        let bind_host = Self::resolve_forward_bind(config)?;
+        // Tuple resolution supports bare IPv6 literals without constructing an
+        // ambiguous `::1:port` string. Explicit ports fail normally; no fallback.
+        let listener = TcpListener::bind((bind_host.as_str(), config.local_port))
+            .map_err(|e| format!("Failed to bind {kind} port: {e}"))?;
+        let bound_addr = listener
+            .local_addr()
+            .map_err(|e| format!("Failed to read bound {kind} address: {e}"))?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|e| format!("Failed to set non-blocking: {}", e))?;
+
+        let mut bound_config = config.clone();
+        bound_config.local_host = bind_host;
+        bound_config.local_port = bound_addr.port();
+        Ok((listener, bound_config, bound_addr))
+    }
+
     async fn setup_local_port_forward(
         session: &mut SshSession,
         config: &PortForwardConfig,
         id: String,
     ) -> Result<PortForwardHandle, String> {
-        let bind_host = Self::resolve_forward_bind(config)?;
-        let listener = std::net::TcpListener::bind(format!("{}:{}", bind_host, config.local_port))
-            .map_err(|e| format!("Failed to bind local port: {}", e))?;
-
-        listener
-            .set_nonblocking(true)
-            .map_err(|e| format!("Failed to set non-blocking: {}", e))?;
+        let (listener, bound_config, bound_addr) = Self::bind_forward_listener(config, "local")?;
 
         let session_clone = session.session.clone();
-        let config_clone = config.clone();
+        let channel_timeout = clamped_ssh_establishment_timeout(session.config.connect_timeout);
+        let channel_open = Arc::clone(&session.channel_open);
+        let config_clone = bound_config.clone();
         let id_clone = id.clone();
 
         let handle = tokio::spawn(async move {
@@ -7047,29 +7092,35 @@ impl SshService {
             )?;
 
             log::info!(
-                "Local port forward started on {}:{} -> {}:{}",
-                config_clone.local_host,
-                config_clone.local_port,
+                "Local port forward started on {} -> {}:{}",
+                bound_addr,
                 config_clone.remote_host,
                 config_clone.remote_port
             );
 
+            // Own accepted connections: stopping a forward must cancel their
+            // relay futures/workers too, not leave detached native readers.
+            let mut connections = tokio::task::JoinSet::new();
             loop {
-                match listener.accept().await {
+                tokio::select! {
+                  accepted = listener.accept() => match accepted {
                     Ok((local_stream, peer_addr)) => {
                         log::debug!("Accepted local connection from {}", peer_addr);
 
                         let session = session_clone.clone();
+                        let channel_open = Arc::clone(&channel_open);
                         let remote_host = config_clone.remote_host.clone();
                         let remote_port = config_clone.remote_port;
                         let id = id_clone.clone();
 
-                        tokio::spawn(async move {
+                        connections.spawn(async move {
                             if let Err(e) = Self::handle_local_forward_connection(
                                 local_stream,
                                 session,
+                                channel_open,
                                 &remote_host,
                                 remote_port,
+                                channel_timeout,
                             )
                             .await
                             {
@@ -7080,13 +7131,19 @@ impl SshService {
                     Err(e) => {
                         log::error!("Failed to accept connection: {}", e);
                     }
+                  },
+                  Some(result) = connections.join_next(), if !connections.is_empty() => {
+                    if let Err(error) = result {
+                        log::debug!("Local forward worker ended: {error}");
+                    }
+                  }
                 }
             }
         });
 
         Ok(PortForwardHandle {
             id: id.clone(),
-            config: config.clone(),
+            config: bound_config,
             handle,
         })
     }
@@ -7094,105 +7151,44 @@ impl SshService {
     async fn handle_local_forward_connection(
         local_stream: tokio::net::TcpStream,
         session: Session,
+        channel_open: Arc<ChannelOpenGate>,
         remote_host: &str,
         remote_port: u16,
+        channel_timeout: Duration,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut channel = tokio::task::spawn_blocking({
-            let session = session.clone();
-            let remote_host = remote_host.to_string();
-            move || {
-                session
-                    .channel_direct_tcpip(&remote_host, remote_port, None)
-                    .map_err(|e| format!("Failed to create channel: {}", e))
-            }
+        let mut local_stream = local_stream.into_std()?;
+        local_stream.set_nonblocking(true)?;
+        local_stream.set_nodelay(true)?;
+        let owner = RelayOwner::new();
+        let cancelled = Arc::clone(&owner.0);
+        let remote_host = remote_host.to_owned();
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
+            // A tunnel-only connection never starts a shell (which otherwise
+            // switches the session to nonblocking). Blocking reads here would
+            // wait for a server response before forwarding its client request.
+            let deadline = Instant::now() + channel_timeout;
+            let channel = channel_open.open(&cancelled, deadline, || {
+                session.set_blocking(false);
+                match session.channel_direct_tcpip(&remote_host, remote_port, None) {
+                    Ok(channel) => Ok(Some(channel)),
+                    Err(error) if error.code() == SshErrorCode::Session(LIBSSH2_ERROR_EAGAIN) => {
+                        Ok(None)
+                    }
+                    Err(error) => Err(format!("Failed to create forwarding channel: {error}")),
+                }
+            })?;
+            let mut channel = ForwardChannel {
+                channel,
+                session,
+                gate: channel_open,
+            };
+            let result = relay_nonblocking(&mut local_stream, &mut channel, &cancelled);
+            // A cancelled/closed relay must not block waiting for its peer to
+            // acknowledge channel closure, nor flush/discard received bytes.
+            channel.close();
+            result.map_err(|error| format!("SSH forwarding relay failed: {error}"))
         })
         .await??;
-
-        let (mut local_read, mut local_write) = local_stream.into_split();
-
-        let (tx_to_remote, mut rx_to_remote) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
-        let (tx_to_local, mut rx_to_local) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
-
-        let ssh_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 32768];
-
-            loop {
-                let mut progressed = false;
-
-                while let Ok(data) = rx_to_remote.try_recv() {
-                    progressed = true;
-                    if let Err(e) = channel.write_all(&data) {
-                        log::debug!("SSH channel write error: {}", e);
-                        return;
-                    }
-                    let _ = channel.flush();
-                }
-
-                match channel.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        progressed = true;
-                        // blocking_send applies backpressure: if the local writer is
-                        // behind, this parks the relay thread (which stops draining the
-                        // SSH channel and closes the TCP window) rather than buffering
-                        // unboundedly.
-                        if tx_to_local.blocking_send(buf[..n].to_vec()).is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-                    Err(e) if e.kind() == ErrorKind::TimedOut => {}
-                    Err(_) => break,
-                }
-
-                if channel.eof() {
-                    break;
-                }
-
-                // Only idle-sleep when neither direction moved data this pass; under
-                // active load we loop immediately so the poll adds no latency.
-                if !progressed {
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-            }
-
-            let _ = channel.close();
-            let _ = channel.wait_close();
-        });
-
-        let local_to_remote = tokio::spawn(async move {
-            let mut buf = [0u8; 32768];
-            loop {
-                match local_read.read(&mut buf).await {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if tx_to_remote.send(buf[..n].to_vec()).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-
-        let remote_to_local = tokio::spawn(async move {
-            while let Some(data) = rx_to_local.recv().await {
-                if local_write.write_all(&data).await.is_err() {
-                    break;
-                }
-            }
-        });
-
-        tokio::select! {
-            _ = local_to_remote => {}
-            _ = remote_to_local => {}
-        }
-
-        let _ = tokio::task::spawn_blocking(move || {
-            let _ = ssh_thread.join();
-        })
-        .await;
-
         Ok(())
     }
 
@@ -7201,9 +7197,15 @@ impl SshService {
         config: &PortForwardConfig,
         id: String,
     ) -> Result<PortForwardHandle, String> {
-        let (listener, actual_port) = session
-            .session
-            .channel_forward_listen(config.remote_port, Some(&config.remote_host), None)
+        let _session_operation = session.channel_open.operation()?;
+        let (listener, actual_port) = _session_operation
+            .native_open(|| {
+                session.session.channel_forward_listen(
+                    config.remote_port,
+                    Some(&config.remote_host),
+                    None,
+                )
+            })
             .map_err(|e| format!("Failed to setup remote port forward: {}", e))?;
 
         let config_clone = config.clone();
@@ -7384,16 +7386,11 @@ impl SshService {
         config: &PortForwardConfig,
         id: String,
     ) -> Result<PortForwardHandle, String> {
-        let bind_host = Self::resolve_forward_bind(config)?;
-        let listener = TcpListener::bind(format!("{}:{}", bind_host, config.local_port))
-            .map_err(|e| format!("Failed to bind SOCKS port: {}", e))?;
-
-        listener
-            .set_nonblocking(true)
-            .map_err(|e| format!("Failed to set non-blocking: {}", e))?;
+        let (listener, bound_config, bound_addr) = Self::bind_forward_listener(config, "SOCKS")?;
 
         let session_clone = session.session.clone();
-        let config_clone = config.clone();
+        let channel_open = Arc::clone(&session.channel_open);
+        let channel_timeout = clamped_ssh_establishment_timeout(session.config.connect_timeout);
         let id_clone = id.clone();
 
         let handle = tokio::spawn(async move {
@@ -7403,23 +7400,22 @@ impl SshService {
                 },
             )?;
 
-            log::info!(
-                "SOCKS5 proxy started on {}:{}",
-                config_clone.local_host,
-                config_clone.local_port
-            );
+            log::info!("SOCKS5 proxy started on {}", bound_addr);
 
+            let mut connections = tokio::task::JoinSet::new();
             loop {
-                match listener.accept().await {
+                tokio::select! {
+                  accepted = listener.accept() => match accepted {
                     Ok((client_stream, peer_addr)) => {
                         log::debug!("[{}] SOCKS5 client connected from {}", id_clone, peer_addr);
 
                         let session = session_clone.clone();
+                        let channel_open = Arc::clone(&channel_open);
                         let id = id_clone.clone();
 
-                        tokio::spawn(async move {
+                        connections.spawn(async move {
                             if let Err(e) =
-                                Self::handle_socks5_connection(client_stream, session).await
+                                Self::handle_socks5_connection(client_stream, session, channel_open, channel_timeout).await
                             {
                                 log::debug!("[{}] SOCKS5 connection error: {}", id, e);
                             }
@@ -7428,13 +7424,15 @@ impl SshService {
                     Err(e) => {
                         log::error!("SOCKS5 accept error: {}", e);
                     }
+                  },
+                  Some(_) = connections.join_next(), if !connections.is_empty() => {}
                 }
             }
         });
 
         Ok(PortForwardHandle {
             id: id.clone(),
-            config: config.clone(),
+            config: bound_config,
             handle,
         })
     }
@@ -7442,6 +7440,8 @@ impl SshService {
     async fn handle_socks5_connection(
         mut client_stream: tokio::net::TcpStream,
         session: Session,
+        channel_open: Arc<ChannelOpenGate>,
+        channel_timeout: Duration,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut buf = [0u8; 258];
         let n = client_stream.read(&mut buf).await?;
@@ -7528,10 +7528,28 @@ impl SshService {
 
         log::debug!("SOCKS5 CONNECT to {}:{}", target_host, target_port);
 
+        let owner = RelayOwner::new();
+        let cancelled = Arc::clone(&owner.0);
         let channel = match tokio::task::spawn_blocking({
             let session = session.clone();
             let host = target_host.clone();
-            move || session.channel_direct_tcpip(&host, target_port, None)
+            let gate = Arc::clone(&channel_open);
+            move || {
+                gate.open(&cancelled, Instant::now() + channel_timeout, || {
+                    session.set_blocking(false);
+                    match session.channel_direct_tcpip(&host, target_port, None) {
+                        Ok(channel) => Ok(Some(channel)),
+                        Err(error)
+                            if error.code() == SshErrorCode::Session(LIBSSH2_ERROR_EAGAIN) =>
+                        {
+                            Ok(None)
+                        }
+                        Err(error) => Err(format!(
+                            "Failed to create SOCKS forwarding channel: {error}"
+                        )),
+                    }
+                })
+            }
         })
         .await?
         {
@@ -7547,98 +7565,33 @@ impl SshService {
         let response = [0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
         client_stream.write_all(&response).await?;
 
-        Self::forward_socks5_traffic(client_stream, channel).await
+        Self::forward_socks5_traffic(
+            client_stream,
+            ForwardChannel {
+                channel,
+                session,
+                gate: channel_open,
+            },
+            &owner,
+        )
+        .await
     }
 
     async fn forward_socks5_traffic(
         client_stream: tokio::net::TcpStream,
-        mut channel: ssh2::Channel,
+        mut channel: ForwardChannel,
+        owner: &RelayOwner,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let (mut client_read, mut client_write) = client_stream.into_split();
-
-        let (tx_to_client, mut rx_to_client) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
-        let (tx_to_remote, mut rx_to_remote) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
-
-        let ssh_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 32768];
-
-            loop {
-                let mut progressed = false;
-
-                while let Ok(data) = rx_to_remote.try_recv() {
-                    progressed = true;
-                    if let Err(e) = channel.write_all(&data) {
-                        log::debug!("SOCKS5 SSH write error: {}", e);
-                        return;
-                    }
-                    let _ = channel.flush();
-                }
-
-                match channel.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        progressed = true;
-                        // blocking_send applies backpressure: if the client writer is
-                        // behind, this parks the relay thread (which stops draining the
-                        // SSH channel and closes the TCP window) rather than buffering
-                        // unboundedly.
-                        if tx_to_client.blocking_send(buf[..n].to_vec()).is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-                    Err(e) if e.kind() == ErrorKind::TimedOut => {}
-                    Err(_) => break,
-                }
-
-                if channel.eof() {
-                    break;
-                }
-
-                // Only idle-sleep when neither direction moved data this pass; under
-                // active load we loop immediately so the poll adds no latency.
-                if !progressed {
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-            }
-
-            let _ = channel.close();
-            let _ = channel.wait_close();
-        });
-
-        let client_to_remote = tokio::spawn(async move {
-            let mut buf = [0u8; 32768];
-            loop {
-                match client_read.read(&mut buf).await {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if tx_to_remote.send(buf[..n].to_vec()).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-
-        let remote_to_client = tokio::spawn(async move {
-            while let Some(data) = rx_to_client.recv().await {
-                if client_write.write_all(&data).await.is_err() {
-                    break;
-                }
-            }
-        });
-
-        tokio::select! {
-            _ = client_to_remote => {}
-            _ = remote_to_client => {}
-        }
-
-        let _ = tokio::task::spawn_blocking(move || {
-            let _ = ssh_thread.join();
+        let mut client = client_stream.into_std()?;
+        client.set_nonblocking(true)?;
+        client.set_nodelay(true)?;
+        let cancelled = Arc::clone(&owner.0);
+        tokio::task::spawn_blocking(move || {
+            let result = relay_nonblocking(&mut client, &mut channel, &cancelled);
+            channel.close();
+            result
         })
-        .await;
-
+        .await??;
         Ok(())
     }
 
@@ -7651,12 +7604,12 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
+        let _session_operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
-        let sftp = session
-            .session
-            .sftp()
+        let sftp = _session_operation
+            .native_open(|| session.session.sftp())
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
         let entries = sftp
@@ -7684,12 +7637,12 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
+        let _session_operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
-        let sftp = session
-            .session
-            .sftp()
+        let sftp = _session_operation
+            .native_open(|| session.session.sftp())
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
         let mut local_file = std::fs::File::open(local_path)
@@ -7715,12 +7668,12 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
+        let _session_operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
-        let sftp = session
-            .session
-            .sftp()
+        let sftp = _session_operation
+            .native_open(|| session.session.sftp())
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
         let mut remote_file = sftp
@@ -7849,6 +7802,12 @@ impl SshService {
             return Err("Session not found".to_string());
         }
 
+        let _session_operation = self
+            .sessions
+            .get(session_id)
+            .ok_or("Session not found")?
+            .channel_open
+            .operation()?;
         let shell_pause = self.pause_shell_io(session_id);
 
         let session = self
@@ -7868,14 +7827,15 @@ impl SshService {
             let full_script = prepare_uploaded_script(script, interpreter);
             let script_bytes = full_script.as_bytes();
 
-            let mut channel = session
-                .session
-                .scp_send(
-                    std::path::Path::new(&remote_path),
-                    0o700,
-                    script_bytes.len() as u64,
-                    None,
-                )
+            let mut channel = _session_operation
+                .native_open(|| {
+                    session.session.scp_send(
+                        std::path::Path::new(&remote_path),
+                        0o700,
+                        script_bytes.len() as u64,
+                        None,
+                    )
+                })
                 .map_err(|e| format!("Failed to open SCP channel for script upload: {}", e))?;
 
             channel
@@ -7902,9 +7862,8 @@ impl SshService {
             ));
 
             let execution_result = (|| -> Result<_, String> {
-                let mut exec_ch = session
-                    .session
-                    .channel_session()
+                let mut exec_ch = _session_operation
+                    .native_open(|| session.session.channel_session())
                     .map_err(|e| format!("Failed to create exec channel: {}", e))?;
                 let deadline = Instant::now() + SCRIPT_EXECUTION_TIMEOUT;
 
@@ -7973,7 +7932,9 @@ impl SshService {
             session
                 .session
                 .set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
-            if let Ok(mut rm_ch) = session.session.channel_session() {
+            if let Ok(mut rm_ch) =
+                _session_operation.native_open(|| session.session.channel_session())
+            {
                 let rm_cmd = format!("rm -f {}", shell_escape::escape(remote_path.clone().into()));
                 let _ = rm_ch.exec(&rm_cmd);
                 let _ = rm_ch.send_eof();
@@ -8018,6 +7979,12 @@ impl SshService {
         if !self.sessions.contains_key(session_id) {
             return Err("Session not found".to_string());
         }
+        let session_operation = self
+            .sessions
+            .get(session_id)
+            .ok_or("Session not found")?
+            .channel_open
+            .operation()?;
 
         let cancelled = Arc::new(AtomicBool::new(false));
         {
@@ -8046,12 +8013,18 @@ impl SshService {
             session.set_blocking(true);
 
             let setup = (|| -> Result<ssh2::Channel, String> {
-                upload_script_via_scp(&session, &remote_path, script, interpreter)?;
+                upload_script_via_scp(
+                    &session,
+                    &session_operation,
+                    &remote_path,
+                    script,
+                    interpreter,
+                )?;
                 let exec_command = wrap_script_invocation_with_exit_sentinel(
                     &build_script_invocation(&remote_path, interpreter),
                 );
-                let mut exec_ch = session
-                    .channel_session()
+                let mut exec_ch = session_operation
+                    .native_open(|| session.channel_session())
                     .map_err(|e| format!("Failed to create exec channel: {}", e))?;
                 session.set_timeout(SCRIPT_EXECUTION_TIMEOUT.as_millis() as u32);
                 exec_ch
@@ -8068,7 +8041,7 @@ impl SshService {
                     Ok((exec_ch, session, was_blocking))
                 }
                 Err(error) => {
-                    remove_remote_script(&session, &remote_path);
+                    remove_remote_script(&session, &session_operation, &remote_path);
                     if !was_blocking {
                         session.set_blocking(false);
                     }
@@ -8095,6 +8068,7 @@ impl SshService {
         let spawn_result = std::thread::Builder::new()
             .name(format!("ssh-script-{}", &script_id[..8]))
             .spawn(move || {
+                let _session_operation = session_operation;
                 let mut guard = ScriptWorkerGuard {
                     registry: worker_registry,
                     execution_id: worker_execution_id.clone(),
@@ -8140,7 +8114,7 @@ impl SshService {
                 let raw_exit = exec_ch.exit_status().unwrap_or(-1);
                 drop(exec_ch);
 
-                remove_remote_script(&session, &remote_path);
+                remove_remote_script(&session, &_session_operation, &remote_path);
                 if !was_blocking {
                     session.set_blocking(false);
                 }
@@ -8204,6 +8178,7 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
+        let _session_operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
@@ -8213,9 +8188,12 @@ impl SshService {
                 let file_size = std::fs::metadata(local_path)
                     .map_err(|e| format!("Failed to get file metadata: {}", e))?
                     .len() as u64;
-                let mut channel = session
-                    .session
-                    .scp_send(Path::new(remote_path), 0o644, file_size, None)
+                let mut channel = _session_operation
+                    .native_open(|| {
+                        session
+                            .session
+                            .scp_send(Path::new(remote_path), 0o644, file_size, None)
+                    })
                     .map_err(|e| format!("Failed to initiate SCP upload: {}", e))?;
 
                 let content = std::fs::read(local_path)
@@ -8242,9 +8220,8 @@ impl SshService {
                     .map_err(|e| format!("Failed to wait for close: {}", e))?;
             }
             TransferDirection::Download => {
-                let (mut channel, stat) = session
-                    .session
-                    .scp_recv(Path::new(remote_path))
+                let (mut channel, stat) = _session_operation
+                    .native_open(|| session.session.scp_recv(Path::new(remote_path)))
                     .map_err(|e| format!("Failed to initiate SCP download: {}", e))?;
 
                 let file_size = stat.size();
@@ -9650,6 +9627,7 @@ mod connection_admission_tests {
             session: Some(SshSession {
                 id: session_id,
                 session,
+                channel_open: Arc::new(ChannelOpenGate::default()),
                 config,
                 connected_at: Utc::now(),
                 last_activity: Utc::now(),
@@ -10628,6 +10606,104 @@ mod tests {
     use crate::ssh::types::ScriptExecutionResult;
     use serde_json::json;
 
+    #[tokio::test]
+    async fn forward_relay_poisoned_session_rejects_every_public_runtime_opener() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let id = connect_fake_service_session(&state).await;
+        let mut service = state.lock().await;
+        let gate = Arc::clone(&service.sessions[&id].channel_open);
+        let cancelled = AtomicBool::new(false);
+        assert!(gate
+            .open::<()>(&cancelled, Instant::now() + Duration::from_secs(1), || {
+                cancelled.store(true, Ordering::Release);
+                Ok(None)
+            })
+            .is_err());
+        assert!(!service.is_session_alive(&id));
+        let emitter: DynEventEmitter = Arc::new(RecordingScriptEmitter::default());
+        service.event_emitter = Some(Arc::clone(&emitter));
+        let errors = [
+            service
+                .execute_command(&id, "unused".into(), None)
+                .await
+                .unwrap_err(),
+            service
+                .execute_command_interactive(&id, "unused".into())
+                .await
+                .unwrap_err(),
+            service.start_shell(&id, emitter).await.unwrap_err(),
+            service.list_directory(&id, "/unused").await.unwrap_err(),
+            service
+                .upload_file(&id, "unused", "/unused")
+                .await
+                .unwrap_err(),
+            service
+                .download_file(&id, "/unused", "unused")
+                .await
+                .unwrap_err(),
+            service
+                .transfer_file_scp(&id, "unused", "/unused", TransferDirection::Upload)
+                .await
+                .unwrap_err(),
+            service
+                .transfer_file_scp(&id, "unused", "/unused", TransferDirection::Download)
+                .await
+                .unwrap_err(),
+            service
+                .execute_script(&id, "unused", None)
+                .await
+                .unwrap_err(),
+            service
+                .execute_script_stream(&id, "unused", None, None)
+                .unwrap_err(),
+        ];
+        for error in errors {
+            assert!(error.contains("reconnect"), "{error}");
+        }
+        for direction in [
+            PortForwardDirection::Local,
+            PortForwardDirection::Dynamic,
+            PortForwardDirection::Remote,
+        ] {
+            let mut config = forward_config("127.0.0.1", false);
+            config.direction = direction;
+            assert!(service
+                .setup_port_forward(&id, config)
+                .await
+                .unwrap_err()
+                .contains("reconnect"));
+        }
+        assert!(service.sessions[&id].port_forwards.is_empty());
+        assert!(service.script_executions.lock().unwrap().is_empty());
+        assert!(service.shells.is_empty());
+    }
+
+    #[tokio::test]
+    async fn forward_relay_tunnel_only_session_is_nonblocking_even_when_channel_open_fails() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (local, _) = listener.accept().await.unwrap();
+        let session = Session::new().unwrap();
+        assert!(session.is_blocking(), "tunnel-only sessions start blocking");
+        // No SSH server or credentials: opening a channel must fail, but the
+        // actual production entry point must first set nonblocking mode and
+        // never restore blocking on this shared session when its worker ends.
+        let result = SshService::handle_local_forward_connection(
+            local,
+            session.clone(),
+            Arc::new(ChannelOpenGate::default()),
+            "127.0.0.1",
+            3389,
+            Duration::from_millis(50),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(!session.is_blocking());
+        drop(peer);
+    }
+
     fn credential_input_fixture() -> (
         SshServiceState,
         super::super::shell_runtime::ShellMailboxReceiver,
@@ -11375,6 +11451,7 @@ mod tests {
                     session: Some(SshSession {
                         id: session_id,
                         session,
+                        channel_open: Arc::new(ChannelOpenGate::default()),
                         config,
                         connected_at: Utc::now(),
                         last_activity: Utc::now(),
@@ -12697,6 +12774,290 @@ mod tests {
             super::SshService::resolve_forward_bind(&cfg).unwrap(),
             "0.0.0.0"
         );
+    }
+
+    #[test]
+    fn forward_bind_concurrent_ephemeral_listeners_have_distinct_retained_ports() {
+        const COUNT: usize = 12;
+        let start = Arc::new(std::sync::Barrier::new(COUNT));
+        let workers: Vec<_> = (0..COUNT)
+            .map(|index| {
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    let mut config = forward_config("127.0.0.1", false);
+                    config.local_port = 0;
+                    if index % 2 == 1 {
+                        config.direction = PortForwardDirection::Dynamic;
+                    }
+                    start.wait();
+                    SshService::bind_forward_listener(&config, "test").unwrap()
+                })
+            })
+            .collect();
+        // Retain every listener, including those returned by an earlier worker,
+        // until all allocations and collision assertions have completed.
+        let bound: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        let ports: HashSet<_> = bound
+            .iter()
+            .map(|(_, config, _)| config.local_port)
+            .collect();
+        assert_eq!(ports.len(), COUNT);
+        assert!(!ports.contains(&0));
+        for (listener, config, address) in &bound {
+            assert_eq!(listener.local_addr().unwrap(), *address);
+            assert_eq!(config.local_port, address.port());
+            assert!(
+                TcpListener::bind(*address).is_err(),
+                "listener must still own its port"
+            );
+        }
+    }
+
+    #[test]
+    fn forward_bind_retains_listener_and_keeps_requested_config_immutable() {
+        let mut requested = forward_config("  ", false);
+        requested.local_port = 0;
+        let before = serde_json::to_value(&requested).unwrap();
+        let (listener, actual, address) =
+            SshService::bind_forward_listener(&requested, "local").unwrap();
+        assert_eq!(serde_json::to_value(&requested).unwrap(), before);
+        assert_eq!(actual.local_host, "127.0.0.1");
+        assert_ne!(actual.local_port, 0);
+        assert_eq!(actual.local_port, address.port());
+        assert_eq!(actual.remote_host, requested.remote_host);
+        assert_eq!(actual.remote_port, requested.remote_port);
+        assert!(!actual.allow_non_loopback_bind);
+        let client = TcpStream::connect_timeout(&address, Duration::from_secs(3)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let accepted = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error)
+                    if error.kind() == ErrorKind::WouldBlock && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                Err(error) => panic!("retained listener did not accept: {error}"),
+            }
+        };
+        assert_eq!(accepted.local_addr().unwrap(), address);
+        assert_eq!(client.peer_addr().unwrap(), address);
+    }
+
+    #[test]
+    fn forward_bind_ipv6_uses_unambiguous_bound_address() {
+        let mut requested = forward_config(" ::1 ", false);
+        requested.local_port = 0;
+        let (listener, actual, address) =
+            SshService::bind_forward_listener(&requested, "local").unwrap();
+        assert_eq!(actual.local_host, "::1");
+        assert_ne!(actual.local_port, 0);
+        assert_eq!(address.to_string(), format!("[::1]:{}", actual.local_port));
+        assert_eq!(listener.local_addr().unwrap(), address);
+        assert!(address.ip().is_loopback());
+    }
+
+    #[test]
+    fn forward_bind_listener_preserves_non_loopback_opt_in_policy() {
+        let mut requested = forward_config("0.0.0.0", false);
+        requested.local_port = 0;
+        assert!(SshService::bind_forward_listener(&requested, "local")
+            .unwrap_err()
+            .contains("allow_non_loopback_bind"));
+        requested.allow_non_loopback_bind = true;
+        let (listener, actual, address) =
+            SshService::bind_forward_listener(&requested, "local").unwrap();
+        assert!(actual.allow_non_loopback_bind);
+        assert!(address.ip().is_unspecified());
+        assert_ne!(actual.local_port, 0);
+        assert_eq!(listener.local_addr().unwrap().port(), actual.local_port);
+    }
+
+    async fn assert_forward_bind_setup(direction: PortForwardDirection) {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let session_id = connect_fake_service_session(&state).await;
+        let mut service = state.lock().await;
+        let mut requested = forward_config("127.0.0.1", false);
+        requested.direction = direction;
+        requested.local_port = 0;
+        let mut forwards = Vec::new();
+        // The real service entry point dispatches to setup_local_port_forward
+        // or setup_dynamic_port_forward and retains their returned handles.
+        for _ in 0..2 {
+            let id = service
+                .setup_port_forward(&session_id, requested.clone())
+                .await
+                .unwrap();
+            let handle = &service.sessions[&session_id].port_forwards[&id];
+            assert_ne!(
+                handle.config.local_port, 0,
+                "handle must advertise the assigned port"
+            );
+            assert_eq!(handle.config.remote_host, requested.remote_host);
+            assert_eq!(handle.config.remote_port, requested.remote_port);
+            let info = service.get_port_forward_info(&session_id, &id).unwrap();
+            assert_eq!(info.id, id);
+            assert_eq!(info.config.local_port, handle.config.local_port);
+            let address = SocketAddr::new("127.0.0.1".parse().unwrap(), handle.config.local_port);
+            assert!(
+                TcpListener::bind(address).is_err(),
+                "setup must retain its listener"
+            );
+            forwards.push((id, address));
+        }
+        assert_eq!(requested.local_port, 0);
+        assert_ne!(forwards[0].1.port(), forwards[1].1.port());
+        for (_, address) in &forwards {
+            tokio::time::timeout(Duration::from_secs(3), async {
+                let mut client = tokio::net::TcpStream::connect(*address).await.unwrap();
+                if matches!(requested.direction, PortForwardDirection::Dynamic) {
+                    // An invalid SOCKS version closes after the real accept,
+                    // without requesting any SSH channel or remote connection.
+                    client.write_all(&[4, 0]).await.unwrap();
+                }
+                // Local forwarding accepts then fails its channel open on this
+                // dummy Session (no socket/authentication). Both paths must close
+                // the accepted client, proving each advertised listener serves.
+                let mut byte = [0];
+                match client.read(&mut byte).await {
+                    Ok(0) => {}
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
+                        ) => {}
+                    result => panic!("dummy forward should close the accepted client: {result:?}"),
+                }
+            })
+            .await
+            .expect("forward accept/client cleanup must be bounded");
+        }
+        for (id, address) in forwards {
+            let forward = service
+                .sessions
+                .get_mut(&session_id)
+                .unwrap()
+                .port_forwards
+                .remove(&id)
+                .unwrap();
+            forward.handle.abort();
+            let outcome = tokio::time::timeout(Duration::from_secs(3), forward.handle)
+                .await
+                .expect("listener shutdown must be bounded");
+            assert!(outcome.unwrap_err().is_cancelled());
+            // Accepted connections may leave normal TCP TIME_WAIT behind. Check
+            // that no listener remains rather than treating TIME_WAIT as a leak.
+            let error = tokio::time::timeout(
+                Duration::from_secs(3),
+                tokio::net::TcpStream::connect(address),
+            )
+            .await
+            .expect("closed listener check must be bounded")
+            .unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::ConnectionRefused);
+        }
+    }
+
+    #[tokio::test]
+    async fn forward_bind_local_setup_returns_actual_ports_accepts_and_releases() {
+        assert_forward_bind_setup(PortForwardDirection::Local).await;
+    }
+
+    #[tokio::test]
+    async fn forward_bind_dynamic_setup_returns_actual_ports_accepts_and_releases() {
+        assert_forward_bind_setup(PortForwardDirection::Dynamic).await;
+    }
+
+    #[tokio::test]
+    async fn forward_bind_setup_explicit_collision_never_falls_back_or_stores_a_handle() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let session_id = connect_fake_service_session(&state).await;
+        let mut service = state.lock().await;
+        // Keep this original listener alive throughout; do not probe and release.
+        let occupied = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = occupied.local_addr().unwrap();
+        for direction in [PortForwardDirection::Local, PortForwardDirection::Dynamic] {
+            let mut requested = forward_config("127.0.0.1", false);
+            requested.direction = direction;
+            requested.local_port = address.port();
+            let error = service
+                .setup_port_forward(&session_id, requested.clone())
+                .await
+                .unwrap_err();
+            assert!(error.starts_with("Failed to bind"));
+            assert_eq!(requested.local_port, address.port());
+            assert!(service.sessions[&session_id].port_forwards.is_empty());
+            assert_eq!(occupied.local_addr().unwrap(), address);
+        }
+    }
+
+    #[tokio::test]
+    async fn forward_bind_info_requires_live_handle_in_owning_session() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let owner = connect_fake_service_session(&state).await;
+        let other = connect_fake_service_session(&state).await;
+        assert_ne!(owner, other);
+        let mut service = state.lock().await;
+        for direction in [PortForwardDirection::Local, PortForwardDirection::Dynamic] {
+            let mut requested = forward_config("127.0.0.1", false);
+            requested.direction = direction;
+            requested.local_port = 0;
+            let id = service.setup_port_forward(&owner, requested).await.unwrap();
+            let mut info = service.get_port_forward_info(&owner, &id).unwrap();
+            assert_eq!(info.id, id);
+            assert_ne!(info.config.local_port, 0);
+            let address = SocketAddr::new("127.0.0.1".parse().unwrap(), info.config.local_port);
+            assert!(TcpListener::bind(address).is_err());
+            assert!(service
+                .get_port_forward_info("missing-session", &id)
+                .is_err());
+            assert!(service.get_port_forward_info(&other, &id).is_err());
+            assert!(service
+                .get_port_forward_info(&owner, "missing-forward")
+                .is_err());
+            // Returned metadata is independent of the active handle's config.
+            info.config.local_port = 1;
+            assert_eq!(
+                service
+                    .get_port_forward_info(&owner, &id)
+                    .unwrap()
+                    .config
+                    .local_port,
+                address.port()
+            );
+            let forward = service
+                .sessions
+                .get_mut(&owner)
+                .unwrap()
+                .port_forwards
+                .get_mut(&id)
+                .unwrap();
+            forward.handle.abort();
+            let stopped = tokio::time::timeout(Duration::from_secs(3), &mut forward.handle)
+                .await
+                .expect("aborted forward must finish promptly");
+            assert!(stopped.unwrap_err().is_cancelled());
+            assert!(forward.handle.is_finished());
+            assert!(
+                service.get_port_forward_info(&owner, &id).is_err(),
+                "finished handle is not active metadata"
+            );
+            service
+                .sessions
+                .get_mut(&owner)
+                .unwrap()
+                .port_forwards
+                .remove(&id);
+            assert!(service.get_port_forward_info(&owner, &id).is_err());
+            // No client connected in this case, so no TIME_WAIT can mask a
+            // retained listener. Rebinding is only a post-shutdown assertion.
+            let released =
+                TcpListener::bind(address).expect("finished forward must release its port");
+            assert_eq!(released.local_addr().unwrap(), address);
+        }
     }
 
     // ── Profile-aware SSH home (t91) ────────────────────────────
