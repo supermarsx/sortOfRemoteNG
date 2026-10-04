@@ -2,6 +2,7 @@ import { Settings } from "lucide-react";
 import type { useToastContext } from "../../contexts/ToastContext";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { claimCloudSyncFailureNotification } from "../../utils/services/cloudSyncNotifications";
+import { openCloudSyncConflictReview } from "../../utils/settings/cloudSyncReviewNavigation";
 
 export function showCloudSyncReviewToast(
   toast: Pick<
@@ -23,7 +24,7 @@ export function showCloudSyncReviewToast(
     action: {
       label: "Open sync settings",
       icon: Settings,
-      onClick: () => openSettings("cloudSync"),
+      onClick: () => openCloudSyncConflictReview(openSettings),
     },
   });
   return id;

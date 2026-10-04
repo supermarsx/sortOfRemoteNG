@@ -20,6 +20,38 @@ import type { SettingSearchEntry } from "./types";
  * "Add target" picker.
  */
 export const CLOUD_SYNC_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  {
+    key: "cloudSync.autoUnlockOsVaultDatabases",
+    label: "Automatically unlock OS-vault databases for sync",
+    description:
+      "Opt in to unlocking selected protected databases with this device's OS vault before syncing, without switching the active database.",
+    tags: ["database", "unlock", "locked", "os vault", "sync", "keychain"],
+    synonyms: [
+      "automatic unlock",
+      "unavailable database",
+      "credential manager",
+    ],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
+  },
+  {
+    key: "cloudSync.remoteDatabases",
+    label: "Remote databases",
+    description:
+      "Browse a sync target and pull protected databases that are not on this device.",
+    tags: [
+      "database",
+      "remote",
+      "download",
+      "pull",
+      "restore",
+      "sync",
+      "new device",
+    ],
+    synonyms: ["missing database", "download database", "restore from cloud"],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
+  },
   // ─── Enable / run ───────────────────────────────────────────────
   {
     key: "cloudSync.enabled",

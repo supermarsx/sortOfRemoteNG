@@ -1,17 +1,15 @@
 import React from "react";
 import { CloudSyncStatusIcon } from "./CloudSyncStatusIcon";
 import { CloudSyncProviderIcon } from "./CloudSyncProviderIcon";
+import { CloudSyncErrorMessage } from "./CloudSyncErrorMessage";
 import {
-  Cloud,
+  CloudSync,
+  CloudCheck,
+  CloudAlert,
   CloudOff,
-  RefreshCw,
   CheckCircle,
-  AlertCircle,
   Clock,
-  Loader2,
   Settings,
-  TestTube,
-  FileCheck,
   AlertTriangle,
 } from "lucide-react";
 import { CloudSyncProvider } from "../../types/settings/settings";
@@ -24,7 +22,6 @@ import {
   useCloudSyncStatus,
   PROVIDER_NAMES,
   formatRelativeTime,
-  SyncTestResult,
 } from "../../hooks/sync/useCloudSyncStatus";
 
 interface CloudSyncStatusPopupProps {
@@ -75,10 +72,10 @@ const OverallStatusIcon: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       />
     );
   if (statuses.some((s) => s === "conflict" || s === "partial"))
-    return <AlertTriangle className="w-4 h-4 text-warning" />;
+    return <CloudAlert className="w-4 h-4 text-warning" />;
   if (statuses.every((s) => s === "success"))
-    return <CheckCircle className="w-4 h-4 text-success" />;
-  return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
+    return <CloudCheck className="w-4 h-4 text-success" />;
+  return <CloudSync className="w-4 h-4 text-[var(--color-textSecondary)]" />;
 };
 
 const ProviderStatusIcon: React.FC<{
@@ -148,19 +145,6 @@ const OverallStatusBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div className="flex gap-2">
       <button
-        onClick={mgr.handleTestAll}
-        disabled={mgr.isTesting}
-        className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary hover:bg-primary/90 disabled:opacity-50 rounded transition-colors"
-        title={mgr.t("sync.testAll", "Test All Connections")}
-      >
-        {mgr.isTesting ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
-        ) : (
-          <TestTube className="w-3 h-3" />
-        )}
-        {mgr.t("sync.test", "Test")}
-      </button>
-      <button
         onClick={mgr.handleSyncAll}
         disabled={mgr.isSyncing}
         className="flex items-center gap-1.5 px-2 py-1 text-xs bg-success hover:bg-success/90 disabled:opacity-50 rounded transition-colors"
@@ -173,37 +157,11 @@ const OverallStatusBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             inheritColor
           />
         ) : (
-          <RefreshCw className="w-3 h-3" />
+          <CloudSync className="w-3 h-3" />
         )}
         {mgr.t("sync.syncAll", "Sync All")}
       </button>
     </div>
-  </div>
-);
-
-const TestResultBadge: React.FC<{ result: SyncTestResult }> = ({ result }) => (
-  <div
-    className={`mt-2 p-2 rounded text-xs ${result.success ? "bg-success/20 border border-success text-success" : "bg-error/20 border border-error text-error"}`}
-  >
-    <div className="flex items-center gap-2">
-      {result.success ? (
-        <FileCheck className="w-3.5 h-3.5 text-success" />
-      ) : (
-        <AlertCircle className="w-3.5 h-3.5 text-error" />
-      )}
-      <span>{result.message}</span>
-    </div>
-    {result.latencyMs && (
-      <div className="mt-1 text-[var(--color-textMuted)]">
-        Latency: {result.latencyMs}ms
-        {result.canRead !== undefined && (
-          <> • Read: {result.canRead ? "✓" : "✗"}</>
-        )}
-        {result.canWrite !== undefined && (
-          <> • Write: {result.canWrite ? "✓" : "✗"}</>
-        )}
-      </div>
-    )}
   </div>
 );
 
@@ -212,7 +170,8 @@ const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({
   provider,
 }) => {
   const status = mgr.config.providerStatus[provider];
-  const testResult = mgr.getTestResultForProvider(provider);
+  const retry =
+    status?.lastSyncStatus === "failed" || status?.lastSyncStatus === "partial";
   return (
     <div className="sor-status-item p-3">
       <div className="flex items-center justify-between mb-2">
@@ -225,22 +184,15 @@ const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => mgr.handleTestProvider(provider)}
-            disabled={mgr.testingProvider === provider}
-            className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-primary disabled:opacity-50"
-            title={mgr.t("sync.testProvider", "Test Connection")}
-          >
-            {mgr.testingProvider === provider ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <TestTube className="w-3.5 h-3.5" />
-            )}
-          </button>
-          <button
             onClick={() => mgr.handleSyncProvider(provider)}
             disabled={mgr.isSyncing}
-            className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-success disabled:opacity-50"
-            title={mgr.t("sync.syncProvider", "Sync Now")}
+            className="inline-flex items-center gap-1 p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-success disabled:opacity-50"
+            aria-label={`${retry ? mgr.t("sync.retry", "Retry") : mgr.t("sync.syncProvider", "Sync Now")} ${PROVIDER_NAMES[provider]}`}
+            title={
+              retry
+                ? mgr.t("sync.retry", "Retry")
+                : mgr.t("sync.syncProvider", "Sync Now")
+            }
           >
             {mgr.isProviderSyncing(provider) ? (
               <CloudSyncStatusIcon
@@ -249,7 +201,10 @@ const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({
                 className="w-3.5 h-3.5"
               />
             ) : (
-              <RefreshCw className="w-3.5 h-3.5" />
+              <CloudSync className="w-3.5 h-3.5" />
+            )}
+            {retry && (
+              <span className="text-xs">{mgr.t("sync.retry", "Retry")}</span>
             )}
           </button>
         </div>
@@ -262,10 +217,9 @@ const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({
       </div>
       {status?.lastSyncError && (
         <div className="mt-2 p-2 bg-error/20 border border-error rounded text-xs text-error">
-          {status.lastSyncError}
+          <CloudSyncErrorMessage message={status.lastSyncError} />
         </div>
       )}
-      {testResult && <TestResultBadge result={testResult} />}
     </div>
   );
 };
@@ -299,7 +253,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
         <div>
           <ToolbarPopoverHeader
             title={mgr.t("sync.title", "Cloud Sync")}
-            icon={<Cloud className="w-5 h-5 text-primary" />}
+            icon={<CloudSync className="w-5 h-5 text-primary" />}
             onClose={() => mgr.setIsOpen(false)}
             actions={
               <button
@@ -327,6 +281,21 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
                     />
                   ))}
                 </div>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    className="mt-3 text-xs text-primary hover:underline"
+                    onClick={() => {
+                      mgr.setIsOpen(false);
+                      onOpenSettings("cloudSync");
+                    }}
+                  >
+                    {mgr.t(
+                      "sync.connectionTestsInSettings",
+                      "Connection tests are in Sync Settings",
+                    )}
+                  </button>
+                )}
                 <div className="mt-4 pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-textMuted)]">
                   <span>{mgr.t("sync.frequency", "Sync frequency")}: </span>
                   <span className="text-[var(--color-textSecondary)]">

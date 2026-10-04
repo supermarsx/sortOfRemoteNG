@@ -16,13 +16,20 @@ import {
   cloudSyncTargetIdentity,
 } from "../../src/utils/services/cloudSyncActivity";
 
-const mocks = vi.hoisted(() => ({ sync: vi.fn(), test: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  sync: vi.fn(),
+  test: vi.fn(),
+  review: vi.fn(),
+  resolve: vi.fn(),
+}));
 // Hook tests exercise status aggregation but never execute payload/transport work.
 vi.mock("../../src/utils/services/cloudSyncEngine", () => ({}));
 vi.mock("../../src/utils/services/cloudSyncService", async (actual) => ({
   ...(await actual<object>()),
   syncCloudTargets: mocks.sync,
   testCloudSyncTarget: mocks.test,
+  reviewCloudSyncTarget: mocks.review,
+  resolveCloudSyncTarget: mocks.resolve,
 }));
 
 const config = (): CloudSyncConfig => ({
@@ -568,9 +575,14 @@ describe("cloud sync settings target status", () => {
   );
 
   it.each(["keepLocal", "keepRemote"] as const)(
-    "requires an explicit conflict retry and scopes %s to that request",
+    "routes the legacy %s shortcut through review without applying choices",
     async (resolution) => {
-      mocks.sync.mockResolvedValue([]);
+      mocks.review.mockImplementation(async (target) => ({
+        targetId: target.id,
+        requestIdentity: cloudSyncTargetIdentity(target.id),
+        reviewKey: "fresh",
+        items: [],
+      }));
       const cloudSync: CloudSyncConfig = {
         ...config(),
         conflictResolution: "askEveryTime",
@@ -588,19 +600,16 @@ describe("cloud sync settings target status", () => {
       );
       expect(mocks.sync).not.toHaveBeenCalled();
       await act(async () =>
-        hook.result.current.handleResolveConflict("home", resolution),
-      );
-      expect(mocks.sync).not.toHaveBeenCalled();
-      await act(async () =>
         hook.result.current.handleResolveConflict("work", resolution),
       );
-      expect(mocks.sync).toHaveBeenCalledWith([cloudSync.syncTargets![0]], {
-        ...cloudSync,
-        conflictResolution: resolution,
-      });
-      expect(update.mock.lastCall![0].cloudSync.conflictResolution).toBe(
-        "askEveryTime",
+      expect(mocks.review).toHaveBeenCalledWith(
+        cloudSync.syncTargets![0],
+        cloudSync,
       );
+      expect(mocks.sync).not.toHaveBeenCalled();
+      expect(mocks.resolve).not.toHaveBeenCalled();
+      expect(hook.result.current.conflictReview?.choices).toEqual({});
+      expect(update).not.toHaveBeenCalled();
     },
   );
 
@@ -677,6 +686,16 @@ describe("cloud sync settings target status", () => {
     expect(conflictDescriptions.merge).toContain(
       "Records inside an archive are not merged",
     );
+    expect(conflictLabels.smartMerge).toBe("Smart Merge");
+    expect(conflictDescriptions.smartMerge).toContain(
+      "successful shared sync baseline",
+    );
+    expect(conflictDescriptions.smartMerge).toContain("disjoint record edits");
+    expect(conflictDescriptions.smartMerge).toContain("supported artifacts");
+    expect(conflictDescriptions.smartMerge).toContain("explicit review");
+    expect(conflictDescriptions.smartMerge).toContain(
+      "Clocks never choose a winner",
+    );
   });
 
   it.each([
@@ -731,6 +750,65 @@ describe("cloud sync settings target status", () => {
       ).toBeUndefined();
     },
   );
+
+  it("revokes queued target identities before publishing OS-vault opt-out and ignores an in-flight result", async () => {
+    const cloudSync = { ...config(), autoUnlockOsVaultDatabases: true };
+    const identities = cloudSync.syncTargets!.map((target) =>
+      cloudSyncTargetIdentity(target.id),
+    );
+    let finish!: (results: CloudSyncOperationResult[]) => void;
+    mocks.sync.mockReturnValueOnce(
+      new Promise<CloudSyncOperationResult[]>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const update = vi.fn((patch: Partial<GlobalSettings>) => {
+      if (patch.cloudSync?.autoUnlockOsVaultDatabases === false) {
+        // Queued work captures these identities before it starts. Revoke them
+        // synchronously, before the new consent reaches persistence or effects.
+        cloudSync.syncTargets!.forEach((target, index) =>
+          expect(cloudSyncTargetIdentity(target.id)).not.toBe(
+            identities[index],
+          ),
+        );
+      }
+    });
+    const hook = renderHook(
+      ({ cloudSync }) =>
+        useCloudSyncSettings({ cloudSync } as GlobalSettings, update),
+      { initialProps: { cloudSync } },
+    );
+    let running!: Promise<void>;
+    act(() => {
+      running = hook.result.current.handleSyncTarget("work");
+    });
+    act(() =>
+      hook.result.current.updateCloudSync({
+        autoUnlockOsVaultDatabases: false,
+      }),
+    );
+    expect(update.mock.lastCall![0].cloudSync?.autoUnlockOsVaultDatabases).toBe(
+      false,
+    );
+    hook.rerender({
+      cloudSync: { ...cloudSync, autoUnlockOsVaultDatabases: false },
+    });
+    await act(async () => {
+      finish([
+        {
+          provider: "nextcloud",
+          targetId: "work",
+          status: "success",
+          message: "Result from revoked OS-vault consent",
+          requestIdentity: identities[0],
+        },
+      ]);
+      await running;
+    });
+    expect(
+      update.mock.lastCall![0].cloudSync?.targetStatus?.work,
+    ).toBeUndefined();
+  });
 
   it("does not revoke runs for status writes, unchanged consent, or notification edits", () => {
     const cloudSync = config();

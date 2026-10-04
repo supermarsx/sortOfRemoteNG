@@ -105,6 +105,7 @@ function manager() {
     handleTestTarget: vi.fn(),
     getTargetTestResult: vi.fn(),
     handleResolveConflict: vi.fn(),
+    handleReviewConflicts: vi.fn(),
     expandedTargetId: null,
     authTargetId: null,
   };
@@ -186,19 +187,26 @@ describe("per-target cloud sync settings status", () => {
     },
   );
 
-  it("only resolves a conflict after the target-specific choice is clicked", () => {
-    const { mgr, value, statuses } = manager();
-    statuses.work.lastSyncStatus = "conflict";
-    render(<SyncStatusOverview mgr={mgr} />);
-    expect(value.handleResolveConflict).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Keep remote for Work" }),
-    );
-    expect(value.handleResolveConflict).toHaveBeenCalledExactlyOnceWith(
-      "work",
-      "keepRemote",
-    );
-  });
+  it.each(["conflict", "partial"] as const)(
+    "directs %s targets to review without one-click overwrite",
+    (status) => {
+      const { mgr, value, statuses } = manager();
+      statuses.work.lastSyncStatus = status;
+      render(<SyncStatusOverview mgr={mgr} />);
+      expect(value.handleResolveConflict).not.toHaveBeenCalled();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Review conflicts for Work" }),
+      );
+      expect(value.handleReviewConflicts).toHaveBeenCalledExactlyOnceWith(
+        "work",
+      );
+      expect(value.handleResolveConflict).not.toHaveBeenCalled();
+      expect(value.handleSyncTarget).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("button", { name: /Keep (local|remote)/ }),
+      ).not.toBeInTheDocument();
+    },
+  );
 
   it("renders independent read/write probe results and a real test callback", () => {
     const { mgr, value } = manager();

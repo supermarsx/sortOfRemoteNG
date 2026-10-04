@@ -16,6 +16,10 @@ import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
 import { useConnections } from "../../src/contexts/useConnections";
 import DatabaseCredentialVault from "../../src/components/security/DatabaseCredentialVault";
 import { fixture as documentFixture } from "../documents/fixtures";
+import { acquireCloudSyncDatabaseBarrier } from "../../src/utils/services/cloudSyncDatabaseBarrier";
+import { normalizeDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
+import { normalizeDatabaseDocuments } from "../../src/utils/documents/validation";
+import { normalizeDatabaseSettings } from "../../src/utils/documents/documentTypePolicy";
 const mock = vi.hoisted(() => ({
   owner: "db-a",
   locked: false,
@@ -185,6 +189,72 @@ async function add(hook: Awaited<ReturnType<typeof mount>>) {
   );
   return hook.result.current.credentialVault!.list(api.scope!);
 }
+
+it("keeps vault reads valid through an upload snapshot while blocking every private library writer", async () => {
+  const hook = await mount();
+  const snapshot = await add(hook);
+  const api = hook.result.current.credentialVault!;
+  const availability = hook.result.current.databaseAvailability;
+  const automation = hook.result.current.automationLibrary!;
+  const documents = hook.result.current.documents!;
+  const settings = hook.result.current.databaseSettings!;
+  const priorAutomation = normalizeDatabaseAutomationLibrary(undefined);
+  const priorDocuments = normalizeDatabaseDocuments(undefined);
+  const priorSettings = normalizeDatabaseSettings(undefined);
+  let release!: () => Promise<void>;
+  await act(async () => {
+    release = await acquireCloudSyncDatabaseBarrier([mock.owner]);
+  });
+  const saves = mock.save.mock.calls.length;
+  try {
+    expect(hook.result.current.databaseAvailability).toEqual(availability);
+    expect(hook.result.current.credentialVault!.scope).toEqual(snapshot.scope);
+    await expect(
+      api.resolve(snapshot, id, ["username", "password"]),
+    ).resolves.toMatchObject({
+      username: "PRIVATE_ACCOUNT",
+      password: "PRIVATE_PASSWORD",
+    });
+    await expect(
+      api.compareAndSwap(snapshot, [{ operation: "put", entry: entry() }]),
+    ).rejects.toThrow(/pending/);
+    await expect(api.importArchive!(snapshot, archive())).rejects.toThrow(
+      /pending/,
+    );
+    await expect(
+      automation.compareAndSwap(automation.scope!, priorAutomation, {
+        ...priorAutomation,
+        revision: priorAutomation.revision + 1,
+      }),
+    ).rejects.toThrow(/pending/);
+    await expect(
+      documents.compareAndSwap(documents.scope!, priorDocuments, {
+        ...priorDocuments,
+        revision: priorDocuments.revision + 1,
+      }),
+    ).rejects.toThrow(/pending/);
+    await expect(
+      settings.compareAndSwap(settings.scope!, priorSettings, priorSettings),
+    ).rejects.toThrow(/pending/);
+    expect(mock.save).toHaveBeenCalledTimes(saves);
+  } finally {
+    await act(async () => {
+      await release();
+    });
+  }
+  await expect(api.resolve(snapshot, id, ["password"])).resolves.toMatchObject({
+    password: "PRIVATE_PASSWORD",
+  });
+  await act(async () => {
+    await api.compareAndSwap(snapshot, [
+      {
+        operation: "put",
+        entry: { ...entry(), name: "Allowed after snapshot" },
+      },
+    ]);
+  });
+  expect(mock.save).toHaveBeenCalledTimes(saves + 1);
+});
 
 const archive = (): DatabaseVaultArchive => ({
   format: "sorng-vault-archive",

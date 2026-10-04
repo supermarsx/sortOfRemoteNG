@@ -4,6 +4,7 @@ import {
   providerLabels,
 } from "../../../../hooks/settings/useCloudSyncSettings";
 import { CloudSyncStatusIcon } from "../../../sync/CloudSyncStatusIcon";
+import { CloudSyncErrorMessage } from "../../../sync/CloudSyncErrorMessage";
 import { Card } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 
@@ -35,6 +36,24 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
           const status = mgr.getTargetStatus(target.id);
           const syncing = mgr.isTargetSyncing(target.id);
           const result = status?.lastSyncStatus;
+          const reviewState =
+            mgr.conflictReview?.targetId === target.id
+              ? mgr.conflictReview
+              : null;
+          const noReviewConflicts = Boolean(
+            reviewState?.review?.items.length &&
+            ["ready", "verifying"].includes(reviewState.phase) &&
+            reviewState.review.items.every((item) => item.state !== "conflict"),
+          );
+          const matchingCopies = Boolean(
+            noReviewConflicts &&
+            reviewState?.review?.items.every((item) => item.state === "same"),
+          );
+          const reviewAction = noReviewConflicts
+            ? matchingCopies
+              ? "Verify matching copies"
+              : "Sync reviewed changes"
+            : "Review conflicts";
           const retry = result === "failed" || result === "partial";
           const resultLabel =
             result === "success"
@@ -109,7 +128,10 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
                             className="w-4 h-4 text-warning"
                           />
                         )}
-                        <span>{resultLabel}</span>
+                        <span>
+                          {noReviewConflicts ? "Last attempt: " : ""}
+                          {resultLabel}
+                        </span>
                       </>
                     )}
                   </div>
@@ -143,52 +165,48 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
                   {syncing ? "Syncing…" : retry ? "Retry" : "Sync"}
                 </button>
               </div>
-              {result === "conflict" && (
+              {(result === "conflict" || result === "partial") && (
                 <div className="mt-2 space-y-2 text-xs text-[var(--color-textSecondary)]">
                   <p>
-                    Choose which copy to keep for this target. Keep local
-                    replaces the remote copy; keep remote replaces selected
-                    local data. This choice applies only to this retry.
+                    {noReviewConflicts
+                      ? reviewState?.phase === "verifying"
+                        ? "The fresh review found matching copies. Verifying the previous conflict before clearing it."
+                        : matchingCopies
+                          ? "The fresh review found matching copies. Verify them to update the result from the previous attempt."
+                          : "The fresh review found no conflicts. Sync the reviewed one-sided changes to finish; the result above is from the previous attempt."
+                      : "Open Conflict Resolution to fetch a fresh preview and choose how to resolve each conflicting artifact for this target."}
                   </p>
-                  <div className="flex flex-wrap gap-2">
-                    {(["keepLocal", "keepRemote"] as const).map(
-                      (resolution) => (
-                        <button
-                          key={resolution}
-                          type="button"
-                          disabled={
-                            !mgr.cloudSync.enabled ||
-                            !target.enabled ||
-                            Boolean(mgr.validationError) ||
-                            mgr.isBusy ||
-                            mgr.isSyncing ||
-                            syncing
-                          }
-                          onClick={() =>
-                            void mgr.handleResolveConflict(
-                              target.id,
-                              resolution,
-                            )
-                          }
-                          aria-label={`${resolution === "keepLocal" ? "Keep local" : "Keep remote"} for ${target.label}`}
-                          className="rounded border border-[var(--color-border)] px-3 py-1.5 hover:bg-[var(--color-surfaceHover)] disabled:opacity-50"
-                        >
-                          {resolution === "keepLocal"
-                            ? "Keep local and retry"
-                            : "Keep remote and retry"}
-                        </button>
-                      ),
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    disabled={
+                      !mgr.cloudSync.enabled ||
+                      !target.enabled ||
+                      Boolean(mgr.validationError) ||
+                      mgr.isBusy ||
+                      mgr.isSyncing ||
+                      syncing
+                    }
+                    onClick={() =>
+                      void (noReviewConflicts
+                        ? mgr.handleApplyReviewedChoices()
+                        : mgr.handleReviewConflicts(target.id))
+                    }
+                    aria-label={`${reviewAction} for ${target.label}`}
+                    className="rounded border border-[var(--color-border)] px-3 py-1.5 hover:bg-[var(--color-surfaceHover)] disabled:opacity-50"
+                  >
+                    {reviewAction}
+                  </button>
                 </div>
               )}
               {status?.lastSyncError && (
                 <details className="mt-2 text-xs text-[var(--color-textSecondary)]">
                   <summary className="cursor-pointer text-error">
-                    Error details
+                    {noReviewConflicts
+                      ? "Last attempt error details"
+                      : "Error details"}
                   </summary>
                   <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                    {status.lastSyncError}
+                    <CloudSyncErrorMessage message={status.lastSyncError} />
                   </p>
                 </details>
               )}

@@ -817,7 +817,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       const currentState = stateRef.current;
       const nextState = connectionReducer(currentState, action);
       if (
-        databaseRowsRevokedRef.current &&
+        (databaseRowsRevokedRef.current || cloudSyncBusyRef.current) &&
         (nextState.connections !== currentState.connections ||
           nextState.tabGroups !== currentState.tabGroups ||
           nextState.recycleBinData !== currentState.recycleBinData ||
@@ -1259,21 +1259,28 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             "A database operation is pending. Retry cloud sync after it finishes.",
           );
         cloudSyncBusyRef.current = true;
-        databaseRowsRevokedRef.current = true;
-        recycleLoadingRef.current = true;
-        setRecycleLoading(true);
-        publishDatabaseAvailability("loading");
+        // Uploads only freeze mutations while capturing a coherent snapshot.
+        // They do not revoke the database lease: publishing "loading" here
+        // unmounts session clients and cancels in-flight credential resolution.
+        // A restore does replace private rows and must still fence all readers.
+        const target = activeDatabaseTargetRef.current;
+        const generation = loadGenerationRef.current;
+        const stillOwnsBarrier = () =>
+          databaseManager.getCurrentDatabase()?.id === owner &&
+          activeDatabaseTargetRef.current === target &&
+          loadGenerationRef.current === generation;
+        if (restore) {
+          databaseRowsRevokedRef.current = true;
+          recycleLoadingRef.current = true;
+          setRecycleLoading(true);
+          publishDatabaseAvailability("loading");
+        }
         const release = async () => {
           try {
-            if (databaseManager.getCurrentDatabase()?.id !== owner) return;
+            if (!stillOwnsBarrier()) return;
             if (restore) {
               if (!(await loadData(owner)))
                 throw new Error("Cloud restore refresh was superseded.");
-            } else {
-              databaseRowsRevokedRef.current = false;
-              recycleLoadingRef.current = false;
-              setRecycleLoading(false);
-              publishDatabaseAvailability();
             }
           } finally {
             cloudSyncBusyRef.current = false;
@@ -1281,12 +1288,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         };
         try {
           await flushPendingSave();
-          if (databaseManager.getCurrentDatabase()?.id !== owner)
+          if (!stillOwnsBarrier())
             throw new Error("Database changed while preparing cloud sync.");
           return release;
         } catch (error) {
           cloudSyncBusyRef.current = false;
-          if (databaseManager.getCurrentDatabase()?.id === owner) {
+          if (restore && stillOwnsBarrier()) {
             databaseRowsRevokedRef.current = false;
             recycleLoadingRef.current = false;
             setRecycleLoading(false);
@@ -1355,6 +1362,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     ): Promise<RecycleBinOutcome> => {
       scope = { ...scope };
       if (
+        cloudSyncBusyRef.current ||
         recycleBusyRef.current ||
         databaseSettingsBusyRef.current ||
         documentsBusyRef.current ||
@@ -1813,6 +1821,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             "The database library write could not be verified. Reload before applying another edit.",
           );
         if (
+          cloudSyncBusyRef.current ||
           automationBusyRef.current ||
           databaseSettingsBusyRef.current ||
           documentsBusyRef.current ||
@@ -1950,6 +1959,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         const proposed = normalizeDatabaseSettings(replacement);
         assertScope(expected);
         if (
+          cloudSyncBusyRef.current ||
           databaseSettingsBusyRef.current ||
           documentsBusyRef.current ||
           automationBusyRef.current ||
@@ -2133,6 +2143,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           throw new Error("Invalid document revision.");
         assertScope(expected);
         if (
+          cloudSyncBusyRef.current ||
           documentsBusyRef.current ||
           databaseSettingsBusyRef.current ||
           automationBusyRef.current ||
@@ -2443,6 +2454,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         const incoming = normalizeDatabaseVaultArchive(archive);
         const prior = reviewed(captured);
         if (
+          cloudSyncBusyRef.current ||
           vaultBusyRef.current ||
           databaseSettingsBusyRef.current ||
           documentsBusyRef.current ||
@@ -2544,6 +2556,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         const prior = reviewed(captured);
         const proposed = applyDatabaseCredentialChanges(prior.data, changes);
         if (
+          cloudSyncBusyRef.current ||
           vaultBusyRef.current ||
           databaseSettingsBusyRef.current ||
           documentsBusyRef.current ||

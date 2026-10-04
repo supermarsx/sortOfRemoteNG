@@ -1,5 +1,5 @@
 import React from "react";
-import { CloudCog, RefreshCw } from "lucide-react";
+import { CloudSync } from "lucide-react";
 import { useCloudSyncSettings } from "../../../hooks/settings/useCloudSyncSettings";
 import SectionHeading from "../../ui/SectionHeading";
 import AdvancedSection from "./cloudSync/AdvancedSection";
@@ -8,6 +8,7 @@ import ConflictResolutionSection from "./cloudSync/ConflictResolutionSection";
 import EnableSyncToggle from "./cloudSync/EnableSyncToggle";
 import EncryptionSection from "./cloudSync/EncryptionSection";
 import NotificationsGrid from "./cloudSync/NotificationsGrid";
+import RemoteDatabasesSection from "./cloudSync/RemoteDatabasesSection";
 import SyncTargetsSection from "./cloudSync/SyncTargetsSection";
 import StartupShutdownGrid from "./cloudSync/StartupShutdownGrid";
 import SyncFrequencySelect from "./cloudSync/SyncFrequencySelect";
@@ -24,7 +25,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   return (
     <div className="space-y-6 relative">
       <SectionHeading
-        icon={<CloudCog className="w-5 h-5 text-primary" />}
+        icon={<CloudSync className="w-5 h-5 text-primary" />}
         title="Cloud Sync"
         description="Synchronize connections and settings across devices using cloud storage providers."
       />
@@ -40,7 +41,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         }
         className="absolute top-0 right-0 !mt-0 flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
       >
-        <RefreshCw className="w-4 h-4" />
+        <CloudSync className="w-4 h-4" />
         Sync All
       </button>
 
@@ -57,6 +58,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
       <SyncFrequencySelect mgr={mgr} />
       <SyncItemsGrid mgr={mgr} />
       <EncryptionSection mgr={mgr} />
+      <RemoteDatabasesSection mgr={mgr} />
       <ConflictResolutionSection mgr={mgr} />
       <StartupShutdownGrid mgr={mgr} />
       <NotificationsGrid mgr={mgr} />

@@ -2,10 +2,11 @@ import React from "react";
 import { CloudSyncStatusIcon } from "./CloudSyncStatusIcon";
 import { CloudSyncProviderIcon } from "./CloudSyncProviderIcon";
 import {
-  Cloud,
+  CloudSync,
+  CloudCheck,
+  CloudAlert,
   CloudOff,
   HardDrive,
-  RefreshCw,
   CheckCircle,
   AlertCircle,
   Clock,
@@ -55,10 +56,10 @@ const SyncStatusIcon: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       />
     );
   if (statuses.some((s) => s === "conflict" || s === "partial"))
-    return <AlertCircle className="w-4 h-4 text-warning" />;
+    return <CloudAlert className="w-4 h-4 text-warning" />;
   if (statuses.every((s) => s === "success"))
-    return <CheckCircle className="w-4 h-4 text-success" />;
-  return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
+    return <CloudCheck className="w-4 h-4 text-success" />;
+  return <CloudSync className="w-4 h-4 text-[var(--color-textSecondary)]" />;
 };
 
 const BackupStatusIcon: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -140,7 +141,7 @@ const ProviderRow: React.FC<{ provider: CloudSyncProvider; mgr: Mgr }> = ({
               className="w-3 h-3"
             />
           ) : (
-            <RefreshCw className="w-3 h-3 text-[var(--color-textSecondary)]" />
+            <CloudSync className="w-3 h-3 text-[var(--color-textSecondary)]" />
           )}
         </button>
       </div>
@@ -155,7 +156,7 @@ const CloudSyncSection: React.FC<{
   <div className="p-4 border-b border-[var(--color-border)]">
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
-        <Cloud className="w-4 h-4 text-primary" />
+        <CloudSync className="w-4 h-4 text-primary" />
         <span className="text-sm font-medium text-[var(--color-textSecondary)]">
           {mgr.t("syncBackup.cloudSync", "Cloud Sync")}
         </span>
@@ -182,7 +183,7 @@ const CloudSyncSection: React.FC<{
               inheritColor
             />
           ) : (
-            <RefreshCw className="w-3 h-3" />
+            <CloudSync className="w-3 h-3" />
           )}
           {mgr.t("syncBackup.syncAll", "Sync All")}
         </button>

@@ -18,6 +18,20 @@ export interface CloudSyncSnapshot {
   version: 1;
   modifiedAt: number;
   payload: CloudSyncPayload;
+  /** Display metadata inside the encrypted snapshot; not part of record merge hashes. */
+  databaseNames?: Record<string, string>;
+}
+
+export function isCloudDatabaseName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    Boolean(value.trim()) &&
+    value.length <= 512 &&
+    !Array.from(value).some(
+      (character) =>
+        character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    )
+  );
 }
 
 export function canonicalSyncJson(value: unknown): string {
@@ -205,5 +219,24 @@ export async function decodeCloudSnapshot(
   ) {
     throw new Error("Invalid cloud sync snapshot metadata.");
   }
-  return { ...snapshot, payload: validateCloudSyncPayload(snapshot.payload) };
+  const payload = validateCloudSyncPayload(snapshot.payload);
+  if (snapshot.databaseNames !== undefined) {
+    const names = snapshot.databaseNames;
+    if (
+      !names ||
+      typeof names !== "object" ||
+      Array.isArray(names) ||
+      Object.entries(names).some(
+        ([id, name]) =>
+          !/^[a-zA-Z0-9_-]{1,128}$/.test(id) ||
+          !Object.prototype.hasOwnProperty.call(
+            payload.sections,
+            `database:${id}`,
+          ) ||
+          !isCloudDatabaseName(name),
+      )
+    )
+      throw new Error("Invalid remote database names.");
+  }
+  return { ...snapshot, payload };
 }

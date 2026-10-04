@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -166,7 +166,7 @@ describe("useCloudSyncStatus", () => {
     expect(result.current.enabledProviders).toEqual(["googleDrive"]);
   });
 
-  it("reports provider tests as explicit backend errors instead of random success", async () => {
+  it("does not expose connection probes outside the named-target Settings controls", () => {
     const config = {
       enabled: true,
       enabledProviders: ["googleDrive"] as CloudSyncProvider[],
@@ -178,17 +178,8 @@ describe("useCloudSyncStatus", () => {
       useCloudSyncStatus({ cloudSyncConfig: config }),
     );
 
-    await act(async () => {
-      await result.current.handleTestProvider("googleDrive");
-    });
-
-    const testResult = result.current.getTestResultForProvider("googleDrive");
-    expect(testResult?.success).toBe(false);
-    expect(testResult?.message).toMatch(
-      /Select a configured destination|desktop backend/,
-    );
-    expect(testResult?.canRead).toBe(false);
-    expect(testResult?.canWrite).toBe(false);
+    expect(result.current).not.toHaveProperty("handleTestProvider");
+    expect(result.current).not.toHaveProperty("handleTestAll");
   });
 
   it("derives enabled providers from sync targets when present", () => {

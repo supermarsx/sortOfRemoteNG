@@ -84,6 +84,7 @@ export const ConflictResolutionStrategies = [
   "keepRemote",
   "keepNewer",
   "merge",
+  "smartMerge",
 ] as const;
 export type ConflictResolutionStrategy =
   (typeof ConflictResolutionStrategies)[number];
@@ -281,6 +282,9 @@ export interface CloudSyncConfig {
   /** Explicit inventory ids; empty/absent selects nothing. New items are never auto-selected. */
   selectedItems?: string[];
 
+  /** Explicit consent to unlock selected native databases with one OS-vault slot. */
+  autoUnlockOsVaultDatabases?: boolean;
+
   // Deprecated category options retained for saved-config compatibility only.
   syncConnections: boolean;
   syncSettings: boolean;
@@ -356,6 +360,7 @@ export const defaultCloudSyncConfig: CloudSyncConfig = {
   },
   syncConnections: true,
   selectedItems: [],
+  autoUnlockOsVaultDatabases: false,
   syncSettings: true,
   syncSSHKeys: false,
   syncScripts: true,
@@ -442,6 +447,9 @@ function liftLegacyProviderConfig(
 export function migrateCloudSyncConfig(
   config: CloudSyncConfig,
 ): CloudSyncConfig {
+  const autoUnlockOsVaultDatabases = config.autoUnlockOsVaultDatabases === true;
+  if (config.autoUnlockOsVaultDatabases !== autoUnlockOsVaultDatabases)
+    config = { ...config, autoUnlockOsVaultDatabases };
   const maxFileSizeMB = normalizeCloudSyncFileSizeMiB(config.maxFileSizeMB);
   if (config.maxFileSizeMB !== maxFileSizeMB) {
     config = { ...config, maxFileSizeMB };

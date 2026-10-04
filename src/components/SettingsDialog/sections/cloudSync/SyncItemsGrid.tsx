@@ -1,13 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Database } from "lucide-react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Database, LockKeyhole } from "lucide-react";
+import { ToastContext } from "../../../../contexts/ToastContext";
+import type { DatabaseOpenObserver } from "../../../../types/connection/databaseOpening";
 import { discoverCloudSyncItems } from "../../../../utils/services/cloudSyncPayload";
 import { APP_DATA_STORE_CHANGED_EVENT } from "../../../../utils/storage/appDataJsonStore";
-import { onCurrentDatabaseChange } from "../../../../utils/connection/databaseManager";
+import {
+  DatabaseManager,
+  onCurrentDatabaseChange,
+  onDatabaseAccessChange,
+} from "../../../../utils/connection/databaseManager";
+import type { DatabaseProtectionStatus } from "../../../../types/encryption/databaseProtection";
 import { formatDatabaseBytes as formatBytes } from "../../../../utils/connection/databaseSize";
+import { cloudSyncArtifactLabel } from "../../../../utils/settings/cloudSyncPresentation";
 import { Checkbox } from "../../../ui/forms";
+import { ManagedDatabaseUnlockDialog } from "../../../encryption/DatabaseUnlockDialog";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 
@@ -30,11 +40,27 @@ const inventoryStoreKeys = new Set([
 
 /** Discovery is read-only; only explicit user actions change sync selections. */
 function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
+  const toast = useContext(ToastContext)?.toast;
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
+  const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [unlockDialog, setUnlockDialog] = useState<{
+    id: string;
+    name: string;
+    status: DatabaseProtectionStatus;
+    generation: number;
+    notify: DatabaseOpenObserver;
+  } | null>(null);
+  const unlockRequest = useRef({
+    generation: 0,
+    busy: false,
+    databaseId: null as string | null,
+    notify: undefined as DatabaseOpenObserver | undefined,
+  });
   const request = useRef({ generation: 0 });
   const refresh = useCallback(async () => {
     const generation = ++request.current.generation;
@@ -51,6 +77,100 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
       if (generation === request.current.generation) setLoading(false);
     }
   }, []);
+  const closeUnlock = useCallback(() => {
+    unlockRequest.current.notify?.("cancelled");
+    unlockRequest.current.notify = undefined;
+    unlockRequest.current.generation++;
+    unlockRequest.current.busy = false;
+    unlockRequest.current.databaseId = null;
+    setUnlockingId(null);
+    setUnlockDialog(null);
+  }, []);
+  useEffect(() => {
+    const lifecycle = unlockRequest.current;
+    return () => {
+      lifecycle.notify?.("cancelled");
+      lifecycle.notify = undefined;
+      lifecycle.generation++;
+      lifecycle.busy = false;
+      lifecycle.databaseId = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (mgr.isBusy) closeUnlock();
+  }, [mgr.isBusy, closeUnlock]);
+
+  const startUnlock = async (item: InventoryItem) => {
+    const id = item.unlockDatabaseId;
+    if (
+      !id ||
+      item.id !== `database:${id}` ||
+      item.available ||
+      loading ||
+      error ||
+      mgr.isBusy ||
+      unlockRequest.current.busy
+    )
+      return;
+    const generation = ++unlockRequest.current.generation;
+    const inventoryGeneration = request.current.generation;
+    unlockRequest.current.busy = true;
+    unlockRequest.current.databaseId = id;
+    setUnlockingId(id);
+    setUnlockError(null);
+    try {
+      const status =
+        await DatabaseManager.getInstance().getDatabaseProtectionStatus(id);
+      if (generation !== unlockRequest.current.generation) return;
+      if (inventoryGeneration !== request.current.generation) {
+        closeUnlock();
+        return;
+      }
+      if (status.kind !== "managed")
+        throw new Error("Database protection changed.");
+      const toastId = toast?.loading(`Preparing to unlock “${item.label}”…`);
+      let settled = false;
+      const notify: DatabaseOpenObserver = (stage) => {
+        if (settled || generation !== unlockRequest.current.generation) return;
+        // A failed password attempt can be retried in the same dialog/toast.
+        settled = ["success", "cancelled", "unconfirmed"].includes(stage);
+        const messages = {
+          "waiting-unlock": `Unlock “${item.label}” to make it available for cloud sync.`,
+          unlocking: `Unlocking “${item.label}”…`,
+          loading: `Checking unlock access for “${item.label}”…`,
+          success: `Unlocked “${item.label}” for cloud sync.`,
+          failed: `Could not unlock “${item.label}”. Review the unlock dialog and retry.`,
+          cancelled: `Unlocking “${item.label}” was cancelled.`,
+          unconfirmed: `Unlocking “${item.label}” finished without confirmation. Refresh the inventory.`,
+        };
+        if (toastId)
+          toast?.update(toastId, {
+            type:
+              stage === "success"
+                ? "success"
+                : stage === "failed"
+                  ? "error"
+                  : settled || stage === "waiting-unlock"
+                    ? "info"
+                    : "loading",
+            message: messages[stage],
+            duration: settled ? 4000 : 0,
+          });
+      };
+      unlockRequest.current.notify = notify;
+      notify("waiting-unlock");
+      setUnlockDialog({ id, name: item.label, status, generation, notify });
+    } catch {
+      if (generation !== unlockRequest.current.generation) return;
+      unlockRequest.current.busy = false;
+      unlockRequest.current.databaseId = null;
+      setUnlockError(
+        "Could not prepare this database's unlock methods. Refresh the inventory and try again; no sync was started.",
+      );
+    } finally {
+      if (generation === unlockRequest.current.generation) setUnlockingId(null);
+    }
+  };
   useEffect(() => {
     const lifecycle = request.current;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -66,6 +186,16 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
       if (key && inventoryStoreKeys.has(key)) scheduleRefresh();
     };
     const unsubscribe = onCurrentDatabaseChange(scheduleRefresh);
+    const unsubscribeAccess = onDatabaseAccessChange((state) => {
+      // Includes non-active databases: unlocking for sync must not select them.
+      if (
+        state.status === "suspended" &&
+        (state.databaseId === unlockRequest.current.databaseId ||
+          state.reason === "global-lock")
+      )
+        closeUnlock();
+      scheduleRefresh();
+    });
     window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
     window.addEventListener("sorng-database-data-saved", scheduleRefresh);
     window.addEventListener("focus", scheduleRefresh);
@@ -74,18 +204,19 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
       lifecycle.generation++;
       clearTimeout(refreshTimer);
       unsubscribe();
+      unsubscribeAccess();
       window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
       window.removeEventListener("sorng-database-data-saved", scheduleRefresh);
       window.removeEventListener("focus", scheduleRefresh);
     };
-  }, [refresh, mgr.isBusy]);
+  }, [refresh, mgr.isBusy, closeUnlock]);
 
   const selected = new Set(mgr.cloudSync.selectedItems ?? []);
   const missing: InventoryItem[] = [...selected]
     .filter((id) => !items.some((item) => item.id === id))
     .map((id) => ({
       id,
-      label: id,
+      label: cloudSyncArtifactLabel(id),
       kind: "unavailable",
       available: false,
       bytes: undefined,
@@ -129,11 +260,40 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
 
   return (
     <div className="space-y-4" data-setting-key="cloudSync.selectedItems">
+      {unlockDialog && (
+        <ManagedDatabaseUnlockDialog
+          key={`${unlockDialog.id}:${unlockDialog.status.securityRevision}`}
+          databaseId={unlockDialog.id}
+          databaseName={unlockDialog.name}
+          status={unlockDialog.status}
+          onClose={closeUnlock}
+          onUnlockProgress={unlockDialog.notify}
+          onUnlockComplete={async () => {
+            if (unlockDialog.generation !== unlockRequest.current.generation)
+              return;
+            unlockDialog.notify("success");
+            closeUnlock();
+            await refresh();
+          }}
+        />
+      )}
       <SectionHeader
         icon={<Database className="w-4 h-4 text-primary" />}
         title="What to Sync"
       />
       <Card>
+        <Toggle
+          settingKey="cloudSync.autoUnlockOsVaultDatabases"
+          icon={<LockKeyhole size={16} />}
+          label="Automatically unlock OS-vault databases for sync"
+          description="Allow sync to unlock selected databases using this device's OS vault. Password-only databases still need manual unlock. This does not switch your active database or unlock the app's global lock."
+          checked={mgr.cloudSync.autoUnlockOsVaultDatabases === true}
+          onChange={(value) =>
+            mgr.updateCloudSync({ autoUnlockOsVaultDatabases: value })
+          }
+          disabled={mgr.isBusy}
+          infoTooltip="Off by default. Applies only when syncing selected, non-excluded databases with one OS-vault unlock method available on this device. Your operating system may require approval. Unlocking creates a normal expiring local session; no unlock credentials are uploaded."
+        />
         <p className="text-sm text-[var(--color-textSecondary)]">
           Choose application archives and libraries found on this device. Newly
           discovered items are never selected automatically. This is not
@@ -227,6 +387,11 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
             have not changed.
           </p>
         )}
+        {unlockError && (
+          <p role="alert" className="text-sm text-error">
+            {unlockError}
+          </p>
+        )}
         {!loading && !error && visible.length === 0 && (
           <p className="text-sm text-[var(--color-textSecondary)]">
             {query
@@ -289,6 +454,25 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
                           "This item cannot currently be synced."}
                       </p>
                     )}
+                    {!item.available &&
+                      item.unlockDatabaseId &&
+                      item.id === `database:${item.unlockDatabaseId}` && (
+                        <button
+                          type="button"
+                          className={`${buttonClass} mt-2 mr-2 inline-flex items-center gap-2`}
+                          disabled={
+                            disabled ||
+                            mgr.isBusy ||
+                            unlockingId !== null ||
+                            unlockDialog !== null
+                          }
+                          onClick={() => void startUnlock(item)}
+                          aria-label={`Unlock database ${item.label}`}
+                        >
+                          <LockKeyhole className="h-3.5 w-3.5" aria-hidden />
+                          Unlock database
+                        </button>
+                      )}
                     {!item.available && selected.has(item.id) && (
                       <button
                         type="button"

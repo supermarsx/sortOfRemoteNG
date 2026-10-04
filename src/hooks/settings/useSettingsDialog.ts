@@ -6,6 +6,7 @@ import { ThemeManager } from "../../utils/settings/themeManager";
 import { loadLanguage, resolveSupportedLanguage } from "../../i18n";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
+import { useCloudSyncReviewNavigation } from "../../utils/settings/cloudSyncReviewNavigation";
 import { useSettingsSearch } from "../../components/SettingsDialog/useSettingsSearch";
 import { useSettingHighlight } from "../../components/SettingsDialog/useSettingHighlight";
 import {
@@ -50,6 +51,7 @@ export function useSettingsDialog(
   const [highlightKey, setHighlightKey] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+  const reviewNavigation = useCloudSyncReviewNavigation();
 
   // `t` is threaded into search so entries carrying `labelKey`/`descriptionKey`
   // also match on their translated text in the current UI language.
@@ -116,6 +118,15 @@ export function useSettingsDialog(
     setSearchQuery("");
     setHighlightKey(null);
   }, [isOpen, initialTab, initialTabNonce]);
+
+  // Alert actions are subsection links, not merely a scroll request against a
+  // possibly hidden panel. Select its owning section before it can take focus.
+  useEffect(() => {
+    if (!isOpen || !reviewNavigation) return;
+    setActiveTab("cloudSync");
+    setSearchQuery("");
+    setHighlightKey(null);
+  }, [isOpen, reviewNavigation]);
 
   // ── Reset scroll-to-bottom on tab change ──────────────────────
   useEffect(() => {

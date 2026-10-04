@@ -113,6 +113,31 @@ beforeEach(() => {
   });
 });
 describe("actual cloud sync artifacts", () => {
+  it("names unavailable databases from the fresh inventory, including after a rename", async () => {
+    state.databases[0].isExportable = false;
+    for (const name of ["Work database", "Renamed database"]) {
+      state.databases[0].name = name;
+      await expect(
+        captureCloudSyncPayload({ ...config, selectedItems: ["database:db1"] }),
+      ).rejects.toThrow(
+        `Database “${name}” is unavailable for cloud sync. Unlock this database here before syncing. If it was already unlocked, its session may have expired.`,
+      );
+    }
+    expect(state.read).not.toHaveBeenCalled();
+    expect(state.restore).not.toHaveBeenCalled();
+  });
+
+  it("uses a friendly missing-database error without leaking its internal selection ID", async () => {
+    state.databases = [];
+    await expect(
+      captureCloudSyncPayload({ ...config, selectedItems: ["database:db1"] }),
+    ).rejects.toThrow(
+      /^A selected database is unavailable for cloud sync\. Review What to sync and select an existing, unlocked artifact\.$/,
+    );
+    expect(state.read).not.toHaveBeenCalled();
+    expect(state.restore).not.toHaveBeenCalled();
+  });
+
   it("accepts payload budgets above 64 MiB through exactly 100 MiB, but rejects one byte more", () => {
     const payload = {
       version: 1,
@@ -169,7 +194,9 @@ describe("actual cloud sync artifacts", () => {
     state.databases[0].isExportable = false;
     const item = (await discoverCloudSyncItems())[0];
     expect(item.available).toBe(false);
-    expect(item.unavailableReason).toMatch(/Open and unlock.*before syncing/);
+    expect(item.unavailableReason).toMatch(
+      /Unlock this database here before syncing/,
+    );
     expect(item.unavailableReason).not.toContain("protection change");
   });
 

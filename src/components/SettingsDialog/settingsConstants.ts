@@ -13,7 +13,7 @@ import {
   MousePointerClick,
   Languages,
   Archive,
-  CloudCog,
+  CloudSync,
   Fingerprint,
   MonitorDot,
   Cpu,
@@ -101,7 +101,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
 
   // ── Storage & sync ──
   { id: "backup", labelKey: "Backup", icon: Archive },
-  { id: "cloudSync", labelKey: "Cloud Sync", icon: CloudCog },
+  { id: "cloudSync", labelKey: "Cloud Sync", icon: CloudSync },
 
   // ── Sessions & automation ──
   { id: "recording", labelKey: "Recording", icon: Circle },

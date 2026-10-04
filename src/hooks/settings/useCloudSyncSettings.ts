@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import React from "react";
 import { CloudOff, Check, X, AlertTriangle, RefreshCw } from "lucide-react";
 import {
@@ -17,12 +17,20 @@ import {
   cloudSyncProviderStatus,
   syncCloudTargets,
   testCloudSyncTarget,
+  reviewCloudSyncTarget,
+  resolveCloudSyncTarget,
   type CloudSyncOperationResult,
 } from "../../utils/services/cloudSyncService";
+import type {
+  CloudSyncConflictReview,
+  CloudSyncReviewChoice,
+  CloudSyncReviewChoices,
+} from "../../utils/services/cloudSyncConflictReview";
 import { useCloudSyncActivity } from "../sync/useCloudSyncActivity";
 import { CloudSyncProviderIcon } from "../../components/sync/CloudSyncProviderIcon";
 import {
   cloudSyncTargetIdentity,
+  getCloudSyncActivity,
   invalidateCloudSyncTarget,
   type CloudSyncActivity,
 } from "../../utils/services/cloudSyncActivity";
@@ -36,6 +44,84 @@ function sameDestination(a: CloudSyncTarget, b: CloudSyncTarget): boolean {
   return Object.keys({ ...before, ...after }).every(
     (key) => Reflect.get(before ?? {}, key) === Reflect.get(after ?? {}, key),
   );
+}
+
+// Compare configuration in memory, without serializing credentials into a key.
+function sameReviewValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) =>
+      sameReviewValue(Reflect.get(a, key), Reflect.get(b, key)),
+    )
+  );
+}
+
+const reviewStatusKeys = new Set([
+  "syncTargets",
+  "enabledProviders",
+  "targetStatus",
+  "providerStatus",
+  "lastSyncTime",
+  "lastSyncStatus",
+  "lastSyncError",
+]);
+
+function sameReviewConfig(a: CloudSyncConfig, b: CloudSyncConfig): boolean {
+  return Object.keys({ ...a, ...b }).every(
+    (key) =>
+      reviewStatusKeys.has(key) ||
+      sameReviewValue(Reflect.get(a, key), Reflect.get(b, key)),
+  );
+}
+
+interface ReviewContext {
+  target: CloudSyncTarget;
+  config: CloudSyncConfig;
+  identity: symbol;
+}
+
+interface ConflictReviewState {
+  targetId: string;
+  phase: "loading" | "ready" | "verifying" | "applying" | "error" | "complete";
+  review?: CloudSyncConflictReview;
+  choices: CloudSyncReviewChoices;
+  message?: string;
+}
+
+function currentReviewContext(
+  context: ReviewContext,
+  config: CloudSyncConfig,
+): boolean {
+  const latest = config.syncTargets?.find(
+    (target) => target.id === context.target.id,
+  );
+  return Boolean(
+    config.enabled &&
+    latest?.enabled &&
+    context.identity === cloudSyncTargetIdentity(context.target.id) &&
+    sameDestination(context.target, latest) &&
+    sameReviewConfig(context.config, config),
+  );
+}
+
+const refreshReviewMessage =
+  "This review is no longer current. Refresh review and choose again before applying.";
+
+function reviewErrorMessage(error: unknown): string {
+  const message =
+    typeof error === "string"
+      ? error
+      : error && typeof error === "object" && "message" in error
+        ? String(error.message)
+        : "";
+  if (/unlock|locked/i.test(message))
+    return "Open and unlock the selected data, then refresh review. No reviewed choices were retried.";
+  if (/stale|changed|no longer|refresh/i.test(message))
+    return refreshReviewMessage;
+  return "Conflict review could not complete. Check the target configuration and access to the selected data, then refresh review.";
 }
 
 function selectionError(config: CloudSyncConfig): string | undefined {
@@ -134,18 +220,21 @@ export const conflictLabels: Record<ConflictResolutionStrategy, string> = {
   keepRemote: "Always Keep Remote",
   keepNewer: "Newer when unambiguous",
   merge: "Attempt to Merge",
+  smartMerge: "Smart Merge",
 };
 
 export const conflictDescriptions: Record<ConflictResolutionStrategy, string> =
   {
     askEveryTime:
-      "Review conflicts in the target status, then choose Keep local or Keep remote to retry.",
+      "Choose Review conflicts in the target status or below, review each artifact, then apply your explicit choices. The strategy stays unchanged.",
     keepLocal: "Local changes always override remote",
     keepRemote: "Remote changes always override local",
     keepNewer:
       "One-sided changes sync automatically. If both copies changed, review is required; clock timestamps never choose a winner.",
     merge:
       "Combine independent whole artifacts; conflicting changes within the same artifact require review. Records inside an archive are not merged.",
+    smartMerge:
+      "Requires a successful shared sync baseline. Merges disjoint record edits in supported artifacts; overlapping edits require explicit review. Clocks never choose a winner.",
   };
 
 // ─── Hook ──────────────────────────────────────────────────────────
@@ -156,7 +245,24 @@ export function useCloudSyncSettings(
 ) {
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [reviewingTargetId, setReviewingTargetId] = useState<string | null>(
+    null,
+  );
   const operationBusy = useRef(false);
+  const mounted = useRef(true);
+  const reviewContext = useRef<ReviewContext | null>(null);
+  const reviewStateRef = useRef<ConflictReviewState | null>(null);
+  const [conflictReview, setConflictReview] =
+    useState<ConflictReviewState | null>(null);
+  const [reviewRequestSequence, setReviewRequestSequence] = useState(0);
+  const publishReview = (next: ConflictReviewState | null) => {
+    reviewStateRef.current = next;
+    if (mounted.current) setConflictReview(next);
+  };
+  const cancelConflictReview = () => {
+    reviewContext.current = null;
+    publishReview(null);
+  };
   const [testingTargetId, setTestingTargetId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<
     Record<string, CloudSyncOperationResult>
@@ -177,6 +283,31 @@ export function useCloudSyncSettings(
   const cloudSync = settings.cloudSync ?? defaultCloudSyncConfig;
   const cloudSyncRef = useRef(cloudSync);
   cloudSyncRef.current = cloudSync;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      reviewContext.current = null;
+      reviewStateRef.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (
+      reviewContext.current &&
+      !currentReviewContext(reviewContext.current, cloudSync)
+    ) {
+      // Revoke pending service work as well as hiding its stale preview.
+      if (
+        reviewContext.current.identity ===
+        cloudSyncTargetIdentity(reviewContext.current.target.id)
+      ) {
+        invalidateCloudSyncTarget(reviewContext.current.target.id);
+      }
+      reviewContext.current = null;
+      reviewStateRef.current = null;
+      setConflictReview(null);
+    }
+  }, [cloudSync, activity]);
   const providerStatus = cloudSync.providerStatus ?? {};
   // Legacy callers (sync status badges, etc.) still ask which
   // providers are "active". Derive from the new per-target list:
@@ -204,6 +335,12 @@ export function useCloudSyncSettings(
       (current.enabled && updates.enabled === false) ||
       changedList("selectedItems") ||
       changedList("excludePatterns") ||
+      (Object.prototype.hasOwnProperty.call(
+        updates,
+        "autoUnlockOsVaultDatabases",
+      ) &&
+        updates.autoUnlockOsVaultDatabases !==
+          current.autoUnlockOsVaultDatabases) ||
       (Object.prototype.hasOwnProperty.call(updates, "encryptBeforeSync") &&
         updates.encryptBeforeSync !== current.encryptBeforeSync) ||
       (Object.prototype.hasOwnProperty.call(
@@ -219,6 +356,18 @@ export function useCloudSyncSettings(
       setTestResults({});
     }
     cloudSyncRef.current = { ...current, ...updates };
+    if (
+      reviewContext.current &&
+      !currentReviewContext(reviewContext.current, cloudSyncRef.current)
+    ) {
+      if (
+        reviewContext.current.identity ===
+        cloudSyncTargetIdentity(reviewContext.current.target.id)
+      ) {
+        invalidateCloudSyncTarget(reviewContext.current.target.id);
+      }
+      cancelConflictReview();
+    }
     updateSettings({
       cloudSync: cloudSyncRef.current,
     });
@@ -409,7 +558,8 @@ export function useCloudSyncSettings(
     );
   };
   const anySyncing = isSyncing || activity.length > 0;
-  const isBusy = anySyncing || testingTargetId !== null;
+  const isBusy =
+    anySyncing || testingTargetId !== null || reviewingTargetId !== null;
 
   const writeSyncTargets = (next: CloudSyncTarget[]) => {
     const current = cloudSyncRef.current;
@@ -518,19 +668,348 @@ export function useCloudSyncSettings(
 
   // ── Sync (target-scoped) ──
 
+  const handleReviewConflicts = async (targetId: string) => {
+    const config = cloudSyncRef.current;
+    if (
+      !mounted.current ||
+      selectionError(config) ||
+      operationBusy.current ||
+      getCloudSyncActivity().length
+    )
+      return;
+    const target = config.syncTargets?.find(
+      (item) =>
+        item.id === targetId && item.enabled && item.provider !== "none",
+    );
+    if (!target) return;
+    const context: ReviewContext = {
+      target: structuredClone(target),
+      config: structuredClone(config),
+      identity: cloudSyncTargetIdentity(targetId),
+    };
+    reviewContext.current = context;
+    setReviewRequestSequence((sequence) => sequence + 1);
+    setReviewingTargetId(targetId);
+    publishReview({ targetId, phase: "loading", choices: {} });
+    operationBusy.current = true;
+    try {
+      const error = targetError(target);
+      if (error) {
+        publishReview({
+          targetId,
+          phase: "error",
+          choices: {},
+          message: error,
+        });
+        return;
+      }
+      const review = await reviewCloudSyncTarget(target, config);
+      if (
+        !mounted.current ||
+        reviewContext.current !== context ||
+        !currentReviewContext(context, cloudSyncRef.current)
+      )
+        return;
+      if (
+        review.targetId !== targetId ||
+        review.requestIdentity !== context.identity
+      ) {
+        publishReview({
+          targetId,
+          phase: "error",
+          choices: {},
+          message: refreshReviewMessage,
+        });
+        return;
+      }
+      const allSame =
+        review.items.length > 0 &&
+        review.items.every((item) => item.state === "same");
+      const previousStatus = config.targetStatus?.[targetId];
+      const samePreviousStatus = () =>
+        sameReviewValue(
+          previousStatus,
+          cloudSyncRef.current.targetStatus?.[targetId],
+        );
+      if (allSame && previousStatus?.lastSyncStatus === "conflict") {
+        if (!samePreviousStatus()) {
+          publishReview({
+            targetId,
+            phase: "error",
+            choices: {},
+            message: refreshReviewMessage,
+          });
+          return;
+        }
+        // A preview alone must not manufacture sync success. Reuse the normal
+        // receipt/freshness guards to verify this is still an all-identical no-op
+        // and establish its checkpoint. Empty choices never resolve a conflict.
+        publishReview({
+          targetId,
+          phase: "verifying",
+          review,
+          choices: {},
+          message:
+            "All reviewed copies match. Verifying before clearing the previous conflict…",
+        });
+        const result = await resolveCloudSyncTarget(target, config, review, {});
+        if (
+          !mounted.current ||
+          reviewContext.current !== context ||
+          !currentReviewContext(context, cloudSyncRef.current)
+        )
+          return;
+        if (
+          !samePreviousStatus() ||
+          result.targetId !== targetId ||
+          result.provider !== target.provider ||
+          (result.requestIdentity &&
+            result.requestIdentity !== context.identity)
+        ) {
+          publishReview({
+            targetId,
+            phase: "error",
+            choices: {},
+            message: refreshReviewMessage,
+          });
+          return;
+        }
+        const safe = safeResult(result, target, config);
+        updateCloudSync(
+          cloudSyncStatusUpdate(cloudSyncRef.current, [
+            { ...safe, requestIdentity: context.identity },
+          ]),
+        );
+        publishReview(
+          result.status === "success"
+            ? {
+                targetId,
+                phase: "complete",
+                review,
+                choices: {},
+                message:
+                  "All reviewed copies are already identical. The previous conflict is cleared.",
+              }
+            : {
+                targetId,
+                phase: "error",
+                choices: {},
+                message: `${safe.message} Refresh review before continuing.`,
+              },
+        );
+        return;
+      }
+      publishReview({
+        targetId,
+        phase: "ready",
+        review,
+        choices: {},
+        message: !review.items.length
+          ? "No artifacts were reviewed; the previous sync status was retained."
+          : !review.items.some((item) => item.state === "conflict")
+            ? allSame
+              ? "No conflicts found. All reviewed copies are identical."
+              : "No conflicts found in this review. One-sided changes still need syncing."
+            : undefined,
+      });
+    } catch (error) {
+      if (
+        mounted.current &&
+        reviewContext.current === context &&
+        currentReviewContext(context, cloudSyncRef.current)
+      ) {
+        publishReview({
+          targetId,
+          phase: "error",
+          choices: {},
+          message: reviewErrorMessage(error),
+        });
+      }
+    } finally {
+      operationBusy.current = false;
+      if (mounted.current) setReviewingTargetId(null);
+      if (
+        mounted.current &&
+        reviewContext.current === context &&
+        !currentReviewContext(context, cloudSyncRef.current)
+      )
+        cancelConflictReview();
+    }
+  };
+
+  const setConflictReviewChoice = (
+    id: string,
+    choice: CloudSyncReviewChoice,
+  ) => {
+    const state = reviewStateRef.current;
+    const context = reviewContext.current;
+    if (
+      !state?.review ||
+      state.phase !== "ready" ||
+      !context ||
+      !currentReviewContext(context, cloudSyncRef.current) ||
+      operationBusy.current ||
+      getCloudSyncActivity().length
+    )
+      return;
+    const item = state.review.items.find(
+      (item) => item.id === id && item.state === "conflict",
+    );
+    if (
+      !item ||
+      !(
+        choice === "keepLocal" ||
+        choice === "keepRemote" ||
+        (choice === "smartMerge" && item.smartMergeAvailable)
+      )
+    )
+      return;
+    publishReview({ ...state, choices: { ...state.choices, [id]: choice } });
+  };
+
+  const handleApplyReviewedChoices = async () => {
+    const state = reviewStateRef.current;
+    const context = reviewContext.current;
+    const config = cloudSyncRef.current;
+    if (
+      !mounted.current ||
+      !context ||
+      !state?.review ||
+      state.phase !== "ready" ||
+      operationBusy.current ||
+      getCloudSyncActivity().length
+    )
+      return;
+    if (
+      !currentReviewContext(context, config) ||
+      state.review.requestIdentity !== context.identity
+    ) {
+      publishReview({
+        targetId: state.targetId,
+        phase: "error",
+        choices: {},
+        message: refreshReviewMessage,
+      });
+      return;
+    }
+    const conflicts = state.review.items.filter(
+      (item) => item.state === "conflict",
+    );
+    if (
+      !conflicts.every(
+        (item) =>
+          state.choices[item.id] === "keepLocal" ||
+          state.choices[item.id] === "keepRemote" ||
+          (state.choices[item.id] === "smartMerge" && item.smartMergeAvailable),
+      )
+    )
+      return;
+    const target = config.syncTargets!.find(
+      (item) => item.id === state.targetId,
+    )!;
+    const choices = Object.fromEntries(
+      conflicts.map((item) => [item.id, state.choices[item.id]]),
+    );
+    operationBusy.current = true;
+    setIsSyncing(true);
+    setSyncingTargetId(target.id);
+    startedTargets.current = [
+      {
+        id: target.id,
+        provider: target.provider,
+        requestIdentity: context.identity,
+      },
+    ];
+    publishReview({ ...state, phase: "applying" });
+    try {
+      const result = await resolveCloudSyncTarget(
+        target,
+        config,
+        state.review,
+        choices,
+      );
+      if (
+        !mounted.current ||
+        reviewContext.current !== context ||
+        !currentReviewContext(context, cloudSyncRef.current)
+      )
+        return;
+      if (
+        result.targetId !== target.id ||
+        result.provider !== target.provider ||
+        (result.requestIdentity && result.requestIdentity !== context.identity)
+      ) {
+        publishReview({
+          targetId: target.id,
+          phase: "error",
+          choices: {},
+          message: refreshReviewMessage,
+        });
+        return;
+      }
+      const safe = safeResult(result, target, config);
+      // Persist only this target's result against the latest status map.
+      updateCloudSync(
+        cloudSyncStatusUpdate(cloudSyncRef.current, [
+          { ...safe, requestIdentity: context.identity },
+        ]),
+      );
+      publishReview({
+        targetId: target.id,
+        choices: {},
+        phase: result.status === "success" ? "complete" : "error",
+        message:
+          result.status === "success"
+            ? "Reviewed choices applied."
+            : `${safe.message} Refresh review and choose again before applying.`,
+      });
+    } catch (error) {
+      if (
+        mounted.current &&
+        reviewContext.current === context &&
+        currentReviewContext(context, cloudSyncRef.current)
+      ) {
+        publishReview({
+          targetId: target.id,
+          phase: "error",
+          choices: {},
+          message: reviewErrorMessage(error),
+        });
+      }
+    } finally {
+      operationBusy.current = false;
+      startedTargets.current = [];
+      if (mounted.current) {
+        setIsSyncing(false);
+        setSyncingTargetId(null);
+        if (
+          reviewContext.current === context &&
+          !currentReviewContext(context, cloudSyncRef.current)
+        )
+          cancelConflictReview();
+      }
+    }
+  };
+
   const handleSyncNow = async (
     targetId?: string,
     resolution?: "keepLocal" | "keepRemote",
   ) => {
+    // Legacy one-click callers may open a review, never override its choices.
+    if (resolution) {
+      if (targetId) await handleReviewConflicts(targetId);
+      return;
+    }
     const current = cloudSyncRef.current;
-    if (selectionError(current) || operationBusy.current || isBusy) return;
-    const currentTargets = current.syncTargets ?? [];
     if (
-      resolution &&
-      (!targetId ||
-        current.targetStatus?.[targetId]?.lastSyncStatus !== "conflict")
+      !mounted.current ||
+      selectionError(current) ||
+      operationBusy.current ||
+      isBusy ||
+      getCloudSyncActivity().length
     )
       return;
+    const currentTargets = current.syncTargets ?? [];
 
     const targetsToRun = targetId
       ? currentTargets.filter(
@@ -540,6 +1019,7 @@ export function useCloudSyncSettings(
 
     if (targetsToRun.length === 0) return;
 
+    cancelConflictReview();
     operationBusy.current = true;
     setIsSyncing(true);
     startedTargets.current = targetsToRun.map((target) => ({
@@ -549,10 +1029,7 @@ export function useCloudSyncSettings(
     }));
     setSyncingTargetId(targetId ?? null);
     try {
-      await applySyncStatusUpdate(
-        targetsToRun,
-        resolution ? { ...current, conflictResolution: resolution } : current,
-      );
+      await applySyncStatusUpdate(targetsToRun, current);
     } finally {
       operationBusy.current = false;
       setIsSyncing(false);
@@ -663,6 +1140,8 @@ export function useCloudSyncSettings(
     syncingTargetId,
     testingTargetId,
     isBusy,
+    conflictReview,
+    reviewRequestSequence,
     validationError,
     authTargetId,
     authForm,
@@ -688,6 +1167,10 @@ export function useCloudSyncSettings(
     handleTestTarget,
     getTargetTestResult,
     handleResolveConflict,
+    handleReviewConflicts,
+    setConflictReviewChoice,
+    handleApplyReviewedChoices,
+    cancelConflictReview,
     getSyncStatusIcon,
 
     // Multi-target list management

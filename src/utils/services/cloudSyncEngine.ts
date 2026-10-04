@@ -10,6 +10,7 @@ import {
   captureCloudSyncPayload,
   applyCloudSyncPayload,
   upgradeCloudSyncPayload,
+  discoverCloudSyncItems,
   type CloudSyncPayload,
 } from "./cloudSyncPayload";
 import {
@@ -18,14 +19,27 @@ import {
   syncHash,
   syncSizeLimit,
   canonicalSyncJson,
+  isCloudDatabaseName,
   type CloudSyncSnapshot,
 } from "./cloudSyncCodec";
+import {
+  buildSmartSyncBaseline,
+  smartMergeSyncSection,
+  type SmartSyncBaseline,
+} from "./cloudSyncSmartMerge";
+import type {
+  CloudSyncConflictReview,
+  CloudSyncReviewedResolution,
+  CloudSyncReviewItem,
+} from "./cloudSyncConflictReview";
+import { summarizeCloudSyncReview } from "./cloudSyncReviewDetails";
 
 interface Checkpoint {
   version: 1;
   baseline: Record<string, string>;
   observedHash: string;
   localChangedAt: number;
+  smartBaseline?: Record<string, SmartSyncBaseline>;
 }
 
 export function cloudSyncTransportOptions(config: CloudSyncConfig) {
@@ -36,7 +50,17 @@ export function cloudSyncTransportOptions(config: CloudSyncConfig) {
   };
 }
 
-export class CloudSyncConflict extends Error {}
+export class CloudSyncConflict extends Error {
+  readonly kind = "conflict";
+}
+
+class LocalSyncEdit extends CloudSyncConflict {
+  constructor() {
+    super(
+      "Local data changed while syncing. Newer local edits were preserved. Open Cloud Sync → Conflict Resolution to review the current copies, or retry when editing has paused.",
+    );
+  }
+}
 
 /** Serialize application mutations across providers, and across desktop windows. */
 let queue: Promise<unknown> = Promise.resolve();
@@ -74,11 +98,22 @@ async function checkpointKey(
   return `sorng-cloud-checkpoint-${await syncHash({ id: target.id, provider: target.provider, destination, items: [...(config.selectedItems ?? [])].sort() })}`;
 }
 
-export async function runCloudSync(
+async function readSyncState(
   target: CloudSyncTarget,
   config: CloudSyncConfig,
-): Promise<string> {
+  readOnly = false,
+  identity = cloudSyncTargetIdentity(target.id),
+  allowAutoUnlock = !readOnly,
+) {
+  const ensureIdentity = () => {
+    if (identity !== cloudSyncTargetIdentity(target.id))
+      throw new CloudSyncConflict(
+        "Sync target changed during the operation. Retry with its current settings.",
+      );
+  };
+  ensureIdentity();
   const invoke = await getInvoke();
+  ensureIdentity();
   if (!invoke)
     throw new Error("Application cloud sync requires the desktop backend.");
   if (!target.enabled || target.provider === "none")
@@ -89,9 +124,12 @@ export async function runCloudSync(
     );
   if (config.encryptBeforeSync && !config.syncEncryptionPassword)
     throw new Error("Set a cloud sync encryption password before syncing.");
-  const identity = cloudSyncTargetIdentity(target.id);
   const options = cloudSyncTransportOptions(config);
-  const original = await captureCloudSyncPayload(config);
+  const original = await captureCloudSyncPayload(config, {
+    allowAutoUnlock,
+    assertCurrent: ensureIdentity,
+  });
+  ensureIdentity();
   if (!Object.keys(original.sections).length)
     throw new Error(
       "No selected items remain after applying exclusions. Nothing was transferred.",
@@ -113,11 +151,14 @@ export async function runCloudSync(
     checkpoint.localChangedAt = Date.now();
   }
   // Persist the observed change time even on a conflict, without application data.
-  await IndexedDbService.setItemStrict(key, checkpoint);
+  ensureIdentity();
+  if (!readOnly) await IndexedDbService.setItemStrict(key, checkpoint);
+  ensureIdentity();
   const remote = await invoke<{ data: string | null; revision: string | null }>(
     "cloud_sync_read",
     { target, options },
   );
+  ensureIdentity();
   const snapshot = remote.data
     ? await decodeCloudSnapshot(remote.data, config)
     : null;
@@ -127,77 +168,283 @@ export async function runCloudSync(
     throw new Error(
       "The provider did not return a safe revision for the remote snapshot.",
     );
+  const ensureUnchanged = async () => {
+    ensureIdentity();
+    const currentHash = await syncHash(
+      await captureCloudSyncPayload(config, {
+        allowAutoUnlock: false,
+        assertCurrent: ensureIdentity,
+      }),
+    );
+    ensureIdentity();
+    if (currentHash !== originalHash) throw new LocalSyncEdit();
+  };
+  await ensureUnchanged();
+  // Bind review choices to both copies, the baseline, and the selected scope.
+  // No record contents, credentials, or unencrypted backups enter the receipt.
+  const reviewKey = await syncHash({
+    key,
+    originalHash,
+    remoteRevision: remote.revision,
+    remoteHash: snapshot ? await syncHash(snapshot.payload) : null,
+    baseline: checkpoint.baseline,
+    smartBaseline: checkpoint.smartBaseline ?? {},
+    exclusions: config.excludePatterns,
+    encrypted: config.encryptBeforeSync,
+    autoUnlockOsVaultDatabases: config.autoUnlockOsVaultDatabases === true,
+  });
+  return {
+    invoke,
+    identity,
+    options,
+    original,
+    originalHash,
+    key,
+    checkpoint,
+    remote,
+    snapshot,
+    ensureUnchanged,
+    ensureIdentity,
+    reviewKey,
+  };
+}
+
+type SyncState = Awaited<ReturnType<typeof readSyncState>>;
+
+async function planSync(
+  state: SyncState,
+  config: CloudSyncConfig,
+  resolution?: CloudSyncReviewedResolution,
+  reviewOnly = false,
+) {
+  const { original, snapshot, checkpoint } = state;
   const combined: CloudSyncPayload = {
     version: 1,
     sections: { ...snapshot?.payload.sections },
   };
   const toApply: CloudSyncPayload = { version: 1, sections: {} };
+  const items: CloudSyncReviewItem[] = [];
+  const unresolved: string[] = [];
   for (const [id, local] of Object.entries(original.sections)) {
     const remoteSection = snapshot?.payload.sections[id];
     const localHash = await syncHash(local);
-    if (
-      remoteSection === undefined ||
-      canonicalSyncJson(remoteSection) === canonicalSyncJson(local)
-    ) {
-      combined.sections[id] = local;
-      continue;
-    }
-    const remoteHash = await syncHash(remoteSection);
+    const remoteHash =
+      remoteSection === undefined ? undefined : await syncHash(remoteSection);
     const baseline = checkpoint.baseline[id];
     const localChanged = !baseline || baseline !== localHash;
     const remoteChanged = !baseline || baseline !== remoteHash;
-    let chooseRemote = !localChanged && remoteChanged;
-    if (localChanged && remoteChanged) {
-      switch (config.conflictResolution) {
+    const equal = localHash === remoteHash;
+    const conflict =
+      remoteSection !== undefined && !equal && localChanged && remoteChanged;
+    const item: CloudSyncReviewItem = {
+      id,
+      label: id.startsWith("database:")
+        ? "Database"
+        : ({
+            "app:settings": "Appearance preferences",
+            "app:recording.managed-scripts": "Saved terminal scripts",
+            "app:recording.terminal-macros": "Terminal macros",
+            "app:recording.web-automation.v1": "Website scripts and macros",
+          }[id] ?? "App-wide documents"),
+      state: equal
+        ? "same"
+        : conflict
+          ? "conflict"
+          : remoteSection !== undefined && !localChanged
+            ? "remote"
+            : "local",
+      localBytes: new TextEncoder().encode(canonicalSyncJson(local)).byteLength,
+      remoteBytes:
+        remoteSection === undefined
+          ? 0
+          : new TextEncoder().encode(canonicalSyncJson(remoteSection))
+              .byteLength,
+      smartMergeAvailable: false,
+    };
+    if (reviewOnly)
+      item.details = summarizeCloudSyncReview(
+        id,
+        local,
+        remoteSection,
+        Boolean(
+          checkpoint.smartBaseline?.[id] &&
+          !checkpoint.smartBaseline[id].disabled,
+        ),
+        snapshot?.modifiedAt,
+      );
+    items.push(item);
+    let chosen = item.state === "remote" ? remoteSection : local;
+    if (conflict) {
+      let merged: unknown;
+      if (
+        reviewOnly ||
+        config.conflictResolution === "smartMerge" ||
+        resolution?.choices[id] === "smartMerge"
+      ) {
+        const result = await smartMergeSyncSection(
+          local,
+          remoteSection,
+          checkpoint.smartBaseline?.[id],
+        );
+        item.reason = result.reason;
+        item.conflicts = result.conflicts;
+        if (result.conflictCount === 0 && result.value !== undefined) {
+          try {
+            // Validate archive references, attachments and ledger invariants
+            // before either side is written. A structurally unsafe merge is a
+            // review conflict, never a best-effort partial archive.
+            const checked = await upgradeCloudSyncPayload({
+              version: 1,
+              sections: { [id]: result.value },
+            });
+            merged = checked.sections[id];
+            item.smartMergeAvailable = true;
+          } catch {
+            item.reason =
+              "The combined records have incompatible dependencies or metadata. Choose a complete copy after reviewing it locally.";
+            item.conflicts = [
+              { code: "dependencies", kind: "other", count: 1 },
+            ];
+          }
+        }
+      }
+      const strategy = reviewOnly
+        ? "askEveryTime"
+        : resolution
+          ? resolution.choices[id]
+          : config.conflictResolution;
+      switch (strategy) {
         case "keepLocal":
-          chooseRemote = false;
+          chosen = local;
           break;
         case "keepRemote":
-          chooseRemote = true;
+          chosen = remoteSection;
+          break;
+        case "smartMerge":
+          if (item.smartMergeAvailable) chosen = merged;
+          else
+            unresolved.push(
+              item.reason ??
+                "Conflicting records need review; smart merge will not guess a winner.",
+            );
           break;
         case "keepNewer":
           // Snapshot upload time and first-observed local change time do not
           // establish which record causally supersedes the other (clock skew,
           // offline edits, migration and unrelated changes all invalidate it).
-          throw new CloudSyncConflict(
-            "Both copies changed. Timestamps cannot safely choose a winner; review and choose Keep local or Keep remote. Record-aware merging requires a shared revision baseline.",
+          unresolved.push(
+            "Both copies changed. Timestamps cannot safely choose a winner. Open Cloud Sync → Conflict Resolution to review this target.",
           );
+          break;
         default:
           // Independent items merge automatically; divergent edits to one item need review.
-          throw new CloudSyncConflict(
-            "The same application item changed locally and remotely. Review this target and choose Keep local or Keep remote.",
+          unresolved.push(
+            "The same application item changed locally and remotely. Open Cloud Sync → Conflict Resolution, review this target, and choose a copy or a safe smart merge.",
           );
       }
     }
-    combined.sections[id] = chooseRemote ? remoteSection : local;
-    if (chooseRemote) toApply.sections[id] = remoteSection;
+    combined.sections[id] = chosen;
+    if (canonicalSyncJson(chosen) !== canonicalSyncJson(local))
+      toApply.sections[id] = chosen;
   }
-  const ensureUnchanged = async () => {
-    if (identity !== cloudSyncTargetIdentity(target.id))
-      throw new Error(
-        "Sync target changed during the operation. Retry with its current settings.",
-      );
-    if (
-      (await syncHash(await captureCloudSyncPayload(config))) !== originalHash
-    )
-      throw new CloudSyncConflict(
-        "Local data changed while syncing. Retry; newer local edits were preserved.",
-      );
+  return { combined, toApply, items, unresolved };
+}
+
+/** Fresh, read-only review. Decrypted records are discarded on return. */
+export async function reviewCloudSync(
+  target: CloudSyncTarget,
+  config: CloudSyncConfig,
+  requestIdentity = cloudSyncTargetIdentity(target.id),
+): Promise<CloudSyncConflictReview> {
+  const state = await readSyncState(target, config, true, requestIdentity);
+  const { items } = await planSync(state, config, undefined, true);
+  const inventory = await discoverCloudSyncItems({ includeSizes: false });
+  for (const item of items)
+    item.label =
+      inventory.find((entry) => entry.id === item.id)?.label ?? item.label;
+  await state.ensureUnchanged();
+  return {
+    targetId: target.id,
+    requestIdentity: state.identity,
+    reviewKey: state.reviewKey,
+    items,
   };
+}
+
+async function syncAttempt(
+  target: CloudSyncTarget,
+  config: CloudSyncConfig,
+  resolution?: CloudSyncReviewedResolution,
+  requestIdentity = cloudSyncTargetIdentity(target.id),
+  allowAutoUnlock = true,
+): Promise<string> {
+  const state = await readSyncState(
+    target,
+    config,
+    false,
+    requestIdentity,
+    allowAutoUnlock && !resolution,
+  );
+  const {
+    invoke,
+    identity,
+    options,
+    original,
+    key,
+    checkpoint,
+    remote,
+    snapshot,
+    ensureUnchanged,
+    ensureIdentity,
+  } = state;
+  if (
+    resolution &&
+    (resolution.review.targetId !== target.id ||
+      resolution.review.requestIdentity !== identity ||
+      resolution.review.reviewKey !== state.reviewKey)
+  )
+    throw new CloudSyncConflict(
+      "The reviewed local data, cloud copy, or sync settings changed. Refresh the conflict review and choose again; no reviewed choices were applied.",
+    );
+  const { combined, toApply, unresolved } = await planSync(
+    state,
+    config,
+    resolution,
+  );
+  await ensureUnchanged();
+  if (unresolved.length) throw new CloudSyncConflict(unresolved[0]);
   const publish =
     !snapshot ||
     canonicalSyncJson(combined) !== canonicalSyncJson(snapshot.payload);
   let committed = false;
   try {
     if (publish) {
+      // Carry display names separately: index labels must not change database
+      // record hashes or rename an existing local database during normal sync.
+      const databaseNames = { ...snapshot?.databaseNames };
+      if (
+        Object.keys(original.sections).some((id) => id.startsWith("database:"))
+      ) {
+        const inventory = await discoverCloudSyncItems({ includeSizes: false });
+        for (const item of inventory) {
+          if (
+            item.id.startsWith("database:") &&
+            Object.prototype.hasOwnProperty.call(original.sections, item.id) &&
+            isCloudDatabaseName(item.label)
+          )
+            databaseNames[item.id.slice(9)] = item.label;
+        }
+      }
       const next: CloudSyncSnapshot = {
         format: "sortofremoteng-cloud-sync",
         version: 1,
         modifiedAt: Date.now(),
         payload: combined,
+        ...(Object.keys(databaseNames).length ? { databaseNames } : {}),
       };
       const data = await encodeCloudSnapshot(next, config);
       await ensureUnchanged();
+      ensureIdentity();
       await invoke("cloud_sync_write", {
         target,
         options,
@@ -208,6 +455,7 @@ export async function runCloudSync(
     }
     if (Object.keys(toApply.sections).length) {
       await ensureUnchanged();
+      ensureIdentity();
       await applyCloudSyncPayload(toApply, config, original);
       committed = true;
     }
@@ -217,11 +465,19 @@ export async function runCloudSync(
         Object.keys(original.sections).map((id) => [id, combined.sections[id]]),
       ),
     };
-    if (
-      identity !== cloudSyncTargetIdentity(target.id) ||
-      (await syncHash(await captureCloudSyncPayload(config))) !==
-        (await syncHash(finalPayload))
-    ) {
+    const matchesFinalPayload = async () => {
+      ensureIdentity();
+      const actual = await syncHash(
+        await captureCloudSyncPayload(config, {
+          allowAutoUnlock: false,
+          assertCurrent: ensureIdentity,
+        }),
+      );
+      const expected = await syncHash(finalPayload);
+      ensureIdentity();
+      return actual === expected;
+    };
+    if (!(await matchesFinalPayload())) {
       throw Object.assign(
         new Error(
           "Data or sync settings changed while the transfer completed. Some data may already have been saved; sync again to review the current state.",
@@ -237,10 +493,31 @@ export async function runCloudSync(
         ]),
       ),
     );
+    const smartBaseline = Object.fromEntries(
+      await Promise.all(
+        Object.entries(finalPayload.sections).map(async ([id, value]) => [
+          id,
+          checkpoint.baseline[id] === baseline[id] &&
+          checkpoint.smartBaseline?.[id]
+            ? checkpoint.smartBaseline[id]
+            : await buildSmartSyncBaseline(value),
+        ]),
+      ),
+    );
+    if (!(await matchesFinalPayload()))
+      throw Object.assign(
+        new Error(
+          "Data changed while sync verification completed. Newer edits were preserved; review this target before retrying.",
+        ),
+        { kind: "partial" },
+      );
+    const observedHash = await syncHash(finalPayload);
+    ensureIdentity();
     await IndexedDbService.setItemStrict(key, {
       ...checkpoint,
       baseline,
-      observedHash: await syncHash(finalPayload),
+      smartBaseline,
+      observedHash,
     });
     return publish
       ? "Selected application data uploaded and verified."
@@ -260,5 +537,29 @@ export async function runCloudSync(
       );
     }
     throw error;
+  }
+}
+
+export async function runCloudSync(
+  target: CloudSyncTarget,
+  config: CloudSyncConfig,
+  resolution?: CloudSyncReviewedResolution,
+  requestIdentity = cloudSyncTargetIdentity(target.id),
+): Promise<string> {
+  // A normal edit during a slow read is not a data conflict. Re-capture and
+  // re-plan once, but never replay explicit review decisions or partial writes.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await syncAttempt(
+        target,
+        config,
+        resolution,
+        requestIdentity,
+        attempt === 0,
+      );
+    } catch (error) {
+      if (!(error instanceof LocalSyncEdit) || resolution || attempt >= 1)
+        throw error;
+    }
   }
 }

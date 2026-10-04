@@ -65,6 +65,7 @@ import type {
   DatabaseProtectionTarget,
   DatabaseProtectionChangeResult,
 } from "../../types/encryption/databaseProtection";
+import { isDatabaseCipher } from "../../types/encryption/databaseProtection";
 // Type-only: keeps the trust export document owned by `trustStore.ts` (single
 // owner) without creating a runtime import edge. The dependency runs the other
 // way — the trust store subscribes to `onCurrentDatabaseChange` below.
@@ -3588,31 +3589,245 @@ export class DatabaseManager {
     await this.ensureManagedListener();
     const created = await this.createDatabase(name, options.description);
     try {
-      const result = await this.changeManagedDatabaseProtection(
-        created.id,
-        target,
-        {
-          initializeWithData: options.data
-            ? rebindDatabaseQuickActions(
-                options.data,
-                options.sourceDatabaseId,
-                created.id,
-              )
-            : undefined,
-          confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
-        },
-      );
-      return {
-        ...created,
-        isEncrypted: true,
-        protectionFormat: "sorng-db",
-        securityRevision: result.securityRevision,
-      };
+      return await this.initializeManagedDatabase(created, target, options);
     } catch (error) {
       // No unconditional delete: another window may have changed the indexed row.
       throw new Error(
         `Database "${created.name}" (${created.id}) was created, but managed initialization did not finish. It may be empty or already protected; inspect it before retrying. ${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+  }
+
+  private async initializeManagedDatabase(
+    created: ConnectionDatabase,
+    target: DatabaseProtectionTarget,
+    options: {
+      data?: StorageData;
+      sourceDatabaseId?: string;
+      confirmDeviceBoundOnly?: boolean;
+    },
+  ): Promise<ConnectionDatabase> {
+    const result = await this.changeManagedDatabaseProtection(
+      created.id,
+      target,
+      {
+        initializeWithData: options.data
+          ? rebindDatabaseQuickActions(
+              options.data,
+              options.sourceDatabaseId,
+              created.id,
+            )
+          : undefined,
+        confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
+      },
+    );
+    return {
+      ...created,
+      isEncrypted: true,
+      protectionFormat: "sorng-db",
+      securityRevision: result.securityRevision,
+    };
+  }
+
+  /**
+   * Import one decrypted cloud archive that is absent from this device. Unlike
+   * an ordinary archive copy, cloud sync must retain the source database ID.
+   * The caller authenticates the cloud envelope; this boundary validates its
+   * archive again and enrolls new, local protectors without copying any keys.
+   */
+  async importCloudSyncDatabase(
+    value: unknown,
+    options: {
+      name: string;
+      protectionTarget: DatabaseProtectionTarget;
+      confirmDeviceBoundOnly?: boolean;
+      assertCurrent?: () => void;
+    },
+  ): Promise<ConnectionDatabase> {
+    // Freeze caller-owned choices before any awaits (including password policy
+    // and attachment validation). Later edits cannot change an approved pull.
+    const { name, confirmDeviceBoundOnly, assertCurrent } = options;
+    const target = structuredClone(options.protectionTarget);
+    const hasControlCharacters = (text: string) =>
+      Array.from(text).some((character) => {
+        const code = character.charCodeAt(0);
+        return code < 32 || (code >= 127 && code <= 159);
+      });
+    assertCurrent?.();
+    if (
+      typeof name !== "string" ||
+      !name.trim() ||
+      name.trim().length > 256 ||
+      hasControlCharacters(name)
+    )
+      throw new Error("Enter a database name of 1–256 printable characters.");
+    if (
+      !target ||
+      !isDatabaseCipher(target.dataCipher) ||
+      !Array.isArray(target.keepSlotIds) ||
+      target.keepSlotIds.length ||
+      !Array.isArray(target.newSlots) ||
+      !target.newSlots.length ||
+      target.newSlots.length > 8
+    )
+      throw new FullDatabaseArchiveError("protection");
+    const encoder = new TextEncoder();
+    for (const slot of target.newSlots) {
+      if (
+        !slot ||
+        !["password", "os-vault"].includes(slot.type) ||
+        typeof slot.label !== "string" ||
+        !slot.label.trim() ||
+        encoder.encode(slot.label).length > 128 ||
+        hasControlCharacters(slot.label)
+      )
+        throw new FullDatabaseArchiveError("protection");
+      if (slot.type === "password") {
+        if (
+          typeof slot.password !== "string" ||
+          !slot.password ||
+          encoder.encode(slot.password).length > 4096
+        )
+          throw new FullDatabaseArchiveError("protection");
+        if (slot.argon2 !== undefined) {
+          const params = slot.argon2;
+          if (
+            !params ||
+            !Number.isInteger(params.memoryKib) ||
+            params.memoryKib < 8192 ||
+            params.memoryKib > 262144 ||
+            !Number.isInteger(params.timeCost) ||
+            params.timeCost < 1 ||
+            params.timeCost > 10 ||
+            !Number.isInteger(params.parallelism) ||
+            params.parallelism < 1 ||
+            params.parallelism > 16
+          )
+            throw new FullDatabaseArchiveError("protection");
+        }
+      }
+    }
+    if (
+      !target.newSlots.some((slot) => slot.type === "password") &&
+      confirmDeviceBoundOnly !== true
+    )
+      throw new Error(
+        "Confirm device-bound-only protection or add a password for local database recovery.",
+      );
+    const archive = await normalizeFullDatabaseArchive(value);
+    const id = archive.collection.id;
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id))
+      throw new FullDatabaseArchiveError("format");
+    const epoch = this.captureDatabaseEpoch(id);
+    const invoke = await getInvoke();
+    if (!invoke) throw new FullDatabaseArchiveError("protection");
+    const capabilities = await databaseProtection.capabilities();
+    if (
+      !capabilities.ciphers.some(
+        (cipher) => cipher.id === target.dataCipher && cipher.available,
+      ) ||
+      target.newSlots.some(
+        (slot) =>
+          !capabilities.protectors.some(
+            (protector) => protector.id === slot.type && protector.available,
+          ),
+      )
+    )
+      throw new Error(
+        "The selected database protection is unavailable on this device. Choose an available cipher and unlock method.",
+      );
+    for (const slot of target.newSlots)
+      if (slot.type === "password")
+        await validateNewPassword(slot.password, "database");
+    await this.ensureManagedListener();
+    const collections = await this.getAllDatabases();
+    const expectedIndex =
+      this.indexSnapshots.get(collections) ?? structuredClone(collections);
+    if (collections.some((database) => database.id === id))
+      throw new Error(
+        "This database already exists on this device. Open it or use conflict review; pulling cannot replace it.",
+      );
+    // An unindexed body (including a recoverable backup) must not be adopted
+    // or overwritten. Native create-if-absent CAS also closes the read race.
+    const existing = await invoke<LoadResultEnvelope | null>(
+      "load_database_data",
+      { databaseId: id },
+    );
+    if (existing !== null)
+      throw new Error(
+        "Local database files already exist for this sync identity. Recover or review them before pulling; no files were replaced.",
+      );
+    const now = new Date().toISOString();
+    const placeholder: ConnectionDatabase = {
+      id,
+      name: name.trim(),
+      description: archive.collection.description,
+      isEncrypted: false,
+      createdAt: now,
+      updatedAt: now,
+      lastAccessed: now,
+    };
+    this.assertDatabaseEpoch(id, epoch);
+    assertCurrent?.();
+    // No await between the final caller guard and the first mutation. Native
+    // index CAS rejects another window adding the same ID in the meantime.
+    await invoke("databases_save_index", {
+      list: [...collections, placeholder],
+      expectedList: expectedIndex,
+    });
+    let protectedBodyReady = false;
+    try {
+      this.assertDatabaseEpoch(id, epoch);
+      // Keep the native initializeEmptyDestination shape exact. The generic
+      // save path adds record history; that history belongs in the encrypted
+      // archive, never in this empty, pre-protection placeholder.
+      await invoke("save_database_data", {
+        databaseId: id,
+        data: { connections: [], settings: {}, timestamp: Date.now() },
+        expectedData: null,
+        expectedSecurityRevision: "",
+      });
+      this.assertDatabaseEpoch(id, epoch);
+      const created = await this.initializeManagedDatabase(
+        placeholder,
+        target,
+        {
+          data: fullDatabaseArchiveData(archive),
+          sourceDatabaseId: id,
+          confirmDeviceBoundOnly,
+        },
+      );
+      protectedBodyReady = true;
+      // Installing a new managed session deliberately advances its access
+      // epoch. Pin that new epoch, but do not bless a lock during enrollment.
+      this.requireManagedSession(id);
+      const protectedEpoch = this.captureDatabaseEpoch(id);
+      const outcome = await invoke<TrustImportOutcome>(
+        "trust_import_database",
+        { databaseId: id, document: archive.trustRecords, mode: "replace" },
+      );
+      this.assertDatabaseEpoch(id, protectedEpoch);
+      if (
+        !outcome ||
+        outcome.skipped !== 0 ||
+        outcome.imported !== archive.trustRecords.records.length
+      )
+        throw new FullDatabaseArchiveError("trust");
+      this.announceDatabaseChange({
+        reason: "create",
+        database: this.currentDatabase,
+        databaseId: id,
+        previousDatabaseId: this.currentDatabase?.id ?? null,
+        connectionIds: [],
+      });
+      return created;
+    } catch {
+      // Index, protected data and trust commit separately. Never delete or
+      // silently retry this identity after any part of creation has committed.
+      const error = new FullDatabaseRestoreIncompleteError(id);
+      if (!protectedBodyReady)
+        error.message = `Database initialization did not finish (${id}). An empty or already protected database may remain. Inspect it before retrying; this is not a complete restore.`;
+      throw Object.assign(error, { kind: "partial" as const });
     }
   }
 

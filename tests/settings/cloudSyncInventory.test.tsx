@@ -75,6 +75,22 @@ describe("cloud sync actual inventory selection", () => {
   });
   afterEach(cleanup);
 
+  it("shows a friendly missing database label without changing its selected identity", async () => {
+    render(<Harness initial={["database:missing-opaque-uuid"]} />);
+    await screen.findByRole("checkbox", { name: /Work database/ });
+    expect(
+      screen.getByRole("checkbox", { name: /Unavailable database/ }),
+    ).toBeChecked();
+    expect(screen.queryByText(/missing-opaque-uuid/)).not.toBeInTheDocument();
+    expect(mocks.update).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove unavailable selection Unavailable database",
+      }),
+    );
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith({ selectedItems: [] });
+  });
+
   it("loads actual items grouped by kind without selecting them or using legacy defaults", async () => {
     render(<Harness />);
     expect(

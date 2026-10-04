@@ -3,6 +3,8 @@ import {
   type CloudSyncConfig,
 } from "../../types/settings/cloudSyncSettings";
 import { DatabaseManager } from "../connection/databaseManager";
+import { singleOsVaultUnlockSlot } from "../connection/databaseUnlockMethods";
+import type { EncryptionStatus } from "../../types/encryption/encryption";
 import { acquireCloudSyncDatabaseBarrier } from "./cloudSyncDatabaseBarrier";
 import { utf8Bytes } from "./cloudSyncInventorySize";
 import { readDatabaseSizes } from "../connection/databaseSize";
@@ -64,6 +66,8 @@ export interface CloudSyncItem {
   kind: string;
   available: boolean;
   unavailableReason?: string;
+  /** Manual unlock action only for an existing, unavailable native database. */
+  unlockDatabaseId?: string;
   bytes?: number;
   sizeKind?:
     | "archive-estimate"
@@ -362,11 +366,14 @@ export async function discoverCloudSyncItems({
       kind: "database",
       sensitive: true,
       available: db.isExportable && db.protectionFormat === "sorng-db",
+      ...(db.protectionFormat === "sorng-db" && !db.isExportable
+        ? { unlockDatabaseId: db.id }
+        : {}),
       unavailableReason:
         db.protectionFormat !== "sorng-db"
           ? `${db.isEncrypted ? "This database uses the older password-protected format." : "This database does not use native database protection."} Cloud sync currently requires the newer protected format. Open this database, go to Settings → Current Database → Native cipher and unlock-method options, and review the protection change. Then refresh this inventory.`
           : !db.isExportable
-            ? "Open and unlock this database before syncing. If it is already open, its unlock session may have expired."
+            ? "Unlock this database here before syncing. If it was already unlocked, its session may have expired."
             : undefined,
     };
     if (includeSizes) {
@@ -522,18 +529,211 @@ async function readItem(id: string): Promise<unknown> {
   return JSON.parse(JSON.stringify(loaded.value));
 }
 
+export interface CloudSyncCaptureOptions {
+  /** Review and comparison captures must never acquire new unlock authority. */
+  allowAutoUnlock?: boolean;
+  /** The engine's target/settings invalidation guard, including during native unlock. */
+  assertCurrent?: () => void;
+}
+
+/** Unlike an export guard, this permits initially locked/nonresident sources. */
+function captureAutoUnlockGuard(
+  manager: DatabaseManager,
+  databaseIds: string[],
+  assertOperation: () => void,
+) {
+  const isCurrent = manager.captureStartupRestoreGuard();
+  const states = new Map(
+    databaseIds.map((id) => [id, manager.getDatabaseAccessState(id)]),
+  );
+  let cancelled = false;
+  let unlocking: string | undefined;
+  const dispose = manager.onDatabaseAccessChange((state) => {
+    if (!states.has(state.databaseId)) return;
+    // Installing our grant advances its epoch. Every revocation remains fatal,
+    // including a lock followed immediately by a different successful unlock.
+    if (
+      !cancelled &&
+      state.databaseId === unlocking &&
+      state.status === "ready" &&
+      state.reason === "unlocked"
+    )
+      states.set(state.databaseId, state);
+    else cancelled = true;
+  });
+  const assertCurrent = () => {
+    assertOperation();
+    if (
+      cancelled ||
+      !isCurrent() ||
+      [...states].some(([id, before]) => {
+        const now = manager.getDatabaseAccessState(id);
+        return (
+          now?.accessEpoch !== before?.accessEpoch ||
+          now?.status !== before?.status
+        );
+      })
+    )
+      throw new Error(
+        "Database access changed during cloud capture. Review and unlock the selected databases before retrying.",
+      );
+  };
+  return {
+    assertCurrent,
+    dispose,
+    async unlock(id: string, slotId: string) {
+      assertCurrent();
+      unlocking = id;
+      try {
+        await manager.unlockManagedDatabase(id, slotId, undefined, {
+          isCurrent: () => {
+            try {
+              assertCurrent();
+              return true;
+            } catch {
+              return false;
+            }
+          },
+        });
+        assertCurrent();
+      } finally {
+        unlocking = undefined;
+      }
+    },
+  };
+}
+
 export async function captureCloudSyncPayload(
   config: CloudSyncConfig,
+  options: CloudSyncCaptureOptions = {},
 ): Promise<CloudSyncPayload> {
   const ids = selected(config);
-  const release = await acquireCloudSyncDatabaseBarrier(
-    [...ids].flatMap((id) => (databaseId(id) ? [databaseId(id)!] : [])),
+  const manager = DatabaseManager.getInstance();
+  const current = manager.getCurrentDatabase();
+  const owner = current?.id;
+  const recoveryId = current ? `database:${current.id}` : undefined;
+  // Only metadata for the already selected, unlocked protected database may
+  // be refreshed. Pin its owner/access epoch before either asynchronous read.
+  const recoveryGuard =
+    current &&
+    recoveryId &&
+    ids.has(recoveryId) &&
+    current.protectionFormat === "sorng-db" &&
+    manager.getDatabaseAccessState(current.id)?.status === "ready"
+      ? manager.captureDatabaseOperationGuard([current.id])
+      : undefined;
+  const assertOwner = () => {
+    options.assertCurrent?.();
+    if (manager.getCurrentDatabase()?.id !== owner)
+      throw new Error("Database selection changed during cloud capture.");
+  };
+  const databaseIds = [...ids].flatMap((id) =>
+    databaseId(id) ? [databaseId(id)!] : [],
   );
+  const unlockGuard =
+    config.autoUnlockOsVaultDatabases === true &&
+    options.allowAutoUnlock !== false
+      ? captureAutoUnlockGuard(
+          manager,
+          [...new Set([...databaseIds, ...(owner ? [owner] : [])])],
+          assertOwner,
+        )
+      : undefined;
+  const assertCurrent = () => {
+    assertOwner();
+    unlockGuard?.assertCurrent();
+  };
+  let release: (() => Promise<void>) | undefined;
+  let captured = false;
   try {
-    const inventory = await discoverCloudSyncItems({ includeSizes: false });
-    const owner = DatabaseManager.getInstance().getCurrentDatabase()?.id;
+    if (unlockGuard) {
+      assertCurrent();
+      const candidates = await discoverCloudSyncItems({ includeSizes: false });
+      assertCurrent();
+      for (const id of ids) {
+        const item = candidates.find((candidate) => candidate.id === id);
+        if (
+          !item ||
+          item.available ||
+          !item.unlockDatabaseId ||
+          excluded(item.id, item.label, config)
+        )
+          continue;
+        assertCurrent();
+        let encryption: EncryptionStatus | null = null;
+        try {
+          const invoke = await getInvoke();
+          assertCurrent();
+          if (invoke)
+            encryption = await invoke<EncryptionStatus>("encryption_status");
+        } catch {
+          // Status probes must never surface native key-store error text.
+        }
+        assertCurrent();
+        if (
+          !encryption ||
+          typeof encryption.unlocked !== "boolean" ||
+          ![0, 2].includes(encryption.schemaVersion) ||
+          encryption.criticalKeyFailure === true ||
+          (encryption.unlocked !== true &&
+            (encryption.schemaVersion === 2 ||
+              encryption.vaultHasMasterDek ||
+              encryption.passwordWrapPresent ||
+              encryption.settingsEncryptedOnDisk ||
+              encryption.recoveryRequired))
+        )
+          throw new Error(
+            "Application storage is locked or its status could not be verified. Unlock application storage before automatically unlocking databases for cloud sync, then retry.",
+          );
+        const failure = () =>
+          new Error(
+            `Database “${item.label}” could not be automatically unlocked for cloud sync. Unlock it manually and retry. Automatic unlock requires exactly one OS-vault unlock method on this device; no password fallback was attempted.`,
+          );
+        try {
+          const status = await manager.getDatabaseProtectionStatus(
+            item.unlockDatabaseId,
+          );
+          assertCurrent();
+          const slot = singleOsVaultUnlockSlot(status);
+          if (!slot) throw failure();
+          await unlockGuard.unlock(item.unlockDatabaseId, slot.id);
+          assertCurrent();
+          if (
+            manager.getDatabaseAccessState(item.unlockDatabaseId)?.status !==
+            "ready"
+          )
+            throw failure();
+        } catch {
+          // Neither native errors nor their causes may expose vault credentials.
+          assertCurrent();
+          throw failure();
+        }
+      }
+    }
+    // Unlocking can refresh the current database's provider state. Acquire its
+    // short-lived writer barrier afterwards, never across the native unlock.
+    release = await acquireCloudSyncDatabaseBarrier(databaseIds);
+    assertCurrent();
+    let inventory = await discoverCloudSyncItems({ includeSizes: false });
+    assertCurrent();
+    const recoveryItem = inventory.find((item) => item.id === recoveryId);
+    if (
+      !unlockGuard &&
+      recoveryGuard &&
+      recoveryId &&
+      !recoveryItem?.available &&
+      !excluded(recoveryId, recoveryItem?.label ?? recoveryId, config)
+    ) {
+      recoveryGuard.assertCurrent();
+      // Inventory reloads the native database index. Do not force availability,
+      // unlock, load a writer baseline, or retry any artifact read/write.
+      inventory = await discoverCloudSyncItems({ includeSizes: false });
+      recoveryGuard.assertCurrent();
+      assertCurrent();
+    }
     const sections: Record<string, unknown> = {};
     for (const id of ids) {
+      assertCurrent();
       if (
         excluded(
           id,
@@ -543,17 +743,33 @@ export async function captureCloudSyncPayload(
       )
         continue;
       const item = inventory.find((item) => item.id === id);
-      if (!item?.available)
+      if (!item?.available) {
+        const label = item?.label.trim();
+        const subject = databaseId(id)
+          ? label
+            ? `Database “${label}”`
+            : "A selected database"
+          : label
+            ? `Selected item “${label}”`
+            : "A selected item";
         throw new Error(
-          `Selected cloud sync artifact "${id}" is unavailable. ${item?.unavailableReason ?? "Review What to sync and select an existing, unlocked artifact."}`,
+          `${subject} is unavailable for cloud sync. ${item?.unavailableReason ?? "Review What to sync and select an existing, unlocked artifact."}`,
         );
+      }
       sections[id] = await readItem(id);
-      if (DatabaseManager.getInstance().getCurrentDatabase()?.id !== owner)
-        throw new Error("Database selection changed during cloud capture.");
+      assertCurrent();
     }
-    return await upgradeCloudSyncPayload({ version: 1, sections });
+    const payload = await upgradeCloudSyncPayload({ version: 1, sections });
+    assertCurrent();
+    captured = true;
+    return payload;
   } finally {
-    await release();
+    try {
+      await release?.();
+      if (captured) assertCurrent();
+    } finally {
+      unlockGuard?.dispose();
+    }
   }
 }
 
@@ -580,7 +796,7 @@ export async function applyCloudSyncPayload(
     throw new Error("Cloud payload contains an excluded artifact.");
   const baseline = expected
     ? await upgradeCloudSyncPayload(expected)
-    : await captureCloudSyncPayload(config);
+    : await captureCloudSyncPayload(config, { allowAutoUnlock: false });
   const owner = DatabaseManager.getInstance().getCurrentDatabase()?.id;
   const assertOwner = () => {
     if (DatabaseManager.getInstance().getCurrentDatabase()?.id !== owner)

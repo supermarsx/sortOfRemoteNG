@@ -16,12 +16,21 @@ export interface RecordChange {
   record: string;
   revision: string;
   parentRevision?: string;
+  /** V2 merge events only. Original single-parent events are never rewritten. */
+  parentRevisions?: string[];
   timestamp: string;
-  kind: "migrate" | "create" | "update" | "delete" | "restore";
+  kind:
+    | "migrate"
+    | "create"
+    | "update"
+    | "delete"
+    | "restore"
+    | "merge"
+    | "merge-delete";
 }
 
 export interface RecordLedger {
-  version: 1;
+  version: 1 | 2;
   records: Record<string, RecordStamp>;
   journal: RecordChange[];
 }
@@ -39,6 +48,7 @@ type Dates = Pick<
 // entries. Reaching one rejects the operation; history is never truncated.
 const MAX_RECORDS = 200_000;
 const MAX_JOURNAL = 1_000_000;
+const MAX_MERGE_PARENTS = 64;
 const MAX_DEPTH = 64;
 const MAX_NODES = 4_000_000;
 const MAX_METADATA_BYTES = 128 * 1024 * 1024;
@@ -328,6 +338,118 @@ function recordKey(value: Json | undefined): string {
   return value;
 }
 
+const deletedEvent = (event: RecordChange) =>
+  event.kind === "delete" || event.kind === "merge-delete";
+const eventParents = (event: RecordChange): readonly string[] =>
+  event.parentRevisions ?? (event.parentRevision ? [event.parentRevision] : []);
+
+/** V2 is a topologically ordered DAG with one resolved head per record. An
+ * explicit merge event joins branches; a version bump alone cannot bless forks.
+ * Existing events retain their original parents, timestamps and revisions. */
+function normalizeDagHistory(
+  entries: Json[],
+  records: Record<string, RecordStamp>,
+): { journal: RecordChange[]; latest: Map<string, RecordChange> } {
+  const events = new Map<string, RecordChange>();
+  const heads = new Map<string, Set<string>>();
+  const roots = new Set<string>();
+  const journal: RecordChange[] = [];
+  let merges = 0;
+  let edges = 0;
+  for (const entry of entries) {
+    const change = object(entry, [
+      "record",
+      "revision",
+      "parentRevision",
+      "parentRevisions",
+      "timestamp",
+      "kind",
+    ]);
+    const key = recordKey(change.record),
+      revision = token(change.revision),
+      time = utc(change.timestamp);
+    const stamp = records[key];
+    if (!stamp || events.has(revision))
+      invalid("unknown record or duplicate revision");
+    const kind = change.kind;
+    const merging = kind === "merge" || kind === "merge-delete";
+    let parents: string[];
+    if (merging) {
+      if (
+        "parentRevision" in change ||
+        !Array.isArray(change.parentRevisions) ||
+        change.parentRevisions.length < 2 ||
+        change.parentRevisions.length > MAX_MERGE_PARENTS
+      )
+        invalid("invalid merge parents");
+      parents = change.parentRevisions.map(token);
+      if (
+        parents.some(
+          (parent, index) => index > 0 && parent <= parents[index - 1],
+        )
+      )
+        invalid("merge parents must be unique and sorted");
+      merges++;
+    } else {
+      if ("parentRevisions" in change) invalid("unexpected merge parents");
+      parents =
+        "parentRevision" in change ? [token(change.parentRevision)] : [];
+    }
+    edges += parents.length;
+    if (edges > MAX_JOURNAL * 4) invalid("history edge limit exceeded");
+    if (!parents.length) {
+      if (
+        (kind !== "create" && kind !== "migrate") ||
+        roots.has(key) ||
+        time < stamp.createdAt
+      )
+        invalid("invalid initial history");
+      if (
+        kind === "create"
+          ? stamp.createdAtSource !== "observed" || stamp.createdAt !== time
+          : stamp.createdAtSource === "observed"
+      )
+        invalid("inconsistent creation provenance");
+      roots.add(key);
+    } else {
+      for (const parent of parents) {
+        const prior = events.get(parent);
+        if (!prior || prior.record !== key || time <= prior.timestamp)
+          invalid("broken revision history");
+        if (
+          !merging &&
+          (deletedEvent(prior)
+            ? kind !== "restore"
+            : kind !== "update" && kind !== "delete")
+        )
+          invalid("broken revision history");
+      }
+    }
+    const event: RecordChange = {
+      record: key,
+      revision,
+      timestamp: time,
+      kind: kind as RecordChange["kind"],
+    };
+    if (merging) event.parentRevisions = parents;
+    else if (parents.length) event.parentRevision = parents[0];
+    if (key === "$" && deletedEvent(event)) invalid("root cannot be deleted");
+    const recordHeads = heads.get(key) ?? new Set<string>();
+    parents.forEach((parent) => recordHeads.delete(parent));
+    recordHeads.add(revision);
+    heads.set(key, recordHeads);
+    events.set(revision, event);
+    journal.push(event);
+  }
+  if (!merges) invalid("version two requires explicit merge history");
+  const latest = new Map<string, RecordChange>();
+  for (const [key, recordHeads] of heads) {
+    if (recordHeads.size !== 1) invalid("unresolved history branches");
+    latest.set(key, events.get([...recordHeads][0])!);
+  }
+  return { journal, latest };
+}
+
 /** Undefined means legacy absence. Present corrupt/future metadata always throws. */
 export function normalizeRecordLedger(
   value: unknown,
@@ -338,7 +460,7 @@ export function normalizeRecordLedger(
     "records",
     "journal",
   ]);
-  if (raw.version !== 1) invalid("unsupported version");
+  if (raw.version !== 1 && raw.version !== 2) invalid("unsupported version");
   const rawRecords = object(raw.records);
   const keys = Object.keys(rawRecords);
   if (!keys.includes("$") || keys.length > MAX_RECORDS)
@@ -380,10 +502,12 @@ export function normalizeRecordLedger(
       records[key].deletedAt = deletedAt;
     }
   }
-  const latest = new Map<string, RecordChange>();
+  const dag =
+    raw.version === 2 ? normalizeDagHistory(raw.journal, records) : undefined;
+  const latest = dag?.latest ?? new Map<string, RecordChange>();
   const revisions = new Set<string>();
-  const journal: RecordChange[] = [];
-  for (const entry of raw.journal) {
+  const journal: RecordChange[] = dag?.journal ?? [];
+  for (const entry of dag ? [] : raw.journal) {
     const change = object(entry, [
       "record",
       "revision",
@@ -439,7 +563,9 @@ export function normalizeRecordLedger(
       !last ||
       last.revision !== stamp.revision ||
       last.timestamp !== stamp.updatedAt ||
-      (last.kind === "delete") !== (stamp.deletedAt !== undefined) ||
+      deletedEvent(last) !== (stamp.deletedAt !== undefined) ||
+      ((last.kind === "merge" || last.kind === "merge-delete") &&
+        stamp.updatedAtSource !== "inferred") ||
       (last.kind === "migrate"
         ? stamp.updatedAtSource === "observed"
         : last.kind === "create"
@@ -457,7 +583,7 @@ export function normalizeRecordLedger(
       }
     }
   }
-  return { version: 1, records, journal };
+  return { version: raw.version, records, journal };
 }
 
 function legacyDates(value: Json, enclosing: string): Dates {
@@ -741,5 +867,169 @@ export async function reconcileRecordLedger(
   }
   // Check aggregate metadata bounds and all cross-record/history invariants
   // before handing a replacement back to the integrating storage layer.
-  return normalizeRecordLedger({ version: 1, records, journal })!;
+  return normalizeRecordLedger({
+    version: prior?.version ?? 1,
+    records,
+    journal,
+  })!;
+}
+
+/** Preserve both histories for an ALREADY resolved payload. This helper never
+ * chooses content or resolves record conflicts: the caller must do that first,
+ * then validate the resulting payload/dependencies before any write. Forks are
+ * closed by causal merge events, not clock winners or rewritten parent links.
+ * No nested ledgers, payload bodies, or historical content are stored. */
+export async function reconcileMergedRecordLedgers(
+  value: unknown,
+  local?: RecordLedger,
+  remote?: RecordLedger,
+): Promise<RecordLedger> {
+  const left = normalizeRecordLedger(local),
+    right = normalizeRecordLedger(remote);
+  if (!left || !right) return reconcileRecordLedger(value, left ?? right);
+  const metadata =
+    value && typeof value === "object"
+      ? Object.getOwnPropertyDescriptor(value, "recordMetadata")
+      : undefined;
+  normalizeRecordLedger(
+    metadata && "value" in metadata ? metadata.value : undefined,
+  );
+  const payload = object(jsonSnapshot(value, MAX_PAYLOAD_BYTES, true));
+  const events = new Map<string, RecordChange>();
+  for (const ledger of [left, right]) {
+    for (const event of ledger.journal) {
+      const existing = events.get(event.revision);
+      if (existing && JSON.stringify(existing) !== JSON.stringify(event))
+        invalid("revision identity collision");
+      events.set(event.revision, event);
+      if (events.size > MAX_JOURNAL) invalid("journal limit exceeded");
+    }
+  }
+  // A containing journal is retained byte-for-byte (including event order).
+  // Otherwise timestamp ordering is only a deterministic topological sort:
+  // every validated child is later than its parents. It never selects content.
+  const journal =
+    events.size === left.journal.length
+      ? [...left.journal]
+      : events.size === right.journal.length
+        ? [...right.journal]
+        : [...events.values()].sort((a, b) =>
+            a.timestamp < b.timestamp
+              ? -1
+              : a.timestamp > b.timestamp
+                ? 1
+                : a.revision < b.revision
+                  ? -1
+                  : a.revision > b.revision
+                    ? 1
+                    : 0,
+          );
+  const heads = new Map<string, Set<string>>();
+  const roots = new Set<string>();
+  for (const event of journal) {
+    const parents = eventParents(event);
+    if (!parents.length) {
+      if (roots.has(event.record)) invalid("unrelated record histories");
+      roots.add(event.record);
+    }
+    const recordHeads = heads.get(event.record) ?? new Set<string>();
+    parents.forEach((parent) => recordHeads.delete(parent));
+    recordHeads.add(event.revision);
+    heads.set(event.record, recordHeads);
+  }
+  if (heads.size > MAX_RECORDS) invalid("record count limit exceeded");
+  const records: Record<string, RecordStamp> = Object.create(null);
+  for (const [key, recordHeads] of heads) {
+    const a = left.records[key],
+      b = right.records[key];
+    if (
+      a &&
+      b &&
+      (a.createdAt !== b.createdAt || a.createdAtSource !== b.createdAtSource)
+    )
+      invalid("inconsistent creation provenance");
+    if (
+      a &&
+      b &&
+      a.revision === b.revision &&
+      JSON.stringify(a) !== JSON.stringify(b)
+    )
+      invalid("revision stamp collision");
+    records[key] = recordHeads.has(a?.revision) ? a : b;
+    if (!records[key] || !recordHeads.has(records[key].revision))
+      invalid("missing branch head stamp");
+  }
+  // Enumeration uses the union's known stable identities, not the archive
+  // envelope. Callers exporting a full database pass fullDatabaseArchiveData.
+  const candidates = new Map(
+    enumerate(payload, { version: 1, records, journal }).map((candidate) => [
+      candidate.key,
+      candidate,
+    ]),
+  );
+  let version: RecordLedger["version"] =
+    left.version === 2 || right.version === 2 ? 2 : 1;
+  let hashedBytes = 0;
+  for (const [key, recordHeads] of heads) {
+    if (recordHeads.size === 1) continue;
+    if (recordHeads.size > MAX_MERGE_PARENTS)
+      invalid("merge parent limit exceeded");
+    const parents = [...recordHeads].sort();
+    const before = records[key];
+    const candidate = candidates.get(key);
+    let contentHash: string;
+    if (candidate) {
+      const serialized = JSON.stringify(candidate.value);
+      hashedBytes += byteLength(serialized);
+      if (hashedBytes > MAX_HASH_BYTES) invalid("hash work limit exceeded");
+      contentHash = await sha256(serialized);
+    } else {
+      // Tombstones retain the last content hash. Divergent last contents have
+      // no single unambiguous tombstone hash; require explicit review instead.
+      if (left.records[key]?.contentHash !== right.records[key]?.contentHash)
+        invalid("ambiguous deleted record content");
+      contentHash = before.contentHash;
+    }
+    const parentTimes = parents
+      .map((parent) => events.get(parent)!.timestamp)
+      .sort();
+    const latestTime = parentTimes[parentTimes.length - 1];
+    const updatedAt = nextTime(EPOCH, latestTime);
+    const kind = candidate ? "merge" : "merge-delete";
+    const revision = await sha256(
+      JSON.stringify([
+        "record-ledger-v2",
+        key,
+        parents,
+        contentHash,
+        kind,
+        before.createdAt,
+        before.createdAtSource,
+        updatedAt,
+      ]),
+    );
+    if (events.has(revision)) invalid("revision identity collision");
+    if (journal.length >= MAX_JOURNAL) invalid("journal limit exceeded");
+    records[key] = {
+      createdAt: before.createdAt,
+      createdAtSource: before.createdAtSource,
+      updatedAt,
+      updatedAtSource: "inferred",
+      revision,
+      contentHash,
+      ...(candidate ? {} : { deletedAt: updatedAt }),
+    };
+    journal.push({
+      record: key,
+      revision,
+      timestamp: updatedAt,
+      kind,
+      parentRevisions: parents,
+    });
+    version = 2;
+  }
+  const combined = normalizeRecordLedger({ version, records, journal })!;
+  // Reconcile nonforked records changed by the already resolved payload, while
+  // retaining every union event. This also verifies the final aggregate bounds.
+  return reconcileRecordLedger(payload, combined, { mode: "migrate" });
 }

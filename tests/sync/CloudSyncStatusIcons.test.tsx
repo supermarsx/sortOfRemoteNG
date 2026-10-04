@@ -4,6 +4,8 @@ import { render, screen, within } from "@testing-library/react";
 import { CloudSyncStatusPopup } from "../../src/components/sync/CloudSyncStatusPopup";
 import { SyncBackupStatusBar } from "../../src/components/sync/SyncBackupStatusBar";
 import { CloudSyncStatusIcon } from "../../src/components/sync/CloudSyncStatusIcon";
+import { SETTINGS_TABS } from "../../src/components/SettingsDialog/settingsConstants";
+import { CloudSync } from "lucide-react";
 
 const { manager } = vi.hoisted(() => ({ manager: vi.fn() }));
 vi.mock("../../src/components/ui/overlays/ToolbarPopover", () => ({
@@ -68,6 +70,35 @@ describe.each([
   ["combined bar", SyncBackupStatusBar, "sync-status-bar"],
 ] as const)("Cloud sync icons: %s", (_name, Component, triggerId) => {
   beforeEach(() => manager.mockReturnValue(makeManager()));
+
+  it.each([
+    [undefined, "cloud-sync", "text-[var(--color-textSecondary)]"],
+    ["success", "cloud-check", "text-success"],
+    ["partial", "cloud-alert", "text-warning"],
+    ["conflict", "cloud-alert", "text-warning"],
+  ])(
+    "keeps a cloud silhouette for %s status",
+    (lastSyncStatus, icon, color) => {
+      const mgr = makeManager();
+      manager.mockReturnValue({
+        ...mgr,
+        config: {
+          ...mgr.config,
+          providerStatus: {
+            nextcloud: { lastSyncStatus },
+            webdav: { lastSyncStatus },
+          },
+        },
+      });
+      render(<Component />);
+      expect(
+        screen.getByTestId(triggerId).querySelector(`.lucide-${icon}`),
+      ).toHaveClass(color);
+      expect(
+        screen.getByRole("button", { name: /Sync All/ }).querySelector("svg"),
+      ).toHaveClass("lucide-cloud-sync");
+    },
+  );
 
   it("uses a labeled cloud with an x for overall and provider failures", () => {
     render(<Component />);
@@ -137,6 +168,12 @@ describe.each([
       screen.queryByRole("img", { name: "WebDAV: Syncing" }),
     ).not.toBeInTheDocument();
   });
+});
+
+it("uses the cloud with sync arrows for the settings entry", () => {
+  expect(SETTINGS_TABS.find((tab) => tab.id === "cloudSync")?.icon).toBe(
+    CloudSync,
+  );
 });
 
 it("keeps the cloud glyph visible with reduced motion and supplies an accessible label", () => {

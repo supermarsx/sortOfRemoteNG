@@ -3,13 +3,8 @@ import { useTranslation } from "react-i18next";
 import {
   CloudSyncProvider,
   CloudSyncTarget,
-  CloudSyncConfig,
 } from "../../types/settings/settings";
-import { defaultCloudSyncConfig } from "../../types/settings/cloudSyncSettings";
-import {
-  providersFromCloudSyncConfig,
-  testCloudSyncProvider,
-} from "../../utils/services/cloudSyncService";
+import { providersFromCloudSyncConfig } from "../../utils/services/cloudSyncService";
 import { useCloudSyncActivity } from "./useCloudSyncActivity";
 
 interface ProviderStatus {
@@ -17,15 +12,6 @@ interface ProviderStatus {
   lastSyncTime?: number;
   lastSyncStatus?: "success" | "failed" | "partial" | "conflict";
   lastSyncError?: string;
-}
-
-export interface SyncTestResult {
-  provider: CloudSyncProvider;
-  success: boolean;
-  message: string;
-  latencyMs?: number;
-  canRead?: boolean;
-  canWrite?: boolean;
 }
 
 interface UseCloudSyncStatusParams {
@@ -73,10 +59,6 @@ export function useCloudSyncStatus({
   const activity = useCloudSyncActivity();
   const [syncingProvider, setSyncingProvider] =
     useState<CloudSyncProvider | null>(null);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testingProvider, setTestingProvider] =
-    useState<CloudSyncProvider | null>(null);
-  const [testResults, setTestResults] = useState<SyncTestResult[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const config = cloudSyncConfig ?? {
@@ -116,69 +98,11 @@ export function useCloudSyncStatus({
     }
   };
 
-  const handleTestProvider = async (provider: CloudSyncProvider) => {
-    setTestingProvider(provider);
-    setIsTesting(true);
-    setTestResults((prev) => prev.filter((r) => r.provider !== provider));
-    try {
-      const targets = config.syncTargets?.filter(
-        (target): target is CloudSyncTarget =>
-          typeof target.id === "string" && typeof target.label === "string",
-      );
-      const result = await testCloudSyncProvider(provider, {
-        ...defaultCloudSyncConfig,
-        ...config,
-        syncTargets: targets,
-      } as CloudSyncConfig);
-      setTestResults((prev) => [
-        ...prev,
-        {
-          provider,
-          success: result.status === "success",
-          message:
-            result.status === "success"
-              ? t("sync.testSuccess", "Connection successful")
-              : result.message,
-          latencyMs: result.latencyMs,
-          canRead: result.canRead,
-          canWrite: result.canWrite,
-        },
-      ]);
-    } catch (error) {
-      setTestResults((prev) => [
-        ...prev,
-        {
-          provider,
-          success: false,
-          message: t("sync.testError", "Test failed: {{error}}", {
-            error: String(error),
-          }),
-        },
-      ]);
-    } finally {
-      setTestingProvider(null);
-      setIsTesting(false);
-    }
-  };
-
-  const handleTestAll = async () => {
-    setTestResults([]);
-    for (const provider of enabledProviders) {
-      await handleTestProvider(provider);
-    }
-  };
-
   const getLastSyncTime = (): number | undefined => {
     const times = enabledProviders
       .map((p) => config.providerStatus[p]?.lastSyncTime)
       .filter((t): t is number => t !== undefined);
     return times.length > 0 ? Math.max(...times) : undefined;
-  };
-
-  const getTestResultForProvider = (
-    provider: CloudSyncProvider,
-  ): SyncTestResult | undefined => {
-    return testResults.find((r) => r.provider === provider);
   };
 
   return {
@@ -188,17 +112,12 @@ export function useCloudSyncStatus({
     isSyncing: anySyncing,
     isProviderSyncing,
     syncingProvider,
-    isTesting,
-    testingProvider,
     dropdownRef,
     config,
     enabledProviders,
     hasSync,
     handleSyncAll,
     handleSyncProvider,
-    handleTestProvider,
-    handleTestAll,
     getLastSyncTime,
-    getTestResultForProvider,
   };
 }

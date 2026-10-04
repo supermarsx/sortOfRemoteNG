@@ -9,12 +9,18 @@ import {
   CloudSyncConflict,
   cloudSyncTransportOptions,
   runCloudSync,
+  reviewCloudSync,
   serializeCloudSync,
 } from "./cloudSyncEngine";
 import {
   beginCloudSyncActivity,
   cloudSyncTargetIdentity,
 } from "./cloudSyncActivity";
+import type {
+  CloudSyncConflictReview,
+  CloudSyncReviewedResolution,
+  CloudSyncReviewChoices,
+} from "./cloudSyncConflictReview";
 
 export type CloudSyncResultStatus =
   "success" | "failed" | "partial" | "conflict";
@@ -349,6 +355,7 @@ export async function testCloudSyncTarget(
 export async function syncCloudTarget(
   target: CloudSyncTargetLike,
   config: CloudSyncConfig = defaultCloudSyncConfig,
+  resolution?: CloudSyncReviewedResolution,
 ): Promise<CloudSyncOperationResult> {
   const started = Date.now();
   const common = {
@@ -362,7 +369,7 @@ export async function syncCloudTarget(
         throw new Error(
           "Sync target or selection changed while queued. Retry with the current settings.",
         );
-      return runCloudSync(target, config);
+      return runCloudSync(target, config, resolution, common.requestIdentity);
     });
     return {
       ...common,
@@ -388,6 +395,52 @@ export async function syncCloudTarget(
       status: partial ? "partial" : conflict ? "conflict" : "failed",
       latencyMs: Date.now() - started,
     });
+  }
+}
+
+/** Read-only inspection uses the same queue as scheduled/manual sync. */
+export async function reviewCloudSyncTarget(
+  target: CloudSyncTarget,
+  config: CloudSyncConfig,
+): Promise<CloudSyncConflictReview> {
+  const requestIdentity = cloudSyncTargetIdentity(target.id);
+  const frozenTarget = structuredClone(target);
+  const frozenConfig = structuredClone(config);
+  const finish = beginCloudSyncActivity({ ...target, requestIdentity });
+  try {
+    return await serializeCloudSync(() => {
+      if (requestIdentity !== cloudSyncTargetIdentity(target.id))
+        throw new CloudSyncConflict(
+          "Sync settings changed. Refresh the conflict review.",
+        );
+      return reviewCloudSync(frozenTarget, frozenConfig, requestIdentity);
+    });
+  } finally {
+    finish();
+  }
+}
+
+/** One-time, target-scoped choices; the configured strategy is never changed. */
+export async function resolveCloudSyncTarget(
+  target: CloudSyncTarget,
+  config: CloudSyncConfig,
+  review: CloudSyncConflictReview,
+  choices: CloudSyncReviewChoices,
+): Promise<CloudSyncOperationResult> {
+  const requestIdentity = cloudSyncTargetIdentity(target.id);
+  const finish = beginCloudSyncActivity({ ...target, requestIdentity });
+  try {
+    // requestIdentity is a symbol, so the public review cannot be structuredCloned.
+    return await syncCloudTarget(
+      structuredClone(target),
+      structuredClone(config),
+      {
+        review: { ...review, items: review.items.map((item) => ({ ...item })) },
+        choices: { ...choices },
+      },
+    );
+  } finally {
+    finish();
   }
 }
 

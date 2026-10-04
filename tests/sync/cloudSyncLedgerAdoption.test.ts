@@ -5,6 +5,7 @@ import {
   CloudSyncPartialApplyError,
   applyCloudSyncPayload,
   captureCloudSyncPayload,
+  upgradeCloudSyncPayload,
   type CloudSyncPayload,
 } from "../../src/utils/services/cloudSyncPayload";
 import { nativeManagedScriptsStore } from "../../src/utils/recording/managedScriptPersistence";
@@ -16,6 +17,10 @@ import {
   reconcileRecordLedger,
   type RecordLedger,
 } from "../../src/utils/storage/recordLedger";
+import {
+  buildSmartSyncBaseline,
+  smartMergeSyncSection,
+} from "../../src/utils/services/cloudSyncSmartMerge";
 
 // Only the native boundary and unrelated database/settings services are mocked.
 // Library load/update, domain sanitizers and ledger reconciliation stay real.
@@ -193,6 +198,61 @@ afterEach(() => {
 });
 
 describe.each(libraries)("cloud ledger adoption: $name", (library) => {
+  it("smart-merges independent record edits, validates history and persists without ledger drift", async () => {
+    const baseline = await captureBaseline(library);
+    const base = baseline.sections[`app:${library.store.key}`] as LibraryValue;
+    const smartBaseline = await buildSmartSyncBaseline(base);
+    const local = structuredClone(base);
+    const remote = structuredClone(base);
+    const localRecords = local[library.records] as Array<
+      Record<string, unknown>
+    >;
+    localRecords[0].name = "Locally renamed";
+    local.recordMetadata = await reconcileRecordLedger(
+      local,
+      local.recordMetadata,
+      { mode: "write", now: REMOTE_UPDATED },
+    );
+    const remoteRecords = remote[library.records] as Array<
+      Record<string, unknown>
+    >;
+    remoteRecords.push({
+      ...remoteRecords[0],
+      id: "remote-added",
+      name: "Remotely added",
+    });
+    remote.recordMetadata = await reconcileRecordLedger(
+      remote,
+      remote.recordMetadata,
+      { mode: "write", now: REMOTE_UPDATED },
+    );
+    durable.set(library.store.key, JSON.stringify(local));
+    const merged = await smartMergeSyncSection(local, remote, smartBaseline);
+    expect(merged.conflictCount).toBe(0);
+    const mergedPayload = payloadFor(library, merged.value as LibraryValue);
+    expect(await upgradeCloudSyncPayload(mergedPayload)).toEqual(mergedPayload);
+    await applyCloudSyncPayload(
+      mergedPayload,
+      configFor(library),
+      payloadFor(library, local),
+    );
+    const recaptured = await captureCloudSyncPayload(configFor(library));
+    expect(recaptured).toEqual(mergedPayload);
+    const records = (
+      recaptured.sections[`app:${library.store.key}`] as LibraryValue
+    )[library.records] as Array<Record<string, unknown>>;
+    expect(records.map((record) => record.name)).toEqual([
+      "Locally renamed",
+      "Remotely added",
+    ]);
+    const history = (merged.value as LibraryValue).recordMetadata.journal;
+    for (const change of [
+      ...local.recordMetadata.journal,
+      ...remote.recordMetadata.journal,
+    ])
+      expect(history).toContainEqual(change);
+  });
+
   it("rejects a structurally valid but mismatched remote ledger before any write", async () => {
     const baseline = await captureBaseline(library);
     const originalBytes = durable.get(library.store.key);
