@@ -341,10 +341,11 @@ pub async fn generate_ssh_key(
     redact_result(ssh.generate_ssh_key(&key_type, bits, passphrase).await)
 }
 
-/// Get the terminal buffer for a session
+/// Legacy replay: return only the newest 256 KiB (whole UTF-8 characters).
+/// Use get_terminal_buffer_snapshot to page through larger histories.
 #[tauri::command]
 pub fn get_terminal_buffer(session_id: String) -> Result<String, String> {
-    terminal_buffer_text(&session_id)
+    terminal_buffer_legacy_text(&session_id)
 }
 
 /// Get a sequence-aware bounded terminal replay snapshot. The legacy plain
@@ -354,8 +355,20 @@ pub fn get_terminal_buffer_snapshot(
     session_id: String,
     generation: Option<u64>,
     after_sequence: Option<u64>,
+    max_bytes: Option<usize>,
 ) -> Result<TerminalBufferSnapshot, String> {
-    terminal_buffer_snapshot(&session_id, generation, after_sequence)
+    terminal_buffer_snapshot_page(&session_id, generation, after_sequence, max_bytes)
+}
+
+/// Main owns global config; each window renews its own pressure report.
+/// Fixed budgets also shrink under emergency pressure/shared safety limits.
+#[tauri::command]
+pub fn configure_terminal_buffering(
+    window: tauri::Window,
+    config: Option<TerminalBufferConfig>,
+    pressure: TerminalMemoryPressure,
+) -> Result<TerminalBufferDiagnostics, String> {
+    configure_terminal_buffering_state(window.label(), config, pressure)
 }
 
 /// Clear the terminal buffer for a session

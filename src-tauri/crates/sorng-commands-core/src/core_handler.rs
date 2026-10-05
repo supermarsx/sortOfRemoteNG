@@ -603,6 +603,7 @@ define_command_group!(
         ssh_commands::clear_highlight_rules,
         http_commands::clear_proxy_request_log,
         ssh_commands::clear_terminal_buffer,
+        ssh_commands::configure_terminal_buffering,
         ssh_commands::close_ssh3_channel,
         ssh_commands::confirm_proxy_command,
         cloudflare_commands::connect_cloudflare,
@@ -1978,6 +1979,7 @@ mod tests {
         for command in [
             "get_terminal_buffer",
             "clear_terminal_buffer",
+            "configure_terminal_buffering",
             "get_terminal_buffer_snapshot",
         ] {
             assert!(is_command(command), "{command} missing from is_command");

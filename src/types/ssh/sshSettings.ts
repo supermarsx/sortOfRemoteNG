@@ -1,3 +1,8 @@
+import {
+  defaultTerminalBufferingSettings,
+  type TerminalBufferingSettings,
+} from "./terminalBuffering";
+
 // SSH Terminal Simulation Configuration Types
 export const BellStyles = [
   "none",
@@ -316,6 +321,9 @@ export interface SSHTerminalConfig {
   scrollOnOutput: boolean;
   scrollOnKeystroke: boolean;
 
+  /** Global replay-history policy; read from settings.sshTerminal, never a connection override. */
+  outputBuffer?: TerminalBufferingSettings;
+
   // Selection behavior
   copyOnSelect: boolean;
   pasteOnRightClick: boolean;
@@ -401,13 +409,7 @@ export interface TerminalOverlay {
   id: string;
   enabled: boolean;
   type:
-    | "color"
-    | "gradient"
-    | "vignette"
-    | "scanlines"
-    | "noise"
-    | "crt"
-    | "grid";
+    "color" | "gradient" | "vignette" | "scanlines" | "noise" | "crt" | "grid";
   opacity: number; // 0-1
   blendMode: OverlayBlendMode;
   color?: string;
@@ -595,6 +597,7 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
   scrollbackLines: 10000,
   scrollOnOutput: false,
   scrollOnKeystroke: true,
+  outputBuffer: { ...defaultTerminalBufferingSettings },
 
   // Selection behavior
   copyOnSelect: false,
@@ -642,8 +645,7 @@ export interface ProxyConfig {
 
 /** A single hop in a mixed chain. */
 export type ChainHop =
-  | ({ type: "ssh_jump" } & JumpHostConfig)
-  | ({ type: "proxy" } & ProxyConfig);
+  ({ type: "ssh_jump" } & JumpHostConfig) | ({ type: "proxy" } & ProxyConfig);
 
 /** Configuration for a mixed chain of SSH jumps + proxy hops. */
 export interface MixedChainConfig {

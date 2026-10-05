@@ -84,6 +84,7 @@ import {
   type BehaviorActivateSessionPayload,
 } from "../../src/utils/behavior/windowActions";
 import { MemoryWatchdogController } from "../../src/components/app/MemoryWatchdogController";
+import { TerminalBufferController } from "../../src/components/app/TerminalBufferController";
 import { UnlockScreen } from "../../src/components/encryption/UnlockScreen";
 import { SettingsStorageNotice } from "../../src/components/encryption/SettingsStorageNotice";
 import { DatabaseAccessNotice } from "../../src/components/encryption/DatabaseAccessNotice";
@@ -2285,10 +2286,16 @@ const DetachedMemoryWatchdog: React.FC = () => {
     // Browser preview fallback; detached thresholds still apply.
   }
   return (
-    <MemoryWatchdogController
-      settings={settings.memoryWatchdog}
-      windowLabel={windowLabel}
-    />
+    <>
+      <MemoryWatchdogController
+        settings={settings.memoryWatchdog}
+        windowLabel={windowLabel}
+      />
+      <TerminalBufferController
+        settings={settings.sshTerminal?.outputBuffer}
+        windowLabel={windowLabel}
+      />
+    </>
   );
 };
 

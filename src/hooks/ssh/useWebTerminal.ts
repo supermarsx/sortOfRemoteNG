@@ -105,6 +105,7 @@ import {
   getTerminalOutputScheduler,
   type TerminalOutputRegistration,
   type TerminalReplaySnapshot,
+  type TerminalOutputCursor,
 } from "../../services/session/terminalOutputScheduler";
 
 /* ── Internal types ────────────────────────────────────────────── */
@@ -145,6 +146,7 @@ interface NativeSshTerminalBufferSnapshot {
   dropped_bytes: number;
   gap: boolean;
   generation_changed: boolean;
+  has_more?: boolean;
 }
 
 const normalizeTerminalBufferSnapshot = (
@@ -175,6 +177,7 @@ const normalizeTerminalBufferSnapshot = (
     droppedBytes: snapshot.dropped_bytes,
     gap: snapshot.gap,
     generationChanged: snapshot.generation_changed,
+    hasMore: snapshot.has_more === true,
   };
 };
 type HostKeyPromptDecision = "accept_once" | "accept_and_save" | "reject";
@@ -793,6 +796,27 @@ export function useWebTerminal(
       return false;
     }
   }, []);
+
+  const writeOutput = useCallback(
+    (text: string): boolean | Promise<boolean> => {
+      const terminal = termRef.current;
+      if (
+        isDisposed.current ||
+        !terminal ||
+        !terminalActiveRef.current ||
+        (terminal.element && !terminal.element.isConnected)
+      )
+        return false;
+      return new Promise<boolean>((resolve, reject) => {
+        try {
+          terminal.write(text, () => resolve(true));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    },
+    [],
+  );
 
   const safeWriteln = useCallback((text: string) => {
     if (isDisposed.current || !termRef.current || !terminalActiveRef.current)
@@ -3083,12 +3107,17 @@ export function useWebTerminal(
     let boundGeneration: number | undefined;
 
     const handleOutput = (payload: SshOutputEventPayload) => {
+      if (payload.session_id !== sshSessionId.current) return;
       if (
-        payload.session_id !== sshSessionId.current ||
-        (boundGeneration !== undefined &&
-          payload.generation !== undefined &&
-          payload.generation !== boundGeneration)
+        boundGeneration !== undefined &&
+        payload.generation !== undefined &&
+        payload.generation !== boundGeneration
       ) {
+        // Clearing history changes the native generation without replacing the
+        // SSH actor. Reconcile that forward change instead of ignoring output
+        // forever; late events from older generations remain discarded.
+        if (payload.generation > boundGeneration)
+          sshOutputRegistrationRef.current?.synchronize();
         return;
       }
       sshOutputRegistrationRef.current?.enqueue({
@@ -3259,14 +3288,13 @@ export function useWebTerminal(
       resumeSshOutputRef.current = async () => undefined;
     };
 
-    const synchronizeReplay = async (
+    const fetchReplay = async (
       actorId: string,
       registration: TerminalOutputRegistration,
-    ) => {
-      const revision = ++actorBindingRevision;
+      cursor: TerminalOutputCursor,
+    ): Promise<TerminalReplaySnapshot | null> => {
+      const revision = actorBindingRevision;
       replayInFlightRevision = revision;
-      registration.pause();
-      const cursor = registration.cursor();
       const request: {
         sessionId: string;
         generation?: number;
@@ -3294,11 +3322,19 @@ export function useWebTerminal(
           boundActorId !== actorId ||
           sshOutputRegistrationRef.current !== registration
         ) {
-          return;
+          throw new Error("Terminal replay binding was replaced");
         }
         boundGeneration = snapshot.generation;
-        registration.applyReplay(snapshot);
-      } catch {
+        return snapshot;
+      } catch (error) {
+        // Only old backends lacking the sequenced API may use legacy replay.
+        // A transient failure must retry without losing the sequence cursor.
+        if (
+          !/legacy backend|unknown command|command .*not found|returned an invalid payload/i.test(
+            String(error),
+          )
+        )
+          throw error;
         // The legacy API has no sequence cursor. Capture the event cutoff
         // before requesting its snapshot so output delivered while the RPC is
         // in flight remains queued instead of being mistaken for replayed data.
@@ -3312,27 +3348,23 @@ export function useWebTerminal(
           boundActorId !== actorId ||
           sshOutputRegistrationRef.current !== registration
         ) {
-          return;
+          throw new Error("Terminal replay binding was replaced");
         }
         if (typeof legacyBuffer === "string") {
           registration.applyLegacyReplay(legacyBuffer, throughOrdinal);
         }
+        return null;
+      } finally {
+        if (replayInFlightRevision === revision) replayInFlightRevision = null;
       }
+    };
 
-      if (replayInFlightRevision === revision) {
-        replayInFlightRevision = null;
-      }
-      if (
-        !cancelled &&
-        revision === actorBindingRevision &&
-        boundActorId === actorId &&
-        sshOutputRegistrationRef.current === registration &&
-        terminalActiveRef.current
-      ) {
-        // Even when replay is temporarily unavailable, bounded live output may
-        // continue. A later inactive→active transition retries synchronization.
-        registration.resume();
-      }
+    const synchronizeReplay = async (
+      _actorId: string,
+      registration: TerminalOutputRegistration,
+    ) => {
+      registration.synchronize();
+      if (terminalActiveRef.current) registration.resume();
     };
 
     const bindActor = async (actorId: string) => {
@@ -3350,7 +3382,8 @@ export function useWebTerminal(
       const registration = getTerminalOutputScheduler().register(
         actorId,
         {
-          write: safeWrite,
+          write: writeOutput,
+          replay: (cursor) => fetchReplay(actorId, registration, cursor),
           onGap: (gap) => safeWrite(formatTerminalOutputGap(gap)),
           onReset: () => {
             if (!terminalActiveRef.current || !termRef.current) return false;
@@ -3470,6 +3503,7 @@ export function useWebTerminal(
     disconnectCurrentSsh,
     session.id,
     safeWrite,
+    writeOutput,
     safeWriteln,
     sanitizeCurrentSshMessage,
     scheduleAutoReconnect,

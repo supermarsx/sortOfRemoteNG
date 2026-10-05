@@ -103,8 +103,9 @@ const mocks = vi.hoisted(() => {
     reset = vi.fn();
     clear = vi.fn();
     scrollToBottom = vi.fn();
-    write = vi.fn((_text: string) => {
+    write = vi.fn((_text: string, callback?: () => void) => {
       for (const handler of [...this.writeParsedHandlers]) handler();
+      callback?.();
     });
     writeln = vi.fn((_text: string) => {
       for (const handler of [...this.writeParsedHandlers]) handler();
@@ -964,7 +965,10 @@ describe("useWebTerminal input lifecycle", () => {
       });
     });
     await waitFor(() =>
-      expect(mocks.MockTerminal.instances[0].write).toHaveBeenCalledWith("A"),
+      expect(mocks.MockTerminal.instances[0].write).toHaveBeenCalledWith(
+        "A",
+        expect.any(Function),
+      ),
     );
 
     firstView.unmount();
@@ -988,7 +992,10 @@ describe("useWebTerminal input lifecycle", () => {
       ).toHaveLength(2),
     );
     await waitFor(() =>
-      expect(mocks.MockTerminal.instances[1].write).toHaveBeenCalledWith("AB"),
+      expect(mocks.MockTerminal.instances[1].write).toHaveBeenCalledWith(
+        "AB",
+        expect.any(Function),
+      ),
     );
     expect(backendActors).toEqual(new Set(["backend-persisted-1"]));
     expect(
@@ -3105,9 +3112,11 @@ describe("useWebTerminal input lifecycle", () => {
     expect(terminal.write).not.toHaveBeenCalled();
 
     view.rerender(<Harness active />);
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("AB"));
-    expect(terminal.write).not.toHaveBeenCalledWith("A");
-    expect(terminal.write).not.toHaveBeenCalledWith("B");
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("AB", expect.any(Function)),
+    );
+    expect(terminal.write).not.toHaveBeenCalledWith("A", expect.any(Function));
+    expect(terminal.write).not.toHaveBeenCalledWith("B", expect.any(Function));
 
     retained = "ABC";
     act(() => {
@@ -3121,7 +3130,9 @@ describe("useWebTerminal input lifecycle", () => {
         dropped_bytes: 0,
       });
     });
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("C"));
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("C", expect.any(Function)),
+    );
 
     view.rerender(<Harness active={false} />);
     retained = "ABCD";
@@ -3142,10 +3153,12 @@ describe("useWebTerminal input lifecycle", () => {
           setTimeout(resolve, 15);
         }),
     );
-    expect(terminal.write).not.toHaveBeenCalledWith("D");
+    expect(terminal.write).not.toHaveBeenCalledWith("D", expect.any(Function));
 
     view.rerender(<Harness active />);
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("D"));
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("D", expect.any(Function)),
+    );
     expect(
       terminal.write.mock.calls.filter(([data]) => data === "D"),
     ).toHaveLength(1);
@@ -3157,6 +3170,84 @@ describe("useWebTerminal input lifecycle", () => {
 
     view.unmount();
     await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(false));
+  });
+
+  it("recovers a live sequence gap and a forward history-generation change automatically", async () => {
+    let retained = "";
+    let generation = 1;
+    mocks.invoke.mockImplementation(
+      (command: string, args: Record<string, unknown> = {}) => {
+        if (command === "connect_ssh") return Promise.resolve("backend-ssh-1");
+        if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+        if (command === "get_terminal_buffer_snapshot") {
+          const changed =
+            args.generation !== undefined && args.generation !== generation;
+          const start = changed
+            ? 0
+            : ((args.afterSequence as number | undefined) ?? 0);
+          return Promise.resolve({
+            session_id: "backend-ssh-1",
+            data: retained.slice(start),
+            generation,
+            sequence_start: start,
+            sequence_end: retained.length,
+            retained_start: 0,
+            dropped_bytes: 0,
+            gap: changed,
+            generation_changed: changed,
+          });
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session, undefined, true);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(true));
+    const terminal = mocks.MockTerminal.instances[0];
+    const output = (
+      data: string,
+      start: number,
+      eventGeneration = generation,
+    ) =>
+      emitTauriEvent("ssh-output", {
+        session_id: "backend-ssh-1",
+        data,
+        generation: eventGeneration,
+        sequence_start: start,
+        sequence_end: start + data.length,
+        retained_start: 0,
+        dropped_bytes: 0,
+      });
+    retained = "A";
+    act(() => output("A", 0));
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("A", expect.any(Function)),
+    );
+    retained = "ABC";
+    act(() => output("C", 2)); // B's live event was lost; native history still has it.
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("BC", expect.any(Function)),
+    );
+    expect(terminal.write.mock.calls.map(([data]) => data).join("")).toBe(
+      "ABC",
+    );
+    generation = 2;
+    retained = "new";
+    act(() => output("new", 0));
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("new", expect.any(Function)),
+    );
+    expect(terminal.clear).toHaveBeenCalled();
+    act(() => output("stale", 3, 1));
+    expect(
+      terminal.write.mock.calls.some(([data]) => data.includes("stale")),
+    ).toBe(false);
+    view.unmount();
   });
 
   it("keeps an event that arrives while the legacy replay RPC is in flight", async () => {
@@ -3285,7 +3376,7 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
       });
       // Scheduler drains on a 0ms tick; stay under the 50ms fit timer.
       await act(async () => vi.advanceTimersByTimeAsync(5));
-      expect(terminal.write).toHaveBeenCalledWith("A");
+      expect(terminal.write).toHaveBeenCalledWith("A", expect.any(Function));
 
       view.unmount();
     } finally {
@@ -3311,7 +3402,9 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
     act(() => {
       emitTauriEvent("ssh-output", sshOutputPayload("A", 0));
     });
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("A"));
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("A", expect.any(Function)),
+    );
     expect(terminal.scrollToBottom).toHaveBeenCalled();
 
     // Flip the setting off; a rerender refreshes the config ref, no remount.
@@ -3323,7 +3416,9 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
     act(() => {
       emitTauriEvent("ssh-output", sshOutputPayload("B", 1));
     });
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("B"));
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("B", expect.any(Function)),
+    );
     expect(terminal.scrollToBottom).not.toHaveBeenCalled();
 
     // And back on again.
@@ -3334,7 +3429,9 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
     act(() => {
       emitTauriEvent("ssh-output", sshOutputPayload("C", 2));
     });
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("C"));
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("C", expect.any(Function)),
+    );
     expect(terminal.scrollToBottom).toHaveBeenCalled();
     expect(mocks.MockTerminal.instances).toHaveLength(1);
 
@@ -3357,7 +3454,9 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
     act(() => {
       emitTauriEvent("ssh-output", sshOutputPayload("A", 0));
     });
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("A"));
+    await waitFor(() =>
+      expect(terminal.write).toHaveBeenCalledWith("A", expect.any(Function)),
+    );
     expect(terminal.scrollToBottom).not.toHaveBeenCalled();
 
     view.unmount();

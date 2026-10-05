@@ -17,13 +17,11 @@ export interface TerminalReplaySnapshot {
   droppedBytes: number;
   gap: boolean;
   generationChanged: boolean;
+  hasMore?: boolean;
 }
 
 export type TerminalOutputGapReason =
-  | "overflow"
-  | "sequence"
-  | "replay"
-  | "generation";
+  "overflow" | "sequence" | "replay" | "generation";
 
 export interface TerminalOutputGap {
   reason: TerminalOutputGapReason;
@@ -35,9 +33,13 @@ export interface TerminalOutputGap {
 
 export interface TerminalOutputCallbacks {
   /** Return false when the renderer is temporarily unavailable; data stays queued. */
-  write: (data: string) => boolean | void;
+  write: (data: string) => boolean | void | Promise<boolean | void>;
   onGap: (gap: TerminalOutputGap) => boolean | void;
   onReset?: () => boolean | void;
+  /** Fetch one bounded native replay page, starting at the acknowledged cursor. */
+  replay?: (
+    cursor: TerminalOutputCursor,
+  ) => Promise<TerminalReplaySnapshot | null>;
 }
 
 export interface TerminalOutputSchedulerConfig {
@@ -108,6 +110,7 @@ export interface TerminalOutputRegistration {
   enqueue: (chunk: TerminalOutputChunk) => boolean;
   pause: () => void;
   resume: () => void;
+  synchronize: () => void;
   captureOrdinal: () => number;
   cursor: () => TerminalOutputCursor;
   applyReplay: (snapshot: TerminalReplaySnapshot) => void;
@@ -146,6 +149,13 @@ interface SchedulerState {
   resetPending: boolean;
   writeRetries: number;
   cancelWriteRetry: (() => void) | null;
+  writing: QueueRecord | null;
+  replayRequested: boolean;
+  replayInFlight: boolean;
+  replayFailures: number;
+  replayPageEnd?: number;
+  replayMore: boolean;
+  highWater?: number;
 }
 
 const encoder = new TextEncoder();
@@ -277,6 +287,8 @@ export class TerminalOutputScheduler {
   private totalQueuedBytes = 0;
   private totalQueuedChunks = 0;
   private scheduledHandle: unknown = null;
+  private replayFlights = 0;
+  private readonly replayWaiters = new Set<number>();
 
   constructor(
     config: Partial<TerminalOutputSchedulerConfig> = {},
@@ -304,6 +316,11 @@ export class TerminalOutputScheduler {
       resetPending: false,
       writeRetries: 0,
       cancelWriteRetry: null,
+      writing: null,
+      replayRequested: false,
+      replayInFlight: false,
+      replayFailures: 0,
+      replayMore: false,
     };
     this.states.set(state.id, state);
 
@@ -323,6 +340,13 @@ export class TerminalOutputScheduler {
       },
       resume: () => {
         withState(undefined, (live) => this.setPaused(live, false));
+      },
+      synchronize: () => {
+        withState(undefined, (live) => {
+          if (!live.callbacks.replay) return;
+          live.replayRequested = true;
+          this.markReady(live);
+        });
       },
       captureOrdinal: () => this.nextOrdinal - 1,
       cursor: () =>
@@ -386,44 +410,35 @@ export class TerminalOutputScheduler {
       if (state.generation !== incoming.generation) return false;
     }
 
-    this.observeBackendLoss(state, incoming);
+    // History eviction is not evidence of missing live output. Only stream
+    // sequence discontinuities (or an expired replay cursor) establish a gap.
+    state.lastBackendDroppedBytes = Math.max(
+      state.lastBackendDroppedBytes ?? 0,
+      incoming.droppedBytes ?? 0,
+    );
+    if (incoming.sequenceEnd !== undefined) {
+      state.highWater = Math.max(state.highWater ?? 0, incoming.sequenceEnd);
+      if (
+        state.callbacks.replay &&
+        (state.paused ||
+          state.replayRequested ||
+          state.replayInFlight ||
+          state.replayPageEnd !== undefined)
+      ) {
+        // During catch-up the native replay buffer is the source of truth.
+        // Do not duplicate potentially 100 MiB of history in a hidden WebView.
+        if (state.replayPageEnd !== undefined) state.replayMore = true;
+        else state.replayRequested = true;
+        this.markReady(state);
+        return true;
+      }
+    }
     const chunk = this.reconcileSequence(state, incoming);
     if (!chunk?.data) return false;
     this.insertRecord(state, chunk, false);
     this.enforceLimits(state);
     this.markReady(state);
     return true;
-  }
-
-  private observeBackendLoss(
-    state: SchedulerState,
-    chunk: TerminalOutputChunk,
-  ): void {
-    if (chunk.droppedBytes !== undefined) {
-      const previous = state.lastBackendDroppedBytes ?? chunk.droppedBytes;
-      if (chunk.droppedBytes > previous) {
-        this.recordGap(state, {
-          reason: "replay",
-          droppedBytes: chunk.droppedBytes - previous,
-          droppedChunks: 0,
-        });
-      }
-      state.lastBackendDroppedBytes = Math.max(previous, chunk.droppedBytes);
-    }
-    const expected = this.latestSequence(state);
-    if (
-      expected !== undefined &&
-      chunk.retainedStart !== undefined &&
-      chunk.retainedStart > expected
-    ) {
-      this.recordGap(state, {
-        reason: "sequence",
-        droppedBytes: chunk.retainedStart - expected,
-        droppedChunks: 0,
-        fromSequence: expected,
-        throughSequence: chunk.retainedStart,
-      });
-    }
   }
 
   private reconcileSequence(
@@ -519,7 +534,7 @@ export class TerminalOutputScheduler {
       state.queue.length > this.config.perSessionMaxChunks ||
       state.queuedBytes > this.config.perSessionMaxBytes
     ) {
-      const oldest = state.queue[0];
+      const oldest = state.queue.find((record) => record !== state.writing);
       if (!oldest) break;
       this.dropRecord(state, oldest, true);
     }
@@ -538,9 +553,14 @@ export class TerminalOutputScheduler {
   }
 
   private takeOldestGlobalRecord(): QueueRecord | null {
-    while (this.globalOrderHead < this.globalOrder.length) {
-      const record = this.globalOrder[this.globalOrderHead++];
-      if (record?.live) return record;
+    for (
+      let index = this.globalOrderHead;
+      index < this.globalOrder.length;
+      index++
+    ) {
+      const record = this.globalOrder[index];
+      if (record?.live && this.states.get(record.ownerId)?.writing !== record)
+        return record;
     }
     return null;
   }
@@ -554,6 +574,14 @@ export class TerminalOutputScheduler {
     }
     if (this.globalOrderHead > 1024) {
       this.globalOrder.splice(0, this.globalOrderHead);
+      this.globalOrderHead = 0;
+    }
+    // A slow in-flight write can pin the first entry while later chunks are
+    // consumed. Do not retain an unbounded tombstone list behind that entry.
+    if (this.globalOrder.length > this.totalQueuedChunks * 2 + 1024) {
+      const live = this.globalOrder.filter((record) => record.live);
+      this.globalOrder.length = 0;
+      this.globalOrder.push(...live);
       this.globalOrderHead = 0;
     }
   }
@@ -582,6 +610,12 @@ export class TerminalOutputScheduler {
   }
 
   private recordGap(state: SchedulerState, gap: TerminalOutputGap): void {
+    if (
+      state.callbacks.replay &&
+      (gap.reason === "sequence" || gap.reason === "overflow")
+    ) {
+      state.replayRequested = true;
+    }
     if (!state.pendingGap) {
       state.pendingGap = { ...gap };
       this.markReady(state);
@@ -630,30 +664,32 @@ export class TerminalOutputScheduler {
     if (generationChanged) {
       this.clearQueue(state, false);
       state.deliveredSequence = undefined;
+      state.highWater = snapshot.sequenceEnd;
       state.generation = snapshot.generation;
       state.resetPending = true;
       this.recordGap(state, {
         reason: "generation",
         droppedChunks: 0,
-        droppedBytes: Math.max(0, snapshot.droppedBytes),
-        fromSequence: snapshot.retainedStart,
+        droppedBytes: Math.max(0, snapshot.sequenceStart),
+        fromSequence: 0,
         throughSequence: snapshot.sequenceStart,
       });
     } else if (state.generation === undefined) {
       state.generation = snapshot.generation;
     }
 
-    if (snapshot.gap && !generationChanged) {
-      state.resetPending = true;
+    if (
+      snapshot.gap &&
+      !generationChanged &&
+      snapshot.sequenceStart > (state.deliveredSequence ?? 0)
+    ) {
+      // Report only the unread interval, not lifetime history eviction. Keep
+      // already-rendered output intact when older native history has expired.
       this.recordGap(state, {
         reason: "replay",
         droppedChunks: 0,
-        droppedBytes: Math.max(
-          snapshot.droppedBytes,
-          snapshot.sequenceStart - snapshot.retainedStart,
-          0,
-        ),
-        fromSequence: snapshot.retainedStart,
+        droppedBytes: snapshot.sequenceStart - (state.deliveredSequence ?? 0),
+        fromSequence: state.deliveredSequence ?? 0,
         throughSequence: snapshot.sequenceStart,
       });
     }
@@ -774,7 +810,11 @@ export class TerminalOutputScheduler {
 
   private hasWork(state: SchedulerState): boolean {
     return (
-      state.queue.length > 0 || state.pendingGap !== null || state.resetPending
+      state.queue.length > 0 ||
+      state.pendingGap !== null ||
+      state.resetPending ||
+      state.replayRequested ||
+      state.replayPageEnd !== undefined
     );
   }
 
@@ -782,6 +822,9 @@ export class TerminalOutputScheduler {
     if (
       state.disposed ||
       state.paused ||
+      state.writing !== null ||
+      state.replayInFlight ||
+      this.replayWaiters.has(state.id) ||
       state.cancelWriteRetry !== null ||
       !this.hasWork(state) ||
       this.readySet.has(state.id)
@@ -818,6 +861,24 @@ export class TerminalOutputScheduler {
       }
       visitedStates++;
 
+      if (state.replayPageEnd !== undefined && state.queue.length === 0) {
+        // Empty can mean eviction, not delivery. Do not lose a recovery
+        // request when global pressure removed the final page before writing.
+        state.replayRequested =
+          state.replayRequested ||
+          state.replayMore ||
+          (state.deliveredSequence ?? -1) < state.replayPageEnd;
+        state.replayPageEnd = undefined;
+        state.replayMore = false;
+      }
+      const canDrainPrefix =
+        state.deliveredSequence !== undefined &&
+        state.queue[0]?.sequenceStart === state.deliveredSequence;
+      if (state.replayRequested && state.callbacks.replay && !canDrainPrefix) {
+        this.startReplay(state);
+        continue;
+      }
+
       if (state.resetPending) {
         const accepted = state.callbacks.onReset?.();
         if (accepted === false) {
@@ -826,7 +887,7 @@ export class TerminalOutputScheduler {
         }
         state.resetPending = false;
       }
-      if (state.pendingGap) {
+      if (state.pendingGap && !state.replayRequested) {
         const gap = state.pendingGap;
         const accepted = state.callbacks.onGap(gap);
         if (accepted === false) {
@@ -842,6 +903,12 @@ export class TerminalOutputScheduler {
         if (turnChunks >= this.config.maxChunksPerSessionTurn) break;
         if (turnBytes >= this.config.maxBytesPerSessionTurn) break;
         const record = state.queue[0];
+        if (
+          state.replayRequested &&
+          state.callbacks.replay &&
+          record.sequenceStart !== state.deliveredSequence
+        )
+          break;
         if (
           turnChunks > 0 &&
           this.clock.now() - startedAt >= this.config.tickBudgetMs
@@ -862,6 +929,35 @@ export class TerminalOutputScheduler {
               : undefined;
         try {
           const accepted = state.callbacks.write(delivery.data);
+          if (
+            accepted instanceof Promise ||
+            (accepted && typeof accepted === "object" && "then" in accepted)
+          ) {
+            // Exactly one xterm write is outstanding per registration. Queue
+            // acceptance is not a rendered/parsed acknowledgement.
+            state.writing = record;
+            const generation = state.generation;
+            void Promise.resolve(accepted).then(
+              (result) => {
+                if (state.disposed || state.generation !== generation) return;
+                state.writing = null;
+                if (result === false) this.handleWriteRejected(state);
+                else {
+                  state.writeRetries = 0;
+                  this.consumeRecordPrefix(state, record, delivery);
+                  if (deliverySequenceEnd !== undefined)
+                    state.deliveredSequence = deliverySequenceEnd;
+                }
+                this.markReady(state);
+              },
+              () => {
+                if (state.disposed || state.generation !== generation) return;
+                state.writing = null;
+                this.handleWriteRejected(state);
+              },
+            );
+            break;
+          }
           if (accepted === false) {
             // The view became hidden or its renderer has not acquired valid
             // dimensions yet. Retry a bounded number of times after a delay;
@@ -898,6 +994,96 @@ export class TerminalOutputScheduler {
 
     this.compactGlobalOrder();
     this.scheduleTick();
+  }
+
+  private startReplay(state: SchedulerState): void {
+    const replay = state.callbacks.replay;
+    if (!replay || state.replayInFlight || state.writing) return;
+    // Cap IPC fan-out as well as the JS delivery queue: a thousand simultaneous
+    // 256 KiB replies would otherwise allocate 250 MiB before queue limits run.
+    if (this.replayFlights >= 4) {
+      this.replayWaiters.add(state.id);
+      return;
+    }
+    this.replayFlights++;
+    state.replayRequested = false;
+    state.replayInFlight = true;
+    const cursor = {
+      generation: state.generation,
+      afterSequence: state.deliveredSequence,
+    };
+    void Promise.resolve()
+      .then(() => replay(cursor))
+      .then((snapshot) => {
+        if (state.disposed) return;
+        if (
+          snapshot &&
+          (snapshot.sessionId !== state.sessionId ||
+            snapshot.sequenceEnd < snapshot.sequenceStart ||
+            byteLength(snapshot.data) !==
+              snapshot.sequenceEnd - snapshot.sequenceStart ||
+            (snapshot.hasMore && !snapshot.data))
+        ) {
+          throw new Error("Invalid terminal replay page");
+        }
+        if (snapshot) {
+          if (
+            !snapshot.data &&
+            (state.highWater ?? 0) > snapshot.sequenceEnd &&
+            !snapshot.generationChanged &&
+            snapshot.generation === state.generation
+          ) {
+            throw new Error(
+              "Terminal replay has not caught up with live output",
+            );
+          }
+          this.clearQueue(state, false);
+          state.pendingGap = null;
+          this.applyReplay(state, snapshot);
+          state.replayPageEnd = snapshot.sequenceEnd;
+          // Preserve requests received during this flight, but drain the page
+          // before fetching again from the acknowledged cursor.
+          state.replayMore =
+            state.replayRequested ||
+            snapshot.hasMore === true ||
+            (state.highWater ?? 0) > snapshot.sequenceEnd;
+          state.replayRequested = false;
+        }
+        state.replayFailures = 0;
+        state.replayInFlight = false;
+        this.markReady(state);
+      })
+      .catch(() => {
+        if (state.disposed) return;
+        state.replayInFlight = false;
+        state.replayRequested = true;
+        state.replayFailures++;
+        // Keep unread data and retry transient IPC failures with bounded
+        // backoff. Never busy-loop or silently switch to an unsequenced stream.
+        this.cancelWriteRetry(state);
+        state.cancelWriteRetry = this.clock.scheduleAfter(
+          Math.min(30_000, 500 * 2 ** Math.min(state.replayFailures - 1, 6)),
+          () => {
+            state.cancelWriteRetry = null;
+            this.markReady(state);
+          },
+        );
+      })
+      .finally(() => {
+        this.replayFlights--;
+        // Ready entries do not reserve slots: a view can pause or disappear
+        // before its tick. Wake every waiter so cancelling an awakened view
+        // cannot strand the remaining waiters with no IPC left to wake them.
+        // The tick budget still bounds scheduling work and startReplay checks
+        // the four-flight cap again at actual admission.
+        for (const id of this.replayWaiters) {
+          this.replayWaiters.delete(id);
+          const waiting = this.states.get(id);
+          if (waiting && !waiting.disposed && !waiting.paused) {
+            this.markReady(waiting);
+          }
+        }
+      });
   }
 
   private consumeRecordPrefix(
@@ -945,6 +1131,7 @@ export class TerminalOutputScheduler {
   private disposeState(state: SchedulerState): void {
     if (state.disposed) return;
     state.disposed = true;
+    this.replayWaiters.delete(state.id);
     this.cancelWriteRetry(state);
     this.readySet.delete(state.id);
     this.clearQueue(state, false);
@@ -986,7 +1173,9 @@ export const formatTerminalOutputGap = (gap: TerminalOutputGap): string => {
   if (gap.fromSequence !== undefined && gap.throughSequence !== undefined) {
     pieces.push(`sequence ${gap.fromSequence}-${gap.throughSequence}`);
   }
-  return `\r\n\x1b[33m[${pieces.join("; ")}]\x1b[0m\r\n`;
+  // CAN aborts a partially received CSI/OSC/DCS after genuine byte loss;
+  // otherwise the warning or following prompt could become control payload.
+  return `\x18\r\n\x1b[33m[${pieces.join("; ")}]\x1b[0m\r\n`;
 };
 
 let windowScheduler: TerminalOutputScheduler | null = null;

@@ -79,6 +79,7 @@ import { ErrorBoundary } from "./components/app/ErrorBoundary";
 import { SplashScreen } from "./components/app/SplashScreen";
 import { CriticalErrorScreen } from "./components/app/CriticalErrorScreen";
 import { MemoryWatchdogController } from "./components/app/MemoryWatchdogController";
+import { TerminalBufferController } from "./components/app/TerminalBufferController";
 import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
 import {
   ToolKey,
@@ -1774,6 +1775,10 @@ const AppContent: React.FC = () => {
         )}
         <MemoryWatchdogController
           settings={appSettings.memoryWatchdog}
+          windowLabel="main"
+        />
+        <TerminalBufferController
+          settings={appSettings.sshTerminal?.outputBuffer}
           windowLabel="main"
         />
         {/* Splash Screen */}
