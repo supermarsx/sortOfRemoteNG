@@ -856,6 +856,7 @@ fn html_encode(value: &str) -> String {
         .replace('>', "&gt;")
 }
 
+#[cfg(test)]
 fn rewrite_html(text: &str, base: &Url, proxy: &str, origins: &[String]) -> String {
     rewrite_html_with(text, &|value, kind| {
         mapped(value, base, proxy, origins, kind)
@@ -995,6 +996,7 @@ pub(super) fn rewrite_html_with(text: &str, map: &impl Fn(&str, Kind) -> Option<
     output
 }
 
+#[cfg(test)]
 pub(super) fn rewrite(
     text: &str,
     content_type: Option<&str>,

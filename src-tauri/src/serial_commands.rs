@@ -18,4 +18,6 @@ mod transport {
 mod inner {
     include!("../crates/sorng-serial/src/serial/commands.rs");
 }
+// Match the serial command registration gates in sorng-commands-core.
+#[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
 pub(crate) use inner::*;

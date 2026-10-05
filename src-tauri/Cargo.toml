@@ -552,6 +552,10 @@ opt-level = 2
 
 [profile.dev.package.sorng-rdp]
 opt-level = 2
+# Optimized incremental RDP codegen has left unresolved private LLVM/drop-glue
+# symbols in the MSVC archive (LNK2019/LNK1120). Recompile this crate in full
+# while preserving runtime optimization and incremental builds elsewhere.
+incremental = false
 
 [profile.dev.package.sorng-rdp-vendor]
 opt-level = 2

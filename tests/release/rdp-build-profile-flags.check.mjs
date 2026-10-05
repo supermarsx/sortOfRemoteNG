@@ -100,7 +100,7 @@ for (const scenario of scenarios) {
     for (const key of Object.keys(env)) {
       if (
         key.startsWith("CARGO_PROFILE_") ||
-        /^(?:RUSTFLAGS|CARGO_ENCODED_RUSTFLAGS|RUSTC_WRAPPER|RUSTC_WORKSPACE_WRAPPER|CARGO_BUILD_TARGET|CARGO_TARGET_DIR)$/.test(
+        /^(?:RUSTFLAGS|CARGO_ENCODED_RUSTFLAGS|RUSTC_WRAPPER|RUSTC_WORKSPACE_WRAPPER|CARGO_BUILD_TARGET|CARGO_TARGET_DIR|CARGO_INCREMENTAL|CARGO_BUILD_INCREMENTAL)$/.test(
           key,
         )
       )
@@ -157,6 +157,21 @@ for (const scenario of scenarios) {
         expectedOpt,
         `${name} optimization in ${scenario.name}: ${invocation}`,
       );
+      if (!scenario.release) {
+        if (name === "sorng-rdp") {
+          assert.doesNotMatch(
+            invocation,
+            /-C incremental=/,
+            "RDP must not reuse the optimized incremental archive that failed MSVC linking",
+          );
+        } else if (name.startsWith("sorng-") || name === "app") {
+          assert.match(
+            invocation,
+            /-C incremental=/,
+            `${name} must retain incremental development builds`,
+          );
+        }
+      }
       if (scenario.units)
         assert.match(
           invocation,

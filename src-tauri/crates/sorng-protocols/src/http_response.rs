@@ -513,6 +513,7 @@ pub(super) struct ReadinessNetworkContext<'a> {
     pub(super) browser_compatibility: super::BrowserCompatibility,
 }
 
+#[cfg(test)]
 pub(super) fn inject_readiness(
     html: &str,
     session_id: &str,

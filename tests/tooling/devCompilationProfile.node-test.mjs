@@ -80,6 +80,7 @@ test("all fourteen explicit RDP pixel/protocol/decoder hot paths stay opt2 in de
   for (const name of runtimePackages) {
     assert.deepEqual(profile(`profile.dev.package.${name}`), {
       "opt-level": 2,
+      ...(name === "sorng-rdp" ? { incremental: false } : {}),
     });
     assert.deepEqual(profile(`profile.release.package.${name}`), {
       "opt-level": 2,

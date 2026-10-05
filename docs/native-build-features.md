@@ -33,19 +33,23 @@ Explicit `CARGO_BUILD_JOBS` and Cargo `--jobs`/`-j` arguments remain authoritati
 
 A development build can fail at the final link even though the code compiles. On Windows the signature is `LNK2019`/`LNK2001` followed by `LNK1120`. On Linux/macOS it is `undefined reference`/`undefined symbol`. Every missing name ends in `.llvm.<digits>`. The object that references it sits in the same crate's library, for example `libsorng_core-<hash>.rlib(sorng_core-<hash>.<unit>.rcgu.o) : error LNK2019: unresolved external symbol _RNv…app_identity8IDENTITY.llvm.8982623585530315724`.
 
-This happens to crates that combine a development `opt-level` above 0 with incremental compilation. Those are the workspace and patched path crates in the dev profile overrides: `sorng-core`, `sorng-rdp`, `sorng-rdp-vendor`, and the patched `ironrdp-blocking`, `ironrdp-session` and `ironrdp-dvc`. Registry dependencies are never compiled incrementally. The build-dependency copy of a workspace crate is also exposed, because `build-override` optimizes it. After interrupted or rapid successive rebuilds, rustc can reuse optimized code-generation units that refer to another unit's symbol by an outdated `.llvm.<hash>` name ([rust-lang/rust#86049](https://github.com/rust-lang/rust/issues/86049)). It is not a toolchain, feature or staged-runtime problem, and it does not need `cargo clean`.
+This pattern can occur when optimized incremental code-generation units refer to another unit's private symbol by a stale `.llvm.<hash>` name ([rust-lang/rust#86049](https://github.com/rust-lang/rust/issues/86049)). It is different from missing Windows SDK or third-party library symbols; do not remove features or switch linkers merely because the final line says `LNK1120`.
 
-To recover, delete only that crate's incremental cache and Cargo fingerprints while no Cargo build is running, then rebuild. A dev session left waiting after the failed link counts as not running. Take the crate name from the `lib<crate>-<hash>.rlib` in the linker lines. The incremental directory uses the crate name with underscores, and the fingerprint uses the package name with hyphens. Use `$CARGO_TARGET_DIR/debug` instead of `src-tauri/target/debug` when it is set. For `sorng-core`:
+The development profile disables incremental compilation specifically for `sorng-rdp`, retaining `opt-level = 2`. This forces Cargo to replace the affected RDP archive without deleting the rest of the build cache. Other workspace crates retain incremental builds, and release settings are unchanged. Rebuild the full app normally; no `cargo clean` is required.
+
+If the same signature names a different archive, identify that package from the `lib<crate>-<hash>.rlib` in the preceding diagnostics. A bounded diagnostic rebuild can disable incremental compilation for that package alone, for example from `src-tauri`:
 
 ```sh
-rm -rf src-tauri/target/debug/incremental/sorng_core-* src-tauri/target/debug/.fingerprint/sorng-core-*
+cargo build -p app --bin app --no-default-features --features full --config 'profile.dev.package.sorng-core.incremental=false'
 ```
 
-```powershell
-Remove-Item -Recurse -Force src-tauri/target/debug/incremental/sorng_core-*, src-tauri/target/debug/.fingerprint/sorng-core-*
-```
+Unset any global `CARGO_INCREMENTAL` or `CARGO_BUILD_INCREMENTAL` override before testing the package policy. Confirm an actual executable link, not just `cargo check`. If it still fails, inspect the new missing symbols rather than repeatedly clearing the entire target directory.
 
-Then restart `npm run tauri dev`, or save a Rust file in a session that is still waiting. Cargo recompiles that crate from scratch and rebuilds its dependents incrementally. A repeat of the same failure means a different crate is named in the new linker lines.
+## Localized MSVC progress reported as a warning
+
+Rust classifies MSVC's English `Creating library ...` output as informational. If Visual Studio has only a non-English C++ language pack, `link.exe` can fall back to localized output even though rustc requests `VSLANG=1033`. For example, `warning: linker stdout: Criando biblioteca ... e objeto ...` is a library/export-file creation message, not an unresolved-symbol error.
+
+Add the English language pack to the **Visual Studio Build Tools installation containing the C++ compiler**, then rebuild affected outputs. This is a machine setup change, not an application dependency. Do not disable `linker_messages` globally: genuine linker warnings must remain visible. See [Rust's linker-output classification](https://github.com/rust-lang/rust/blob/1.98.0/compiler/rustc_codegen_ssa/src/back/link.rs) and [localization setup](https://github.com/rust-lang/rust/blob/1.98.0/compiler/rustc_codegen_ssa/src/back/linker.rs).
 
 ## OPKSSH runtime prerequisites
 
