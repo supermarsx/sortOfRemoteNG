@@ -1254,17 +1254,17 @@ const AppContent: React.FC = () => {
           "Cloud sync needs conflict review. Open Cloud Sync settings for target actions.",
           "warning",
         );
-      } else if (currentConfig.notifyOnSync) {
-        if (updatedCloudSync.lastSyncStatus === "success")
+      } else if (updatedCloudSync.lastSyncStatus === "success") {
+        if (currentConfig.notifyOnSyncSuccess === true)
           toast.success("Cloud sync completed.");
-        else
-          showCloudSyncReviewToast(
-            toast,
-            handleOpenSettings,
-            "Cloud sync did not complete for every target. Review Cloud Sync statuses.",
-            "error",
-            currentConfig.failureNotificationIntervalMinutes,
-          );
+      } else if (currentConfig.notifyOnSync) {
+        showCloudSyncReviewToast(
+          toast,
+          handleOpenSettings,
+          "Cloud sync did not complete for every target. Review Cloud Sync statuses.",
+          "error",
+          currentConfig.failureNotificationIntervalMinutes,
+        );
       }
     },
     [flushPendingSave, settingsManager, toast, handleOpenSettings],

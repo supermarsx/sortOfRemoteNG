@@ -310,7 +310,10 @@ export interface CloudSyncConfig {
   syncOnShutdown: boolean;
 
   // Notifications
+  /** Notify about incomplete sync results (success notifications are separate). */
   notifyOnSync: boolean;
+  /** Successful syncs stay silent unless explicitly enabled. */
+  notifyOnSyncSuccess?: boolean;
   notifyOnConflict: boolean;
   /** Minimum minutes between failure toasts, across targets; 0 means every failure. */
   failureNotificationIntervalMinutes?: number;
@@ -371,6 +374,7 @@ export const defaultCloudSyncConfig: CloudSyncConfig = {
   syncOnStartup: false,
   syncOnShutdown: false,
   notifyOnSync: true,
+  notifyOnSyncSuccess: false,
   notifyOnConflict: true,
   failureNotificationIntervalMinutes:
     DEFAULT_CLOUD_SYNC_FAILURE_NOTIFICATION_MINUTES,
@@ -447,6 +451,9 @@ function liftLegacyProviderConfig(
 export function migrateCloudSyncConfig(
   config: CloudSyncConfig,
 ): CloudSyncConfig {
+  const notifyOnSyncSuccess = config.notifyOnSyncSuccess === true;
+  if (config.notifyOnSyncSuccess !== notifyOnSyncSuccess)
+    config = { ...config, notifyOnSyncSuccess };
   const autoUnlockOsVaultDatabases = config.autoUnlockOsVaultDatabases === true;
   if (config.autoUnlockOsVaultDatabases !== autoUnlockOsVaultDatabases)
     config = { ...config, autoUnlockOsVaultDatabases };

@@ -28,6 +28,24 @@ function fixture() {
 }
 
 describe("sync failure toast cooldown", () => {
+  it("defaults success notifications off without disabling failure or conflict alerts", () => {
+    expect(defaultCloudSyncConfig.notifyOnSyncSuccess).toBe(false);
+    expect(defaultCloudSyncConfig.notifyOnSync).toBe(true);
+    expect(defaultCloudSyncConfig.notifyOnConflict).toBe(true);
+  });
+
+  it.each([undefined, false, true])(
+    "migrates success notification preference %s idempotently",
+    (value) => {
+      const input = { ...defaultCloudSyncConfig, notifyOnSyncSuccess: value };
+      const migrated = migrateCloudSyncConfig(input);
+      expect(migrated.notifyOnSyncSuccess).toBe(value === true);
+      expect(migrated.notifyOnSync).toBe(input.notifyOnSync);
+      expect(migrated.notifyOnConflict).toBe(input.notifyOnConflict);
+      expect(migrateCloudSyncConfig(migrated)).toEqual(migrated);
+    },
+  );
+
   it("shows the first failure then only one per 30 minutes, not 30 minutes after the last failure", () => {
     const f = fixture();
     const claim = createCloudSyncFailureToastLimiter(() => f.storage, f.now);

@@ -299,10 +299,20 @@ export const CLOUD_SYNC_SEARCH_ENTRIES: SettingSearchEntry[] = [
   // ─── Notifications ──────────────────────────────────────────────
   {
     key: "cloudSync.notifyOnSync",
-    label: "Notify on Sync",
-    description: "Show a desktop notification when a sync completes",
+    label: "Notify on Sync Failure",
+    description: "Show an in-app notification when sync does not complete",
     tags: ["notification", "notify", "desktop", "toast", "sync"],
     synonyms: ["sync notification"],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
+  },
+  {
+    key: "cloudSync.notifyOnSyncSuccess",
+    label: "Notify on Sync Success",
+    description:
+      "Show a toast when cloud sync completes successfully; off by default",
+    tags: ["notification", "notify", "success", "completed", "toast", "sync"],
+    synonyms: ["sync success notification", "silent sync"],
     section: "cloudSync",
     sectionLabel: "Cloud Sync",
   },

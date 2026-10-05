@@ -10,6 +10,45 @@ import {
 
 afterEach(cleanup);
 describe("cloud sync failure notification setting", () => {
+  it("keeps success toasts off by default and lets users toggle them independently", () => {
+    const update = vi.fn();
+    function Harness() {
+      const [cloudSync, setCloudSync] = useState<CloudSyncConfig>({
+        ...defaultCloudSyncConfig,
+        notifyOnSyncSuccess: undefined,
+      });
+      return (
+        <NotificationsGrid
+          mgr={
+            {
+              cloudSync,
+              updateCloudSync: (patch: Partial<CloudSyncConfig>) => {
+                update(patch);
+                setCloudSync((current) => ({ ...current, ...patch }));
+              },
+            } as Mgr
+          }
+        />
+      );
+    }
+    render(<Harness />);
+    const success = screen.getByRole("checkbox", {
+      name: /Notify on Sync Success/,
+    });
+    const failure = screen.getByRole("checkbox", {
+      name: /Notify on Sync Failure/,
+    });
+    expect(success).not.toBeChecked();
+    expect(failure).toBeChecked();
+    fireEvent.click(success);
+    expect(update).toHaveBeenLastCalledWith({ notifyOnSyncSuccess: true });
+    expect(success).toBeChecked();
+    expect(failure).toBeChecked();
+    fireEvent.click(success);
+    expect(update).toHaveBeenLastCalledWith({ notifyOnSyncSuccess: false });
+    expect(success).not.toBeChecked();
+  });
+
   it("defaults to 30 minutes with a themed input and persists custom/every-failure values", () => {
     const update = vi.fn();
     function Harness() {

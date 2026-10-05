@@ -22,11 +22,21 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
         <Toggle
           settingKey="cloudSync.notifyOnSync"
           icon={<Bell size={16} />}
-          label="Notify on Sync"
-          description="Show in-app notifications for sync results"
+          label="Notify on Sync Failure"
+          description="Show an in-app notification when sync does not complete"
           checked={mgr.cloudSync.notifyOnSync}
           onChange={(v) => mgr.updateCloudSync({ notifyOnSync: v })}
-          infoTooltip="Notify when cloud sync succeeds or fails. Repeated failures respect the interval below."
+          infoTooltip="Repeated failures respect the interval below. Target statuses always update, even with notifications off."
+        />
+
+        <Toggle
+          settingKey="cloudSync.notifyOnSyncSuccess"
+          icon={<Bell size={16} />}
+          label="Notify on Sync Success"
+          description="Show a toast when cloud sync completes successfully. Off by default."
+          checked={mgr.cloudSync.notifyOnSyncSuccess === true}
+          onChange={(v) => mgr.updateCloudSync({ notifyOnSyncSuccess: v })}
+          infoTooltip="Applies to manual and automatic sync. Successful syncs still appear in target statuses when this is off."
         />
 
         <SettingsNumberRow
