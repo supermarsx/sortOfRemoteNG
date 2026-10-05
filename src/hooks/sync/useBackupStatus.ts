@@ -555,11 +555,10 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
           exactTargetId,
         );
         const restoredConnections = Array.isArray(data?.connections)
-          ? data.connections.map((conn: any) => ({
-              ...conn,
-              createdAt: conn.createdAt ? new Date(conn.createdAt) : new Date(),
-              updatedAt: conn.updatedAt ? new Date(conn.updatedAt) : new Date(),
-            }))
+          ? // The backend already committed these values. Reinterpreting legacy
+            // dates in this device's timezone would turn hydration into a new edit
+            // on the next save (and fabricate now for missing timestamps).
+            data.connections.map((conn) => ({ ...conn }))
           : [];
 
         // t62 / D6 — re-import the backup's trust records into the active

@@ -115,17 +115,12 @@ const initialState: ConnectionState = {
 
 /** Both active loads and restored archives use the same runtime boundary. */
 function normalizeLoadedConnection(connection: Connection): Connection {
-  const date = (value: unknown): Date => {
-    const parsed = value ? new Date(value as string | number) : new Date();
-    return Number.isFinite(parsed.getTime()) ? parsed : new Date();
-  };
-  // Persisted Connection dates remain strings; the existing provider runtime
-  // contract rehydrates them without changing the serialized schema.
-  return normalizeAdvancedProtocolConnection({
-    ...connection,
-    createdAt: date(connection.createdAt),
-    updatedAt: date(connection.updatedAt),
-  } as unknown as Connection);
+  // Connection timestamps are persisted strings, not runtime Dates. Preserve
+  // their exact evidence: parsing an unzoned legacy value assigns this device's
+  // timezone, and replacing missing/invalid values with now invents an edit.
+  // Even canonicalizing an explicit offset here changes the content hash on an
+  // unrelated save. New edits use UTC; loading/restoring must not rewrite dates.
+  return normalizeAdvancedProtocolConnection(connection);
 }
 
 /** Flatten the connection tree into an ordered list of IDs for range-select. */

@@ -275,8 +275,8 @@ describe("current-database Recycle Bin durable provider", () => {
     ).toEqual(["other", "folder", "child"]);
     const restored = result.current.state.connections[2];
     expect(restored.protocol).toBe("ssh");
-    expect(restored.createdAt).toBeInstanceOf(Date);
-    expect(restored.updatedAt).toBeInstanceOf(Date);
+    expect(restored.createdAt).toBe(row("child").createdAt);
+    expect(restored.updatedAt).toBe(row("child").updatedAt);
     expect(restored.password).toBe("synthetic-password");
     expect((await manager.loadDatabaseData(id))?.recycleBin?.entries).toEqual(
       [],
