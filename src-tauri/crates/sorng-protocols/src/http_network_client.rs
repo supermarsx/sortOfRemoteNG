@@ -856,6 +856,9 @@ impl ProxyNetworkState {
 
 pub(super) fn content_security_policy(policy: &HttpProxyPolicy, authority: &str) -> String {
     let scripts = match policy.page_scripts {
+        PageScripts::Allow if policy.allows_all_scripts() => {
+            "'self' data: blob: 'unsafe-inline' 'unsafe-eval'"
+        }
         PageScripts::Allow => "'self' 'unsafe-inline' 'unsafe-eval'",
         PageScripts::InlineOnly => "'unsafe-inline' 'unsafe-eval'",
         PageScripts::Block => "'none'",

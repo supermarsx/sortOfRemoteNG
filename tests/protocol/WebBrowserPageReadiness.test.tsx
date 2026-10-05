@@ -11,6 +11,7 @@ import type {
   Connection,
   ConnectionSession,
 } from "../../src/types/connection/connection";
+import { DEFAULT_HTTP_PROXY_POLICY } from "../../src/types/connection/httpProxyPolicy";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -18,6 +19,14 @@ const mocks = vi.hoisted(() => ({
   trust: vi.fn(),
   dispatch: vi.fn(),
   startRecording: vi.fn(),
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(() => "script-block"),
+    update: vi.fn(),
+    remove: vi.fn(),
+  },
   connections: [] as Connection[],
   settings: {
     httpsTrustPolicy: "always-ask",
@@ -52,7 +61,7 @@ vi.mock("../../src/contexts/SettingsContext", async (original) => ({
 }));
 vi.mock("../../src/contexts/ToastContext", () => ({
   useToastContext: () => ({
-    toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+    toast: mocks.toast,
   }),
 }));
 vi.mock("../../src/hooks/recording/useWebRecorder", () => ({
@@ -145,6 +154,7 @@ function reportReady(report: ReturnType<typeof readiness>) {
 async function mounted(
   profile: (typeof profiles)[number] = profiles[0],
   expectFrame = true,
+  overrides: Partial<Connection> = {},
 ) {
   const connection: Connection = {
     id: "readiness-connection",
@@ -158,6 +168,7 @@ async function mounted(
     httpApplication: { version: 1, id: profile.id, loginMode: "form" },
     createdAt: "2026-09-09T00:00:00.000Z",
     updatedAt: "2026-09-09T00:00:00.000Z",
+    ...overrides,
   };
   mocks.connections = [connection];
   const session: ConnectionSession = {
@@ -185,6 +196,7 @@ describe("mounted website page readiness", () => {
       event.stopImmediatePropagation();
   };
   beforeEach(() => {
+    Object.values(mocks.toast).forEach((mock) => mock.mockClear());
     vi.useFakeTimers();
     document.addEventListener("load", holdFrameLoad, true);
     mocks.settings.webRecording.autoRecordWebSessions = false;
@@ -202,6 +214,72 @@ describe("mounted website page readiness", () => {
     cleanup();
     document.removeEventListener("load", holdFrameLoad, true);
     vi.useRealTimers();
+  });
+
+  it.each([false, true])(
+    "passes saved all-script trust to the native session (%s)",
+    async (allowAllScripts) => {
+      await mounted(profiles[0], true, {
+        httpProxyPolicy: {
+          ...DEFAULT_HTTP_PROXY_POLICY,
+          allowAllScripts,
+          externalResourceOrigins: [],
+        },
+      });
+      const starts = mocks.invoke.mock.calls.filter(
+        ([command]) => command === "start_basic_auth_proxy",
+      );
+      expect(starts).toHaveLength(1);
+      expect(starts[0][1].config.proxy_policy).toMatchObject({
+        allowAllScripts,
+        externalResourceOrigins: [],
+        allowCrossOriginRedirects: false,
+      });
+    },
+  );
+
+  it("toasts only script blocks from the active protected frame and document", async () => {
+    const { iframe } = await mounted();
+    const valid = readiness(iframe);
+    reportReady(valid);
+    const blocked = {
+      ...valid,
+      data: {
+        ...valid.data,
+        type: "sorng_web_network_blocked",
+        kind: "script",
+        reason: "policy-blocked-resource",
+        origin: "https://cdn.example.test",
+      },
+    };
+    for (const invalid of [
+      { ...blocked, source: window },
+      { ...blocked, origin: "https://other.example.test" },
+      { ...blocked, data: { ...blocked.data, documentToken: "0".repeat(32) } },
+      { ...blocked, data: { ...blocked.data, sessionId: "other-session" } },
+      {
+        ...blocked,
+        data: { ...blocked.data, url: `${valid.origin}/old-page` },
+      },
+      {
+        ...blocked,
+        data: {
+          ...blocked.data,
+          origin: "https://cdn.example.test/script.js?private=value",
+        },
+      },
+    ])
+      reportMessage(invalid);
+    expect(mocks.toast.warning).not.toHaveBeenCalled();
+    reportMessage(blocked);
+    reportMessage(blocked);
+    expect(mocks.toast.warning).toHaveBeenCalledOnce();
+    expect(mocks.toast.update).toHaveBeenCalledWith(
+      "script-block",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "Review blocked scripts" }),
+      }),
+    );
   });
 
   it.each(profiles)(

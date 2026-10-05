@@ -20,6 +20,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     externalFontEndpoint = null,
     externalResourceOrigins = new Map(),
     externalResourceEndpoint = null,
+    allowAllScripts = false,
     navigationOrigins = new Set(),
     quickConnectRpc = null,
     quickConnectDiscovered = null,
@@ -276,9 +277,16 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       typeof externalResources !== "object" ||
       Array.isArray(externalResources) ||
       Object.keys(externalResources).some(function (key) {
-        return !["version", "origins", "proxyEndpoint"].includes(key);
+        return ![
+          "version",
+          "origins",
+          "proxyEndpoint",
+          "allowAllScripts",
+        ].includes(key);
       }) ||
       externalResources.version !== 1 ||
+      (externalResources.allowAllScripts !== undefined &&
+        typeof externalResources.allowAllScripts !== "boolean") ||
       !Array.isArray(externalResources.origins) ||
       externalResources.origins.length > 16 ||
       externalResources.proxyEndpoint !==
@@ -314,6 +322,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       );
     }
     externalResourceEndpoint = externalResources.proxyEndpoint;
+    allowAllScripts = externalResources.allowAllScripts === true;
   }
   // Closed native capabilities, not a foreign-origin route. The control
   // endpoint independently validates discovery commands and never forwards
@@ -603,8 +612,9 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       !target.password &&
       target.href.indexOf("#") === -1 &&
       target.href.length <= 8192 &&
-      externalResourceOrigins.has(target.origin) &&
-      externalResourceOrigins.get(target.origin).has(kind)
+      ((allowAllScripts && kind === "script") ||
+        (externalResourceOrigins.has(target.origin) &&
+          externalResourceOrigins.get(target.origin).has(kind)))
     );
   }
   function mapUrl(
@@ -627,6 +637,9 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     )
       return mapped;
     var url = new NativeURL(mapped);
+    // A blob can carry the proxy's origin, but it is local bytes, not an HTTP
+    // request. Appending a document proof would change its opaque lookup key.
+    if (url.protocol === "data:" || url.protocol === "blob:") return mapped;
     if (
       sameDocumentNavigation &&
       kind === "navigation" &&
@@ -867,7 +880,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       return fontRoute.href;
     }
     if (
-      localData &&
+      (localData || (allowAllScripts && kind === "script")) &&
       (target.protocol === "data:" || target.protocol === "blob:")
     )
       return target.href;
@@ -2122,6 +2135,8 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     });
   });
   function policyViolation(event) {
+    // Report-only policies did not block execution or a resource request.
+    if (event.disposition !== "enforce") return;
     var destination = null;
     try {
       var url = new NativeURL(event.blockedURI);
@@ -2132,7 +2147,11 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
       }
     } catch (_) {}
     blocked(
-      event.effectiveDirective === "font-src" ? "font" : "resource",
+      /^script-src(?:-elem|-attr)?$/.test(event.effectiveDirective)
+        ? "script"
+        : event.effectiveDirective === "font-src"
+          ? "font"
+          : "resource",
       "policy-blocked-resource",
       destination,
     );

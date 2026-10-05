@@ -58,21 +58,29 @@ fn effective_origins(policy: &HttpProxyPolicy) -> Vec<ExternalResourceOrigin> {
 
 pub(super) fn manifest(policy: &HttpProxyPolicy, proxy: &str) -> Option<serde_json::Value> {
     let origins = effective_origins(policy);
-    (!origins.is_empty()).then(|| {
-        serde_json::json!({
+    (!origins.is_empty() || policy.allows_all_scripts()).then(|| {
+        let mut manifest = serde_json::json!({
             "version":1, "origins":origins, "proxyEndpoint":format!("{proxy}{PATH}")
-        })
+        });
+        if policy.allows_all_scripts() {
+            manifest["allowAllScripts"] = true.into();
+        }
+        manifest
     })
 }
 
-fn approved(value: &str, kind: Kind, origins: &[ExternalResourceOrigin]) -> Option<Url> {
+fn approved(
+    value: &str,
+    kind: Kind,
+    origins: &[ExternalResourceOrigin],
+    allow_all_scripts: bool,
+) -> Option<Url> {
     let url = fonts::https_url_with_limit(value, MAX_URL)?;
-    origins
-        .iter()
-        .any(|grant| {
+    ((allow_all_scripts && kind == Kind::Script)
+        || origins.iter().any(|grant| {
             grant.origin == url.origin().ascii_serialization() && grant.kinds.contains(&kind)
-        })
-        .then_some(url)
+        }))
+    .then_some(url)
 }
 
 fn local_url(url: &Url, kind: Kind, proxy: &str) -> String {
@@ -117,7 +125,8 @@ fn mapper<'a>(
         resource
             .and_then(|kind| {
                 let url = fonts::resolved_with_limit(value, base, MAX_URL)?;
-                approved(url.as_str(), kind, &origins).map(|url| local_url(&url, kind, proxy))
+                approved(url.as_str(), kind, &origins, policy.allows_all_scripts())
+                    .map(|url| local_url(&url, kind, proxy))
             })
             .or_else(|| font(value, kind))
     }
@@ -146,7 +155,11 @@ pub(super) fn rewrite(
     }
 }
 
-fn destination(uri: &axum::http::Uri, origins: &[ExternalResourceOrigin]) -> Option<(Url, Kind)> {
+fn destination(
+    uri: &axum::http::Uri,
+    origins: &[ExternalResourceOrigin],
+    allow_all_scripts: bool,
+) -> Option<(Url, Kind)> {
     let query = uri.query()?;
     if query.len() > MAX_URL * 3 + 64 {
         return None;
@@ -167,7 +180,7 @@ fn destination(uri: &axum::http::Uri, origins: &[ExternalResourceOrigin]) -> Opt
         }
     }
     let kind = kind?;
-    Some((approved(&target?, kind, origins)?, kind))
+    Some((approved(&target?, kind, origins, allow_all_scripts)?, kind))
 }
 
 async fn download(
@@ -185,8 +198,8 @@ async fn download(
         .await
         .map_err(|_| "Resource route ended.")?;
     for hop in 0..=3 {
-        url =
-            approved(url.as_str(), kind, origins).ok_or("Resource destination is not approved.")?;
+        url = approved(url.as_str(), kind, origins, policy.allows_all_scripts())
+            .ok_or("Resource destination is not approved.")?;
         let mut request = assets
             .client
             .get(url.clone())
@@ -226,7 +239,7 @@ async fn download(
             let next = url
                 .join(location)
                 .map_err(|_| "Invalid resource redirect.")?;
-            url = approved(next.as_str(), kind, origins)
+            url = approved(next.as_str(), kind, origins, policy.allows_all_scripts())
                 .ok_or("Resource redirect origin or kind is not approved.")?;
             continue;
         }
@@ -397,13 +410,17 @@ pub(super) async fn handle_with_timeout(
         );
     }
     let origins = effective_origins(&state.proxy_policy);
-    if origins.is_empty() {
+    if origins.is_empty() && !state.proxy_policy.allows_all_scripts() {
         return refusal(
             StatusCode::FORBIDDEN,
             "External resources are not enabled for this session.",
         );
     }
-    let Some((url, kind)) = destination(request.uri(), &origins) else {
+    let Some((url, kind)) = destination(
+        request.uri(),
+        &origins,
+        state.proxy_policy.allows_all_scripts(),
+    ) else {
         return refusal(
             StatusCode::BAD_REQUEST,
             "Invalid external resource request.",

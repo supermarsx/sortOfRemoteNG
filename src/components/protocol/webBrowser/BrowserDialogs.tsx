@@ -4,10 +4,14 @@ import { TrustWarningDialog } from "../../security/TrustWarningDialog";
 import { InputDialog } from "../../ui/dialogs/InputDialog";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import BookmarkEditDialog from "./BookmarkEditDialog";
+import BlockedScriptsDialog from "./BlockedScriptsDialog";
 
 const BrowserDialogs: React.FC<SectionProps> = ({ mgr }) => (
   <>
     <BookmarkEditDialog mgr={mgr} />
+    {mgr.blockedScripts && (
+      <BlockedScriptsDialog scripts={mgr.blockedScripts} />
+    )}
     <ConfirmDialog
       isOpen={mgr.showClearSessionConfirm}
       title="Clear this website session?"

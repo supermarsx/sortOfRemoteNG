@@ -219,6 +219,14 @@ struct Attribute<'a> {
 }
 
 fn rewrite_meta_csp(html: &str, trust: &TrustedInlineHashes) -> String {
+    rewrite_meta_csp_with(html, &|value, quote| authorize_policy(value, quote, trust))
+}
+
+/// Shared tag-aware traversal; never rewrite CSP-looking strings in scripts/comments.
+pub(super) fn rewrite_meta_csp_with(
+    html: &str,
+    rewrite: &impl Fn(&str, Option<u8>) -> Option<String>,
+) -> String {
     let lower = html.to_ascii_lowercase();
     let mut output = String::with_capacity(html.len());
     let mut copied = 0;
@@ -267,10 +275,13 @@ fn rewrite_meta_csp(html: &str, trust: &TrustedInlineHashes) -> String {
         }
         let tag = &html[start..end];
         let attrs = attributes(tag);
-        let is_csp = attrs.iter().any(|attr| {
-            attr.name.eq_ignore_ascii_case("http-equiv")
-                && decode_entities(attr.value).eq_ignore_ascii_case("content-security-policy")
-        });
+        // HTML ignores duplicate attributes after the first one.
+        let is_csp = attrs
+            .iter()
+            .find(|attr| attr.name.eq_ignore_ascii_case("http-equiv"))
+            .is_some_and(|attr| {
+                decode_entities(attr.value).eq_ignore_ascii_case("content-security-policy")
+            });
         if !is_csp {
             continue;
         }
@@ -280,7 +291,7 @@ fn rewrite_meta_csp(html: &str, trust: &TrustedInlineHashes) -> String {
         else {
             continue;
         };
-        let Some(rewritten) = authorize_policy(content.value, content.quote, trust) else {
+        let Some(rewritten) = rewrite(content.value, content.quote) else {
             continue;
         };
         output.push_str(&html[copied..start + content.value_start]);
@@ -341,7 +352,7 @@ fn attributes(tag: &str) -> Vec<Attribute<'_>> {
         } else {
             while cursor < bytes.len()
                 && !bytes[cursor].is_ascii_whitespace()
-                && !matches!(bytes[cursor], b'/' | b'>')
+                && bytes[cursor] != b'>'
             {
                 cursor += 1;
             }
@@ -540,7 +551,7 @@ fn source_list_has_nonce_or_hash(source_list: &str) -> bool {
     })
 }
 
-fn decode_entities(value: &str) -> String {
+pub(super) fn decode_entities(value: &str) -> String {
     let mut output = String::with_capacity(value.len());
     let mut rest = value;
     while let Some(index) = rest.find('&') {

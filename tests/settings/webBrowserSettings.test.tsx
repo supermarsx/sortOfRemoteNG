@@ -491,6 +491,12 @@ describe("Web Browser settings", () => {
     ).toBeChecked();
   });
 
+  it("does not accept all-script trust as a global default", () => {
+    const config = normalizeWebBrowserSettings(undefined);
+    config.defaultPolicy.allowAllScripts = true;
+    expect(() => normalizeWebBrowserSettings(config)).toThrow();
+  });
+
   it("requires explicit recovery of invalid saved policies", () => {
     const config = normalizeWebBrowserSettings(undefined);
     config.defaultPolicy.allowCrossOriginRedirects = true;

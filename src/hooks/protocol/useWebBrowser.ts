@@ -54,6 +54,7 @@ import { useWebRecorder } from "../recording/useWebRecorder";
 import { useDisplayRecorder } from "../recording/useDisplayRecorder";
 import { useWebAutomation } from "./useWebAutomation";
 import { useWebAutoMfa } from "./useWebAutoMfa";
+import { useBlockedWebsiteScripts } from "./useBlockedWebsiteScripts";
 import { useWebPopupTabs } from "./useWebPopupTabs";
 import {
   browserSessionPolicy,
@@ -5249,7 +5250,21 @@ export function useWebBrowser(
     setWebsiteDarkBootstrap,
   ]);
 
+  const blockedScripts = useBlockedWebsiteScripts({
+    session,
+    connection,
+    // Persist only the reviewed base policy, never runtime redirect capabilities.
+    policy: browserRuntime.policy,
+    reports:
+      networkReports.scope === networkReportScope() ? networkReports.rows : [],
+    documentScope: networkReportScope(),
+    getDocumentScope: networkReportScope,
+    sharedSession: !!sharedPopupId,
+    onReload: handleRefresh,
+  });
+
   return {
+    blockedScripts,
     sharedSession: !!sharedPopupId,
     webNetworkRouting:
       networkRouting?.scope === networkReportScope()

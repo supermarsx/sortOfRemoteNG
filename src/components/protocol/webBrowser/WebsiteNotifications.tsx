@@ -23,6 +23,10 @@ export default function WebsiteNotifications({
     | "openingApplicationExternal"
     | "handleOpenApplicationExternal"
   > & {
+    blockedScripts?: Pick<
+      SectionProps["mgr"]["blockedScripts"],
+      "hasBlockedScripts" | "openReview"
+    >;
     connection?: SectionProps["mgr"]["connection"];
     session: Pick<SectionProps["mgr"]["session"], "id" | "ownerDatabaseId">;
     automation: Pick<
@@ -216,6 +220,18 @@ export default function WebsiteNotifications({
                 </span>
               </div>
               <WebAutomationNotice automation={mgr.automation} />
+              {mgr.blockedScripts?.hasBlockedScripts && (
+                <button
+                  type="button"
+                  className="sor-btn sor-btn-sm sor-btn-secondary"
+                  onClick={() => {
+                    close();
+                    mgr.blockedScripts?.openReview();
+                  }}
+                >
+                  Review blocked scripts
+                </button>
+              )}
               <WebNetworkNotice
                 reports={reports}
                 guard={mgr.webNetworkGuard ?? null}

@@ -80,8 +80,6 @@ pub use proxy_policy::{
 pub mod cloudflare_challenge;
 #[path = "http_exchange_cookies.rs"]
 mod exchange_cookies;
-#[path = "http_freepbx_cookies.rs"]
-mod freepbx_cookies;
 #[path = "http_exchange_ecp.rs"]
 mod exchange_ecp;
 #[path = "http_external_fonts.rs"]
@@ -90,6 +88,8 @@ mod external_fonts;
 mod external_resources;
 #[path = "http_font_assets.rs"]
 mod font_assets;
+#[path = "http_freepbx_cookies.rs"]
+mod freepbx_cookies;
 #[path = "http_google.rs"]
 #[doc(hidden)]
 pub mod google;
@@ -102,6 +102,8 @@ mod http_digest;
 mod network;
 #[path = "http_redirect.rs"]
 mod redirect;
+#[path = "http_script_policy.rs"]
+mod script_policy;
 #[path = "http_synology_login.rs"]
 mod synology_login;
 #[path = "http_synology_redirect_defaults.rs"]
@@ -3496,6 +3498,13 @@ async fn axum_proxy_handler_inner(
                         &String::from_utf8_lossy(&final_body),
                         &trusted_script_bodies,
                         &trusted_style_bodies,
+                    )
+                    .into_bytes();
+                }
+                if state.proxy_policy.allows_all_scripts() {
+                    final_body = script_policy::rewrite_meta(
+                        &String::from_utf8_lossy(&final_body),
+                        &state.proxy_policy,
                     )
                     .into_bytes();
                 }

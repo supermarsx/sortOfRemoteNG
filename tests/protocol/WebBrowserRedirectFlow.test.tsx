@@ -2014,6 +2014,8 @@ describe("actual website redirect review integration", () => {
         screen.getByRole("region", { name: "Redirect continuation" }),
       ).toBeVisible(),
     );
+    // The continuation UI mounts before native receipt consumption starts.
+    await waitFor(() => expect(fail).toBeTypeOf("function"));
     await act(async () => {
       fail!();
     });

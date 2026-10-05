@@ -5,6 +5,7 @@ const kinds = new Set([
   "eventsource",
   "websocket",
   "resource",
+  "script",
   "css",
   "font",
   "form",

@@ -255,6 +255,27 @@ describe("untrusted page network report boundary", () => {
       origin: "https://cdn.example",
     });
   });
+  it.each(["origin-not-approved", "policy-blocked-resource"])(
+    "accepts the fenced script category for %s without exporting page details",
+    (reason) => {
+      for (const origin of ["https://cdn.example", null])
+        expect(
+          parseWebNetworkReport(
+            {
+              ...report,
+              kind: "script",
+              reason,
+              origin,
+              blockedURI: "https://cdn.example/private.js?token=secret",
+              sample: "private script containing secret",
+              error: "private",
+              headers: { Authorization: "secret" },
+            },
+            document,
+          ),
+        ).toEqual({ kind: "script", reason, origin });
+    },
+  );
   it("returns only closed diagnostic categories and an exact origin", () => {
     expect(
       parseWebNetworkReport(
@@ -282,20 +303,25 @@ describe("untrusted page network report boundary", () => {
     { origin: "https://cdn.example/" },
     { origin: "x".repeat(2049) },
   ])("rejects stale or unsafe report %j", (change) => {
-    expect(
-      parseWebNetworkReport({ ...report, ...change }, document),
-    ).toBeNull();
+    for (const kind of ["fetch", "script"])
+      expect(
+        parseWebNetworkReport({ ...report, kind, ...change }, document),
+      ).toBeNull();
   });
-  it("caps and deduplicates diagnostics without growing the stored payload", () => {
-    const first = parseWebNetworkReport(report, document)!;
-    const rows = [first];
-    expect(appendWebNetworkReport(rows, first)).toBe(rows);
-    const full = Array.from({ length: 32 }, (_, index) => ({
-      ...first,
-      origin: `https://host${index}.example`,
-    }));
-    expect(appendWebNetworkReport(full, first)).toBe(full);
-  });
+  it.each(["fetch", "script"])(
+    "caps and deduplicates %s diagnostics without growing the stored payload",
+    (kind) => {
+      const first = parseWebNetworkReport({ ...report, kind }, document)!;
+      expect(first).not.toBeNull();
+      const rows = [first];
+      expect(appendWebNetworkReport(rows, first)).toBe(rows);
+      const full = Array.from({ length: 32 }, (_, index) => ({
+        ...first,
+        origin: `https://host${index}.example`,
+      }));
+      expect(appendWebNetworkReport(full, first)).toBe(full);
+    },
+  );
 });
 describe("native frame guard status contract", () => {
   it("accepts the Windows native guard separately from cross-platform page coverage", () => {

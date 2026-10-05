@@ -38,6 +38,90 @@ const fontOptOut = (): Partial<Connection> => ({
 });
 
 describe("Internal proxy controls", () => {
+  it.each(["scripts", "origin"])(
+    "does not reactivate imported all-script trust by removing the %s restriction",
+    (restriction) => {
+      render(
+        <Fixture
+          initial={{
+            protocol: "https",
+            httpProxyPolicy: {
+              ...DEFAULT_HTTP_PROXY_POLICY,
+              allowAllScripts: true,
+              pageScripts: restriction === "scripts" ? "block" : "allow",
+              sameOriginOnly: restriction === "origin",
+            },
+          }}
+        />,
+      );
+      const toggle = screen.getByRole("checkbox", {
+        name: /Allow all website scripts/,
+      });
+      expect(toggle).not.toBeChecked();
+      if (restriction === "scripts") {
+        fireEvent.click(
+          screen.getByRole("combobox", { name: "Website scripts" }),
+        );
+        fireEvent.mouseDown(
+          screen.getByRole("option", { name: "Allow website scripts" }),
+        );
+      } else {
+        fireEvent.click(
+          screen.getByRole("checkbox", {
+            name: /Same-origin resources and forms/,
+          }),
+        );
+      }
+      expect(draft().httpProxyPolicy).toMatchObject({
+        allowAllScripts: false,
+        pageScripts: "allow",
+        sameOriginOnly: false,
+      });
+      expect(toggle).not.toBeChecked();
+    },
+  );
+  it("saves and revokes all-script trust per connection, including after remount", () => {
+    const initial = fontOptOut();
+    const view = render(<Fixture initial={initial} />);
+    const toggle = () =>
+      screen.getByRole("checkbox", { name: /Allow all website scripts/ });
+    expect(toggle()).not.toBeChecked();
+    fireEvent.click(toggle());
+    expect(draft().httpProxyPolicy).toMatchObject({
+      allowAllScripts: true,
+      pageScripts: "allow",
+      sameOriginOnly: false,
+      allowExternalFonts: false,
+      externalFontOrigins: [],
+      allowCrossOriginRedirects: false,
+    });
+    const saved = draft();
+    view.unmount();
+    render(<Fixture initial={saved} />);
+    expect(toggle()).toBeChecked();
+    expect(screen.getByText(/All-script trust is active/)).toBeVisible();
+    fireEvent.click(toggle());
+    expect(draft().httpProxyPolicy.allowAllScripts).toBe(false);
+    expect(draft().httpProxyPolicy.externalResourceOrigins).toEqual(
+      saved.httpProxyPolicy.externalResourceOrigins,
+    );
+    fireEvent.click(toggle());
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Same-origin resources and forms/ }),
+    );
+    expect(toggle()).not.toBeChecked();
+    expect(draft().httpProxyPolicy.allowAllScripts).toBe(false);
+    fireEvent.click(toggle());
+    expect(draft().httpProxyPolicy.sameOriginOnly).toBe(false);
+    fireEvent.click(screen.getByRole("combobox", { name: "Website scripts" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Block external script files" }),
+    );
+    expect(draft().httpProxyPolicy).toMatchObject({
+      allowAllScripts: false,
+      pageScripts: "inline-only",
+    });
+  });
   it("shows common defaults for absent policies without saving a policy on render", () => {
     render(<Fixture />);
     expect(

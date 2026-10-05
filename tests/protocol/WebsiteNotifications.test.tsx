@@ -78,6 +78,31 @@ async function open() {
   return dialog;
 }
 describe("website notifications popover", () => {
+  it("keeps blocked-script review available after the toast is dismissed", async () => {
+    const openReview = vi.fn();
+    render(
+      <WebsiteNotifications
+        mgr={manager({
+          webNetworkReports: [
+            {
+              kind: "script",
+              reason: "policy-blocked-resource",
+              origin: "https://cdn.example.test",
+            },
+          ],
+          blockedScripts: { hasBlockedScripts: true, openReview },
+        })}
+      />,
+    );
+    await open();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review blocked scripts" }),
+    );
+    expect(openReview).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("dialog", { name: "Website notifications" }),
+    ).not.toBeInTheDocument();
+  });
   it.each([
     "http://ordinary.example/page",
     "https://ordinary.example/page",

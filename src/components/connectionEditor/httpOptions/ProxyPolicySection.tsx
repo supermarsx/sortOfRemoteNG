@@ -94,6 +94,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
             onChange={(pageScripts) =>
               update({
                 pageScripts: pageScripts as HttpProxyPolicy["pageScripts"],
+                allowAllScripts: false,
               })
             }
             variant="form"
@@ -144,11 +145,52 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
       )}
       <CheckboxField
         checked={policy.sameOriginOnly}
-        onChange={(sameOriginOnly) => update({ sameOriginOnly })}
+        onChange={(sameOriginOnly) =>
+          update({
+            sameOriginOnly,
+            allowAllScripts: false,
+          })
+        }
         label="Same-origin resources and forms"
         description="Restrict page resources and form submissions to this origin. The proxy never forwards credentials to another origin. This is not a complete browser navigation sandbox and may break SSO or CDN-based apps."
         variant="form"
       />
+      <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
+        <CheckboxField
+          checked={
+            policy.allowAllScripts === true &&
+            policy.pageScripts === "allow" &&
+            !policy.sameOriginOnly
+          }
+          onChange={(allowAllScripts) =>
+            update({
+              allowAllScripts,
+              ...(allowAllScripts
+                ? { pageScripts: "allow", sameOriginOnly: false }
+                : {}),
+            })
+          }
+          label="Allow all website scripts"
+          description="Trust all current and future HTTPS script sources, inline scripts and eval for this saved connection. Overrides script-specific website CSP, enables website scripts and turns off same-origin-only restrictions."
+          variant="form"
+        />
+        <p className="text-xs leading-relaxed text-warning">
+          Scripts can read and change this page, including information you
+          enter. External scripts still download anonymously through the proxy;
+          this does not grant saved credentials, login consent, other network
+          resources or browser sandbox access. Invalid URLs and insecure
+          external HTTP scripts remain blocked.
+        </p>
+        {policy.allowAllScripts &&
+          policy.pageScripts === "allow" &&
+          !policy.sameOriginOnly && (
+            <p role="status" className="text-xs text-[var(--color-textMuted)]">
+              All-script trust is active. The source list below still controls
+              stylesheets; its script grants are preserved for when you turn
+              this option off. Save and reload the website to apply changes.
+            </p>
+          )}
+      </div>
       <div className="space-y-2">
         <CheckboxField
           checked={policy.allowExternalFonts === true && !policy.sameOriginOnly}

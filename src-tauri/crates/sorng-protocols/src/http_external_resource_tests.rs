@@ -4,6 +4,9 @@ use crate::http::{
 };
 use reqwest::Url;
 
+#[path = "http_allow_all_script_tests.rs"]
+mod allow_all_script_tests;
+
 fn resource_policy() -> HttpProxyPolicy {
     HttpProxyPolicy {
         external_resource_origins: vec![

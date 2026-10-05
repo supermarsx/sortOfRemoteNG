@@ -20,6 +20,9 @@ export const DEFAULT_EXTERNAL_RESOURCE_ORIGINS: readonly HttpExternalResourceOri
 export interface HttpProxyPolicy {
   version: 1;
   pageScripts: "allow" | "inline-only" | "block";
+  /** Per-connection trust exception for all HTTPS/inline scripts and script CSP.
+   * pageScripts restrictions and sameOriginOnly still take precedence. */
+  allowAllScripts?: boolean;
   httpsOnly: boolean;
   /** Restricts mediated redirects, resources and forms; not a browser sandbox. */
   sameOriginOnly: boolean;
@@ -41,6 +44,7 @@ export const DEFAULT_HTTP_PROXY_POLICY: Readonly<HttpProxyPolicy> =
   Object.freeze({
     version: 1,
     pageScripts: "allow",
+    allowAllScripts: false,
     httpsOnly: false,
     sameOriginOnly: false,
     allowExternalFonts: true,

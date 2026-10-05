@@ -96,6 +96,7 @@ export function normalizeWebBrowserSettings(
   // Those decisions continue to require per-connection review.
   if (
     defaultPolicy.queryParameters.length ||
+    defaultPolicy.allowAllScripts ||
     defaultPolicy.allowCrossOriginRedirects ||
     defaultPolicy.allowHttpDowngradeRedirects
   )

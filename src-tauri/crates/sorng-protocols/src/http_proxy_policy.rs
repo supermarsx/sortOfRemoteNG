@@ -74,6 +74,9 @@ pub struct HttpProxyPolicy {
     pub page_scripts: PageScripts,
     pub https_only: bool,
     pub same_origin_only: bool,
+    /// Connection-scoped permissive script grant; restrictive controls win.
+    #[serde(default)]
+    pub allow_all_scripts: bool,
     #[serde(default)]
     pub allow_cross_origin_redirects: bool,
     /// Separate opt-in to review (never automatically follow) an HTTP handoff.
@@ -102,6 +105,7 @@ impl std::fmt::Debug for HttpProxyPolicy {
             .field("page_scripts", &self.page_scripts)
             .field("https_only", &self.https_only)
             .field("same_origin_only", &self.same_origin_only)
+            .field("allow_all_scripts", &self.allow_all_scripts)
             .field(
                 "allow_cross_origin_redirects",
                 &self.allow_cross_origin_redirects,
@@ -132,6 +136,7 @@ impl Default for HttpProxyPolicy {
             page_scripts: PageScripts::Allow,
             https_only: false,
             same_origin_only: false,
+            allow_all_scripts: false,
             allow_cross_origin_redirects: false,
             allow_http_downgrade_redirects: false,
             allow_external_fonts: default_external_fonts_enabled(),
@@ -145,6 +150,13 @@ impl Default for HttpProxyPolicy {
 }
 
 impl HttpProxyPolicy {
+    pub(super) fn allows_all_scripts(&self) -> bool {
+        self.version == 1
+            && self.allow_all_scripts
+            && self.page_scripts == PageScripts::Allow
+            && !self.same_origin_only
+    }
+
     pub fn validate(&self, target: &Url) -> Result<(), String> {
         let invalid =
             || "Invalid HTTP proxy policy. Review the advanced connection settings.".to_string();
@@ -253,6 +265,8 @@ impl HttpProxyPolicy {
             PageScripts::Allow if self.same_origin_only => {
                 directives.push("script-src 'self' 'unsafe-inline' 'unsafe-eval'".into())
             }
+            PageScripts::Allow if self.allows_all_scripts() => directives
+                .push("script-src 'self' data: blob: 'unsafe-inline' 'unsafe-eval'".into()),
             PageScripts::Allow if self.https_only => {
                 directives.push("script-src 'self' https: 'unsafe-inline' 'unsafe-eval'".into())
             }

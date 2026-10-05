@@ -954,6 +954,9 @@ impl GoogleSession {
             .collect::<Vec<_>>()
             .join(" ");
         let scripts = match policy.page_scripts {
+            super::PageScripts::Allow if policy.allows_all_scripts() => {
+                format!("'self' data: blob: 'unsafe-inline' 'unsafe-eval' {all}")
+            }
             super::PageScripts::Allow => format!("'self' 'unsafe-inline' 'unsafe-eval' {all}"),
             super::PageScripts::InlineOnly => "'unsafe-inline' 'unsafe-eval'".into(),
             super::PageScripts::Block => "'none'".into(),

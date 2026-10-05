@@ -62,6 +62,7 @@ interface ClientConfiguration extends ReturnType<typeof config> {
     version: number;
     origins: Array<{ origin: string; kinds: string[] }>;
     proxyEndpoint: string;
+    allowAllScripts?: boolean;
   };
   synologyQuickConnect?: {
     version: number;
@@ -212,6 +213,20 @@ afterEach(() => {
 });
 function start(value: ClientConfiguration = config()) {
   return (controller = install(value, report));
+}
+function dispatchPolicyViolation(values: Record<string, unknown> = {}) {
+  // jsdom has no native CSP enforcement; exercise the installed event handler.
+  document.dispatchEvent(
+    Object.assign(new Event("securitypolicyviolation"), {
+      disposition: "enforce",
+      effectiveDirective: "script-src-elem",
+      blockedURI: "https://cdn.example/private.js?token=secret#fragment",
+      sourceFile: "https://device.example/private?password=secret",
+      sample: "private script containing secret",
+      originalPolicy: "script-src 'nonce-secret'",
+      ...values,
+    }),
+  );
 }
 function cancelBrowserDefaultAfterRouting() {
   // Run after the network client's window-bubble finalizer, not as a site
@@ -2711,6 +2726,123 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       url.searchParams.set("__sorng_generation_v1", proof);
       return url.href;
     }
+    const allScripts = () => ({
+      ...options(),
+      externalResources: { ...manifest(), origins: [], allowAllScripts: true },
+    });
+    it.each(["property", "attribute"])(
+      "routes allow-all future HTTPS scripts through the anonymous endpoint via %s",
+      (assignment) => {
+        const input = allScripts();
+        start(input);
+        // Configuration is snapshotted; a page cannot revoke or expand it later.
+        input.externalResources.allowAllScripts = false;
+        const url = "https://new-cdn.example/script.js?key=opaque";
+        const script = document.createElement("script");
+        if (assignment === "property") script.src = url;
+        else script.setAttribute("src", url);
+        expect(script.getAttribute("src")).toBe(routed(url, "script"));
+        expect(script.src).toBe(url);
+        expect(controller!.mapUrl(routed(url, "script"), "script")).toBe(
+          routed(url, "script"),
+        );
+        expect(report).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+      },
+    );
+    it.each(["preload", "modulepreload"])(
+      "routes allow-all %s without giving href-first links a direct URL",
+      (rel) => {
+        start(allScripts());
+        const url = "https://future.example/module.js";
+        const link = document.createElement("link");
+        link.href = url;
+        expect(link.getAttribute("href")).toBeNull();
+        link.as = "script";
+        link.rel = rel;
+        expect(link.href).toBe(routed(url, "script"));
+      },
+    );
+    it.each([
+      "fetch",
+      "xhr",
+      "stylesheet",
+      "font",
+      "css",
+      "resource",
+      "form",
+      "navigation",
+      "websocket",
+    ])("does not extend allow-all scripts to %s", (kind) => {
+      start(allScripts());
+      expect(() =>
+        controller!.mapUrl("https://future.example/private", kind),
+      ).toThrow();
+      expect(() =>
+        controller!.mapUrl(
+          routed("https://future.example/private", "script"),
+          kind,
+        ),
+      ).toThrow();
+    });
+    it.each([
+      "http://future.example/script.js",
+      "https://user:secret@future.example/script.js",
+      "ftp://future.example/script.js",
+      "javascript:alert(1)",
+      "https://future.example/script.js#fragment",
+    ])("refuses unsafe allow-all script URL %s", (url) => {
+      start(allScripts());
+      const script = document.createElement("script");
+      expect(() => {
+        script.src = url;
+      }).toThrow();
+      expect(script.getAttribute("src")).toBeNull();
+      expect(JSON.stringify(report.mock.calls)).not.toContain("secret");
+    });
+    it.each(["data:text/javascript,window.fixture=1", `blob:${proxy}/fixture`])(
+      "allows a local script only with the effective opt-in: %s",
+      (url) => {
+        start(options());
+        expect(() => controller!.mapUrl(url, "script")).toThrow();
+        controller!.dispose();
+        start(allScripts());
+        const script = document.createElement("script");
+        script.src = url;
+        expect(script.getAttribute("src")).toBe(url);
+        expect(() => controller!.mapUrl(url, "fetch")).toThrow();
+        window.dispatchEvent(new Event("pagehide"));
+        expect(() => {
+          script.src = url;
+        }).toThrow("document-closed");
+      },
+    );
+    it.each([undefined, false])(
+      "keeps unknown script origins blocked with opt-in %s",
+      (allowAllScripts) => {
+        start({
+          ...options(),
+          externalResources: { ...manifest(), allowAllScripts },
+        });
+        expect(() =>
+          controller!.mapUrl("https://future.example/script.js", "script"),
+        ).toThrow("origin-not-approved");
+      },
+    );
+    it.each([null, "true", 1, {}])(
+      "rejects malformed allow-all capability %j",
+      (allowAllScripts) => {
+        expect(() =>
+          install(
+            {
+              ...options(),
+              externalResources: { ...manifest(), allowAllScripts },
+            },
+            report,
+          ),
+        ).toThrow("Invalid external resource configuration");
+      },
+    );
     it("rewrites script and stylesheet elements before assignment and preserves SRI", () => {
       start(options());
       const script = document.createElement("script");
@@ -2726,7 +2858,40 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       expect(controller!.mapUrl(script.getAttribute("src"), "script")).toBe(
         routed(scriptUrl, "script"),
       );
+      expect(report).not.toHaveBeenCalled();
     });
+    it.each([
+      ["property", false],
+      ["attribute", false],
+      ["property", true],
+      ["attribute", true],
+    ])(
+      "reports a refused dynamic script via %s with external manifest %s",
+      (assignment, externalResources) => {
+        start(externalResources ? options() : config());
+        const script = document.createElement("script");
+        const destination =
+          "https://www.googletagmanager.com/private.js?token=secret#fragment";
+        expect(() => {
+          if (assignment === "property") script.src = destination;
+          else script.setAttribute("src", destination);
+        }).toThrow("origin-not-approved");
+        expect(script.getAttribute("src")).toBeNull();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(report).toHaveBeenCalledExactlyOnceWith({
+          type: "sorng_web_network_blocked",
+          version: 1,
+          sessionId: "session-one",
+          documentSequence: 3,
+          kind: "script",
+          reason: "origin-not-approved",
+          origin: "https://www.googletagmanager.com",
+        });
+        expect(JSON.stringify(report.mock.calls)).not.toMatch(
+          /private|secret|token|fragment/,
+        );
+      },
+    );
     it("holds href-first stylesheet assignments inert until the resource kind is known", () => {
       start(options());
       const link = document.createElement("link");
@@ -3938,20 +4103,100 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     );
     expect(fetch).not.toHaveBeenCalled();
   });
-  it("reports browser CSP denials from parser/CSS resources using origin only", () => {
-    start();
-    const event = new Event("securitypolicyviolation");
-    Object.defineProperty(event, "blockedURI", {
-      value: "https://cdn.example/private?token=secret",
-    });
-    document.dispatchEvent(event);
-    expect(report).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "resource",
+  it.each([
+    ["script-src", "script"],
+    ["script-src-elem", "script"],
+    ["script-src-attr", "script"],
+    ["font-src", "font"],
+    ["style-src", "resource"],
+    ["img-src", "resource"],
+    ["default-src", "resource"],
+    ["script-src-elem-other", "resource"],
+  ])(
+    "classifies enforced CSP %s as %s using only origin",
+    (effectiveDirective, kind) => {
+      start();
+      dispatchPolicyViolation({
+        effectiveDirective,
+        blockedURI:
+          "https://user:secret@cdn.example/private.js?token=secret#fragment",
+      });
+      expect(report).toHaveBeenCalledExactlyOnceWith({
+        type: "sorng_web_network_blocked",
+        version: 1,
+        sessionId: "session-one",
+        documentSequence: 3,
+        kind,
         reason: "policy-blocked-resource",
         origin: "https://cdn.example",
-      }),
-    );
+      });
+      expect(JSON.stringify(report.mock.calls)).not.toMatch(
+        /private|secret|token|fragment|user|nonce/,
+      );
+    },
+  );
+  it.each(["script-src", "script-src-elem", "script-src-attr", "font-src"])(
+    "ignores report-only CSP %s without consuming a report slot",
+    (effectiveDirective) => {
+      start();
+      for (let i = 0; i < 40; i++)
+        dispatchPolicyViolation({
+          disposition: "report",
+          effectiveDirective,
+          blockedURI: `https://blocked${i}.example/private?token=secret`,
+        });
+      expect(report).not.toHaveBeenCalled();
+      dispatchPolicyViolation({ effectiveDirective });
+      expect(report).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each([undefined, "", "unknown"])(
+    "ignores CSP without an enforced disposition (%s)",
+    (disposition) => {
+      start();
+      dispatchPolicyViolation({ disposition });
+      expect(report).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    "inline",
+    "eval",
+    "data:text/javascript,private-secret",
+    "blob:https://cdn.example/private-secret",
+  ])("reports CSP script %s without inventing an origin", (blockedURI) => {
+    start();
+    dispatchPolicyViolation({ blockedURI });
+    expect(report).toHaveBeenCalledExactlyOnceWith({
+      type: "sorng_web_network_blocked",
+      version: 1,
+      sessionId: "session-one",
+      documentSequence: 3,
+      kind: "script",
+      reason: "policy-blocked-resource",
+      origin: null,
+    });
     expect(JSON.stringify(report.mock.calls)).not.toMatch(/private|secret/);
+  });
+  it("deduplicates and bounds script CSP reports, then stops on document revocation", () => {
+    start();
+    dispatchPolicyViolation();
+    dispatchPolicyViolation({
+      effectiveDirective: "script-src",
+      blockedURI: "https://cdn.example/another.js?token=another-secret",
+    });
+    expect(report).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 40; i++)
+      dispatchPolicyViolation({
+        blockedURI: `https://blocked${i}.example/private?token=secret`,
+      });
+    expect(report).toHaveBeenCalledTimes(32);
+    expect(JSON.stringify(report.mock.calls)).not.toMatch(/private|secret/);
+    report.mockClear();
+    window.dispatchEvent(new Event("pagehide"));
+    dispatchPolicyViolation({ blockedURI: "https://after-close.example" });
+    expect(report).not.toHaveBeenCalled();
+    controller?.dispose();
+    dispatchPolicyViolation({ blockedURI: "https://after-dispose.example" });
+    expect(report).not.toHaveBeenCalled();
   });
 });

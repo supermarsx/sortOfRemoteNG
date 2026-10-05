@@ -6,6 +6,21 @@ import {
 import { DEFAULT_EXTERNAL_FONT_ORIGINS } from "../../src/types/connection/httpProxyPolicy";
 
 describe("HTTP proxy policy validation", () => {
+  it("defaults all-script trust off, validates explicit booleans and roundtrips the opt-in", () => {
+    const base = normalizeHttpProxyPolicy(undefined);
+    expect(base.allowAllScripts).toBe(false);
+    delete base.allowAllScripts;
+    expect(normalizeHttpProxyPolicy(base).allowAllScripts).toBe(false);
+    const optedIn = { ...base, allowAllScripts: true };
+    expect(
+      normalizeHttpProxyPolicy(JSON.parse(JSON.stringify(optedIn))),
+    ).toEqual(optedIn);
+    for (const allowAllScripts of [null, 1, "true", {}, []]) {
+      expect(() =>
+        normalizeHttpProxyPolicy({ ...base, allowAllScripts }),
+      ).toThrow("Invalid HTTP proxy policy");
+    }
+  });
   it("defaults missing font settings to common hosts and clones origin arrays", () => {
     const legacy = normalizeHttpProxyPolicy(undefined);
     delete legacy.allowExternalFonts;
