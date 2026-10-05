@@ -122,7 +122,9 @@ describe("cloud inventory byte sizes", () => {
       encryptBeforeSync: true,
     });
     expect(Object.keys(payload.sections)).toEqual([id]);
-    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith(collection.id);
+    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith(collection.id, {
+      materializeDefaults: true,
+    });
     expect(mocks.sizes).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(payload)).not.toContain("APP_WIDE_ONLY_DOCUMENT");
     expect(mocks.raw.get("documents.app-wide.v1")).toBe(

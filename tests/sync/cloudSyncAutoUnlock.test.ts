@@ -248,7 +248,9 @@ describe("explicit OS-vault cloud capture consent", () => {
       return fixture.release;
     });
     await captureCloudSyncPayload(config());
-    expect(fixture.read).toHaveBeenCalledExactlyOnceWith("side");
+    expect(fixture.read).toHaveBeenCalledExactlyOnceWith("side", {
+      materializeDefaults: true,
+    });
   });
 
   it.each(["database:side", "Database side", "database/*.json"])(

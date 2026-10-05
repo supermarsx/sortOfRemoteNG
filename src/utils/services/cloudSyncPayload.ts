@@ -509,8 +509,12 @@ async function readItem(id: string): Promise<unknown> {
   }
   const db = databaseId(id);
   if (db) {
-    const archive =
-      await DatabaseManager.getInstance().readFullDatabaseArchive(db);
+    const archive = await DatabaseManager.getInstance().readFullDatabaseArchive(
+      db,
+      {
+        materializeDefaults: true,
+      },
+    );
     // Use the same canonical representation at capture AND apply preflight.
     // JSON serialization omits optional undefined fields in the archive API.
     return validateCloudSyncPayload({

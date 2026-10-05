@@ -69,6 +69,50 @@ const writes = () =>
   );
 
 describe("database record timestamp migration", () => {
+  it("pins the migrated object's own ledger and CAS snapshot across subsequent writes and newer reads", async () => {
+    const manager = DatabaseManager.getInstance();
+    const save = vi.spyOn(manager, "saveDatabaseData");
+    await manager.selectDatabase("db");
+    const migrated = save.mock.calls[0][1];
+    const first = structuredClone(stored) as StorageData;
+    migrated.connections[0].name = "After migration";
+    await manager.saveDatabaseData("db", migrated);
+    expect(writes()[1][1].expectedData).toEqual(first);
+    expect((stored as StorageData).recordMetadata!.journal).toEqual(
+      expect.arrayContaining(first.recordMetadata!.journal),
+    );
+    const committed = structuredClone(stored) as StorageData;
+    migrated.connections[0].name = "Second write";
+    await manager.saveDatabaseData("db", migrated);
+    expect(writes()[2][1].expectedData).toEqual(committed);
+    (stored as StorageData).connections[0].name = "Other window";
+    await manager.loadDatabaseData("db");
+    migrated.connections[0].name = "Stale migrated object";
+    await expect(manager.saveDatabaseData("db", migrated)).rejects.toThrow(
+      /Concurrent/,
+    );
+    expect((stored as StorageData).connections[0].name).toBe("Other window");
+    expect(writes()[3][1].expectedData.connections[0].name).toBe(
+      "Second write",
+    );
+  });
+
+  it("retains the migrated snapshot's security revision for the post-migration open check", async () => {
+    row.securityRevision = "original-security";
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      const result = await previous(command, args);
+      if (command === "databases_save_index")
+        row.securityRevision = "replacement-security";
+      return result;
+    });
+    await expect(
+      DatabaseManager.getInstance().selectDatabase("db"),
+    ).rejects.toThrow(/security changed/i);
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0][1].expectedSecurityRevision).toBe("original-security");
+  });
+
   it("migrates on open exactly once without changing domain content", async () => {
     const manager = DatabaseManager.getInstance();
     const before = structuredClone(stored);

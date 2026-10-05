@@ -52,6 +52,7 @@ import {
   buildFullDatabaseArchive,
   encryptFullDatabaseArchive,
   fullDatabaseArchiveData,
+  materializeDatabaseArchiveDefaults,
   isFullDatabaseArchive,
   normalizeFullDatabaseArchive,
   FullDatabaseArchiveError,
@@ -999,27 +1000,50 @@ export class DatabaseManager {
     id: string,
     data: StorageData,
     password?: string,
-  ): Promise<void> {
-    const ledger = this.loadedRecordBaselines.get(data);
+  ): Promise<StorageData> {
+    const previous = this.loadedRecordBaselines.get(data);
+    if (!previous) return data;
+    const epoch = this.captureDatabaseEpoch(id);
+    const revision = this.loadedSecurityRevisions.get(data);
+    if (revision === undefined)
+      throw new Error(
+        "Record migration requires a verified security revision.",
+      );
+    // Database-owned sections cannot be persisted by the browser fallback.
+    const materialized = (await getInvoke())
+      ? materializeDatabaseArchiveDefaults(data)
+      : data;
+    const ledger =
+      materialized === data
+        ? previous
+        : await reconcileRecordLedger(materialized, previous, {
+            mode: "migrate",
+          });
+    this.assertDatabaseEpoch(id, epoch);
     if (
-      !ledger ||
-      (data.recordMetadata !== undefined &&
-        stableJsonStringify(ledger) ===
-          stableJsonStringify(data.recordMetadata))
+      materialized === data &&
+      data.recordMetadata !== undefined &&
+      stableJsonStringify(ledger) === stableJsonStringify(data.recordMetadata)
     )
-      return;
+      return data;
     const expectedData = this.loadedRepresentations.get(data);
     if (expectedData === undefined)
       throw new Error(
         "Record migration requires the exact loaded database snapshot.",
       );
-    await this.saveDatabaseData(
-      id,
-      data,
-      password,
-      this.loadedSecurityRevisions.get(data),
-      { expectedData, recordMetadataMode: "migrate" },
-    );
+    this.assertDatabaseEpoch(id, epoch);
+    const migrated = { ...materialized, recordMetadata: ledger };
+    await this.saveDatabaseData(id, migrated, password, revision, {
+      expectedData,
+      recordBaseline: previous,
+      recordMetadataMode: "migrate",
+    });
+    this.assertDatabaseEpoch(id, epoch);
+    // saveDatabaseData pins the new object's representation and record ledger.
+    // Carry its verified security ownership too, for the subsequent open/export
+    // checks; never borrow a later reader's or a replacement session's revision.
+    this.loadedSecurityRevisions.set(migrated, revision);
+    return migrated;
   }
   private readonly loadedSecurityRevisions = new WeakMap<StorageData, string>();
   private readonly indexSnapshots = new WeakMap<
@@ -1583,14 +1607,14 @@ export class DatabaseManager {
       );
     }
 
-    const loaded = await this.loadDatabaseData(id, resolvedPassword);
+    let loaded = await this.loadDatabaseData(id, resolvedPassword);
     assertSelectionCurrent();
     if (options.requireData && !loaded)
       throw new Error(
         "The database file is unavailable; startup did not create or replace it.",
       );
     if (loaded)
-      await this.migrateRecordTimestamps(id, loaded, resolvedPassword);
+      loaded = await this.migrateRecordTimestamps(id, loaded, resolvedPassword);
     // A database load can be slow. Flush edits made to the outgoing UI while
     // it was in flight before advancing the mutable current-database pointer.
     if (switchingDatabase) {
@@ -3116,10 +3140,11 @@ export class DatabaseManager {
     return jsonData;
   }
 
-  /** In-memory only. The full archive owns all references and private sections. */
+  /** Read-only by default. Cloud capture explicitly migrates missing storage
+   * defaults and history with CAS before constructing its portable snapshot. */
   async readFullDatabaseArchive(
     collectionId: string,
-    options?: { collectionPassword?: string },
+    options?: { collectionPassword?: string; materializeDefaults?: boolean },
   ): Promise<FullDatabaseArchive> {
     return this.readExportableDatabaseSnapshot(collectionId, true, {
       ...options,
@@ -3303,6 +3328,8 @@ export class DatabaseManager {
       collectionPassword?: string;
       /** Explicit private whole-database archive; passwords and trust must be included. */
       fullDatabase?: boolean;
+      /** Explicit cloud capture only; normal archive reads remain read-only. */
+      materializeDefaults?: boolean;
       /**
        * Carry the database's Trust Center records in the snapshot (t62 / D6).
        * Defaults to `true`; the Export / Clone tabs expose it as the
@@ -3327,13 +3354,17 @@ export class DatabaseManager {
       collection,
       options?.collectionPassword,
     );
-    const data = await this.loadDatabaseData(collectionId, password);
+    let data = await this.loadDatabaseData(collectionId, password);
     if (!data) {
       throw new Error("Failed to load collection data");
     }
 
     this.assertDatabaseEpoch(collectionId, epoch);
     if (options?.fullDatabase) {
+      if (options.materializeDefaults) {
+        data = await this.migrateRecordTimestamps(collectionId, data, password);
+        this.assertDatabaseEpoch(collectionId, epoch);
+      }
       // Unlike legacy exports, a full backup must never silently omit trust or
       // log a backend error that could contain private archive values.
       const invoke = await getInvoke();

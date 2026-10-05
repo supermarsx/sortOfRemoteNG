@@ -6,7 +6,13 @@ import {
 } from "../../src/utils/connection/fullDatabaseArchive";
 import { decryptWithPassword } from "../../src/utils/crypto/webCryptoAes";
 import {
+  normalizeRecordLedger,
+  reconcileRecordLedger,
+} from "../../src/utils/storage/recordLedger";
+import type { StorageData } from "../../src/utils/storage/storage";
+import {
   collection,
+  connection,
   fullData,
   trust,
   VAULT_ID,
@@ -16,6 +22,104 @@ vi.mock("../../src/utils/security/passwordPolicy", () => ({
 }));
 
 describe("full database portable archive", () => {
+  it("keeps sparse projection history stable across timestamp-only writes without redating existing children", async () => {
+    const data: StorageData = {
+      connections: [connection("future-child")],
+      settings: {},
+      timestamp: Date.parse("2025-01-01T00:00:00Z"),
+    };
+    data.recordMetadata = await reconcileRecordLedger(data);
+    const original = structuredClone(data);
+    const first = await buildFullDatabaseArchive(collection, data, trust);
+    const ledger = first.recordMetadata!;
+    expect(ledger.records["$/documents"].createdAt).toBe(
+      original.recordMetadata!.records["$"].updatedAt,
+    );
+    expect(ledger.records["$/connections/@future-child"]).toEqual(
+      original.recordMetadata!.records["$/connections/@future-child"],
+    );
+    expect(ledger.journal).toEqual(
+      expect.arrayContaining(original.recordMetadata!.journal),
+    );
+    expect(normalizeRecordLedger(ledger)).toEqual(ledger);
+    expect((await normalizeFullDatabaseArchive(first)).recordMetadata).toEqual(
+      ledger,
+    );
+    expect(data).toEqual(original);
+    for (const timestamp of ["2027-01-01", "2024-01-01", "2028-01-01"]) {
+      data.timestamp = Date.parse(timestamp);
+      data.recordMetadata = await reconcileRecordLedger(
+        data,
+        data.recordMetadata,
+        { mode: "write", now: new Date(data.timestamp).toISOString() },
+      );
+      expect(data.recordMetadata).toEqual(original.recordMetadata);
+      expect(
+        (await buildFullDatabaseArchive(collection, data, trust))
+          .recordMetadata,
+      ).toEqual(ledger);
+    }
+  });
+
+  it("projects device fields causally from each record even when their dates are newer than the root clock", async () => {
+    const data = await fullData();
+    data.timestamp = Date.parse("2025-01-01T00:00:00Z");
+    const device = data.credentialVault!.entries[0].facets.deviceTrust![0];
+    device.createdAt = "2029-01-01T00:00:00.000Z";
+    data.recordMetadata = await reconcileRecordLedger(data);
+    const original = structuredClone(data);
+    const deviceKey = `$/credentialVault/entries/@${VAULT_ID}/facets/deviceTrust/@${device.id}`;
+    const before = data.recordMetadata.records[deviceKey];
+    expect(Date.parse(before.updatedAt)).toBeGreaterThan(
+      Date.parse(data.recordMetadata.records["$"].updatedAt),
+    );
+    const first = await buildFullDatabaseArchive(collection, data, trust);
+    const ledger = first.recordMetadata!;
+    expect(first.credentialVault.entries[0].facets.deviceTrust).toBeUndefined();
+    expect(ledger.records[deviceKey]).toMatchObject({
+      createdAt: before.createdAt,
+      updatedAt: "2029-01-01T00:00:00.001Z",
+      deletedAt: "2029-01-01T00:00:00.001Z",
+      updatedAtSource: "inferred",
+    });
+    const projectedEvents = ledger.journal.slice(
+      original.recordMetadata!.journal.length,
+    );
+    expect(projectedEvents.some((event) => event.record === deviceKey)).toBe(
+      true,
+    );
+    for (const event of projectedEvents) {
+      const prior = original.recordMetadata!.records[event.record];
+      if (prior) {
+        expect(event.parentRevision).toBe(prior.revision);
+        expect(Date.parse(event.timestamp)).toBeGreaterThan(
+          Date.parse(prior.updatedAt),
+        );
+        expect(Date.parse(event.timestamp)).toBeGreaterThanOrEqual(
+          Date.parse(prior.createdAt),
+        );
+      }
+    }
+    expect(normalizeRecordLedger(ledger)).toEqual(ledger);
+    expect((await normalizeFullDatabaseArchive(first)).recordMetadata).toEqual(
+      ledger,
+    );
+    expect(data).toEqual(original);
+    for (const timestamp of ["2030-01-01", "2024-01-01", "2031-01-01"]) {
+      data.timestamp = Date.parse(timestamp);
+      data.recordMetadata = await reconcileRecordLedger(
+        data,
+        data.recordMetadata,
+        { mode: "write", now: new Date(data.timestamp).toISOString() },
+      );
+      expect(data.recordMetadata).toEqual(original.recordMetadata);
+      expect(
+        (await buildFullDatabaseArchive(collection, data, trust))
+          .recordMetadata,
+      ).toEqual(ledger);
+    }
+  });
+
   it("upgrades legacy trust dates deterministically without changing the source", async () => {
     const legacyTrust = structuredClone(trust);
     delete legacyTrust.records[0].timestamps;

@@ -713,8 +713,19 @@ export async function normalizeFullDatabaseArchive(
     validateClosure(result);
     // Archive normalizers materialize default sections and strip device-only
     // credentials. Reconcile against that portable body, not the source blob.
+    const portableData = fullDatabaseArchiveData(result);
+    if (result.recordMetadata) {
+      // A projection of the same recorded storage body must have the same
+      // inferred history even after a timestamp-only save. Existing ledger
+      // events remain untouched; this only dates export-generated changes.
+      // This is not a global clock: reconciliation advances each changed or
+      // deleted child past its own prior stamp, even if newer than the root.
+      portableData.timestamp = Date.parse(
+        result.recordMetadata.records["$"].updatedAt,
+      );
+    }
     result.recordMetadata = await reconcileRecordLedger(
-      fullDatabaseArchiveData(result),
+      portableData,
       result.recordMetadata,
       { mode: "migrate" },
     );
@@ -729,6 +740,31 @@ export async function normalizeFullDatabaseArchive(
     if (error instanceof FullDatabaseArchiveError) throw error;
     return fail();
   }
+}
+
+/** Materialize only absent storage sections. Never persist the portable archive
+ * itself: its sanitizers deliberately remove device-bound credentials. */
+export function materializeDatabaseArchiveDefaults(
+  data: StorageData,
+): StorageData {
+  const defaults = {
+    settings: {},
+    tabGroups: [],
+    colorTags: {},
+    databaseSettings: normalizeDatabaseSettings(undefined),
+    recycleBin: normalizeRecycleBin(undefined),
+    automationLibrary: normalizeDatabaseAutomationLibrary(undefined),
+    documents: normalizeDatabaseDocuments(undefined),
+    credentialVault: normalizeDatabaseCredentialVault(undefined),
+  };
+  const missing = Object.keys(defaults).filter(
+    (key) => data[key as keyof typeof defaults] === undefined,
+  ) as (keyof typeof defaults)[];
+  if (!missing.length) return data;
+  return {
+    ...data,
+    ...Object.fromEntries(missing.map((key) => [key, defaults[key]])),
+  };
 }
 
 export async function buildFullDatabaseArchive(

@@ -96,7 +96,9 @@ describe("bounded cloud inventory recovery", () => {
       const result = await captureCloudSyncPayload(config);
       expect(fixture.inventory).toHaveBeenCalledTimes(2);
       expect(fixture.guard).toHaveBeenCalledWith(["db1"]);
-      expect(fixture.read).toHaveBeenCalledExactlyOnceWith("db1");
+      expect(fixture.read).toHaveBeenCalledExactlyOnceWith("db1", {
+        materializeDefaults: true,
+      });
       expect(result.sections["database:db1"]).toMatchObject({
         settings: { newestEdit: "synthetic" },
       });

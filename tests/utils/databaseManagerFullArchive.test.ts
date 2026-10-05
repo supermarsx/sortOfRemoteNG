@@ -13,6 +13,11 @@ import {
   fullDatabaseArchiveData,
 } from "../../src/utils/connection/fullDatabaseArchive";
 import { reconcileRecordLedger } from "../../src/utils/storage/recordLedger";
+import { runCloudSync } from "../../src/utils/services/cloudSyncEngine";
+import {
+  decodeCloudSnapshot,
+  encodeCloudSnapshot,
+} from "../../src/utils/services/cloudSyncCodec";
 import {
   encryptWithPassword,
   decryptWithPassword,
@@ -190,6 +195,185 @@ async function openPlainDatabase() {
 }
 
 describe("full database manager archive boundary", () => {
+  it("CAS-materializes absent sections once, preserving existing history and device fields across capture and saves", async () => {
+    const source: StorageData = {
+      connections: [connection("a"), connection("b")],
+      settings: { theme: "dark" },
+      timestamp: Date.parse("2026-10-01T00:00:00Z"),
+      credentialVault: (await fullData()).credentialVault,
+    };
+    source.recordMetadata = await reconcileRecordLedger(source);
+    privateData.set(collection.id, source);
+    const original = structuredClone(source);
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    // A normal export still has no persistence side effects.
+    await manager.readFullDatabaseArchive(collection.id);
+    expect(privateData.get(collection.id)).toEqual(original);
+    const config = {
+      ...defaultCloudSyncConfig,
+      selectedItems: [`database:${collection.id}`],
+      encryptBeforeSync: true,
+    };
+    const captured = await captureCloudSyncPayload(config);
+    const migrated = privateData.get(collection.id)!;
+    expect(migrated.credentialVault).toEqual(original.credentialVault);
+    expect(migrated.connections).toEqual(original.connections);
+    expect(migrated.settings).toEqual(original.settings);
+    expect(migrated.timestamp).toBe(original.timestamp);
+    expect(migrated.recordMetadata!.journal).toEqual(
+      expect.arrayContaining(original.recordMetadata!.journal),
+    );
+    for (const section of [
+      "documents",
+      "automationLibrary",
+      "databaseSettings",
+      "tabGroups",
+      "recycleBin",
+      "colorTags",
+    ])
+      expect(migrated.recordMetadata!.records[`$/${section}`]).toBeDefined();
+    const saves = () =>
+      bridge.invoke.mock.calls.filter(
+        ([cmd]) => cmd === "database_protection_save",
+      );
+    expect(saves()).toHaveLength(1);
+    expect(saves()[0][1].expectedData).toEqual(original);
+    expect(await captureCloudSyncPayload(config)).toEqual(captured);
+    expect(saves()).toHaveLength(1);
+    const draft = (await manager.loadDatabaseData(collection.id))!;
+    draft.timestamp += 86400000;
+    await manager.saveDatabaseData(collection.id, draft);
+    expect(await captureCloudSyncPayload(config)).toEqual(captured);
+    expect(saves()).toHaveLength(2);
+  });
+
+  it("refuses a stale materialization CAS without overwriting the concurrent body or creating export history", async () => {
+    privateData.set(collection.id, {
+      connections: [connection("a")],
+      settings: {},
+      timestamp: 1,
+    });
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "database_protection_save") {
+        privateData.get(collection.id)!.connections[0].name = "Concurrent edit";
+        throw new Error("Concurrent edit; refused CAS");
+      }
+      return previous(command, args);
+    });
+    await expect(
+      captureCloudSyncPayload({
+        ...defaultCloudSyncConfig,
+        selectedItems: [`database:${collection.id}`],
+        encryptBeforeSync: true,
+      }),
+    ).rejects.toThrow(/Concurrent/);
+    expect(privateData.get(collection.id)).toEqual({
+      connections: [{ ...connection("a"), name: "Concurrent edit" }],
+      settings: {},
+      timestamp: 1,
+    });
+  });
+
+  it("syncs repeated disjoint database saves from a sparse uploader and restored peer without recurring history conflicts", async () => {
+    privateData.set(collection.id, {
+      connections: [connection("a"), connection("b")],
+      settings: {},
+      timestamp: Date.parse("2026-10-01T00:00:00Z"),
+    });
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    const config = {
+      ...defaultCloudSyncConfig,
+      selectedItems: [`database:${collection.id}`],
+      encryptBeforeSync: true,
+      syncEncryptionPassword: PASSWORD,
+      compressionEnabled: false,
+      conflictResolution: "smartMerge" as const,
+    };
+    const target = {
+      id: "materialization-regression",
+      label: "Fixture",
+      provider: "nextcloud" as const,
+      enabled: true,
+    };
+    let remote: string | null = null;
+    let revision = 0;
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "cloud_sync_read")
+        return { data: remote, revision: remote ? String(revision) : null };
+      if (command === "cloud_sync_write") {
+        expect(args.expectedRevision).toBe(remote ? String(revision) : null);
+        remote = args.data;
+        return { revision: String(++revision) };
+      }
+      return previous(command, args);
+    });
+    await runCloudSync(target, config);
+    for (let round = 1; round <= 2; round++) {
+      const peer = (await decodeCloudSnapshot(remote!, config)).payload;
+      const archive = peer.sections[`database:${collection.id}`] as Awaited<
+        ReturnType<typeof manager.readFullDatabaseArchive>
+      >;
+      const local = (await manager.loadDatabaseData(collection.id))!;
+      local.connections[0].name = `Local ${round}`;
+      local.timestamp += round * 86400000;
+      await manager.saveDatabaseData(collection.id, local);
+      archive.connections[1].name = `Remote ${round}`;
+      archive.recordMetadata = await reconcileRecordLedger(
+        fullDatabaseArchiveData(archive),
+        archive.recordMetadata,
+        { mode: "write", now: `2026-10-0${round + 1}T00:00:00.000Z` },
+      );
+      const localHistory = structuredClone(
+        privateData.get(collection.id)!.recordMetadata!.journal,
+      );
+      const remoteHistory = structuredClone(archive.recordMetadata.journal);
+      remote = await encodeCloudSnapshot(
+        {
+          format: "sortofremoteng-cloud-sync",
+          version: 1,
+          modifiedAt: Date.now(),
+          payload: peer,
+        },
+        config,
+      );
+      revision++;
+      await runCloudSync(target, config);
+      const saved = privateData.get(collection.id)!;
+      expect(saved.connections.map((row) => row.name)).toEqual([
+        `Local ${round}`,
+        `Remote ${round}`,
+      ]);
+      expect(saved.recordMetadata!.journal).toEqual(
+        expect.arrayContaining([...localHistory, ...remoteHistory]),
+      );
+      const before = revision;
+      const history = structuredClone(saved.recordMetadata);
+      await expect(runCloudSync(target, config)).resolves.toContain(
+        "already up to date",
+      );
+      expect(revision).toBe(before);
+      expect(privateData.get(collection.id)!.recordMetadata).toEqual(history);
+    }
+  });
+
   it("captures a database-local SSH source for sync and rebinds it on protected archive restore", async () => {
     const source = privateData.get(collection.id)!;
     source.connections[2].security = {
@@ -229,7 +413,7 @@ describe("full database manager archive boundary", () => {
       ownerDatabaseId: restored.id,
       forwardType: "local",
     });
-    expect(privateData.get(collection.id)).toEqual(original);
+    expect(privateData.get(collection.id)).toMatchObject(original);
   });
 
   it("round trips the intended cloud body and trust without export-time or local-label drift", async () => {
