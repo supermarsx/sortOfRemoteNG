@@ -233,6 +233,17 @@ updates preserve creation dates and use monotonic per-record dates even if the
 local clock moves backwards. Those dates are audit information, not proof of
 causal order across devices.
 
+Cloud Sync's review shows a **Version history** summary of this existing ledger:
+shared revisions and revisions present only locally or remotely. It identifies
+when one history contains the other, when both have new branches, and when their
+origins or metadata cannot be compared safely. This is not a second history
+store or a last-writer-wins rule: a higher count or later timestamp never selects
+a whole-copy winner. Body validation, shared-baseline checks, dependency checks
+and explicit merge blockers remain authoritative. No private record IDs, hashes,
+paths or contents appear in the summary. Display comparison is capped at 5,000
+events and 512 KiB of metadata per copy; reaching either cap does not truncate
+the underlying ledger or change the normal merge limits.
+
 App-wide automation libraries migrate under their existing storage CAS. Native
 settings and Trust Center records maintain their own timestamp metadata at their
 locked persistence boundaries. Portable appearance sync still sends only its

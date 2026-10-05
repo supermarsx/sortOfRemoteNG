@@ -1,5 +1,9 @@
 import { canonicalSyncJson } from "./cloudSyncCodec";
 import { normalizeZonedTimestamp } from "../storage/recordTimestamps";
+import {
+  summarizeCloudSyncVersionHistory,
+  type CloudSyncVersionHistory,
+} from "./cloudSyncVersionHistory";
 
 // Only these product-authored labels leave this module. Keys, IDs, record names,
 // paths, values, revisions and content hashes are deliberately not returned.
@@ -149,6 +153,7 @@ export interface ReviewRecordedDate {
   source: "record" | "inferred" | "observed";
 }
 export interface CloudSyncReviewDetails {
+  versionHistory?: CloudSyncVersionHistory;
   records: ReviewRecordComparison[];
   localRecordedAt?: ReviewRecordedDate;
   remoteRecordedAt?: ReviewRecordedDate;
@@ -382,6 +387,7 @@ export function summarizeCloudSyncReview(
   const otherDifferences = otherChanged(local, remote, "");
   return {
     records,
+    versionHistory: summarizeCloudSyncVersionHistory(local, remote),
     hasBaseline,
     comparisonLimited,
     otherDifferences,

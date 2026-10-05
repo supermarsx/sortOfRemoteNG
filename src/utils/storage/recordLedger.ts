@@ -439,9 +439,16 @@ function normalizeDagHistory(
 /** Undefined means legacy absence. Present corrupt/future metadata always throws. */
 export function normalizeRecordLedger(
   value: unknown,
+  limits?: { maxBytes: number },
 ): RecordLedger | undefined {
   if (value === undefined) return undefined;
-  const raw = object(jsonSnapshot(value, MAX_METADATA_BYTES), [
+  // Read-only display callers may reduce the work budget, never raise the
+  // persistence limit or skip any validation invariant.
+  const maxBytes =
+    limits && Number.isSafeInteger(limits.maxBytes) && limits.maxBytes > 0
+      ? Math.min(limits.maxBytes, MAX_METADATA_BYTES)
+      : MAX_METADATA_BYTES;
+  const raw = object(jsonSnapshot(value, maxBytes), [
     "version",
     "records",
     "journal",

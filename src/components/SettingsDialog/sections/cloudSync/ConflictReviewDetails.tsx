@@ -7,6 +7,7 @@ import {
   type ReviewRecordedDate,
 } from "../../../../utils/services/cloudSyncReviewDetails";
 import { normalizeZonedTimestamp } from "../../../../utils/storage/recordTimestamps";
+import VersionHistorySummary from "./VersionHistorySummary";
 
 function UtcDate({ at }: { at: string }) {
   // Do not assign the viewer's timezone to an ambiguous legacy timestamp.
@@ -53,6 +54,9 @@ function RecordComparison({ item }: { item: CloudSyncReviewItem }) {
               ? "A shared smart-sync baseline is available."
               : "No shared smart-sync baseline: differences alone cannot establish which copy is newer."}
           </p>
+          {details.versionHistory && (
+            <VersionHistorySummary history={details.versionHistory} />
+          )}
           {rows.length > 0 ? (
             <div className="overflow-x-auto">
               <table
