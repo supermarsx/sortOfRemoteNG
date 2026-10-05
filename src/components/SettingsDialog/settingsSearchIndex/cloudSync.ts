@@ -154,7 +154,7 @@ export const CLOUD_SYNC_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "manual",
       "Manual Only",
       "realtime",
-      "Real-time (Instant)",
+      "Real-time (Debounced)",
       "onSave",
       "On Save",
       "every5Minutes",
@@ -189,6 +189,67 @@ export const CLOUD_SYNC_SEARCH_ENTRIES: SettingSearchEntry[] = [
     section: "cloudSync",
     sectionLabel: "Cloud Sync",
     values: ["minutes", "Minutes", "hours", "Hours", "days", "Days"],
+  },
+
+  {
+    key: "cloudSync.adaptiveSyncEnabled",
+    label: "Adaptive smart sync",
+    description:
+      "Use a longer quiet period after five relevant saved changes within the last 3 minutes. Enabled by default for realtime sync.",
+    tags: ["adaptive", "smart sync", "debounce", "busy", "realtime"],
+    synonyms: ["adaptive debounce", "fixed debounce", "burst detection"],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
+  },
+  {
+    key: "cloudSync.realtimeDebounceSeconds",
+    label: "Realtime quiet period",
+    description:
+      "Baseline trailing debounce for isolated edits or fixed realtime syncing.",
+    tags: ["debounce", "delay", "quiet", "realtime", "seconds"],
+    synonyms: ["fixed debounce", "wait after changes"],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
+  },
+  {
+    key: "cloudSync.adaptiveSyncQuietSeconds",
+    label: "Busy quiet period",
+    description:
+      "Wait 60 to 120 seconds after a burst stops; defaults to 90 seconds.",
+    tags: ["adaptive", "smart sync", "busy", "quiet", "debounce"],
+    synonyms: ["burst delay", "wait until changes stop"],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
+  },
+  {
+    key: "cloudSync.onSaveDebounceSeconds",
+    label: "On-save quiet period",
+    description:
+      "Trailing debounce after a saved change; defaults to half a second.",
+    tags: ["on save", "debounce", "delay", "quiet", "seconds"],
+    synonyms: ["save debounce"],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
+  },
+  {
+    key: "cloudSync.debounceMaxWaitSeconds",
+    label: "Maximum change wait",
+    description:
+      "Bound continuous changes before syncing, subject to active work and the minimum pause. Realtime defaults to 10 minutes.",
+    tags: ["debounce", "maximum", "wait", "continuous", "sync"],
+    synonyms: ["max wait", "debounce deadline"],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
+  },
+  {
+    key: "cloudSync.debounceMinIntervalSeconds",
+    label: "Minimum sync pause",
+    description:
+      "Minimum pause after scheduled or manual activity before another automatic run.",
+    tags: ["debounce", "minimum", "pause", "interval", "sync"],
+    synonyms: ["cooldown", "minimum between runs"],
+    section: "cloudSync",
+    sectionLabel: "Cloud Sync",
   },
 
   // ─── What to sync ───────────────────────────────────────────────

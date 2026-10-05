@@ -6,12 +6,15 @@ import {
   cloudSyncFrequencyLabels,
   MAX_CLOUD_SYNC_INTERVAL_MINUTES,
   normalizeCloudSyncIntervalMinutes,
+  normalizeCloudSyncDebounceSeconds,
+  resolveCloudSyncDebounce,
 } from "../../../../types/settings/cloudSyncSettings";
 import {
   Card,
   SettingsNumberRow,
   SettingsSectionHeader as SectionHeader,
   SettingsSelectRow,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 
@@ -35,6 +38,7 @@ function intervalUnit(minutes: number): IntervalUnit {
 }
 
 function SyncFrequencySelect({ mgr }: { mgr: Mgr }) {
+  const debounce = resolveCloudSyncDebounce(mgr.cloudSync);
   const intervalMinutes = normalizeCloudSyncIntervalMinutes(
     mgr.cloudSync.customIntervalMinutes,
   );
@@ -102,6 +106,123 @@ function SyncFrequencySelect({ mgr }: { mgr: Mgr }) {
               options={unitOptions}
               onChange={(value) =>
                 updateInterval(amount, value as IntervalUnit)
+              }
+            />
+          </>
+        )}
+        {mgr.cloudSync.frequency === "realtime" && (
+          <>
+            <Toggle
+              settingKey="cloudSync.adaptiveSyncEnabled"
+              label="Adaptive smart sync"
+              checked={debounce.adaptive}
+              onChange={(adaptiveSyncEnabled: boolean) =>
+                mgr.updateCloudSync({ adaptiveSyncEnabled })
+              }
+              description="Five relevant saved changes within the last 3 minutes switch to a longer quiet period. Isolated edits use the baseline delay. Turn off to use fixed debouncing."
+            />
+            <SettingsNumberRow
+              settingKey="cloudSync.realtimeDebounceSeconds"
+              label="Realtime quiet period"
+              description="Wait after the latest saved change. Used for isolated edits, or every edit when adaptive smart sync is off."
+              value={debounce.quietMs / 1000}
+              min={0.1}
+              max={120}
+              step={0.1}
+              unit="seconds"
+              onChange={(value) =>
+                mgr.updateCloudSync({
+                  realtimeDebounceSeconds: normalizeCloudSyncDebounceSeconds(
+                    value,
+                    3,
+                  ),
+                })
+              }
+            />
+            {debounce.adaptive && (
+              <SettingsNumberRow
+                settingKey="cloudSync.adaptiveSyncQuietSeconds"
+                label="Busy quiet period"
+                description="After a burst, wait this long after the last saved change (at least the baseline delay). Defaults to 90 seconds."
+                value={debounce.busyQuietMs / 1000}
+                min={60}
+                max={120}
+                step={1}
+                unit="seconds"
+                onChange={(value) =>
+                  mgr.updateCloudSync({
+                    adaptiveSyncQuietSeconds: normalizeCloudSyncDebounceSeconds(
+                      value,
+                      90,
+                      60,
+                      120,
+                    ),
+                  })
+                }
+              />
+            )}
+          </>
+        )}
+        {mgr.cloudSync.frequency === "onSave" && (
+          <SettingsNumberRow
+            settingKey="cloudSync.onSaveDebounceSeconds"
+            label="On-save quiet period"
+            description="Wait after the latest saved change before syncing. Defaults to half a second."
+            value={debounce.quietMs / 1000}
+            min={0.1}
+            max={120}
+            step={0.1}
+            unit="seconds"
+            onChange={(value) =>
+              mgr.updateCloudSync({
+                onSaveDebounceSeconds: normalizeCloudSyncDebounceSeconds(
+                  value,
+                  0.5,
+                ),
+              })
+            }
+          />
+        )}
+        {["realtime", "onSave"].includes(mgr.cloudSync.frequency) && (
+          <>
+            <SettingsNumberRow
+              settingKey="cloudSync.debounceMaxWaitSeconds"
+              label="Maximum change wait"
+              description="Continuous changes eventually sync at this limit, even before the quiet period ends. Realtime defaults to 10 minutes. Active syncs and the minimum pause take priority; concurrent edits are checked before applying data."
+              value={debounce.maxWaitMs / 1000}
+              min={1}
+              max={3600}
+              step={1}
+              unit="seconds"
+              onChange={(value) =>
+                mgr.updateCloudSync({
+                  debounceMaxWaitSeconds: normalizeCloudSyncDebounceSeconds(
+                    value,
+                    600,
+                    1,
+                    3600,
+                  ),
+                })
+              }
+            />
+            <SettingsNumberRow
+              settingKey="cloudSync.debounceMinIntervalSeconds"
+              label="Minimum sync pause"
+              description="Minimum pause after scheduled or manual activity before another automatic run. Manual sync remains available immediately."
+              value={debounce.minIntervalMs / 1000}
+              min={0}
+              max={120}
+              step={0.1}
+              unit="seconds"
+              onChange={(value) =>
+                mgr.updateCloudSync({
+                  debounceMinIntervalSeconds: normalizeCloudSyncDebounceSeconds(
+                    value,
+                    debounce.quietMs / 1000,
+                    0,
+                    120,
+                  ),
+                })
               }
             />
           </>

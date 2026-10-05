@@ -23,7 +23,8 @@ afterEach(() => vi.useRealTimers());
 const settings = {
   ...defaultCloudSyncConfig,
   enabled: true,
-  selectedItems: ["app:settings"],
+  selectedItems: ["database:test", "app:settings"],
+  adaptiveSyncEnabled: false,
 };
 
 function deferred() {
@@ -81,10 +82,14 @@ it("coalesces realtime saves into one trailing run after three quiet seconds", a
   unmount();
 });
 
-it("bounds continuous realtime changes to a fifteen-second wait", async () => {
+it("bounds continuous fixed realtime changes to a configured fifteen-second wait", async () => {
   const run = vi.fn().mockResolvedValue(undefined);
   const { unmount } = renderHook(() =>
-    useCloudSyncScheduler({ ...settings, frequency: "realtime" }, true, run),
+    useCloudSyncScheduler(
+      { ...settings, frequency: "realtime", debounceMaxWaitSeconds: 15 },
+      true,
+      run,
+    ),
   );
   for (let i = 0; i < 15; i++) {
     act(saved);

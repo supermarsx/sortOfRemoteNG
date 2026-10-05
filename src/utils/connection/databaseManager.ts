@@ -2629,6 +2629,13 @@ export class DatabaseManager {
         representation: structuredClone(representation),
         ledger: data.recordMetadata!,
       });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("sorng-database-data-saved", {
+            detail: { databaseId: collectionId },
+          }),
+        );
+      }
     };
     if (collection.protectionFormat === "sorng-db") {
       this.assertDatabaseEpoch(collectionId, epoch);
@@ -2683,8 +2690,6 @@ export class DatabaseManager {
           structuredClone(data),
         );
         rememberCommitted(data);
-        if (typeof window !== "undefined")
-          window.dispatchEvent(new Event("sorng-database-data-saved"));
         return;
       } catch (error) {
         throw Object.assign(
@@ -2755,8 +2760,6 @@ export class DatabaseManager {
         structuredClone(payload),
       );
       rememberCommitted(payload);
-      if (typeof window !== "undefined")
-        window.dispatchEvent(new Event("sorng-database-data-saved"));
       return;
     }
 

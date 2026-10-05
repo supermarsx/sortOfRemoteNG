@@ -40,6 +40,61 @@ function choose(label: string, index = 0) {
 }
 
 describe("cloud sync frequency controls", () => {
+  it("exposes default-on adaptive smart sync only for realtime without changing the selected frequency", () => {
+    const { container, update } = renderFrequency({ frequency: "realtime" });
+    expect(screen.getByText("Adaptive smart sync")).toBeInTheDocument();
+    expect(
+      screen.getByRole("spinbutton", { name: "Realtime quiet period" }),
+    ).toHaveValue(3);
+    expect(
+      screen.getByRole("spinbutton", { name: "Busy quiet period" }),
+    ).toHaveValue(90);
+    expect(
+      screen.getByRole("spinbutton", { name: "Maximum change wait" }),
+    ).toHaveValue(600);
+    expect(update).not.toHaveBeenCalled();
+    const toggle = container.querySelector(
+      '[data-setting-key="cloudSync.adaptiveSyncEnabled"] input',
+    )!;
+    fireEvent.click(toggle);
+    expect(update).toHaveBeenLastCalledWith({ adaptiveSyncEnabled: false });
+    expect(
+      screen.queryByRole("spinbutton", { name: "Busy quiet period" }),
+    ).toBeNull();
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      "Real-time (Debounced)",
+    );
+    choose("On Save");
+    expect(screen.queryByText("Adaptive smart sync")).toBeNull();
+    expect(
+      screen.getByRole("spinbutton", { name: "On-save quiet period" }),
+    ).toHaveValue(0.5);
+    expect(
+      screen.getByRole("spinbutton", { name: "Maximum change wait" }),
+    ).toHaveValue(15);
+    choose("Manual Only");
+    expect(screen.queryByRole("spinbutton")).toBeNull();
+  });
+
+  it("stores bounded debounce controls independently of frequency and notifications", () => {
+    const { update } = renderFrequency({
+      frequency: "realtime",
+      notifyOnSyncSuccess: true,
+    });
+    for (const [label, key, input, expected] of [
+      ["Realtime quiet period", "realtimeDebounceSeconds", "5", 5],
+      ["Busy quiet period", "adaptiveSyncQuietSeconds", "1", 60],
+      ["Busy quiet period", "adaptiveSyncQuietSeconds", "999", 120],
+      ["Maximum change wait", "debounceMaxWaitSeconds", "999999", 3600],
+      ["Minimum sync pause", "debounceMinIntervalSeconds", "-3", 0],
+    ] as const) {
+      fireEvent.change(screen.getByRole("spinbutton", { name: label }), {
+        target: { value: input },
+      });
+      expect(update).toHaveBeenLastCalledWith({ [key]: expected });
+    }
+  });
+
   it("keeps every existing preset and exposes themed custom controls", () => {
     const { container, update } = renderFrequency();
     fireEvent.click(screen.getByRole("combobox"));
@@ -47,7 +102,7 @@ describe("cloud sync frequency controls", () => {
       screen.getAllByRole("option").map((option) => option.textContent),
     ).toEqual([
       "Manual Only",
-      "Real-time (Instant)",
+      "Real-time (Debounced)",
       "On Save",
       "Every 5 Minutes",
       "Every 15 Minutes",

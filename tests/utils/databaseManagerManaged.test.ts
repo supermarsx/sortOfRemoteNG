@@ -734,6 +734,33 @@ describe("native managed database sessions", () => {
     expect(manager.getCurrentDatabase()?.id).toBe(rows[0].id);
     expect(manager.isDatabaseUnlocked(rows[0].id)).toBe(true);
   });
+  it("identifies the saved database without publishing its contents and emits only after commit", async () => {
+    const manager = DatabaseManager.getInstance();
+    const databaseId = rows[0].id;
+    await manager.unlockManagedDatabase(databaseId, "password-slot", "secret");
+    const saved = vi.fn();
+    window.addEventListener("sorng-database-data-saved", saved);
+    try {
+      await manager.saveDatabaseData(databaseId, data);
+      expect(saved).toHaveBeenCalledTimes(1);
+      expect((saved.mock.calls[0][0] as CustomEvent).detail).toEqual({
+        databaseId,
+      });
+      saved.mockClear();
+      const original = bridge.invoke.getMockImplementation()!;
+      bridge.invoke.mockImplementation((cmd, args) =>
+        cmd === "database_protection_save"
+          ? Promise.reject(new Error("save failed"))
+          : original(cmd, args),
+      );
+      await expect(manager.saveDatabaseData(databaseId, data)).rejects.toThrow(
+        "save failed",
+      );
+      expect(saved).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("sorng-database-data-saved", saved);
+    }
+  });
   it("treats committed save cleanup warnings as saved", async () => {
     const manager = DatabaseManager.getInstance();
     await manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret");

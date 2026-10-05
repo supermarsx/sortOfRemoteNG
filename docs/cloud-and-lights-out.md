@@ -197,6 +197,27 @@ restore are separate transactions: an incomplete restore is reported, never
 advertised as atomic or silently rolled back. Opt-in shutdown sync keeps the
 window open if synchronization does not complete successfully.
 
+Realtime sync uses **Adaptive smart sync** by default, including for existing
+configurations that have no saved preference. This does not enable cloud sync,
+select new artifacts, change the chosen frequency or enable automatic conflict
+resolution. Isolated changes wait 3 seconds after the last saved edit. Five
+relevant writes within a rolling 3-minute window switch the pending batch to a
+90-second quiet period. Continued editing restarts that quiet period; a
+10-minute maximum wait prevents indefinite postponement while the transport is
+idle. The Settings frequency section exposes the adaptive toggle, baseline and
+busy quiet periods, maximum wait and minimum pause between automatic runs.
+Turning adaptive off keeps fixed trailing debouncing. On-save retains its
+separate half-second debounce and 15-second maximum wait by default.
+
+Only selected database/library saves and selected portable appearance changes
+count as activity; sync status updates do not trigger another run. Pending edits
+during an active transfer coalesce into one follow-up after it finishes, never
+an overlapping automatic run. Remote data application can cause a single
+verification follow-up; unchanged data is not applied or uploaded again.
+Manual sync remains available immediately. Debouncing reduces avoidable
+collisions but does not replace provider revisions, local compare-and-swap
+guards or conflict review.
+
 Automated checks exercise local provider fixtures, snapshot encryption, artifact
 selection, conflicts and storage coordination. They do not establish that a real
 account's credentials, quotas or permissions are valid; use **Test connection**

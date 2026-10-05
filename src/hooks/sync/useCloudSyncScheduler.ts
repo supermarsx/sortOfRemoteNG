@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import {
+  CLOUD_SYNC_ACTIVITY_WINDOW_MS,
+  CLOUD_SYNC_BUSY_WRITE_COUNT,
   normalizeCloudSyncIntervalMinutes,
+  resolveCloudSyncDebounce,
   type CloudSyncConfig,
 } from "../../types/settings/cloudSyncSettings";
 import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
@@ -11,8 +14,6 @@ import {
 import { SettingsManager } from "../../utils/settings/settingsManager";
 
 export const DATABASE_SYNC_CHANGED_EVENT = "sorng-database-data-saved";
-const REALTIME_QUIET_MS = 3000;
-const MAX_CHANGE_WAIT_MS = 15_000;
 const intervals: Record<string, number> = {
   every5Minutes: 300_000,
   every15Minutes: 900_000,
@@ -21,14 +22,28 @@ const intervals: Record<string, number> = {
   daily: 86_400_000,
 };
 
+type ChangeBatch = { first: number; last: number; busy: boolean };
+
+// Match the portable appearance artifact in cloudSyncPayload/settingsManager.
+// Status, credentials and other device-only settings are not synced content.
+const settingsFingerprint = (settings: Record<string, unknown>) =>
+  JSON.stringify([
+    settings.language,
+    settings.theme,
+    settings.colorScheme,
+    settings.animationsEnabled,
+    settings.sidebarWidth,
+  ]);
+
 /** Main-window scheduler: run only after initialization and durable source writes. */
 export function useCloudSyncScheduler(
   config: CloudSyncConfig,
   ready: boolean,
   run: () => Promise<void>,
 ) {
-  const latest = useRef({ config, run });
-  latest.current = { config, run };
+  const debounce = resolveCloudSyncDebounce(config);
+  const latest = useRef({ config, run, debounce });
+  latest.current = { config, run, debounce };
   const startupRan = useRef(false);
   // An effect restart must not forget a still-running scheduled operation.
   const running = useRef(false);
@@ -36,11 +51,24 @@ export function useCloudSyncScheduler(
   const resume = useRef<(() => void) | undefined>(undefined);
   const hasSelection = Boolean(config.selectedItems?.length);
   const selectionKey = JSON.stringify(config.selectedItems ?? []);
+  const queued = useRef<{
+    selectionKey: string;
+    changes?: ChangeBatch;
+    recentWrites: number[];
+  }>({ selectionKey, recentWrites: [] });
   const duration =
     config.frequency === "custom"
       ? normalizeCloudSyncIntervalMinutes(config.customIntervalMinutes) * 60_000
       : intervals[config.frequency];
   useEffect(() => {
+    const changeDriven = ["realtime", "onSave"].includes(config.frequency);
+    if (
+      !ready ||
+      !config.enabled ||
+      !changeDriven ||
+      queued.current.selectionKey !== selectionKey
+    )
+      queued.current = { selectionKey, recentWrites: [] };
     if (
       !ready ||
       !config.enabled ||
@@ -51,8 +79,9 @@ export function useCloudSyncScheduler(
     let disposed = false;
     let pending: ReturnType<typeof setTimeout> | undefined;
     let startup: ReturnType<typeof setTimeout> | undefined;
-    let changes: { first: number; last: number } | undefined;
-    const quietMs = config.frequency === "realtime" ? REALTIME_QUIET_MS : 500;
+    const state = queued.current;
+    let scheduled = false;
+    let startupDue = false;
     const clearPending = () => {
       if (pending !== undefined) clearTimeout(pending);
       pending = undefined;
@@ -67,7 +96,10 @@ export function useCloudSyncScheduler(
         return;
       // Startup/interval runs consume an already queued change batch, too.
       clearPending();
-      changes = undefined;
+      state.changes = undefined;
+      scheduled = false;
+      if (startupDue) startupRan.current = true;
+      startupDue = false;
       running.current = true;
       try {
         await latest.current.run();
@@ -84,20 +116,30 @@ export function useCloudSyncScheduler(
       clearPending();
       if (
         disposed ||
-        !changes ||
+        (!state.changes && !scheduled) ||
         running.current ||
         getCloudSyncActivity().length
       )
         return;
       const now = Date.now();
+      const { adaptive, quietMs, busyQuietMs, maxWaitMs, minIntervalMs } =
+        latest.current.debounce;
+      const changes = state.changes;
+      const quiet = adaptive && changes?.busy ? busyQuietMs : quietMs;
       const due = Math.max(
-        Math.min(changes.last + quietMs, changes.first + MAX_CHANGE_WAIT_MS),
+        scheduled || !changes
+          ? now
+          : Math.min(changes.last + quiet, changes.first + maxWaitMs),
         // A slow upload/manual action must not be followed by an immediate
         // burst. The maximum wait is bounded only while transport is idle.
         lastFinished.current !== undefined && lastFinished.current <= now
-          ? lastFinished.current + quietMs
+          ? lastFinished.current + minIntervalMs
           : now,
       );
+      if (due <= now) {
+        void trigger();
+        return;
+      }
       pending = setTimeout(
         () => {
           pending = undefined;
@@ -111,55 +153,99 @@ export function useCloudSyncScheduler(
       if (!getCloudSyncActivity().length) lastFinished.current = Date.now();
       schedule();
     });
-    const changed = (event?: Event) => {
+    const changed = () => {
       if (!["realtime", "onSave"].includes(latest.current.config.frequency))
         return;
-      if (event?.type === APP_DATA_STORE_CHANGED_EVENT) {
-        const key = (event as CustomEvent<{ key?: unknown }>).detail?.key;
-        if (
-          typeof key === "string" &&
-          !latest.current.config.selectedItems?.includes(`app:${key}`)
-        )
-          return;
-      }
       const now = Date.now();
-      changes = { first: changes?.first ?? now, last: now };
+      // Five timestamps suffice for a bounded rolling activity window. Keep
+      // collecting during sync: a local edit must survive as one follow-up.
+      state.recentWrites = state.recentWrites
+        .filter((time) => time > now - CLOUD_SYNC_ACTIVITY_WINDOW_MS)
+        .concat(now)
+        .slice(-CLOUD_SYNC_BUSY_WRITE_COUNT);
+      state.changes = {
+        first: state.changes?.first ?? now,
+        last: now,
+        busy:
+          state.changes?.busy === true ||
+          state.recentWrites.length >= CLOUD_SYNC_BUSY_WRITE_COUNT,
+      };
       schedule();
+    };
+    const appDataChanged = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: unknown }>).detail?.key;
+      if (
+        typeof key === "string" &&
+        latest.current.config.selectedItems?.includes(`app:${key}`)
+      )
+        changed();
+    };
+    const databaseChanged = (event: Event) => {
+      const databaseId = (event as CustomEvent<{ databaseId?: unknown }>).detail
+        ?.databaseId;
+      if (typeof databaseId === "string") {
+        if (
+          latest.current.config.selectedItems?.includes(
+            `database:${databaseId}`,
+          )
+        )
+          changed();
+        return;
+      }
+      // Older producers emit a plain Event. Retain the coarse fallback:
+      // guessing the active database could hide legitimate background saves.
+      if (
+        latest.current.config.selectedItems?.some((id) =>
+          id.startsWith("database:"),
+        )
+      )
+        changed();
     };
     const settingsChanged = (event: Event) => {
       const detail = (event as CustomEvent<Record<string, unknown>>).detail;
-      if (!detail) return;
-      // Sync status writes must not schedule another sync indefinitely.
-      const { cloudSync: _sync, ...rest } = detail;
-      const fingerprint = JSON.stringify(rest);
-      if (lastSettings !== null && fingerprint !== lastSettings) changed();
+      if (!detail || typeof detail !== "object") return;
+      const fingerprint = settingsFingerprint(detail);
+      if (
+        latest.current.config.selectedItems?.includes("app:settings") &&
+        fingerprint !== lastSettings
+      )
+        changed();
       lastSettings = fingerprint;
     };
-    const { cloudSync: _initialSync, ...initialSettings } =
-      SettingsManager.getInstance().getSettings();
-    let lastSettings: string | null = JSON.stringify(initialSettings);
+    let lastSettings = settingsFingerprint(
+      SettingsManager.getInstance().getSettings() as unknown as Record<
+        string,
+        unknown
+      >,
+    );
     if (!startupRan.current && config.syncOnStartup) {
       startup = setTimeout(() => {
-        startupRan.current = true;
-        void trigger();
+        startupDue = true;
+        scheduled = true;
+        schedule();
       }, 1000);
     }
     const timer = duration
-      ? setInterval(() => void trigger(), duration)
+      ? setInterval(() => {
+          // Preserve periodic semantics: an occupied tick is skipped.
+          if (running.current || getCloudSyncActivity().length) return;
+          scheduled = true;
+          schedule();
+        }, duration)
       : undefined;
-    window.addEventListener(DATABASE_SYNC_CHANGED_EVENT, changed);
-    window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
+    window.addEventListener(DATABASE_SYNC_CHANGED_EVENT, databaseChanged);
+    window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, appDataChanged);
     window.addEventListener("settings-updated", settingsChanged);
+    schedule();
     return () => {
       disposed = true;
       clearPending();
-      changes = undefined;
       if (startup !== undefined) clearTimeout(startup);
       if (timer) clearInterval(timer);
       unsubscribe();
       if (resume.current === schedule) resume.current = undefined;
-      window.removeEventListener(DATABASE_SYNC_CHANGED_EVENT, changed);
-      window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, changed);
+      window.removeEventListener(DATABASE_SYNC_CHANGED_EVENT, databaseChanged);
+      window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, appDataChanged);
       window.removeEventListener("settings-updated", settingsChanged);
     };
   }, [
@@ -170,5 +256,16 @@ export function useCloudSyncScheduler(
     duration,
     hasSelection,
     selectionKey,
+  ]);
+  useEffect(() => {
+    // Timing edits re-arm the existing batch, retaining its first-write
+    // deadline and activity history. They must not restart startup/intervals.
+    resume.current?.();
+  }, [
+    debounce.adaptive,
+    debounce.quietMs,
+    debounce.busyQuietMs,
+    debounce.maxWaitMs,
+    debounce.minIntervalMs,
   ]);
 }

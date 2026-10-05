@@ -25,7 +25,7 @@ export type CloudSyncFrequency = (typeof CloudSyncFrequencies)[number];
 
 export const cloudSyncFrequencyLabels: Record<CloudSyncFrequency, string> = {
   manual: "Manual Only",
-  realtime: "Real-time (Instant)",
+  realtime: "Real-time (Debounced)",
   onSave: "On Save",
   every5Minutes: "Every 5 Minutes",
   every15Minutes: "Every 15 Minutes",
@@ -41,6 +41,99 @@ export const DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES = 15;
 export const DEFAULT_CLOUD_SYNC_FAILURE_NOTIFICATION_MINUTES = 30;
 export const MAX_CLOUD_SYNC_FILE_SIZE_MIB = 100;
 export const DEFAULT_CLOUD_SYNC_FILE_SIZE_MIB = 50;
+
+export const CLOUD_SYNC_ACTIVITY_WINDOW_MS = 180_000;
+export const CLOUD_SYNC_BUSY_WRITE_COUNT = 5;
+
+export interface CloudSyncDebounceSettings {
+  /** Realtime only. Missing legacy values enable adaptive smart sync. */
+  adaptiveSyncEnabled?: boolean;
+  realtimeDebounceSeconds?: number;
+  onSaveDebounceSeconds?: number;
+  /** Quiet time after five relevant writes in the last three minutes. */
+  adaptiveSyncQuietSeconds?: number;
+  /** Missing values use 10 minutes for realtime and 15 seconds for on-save. */
+  debounceMaxWaitSeconds?: number;
+  /** Missing values follow the mode's baseline quiet time, not its busy delay. */
+  debounceMinIntervalSeconds?: number;
+}
+
+export function normalizeCloudSyncDebounceSeconds(
+  value: unknown,
+  fallback: number,
+  min = 0.1,
+  max = 120,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.round(Math.min(max, Math.max(min, value)) * 1000) / 1000;
+}
+
+function normalizeCloudSyncDebounceSettings(
+  config: CloudSyncDebounceSettings,
+): CloudSyncDebounceSettings {
+  return {
+    adaptiveSyncEnabled: config.adaptiveSyncEnabled !== false,
+    realtimeDebounceSeconds: normalizeCloudSyncDebounceSeconds(
+      config.realtimeDebounceSeconds,
+      3,
+    ),
+    onSaveDebounceSeconds: normalizeCloudSyncDebounceSeconds(
+      config.onSaveDebounceSeconds,
+      0.5,
+    ),
+    adaptiveSyncQuietSeconds: normalizeCloudSyncDebounceSeconds(
+      config.adaptiveSyncQuietSeconds,
+      90,
+      60,
+      120,
+    ),
+    // Leave mode-dependent defaults absent so switching frequency retains
+    // the legacy on-save timing, even after settings have been migrated.
+    debounceMaxWaitSeconds:
+      config.debounceMaxWaitSeconds === undefined ||
+      typeof config.debounceMaxWaitSeconds !== "number" ||
+      !Number.isFinite(config.debounceMaxWaitSeconds)
+        ? undefined
+        : normalizeCloudSyncDebounceSeconds(
+            config.debounceMaxWaitSeconds,
+            600,
+            1,
+            3600,
+          ),
+    debounceMinIntervalSeconds:
+      config.debounceMinIntervalSeconds === undefined ||
+      typeof config.debounceMinIntervalSeconds !== "number" ||
+      !Number.isFinite(config.debounceMinIntervalSeconds)
+        ? undefined
+        : normalizeCloudSyncDebounceSeconds(
+            config.debounceMinIntervalSeconds,
+            3,
+            0,
+            120,
+          ),
+  };
+}
+
+/** Shared runtime/UI defaults also protect callers with unmigrated settings. */
+export function resolveCloudSyncDebounce(
+  config: CloudSyncDebounceSettings & { frequency: CloudSyncFrequency },
+) {
+  const normalized = normalizeCloudSyncDebounceSettings(config);
+  const realtime = config.frequency === "realtime";
+  const quietSeconds = realtime
+    ? normalized.realtimeDebounceSeconds!
+    : normalized.onSaveDebounceSeconds!;
+  return {
+    adaptive: realtime && normalized.adaptiveSyncEnabled === true,
+    quietMs: quietSeconds * 1000,
+    busyQuietMs:
+      Math.max(quietSeconds, normalized.adaptiveSyncQuietSeconds!) * 1000,
+    maxWaitMs:
+      (normalized.debounceMaxWaitSeconds ?? (realtime ? 600 : 15)) * 1000,
+    minIntervalMs:
+      (normalized.debounceMinIntervalSeconds ?? quietSeconds) * 1000,
+  };
+}
 
 /** Repair legacy limits on load without changing valid, smaller byte budgets. */
 export function normalizeCloudSyncFileSizeMiB(value: unknown): number {
@@ -237,7 +330,7 @@ export function defaultProviderConfigFor(
 }
 
 // Cloud Sync Configuration
-export interface CloudSyncConfig {
+export interface CloudSyncConfig extends CloudSyncDebounceSettings {
   // Enable cloud sync (master switch)
   enabled: boolean;
 
@@ -336,6 +429,10 @@ export const defaultCloudSyncConfig: CloudSyncConfig = {
   providerStatus: {},
   frequency: "manual",
   customIntervalMinutes: DEFAULT_CLOUD_SYNC_INTERVAL_MINUTES,
+  adaptiveSyncEnabled: true,
+  realtimeDebounceSeconds: 3,
+  onSaveDebounceSeconds: 0.5,
+  adaptiveSyncQuietSeconds: 90,
   googleDrive: {
     folderPath: "/sortOfRemoteNG",
   },
@@ -451,6 +548,13 @@ function liftLegacyProviderConfig(
 export function migrateCloudSyncConfig(
   config: CloudSyncConfig,
 ): CloudSyncConfig {
+  const debounce = normalizeCloudSyncDebounceSettings(config);
+  if (
+    (Object.keys(debounce) as (keyof CloudSyncDebounceSettings)[]).some(
+      (key) => config[key] !== debounce[key],
+    )
+  )
+    config = { ...config, ...debounce };
   const notifyOnSyncSuccess = config.notifyOnSyncSuccess === true;
   if (config.notifyOnSyncSuccess !== notifyOnSyncSuccess)
     config = { ...config, notifyOnSyncSuccess };
