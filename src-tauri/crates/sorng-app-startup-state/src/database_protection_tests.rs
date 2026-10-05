@@ -183,7 +183,7 @@ fn managed_database_all_seven_commands_execute_through_real_lean_ipc_on_temp_pro
         "argon2":{"memoryKib":8192,"timeCost":1,"parallelism":1}}]}})).unwrap();
     assert_eq!(changed["committed"], true);
     assert_eq!(changed["cleanupPending"], false);
-    assert!(changed["sessionExpiresAt"].is_u64());
+    assert_eq!(changed.get("sessionExpiresAt"), Some(&Value::Null));
     let protected = invoke(&main, names[1], json!({"databaseId":"db"})).unwrap();
     assert_eq!(protected["kind"], "managed");
     assert_eq!(protected["dataCipher"], "chacha20-poly1305");

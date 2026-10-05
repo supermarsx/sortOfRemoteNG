@@ -66,6 +66,7 @@ import { SessionFullscreenProvider } from "./contexts/SessionFullscreenProvider"
 import { useSessionFullscreenController } from "./hooks/session/useSessionFullscreen";
 import { UnlockScreen } from "./components/encryption/UnlockScreen";
 import { useGlobalEncryptionGuard } from "./hooks/settings/useGlobalEncryptionGuard";
+import { clearGlobalLockViews } from "./utils/security/clearGlobalLockViews";
 import { SettingsStorageNotice } from "./components/encryption/SettingsStorageNotice";
 import { DatabaseAccessNotice } from "./components/encryption/DatabaseAccessNotice";
 import { useDatabaseAccessSuspension } from "./hooks/settings/useDatabaseAccessSuspension";
@@ -816,45 +817,49 @@ const AppContent: React.FC = () => {
     // an undefined legacy ID alone would be dropped by native JSON serialization.
   }, [dispatch]);
 
-  const beforeCurrentDatabaseLock = useCallback(async () => {
-    setShowQuickConnect(false);
-    setShowDiagnostics(false);
-    setDiagnosticsConnection(null);
-    dispatch({ type: "CLEAR_SELECTION" });
-    const sensitiveSessions = state.sessions.filter(
-      (session) =>
-        session.protocol !== "tool:settings" &&
-        session.protocol !== "tool:database",
-    );
-    const results = await Promise.all(
-      sensitiveSessions.map((session) =>
-        handleSessionClose(session.id, session),
-      ),
-    );
-    if (results.some((closed) => !closed))
-      throw new Error(
-        "Some sessions could not be closed. Resolve their close errors before locking this database.",
+  const beforeCurrentDatabaseLock = useCallback(
+    async (isCurrent: () => boolean = () => true) => {
+      if (!isCurrent()) return;
+      setShowQuickConnect(false);
+      setShowDiagnostics(false);
+      setDiagnosticsConnection(null);
+      dispatch({ type: "CLEAR_SELECTION" });
+      const sensitiveSessions = state.sessions.filter(
+        (session) =>
+          session.protocol !== "tool:settings" &&
+          session.protocol !== "tool:database",
       );
-  }, [state.sessions, handleSessionClose, dispatch]);
+      const results = await Promise.all(
+        sensitiveSessions.map((session) =>
+          handleSessionClose(session.id, session, isCurrent),
+        ),
+      );
+      if (isCurrent() && results.some((closed) => !closed))
+        throw new Error(
+          "Some sessions could not be closed. Resolve their close errors before locking this database.",
+        );
+    },
+    [state.sessions, handleSessionClose, dispatch],
+  );
 
-  const clearGloballyLockedViews = useCallback(async () => {
-    setShowSettings(false);
-    setDialogState((previous) => ({ ...previous, isOpen: false }));
-    // Native lock already happened: fence first (in the guard), then stop
-    // sessions without pretending an old-key pending snapshot was saved.
-    const closing = beforeCurrentDatabaseLock();
-    dispatch({ type: "SET_CONNECTIONS", payload: [] });
-    dispatch({ type: "SET_TAB_GROUPS", payload: [] });
-    await databaseManager.closeCurrentDatabase("lock");
-    await closing;
-    dispatch({ type: "SET_SESSIONS", payload: [] });
-    await handleDatabaseClose();
-  }, [
-    beforeCurrentDatabaseLock,
-    databaseManager,
-    dispatch,
-    handleDatabaseClose,
-  ]);
+  const clearGloballyLockedViews = useCallback(
+    async (isCurrent: () => boolean) => {
+      await clearGlobalLockViews(isCurrent, {
+        clearDialogs: () => {
+          setShowSettings(false);
+          setDialogState((previous) => ({ ...previous, isOpen: false }));
+        },
+        closeSessions: () => beforeCurrentDatabaseLock(isCurrent),
+        clearRows: () => {
+          dispatch({ type: "SET_CONNECTIONS", payload: [] });
+          dispatch({ type: "SET_TAB_GROUPS", payload: [] });
+        },
+        closeDatabase: () => databaseManager.closeCurrentDatabase("lock"),
+        clearSessions: () => dispatch({ type: "SET_SESSIONS", payload: [] }),
+      });
+    },
+    [beforeCurrentDatabaseLock, databaseManager, dispatch],
+  );
   const globallyLocked = useGlobalEncryptionGuard({
     primary: true,
     flushCurrent: flushPendingSave,

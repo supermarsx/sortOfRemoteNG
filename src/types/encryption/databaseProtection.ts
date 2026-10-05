@@ -41,7 +41,7 @@ export interface DatabaseProtectionStatus {
   unlocked: boolean;
   /** Native proof of both effective policy and authenticated encrypted file bytes. */
   globalEncryptionProtected?: boolean;
-  sessionExpiresAt?: number;
+  sessionExpiresAt?: number | null;
 }
 export type NewDatabaseProtectionSlot =
   | {
@@ -58,7 +58,8 @@ export interface DatabaseProtectionTarget {
 }
 export interface DatabaseProtectionUnlockResult {
   sessionId: string;
-  sessionExpiresAt: number;
+  /** null = open database lifetime; explicit/configured locks still revoke access. */
+  sessionExpiresAt: number | null;
   securityRevision: string;
   data: StorageData;
 }
@@ -78,7 +79,7 @@ export interface DatabaseProtectionReleaseSessionResult {
 }
 export interface DatabaseProtectionChangeResult extends DatabaseProtectionSaveResult {
   sessionId?: string;
-  sessionExpiresAt?: number;
+  sessionExpiresAt?: number | null;
 }
 export interface DatabaseProtectionChangeRequest {
   databaseId: string;
@@ -100,5 +101,17 @@ export interface DatabaseAccessState {
   status: "suspended" | "ready";
   reason:
     "expired" | "locked" | "security-changed" | "global-lock" | "unlocked";
-  sessionExpiresAt?: number;
+  sessionExpiresAt?: number | null;
+}
+
+/** Missing/malformed deadlines must never silently become an unlimited grant. */
+export function isDatabaseSessionLive(
+  expiresAt: unknown,
+): expiresAt is number | null {
+  return (
+    expiresAt === null ||
+    (typeof expiresAt === "number" &&
+      Number.isSafeInteger(expiresAt) &&
+      expiresAt > Date.now())
+  );
 }

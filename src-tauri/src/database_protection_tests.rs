@@ -14,6 +14,8 @@ use std::{
 struct FakeVault {
     entries: Mutex<HashMap<String, DatabaseKey>>,
     fail: AtomicBool,
+    close_window_on_get: Option<(u64, String)>,
+    close_window_on_put: Option<(u64, String)>,
 }
 impl VaultProvider for FakeVault {
     fn available(&self) -> bool {
@@ -21,6 +23,9 @@ impl VaultProvider for FakeVault {
     }
     fn put<'a>(&'a self, account: &'a str, key: &'a DatabaseKey) -> VaultFuture<'a, ()> {
         Box::pin(async move {
+            if let Some((owner, window)) = &self.close_window_on_put {
+                database_sessions::revoke_window(*owner, window);
+            }
             if self.fail.load(Ordering::Relaxed) {
                 return Err("fixture vault unavailable".into());
             }
@@ -34,6 +39,9 @@ impl VaultProvider for FakeVault {
     }
     fn get<'a>(&'a self, account: &'a str) -> VaultFuture<'a, DatabaseKey> {
         Box::pin(async move {
+            if let Some((owner, window)) = &self.close_window_on_get {
+                database_sessions::revoke_window(*owner, window);
+            }
             self.entries
                 .lock()
                 .unwrap()
@@ -66,6 +74,71 @@ async fn fixture() -> (tempfile::TempDir, EncryptionState, Value) {
 }
 fn password_target(cipher: &str) -> ProtectionTarget {
     serde_json::from_value(json!({"dataCipher":cipher,"keepSlotIds":[],"newSlots":[{"type":"password","label":"Recovery","password":"fixture-only","argon2":{"memoryKib":8192,"timeCost":1,"parallelism":1}}]})).unwrap()
+}
+
+#[tokio::test]
+async fn closed_window_cannot_receive_a_late_unlock_or_protection_change_grant() {
+    let _coordinator = sorng_encryption::settings_coordinator::lock().await;
+    for closing_during_change in [false, true] {
+        let (root, state, data) = fixture().await;
+        let mut vault = FakeVault::default();
+        let close_window = Some((state.database_session_owner(), "main".into()));
+        if closing_during_change {
+            vault.close_window_on_put = close_window.clone();
+        }
+        let target = serde_json::from_value(json!({
+            "dataCipher": "aes-256-gcm", "keepSlotIds": [],
+            "newSlots": [{"type": "os-vault", "label": "Fixture account"}]
+        }))
+        .unwrap();
+        let changed = change_inner(
+            root.path(),
+            &state,
+            "main",
+            "db",
+            "r0",
+            data.clone(),
+            None,
+            Some(data),
+            Some(target),
+            false,
+            true,
+            &vault,
+        )
+        .await
+        .unwrap();
+        if closing_during_change {
+            // The encrypted write committed; only the abandoned unlock grant
+            // must be refused. Never pretend the durable change was rolled back.
+            assert!(changed.committed);
+            assert!(changed.session_id.is_none());
+            assert!(!changed.warnings.is_empty());
+        } else {
+            assert!(changed.session_id.is_some());
+            vault.close_window_on_get = close_window;
+            let stored = managed_snapshot(root.path(), &state, "db").await.unwrap();
+            let envelope = DatabaseEnvelope::parse(&stored.data, "db").unwrap();
+            let error = unlock_inner(
+                root.path(),
+                &state,
+                "main",
+                "db",
+                &envelope.slots[0].id,
+                None,
+                &vault,
+            )
+            .await
+            .err()
+            .unwrap();
+            assert!(error.contains("window closed"));
+        }
+        assert!(
+            !status_inner(root.path(), &state, "main", "db")
+                .await
+                .unwrap()
+                .unlocked
+        );
+    }
 }
 
 #[tokio::test]
@@ -708,7 +781,11 @@ async fn managed_database_password_cipher_change_cas_and_raw_endpoint_fences() {
     .await
     .unwrap();
     assert!(result.committed && !result.cleanup_pending);
-    assert!(result.session_expires_at.is_some());
+    assert!(result.session_expires_at.is_none());
+    assert_eq!(
+        serde_json::to_value(&result).unwrap()["sessionExpiresAt"],
+        Value::Null
+    );
     let stored = managed_snapshot(root.path(), &state, "db").await.unwrap();
     let envelope = DatabaseEnvelope::parse(&stored.data, "db").unwrap();
     assert_eq!(stored.row["protectionFormat"], "sorng-db");
@@ -751,6 +828,14 @@ async fn managed_database_password_cipher_change_cas_and_raw_endpoint_fences() {
     .await
     .unwrap();
     assert_eq!(unlock.data, data);
+    let unlock_json = serde_json::to_value(&unlock).unwrap();
+    assert_eq!(unlock_json.get("sessionExpiresAt"), Some(&Value::Null));
+    assert!(
+        status_inner(root.path(), &state, "main", "db")
+            .await
+            .unwrap()
+            .unlocked
+    );
     assert!(save_inner(
         root.path(),
         &state,

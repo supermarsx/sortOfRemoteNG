@@ -125,7 +125,7 @@ export interface UseEncryption {
    *  (`"manual"`, `"shortcut"`, `"idle"`, `"blur"`, `"minimize"`,
    *  `"visibility-hidden"`) recorded in the audit log so a future
    *  user can tell why each lock fired. Defaults to `"unspecified"`. */
-  lock: (reason?: LockReason) => Promise<void>;
+  lock: (reason?: LockReason, isCurrent?: () => boolean) => Promise<void>;
   changePassword: (
     oldPassword: string,
     newPassword: string,
@@ -325,11 +325,13 @@ export function useEncryption(): UseEncryption {
   );
 
   const lock = useCallback(
-    async (reason?: LockReason): Promise<void> => {
+    async (reason?: LockReason, isCurrent?: () => boolean): Promise<void> => {
       const inv = await invokeOrThrow();
       try {
-        await executeGlobalLock(reason, () =>
-          inv<void>("encryption_lock", { reason: reason ?? null }),
+        await executeGlobalLock(
+          reason,
+          () => inv<void>("encryption_lock", { reason: reason ?? null }),
+          isCurrent,
         );
       } catch (error) {
         if (typeof window !== "undefined")

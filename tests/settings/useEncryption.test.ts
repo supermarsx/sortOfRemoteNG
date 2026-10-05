@@ -278,6 +278,27 @@ describe("useEncryption", () => {
     expect(lockCalled).toBe(true);
   });
 
+  it("passes the automatic trigger lifetime to the global lock executor", async () => {
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      return undefined;
+    });
+    const executor = vi.fn(async () => {});
+    releaseLockExecutor?.();
+    releaseLockExecutor = registerGlobalLockExecutor(executor);
+    const { result } = renderHook(() => useEncryption());
+    const isCurrent = () => false;
+    await act(async () => result.current.lock("idle", isCurrent));
+    expect(executor).toHaveBeenCalledWith(expect.any(Function), {
+      reason: "idle",
+      isCurrent,
+    });
+    expect(invokeImpl).not.toHaveBeenCalledWith(
+      "encryption_lock",
+      expect.anything(),
+    );
+  });
+
   it("changePassword sends snake_case-free camelCase args", async () => {
     let received: any = null;
     invokeImpl = makeInvoke(async (cmd, args) => {

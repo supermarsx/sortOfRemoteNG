@@ -1,48 +1,31 @@
-//! Native-only unlock leases; never persist keys or return them through IPC.
+//! Native-only open-database sessions; never persist keys or return them through IPC.
+//! Lifetime follows explicit close/lock, the owning window/state and key generation.
+//! Idle locking belongs to the configured auto-lock policy, not a hidden fixed TTL.
 use crate::database_protection::{random_id, DatabaseKey};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, OnceLock, Weak},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    sync::{Mutex, OnceLock},
 };
 
-const SESSION_TTL: Duration = Duration::from_secs(15 * 60);
 const MAX_SESSIONS: usize = 128;
-static SESSIONS: OnceLock<Arc<Mutex<DatabaseSessions>>> = OnceLock::new();
-static EXPIRY_WORKER: OnceLock<()> = OnceLock::new();
+static SESSIONS: OnceLock<Mutex<DatabaseSessions>> = OnceLock::new();
 pub fn global() -> &'static Mutex<DatabaseSessions> {
-    let sessions = SESSIONS.get_or_init(|| Arc::new(Mutex::default()));
-    EXPIRY_WORKER.get_or_init(|| {
-        // One bounded process worker, independent of whichever temporary Tokio
-        // executor first used the registry. Drop idle expired keys within one
-        // second even if no subsequent window invokes a command.
-        let _ = spawn_expiry_worker(Arc::downgrade(sessions), Duration::from_secs(1));
-    });
-    sessions
-}
-fn spawn_expiry_worker(
-    sessions: Weak<Mutex<DatabaseSessions>>,
-    interval: Duration,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(interval);
-        let Some(sessions) = sessions.upgrade() else {
-            break;
-        };
-        match sessions.lock() {
-            Ok(mut sessions) => sessions.prune(Instant::now()),
-            Err(poisoned) => poisoned.into_inner().entries.clear(),
-        };
-    })
+    SESSIONS.get_or_init(Mutex::default)
 }
 pub fn revoke_owner(owner: u64) {
     // Recover the poisoned guard only to drop all secrets; future operations
     // continue reporting poison rather than silently accepting new sessions.
+    let mut sessions = global().lock().unwrap_or_else(|e| e.into_inner());
+    sessions.entries.retain(|_, s| s.owner != owner);
+    sessions
+        .window_epochs
+        .retain(|(entry_owner, _), _| *entry_owner != owner);
+}
+pub fn revoke_window(owner: u64, window: &str) {
     global()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .entries
-        .retain(|_, s| s.owner != owner);
+        .revoke_window(owner, window);
 }
 pub struct SessionScope<'a> {
     pub owner: u64,
@@ -59,30 +42,50 @@ struct Session {
     revision: String,
     window: String,
     generation: u64,
-    expires: Instant,
-    expires_at: u64,
     key: DatabaseKey,
 }
 #[derive(Default)]
 pub struct DatabaseSessions {
     entries: HashMap<String, Session>,
+    window_epochs: HashMap<(u64, String), u64>,
+    next_window_epoch: u64,
 }
 impl DatabaseSessions {
-    fn prune(&mut self, now: Instant) {
-        self.entries.retain(|_, s| s.expires > now);
+    /// Capture before any asynchronous authentication/protection work. A
+    /// destroyed/reopened window with the same label gets a different epoch.
+    pub fn window_epoch(&mut self, owner: u64, window: &str) -> Result<u64, String> {
+        let identity = (owner, window.to_owned());
+        if let Some(epoch) = self.window_epochs.get(&identity) {
+            return Ok(*epoch);
+        }
+        self.next_window_epoch = self
+            .next_window_epoch
+            .checked_add(1)
+            .ok_or("database window lifetime exhausted")?;
+        self.window_epochs.insert(identity, self.next_window_epoch);
+        Ok(self.next_window_epoch)
+    }
+    pub fn insert_for_window(
+        &mut self,
+        scope: &SessionScope<'_>,
+        key: DatabaseKey,
+        window_epoch: u64,
+    ) -> Result<String, String> {
+        if self
+            .window_epochs
+            .get(&(scope.owner, scope.window.to_owned()))
+            != Some(&window_epoch)
+        {
+            return Err("database unlock window closed; unlock again in the current window".into());
+        }
+        self.insert(scope, key)
     }
     pub fn insert(&mut self, scope: &SessionScope<'_>, key: DatabaseKey) -> Result<String, String> {
-        self.prune(Instant::now());
         self.lock(scope.owner, scope.profile, scope.database, scope.window);
         if self.entries.len() >= MAX_SESSIONS {
             return Err("too many unlocked database sessions; close an existing database".into());
         }
         let id = random_id();
-        let expires_at = (SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| "system clock invalid")?
-            + SESSION_TTL)
-            .as_millis() as u64;
         self.entries.insert(
             id.clone(),
             Session {
@@ -92,15 +95,12 @@ impl DatabaseSessions {
                 revision: scope.revision.into(),
                 window: scope.window.into(),
                 generation: scope.generation,
-                expires: Instant::now() + SESSION_TTL,
-                expires_at,
                 key,
             },
         );
         Ok(id)
     }
     pub fn key(&mut self, id: &str, scope: &SessionScope<'_>) -> Result<DatabaseKey, String> {
-        self.prune(Instant::now());
         let session = self
             .entries
             .get(id)
@@ -124,7 +124,6 @@ impl DatabaseSessions {
         Ok(session.key.duplicate())
     }
     pub fn is_unlocked(&mut self, scope: &SessionScope<'_>) -> bool {
-        self.prune(Instant::now());
         self.entries.values().any(|s| {
             s.owner == scope.owner
                 && s.profile == scope.profile
@@ -134,19 +133,12 @@ impl DatabaseSessions {
                 && s.generation == scope.generation
         })
     }
-    pub fn expires_at(&mut self, scope: &SessionScope<'_>) -> Option<u64> {
-        self.prune(Instant::now());
+    /// Window destruction drops every database key for that window, including
+    /// abandoned grants whose renderer never received the unlock response.
+    pub fn revoke_window(&mut self, owner: u64, window: &str) {
+        self.window_epochs.remove(&(owner, window.to_owned()));
         self.entries
-            .values()
-            .find(|s| {
-                s.owner == scope.owner
-                    && s.profile == scope.profile
-                    && s.database == scope.database
-                    && s.revision == scope.revision
-                    && s.window == scope.window
-                    && s.generation == scope.generation
-            })
-            .map(|s| s.expires_at)
+            .retain(|_, s| s.owner != owner || s.window != window);
     }
     pub fn lock(&mut self, owner: u64, profile: &str, database: &str, window: &str) {
         self.entries.retain(|_, s| {
@@ -265,7 +257,7 @@ mod tests {
         assert!(global().lock().unwrap().key(&token, &scope).is_err());
     }
     #[test]
-    fn leases_bind_every_identity_and_expire_without_keys_leaving_native_memory() {
+    fn sessions_bind_every_identity_without_keys_leaving_native_memory() {
         for mismatch in [
             "owner",
             "profile",
@@ -273,7 +265,6 @@ mod tests {
             "revision",
             "window",
             "generation",
-            "expired",
         ] {
             let mut sessions = DatabaseSessions::default();
             let original = SessionScope {
@@ -293,10 +284,6 @@ mod tests {
                 "revision" => wrong.revision = "other",
                 "window" => wrong.window = "other",
                 "generation" => wrong.generation = 1,
-                "expired" => {
-                    sessions.entries.get_mut(&token).unwrap().expires =
-                        Instant::now() - Duration::from_secs(1)
-                }
                 _ => unreachable!(),
             }
             assert!(sessions.key(&token, &wrong).is_err(), "{mismatch}");
@@ -326,57 +313,120 @@ mod tests {
         assert!(sessions.key(&second, &other).is_err());
     }
 
-    #[tokio::test]
-    async fn periodic_expiry_drops_idle_keys_without_ipc_and_preserves_other_owner_leases() {
-        // A dedicated registry prevents unrelated concurrent test IPC from
-        // pruning this deadline and falsely proving periodic cleanup.
-        let registry = Arc::new(Mutex::new(DatabaseSessions::default()));
-        let worker = spawn_expiry_worker(Arc::downgrade(&registry), Duration::from_millis(20));
-        let owner = crate::EncryptionState::new().database_session_owner();
-        let other_owner = crate::EncryptionState::new().database_session_owner();
+    #[test]
+    fn window_close_revokes_all_its_databases_without_touching_other_windows_or_owners() {
+        let mut sessions = DatabaseSessions::default();
         let scope = SessionScope {
-            owner,
-            profile: "expiry-fixture",
+            owner: 1,
+            profile: "window-fixture",
             database: "db",
             revision: "r",
             window: "main",
             generation: 0,
         };
-        let other = SessionScope {
-            owner: other_owner,
+        let side = SessionScope {
+            database: "side",
             ..scope
         };
-        let (expired, live) = {
-            let mut sessions = registry.lock().unwrap();
-            let expired = sessions.insert(&scope, DatabaseKey::generate()).unwrap();
-            let live = sessions.insert(&other, DatabaseKey::generate()).unwrap();
-            assert!(
-                sessions.entries.contains_key(&expired),
-                "other owner insertion must not replace this lease"
-            );
-            sessions.entries.get_mut(&expired).unwrap().expires =
-                Instant::now() - Duration::from_secs(1);
-            (expired, live)
+        let detached = SessionScope {
+            window: "detached",
+            ..scope
         };
-        tokio::time::timeout(Duration::from_secs(4), async {
-            loop {
-                // Inspect membership directly; no key()/expires_at() call can
-                // prune on behalf of the actual periodic cleanup worker.
-                if !registry.lock().unwrap().entries.contains_key(&expired) {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
-        .await
-        .expect("idle expired key was not dropped by cleanup worker");
-        let mut sessions = registry.lock().unwrap();
-        assert!(sessions.entries.contains_key(&live));
-        sessions.revoke_database(owner, scope.profile, scope.database);
-        assert!(sessions.entries.contains_key(&live));
-        sessions.revoke_database(other_owner, scope.profile, scope.database);
-        drop(sessions);
-        drop(registry);
-        worker.join().unwrap();
+        let other = SessionScope { owner: 2, ..scope };
+        let main_token = sessions.insert(&scope, DatabaseKey::generate()).unwrap();
+        let side_token = sessions.insert(&side, DatabaseKey::generate()).unwrap();
+        let detached_token = sessions.insert(&detached, DatabaseKey::generate()).unwrap();
+        let other_token = sessions.insert(&other, DatabaseKey::generate()).unwrap();
+        sessions.revoke_window(1, "main");
+        assert!(sessions.key(&main_token, &scope).is_err());
+        assert!(sessions.key(&side_token, &side).is_err());
+        assert!(sessions.key(&detached_token, &detached).is_ok());
+        assert!(sessions.key(&other_token, &other).is_ok());
+    }
+
+    #[test]
+    fn last_owner_drop_revokes_keys_but_dropping_a_clone_does_not() {
+        let state = crate::EncryptionState::new();
+        let clone = state.clone();
+        let scope = SessionScope {
+            owner: state.database_session_owner(),
+            profile: "owner-fixture",
+            database: "db",
+            revision: "r",
+            window: "main",
+            generation: 0,
+        };
+        let token = global()
+            .lock()
+            .unwrap()
+            .insert(&scope, DatabaseKey::generate())
+            .unwrap();
+        drop(state);
+        assert!(global().lock().unwrap().key(&token, &scope).is_ok());
+        drop(clone);
+        assert!(global().lock().unwrap().key(&token, &scope).is_err());
+    }
+
+    #[test]
+    fn window_close_rejects_late_grants_even_after_the_label_is_reused() {
+        let mut sessions = DatabaseSessions::default();
+        let scope = SessionScope {
+            owner: 1,
+            profile: "p",
+            database: "db",
+            revision: "r",
+            window: "main",
+            generation: 0,
+        };
+        let abandoned = sessions.window_epoch(1, "main").unwrap();
+        sessions.revoke_window(1, "main");
+        assert!(sessions
+            .insert_for_window(&scope, DatabaseKey::generate(), abandoned)
+            .is_err());
+        let reopened = sessions.window_epoch(1, "main").unwrap();
+        assert_ne!(abandoned, reopened);
+        let current = sessions
+            .insert_for_window(&scope, DatabaseKey::generate(), reopened)
+            .unwrap();
+        assert!(sessions
+            .insert_for_window(&scope, DatabaseKey::generate(), abandoned)
+            .is_err());
+        assert!(sessions.key(&current, &scope).is_ok());
+        assert_eq!(sessions.entries.len(), 1);
+    }
+
+    #[test]
+    fn open_sessions_stay_bounded_and_replacement_does_not_consume_capacity() {
+        let mut sessions = DatabaseSessions::default();
+        for index in 0..MAX_SESSIONS {
+            let scope = SessionScope {
+                owner: 1,
+                profile: "p",
+                database: &index.to_string(),
+                revision: "r",
+                window: "main",
+                generation: 0,
+            };
+            sessions.insert(&scope, DatabaseKey::generate()).unwrap();
+        }
+        let scope = SessionScope {
+            owner: 1,
+            profile: "p",
+            database: "another",
+            revision: "r",
+            window: "main",
+            generation: 0,
+        };
+        assert!(sessions.insert(&scope, DatabaseKey::generate()).is_err());
+        let replacement = SessionScope {
+            database: "0",
+            ..scope
+        };
+        let token = sessions
+            .insert(&replacement, DatabaseKey::generate())
+            .unwrap();
+        assert!(sessions.key(&token, &replacement).is_ok());
+        sessions.revoke_window(1, "main");
+        assert!(sessions.insert(&scope, DatabaseKey::generate()).is_ok());
     }
 }

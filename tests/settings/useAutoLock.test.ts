@@ -229,7 +229,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     await advance(249);
     expect(mocks.lock).not.toHaveBeenCalled();
     await advance(1);
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("blur");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "blur",
+      expect.any(Function),
+    );
   });
 
   it("keeps browser-only blur locking and cancels transient focus loss", async () => {
@@ -244,7 +247,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     focused = false;
     dom("blur");
     await advance(250);
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("blur");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "blur",
+      expect.any(Function),
+    );
   });
 
   it("falls back to real document focus if native focus querying fails", async () => {
@@ -258,7 +264,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     focused = false;
     dom("blur");
     await advance(250);
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("blur");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "blur",
+      expect.any(Function),
+    );
   });
 
   it.each(["focus", "unmount", "disable"])(
@@ -298,7 +307,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     mocks.isMinimized.mockResolvedValue(true);
     nativeFocus(false);
     await settle();
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("minimize");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "minimize",
+      expect.any(Function),
+    );
   });
 
   it.each(["native-focus", "dom-focus", "visible", "unmount", "disable"])(
@@ -354,7 +366,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     hidden = true;
     nativeFocus(false);
     await settle();
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("minimize");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "minimize",
+      expect.any(Function),
+    );
   });
 
   it("does not mistake hidden visibility for minimize when native says it is restored", async () => {
@@ -373,7 +388,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     hidden = true;
     dom("visibilitychange");
     await settle();
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("minimize");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "minimize",
+      expect.any(Function),
+    );
   });
 
   it("ignores a queued native event delivered after unmount", async () => {
@@ -441,7 +459,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     hook.rerender({ value: { ...policy, timeoutMinutes: 0.02 } });
     dom("visibilitychange");
     await advance(1200);
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("visibility-hidden");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "visibility-hidden",
+      expect.any(Function),
+    );
     await act(async () => {
       request.resolve();
     });
@@ -469,7 +490,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     await advance(400);
     expect(mocks.lock).not.toHaveBeenCalled();
     await advance(200);
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("idle");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "idle",
+      expect.any(Function),
+    );
   });
 
   it("does not reset idle time on equivalent policy objects or focus events", async () => {
@@ -481,7 +505,10 @@ describe("useAutoLock focus and async lifecycle", () => {
     hook.rerender({ value: { ...policy } });
     dom("focus");
     await advance(200);
-    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith("idle");
+    expect(mocks.lock).toHaveBeenCalledExactlyOnceWith(
+      "idle",
+      expect.any(Function),
+    );
   });
 
   it("stops pending work when encryption becomes locked", async () => {
@@ -495,4 +522,26 @@ describe("useAutoLock focus and async lifecycle", () => {
     await advance(1000);
     expect(mocks.lock).not.toHaveBeenCalled();
   });
+
+  it.each(["disable", "unmount"])(
+    "retires an admitted automatic trigger on %s",
+    async (change) => {
+      const policy = cfg({ timeoutMinutes: 0.01 });
+      const pending = deferred<void>();
+      mocks.lock.mockReturnValue(pending.promise);
+      const hook = renderHook(({ value }) => useAutoLock(value), {
+        initialProps: { value: policy },
+      });
+      await advance(600);
+      const isCurrent = mocks.lock.mock.calls[0][1] as () => boolean;
+      expect(isCurrent()).toBe(true);
+      if (change === "unmount") hook.unmount();
+      else {
+        hook.rerender({ value: { ...policy, enabled: false } });
+        hook.rerender({ value: policy });
+      }
+      expect(isCurrent()).toBe(false);
+      await act(async () => pending.resolve());
+    },
+  );
 });

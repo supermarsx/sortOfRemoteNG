@@ -65,7 +65,10 @@ import type {
   DatabaseProtectionTarget,
   DatabaseProtectionChangeResult,
 } from "../../types/encryption/databaseProtection";
-import { isDatabaseCipher } from "../../types/encryption/databaseProtection";
+import {
+  isDatabaseCipher,
+  isDatabaseSessionLive,
+} from "../../types/encryption/databaseProtection";
 // Type-only: keeps the trust export document owned by `trustStore.ts` (single
 // owner) without creating a runtime import edge. The dependency runs the other
 // way — the trust store subscribes to `onCurrentDatabaseChange` below.
@@ -578,7 +581,7 @@ export class DatabaseManager {
     const state = this.managedAccess.get(id);
     if (
       state?.status === "ready" &&
-      (state.sessionExpiresAt ?? 0) <= Date.now()
+      !isDatabaseSessionLive(state.sessionExpiresAt)
     )
       return { ...state, status: "suspended", reason: "expired" };
     if (state) return state;
@@ -789,7 +792,7 @@ export class DatabaseManager {
         ],
       };
     if (target) {
-      if (!result.sessionId || !result.sessionExpiresAt) {
+      if (!result.sessionId || result.sessionExpiresAt === undefined) {
         this.suspendManagedDatabase(id, "security-changed");
         return {
           ...result,
@@ -833,7 +836,7 @@ export class DatabaseManager {
 
   private requireManagedSession(id: string) {
     const session = this.managedSessions.get(id);
-    if (!session || session.sessionExpiresAt <= Date.now()) {
+    if (!session || !isDatabaseSessionLive(session.sessionExpiresAt)) {
       if (session) this.suspendManagedDatabase(id, "expired");
       throw new Error(
         "Database access is locked or expired. Unlock this database again; pending edits are retained.",
@@ -848,8 +851,7 @@ export class DatabaseManager {
   ): void {
     if (
       !result.sessionId ||
-      !Number.isFinite(result.sessionExpiresAt) ||
-      result.sessionExpiresAt <= Date.now() ||
+      !isDatabaseSessionLive(result.sessionExpiresAt) ||
       typeof result.securityRevision !== "string" ||
       !Array.isArray(result.data?.connections)
     )
@@ -863,13 +865,26 @@ export class DatabaseManager {
       securityRevision,
     });
     this.credentialSecurityRevisions.set(id, securityRevision);
-    this.managedTimers.set(
-      id,
-      setTimeout(
-        () => this.suspendManagedDatabase(id, "expired"),
-        Math.min(sessionExpiresAt - Date.now(), 2147483647),
-      ),
-    );
+    // Current native grants live until close/lock, not an independent idle
+    // timer. Still honour bounded grants from an older native host. Recheck
+    // long deadlines instead of expiring at setTimeout's 32-bit limit.
+    if (sessionExpiresAt !== null) {
+      const expire = () => {
+        if (this.managedSessions.get(id)?.sessionId !== sessionId) return;
+        if (!isDatabaseSessionLive(sessionExpiresAt)) {
+          this.suspendManagedDatabase(id, "expired");
+          return;
+        }
+        this.managedTimers.set(
+          id,
+          setTimeout(
+            expire,
+            Math.min(sessionExpiresAt - Date.now(), 2147483647),
+          ),
+        );
+      };
+      expire();
+    }
     if (this.currentDatabase?.id === id) {
       this.currentPassword = null;
       this.currentDatabase = {
@@ -1916,7 +1931,9 @@ export class DatabaseManager {
         this.currentDatabase.protectionFormat === "sorng-db")
     ) {
       const session = this.managedSessions.get(databaseId);
-      return Boolean(session && session.sessionExpiresAt > Date.now());
+      return Boolean(
+        session && isDatabaseSessionLive(session.sessionExpiresAt),
+      );
     }
     if (this.unlockedDatabasePasswords.has(databaseId)) {
       return true;

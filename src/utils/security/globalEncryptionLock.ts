@@ -2,7 +2,15 @@ import type { LockReason } from "../../hooks/settings/useEncryption";
 
 export const GLOBAL_LOCK_REQUEST = "encryption-ui-lock-request";
 export const GLOBAL_LOCK_RESPONSE = "encryption-ui-lock-response";
-type LockExecutor = (lock: () => Promise<void>) => Promise<void>;
+export interface GlobalLockRequest {
+  reason?: LockReason;
+  /** Local automatic trigger lifetime; never restricts an explicit manual lock. */
+  isCurrent?: () => boolean;
+}
+type LockExecutor = (
+  lock: () => Promise<void>,
+  request: GlobalLockRequest,
+) => Promise<void>;
 let executor: LockExecutor | null = null;
 
 /** Main-window ownership; the wrapper holds the database mutation queue through native lock. */
@@ -15,25 +23,28 @@ export function registerGlobalLockExecutor(next: LockExecutor): () => void {
 
 export async function executeMainGlobalLock(
   lock: () => Promise<void>,
+  request: GlobalLockRequest = {},
 ): Promise<void> {
   if (!executor)
     throw new Error(
       "The primary window is not ready to safely lock storage. Retry from the primary window.",
     );
-  await executor(lock);
+  await executor(lock, request);
 }
 
 export async function executeGlobalLock(
   reason: LockReason | undefined,
   lock: () => Promise<void>,
+  isCurrent?: () => boolean,
 ): Promise<void> {
-  if (executor) return executeMainGlobalLock(lock);
+  if (executor) return executeMainGlobalLock(lock, { reason, isCurrent });
   const [{ getCurrentWindow }, { listen, emitTo }] = await Promise.all([
     import("@tauri-apps/api/window"),
     import("@tauri-apps/api/event"),
   ]);
   const windowLabel = getCurrentWindow().label;
-  if (windowLabel === "main") return executeMainGlobalLock(lock);
+  if (windowLabel === "main")
+    return executeMainGlobalLock(lock, { reason, isCurrent });
   const requestId = crypto.randomUUID();
   await new Promise<void>((resolve, reject) => {
     let unlisten: (() => void) | undefined;

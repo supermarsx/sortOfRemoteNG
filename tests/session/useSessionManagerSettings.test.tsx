@@ -167,6 +167,83 @@ describe("useSessionManager settings effects", () => {
       expect(usesGenericSessionTimer(option.value), option.value).toBe(false);
     }
   });
+
+  it.each(["ssh", "raw"] as const)(
+    "fences late %s shutdown after the owning global lock is retired",
+    async (protocol) => {
+      const connection = makeConnection({ protocol, warnOnClose: false });
+      const session = makeSession({
+        connectionId: connection.id,
+        protocol,
+        backendSessionId: "old-backend",
+        ...(protocol === "ssh"
+          ? {
+              vpnLeaseBindings: [
+                {
+                  ownerId: "old-owner",
+                  backendSessionId: "old-backend",
+                  protocol: "ssh" as const,
+                  status: "active" as const,
+                },
+              ],
+            }
+          : {}),
+      });
+      connectionMocks.state = {
+        sessions: [session],
+        connections: [connection],
+      };
+      SettingsManager.getInstance().applyInMemory({
+        warnOnClose: false,
+        confirmCloseActiveTab: false,
+      });
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const command =
+        protocol === "ssh" ? "disconnect_ssh" : "disconnect_raw_socket";
+      connectionMocks.invoke.mockImplementation((name) =>
+        name === command ? pending : Promise.resolve(undefined),
+      );
+      const { result, rerender } = renderHook(() => useSessionManager());
+      let current = true;
+      let closing!: Promise<boolean>;
+      act(() => {
+        closing = result.current.handleSessionClose(
+          session.id,
+          session,
+          () => current,
+        );
+      });
+      await waitFor(() =>
+        expect(connectionMocks.invoke).toHaveBeenCalledWith(command, {
+          sessionId: "old-backend",
+        }),
+      );
+      current = false;
+      const replacement = {
+        ...session,
+        backendSessionId: "replacement-backend",
+      };
+      connectionMocks.state = {
+        sessions: [replacement],
+        connections: [connection],
+      };
+      rerender();
+      connectionMocks.dispatch.mockClear();
+      await act(async () => {
+        finish();
+        await closing;
+      });
+      await expect(closing).resolves.toBe(false);
+      expect(connectionMocks.dispatch).not.toHaveBeenCalled();
+      expect(connectionMocks.stopChecking).not.toHaveBeenCalled();
+      expect(connectionMocks.invoke).not.toHaveBeenCalledWith(command, {
+        sessionId: "replacement-backend",
+      });
+    },
+  );
   it("focuses a newly dispatched editor after commit without changing background session behavior", () => {
     SettingsManager.getInstance().applyInMemory({
       openConnectionInBackground: true,

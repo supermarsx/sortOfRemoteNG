@@ -184,6 +184,8 @@ type SessionCloseAttempt = {
   forceCloseTimer?: ReturnType<typeof setTimeout>;
   timedOut: boolean;
   forced: boolean;
+  /** A global lock may retire this cleanup when storage is unlocked again. */
+  isCurrent?: () => boolean;
 };
 
 const sessionStartTimeIdentity = (session: ConnectionSession): string =>
@@ -555,6 +557,7 @@ export const useSessionManager = () => {
 
   const isCurrentCloseAttempt = (attempt: SessionCloseAttempt): boolean =>
     !attempt.forced &&
+    attempt.isCurrent?.() !== false &&
     closeAttemptsRef.current.get(attempt.sessionId) === attempt;
 
   const retireSessionCloseAttempt = (attempt: SessionCloseAttempt) => {
@@ -621,7 +624,7 @@ export const useSessionManager = () => {
     });
 
     const cleanupPromise = Promise.resolve()
-      .then(operation)
+      .then(() => (isCurrentCloseAttempt(attempt) ? operation() : false))
       .catch((error) => {
         console.error("Session close cleanup failed:", error);
         return false;
@@ -2274,9 +2277,23 @@ export const useSessionManager = () => {
   const handleSessionClose = (
     sessionId: string,
     authoritativeSession?: ConnectionSession,
+    isCurrent?: () => boolean,
   ): Promise<boolean> => {
+    if (isCurrent?.() === false) return Promise.resolve(false);
     const existing = closeAttemptsRef.current.get(sessionId);
-    if (existing) return existing.resultPromise;
+    if (existing) {
+      if (existing.isCurrent?.() === false) {
+        existing.forced = true;
+        retireSessionCloseAttempt(existing);
+        existing.resolveResult(false);
+      } else {
+        if (isCurrent) {
+          const previous = existing.isCurrent;
+          existing.isCurrent = () => previous?.() !== false && isCurrent();
+        }
+        return existing.resultPromise;
+      }
+    }
 
     const storedSession = stateRef.current.sessions.find(
       (candidate) => candidate.id === sessionId,
@@ -2302,6 +2319,7 @@ export const useSessionManager = () => {
       cleanupSettled: false,
       timedOut: false,
       forced: false,
+      isCurrent,
     };
     closeAttemptsRef.current.set(sessionId, attempt);
     publishSessionCloseState(attempt, {
@@ -2423,6 +2441,12 @@ export const useSessionManager = () => {
 
   const forceSessionClose = (sessionId: string, automatic = false): boolean => {
     const attempt = closeAttemptsRef.current.get(sessionId);
+    if (attempt?.isCurrent?.() === false) {
+      attempt.forced = true;
+      retireSessionCloseAttempt(attempt);
+      attempt.resolveResult(false);
+      return false;
+    }
     const session = stateRef.current.sessions.find(
       (candidate) => candidate.id === sessionId,
     );

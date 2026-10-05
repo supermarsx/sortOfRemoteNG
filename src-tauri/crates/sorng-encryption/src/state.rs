@@ -40,8 +40,18 @@ pub struct EncryptionState {
     inner: Arc<RwLock<Option<MasterDek>>>,
     ever_installed: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
-    session_owner: Arc<OnceLock<u64>>,
+    session_owner: Arc<OnceLock<DatabaseSessionOwner>>,
     pub(crate) artifact_policy: Arc<crate::artifact_policy::PolicyRuntime>,
+}
+
+/// Clones share this guard. Dropping a temporary snapshot must not revoke a
+/// live owner's sessions, but the last owner must never leave keys behind.
+struct DatabaseSessionOwner(u64);
+impl Drop for DatabaseSessionOwner {
+    fn drop(&mut self) {
+        crate::database_sessions::revoke_owner(self.0);
+        crate::master_recovery::cancel_owner(self.0);
+    }
 }
 
 impl EncryptionState {
@@ -61,8 +71,8 @@ impl EncryptionState {
     pub async fn lock(&self) {
         let mut guard = self.inner.write().await;
         if let Some(owner) = self.session_owner.get() {
-            crate::database_sessions::revoke_owner(*owner);
-            crate::master_recovery::cancel_owner(*owner);
+            crate::database_sessions::revoke_owner(owner.0);
+            crate::master_recovery::cancel_owner(owner.0);
         }
         // Drop replaces the value with None; the old MasterDek's
         // Zeroizing field zeroes itself on Drop.
@@ -77,8 +87,8 @@ impl EncryptionState {
     pub async fn install(&self, dek: MasterDek) {
         let mut guard = self.inner.write().await;
         if let Some(owner) = self.session_owner.get() {
-            crate::database_sessions::revoke_owner(*owner);
-            crate::master_recovery::cancel_owner(*owner);
+            crate::database_sessions::revoke_owner(owner.0);
+            crate::master_recovery::cancel_owner(owner.0);
         }
         self.ever_installed.store(true, Ordering::Release);
         *guard = Some(dek);
@@ -196,9 +206,9 @@ impl EncryptionState {
     /// identity is process-local, never serialized, and not based on addresses.
     pub fn database_session_owner(&self) -> u64 {
         static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
-        *self
-            .session_owner
-            .get_or_init(|| NEXT_OWNER.fetch_add(1, Ordering::Relaxed))
+        self.session_owner
+            .get_or_init(|| DatabaseSessionOwner(NEXT_OWNER.fetch_add(1, Ordering::Relaxed)))
+            .0
     }
 
     /// Derive a sub-key for the given artifact. Returns `None` when the

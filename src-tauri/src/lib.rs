@@ -196,6 +196,22 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        // Open database keys follow their native window, not an unrelated
+        // fixed timer. Cleanup does not rely on a renderer unload callback.
+        if let tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } = &event
+        {
+            use tauri::Manager;
+            if let Some(state) = app_handle.try_state::<sorng_encryption::EncryptionState>() {
+                sorng_encryption::database_sessions::revoke_window(
+                    state.database_session_owner(),
+                    label,
+                );
+            }
+        }
         if matches!(event, tauri::RunEvent::Exit) {
             web_network_guard::close();
         }

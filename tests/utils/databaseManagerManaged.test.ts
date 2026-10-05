@@ -61,7 +61,7 @@ beforeEach(() => {
   ]);
   lease = {
     sessionId: "fixture-native-handle",
-    sessionExpiresAt: Date.now() + 900000,
+    sessionExpiresAt: null,
     securityRevision: "rev-1",
     data,
   };
@@ -146,7 +146,7 @@ beforeEach(() => {
           warnings: [],
           securityRevision: "rev-2",
           sessionId: "new-handle",
-          sessionExpiresAt: Date.now() + 900000,
+          sessionExpiresAt: null,
         };
       }
       return undefined;
@@ -159,6 +159,74 @@ afterEach(() => {
 });
 
 describe("native managed database sessions", () => {
+  it.each(["active", "side"])(
+    "keeps an open %s database and its captured session usable after eight idle hours",
+    async (target) => {
+      vi.useFakeTimers();
+      const manager = DatabaseManager.getInstance();
+      const id = rows[0].id;
+      await manager.unlockManagedDatabase(id, "password-slot", "secret");
+      await manager.selectDatabase(id);
+      const captured = manager.captureCurrentDatabaseDataTarget()!;
+      const epoch = manager.getDatabaseAccessState(id)?.accessEpoch;
+      if (target === "side") {
+        rows.push({
+          ...rows[0],
+          id: "other",
+          isEncrypted: false,
+          protectionFormat: undefined,
+        });
+        payloads.set("other", structuredClone(data));
+        await manager.selectDatabase("other");
+      }
+      const access = vi.fn();
+      const changes = vi.fn();
+      const offAccess = onDatabaseAccessChange(access);
+      const offChange = onCurrentDatabaseChange(changes);
+      await vi.advanceTimersByTimeAsync(8 * 60 * 60 * 1000);
+      expect(manager.isDatabaseUnlocked(id)).toBe(true);
+      expect(manager.getUnlockedDatabaseIds()).toContain(id);
+      expect(manager.getDatabaseAccessState(id)).toMatchObject({
+        status: "ready",
+        sessionExpiresAt: null,
+      });
+      expect(manager.getDatabaseAccessState(id)?.accessEpoch).toBe(epoch);
+      expect(access).not.toHaveBeenCalled();
+      expect(changes).not.toHaveBeenCalled();
+      if (target === "active") {
+        await captured.load();
+        await captured.save(data);
+      } else {
+        await manager.loadDatabaseData(id);
+        await manager.saveDatabaseData(id, data);
+      }
+      expect(
+        bridge.invoke.mock.calls.filter(
+          ([cmd]) => cmd === "database_protection_unlock",
+        ),
+      ).toHaveLength(1);
+      offAccess();
+      offChange();
+    },
+  );
+  it.each([undefined, 0, NaN, Infinity, "unlimited", "900000"])(
+    "rejects malformed session expiry %s rather than treating it as open-lifetime access",
+    async (expiresAt) => {
+      lease.sessionExpiresAt = expiresAt as number;
+      const manager = DatabaseManager.getInstance();
+      await expect(
+        manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret"),
+      ).rejects.toThrow("Invalid native database session response");
+      expect(manager.isDatabaseUnlocked(rows[0].id)).toBe(false);
+      expect(bridge.invoke).toHaveBeenCalledWith(
+        "database_protection_release_session",
+        {
+          databaseId: rows[0].id,
+          sessionId: lease.sessionId,
+        },
+      );
+    },
+  );
   it.each(["active", "side"])(
     "persists explicit managed %s Close rather than treating it as expiry",
     async (target) => {
@@ -478,8 +546,9 @@ describe("native managed database sessions", () => {
       "sessionId",
     );
   });
-  it("expires access without closing the active database or discarding persistence ownership", async () => {
+  it("honours a legacy native deadline without closing the database or discarding persistence ownership", async () => {
     vi.useFakeTimers();
+    lease.sessionExpiresAt = Date.now() + 900000;
     const manager = DatabaseManager.getInstance();
     await manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret");
     await manager.selectDatabase(rows[0].id);
@@ -495,6 +564,33 @@ describe("native managed database sessions", () => {
     expect(changes).not.toHaveBeenCalled();
     expect(() => target.save(data)).toThrow("access expired");
     off();
+  });
+  it("cancels an old expiry timer when native reauthentication grants open-lifetime access", async () => {
+    vi.useFakeTimers();
+    const manager = DatabaseManager.getInstance();
+    const id = rows[0].id;
+    lease.sessionExpiresAt = Date.now() + 900000;
+    await manager.unlockManagedDatabase(id, "password-slot", "secret");
+    lease = { ...lease, sessionId: "replacement", sessionExpiresAt: null };
+    await manager.unlockManagedDatabase(id, "password-slot", "secret");
+    await vi.advanceTimersByTimeAsync(8 * 60 * 60 * 1000);
+    expect(manager.isDatabaseUnlocked(id)).toBe(true);
+    expect(manager.getDatabaseAccessState(id)?.status).toBe("ready");
+    await manager.lockDatabase(id);
+    expect(manager.isDatabaseUnlocked(id)).toBe(false);
+    await expect(manager.loadDatabaseData(id)).rejects.toThrow(
+      "locked or expired",
+    );
+  });
+  it("does not expire a bounded native grant early at the browser timer limit", async () => {
+    vi.useFakeTimers();
+    const manager = DatabaseManager.getInstance();
+    lease.sessionExpiresAt = Date.now() + 2147483647 + 60000;
+    await manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret");
+    await vi.advanceTimersByTimeAsync(2147483647);
+    expect(manager.isDatabaseUnlocked(rows[0].id)).toBe(true);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(manager.isDatabaseUnlocked(rows[0].id)).toBe(false);
   });
   it("masks native cross-window lock synchronously and recaptures on explicit reauthentication", async () => {
     const manager = DatabaseManager.getInstance();

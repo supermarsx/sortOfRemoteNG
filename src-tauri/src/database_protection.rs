@@ -110,7 +110,9 @@ pub struct ProtectionStatus {
 #[serde(rename_all = "camelCase")]
 pub struct UnlockResult {
     session_id: String,
-    session_expires_at: u64,
+    // Explicit null denotes an open-lifetime grant. Never omit this field:
+    // older/malformed hosts must not be mistaken for unlimited authority.
+    session_expires_at: Option<u64>,
     security_revision: String,
     data: Value,
 }
@@ -123,7 +125,6 @@ pub struct ChangeResult {
     security_revision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     session_expires_at: Option<u64>,
 }
 #[derive(Serialize)]
@@ -216,17 +217,42 @@ fn scope<'a>(
         generation: state.key_generation(),
     }
 }
-fn insert_session(scope: &SessionScope<'_>, key: DatabaseKey) -> Result<String, String> {
+fn window_epoch(state: &EncryptionState, window: &str) -> Result<u64, String> {
     database_sessions::global()
         .lock()
         .map_err(|_| "database session registry unavailable")?
-        .insert(scope, key)
+        .window_epoch(state.database_session_owner(), window)
+}
+fn insert_session(
+    scope: &SessionScope<'_>,
+    key: DatabaseKey,
+    epoch: u64,
+) -> Result<String, String> {
+    database_sessions::global()
+        .lock()
+        .map_err(|_| "database session registry unavailable")?
+        .insert_for_window(scope, key, epoch)
 }
 fn session_key(id: &str, scope: &SessionScope<'_>) -> Result<DatabaseKey, String> {
     database_sessions::global()
         .lock()
         .map_err(|_| "database session registry unavailable")?
         .key(id, scope)
+}
+
+fn require_live_unlock_window<R: Runtime>(
+    window: &WebviewWindow<R>,
+    state: &EncryptionState,
+) -> Result<(), String> {
+    if window
+        .app_handle()
+        .get_webview_window(window.label())
+        .is_none()
+    {
+        database_sessions::revoke_window(state.database_session_owner(), window.label());
+        return Err("Database window closed; reopen the database to unlock it".into());
+    }
+    Ok(())
 }
 
 /// The source remains in its database; only verified connection IDs cross into
@@ -448,19 +474,19 @@ async fn status_inner(
         crate::database_files::globally_protected_database(root, state, id).await?;
     if is_managed(&snapshot) {
         let envelope = DatabaseEnvelope::parse(&snapshot.data, id)?;
-        let session_expires_at = database_sessions::global()
+        let unlocked = database_sessions::global()
             .lock()
             .map_err(|_| "database session registry unavailable")?
-            .expires_at(&scope(&profile, id, &revision, window, state));
+            .is_unlocked(&scope(&profile, id, &revision, window, state));
         Ok(ProtectionStatus {
             kind: "managed",
             version: Some(codec::VERSION),
             data_cipher: Some(envelope.data_cipher),
             security_revision: revision,
             slots: envelope.slots.iter().map(|s| s.info()).collect(),
-            unlocked: session_expires_at.is_some(),
+            unlocked,
             global_encryption_protected,
-            session_expires_at,
+            session_expires_at: None,
         })
     } else {
         Ok(ProtectionStatus {
@@ -494,7 +520,8 @@ pub async fn database_protection_unlock<R: Runtime>(
     if native_root(&window, &state)? != root {
         return Err("Database profile changed; reload before retrying".into());
     }
-    unlock_inner(
+    require_live_unlock_window(&window, &state)?;
+    let result = unlock_inner(
         &root,
         &state,
         window.label(),
@@ -503,7 +530,11 @@ pub async fn database_protection_unlock<R: Runtime>(
         password,
         &NativeVault,
     )
-    .await
+    .await;
+    // Also covers an IPC task first polled after native window destruction.
+    // Normal mid-unlock destruction is fenced atomically by the window epoch.
+    require_live_unlock_window(&window, &state)?;
+    result
 }
 async fn unlock_inner(
     root: &Path,
@@ -514,6 +545,7 @@ async fn unlock_inner(
     password: Option<Zeroizing<String>>,
     vault: &(impl VaultProvider + Sync),
 ) -> Result<UnlockResult, String> {
+    let epoch = window_epoch(state, window)?;
     let snapshot = managed_snapshot(root, state, id).await?;
     let security_revision = revision(&snapshot).to_owned();
     let profile = profile_binding(root)?;
@@ -544,15 +576,18 @@ async fn unlock_inner(
     if current.data != snapshot.data || revision(&current) != security_revision {
         return Err("database changed during unlock; retry".into());
     }
-    let session_id = insert_session(&scope(&profile, id, &security_revision, window, state), key)?;
-    let session_expires_at = database_sessions::global()
-        .lock()
-        .map_err(|_| "database session registry unavailable")?
-        .expires_at(&scope(&profile, id, &security_revision, window, state))
-        .ok_or("database session expired")?;
+    let session_id = insert_session(
+        &scope(&profile, id, &security_revision, window, state),
+        key,
+        epoch,
+    )?;
+    session_key(
+        &session_id,
+        &scope(&profile, id, &security_revision, window, state),
+    )?;
     Ok(UnlockResult {
         session_id,
-        session_expires_at,
+        session_expires_at: None,
         security_revision,
         data,
     })
@@ -669,18 +704,13 @@ pub async fn database_protection_load<R: Runtime>(
     );
     let key = session_key(&session_id, &current_scope)?;
     let data = DatabaseEnvelope::parse(&snapshot.data, &database_id)?.open(&key)?;
-    // Do not release plaintext from an expired lease after a lengthy decrypt.
+    // Do not release plaintext from a revoked session after a lengthy decrypt.
     session_key(&session_id, &current_scope)?;
-    let session_expires_at = database_sessions::global()
-        .lock()
-        .map_err(|_| "database session registry unavailable")?
-        .expires_at(&current_scope)
-        .ok_or("database session expired")?;
     Ok(UnlockResult {
         session_id,
         security_revision: expected_security_revision,
         data,
-        session_expires_at,
+        session_expires_at: None,
     })
 }
 #[allow(clippy::too_many_arguments)] // Window/session/security/content boundaries are independent.
@@ -746,7 +776,8 @@ pub async fn database_protection_change<R: Runtime>(
 ) -> Result<ChangeResult, String> {
     let _guard = sorng_encryption::settings_coordinator::lock().await;
     let root = native_root(&window, &state)?;
-    change_inner_with_initialization(
+    require_live_unlock_window(&window, &state)?;
+    let result = change_inner_with_initialization(
         &root,
         &state,
         window.label(),
@@ -761,7 +792,9 @@ pub async fn database_protection_change<R: Runtime>(
         initialize_empty_destination == Some(true),
         &NativeVault,
     )
-    .await
+    .await;
+    require_live_unlock_window(&window, &state)?;
+    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -780,6 +813,7 @@ async fn change_inner_with_initialization(
     initialize_empty_destination: bool,
     vault: &(impl VaultProvider + Sync),
 ) -> Result<ChangeResult, String> {
+    let epoch = window_epoch(state, window)?;
     let snapshot = managed_snapshot(root, state, id).await?;
     if let Some(target) = &target {
         if target
@@ -967,11 +1001,15 @@ async fn change_inner_with_initialization(
     )
     .await?;
     let mut warnings = outcome.warnings;
-    let (session_id, session_expires_at) = match database_sessions::global().lock() {
+    let session_id = match database_sessions::global().lock() {
         Ok(mut registry) => {
             registry.revoke_database(state.database_session_owner(), &profile, id);
-            let session_id = if managed {
-                match registry.insert(&scope(&profile, id, &new_revision, window, state), key) {
+            if managed {
+                match registry.insert_for_window(
+                    &scope(&profile, id, &new_revision, window, state),
+                    key,
+                    epoch,
+                ) {
                     Ok(id) => Some(id),
                     Err(_) => {
                         warnings.push(
@@ -982,16 +1020,14 @@ async fn change_inner_with_initialization(
                 }
             } else {
                 None
-            };
-            let expires = registry.expires_at(&scope(&profile, id, &new_revision, window, state));
-            (session_id, expires)
+            }
         }
         Err(_) => {
             warnings.push(
                 "Protection committed; native session registry unavailable; restart and unlock"
                     .into(),
             );
-            (None, None)
+            None
         }
     };
     Ok(ChangeResult {
@@ -1000,7 +1036,7 @@ async fn change_inner_with_initialization(
         warnings,
         security_revision: new_revision,
         session_id,
-        session_expires_at,
+        session_expires_at: None,
     })
 }
 

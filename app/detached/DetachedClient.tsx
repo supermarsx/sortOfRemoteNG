@@ -2303,13 +2303,17 @@ const DetachedSecurityBoundary: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { dispatch } = useConnections();
-  const clearViews = useCallback(async () => {
-    dispatch({ type: "SET_CONNECTIONS", payload: [] });
-    dispatch({ type: "SET_TAB_GROUPS", payload: [] });
-    dispatch({ type: "CLEAR_SELECTION" });
-    dispatch({ type: "SET_SESSIONS", payload: [] });
-    await DatabaseManager.getInstance().closeCurrentDatabase("lock");
-  }, [dispatch]);
+  const clearViews = useCallback(
+    async (isCurrent: () => boolean) => {
+      if (!isCurrent()) return;
+      dispatch({ type: "SET_CONNECTIONS", payload: [] });
+      dispatch({ type: "SET_TAB_GROUPS", payload: [] });
+      dispatch({ type: "CLEAR_SELECTION" });
+      dispatch({ type: "SET_SESSIONS", payload: [] });
+      await DatabaseManager.getInstance().closeCurrentDatabase("lock");
+    },
+    [dispatch],
+  );
   const locked = useGlobalEncryptionGuard({ clearViews });
   const databaseAccess = useDatabaseAccessSuspension();
   // No second auto-lock policy controller: requests go to main's durable lock queue.

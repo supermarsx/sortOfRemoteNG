@@ -20,14 +20,17 @@ import { useSettings } from "../../contexts/SettingsContext";
 interface GuardOptions {
   primary?: boolean;
   flushCurrent?: () => Promise<void>;
-  prepareViews?: () => Promise<void>;
-  clearViews: () => Promise<void> | void;
+  prepareViews?: (isCurrent: () => boolean) => Promise<void>;
+  /** Recheck after each await before touching views; unlock retires this cleanup. */
+  clearViews: (isCurrent: () => boolean) => Promise<void> | void;
 }
 
 /** Every app window blocks immediately on native lock; only main initiates a durable lock. */
 export function useGlobalEncryptionGuard(options: GuardOptions) {
   const enc = useEncryption();
-  const { settingsReady } = useSettings();
+  const { settingsReady, settings } = useSettings();
+  const policyRef = useRef(settings.autoLock);
+  policyRef.current = settings.autoLock;
   const settingsReadyRef = useRef(settingsReady);
   settingsReadyRef.current = settingsReady;
   const manager = DatabaseManager.getInstance();
@@ -36,13 +39,23 @@ export function useGlobalEncryptionGuard(options: GuardOptions) {
   const [eventLocked, setEventLocked] = useState(false);
   const authoritativeEvent = useRef<"locked" | "unlocked" | null>(null);
   const handled = useRef(false);
+  const lifecycle = useRef(0);
+  useEffect(
+    () => () => {
+      lifecycle.current++;
+    },
+    [],
+  );
   const lockedRef = useRef<() => void>(() => {});
   lockedRef.current = () => {
     setEventLocked(true);
     if (handled.current) return;
     handled.current = true;
+    const generation = lifecycle.current;
     manager.invalidatePendingDatabaseOperations();
-    void Promise.resolve(latest.current.clearViews()).catch((error: unknown) =>
+    void Promise.resolve(
+      latest.current.clearViews(() => lifecycle.current === generation),
+    ).catch((error: unknown) =>
       console.error("Storage locked; view cleanup failed", error),
     );
   };
@@ -56,21 +69,53 @@ export function useGlobalEncryptionGuard(options: GuardOptions) {
   }, [enc.status, eventLocked]);
   useEffect(() => {
     if (!options.primary) return;
-    return registerGlobalLockExecutor((nativeLock) =>
-      withDatabaseMutation(manager, async () => {
+    return registerGlobalLockExecutor((nativeLock, request) => {
+      const generation = lifecycle.current;
+      const isCurrent = () => lifecycle.current === generation;
+      const automatic =
+        request.reason === "idle" ||
+        request.reason === "blur" ||
+        request.reason === "minimize" ||
+        request.reason === "visibility-hidden";
+      const shouldProceed = () => {
+        if (!isCurrent()) return false;
+        if (!automatic) return true;
+        const policy = policyRef.current;
+        if (!policy?.enabled || request.isCurrent?.() === false) return false;
+        switch (request.reason) {
+          case "idle":
+            return !!policy.lockOnIdle && policy.timeoutMinutes > 0;
+          case "blur":
+            return !!policy.lockOnBlur;
+          case "minimize":
+            return !!policy.lockOnMinimize;
+          case "visibility-hidden":
+            return !!policy.lockOnVisibilityHidden;
+          default:
+            return false;
+        }
+      };
+      return withDatabaseMutation(manager, async () => {
+        if (!shouldProceed()) return;
         if (settingsReadyRef.current === false)
           throw new Error(
             "Global settings have not loaded. Unlock storage and reload settings before locking again.",
           );
         await latest.current.flushCurrent?.();
-        await latest.current.prepareViews?.();
+        if (!shouldProceed()) return;
+        await latest.current.prepareViews?.(shouldProceed);
+        if (!shouldProceed()) return;
         await latest.current.flushCurrent?.();
+        // Commit point: no asynchronous work between the policy check and
+        // invalidation. Once committed, finish the lock even if policy changes.
+        if (!shouldProceed()) return;
         manager.invalidatePendingDatabaseOperations();
-        await latest.current.clearViews();
+        await latest.current.clearViews(isCurrent);
+        if (!isCurrent()) return;
         await nativeLock();
-        lockedRef.current();
-      }),
-    );
+        if (isCurrent()) lockedRef.current();
+      });
+    });
   }, [manager, options.primary]);
   useEffect(() => {
     let disposed = false;
@@ -80,6 +125,7 @@ export function useGlobalEncryptionGuard(options: GuardOptions) {
       if (!(await getInvoke())) return;
       const { listen, emitTo } = await import("@tauri-apps/api/event");
       const lockOff = await listen(ENCRYPTION_EVENT_LOCKED, () => {
+        if (disposed) return;
         authoritativeEvent.current = "locked";
         lockedRef.current();
       });
@@ -89,6 +135,8 @@ export function useGlobalEncryptionGuard(options: GuardOptions) {
       }
       off.push(lockOff);
       const unlockOff = await listen(ENCRYPTION_EVENT_UNLOCKED, () => {
+        if (disposed) return;
+        lifecycle.current++;
         authoritativeEvent.current = "unlocked";
         handled.current = false;
         setEventLocked(false);
@@ -104,6 +152,7 @@ export function useGlobalEncryptionGuard(options: GuardOptions) {
         windowLabel: string;
         reason?: LockReason;
       }>(GLOBAL_LOCK_REQUEST, ({ payload }) => {
+        if (disposed) return;
         if (
           !payload ||
           typeof payload.requestId !== "string" ||
@@ -112,13 +161,16 @@ export function useGlobalEncryptionGuard(options: GuardOptions) {
           return;
         let action = requests.get(payload.requestId);
         if (!action) {
-          action = executeMainGlobalLock(async () => {
-            const invoke = await getInvoke();
-            if (!invoke) throw new Error("Native encryption is unavailable.");
-            await invoke("encryption_lock", {
-              reason: payload.reason ?? "manual",
-            });
-          }).then(
+          action = executeMainGlobalLock(
+            async () => {
+              const invoke = await getInvoke();
+              if (!invoke) throw new Error("Native encryption is unavailable.");
+              await invoke("encryption_lock", {
+                reason: payload.reason ?? "manual",
+              });
+            },
+            { reason: payload.reason },
+          ).then(
             () => undefined,
             (error: unknown) =>
               error instanceof Error ? error.message : String(error),

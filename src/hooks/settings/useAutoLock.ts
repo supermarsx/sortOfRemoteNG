@@ -96,7 +96,7 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
       lockPendingRef.current = true;
       void (async () => {
         try {
-          await lockRef.current(reason);
+          await lockRef.current(reason, () => !disposed && armedRef.current);
         } catch {
           // The next genuine policy event may retry a failed save/lock.
         } finally {
