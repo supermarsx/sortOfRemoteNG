@@ -208,6 +208,7 @@ pub struct ProxyNetworkState {
     pub tactical_mesh: Option<Arc<super::tactical_mesh::TacticalMeshRoute>>,
     pub cloudflare_challenge: Option<Arc<super::cloudflare_challenge::CloudflareChallenge>>,
     pub(super) exchange_cookies: Option<Arc<super::exchange_cookies::ExchangeCookies>>,
+    pub(super) freepbx_cookies: Option<Arc<super::freepbx_cookies::FreepbxCookies>>,
     reviewed_application_profile: Option<super::ReviewedApplicationProfile>,
 }
 
@@ -297,6 +298,7 @@ impl Default for ProxyNetworkState {
             tactical_mesh: None,
             cloudflare_challenge: None,
             exchange_cookies: None,
+            freepbx_cookies: None,
             reviewed_application_profile: None,
         }
     }
@@ -544,6 +546,18 @@ impl ProxyNetworkState {
         Ok(self)
     }
 
+    /// Retain only the reviewed FreePBX PHP session; browser preferences stay
+    /// browser-owned. No other application's authentication policy changes.
+    pub fn with_freepbx_cookies(mut self, source_origin: &str) -> Result<Self, String> {
+        if self.has_freepbx_cookie_compatibility() {
+            self.freepbx_cookies = Some(Arc::new(
+                super::freepbx_cookies::FreepbxCookies::new(source_origin)
+                    .map_err(str::to_owned)?,
+            ));
+        }
+        Ok(self)
+    }
+
     pub(super) fn permits_tactical_popup_parent(&self, sequence: u64) -> bool {
         self.reviewed_application_profile == Some(super::ReviewedApplicationProfile::TacticalRmm)
             && self.document_is_current(sequence)
@@ -630,6 +644,9 @@ impl ProxyNetworkState {
         self.requests.stop_accepting();
         self.active.store(false, Ordering::Release);
         if let Some(cookies) = &self.exchange_cookies {
+            cookies.revoke();
+        }
+        if let Some(cookies) = &self.freepbx_cookies {
             cookies.revoke();
         }
         if let Some(mesh) = &self.tactical_mesh {
@@ -871,6 +888,44 @@ mod freepbx_cookie_compat_tests {
                 .with_reviewed_application_profile(other)
                 .has_freepbx_cookie_compatibility());
         }
+    }
+
+    #[test]
+    fn freepbx_cookie_builder_is_profile_scoped_and_retirement_revokes_handles() {
+        let origin = "http://pbx.fixture.test:8080";
+        let url = reqwest::Url::parse(&format!("{origin}/admin/")).unwrap();
+        for profile in [
+            None,
+            Some(ReviewedApplicationProfile::ExchangeOwa),
+            Some(ReviewedApplicationProfile::GoogleHosted),
+            Some(ReviewedApplicationProfile::Porkbun),
+        ] {
+            let network = ProxyNetworkState::default()
+                .with_reviewed_application_profile(profile)
+                .with_freepbx_cookies("not-an-origin")
+                .unwrap();
+            assert!(network.freepbx_cookies.is_none());
+        }
+        let retirement_paths: [fn(&ProxyNetworkState); 3] = [
+            ProxyNetworkState::revoke,
+            ProxyNetworkState::retire_listener,
+            ProxyNetworkState::retire_for_continuation,
+        ];
+        for retire in retirement_paths {
+            let network = ProxyNetworkState::default()
+                .with_reviewed_application_profile(Some(ReviewedApplicationProfile::Freepbx))
+                .with_freepbx_cookies(origin)
+                .unwrap();
+            let cookies = network.freepbx_cookies.as_ref().unwrap().clone();
+            assert!(cookies.cookie_header(&url, &[]).is_ok());
+            assert!(network.successor().freepbx_cookies.is_none());
+            retire(&network);
+            assert!(cookies.cookie_header(&url, &[]).is_err());
+        }
+        assert!(ProxyNetworkState::default()
+            .with_reviewed_application_profile(Some(ReviewedApplicationProfile::Freepbx))
+            .with_freepbx_cookies("http://pbx.fixture.test/admin/")
+            .is_err());
     }
 }
 

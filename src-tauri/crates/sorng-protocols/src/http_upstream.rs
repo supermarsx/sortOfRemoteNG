@@ -193,11 +193,20 @@ impl RedirectCookieOverlay {
         }
         Ok(())
     }
-    fn browser_header(&self, url: &reqwest::Url, browser: &[&str]) -> Option<String> {
+    fn browser_header(
+        &self,
+        url: &reqwest::Url,
+        browser: &[&str],
+        explicit_native_header: bool,
+    ) -> Option<String> {
         // With no explicit incoming Cookie, reqwest's existing provider must
         // remain solely responsible for all cookies, including non-attempt
         // sessions. Never replace its complete jar with a partial overlay.
-        if browser.is_empty() || url.origin().ascii_serialization() != self.origin {
+        // FreePBX always emits its own header. Include redirect-issued UI
+        // cookies there even when the renderer sent no cookies at all.
+        if (browser.is_empty() && !explicit_native_header)
+            || url.origin().ascii_serialization() != self.origin
+        {
             return None;
         }
         let mut matching: Vec<_> = self
@@ -230,10 +239,21 @@ impl RedirectCookieOverlay {
         );
         Some(values.join("; "))
     }
-    fn has_ambiguous_scope(&self, url: &reqwest::Url, browser: &[&str]) -> bool {
+    fn has_ambiguous_scope(
+        &self,
+        url: &reqwest::Url,
+        browser: &[&str],
+        native_freepbx: bool,
+    ) -> bool {
         self.updates
             .iter()
             .filter(|cookie| cookie.matches(url))
+            // Validated PHP session updates already have native path scopes;
+            // the browser copies are discarded by FreepbxCookies. Keep the
+            // ambiguity refusal for every other cookie/application.
+            .filter(|cookie| {
+                !native_freepbx || cookie.name() != super::freepbx_cookies::SESSION_COOKIE
+            })
             .any(|cookie| {
                 browser
                     .iter()
@@ -387,6 +407,11 @@ async fn send_inner(
     let mut body = body.to_vec();
     let initial_url = url.clone();
     let exchange = state.network.exchange_cookies.as_ref();
+    let freepbx = state
+        .network
+        .freepbx_cookies
+        .as_ref()
+        .filter(|_| !tactical_api_request);
     let exchange_include = if exchange.is_some() {
         let modes: Vec<_> = headers
             .iter()
@@ -460,7 +485,7 @@ async fn send_inner(
             if websocket {
                 request = request.version(reqwest::Version::HTTP_11);
             }
-            let changed_cookie = cookies.browser_header(&url, &browser_cookies);
+            let changed_cookie = cookies.browser_header(&url, &browser_cookies, freepbx.is_some());
             let effective_cookies: Vec<_> = match changed_cookie.as_deref() {
                 Some("") => Vec::new(),
                 Some(value) => vec![value],
@@ -471,6 +496,10 @@ async fn send_inner(
                 .as_ref()
                 .filter(|_| !tactical_api_request)
                 .and_then(|attempt| attempt.merged_request_cookies(&url, &effective_cookies));
+            let freepbx_cookies = freepbx
+                .map(|cookies| cookies.cookie_header(&url, &effective_cookies))
+                .transpose()
+                .map_err(UpstreamError::Policy)?;
             let mesh_cookies = mesh
                 .map(|route| {
                     route.request_cookies(
@@ -510,6 +539,7 @@ async fn send_inner(
                 }
                 if name.eq_ignore_ascii_case("cookie")
                     && (exchange.is_some()
+                        || freepbx_cookies.is_some()
                         || mesh_cookies.is_some()
                         || native_cookies_only
                         || merged_cookies.is_some()
@@ -533,6 +563,8 @@ async fn send_inner(
                 } else {
                     reqwest::header::HeaderValue::from_static("")
                 };
+                request = request.header(reqwest::header::COOKIE, cookies);
+            } else if let Some(cookies) = freepbx_cookies {
                 request = request.header(reqwest::header::COOKIE, cookies);
             } else if let Some(cookies) = mesh_cookies {
                 if !cookies.is_empty() {
@@ -568,6 +600,11 @@ async fn send_inner(
             Ok::<_, UpstreamError>(request)
         };
         let mut response = request(None, &cookie_overlay)?.send().await?;
+        if let Some(cookies) = freepbx {
+            cookies
+                .observe_response(&response)
+                .map_err(UpstreamError::Policy)?;
+        }
         if let Some(exchange) = exchange {
             exchange
                 .observe_response(&mut response, exchange_include)
@@ -593,7 +630,7 @@ async fn send_inner(
                 return Err(UpstreamError::Policy("HTTP Digest requires saved credentials. Edit this connection's username and password, then reconnect."));
             }
             for attempt in 0..2 {
-                if cookie_overlay.has_ambiguous_scope(&url, &browser_cookies) {
+                if cookie_overlay.has_ambiguous_scope(&url, &browser_cookies, freepbx.is_some()) {
                     return Err(UpstreamError::Policy("The server changed cookies with ambiguous browser path scopes. Clear session cookies and retry. No further request was sent."));
                 }
                 let uri = match url.query() {
@@ -612,6 +649,11 @@ async fn send_inner(
                 response = request(Some(authorization), &cookie_overlay)?
                     .send()
                     .await?;
+                if let Some(cookies) = freepbx {
+                    cookies
+                        .observe_response(&response)
+                        .map_err(UpstreamError::Policy)?;
+                }
                 if let Some(exchange) = exchange {
                     exchange
                         .observe_response(&mut response, exchange_include)
@@ -696,7 +738,7 @@ async fn send_inner(
                 UpstreamError::Policy("The configured HTTP query parameters could not be applied.")
             })?
         };
-        if cookie_overlay.has_ambiguous_scope(&next, &browser_cookies) {
+        if cookie_overlay.has_ambiguous_scope(&next, &browser_cookies, freepbx.is_some()) {
             // The raw browser header cannot identify which path each value
             // belongs to. Do not silently discard one session identity, nor
             // bypass native redirect deadlines with a browser-follow loop.

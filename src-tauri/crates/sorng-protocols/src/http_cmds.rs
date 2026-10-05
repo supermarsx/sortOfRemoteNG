@@ -1017,7 +1017,8 @@ pub async fn restart_proxy_session(
             .with_tactical_mesh(tactical_mesh)
             .with_cloudflare_challenge(cloudflare_challenge)
             .with_reviewed_application_profile(reviewed_application_profile)
-            .with_exchange_cookies(&target_origin)?,
+            .with_exchange_cookies(&target_origin)?
+            .with_freepbx_cookies(&target_origin)?,
     );
     let google_routes = network.google_routes();
 

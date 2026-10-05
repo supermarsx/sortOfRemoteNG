@@ -80,6 +80,8 @@ pub use proxy_policy::{
 pub mod cloudflare_challenge;
 #[path = "http_exchange_cookies.rs"]
 mod exchange_cookies;
+#[path = "http_freepbx_cookies.rs"]
+mod freepbx_cookies;
 #[path = "http_exchange_ecp.rs"]
 mod exchange_ecp;
 #[path = "http_external_fonts.rs"]

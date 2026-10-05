@@ -83,6 +83,452 @@ fn pairs(headers: &HeaderMap) -> Vec<String> {
         .collect()
 }
 
+const FREEPBX_FORM: &str = "username=fixture%2Badmin&password=synthetic%26pass";
+
+// Synthetic PHP session contract, not real FreePBX authentication. Validate the
+// prelogin cookie and POST bytes, rotate on both a redirect and its terminal GET.
+async fn freepbx_peer(redirect_status: u16, http_only: bool) -> Peer {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = seen.clone();
+    let router = axum::Router::new().fallback(move |request: axum::extract::Request| {
+        let captured = captured.clone();
+        async move {
+            let (parts, body) = request.into_parts();
+            let body = axum::body::to_bytes(body, 4096).await.unwrap();
+            let path = parts.uri.path();
+            let session: Vec<_> = pairs(&parts.headers)
+                .into_iter()
+                .filter(|pair| pair.starts_with("PHPSESSID="))
+                .collect();
+            captured.lock().unwrap().push((
+                path.to_owned(),
+                parts.method.to_string(),
+                parts.headers.clone(),
+            ));
+            let cookie = |value: &str| {
+                format!(
+                    "PHPSESSID={value}; Path=/admin{}",
+                    if http_only { "; HttpOnly" } else { "" }
+                )
+            };
+            let plain = |text: &'static str| {
+                Response::builder()
+                    .header("Content-Type", "text/plain")
+                    .body(Body::from(text))
+                    .unwrap()
+            };
+            match (parts.method.as_str(), path) {
+                ("GET", "/admin/") => response(200, None, &[&cookie("prelogin")]),
+                ("POST", "/admin/" | "/admin/config.php") => {
+                    if body.as_ref() != FREEPBX_FORM.as_bytes()
+                        || parts
+                            .headers
+                            .get("content-type")
+                            .and_then(|v| v.to_str().ok())
+                            != Some("application/x-www-form-urlencoded")
+                        || session != ["PHPSESSID=prelogin"]
+                    {
+                        return Response::builder()
+                            .status(400)
+                            .body(Body::from("invalid synthetic prelogin session or POST"))
+                            .unwrap();
+                    }
+                    if redirect_status == 200 {
+                        let mut result = plain("authenticated");
+                        result
+                            .headers_mut()
+                            .insert("set-cookie", cookie("active-session").parse().unwrap());
+                        return result;
+                    }
+                    response(
+                        redirect_status,
+                        Some("/admin/config.php"),
+                        &[&cookie("redirect-session")],
+                    )
+                }
+                ("GET", "/admin/config.php") if session == ["PHPSESSID=redirect-session"] => {
+                    let mut result = plain("authenticated");
+                    result
+                        .headers_mut()
+                        .insert("set-cookie", cookie("active-session").parse().unwrap());
+                    result
+                }
+                ("GET", "/admin/config.php") if session == ["PHPSESSID=active-session"] => {
+                    plain("authenticated")
+                }
+                ("POST", "/admin/logout") => response(
+                    redirect_status,
+                    Some("/admin/config.php"),
+                    // A deletion need not repeat HttpOnly.
+                    &["PHPSESSID=; Max-Age=0; Path=/admin"],
+                ),
+                _ => plain("signed-out"),
+            }
+        }
+    });
+    let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    Peer { origin, seen, task }
+}
+
+fn freepbx_config(peer: &Peer) -> BasicAuthProxyConfig {
+    serde_json::from_value(serde_json::json!({
+        "target_url": format!("{}/", peer.origin),
+        "username": "", "password": "", "upstream_auth_mode": "none",
+        "reviewed_application_profile": "freepbx"
+    }))
+    .unwrap()
+}
+
+async fn freepbx_proxy(peer: &Peer, native_override: Option<reqwest::Client>) -> FixtureProxy {
+    let mut config = freepbx_config(peer);
+    let target = reqwest::Url::parse(&config.target_url).unwrap();
+    let mut registry = attempt::AttemptRegistry::default();
+    for automatic in [false, true] {
+        config.http_auto_login = automatic;
+        assert!(registry
+            .start(&config, &target, "synthetic-freepbx-session")
+            .unwrap()
+            .is_none());
+    }
+    let native = native_override.unwrap_or_else(|| {
+        proxy_start::proxy_client_builder_with_cookies(
+            &config.transport_settings,
+            config.verify_ssl,
+            config.accepted_cert_fingerprint.as_deref(),
+            &config.min_tls_version,
+            config.upstream_proxy_url.as_deref(),
+            config.require_ca_verification,
+            target.host_str(),
+            None,
+            true,
+        )
+        .unwrap()
+    });
+    let proxy = proxy_with_policy_and_network(
+        config.target_url,
+        native,
+        config.upstream_auth_mode,
+        config.proxy_policy.unwrap_or_default(),
+        config.custom_headers,
+        Arc::new(
+            ProxyNetworkState::default()
+                .with_reviewed_application_profile(config.reviewed_application_profile)
+                .with_freepbx_cookies(&peer.origin)
+                .unwrap(),
+        ),
+    )
+    .await;
+    assert!(proxy.state.attempt.is_none());
+    assert!(proxy.state.network.has_freepbx_cookie_compatibility());
+    proxy
+}
+
+fn freepbx_request(
+    proxy: &FixtureProxy,
+    method: reqwest::Method,
+    path: &str,
+    cookie: Option<&str>,
+) -> reqwest::RequestBuilder {
+    let mut request = client()
+        .request(method, format!("{}{path}", proxy.base))
+        .header("Host", &proxy.state.proxy_authority)
+        .header("Origin", &proxy.state.proxy_origin)
+        .header("Sec-Fetch-Dest", "iframe")
+        .header("Sec-Fetch-Mode", "navigate");
+    if let Some(cookie) = cookie {
+        request = request.header("Cookie", cookie);
+    }
+    request
+}
+
+async fn freepbx_login(peer: &Peer, proxy: &FixtureProxy, cookie: Option<&str>) {
+    let prelogin = freepbx_request(proxy, reqwest::Method::GET, "/admin/", None)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(prelogin.status(), StatusCode::OK);
+    let login = freepbx_request(proxy, reqwest::Method::POST, "/admin/", cookie)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(FREEPBX_FORM)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::OK);
+    assert_eq!(login.text().await.unwrap(), "authenticated");
+    let seen = peer.seen.lock().unwrap();
+    let post = &seen[seen.len() - 2];
+    assert_eq!((&*post.0, &*post.1), ("/admin/", "POST"));
+    assert_eq!(post.2["content-length"], FREEPBX_FORM.len().to_string());
+    assert_eq!(post.2["origin"], peer.origin);
+    let redirected = seen.last().unwrap();
+    assert_eq!(
+        (&*redirected.0, &*redirected.1),
+        ("/admin/config.php", "GET")
+    );
+    assert!(pairs(&redirected.2).contains(&"PHPSESSID=redirect-session".into()));
+}
+
+#[tokio::test]
+async fn freepbx_login_rotation_survives_partial_and_stale_browser_cookies() {
+    for status in [302, 303] {
+        for http_only in [false, true] {
+            for post_cookie in [
+                None,
+                Some("theme=dark"),
+                Some("PHPSESSID=stale; theme=dark"),
+                Some("PHPSESSID=prelogin; theme=dark"),
+            ] {
+                let peer = freepbx_peer(status, http_only).await;
+                let proxy = freepbx_proxy(&peer, None).await;
+                freepbx_login(&peer, &proxy, post_cookie).await;
+                // No browser jar: these headers explicitly model withheld or stale
+                // browser copies, including two same-name values with unknown paths.
+                for cookie in [
+                    None,
+                    Some("theme=dark"),
+                    Some("theme=light; PHPSESSID=prelogin"),
+                    Some("PHPSESSID=redirect-session; theme=dark; PHPSESSID=prelogin"),
+                ] {
+                    let result =
+                        freepbx_request(&proxy, reqwest::Method::GET, "/admin/config.php", cookie)
+                            .send()
+                            .await
+                            .unwrap();
+                    assert_eq!(result.status(), StatusCode::OK);
+                    let body = result.text().await.unwrap();
+                    let seen = peer.seen.lock().unwrap();
+                    let forwarded = pairs(&seen.last().unwrap().2);
+                    assert_eq!(body, "authenticated", "status={status}, HttpOnly={http_only}, browser={cookie:?}, upstream={forwarded:?}");
+                    assert_eq!(
+                        forwarded
+                            .iter()
+                            .map(String::as_str)
+                            .filter(|value| value.starts_with("PHPSESSID="))
+                            .collect::<Vec<_>>(),
+                        ["PHPSESSID=active-session"]
+                    );
+                    if let Some(value) = cookie.and_then(|header| {
+                        header
+                            .split(';')
+                            .map(str::trim)
+                            .find(|pair| pair.starts_with("theme="))
+                    }) {
+                        assert!(forwarded.iter().any(|pair| pair == value));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn freepbx_direct_200_post_session_survives_next_browser_request() {
+    for http_only in [false, true] {
+        let peer = freepbx_peer(200, http_only).await;
+        let proxy = freepbx_proxy(&peer, None).await;
+        let prelogin = freepbx_request(&proxy, reqwest::Method::GET, "/admin/", None)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(prelogin.status(), StatusCode::OK);
+        // The upstream validates these form bytes AND its prelogin session.
+        // The renderer supplies only a preference, never the required session.
+        let login = freepbx_request(
+            &proxy,
+            reqwest::Method::POST,
+            "/admin/config.php",
+            Some("theme=dark"),
+        )
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(FREEPBX_FORM)
+        .send()
+        .await
+        .unwrap();
+        assert_eq!(login.status(), StatusCode::OK);
+        assert!(!login.headers().contains_key("location"));
+        assert_eq!(login.text().await.unwrap(), "authenticated");
+        {
+            let seen = peer.seen.lock().unwrap();
+            assert_eq!(
+                seen.len(),
+                2,
+                "direct POST success must not invent a redirect hop"
+            );
+            assert_eq!((&*seen[0].0, &*seen[0].1), ("/admin/", "GET"));
+            assert_eq!((&*seen[1].0, &*seen[1].1), ("/admin/config.php", "POST"));
+            assert!(pairs(&seen[1].2).contains(&"PHPSESSID=prelogin".into()));
+        }
+        for cookie in ["theme=dark", "PHPSESSID=prelogin; theme=light"] {
+            let result = freepbx_request(
+                &proxy,
+                reqwest::Method::GET,
+                "/admin/config.php",
+                Some(cookie),
+            )
+            .send()
+            .await
+            .unwrap();
+            assert_eq!(result.status(), StatusCode::OK);
+            assert_eq!(result.text().await.unwrap(), "authenticated");
+            let forwarded = pairs(&peer.seen.lock().unwrap().last().unwrap().2);
+            assert!(forwarded.contains(&"PHPSESSID=active-session".into()));
+            assert!(!forwarded.contains(&"PHPSESSID=prelogin".into()));
+        }
+    }
+}
+
+#[tokio::test]
+async fn freepbx_logout_deletion_rejects_stale_browser_and_hidden_native_jar() {
+    for status in [302, 303] {
+        let peer = freepbx_peer(status, true).await;
+        let hidden_jar = Arc::new(reqwest::cookie::Jar::default());
+        let proxy = freepbx_proxy(&peer, Some(cookie_client(hidden_jar.clone()))).await;
+        freepbx_login(&peer, &proxy, Some("theme=dark")).await;
+        let logout = freepbx_request(
+            &proxy,
+            reqwest::Method::POST,
+            "/admin/logout",
+            Some("theme=dark; PHPSESSID=active-session"),
+        )
+        .send()
+        .await
+        .unwrap();
+        assert_eq!(logout.status(), StatusCode::OK);
+        assert_eq!(logout.text().await.unwrap(), "signed-out");
+        assert!(!pairs(&peer.seen.lock().unwrap().last().unwrap().2)
+            .iter()
+            .any(|value| value.starts_with("PHPSESSID=")));
+        // Deliberately contaminate a separate reqwest jar after deletion. The
+        // explicitly empty authoritative header must prevent automatic refill.
+        hidden_jar.add_cookie_str(
+            "PHPSESSID=active-session; Path=/admin",
+            &reqwest::Url::parse(&peer.origin).unwrap(),
+        );
+        for cookie in [
+            None,
+            Some("PHPSESSID=active-session"),
+            Some("PHPSESSID=prelogin; theme=light"),
+        ] {
+            let result = freepbx_request(&proxy, reqwest::Method::GET, "/admin/config.php", cookie)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(result.status(), StatusCode::OK);
+            assert_eq!(
+                result.text().await.unwrap(),
+                "signed-out",
+                "browser={cookie:?}"
+            );
+            let seen = peer.seen.lock().unwrap();
+            let headers = &seen.last().unwrap().2;
+            assert!(!pairs(headers)
+                .iter()
+                .any(|value| value.starts_with("PHPSESSID=")));
+            if cookie.is_none() || cookie == Some("PHPSESSID=active-session") {
+                assert_eq!(headers.get("cookie").unwrap(), "");
+            } else {
+                assert!(pairs(headers).contains(&"theme=light".into()));
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn freepbx_session_cookie_preserves_path_origin_and_session_isolation() {
+    let peer = freepbx_peer(303, true).await;
+    let first = freepbx_proxy(&peer, None).await;
+    freepbx_login(&peer, &first, Some("theme=dark")).await;
+    for path in ["/ucp/", "/administrator/", "/admin-extra/"] {
+        let result = freepbx_request(
+            &first,
+            reqwest::Method::GET,
+            path,
+            Some("PHPSESSID=active-session; theme=dark"),
+        )
+        .send()
+        .await
+        .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        assert_eq!(result.text().await.unwrap(), "signed-out");
+        let seen = peer.seen.lock().unwrap();
+        assert!(
+            !pairs(&seen.last().unwrap().2)
+                .iter()
+                .any(|value| value.starts_with("PHPSESSID=")),
+            "path={path}"
+        );
+        assert!(pairs(&seen.last().unwrap().2).contains(&"theme=dark".into()));
+    }
+    let before = peer.seen.lock().unwrap().len();
+    assert!(matches!(
+        upstream::send(
+            &first.state,
+            &reqwest::Method::GET,
+            "http://unapproved.invalid/admin/config.php",
+            &[],
+            &[]
+        )
+        .await,
+        Err(upstream::UpstreamError::Policy(_))
+    ));
+    assert_eq!(peer.seen.lock().unwrap().len(), before);
+    let second = freepbx_proxy(&peer, None).await;
+    // Neither the native jar nor a supplied browser copy may import another
+    // proxy's PHP session, even before this session observes an upstream cookie.
+    for cookie in [None, Some("PHPSESSID=active-session; theme=dark")] {
+        let fresh = freepbx_request(&second, reqwest::Method::GET, "/admin/config.php", cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(fresh.status(), StatusCode::OK);
+        assert_eq!(fresh.text().await.unwrap(), "signed-out");
+        assert!(!pairs(&peer.seen.lock().unwrap().last().unwrap().2)
+            .iter()
+            .any(|value| value.starts_with("PHPSESSID=")));
+    }
+    let prelogin = freepbx_request(&second, reqwest::Method::GET, "/admin/", None)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(prelogin.status(), StatusCode::OK);
+    let result = freepbx_request(
+        &second,
+        reqwest::Method::GET,
+        "/admin/config.php",
+        Some("PHPSESSID=active-session; theme=dark"),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(result.status(), StatusCode::OK);
+    assert_eq!(result.text().await.unwrap(), "signed-out");
+    let forwarded = pairs(&peer.seen.lock().unwrap().last().unwrap().2);
+    assert!(forwarded.contains(&"PHPSESSID=prelogin".into()));
+    assert!(!forwarded.contains(&"PHPSESSID=active-session".into()));
+    // Revoking a separate session must not affect the authenticated owner.
+    second.state.network.revoke();
+    let result = freepbx_request(
+        &first,
+        reqwest::Method::GET,
+        "/admin/config.php",
+        Some("theme=dark"),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(result.text().await.unwrap(), "authenticated");
+    first.state.network.revoke();
+    let before = peer.seen.lock().unwrap().len();
+    let retired = freepbx_request(&first, reqwest::Method::GET, "/admin/config.php", None)
+        .send()
+        .await
+        .unwrap();
+    assert!(!retired.status().is_success());
+    assert_eq!(peer.seen.lock().unwrap().len(), before);
+}
+
 #[tokio::test]
 async fn redirect_rotation_reaches_next_hop_and_next_browser_request() {
     let peer = peer(|path, _| match path {

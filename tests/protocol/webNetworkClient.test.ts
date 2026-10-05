@@ -1058,6 +1058,49 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
       `${proxy}/other-page?return=%2Fhome+page&__sorng_generation_v1=0123456789abcdef0123456789abcdef`,
     );
   });
+  it.each(["markup", "property", "attribute"] as const)(
+    "preserves an empty fragment from %s without turning a modal launcher into a reload",
+    (assignment) => {
+      const current = `${proxy}/portal/page?return=%2Fhome+page#!/login`;
+      vi.stubGlobal("location", new URL(current));
+      vi.spyOn(document, "baseURI", "get").mockReturnValue(current);
+      start({
+        ...config(),
+        requestGeneration: "0123456789abcdef0123456789abcdef",
+      });
+      const container = document.createElement("div");
+      container.innerHTML = '<a href="#">Open login dialog</a>';
+      const anchor = container.querySelector("a")!;
+      if (assignment === "property") anchor.href = "#";
+      if (assignment === "attribute") anchor.setAttribute("href", "#");
+      document.body.append(container);
+      cancelBrowserDefaultAfterRouting();
+      anchor.click();
+      expect(anchor.getAttribute("href")).toBe(
+        `${proxy}/portal/page?return=%2Fhome+page#`,
+      );
+      // Explicit requests still require a proof, regardless of the fragment.
+      expect(controller!.mapUrl("#", "fetch")).toContain(
+        "__sorng_generation_v1=",
+      );
+    },
+  );
+  it("preserves an empty fragment when mapping the upstream origin and preparing a new-context link", () => {
+    start({
+      ...config(),
+      requestGeneration: "0123456789abcdef0123456789abcdef",
+    });
+    const anchor = document.createElement("a");
+    anchor.href = `${upstream}/portal/page#`;
+    expect(anchor.href).toBe(`${proxy}/portal/page#`);
+    anchor.target = "_blank";
+    document.body.append(anchor);
+    anchor.addEventListener("click", (event) => event.preventDefault());
+    anchor.click();
+    expect(anchor.href).toBe(
+      `${proxy}/portal/page?__sorng_generation_v1=0123456789abcdef0123456789abcdef#`,
+    );
+  });
   it("stamps a different query even when the path and fragment stay local", () => {
     start({
       ...config(),

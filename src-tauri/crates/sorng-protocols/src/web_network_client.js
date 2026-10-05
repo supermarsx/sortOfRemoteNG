@@ -926,7 +926,11 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     if (socket) result.protocol = "ws:";
     result.pathname = target.pathname;
     result.search = target.search;
-    result.hash = target.hash;
+    // URL.hash is empty both for no fragment and for the explicit empty '#'.
+    // Preserve the latter: FreePBX and other modal launchers use href="#".
+    // Dropping it makes mapUrl stamp a new request proof and turns an in-page
+    // activation into a document reload before the user can submit the dialog.
+    result.hash = target.hash || (target.href.indexOf("#") !== -1 ? "#" : "");
     if (socket) {
       if (result.searchParams.has("__sorng_ws_document_v1"))
         throw blocked(kind, "reserved-url-parameter");
