@@ -89,11 +89,35 @@ const recordArrays = new Set([
   "$/scripts",
   "$/macros",
 ]);
-function invalid(reason: string): never {
+export type RecordLedgerErrorCode =
+  | "invalid-ledger"
+  | "unrelated-histories"
+  | "revision-identity-collision"
+  | "revision-stamp-collision"
+  | "creation-provenance"
+  | "missing-branch-head"
+  | "deleted-content"
+  | "safety-limit"
+  | "timestamp-overflow";
+
+/** Only fixed diagnostic codes cross into sync review; never attach the
+ * offending record path, revision, stamp, or private payload to an error. */
+export class RecordLedgerError extends Error {
+  constructor(
+    readonly code: RecordLedgerErrorCode,
+    reason: string,
+  ) {
+    super(`Invalid record ledger: ${reason}. Existing metadata was retained.`);
+    this.name = "RecordLedgerError";
+  }
+}
+
+function invalid(
+  reason: string,
+  code: RecordLedgerErrorCode = "invalid-ledger",
+): never {
   // Deliberately never interpolate keys, IDs, or values from private payloads.
-  throw new Error(
-    `Invalid record ledger: ${reason}. Existing metadata was retained.`,
-  );
+  throw new RecordLedgerError(code, reason);
 }
 const isObject = (value: Json): value is JsonObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -110,17 +134,18 @@ function jsonSnapshot(
   const ancestors = new Set<object>();
   const charge = (amount: number) => {
     bytes += amount;
-    if (bytes > maxBytes) invalid("JSON byte limit exceeded");
+    if (bytes > maxBytes) invalid("JSON byte limit exceeded", "safety-limit");
   };
   const copy = (input: unknown, depth: number): Json => {
     if (++nodes > MAX_NODES || depth > MAX_DEPTH)
-      invalid("JSON complexity limit exceeded");
+      invalid("JSON complexity limit exceeded", "safety-limit");
     if (input === null || typeof input === "boolean") {
       charge(5);
       return input;
     }
     if (typeof input === "string") {
-      if (input.length > maxBytes) invalid("JSON byte limit exceeded");
+      if (input.length > maxBytes)
+        invalid("JSON byte limit exceeded", "safety-limit");
       charge(byteLength(JSON.stringify(input)));
       return input;
     }
@@ -152,12 +177,12 @@ function jsonSnapshot(
       (input as unknown[]).length >
         (maxBytes === MAX_METADATA_BYTES ? MAX_JOURNAL : MAX_NODES)
     )
-      invalid("JSON array count limit exceeded");
+      invalid("JSON array count limit exceeded", "safety-limit");
     if (ancestors.has(input)) invalid("cyclic JSON");
     ancestors.add(input);
     const keys = Reflect.ownKeys(input);
     if (keys.length > MAX_NODES - nodes)
-      invalid("JSON complexity limit exceeded");
+      invalid("JSON complexity limit exceeded", "safety-limit");
     const output: JsonObject | Json[] = array ? [] : Object.create(null);
     let items = 0;
     for (const key of keys.sort((a, b) =>
@@ -356,7 +381,8 @@ function normalizeDagHistory(
         "parentRevision" in change ? [token(change.parentRevision)] : [];
     }
     edges += parents.length;
-    if (edges > MAX_JOURNAL * 4) invalid("history edge limit exceeded");
+    if (edges > MAX_JOURNAL * 4)
+      invalid("history edge limit exceeded", "safety-limit");
     if (!parents.length) {
       if (
         (kind !== "create" && kind !== "migrate") ||
@@ -585,7 +611,8 @@ function enumerate(payload: JsonObject, prior?: RecordLedger): Candidate[] {
   const add = (key: string, value: Json, dates: Dates) => {
     recordKey(key);
     if (candidates.has(key)) invalid("duplicate record identity");
-    if (candidates.size >= MAX_RECORDS) invalid("record count limit exceeded");
+    if (candidates.size >= MAX_RECORDS)
+      invalid("record count limit exceeded", "safety-limit");
     candidates.set(key, { key, value, dates });
   };
   const walk = (
@@ -691,7 +718,7 @@ async function sha256(value: string): Promise<string> {
 function nextTime(now: string, prior: string): string {
   return (
     timestamp(Math.max(Date.parse(now), Date.parse(prior) + 1)) ??
-    invalid("timestamp overflow")
+    invalid("timestamp overflow", "timestamp-overflow")
   );
 }
 
@@ -743,10 +770,11 @@ export async function reconcileRecordLedger(
     dates: Dates,
     kind: RecordChange["kind"],
   ) => {
-    if (journal.length >= MAX_JOURNAL) invalid("journal limit exceeded");
+    if (journal.length >= MAX_JOURNAL)
+      invalid("journal limit exceeded", "safety-limit");
     const before = records[key];
     if (!before && ++recordCount > MAX_RECORDS)
-      invalid("record count limit exceeded");
+      invalid("record count limit exceeded", "safety-limit");
     const revision = await sha256(
       JSON.stringify([
         "record-ledger-v1",
@@ -774,7 +802,8 @@ export async function reconcileRecordLedger(
   for (const candidate of candidates) {
     const serialized = JSON.stringify(candidate.value);
     hashedBytes += byteLength(serialized);
-    if (hashedBytes > MAX_HASH_BYTES) invalid("hash work limit exceeded");
+    if (hashedBytes > MAX_HASH_BYTES)
+      invalid("hash work limit exceeded", "safety-limit");
     const contentHash = await sha256(serialized);
     const before = records[candidate.key];
     if (before && !before.deletedAt && before.contentHash === contentHash)
@@ -860,9 +889,10 @@ export async function reconcileMergedRecordLedgers(
     for (const event of ledger.journal) {
       const existing = events.get(event.revision);
       if (existing && JSON.stringify(existing) !== JSON.stringify(event))
-        invalid("revision identity collision");
+        invalid("revision identity collision", "revision-identity-collision");
       events.set(event.revision, event);
-      if (events.size > MAX_JOURNAL) invalid("journal limit exceeded");
+      if (events.size > MAX_JOURNAL)
+        invalid("journal limit exceeded", "safety-limit");
     }
   }
   // A containing journal is retained byte-for-byte (including event order).
@@ -889,7 +919,8 @@ export async function reconcileMergedRecordLedgers(
   for (const event of journal) {
     const parents = eventParents(event);
     if (!parents.length) {
-      if (roots.has(event.record)) invalid("unrelated record histories");
+      if (roots.has(event.record))
+        invalid("unrelated record histories", "unrelated-histories");
       roots.add(event.record);
     }
     const recordHeads = heads.get(event.record) ?? new Set<string>();
@@ -897,7 +928,8 @@ export async function reconcileMergedRecordLedgers(
     recordHeads.add(event.revision);
     heads.set(event.record, recordHeads);
   }
-  if (heads.size > MAX_RECORDS) invalid("record count limit exceeded");
+  if (heads.size > MAX_RECORDS)
+    invalid("record count limit exceeded", "safety-limit");
   const records: Record<string, RecordStamp> = Object.create(null);
   for (const [key, recordHeads] of heads) {
     const a = left.records[key],
@@ -907,17 +939,17 @@ export async function reconcileMergedRecordLedgers(
       b &&
       (a.createdAt !== b.createdAt || a.createdAtSource !== b.createdAtSource)
     )
-      invalid("inconsistent creation provenance");
+      invalid("inconsistent creation provenance", "creation-provenance");
     if (
       a &&
       b &&
       a.revision === b.revision &&
       JSON.stringify(a) !== JSON.stringify(b)
     )
-      invalid("revision stamp collision");
+      invalid("revision stamp collision", "revision-stamp-collision");
     records[key] = recordHeads.has(a?.revision) ? a : b;
     if (!records[key] || !recordHeads.has(records[key].revision))
-      invalid("missing branch head stamp");
+      invalid("missing branch head stamp", "missing-branch-head");
   }
   // Enumeration uses the union's known stable identities, not the archive
   // envelope. Callers exporting a full database pass fullDatabaseArchiveData.
@@ -933,7 +965,7 @@ export async function reconcileMergedRecordLedgers(
   for (const [key, recordHeads] of heads) {
     if (recordHeads.size === 1) continue;
     if (recordHeads.size > MAX_MERGE_PARENTS)
-      invalid("merge parent limit exceeded");
+      invalid("merge parent limit exceeded", "safety-limit");
     const parents = [...recordHeads].sort();
     const before = records[key];
     const candidate = candidates.get(key);
@@ -941,13 +973,14 @@ export async function reconcileMergedRecordLedgers(
     if (candidate) {
       const serialized = JSON.stringify(candidate.value);
       hashedBytes += byteLength(serialized);
-      if (hashedBytes > MAX_HASH_BYTES) invalid("hash work limit exceeded");
+      if (hashedBytes > MAX_HASH_BYTES)
+        invalid("hash work limit exceeded", "safety-limit");
       contentHash = await sha256(serialized);
     } else {
       // Tombstones retain the last content hash. Divergent last contents have
       // no single unambiguous tombstone hash; require explicit review instead.
       if (left.records[key]?.contentHash !== right.records[key]?.contentHash)
-        invalid("ambiguous deleted record content");
+        invalid("ambiguous deleted record content", "deleted-content");
       contentHash = before.contentHash;
     }
     const parentTimes = parents
@@ -968,8 +1001,10 @@ export async function reconcileMergedRecordLedgers(
         updatedAt,
       ]),
     );
-    if (events.has(revision)) invalid("revision identity collision");
-    if (journal.length >= MAX_JOURNAL) invalid("journal limit exceeded");
+    if (events.has(revision))
+      invalid("revision identity collision", "revision-identity-collision");
+    if (journal.length >= MAX_JOURNAL)
+      invalid("journal limit exceeded", "safety-limit");
     records[key] = {
       createdAt: before.createdAt,
       createdAtSource: before.createdAtSource,

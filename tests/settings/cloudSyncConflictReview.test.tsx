@@ -365,6 +365,88 @@ describe("cloud sync conflict review UI", () => {
     expect(screen.getByText("1 artifact · 1 conflict")).toBeInTheDocument();
   });
 
+  it("keeps one visible blocker list above the record counts when comparison details are collapsed", async () => {
+    const receipt = review();
+    receipt.items[1].details = {
+      records: [
+        {
+          kind: "terminalScripts",
+          local: 5,
+          remote: 5,
+          localOnly: 0,
+          remoteOnly: 0,
+          different: 5,
+          same: 0,
+          reordered: false,
+        },
+      ],
+      hasBaseline: true,
+      comparisonLimited: false,
+      otherDifferences: true,
+    };
+    receipt.items[1].conflicts = [
+      { code: "history-incompatible", kind: "other", count: 1 },
+      { code: "concurrent-edit", kind: "terminalScripts", count: 2 },
+    ];
+    mocks.review.mockResolvedValueOnce(receipt);
+    render(<Harness />);
+    await openReview();
+    const artifact = within(screen.getByRole("listitem", { name: "Scripts" }));
+    const heading = artifact.getByRole("heading", { name: "Merge blockers" });
+    const blockers = artifact.getByRole("list", {
+      name: "Merge blockers for Scripts",
+    });
+    const table = artifact.getByRole("table", {
+      name: "Record comparison for Scripts",
+    });
+    const summary = artifact.getByText("Record comparison and merge details");
+    const disclosure = summary.closest("details")!;
+    expect(heading).toBeVisible();
+    expect(
+      heading.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(blockers).toBeVisible();
+    expect(within(blockers).getAllByRole("listitem")).toHaveLength(2);
+    expect(blockers).toHaveTextContent("1 reported blocker");
+    expect(blockers).toHaveTextContent("2 reported blockers");
+
+    fireEvent.click(summary);
+    expect(disclosure.open).toBe(false);
+    expect(table).not.toBeVisible();
+    expect(heading).toBeVisible();
+    expect(blockers).toBeVisible();
+    expect(
+      artifact.getByText(/The record histories cannot be safely combined/),
+    ).toBeVisible();
+    expect(
+      artifact.getByText(/Both copies edited the same record/),
+    ).toBeVisible();
+    expect(
+      artifact.getByText(/Refresh review to run the current history checks/),
+    ).toBeVisible();
+    expect(
+      artifact.getByText(/Compare the affected category in both copies/),
+    ).toBeVisible();
+    expect(
+      artifact.getByText(/These counts are reported blockers/),
+    ).toBeVisible();
+    expect(artifact.getByText(/History validation stops/)).toBeVisible();
+    expect(artifact.getByText(/replaces the entire artifact/)).toBeVisible();
+    expect(blockers.closest("details")).toBeNull();
+
+    fireEvent.click(summary);
+    expect(table).toBeVisible();
+    expect(
+      artifact.getAllByRole("list", { name: "Merge blockers for Scripts" }),
+    ).toHaveLength(1);
+    expect(
+      artifact.getAllByRole("heading", { name: "Merge blockers" }),
+    ).toHaveLength(1);
+    expect(document.body.textContent).not.toMatch(
+      /private-secret|private-receipt-key/,
+    );
+  });
+
   it("previews summaries, makes every conflict explicit, and cancels without a write", async () => {
     render(<Harness />);
     expect(

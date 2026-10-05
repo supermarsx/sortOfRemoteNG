@@ -191,3 +191,77 @@ it.each(["automatic", "reviewed"] as const)(
     ]);
   },
 );
+
+it("keeps specific history blockers through encrypted archive review without writing either side", async () => {
+  const base = await buildFullDatabaseArchive(
+    collection,
+    await fullData(),
+    trust,
+  );
+  local = await upgradeCloudSyncPayload(wrap(base));
+  await runCloudSync(target, config);
+  const normalized = local.sections["database:source-db"] as typeof base;
+  const ours = structuredClone(normalized),
+    theirs = structuredClone(normalized);
+  ours.connections[2].name = "PRIVATE_LOCAL_CHANGE";
+  theirs.connections[1].name = "PRIVATE_REMOTE_CHANGE";
+  ours.recordMetadata = await reconcileRecordLedger(
+    fullDatabaseArchiveData(ours),
+    ours.recordMetadata,
+    { mode: "write", now: "2026-10-04T16:27:11.513Z" },
+  );
+  // An independent import retained the content, but not the original lineage.
+  const imported = fullDatabaseArchiveData(theirs);
+  delete imported.recordMetadata;
+  theirs.recordMetadata = await reconcileRecordLedger(imported, undefined, {
+    mode: "write",
+    now: "2026-10-04T11:42:20.010Z",
+  });
+  local = await upgradeCloudSyncPayload(wrap(ours));
+  await publishRemote(await upgradeCloudSyncPayload(wrap(theirs)));
+  const before = {
+    local: structuredClone(local),
+    remote,
+    checkpoint: structuredClone([...mocks.store.values()]),
+  };
+  mocks.invoke.mockClear();
+  mocks.apply.mockClear();
+
+  const review = await reviewCloudSync(target, config);
+  expect(review.items).toMatchObject([
+    {
+      state: "conflict",
+      smartMergeAvailable: false,
+      reason: expect.stringContaining("separate starting histories"),
+      conflicts: [{ code: "history-unrelated", kind: "other", count: 1 }],
+      details: { hasBaseline: true },
+    },
+  ]);
+  expect(JSON.stringify(review)).not.toContain("PRIVATE_");
+  for (const source of [ours, theirs])
+    for (const event of source.recordMetadata!.journal)
+      expect(JSON.stringify(review)).not.toContain(event.revision);
+  expect([...mocks.store.values()]).toEqual(before.checkpoint);
+  await expect(runCloudSync(target, config)).rejects.toThrow(
+    /separate starting histories/,
+  );
+  expect(mocks.apply).not.toHaveBeenCalled();
+  expect(
+    mocks.invoke.mock.calls.every(([command]) => command === "cloud_sync_read"),
+  ).toBe(true);
+  expect({ local, remote }).toEqual({
+    local: before.local,
+    remote: before.remote,
+  });
+  // A sync attempt may observe a new local fingerprint, but must not advance
+  // either successful-sync baseline after rejecting the merge.
+  const checkpoints = [...mocks.store.values()];
+  expect(checkpoints).toHaveLength(before.checkpoint.length);
+  before.checkpoint.forEach((checkpoint, index) => {
+    const { baseline, smartBaseline } = checkpoint as {
+      baseline: unknown;
+      smartBaseline: unknown;
+    };
+    expect(checkpoints[index]).toMatchObject({ baseline, smartBaseline });
+  });
+});

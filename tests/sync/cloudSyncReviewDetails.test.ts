@@ -130,6 +130,9 @@ describe("metadata-only sync review details", () => {
       "PRIVATE_VALUE",
       "",
       "99999-01-01T00:00:00Z",
+      "2026-10-25T01:30:00",
+      "2026-02-30T12:00:00Z",
+      "2026-10-05T24:00:00Z",
     ])
       expect(
         summarizeCloudSyncReview(
@@ -148,6 +151,31 @@ describe("metadata-only sync review details", () => {
         remoteRecordedAt: undefined,
         remoteSnapshotAt: undefined,
       });
+  });
+
+  it("compares equivalent offset dates against one explicit UTC reference", () => {
+    const details = summarizeCloudSyncReview(
+      "database:db",
+      { recordMetadata: ledger("2026-10-05T13:34:56.789+01:00") },
+      { recordMetadata: ledger("2026-10-05T08:34:56.789-04:00") },
+      true,
+      Date.parse("2026-10-05T18:19:56.789+05:45"),
+    );
+    expect(details.localRecordedAt).toEqual(details.remoteRecordedAt);
+    expect(details.localRecordedAt?.at).toBe("2026-10-05T12:34:56.789Z");
+    expect(details.remoteSnapshotAt).toBe(details.localRecordedAt?.at);
+  });
+
+  it("keeps repeated DST wall times distinct and never treats them as a merge winner", () => {
+    const details = summarizeCloudSyncReview(
+      "database:db",
+      { recordMetadata: ledger("2026-10-25T01:30:00+01:00") },
+      { recordMetadata: ledger("2026-10-25T01:30:00+00:00") },
+      false,
+    );
+    expect(details.localRecordedAt?.at).toBe("2026-10-25T00:30:00.000Z");
+    expect(details.remoteRecordedAt?.at).toBe("2026-10-25T01:30:00.000Z");
+    expect(details.hasBaseline).toBe(false);
   });
 
   it.each([

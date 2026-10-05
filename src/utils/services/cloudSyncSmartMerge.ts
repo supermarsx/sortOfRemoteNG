@@ -2,6 +2,8 @@ import {
   normalizeRecordLedger,
   reconcileRecordLedger,
   reconcileMergedRecordLedgers,
+  RecordLedgerError,
+  type RecordLedgerErrorCode,
 } from "../storage/recordLedger";
 import {
   fullDatabaseArchiveData,
@@ -9,6 +11,7 @@ import {
 } from "../connection/fullDatabaseArchive";
 import {
   reviewRecordKind,
+  reviewConflictLabels,
   type SmartSyncConflictCode,
   type SmartSyncConflictDetail,
 } from "./cloudSyncReviewDetails";
@@ -94,6 +97,21 @@ const invalid = (): never => {
 const canonical = (value: Json): string => JSON.stringify(value);
 const childPath = (path: string, key: string) =>
   path ? `${path}/${encodeURIComponent(key)}` : encodeURIComponent(key);
+
+const historyConflictCodes: Record<
+  RecordLedgerErrorCode,
+  SmartSyncConflictCode
+> = {
+  "unrelated-histories": "history-unrelated",
+  "revision-identity-collision": "history-revision-collision",
+  "revision-stamp-collision": "history-stamp-collision",
+  "creation-provenance": "history-creation-provenance",
+  "missing-branch-head": "history-missing-head",
+  "deleted-content": "history-deleted-content",
+  "safety-limit": "history-safety-limit",
+  "timestamp-overflow": "history-timestamp-overflow",
+  "invalid-ledger": "history-invalid",
+};
 
 /** JSON descriptors only. Do not run getters, toJSON, or prototype hooks. */
 function snapshot(
@@ -535,10 +553,17 @@ export async function smartMergeSyncSection(
           l.ledger,
           r.ledger,
         )) as unknown as Json;
-      } catch {
+      } catch (error) {
+        // The ledger intentionally stops at the first failed invariant. Report
+        // that fixed code, not an invented count of affected records or the raw
+        // exception (which could originate outside the ledger, e.g. WebCrypto).
+        const code =
+          error instanceof RecordLedgerError
+            ? historyConflictCodes[error.code]
+            : "history-incompatible";
         return conflict(
-          "Record histories could not be safely combined. Review both copies; no history was discarded.",
-          "history-incompatible",
+          `${reviewConflictLabels[code]}. No history was discarded.`,
+          code,
         );
       }
     }

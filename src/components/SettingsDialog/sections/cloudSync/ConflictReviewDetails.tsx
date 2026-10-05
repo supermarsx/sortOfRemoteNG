@@ -1,9 +1,23 @@
+import { AlertTriangle } from "lucide-react";
 import type { CloudSyncReviewItem } from "../../../../utils/services/cloudSyncConflictReview";
 import {
+  reviewConflictGuidance,
   reviewConflictLabels,
   reviewRecordLabels,
   type ReviewRecordedDate,
 } from "../../../../utils/services/cloudSyncReviewDetails";
+import { normalizeZonedTimestamp } from "../../../../utils/storage/recordTimestamps";
+
+function UtcDate({ at }: { at: string }) {
+  // Do not assign the viewer's timezone to an ambiguous legacy timestamp.
+  const iso = normalizeZonedTimestamp(at);
+  if (!iso) {
+    return <>Unavailable (invalid or missing timezone)</>;
+  }
+  return (
+    <time dateTime={iso}>{iso.replace("T", " ").replace("Z", " UTC")}</time>
+  );
+}
 
 function RecordedDate({
   label,
@@ -17,8 +31,7 @@ function RecordedDate({
       {label}:{" "}
       {date ? (
         <>
-          <time dateTime={date.at}>{new Date(date.at).toLocaleString()}</time> (
-          {date.source})
+          <UtcDate at={date.at} /> ({date.source})
         </>
       ) : (
         "Not recorded"
@@ -27,14 +40,10 @@ function RecordedDate({
   );
 }
 
-export default function ConflictReviewDetails({
-  item,
-}: {
-  item: CloudSyncReviewItem;
-}) {
+function RecordComparison({ item }: { item: CloudSyncReviewItem }) {
   const details = item.details;
-  if (!details && !item.conflicts?.length) return null;
-  const rows = details?.records.filter((row) => row.local || row.remote) ?? [];
+  if (!details) return null;
+  const rows = details.records.filter((row) => row.local || row.remote);
   return (
     <div className="space-y-2 text-xs text-[var(--color-textSecondary)]">
       {details && (
@@ -128,12 +137,14 @@ export default function ConflictReviewDetails({
             />
             {details.remoteSnapshotAt && (
               <p>
-                Remote snapshot time:{" "}
-                <time dateTime={details.remoteSnapshotAt}>
-                  {new Date(details.remoteSnapshotAt).toLocaleString()}
-                </time>
+                Remote snapshot time: <UtcDate at={details.remoteSnapshotAt} />
               </p>
             )}
+            <p>
+              Times are shown in UTC. Timezone differences alone do not
+              establish which copy is newer. Legacy dates without a recorded
+              timezone remain uncertain.
+            </p>
             <p>
               Dates are informational, not evidence of which copy should win.
               Inferred or observed dates may reflect migration or when the app
@@ -142,18 +153,64 @@ export default function ConflictReviewDetails({
           </div>
         </>
       )}
-      {!!item.conflicts?.length && (
-        <ul
+    </div>
+  );
+}
+
+export default function ConflictReviewDetails({
+  item,
+}: {
+  item: CloudSyncReviewItem;
+}) {
+  const blockers = item.state === "conflict" ? (item.conflicts ?? []) : [];
+  if (!item.details && !blockers.length) return null;
+  return (
+    <div className="space-y-2 text-xs text-[var(--color-textSecondary)]">
+      {blockers.length > 0 && (
+        <section
           aria-label={`Merge blockers for ${item.label}`}
-          className="list-disc pl-4 space-y-1"
+          className="sor-alert-warning space-y-2"
         >
-          {item.conflicts.map((entry) => (
-            <li key={`${entry.code}:${entry.kind}`}>
-              {reviewRecordLabels[entry.kind]}:{" "}
-              {reviewConflictLabels[entry.code]} ({entry.count}).
-            </li>
-          ))}
-        </ul>
+          <h6 className="flex items-center gap-2 text-sm font-semibold text-warning">
+            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Merge blockers
+          </h6>
+          <ul
+            aria-label={`Merge blockers for ${item.label}`}
+            className="list-disc space-y-2 pl-4"
+          >
+            {blockers.map((entry) => (
+              <li key={`${entry.code}:${entry.kind}`}>
+                <p className="font-medium text-[var(--color-text)]">
+                  {reviewRecordLabels[entry.kind]}:{" "}
+                  {reviewConflictLabels[entry.code]} ({entry.count}{" "}
+                  {entry.count === 1 ? "reported blocker" : "reported blockers"}
+                  ).
+                </p>
+                <p>{reviewConflictGuidance[entry.code]}</p>
+              </li>
+            ))}
+          </ul>
+          <p>
+            These counts are reported blockers, not counts of differing records.
+            History validation stops at the first detected problem, so more
+            problems may remain. A history count of 1 means one reported
+            rejection, not one affected record.
+          </p>
+        </section>
+      )}
+      {item.details && (
+        <details
+          open={item.state === "conflict"}
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2"
+        >
+          <summary className="cursor-pointer rounded text-xs font-medium text-[var(--color-textSecondary)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            Record comparison and merge details
+          </summary>
+          <div className="mt-2">
+            <RecordComparison item={item} />
+          </div>
+        </details>
       )}
       {item.state === "conflict" && (
         <p>

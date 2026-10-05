@@ -227,19 +227,7 @@ function ConflictResolutionSection({ mgr }: { mgr: Mgr }) {
                                 {item.reason}
                               </p>
                             )}
-                            {(item.details || !!item.conflicts?.length) && (
-                              <details
-                                open={item.state === "conflict"}
-                                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2"
-                              >
-                                <summary className="cursor-pointer rounded text-xs font-medium text-[var(--color-textSecondary)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-                                  Record comparison and merge details
-                                </summary>
-                                <div className="mt-2">
-                                  <ConflictReviewDetails item={item} />
-                                </div>
-                              </details>
-                            )}
+                            <ConflictReviewDetails item={item} />
                             {item.state === "conflict" && (
                               <Select
                                 label={`Resolution for ${item.label}`}

@@ -1,4 +1,5 @@
 import { canonicalSyncJson } from "./cloudSyncCodec";
+import { normalizeZonedTimestamp } from "../storage/recordTimestamps";
 
 // Only these product-authored labels leave this module. Keys, IDs, record names,
 // paths, values, revisions and content hashes are deliberately not returned.
@@ -32,6 +33,15 @@ export type SmartSyncConflictCode =
   | "history-removed"
   | "history-mismatch"
   | "history-incompatible"
+  | "history-unrelated"
+  | "history-revision-collision"
+  | "history-stamp-collision"
+  | "history-creation-provenance"
+  | "history-missing-head"
+  | "history-deleted-content"
+  | "history-safety-limit"
+  | "history-timestamp-overflow"
+  | "history-invalid"
   | "invalid-data"
   | "dependencies";
 export const reviewConflictLabels: Record<SmartSyncConflictCode, string> = {
@@ -50,10 +60,74 @@ export const reviewConflictLabels: Record<SmartSyncConflictCode, string> = {
   "history-removed": "One copy is missing previously recorded history",
   "history-mismatch": "Recorded history does not match the current data",
   "history-incompatible": "The record histories cannot be safely combined",
+  "history-unrelated":
+    "The same record has separate starting histories with no shared origin",
+  "history-revision-collision":
+    "The same revision identifies different history events in the two copies",
+  "history-stamp-collision":
+    "The same revision has different record metadata in the two copies",
+  "history-creation-provenance":
+    "The copies disagree about a record's creation time or how it was recorded",
+  "history-missing-head":
+    "A history branch is missing its current record metadata",
+  "history-deleted-content":
+    "A deleted record has different last-known contents across the two histories",
+  "history-safety-limit":
+    "Combining the histories would exceed a safe processing limit",
+  "history-timestamp-overflow":
+    "A history timestamp is too large to record a later merge event",
+  "history-invalid": "The combined history failed record-ledger validation",
   "invalid-data":
     "Data or checkpoint is unsupported, invalid, or exceeds safe limits",
   dependencies:
     "The combined records have incompatible dependencies or metadata",
+};
+
+/** Fixed, actionable guidance only. Never surface an exception message or a
+ * private history path/revision from either copy in the review receipt. */
+export const reviewConflictGuidance: Record<SmartSyncConflictCode, string> = {
+  "concurrent-edit":
+    "Compare the affected category in both copies and preserve the edits you need before choosing a whole copy.",
+  "concurrent-addition":
+    "Check the added records in both copies. Preserve distinct additions before choosing a whole copy.",
+  "delete-versus-edit":
+    "Decide whether the deletion or the edited record should be kept; a timestamp alone cannot make this decision.",
+  ordering:
+    "Compare the order of the affected records in both copies and decide which order should be retained.",
+  "incompatible-shape":
+    "Use the same app version on both devices, then review the affected data structures before choosing a copy.",
+  "missing-baseline":
+    "Back up both copies and reconcile their contents before choosing a whole copy. A successful sync establishes a shared baseline.",
+  "unavailable-baseline":
+    "Detailed indexing could not be used for this artifact. Back up and compare both copies before choosing a whole copy.",
+  "history-removed":
+    "Look for a backup that retains the missing history. Do not remove the other copy's metadata to force a merge.",
+  "history-mismatch":
+    "Reload the owning database and refresh this review. If the problem remains, compare a known-good backup; do not erase the history.",
+  "history-incompatible":
+    "Refresh review to run the current history checks and obtain a more specific reason where available. Back up both copies before choosing either one.",
+  "history-unrelated":
+    "A shared content baseline does not prove shared record history. This can happen after separate migrations or imports. Preserve both copies and reconcile the needed content before choosing a whole copy; their histories cannot be joined automatically.",
+  "history-revision-collision":
+    "Do not reset the ledger or choose by date. Retain backups of both copies and compare a known-good backup before choosing a whole copy.",
+  "history-stamp-collision":
+    "Do not regenerate revision identifiers to force a merge. Retain backups and compare a known-good backup before choosing a whole copy.",
+  "history-creation-provenance":
+    "Changing the displayed timezone will not reconcile this evidence. Retain both copies and check their migration or import history before choosing a whole copy.",
+  "history-missing-head":
+    "Reload and refresh the review. If the branch metadata remains missing, compare a known-good backup without deleting either history.",
+  "history-deleted-content":
+    "Review the affected deleted records or recycle bins in both copies. Preserve anything you may need to restore before choosing a whole copy.",
+  "history-safety-limit":
+    "History was not truncated. Keep backups of both copies and use a reviewed whole-copy resolution if appropriate; reducing current file contents may not reduce historical data.",
+  "history-timestamp-overflow":
+    "Check for invalid future dates in a known-good backup. Do not rewrite ledger timestamps, because revisions depend on them.",
+  "history-invalid":
+    "Reload both copies in the same app version and refresh review. If validation still fails, retain backups and investigate the history before choosing a whole copy.",
+  "invalid-data":
+    "Reload the database and refresh review using the same app version on both devices. Retain backups if validation continues to fail.",
+  dependencies:
+    "Check linked connections, saved credentials, documents and scripts in the affected database. Repair missing references before retrying the merge.",
 };
 export interface SmartSyncConflictDetail {
   code: SmartSyncConflictCode;
@@ -186,11 +260,10 @@ export function reviewRecordKind(
 }
 
 function isoDate(value: unknown): string | undefined {
-  // Never echo an arbitrary timestamp string: accept real, bounded dates only.
-  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT/.test(value)) return;
-  const time = Date.parse(value);
-  if (!Number.isFinite(time) || time <= 0 || time > 253402300799999) return;
-  return new Date(time).toISOString();
+  // Never infer the source timezone from the device performing the review.
+  // Use the ledger's strict calendar/offset validation, not permissive Date.parse.
+  const normalized = normalizeZonedTimestamp(value);
+  return normalized && Date.parse(normalized) > 0 ? normalized : undefined;
 }
 
 function recordedDate(value: unknown): ReviewRecordedDate | undefined {
