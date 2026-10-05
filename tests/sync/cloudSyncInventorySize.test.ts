@@ -304,7 +304,9 @@ describe("cloud inventory byte sizes", () => {
       expect(row.sizeUnavailableReason).toBeUndefined();
       expect(row.sensitive).toBe(true);
     }
-    expect(rows[1].unavailableReason).toContain("Open and unlock");
+    expect(rows[1].unavailableReason).toContain(
+      "Unlock this database here before syncing",
+    );
     expect(rows[2].unavailableReason).toContain(
       "older password-protected format",
     );

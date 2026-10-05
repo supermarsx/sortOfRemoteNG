@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   onCurrentDatabaseChange: () => () => {},
+  onDatabaseAccessChange: () => () => {},
   DatabaseManager: {
     getInstance: () => ({
       getExportableDatabases: async () => mocks.databases,
