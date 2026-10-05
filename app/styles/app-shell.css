@@ -1,5 +1,9 @@
 .app-shell {
   position: relative;
+  /* The oversized glow creates overflow even when every flex child fits.
+     `hidden` still lets descendant focus/scrollIntoView scroll this shell,
+     shifting all chrome offscreen. Only inner panels are scroll containers. */
+  overflow: clip;
   /* No isolation: isolate here — that would lock children into a private
      stacking context and prevent the toolbar (z-index 1100) from layering
      above the portaled modal backdrop (z-index 1000). The glow ::before
