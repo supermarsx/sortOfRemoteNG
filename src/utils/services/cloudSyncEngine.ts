@@ -74,10 +74,10 @@ export function serializeCloudSync<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
-async function checkpointKey(
+async function checkpointKeys(
   target: CloudSyncTarget,
   config: CloudSyncConfig,
-): Promise<string> {
+): Promise<{ key: string; legacyKey: string }> {
   const provider =
     target.provider === "none" ? undefined : target[target.provider];
   // Credentials never enter checkpoint identities, status, or activity records.
@@ -95,7 +95,11 @@ async function checkpointKey(
       ].includes(key),
     ),
   );
-  return `sorng-cloud-checkpoint-${await syncHash({ id: target.id, provider: target.provider, destination, items: [...(config.selectedItems ?? [])].sort() })}`;
+  const identity = { id: target.id, provider: target.provider, destination };
+  return {
+    key: `sorng-cloud-checkpoint-v2-${await syncHash(identity)}`,
+    legacyKey: `sorng-cloud-checkpoint-${await syncHash({ ...identity, items: [...(config.selectedItems ?? [])].sort() })}`,
+  };
 }
 
 async function readSyncState(
@@ -135,8 +139,12 @@ async function readSyncState(
       "No selected items remain after applying exclusions. Nothing was transferred.",
     );
   const originalHash = await syncHash(original);
-  const key = await checkpointKey(target, config);
+  const { key, legacyKey } = await checkpointKeys(target, config);
   const saved = await IndexedDbService.getItemStrict<Checkpoint>(key);
+  // Old keys hash the complete selection, so only this exact legacy scope can
+  // be identified safely. Import its missing items, never overwrite a newer
+  // destination checkpoint or guess a different selection/destination by date.
+  const legacy = await IndexedDbService.getItemStrict<Checkpoint>(legacyKey);
   const checkpoint: Checkpoint =
     saved?.version === 1
       ? saved
@@ -146,6 +154,17 @@ async function readSyncState(
           observedHash: originalHash,
           localChangedAt: Date.now(),
         };
+  if (legacy?.version === 1) {
+    for (const id of Object.keys(original.sections)) {
+      if (checkpoint.baseline[id] || !legacy.baseline[id]) continue;
+      checkpoint.baseline[id] = legacy.baseline[id];
+      if (checkpoint.smartBaseline) delete checkpoint.smartBaseline[id];
+      if (legacy.smartBaseline?.[id]) {
+        checkpoint.smartBaseline ??= {};
+        checkpoint.smartBaseline[id] = legacy.smartBaseline[id];
+      }
+    }
+  }
   if (checkpoint.observedHash !== originalHash) {
     checkpoint.observedHash = originalHash;
     checkpoint.localChangedAt = Date.now();
@@ -184,6 +203,7 @@ async function readSyncState(
   // No record contents, credentials, or unencrypted backups enter the receipt.
   const reviewKey = await syncHash({
     key,
+    items: [...config.selectedItems].sort(),
     originalHash,
     remoteRevision: remote.revision,
     remoteHash: snapshot ? await syncHash(snapshot.payload) : null,
@@ -495,15 +515,25 @@ async function syncAttempt(
     );
     const smartBaseline = Object.fromEntries(
       await Promise.all(
-        Object.entries(finalPayload.sections).map(async ([id, value]) => [
-          id,
-          checkpoint.baseline[id] === baseline[id] &&
-          checkpoint.smartBaseline?.[id]
-            ? checkpoint.smartBaseline[id]
-            : await buildSmartSyncBaseline(value),
-        ]),
+        Object.entries(finalPayload.sections).map(
+          async ([id, value]): Promise<
+            [string, SmartSyncBaseline | undefined]
+          > => [
+            id,
+            checkpoint.baseline[id] === baseline[id] &&
+            checkpoint.smartBaseline?.[id]
+              ? checkpoint.smartBaseline[id]
+              : await buildSmartSyncBaseline(value),
+          ],
+        ),
       ),
     );
+    const retainedSmartBaseline = { ...checkpoint.smartBaseline };
+    // A selected item's new content baseline invalidates its previous index,
+    // even when no replacement index was produced. Keep only unselected ones.
+    for (const id of Object.keys(baseline)) delete retainedSmartBaseline[id];
+    for (const [id, value] of Object.entries(smartBaseline))
+      if (value !== undefined) retainedSmartBaseline[id] = value;
     if (!(await matchesFinalPayload()))
       throw Object.assign(
         new Error(
@@ -515,8 +545,9 @@ async function syncAttempt(
     ensureIdentity();
     await IndexedDbService.setItemStrict(key, {
       ...checkpoint,
-      baseline,
-      smartBaseline,
+      // Unselected/excluded artifacts retain their last successful baseline.
+      baseline: { ...checkpoint.baseline, ...baseline },
+      smartBaseline: retainedSmartBaseline,
       observedHash,
     });
     return publish
