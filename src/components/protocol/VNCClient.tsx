@@ -22,6 +22,7 @@ import {
 import { ConnectingSpinner, StatusBar } from "../ui/display";
 import { Checkbox } from "../ui/forms";
 import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
+import { VncFailureDiagnostics } from "./VncFailureDiagnostics";
 
 interface VNCClientProps {
   session: ConnectionSession;
@@ -168,7 +169,7 @@ function SettingsPanel({ m }: { m: Mgr }) {
 function CanvasArea({ m }: { m: Mgr }) {
   return (
     <div
-      className={`relative flex flex-1 items-center justify-center bg-black ${m.isFullscreen ? "p-0" : "p-4"}`}
+      className={`relative flex min-h-0 flex-1 items-center justify-center overflow-y-auto bg-black ${m.isFullscreen ? "p-0" : "p-4"}`}
     >
       <canvas
         ref={m.canvasRef}
@@ -193,28 +194,13 @@ function CanvasArea({ m }: { m: Mgr }) {
         />
       )}
       {m.connectionStatus === "error" && (
-        <div className="text-center">
-          <WifiOff size={48} className="mx-auto mb-4 text-error" />
-          <p className="mb-2 text-error">VNC Connection Failed</p>
-          <p className="text-sm text-[var(--color-textMuted)]">
-            Unable to connect safely to {m.session.hostname}
-          </p>
-          {m.errorMessage && (
-            <p
-              role="alert"
-              className="mt-3 max-w-md rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left text-xs text-[var(--color-textSecondary)]"
-            >
-              {m.errorMessage}
-            </p>
-          )}
-          <button
-            type="button"
-            className="mt-4 inline-flex items-center gap-2 rounded border border-[var(--color-border)] px-3 py-2 text-sm"
-            onClick={() => void m.reconnect()}
-          >
-            <RefreshCw size={14} /> Retry native VNC
-          </button>
-        </div>
+        <VncFailureDiagnostics
+          key={m.session.id}
+          connection={m.connection}
+          session={m.session}
+          error={m.errorMessage}
+          retry={m.reconnect}
+        />
       )}
       {m.connectionStatus === "disconnected" && (
         <div className="text-center text-[var(--color-textSecondary)]">

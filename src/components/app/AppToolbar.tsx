@@ -85,6 +85,7 @@ interface AppToolbarProps {
   setShowShortcutManager: (v: boolean) => void;
   setShowWol: (v: boolean) => void;
   setShowNetworkScanner?: (v: boolean) => void;
+  setShowNetworkToolkit?: (v: boolean) => void;
   setShowBulkSSH: (v: boolean) => void;
   setShowServerStats: (v: boolean) => void;
   setShowOpkssh: (v: boolean) => void;
@@ -129,6 +130,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowShortcutManager,
   setShowWol,
   setShowNetworkScanner,
+  setShowNetworkToolkit,
   setShowBulkSSH,
   setShowServerStats,
   setShowOpkssh,
@@ -343,6 +345,17 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                   aria-label={TOOL_DESCRIPTORS.networkScanner.label}
                 >
                   <ToolGlyph tool="networkScanner" />
+                </button>
+              )}
+            {(appSettings.showNetworkToolkitIcon ?? true) &&
+              setShowNetworkToolkit && (
+                <button
+                  onClick={() => setShowNetworkToolkit(true)}
+                  className="app-bar-button p-2"
+                  title={TOOL_DESCRIPTORS.networkToolkit.label}
+                  aria-label={TOOL_DESCRIPTORS.networkToolkit.label}
+                >
+                  <ToolGlyph tool="networkToolkit" />
                 </button>
               )}
             {appSettings.showWolIcon && (

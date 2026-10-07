@@ -8,5 +8,6 @@ pub mod discovery_ping;
 pub mod interface_subnets;
 pub mod network;
 pub mod protocol_probe;
+pub mod toolkit;
 pub mod qr;
 pub mod wol;

@@ -1,3 +1,4 @@
+use crate::vnc::diagnostics as vnc_diagnostics;
 use crate::*;
 use connection_clone_cmds as connection_clone_commands;
 #[cfg(all(feature = "opkssh", not(feature = "ops")))]
@@ -318,6 +319,7 @@ define_command_group!(
         rdp_commands::detach_rdp_session,
         rdp_commands::detect_keyboard_layout,
         rdp_commands::diagnose_rdp_connection,
+        vnc_diagnostics::diagnose_vnc,
         vnc_commands::disconnect_all_vnc,
         rdp_commands::disconnect_rdp,
         ssh_commands::disconnect_ssh,
@@ -331,6 +333,7 @@ define_command_group!(
         rdp_commands::get_rdp_session_info,
         rdp_commands::get_rdp_stats,
         ssh_commands::get_session_info,
+        ssh_commands::get_ssh_port_forward,
         ssh_commands::get_system_info,
         vnc_commands::get_vnc_session_count,
         vnc_commands::get_vnc_session_info,
@@ -373,7 +376,6 @@ define_command_group!(
         vnc_commands::set_vnc_pixel_format,
         vnc_commands::set_vnc_session_activity,
         ssh_commands::setup_port_forward,
-        ssh_commands::get_ssh_port_forward,
         ssh_commands::ssh_respond_to_host_key_prompt,
         ssh_commands::start_shell,
         ssh_commands::test_mixed_chain_connection,
@@ -469,6 +471,8 @@ define_command_group!(
         anydesk_commands::list_anydesk_sessions,
         wol_commands::list_wol_schedules,
         network_commands::lookup_ip_geo,
+        network_toolkit_commands::network_toolkit_cancel,
+        network_toolkit_commands::network_toolkit_run,
         network_commands::ping_gateway,
         network_commands::ping_host,
         network_commands::ping_host_detailed,
@@ -603,8 +607,8 @@ define_command_group!(
         ssh_commands::clear_highlight_rules,
         http_commands::clear_proxy_request_log,
         ssh_commands::clear_terminal_buffer,
-        ssh_commands::configure_terminal_buffering,
         ssh_commands::close_ssh3_channel,
+        ssh_commands::configure_terminal_buffering,
         ssh_commands::confirm_proxy_command,
         cloudflare_commands::connect_cloudflare,
         // SSH3 (SSH over HTTP/3 QUIC) commands
@@ -1604,12 +1608,17 @@ mod tests {
 
     #[test]
     fn vnc_activity_and_ack_commands_are_recognized_and_registered() {
-        for command in ["set_vnc_session_activity", "acknowledge_vnc_frame"] {
+        for command in [
+            "set_vnc_session_activity",
+            "acknowledge_vnc_frame",
+            "diagnose_vnc",
+        ] {
             assert!(is_command(command), "{command} is not publicly recognized");
             assert!(
                 GROUP_J_COMMANDS.contains(&command),
                 "{command} is not registered in the VNC command group"
             );
+            assert_eq!(command_route_count(command), 1);
         }
     }
 

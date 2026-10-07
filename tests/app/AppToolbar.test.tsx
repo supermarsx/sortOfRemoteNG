@@ -95,6 +95,35 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("AppToolbar", () => {
+  it("places Network Toolkit directly after Network Scanner and honors its own visibility", () => {
+    const setShowNetworkToolkit = vi.fn();
+    const props = makeProps({
+      setShowNetworkScanner: vi.fn(),
+      setShowNetworkToolkit,
+    });
+    const view = render(<AppToolbar {...(props as any)} />);
+    const scanner = screen.getByRole("button", { name: "Network Scanner" });
+    const toolkit = screen.getByRole("button", { name: "Network Toolkit" });
+    expect(scanner.nextElementSibling).toBe(toolkit);
+    expect(toolkit).toBeEnabled();
+    expect(
+      toolkit.querySelector('[data-tool-icon="networkToolkit"]'),
+    ).not.toBeNull();
+    fireEvent.click(toolkit);
+    expect(setShowNetworkToolkit).toHaveBeenCalledExactlyOnceWith(true);
+    expect(TOOL_DESCRIPTORS.networkToolkit.access).toBe("app");
+    expect(defaultSettings.showNetworkToolkitIcon).toBe(true);
+    expect(DEFAULT_VALUES.showNetworkToolkitIcon).toBe(true);
+    view.rerender(
+      <AppToolbar
+        {...(props as any)}
+        appSettings={{ ...props.appSettings, showNetworkToolkitIcon: false }}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Network Toolkit" }),
+    ).toBeNull();
+  });
   it("keeps the Action Log visibility preference as a labelled Session Manager shortcut", () => {
     const props = makeProps();
     props.appSettings.showActionLogIcon = true;

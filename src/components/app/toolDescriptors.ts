@@ -64,6 +64,7 @@ export const TOOL_DESCRIPTORS = Object.freeze({
   internalProxy: defineTool("internalProxy", Server),
   wol: defineTool("wol", Power),
   networkScanner: defineTool("networkScanner", Radar, "app"),
+  networkToolkit: defineTool("networkToolkit", Waypoints, "app"),
   bulkSsh: defineTool("bulkSsh", Terminal),
   serverStats: defineTool("serverStats", Server),
   opkssh: defineTool("opkssh", Shield),

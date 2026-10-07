@@ -28,6 +28,7 @@ import {
   FileText,
   Power,
   Radar,
+  Waypoints,
   ScreenShare,
   Bug,
   HardDrive,
@@ -664,6 +665,14 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             label="Network Scanner"
             settingKey="showNetworkScannerIcon"
             infoTooltip="Show the network scanner tool for discovering hosts and open TCP ports"
+          />
+          <Toggle
+            checked={settings.showNetworkToolkitIcon ?? true}
+            onChange={(v) => updateSettings({ showNetworkToolkitIcon: v })}
+            icon={<Waypoints size={16} />}
+            label="Network Toolkit"
+            settingKey="showNetworkToolkitIcon"
+            infoTooltip="Show network diagnostics, DNS, web, mail and local network utilities"
           />
           <Toggle
             checked={settings.showBulkSSHIcon}

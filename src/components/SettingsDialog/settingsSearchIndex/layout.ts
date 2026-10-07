@@ -437,6 +437,24 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Layout",
   },
   {
+    key: "showNetworkToolkitIcon",
+    label: "Network Toolkit",
+    description:
+      "Show network diagnostics, DNS, web, mail and local network utilities",
+    tags: [
+      "toolbar",
+      "icon",
+      "network",
+      "toolkit",
+      "ping",
+      "dns",
+      "traceroute",
+    ],
+    synonyms: ["network tools", "iperf", "whois", "port checker"],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
     key: "showBulkSSHIcon",
     label: "Bulk SSH Commander",
     labelKey: "settingsLayout.bulkSshCommander",

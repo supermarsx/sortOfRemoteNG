@@ -103,6 +103,13 @@ const BulkSSHCommander = dynamic(
     import("../ssh/BulkSSHCommander").then((module) => module.BulkSSHCommander),
   { ssr: false },
 );
+const NetworkToolkit = dynamic(
+  () =>
+    import("../network/toolkit/NetworkToolkit").then(
+      (module) => module.NetworkToolkit,
+    ),
+  { ssr: false },
+);
 const ServerStatsPanel = dynamic(
   () =>
     import("../ssh/ServerStatsPanel").then((module) => module.ServerStatsPanel),
@@ -582,6 +589,9 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         />
       )}
       {toolKey === "bulkSsh" && <BulkSSHCommander isOpen onClose={onClose} />}
+      {toolKey === "networkToolkit" && (
+        <NetworkToolkit isOpen embedded onClose={onClose} />
+      )}
       {toolKey === "serverStats" && (
         <ServerStatsPanel isOpen onClose={onClose} />
       )}

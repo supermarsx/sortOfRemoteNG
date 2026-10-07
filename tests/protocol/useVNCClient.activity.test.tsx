@@ -433,6 +433,25 @@ afterEach(async () => {
 });
 
 describe("useVNCClient render activity", () => {
+  it("never opens direct TCP on initialize or retry when a tunnel is configured", async () => {
+    connections = [
+      { ...makeConnection(), tunnelProfileId: "configured-tunnel" },
+    ];
+    const session = makeSession();
+    renderHarness([session], true);
+    await flushAsyncWork();
+    expect(commandCalls("connect_vnc")).toHaveLength(0);
+    expect(clients.get(session.id)?.errorMessage).toContain(
+      "network path cannot be verified",
+    );
+    await act(async () => {
+      await clients.get(session.id)?.reconnect();
+    });
+    await flushAsyncWork();
+    expect(commandCalls("connect_vnc")).toHaveLength(0);
+    expect(commandCalls("diagnose_vnc")).toHaveLength(0);
+  });
+
   it.each([100, 500, 1_000])(
     "keeps %i mounted inactive controllers at zero delivery IPC and zero timers",
     async (count) => {

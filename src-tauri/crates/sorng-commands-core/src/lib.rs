@@ -94,6 +94,8 @@ mod legacy_crypto_commands;
 mod meshcentral_commands;
 #[path = "../../../src/network_commands.rs"]
 mod network_commands;
+#[path = "../../../src/network_toolkit_commands.rs"]
+mod network_toolkit_commands;
 #[cfg(all(feature = "opkssh", not(feature = "ops")))]
 #[path = "../../../src/opkssh_commands.rs"]
 mod opkssh_commands;

@@ -15,6 +15,7 @@ import { dispatchVncPointerClick } from "../../utils/session/canvasCoordinates";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
 import { VncAdmissionController } from "./vncAdmissionController";
+import { vncDiagnosticTarget } from "./vncDiagnostics";
 
 export interface VNCSettings {
   viewOnly: boolean;
@@ -137,10 +138,7 @@ const vncActivityAdmission = new VncAdmissionController(
 );
 
 export type VNCConnectionStatus =
-  | "connecting"
-  | "connected"
-  | "disconnected"
-  | "error";
+  "connecting" | "connected" | "disconnected" | "error";
 
 const safeVncError = (value: unknown, password?: string): string => {
   let message =
@@ -1168,6 +1166,14 @@ export function useVNCClient(session: ConnectionSession) {
           }
           try {
             if (!isCurrent()) return;
+            if (
+              vncDiagnosticTarget(currentConnection, currentSession).request
+                .route === "blocked"
+            ) {
+              throw new Error(
+                "The configured network path cannot be verified by the native VNC transport.",
+              );
+            }
             const connectedSessionId = await invoke<string>("connect_vnc", {
               host: currentConnection.hostname || currentSession.hostname,
               port: currentConnection.port || 5900,
@@ -1713,6 +1719,7 @@ export function useVNCClient(session: ConnectionSession) {
 
   return {
     session,
+    connection,
     canvasRef,
     backendSessionId,
     sessionInfo,

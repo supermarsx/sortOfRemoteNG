@@ -201,6 +201,7 @@ export const defaultSettings: GlobalSettings = {
   showShortcutManagerIcon: true,
   showWolIcon: true,
   showNetworkScannerIcon: true,
+  showNetworkToolkitIcon: true,
   showErrorLogBar: false,
   showRdpSessionsIcon: true,
   recording: {
@@ -588,6 +589,7 @@ export const defaultSettings: GlobalSettings = {
     proxyChain: "tab" as const,
     wol: "tab" as const,
     networkScanner: "tab" as const,
+    networkToolkit: "tab" as const,
     windowsBackup: "tab" as const,
     diagnostics: "tab" as const,
     settings: "tab" as const,
