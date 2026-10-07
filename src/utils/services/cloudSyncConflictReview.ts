@@ -18,12 +18,15 @@ export interface CloudSyncReviewItem {
   localBytes: number;
   remoteBytes: number;
   smartMergeAvailable: boolean;
+  /** Explicit, one-time repair after content and both histories validate. */
+  historyReconciliationAvailable?: boolean;
   reason?: string;
   details?: CloudSyncReviewDetails;
   conflicts?: SmartSyncConflictDetail[];
 }
 
-export type CloudSyncReviewChoice = "keepLocal" | "keepRemote" | "smartMerge";
+export type CloudSyncReviewChoice =
+  "keepLocal" | "keepRemote" | "smartMerge" | "reconcileHistory";
 export type CloudSyncReviewChoices = Record<string, CloudSyncReviewChoice>;
 
 export interface CloudSyncReviewedResolution {

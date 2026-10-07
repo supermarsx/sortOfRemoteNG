@@ -356,6 +356,7 @@ export async function smartMergeSyncSection(
   local: unknown,
   remote: unknown,
   baseline?: SmartSyncBaseline,
+  options?: { reconcileOrigins?: boolean },
 ): Promise<{
   value?: unknown;
   conflictCount: number;
@@ -379,8 +380,16 @@ export async function smartMergeSyncSection(
       r = split(right);
     const base =
       baseline === undefined ? undefined : baselineSnapshot(baseline);
+    // Repair is a reviewed operation, not permission to infer ancestry from
+    // equal content or a clock. Require the same bounded three-way baseline
+    // used for content conflict checks and both complete input histories.
+    if (options?.reconcileOrigins && !base)
+      return conflict(
+        "History reconciliation requires a shared smart-sync baseline. Neither copy was changed.",
+        "missing-baseline",
+      );
     if (base?.disabled)
-      return canonical(left) === canonical(right)
+      return !options?.reconcileOrigins && canonical(left) === canonical(right)
         ? { value: left, conflictCount: 0 }
         : conflict(
             "A bounded smart-sync baseline is unavailable. Review both copies before choosing a version.",
@@ -394,6 +403,11 @@ export async function smartMergeSyncSection(
     if (base?.history && (!l.ledger || !r.ledger))
       return conflict(
         "Record history was removed. Review both copies; history cannot be silently discarded.",
+        "history-removed",
+      );
+    if (options?.reconcileOrigins && (!l.ledger || !r.ledger))
+      return conflict(
+        "History reconciliation requires both recorded histories. Neither copy was changed.",
         "history-removed",
       );
     for (const part of [l, r])
@@ -552,6 +566,7 @@ export async function smartMergeSyncSection(
           ledgerBody(body),
           l.ledger,
           r.ledger,
+          options,
         )) as unknown as Json;
       } catch (error) {
         // The ledger intentionally stops at the first failed invariant. Report

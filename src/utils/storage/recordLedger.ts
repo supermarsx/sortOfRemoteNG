@@ -18,7 +18,7 @@ export interface RecordChange {
   record: string;
   revision: string;
   parentRevision?: string;
-  /** V2 merge events only. Original single-parent events are never rewritten. */
+  /** Explicit DAG joins only. Original single-parent events are never rewritten. */
   parentRevisions?: string[];
   timestamp: string;
   kind:
@@ -28,13 +28,19 @@ export interface RecordChange {
     | "delete"
     | "restore"
     | "merge"
-    | "merge-delete";
+    | "merge-delete"
+    | "reconcile"
+    | "reconcile-delete";
 }
 
+export type RecordOrigin = Pick<RecordStamp, "createdAt" | "createdAtSource">;
+
 export interface RecordLedger {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   records: Record<string, RecordStamp>;
   journal: RecordChange[];
+  /** V3 only: immutable creation evidence keyed by every original root revision. */
+  origins?: Record<string, RecordOrigin>;
 }
 
 type Json = null | boolean | number | string | Json[] | JsonObject;
@@ -51,6 +57,7 @@ type Dates = Pick<
 const MAX_RECORDS = 200_000;
 const MAX_JOURNAL = 1_000_000;
 const MAX_MERGE_PARENTS = 64;
+const MAX_RECORD_ORIGINS = 64;
 const MAX_DEPTH = 64;
 const MAX_NODES = 4_000_000;
 const MAX_METADATA_BYTES = 128 * 1024 * 1024;
@@ -324,9 +331,76 @@ function recordKey(value: Json | undefined): string {
 }
 
 const deletedEvent = (event: RecordChange) =>
-  event.kind === "delete" || event.kind === "merge-delete";
+  event.kind === "delete" ||
+  event.kind === "merge-delete" ||
+  event.kind === "reconcile-delete";
 const eventParents = (event: RecordChange): readonly string[] =>
   event.parentRevisions ?? (event.parentRevision ? [event.parentRevision] : []);
+const reconciledEvent = (event: RecordChange) =>
+  event.kind === "reconcile" || event.kind === "reconcile-delete";
+
+/** Parent root sets are causal evidence: overlapping sets are already joined.
+ * A reconciliation elsewhere in the journal cannot authorize an earlier merge. */
+function joinOrigins(
+  sets: readonly ReadonlySet<string>[],
+  budget: { work: number },
+) {
+  const links = new Map<string, string>();
+  const find = (key: string): string => {
+    let root = key;
+    while (links.get(root) !== root) root = links.get(root)!;
+    return root;
+  };
+  for (const set of sets) {
+    let first: string | undefined;
+    for (const root of set) {
+      if (++budget.work > MAX_JOURNAL * 4)
+        invalid("origin ancestry work limit exceeded", "safety-limit");
+      if (!links.has(root)) links.set(root, root);
+      if (links.size > MAX_RECORD_ORIGINS)
+        invalid("record origin limit exceeded", "safety-limit");
+      if (first === undefined) first = root;
+      else links.set(find(root), find(first));
+    }
+  }
+  return {
+    roots: new Set(links.keys()),
+    connected: new Set([...links.keys()].map(find)).size === 1,
+  };
+}
+
+function creationSummary(
+  roots: Iterable<string>,
+  origins: Record<string, RecordOrigin>,
+): RecordOrigin {
+  const values = [...roots].map((root) => origins[root]);
+  if (!values.length || values.some((value) => !value))
+    invalid("missing origin provenance");
+  const createdAt = values.map((value) => value.createdAt).sort()[0];
+  const same = values.every(
+    (value) =>
+      value.createdAt === values[0].createdAt &&
+      value.createdAtSource === values[0].createdAtSource,
+  );
+  return {
+    createdAt,
+    createdAtSource: same ? values[0].createdAtSource : "inferred",
+  };
+}
+
+function ledgerOrigins(ledger: RecordLedger): Record<string, RecordOrigin> {
+  if (ledger.version === 3) return ledger.origins!;
+  const origins: Record<string, RecordOrigin> = Object.create(null);
+  for (const event of ledger.journal) {
+    if (eventParents(event).length) continue;
+    const stamp = ledger.records[event.record];
+    origins[event.revision] = {
+      createdAt: stamp.createdAt,
+      createdAtSource: stamp.createdAtSource,
+    };
+  }
+  return origins;
+}
 
 /** V2 is a topologically ordered DAG with one resolved head per record. An
  * explicit merge event joins branches; a version bump alone cannot bless forks.
@@ -334,12 +408,16 @@ const eventParents = (event: RecordChange): readonly string[] =>
 function normalizeDagHistory(
   entries: Json[],
   records: Record<string, RecordStamp>,
+  origins?: Record<string, RecordOrigin>,
 ): { journal: RecordChange[]; latest: Map<string, RecordChange> } {
   const events = new Map<string, RecordChange>();
   const heads = new Map<string, Set<string>>();
-  const roots = new Set<string>();
+  const roots = new Map<string, Set<string>>();
+  const ancestry = new Map<string, ReadonlySet<string>>();
+  const originBudget = { work: 0 };
   const journal: RecordChange[] = [];
   let merges = 0;
+  let reconciliations = 0;
   let edges = 0;
   for (const entry of entries) {
     const change = object(entry, [
@@ -357,7 +435,10 @@ function normalizeDagHistory(
     if (!stamp || events.has(revision))
       invalid("unknown record or duplicate revision");
     const kind = change.kind;
-    const merging = kind === "merge" || kind === "merge-delete";
+    const reconciling = kind === "reconcile" || kind === "reconcile-delete";
+    if (reconciling && !origins)
+      invalid("reconciliation requires version three");
+    const merging = kind === "merge" || kind === "merge-delete" || reconciling;
     let parents: string[];
     if (merging) {
       if (
@@ -384,19 +465,27 @@ function normalizeDagHistory(
     if (edges > MAX_JOURNAL * 4)
       invalid("history edge limit exceeded", "safety-limit");
     if (!parents.length) {
+      const creation = origins ? origins[revision] : stamp;
       if (
         (kind !== "create" && kind !== "migrate") ||
-        roots.has(key) ||
-        time < stamp.createdAt
+        (!origins && roots.has(key)) ||
+        !creation ||
+        time < creation.createdAt
       )
         invalid("invalid initial history");
       if (
         kind === "create"
-          ? stamp.createdAtSource !== "observed" || stamp.createdAt !== time
-          : stamp.createdAtSource === "observed"
+          ? creation.createdAtSource !== "observed" ||
+            creation.createdAt !== time
+          : creation.createdAtSource === "observed"
       )
         invalid("inconsistent creation provenance");
-      roots.add(key);
+      const recordRoots = roots.get(key) ?? new Set<string>();
+      recordRoots.add(revision);
+      if (recordRoots.size > MAX_RECORD_ORIGINS)
+        invalid("record origin limit exceeded", "safety-limit");
+      roots.set(key, recordRoots);
+      if (origins) ancestry.set(revision, new Set([revision]));
     } else {
       for (const parent of parents) {
         const prior = events.get(parent);
@@ -409,6 +498,24 @@ function normalizeDagHistory(
             : kind !== "update" && kind !== "delete")
         )
           invalid("broken revision history");
+      }
+      if (origins) {
+        if (parents.length === 1)
+          ancestry.set(revision, ancestry.get(parents[0])!);
+        else {
+          const joined = joinOrigins(
+            parents.map((parent) => ancestry.get(parent)!),
+            originBudget,
+          );
+          if (reconciling === joined.connected)
+            invalid(
+              reconciling
+                ? "reconciliation requires independent origins"
+                : "independent origins require explicit reconciliation",
+            );
+          ancestry.set(revision, joined.roots);
+          if (reconciling) reconciliations++;
+        }
       }
     }
     const event: RecordChange = {
@@ -428,6 +535,24 @@ function normalizeDagHistory(
     journal.push(event);
   }
   if (!merges) invalid("version two requires explicit merge history");
+  if (origins) {
+    if (!reconciliations)
+      invalid("version three requires explicit reconciliation history");
+    const actual = new Set([...roots.values()].flatMap((set) => [...set]));
+    if (
+      actual.size !== Object.keys(origins).length ||
+      Object.keys(origins).some((root) => !actual.has(root))
+    )
+      invalid("extra or missing origin provenance");
+    for (const [key, recordRoots] of roots) {
+      const summary = creationSummary(recordRoots, origins);
+      if (
+        summary.createdAt !== records[key].createdAt ||
+        summary.createdAtSource !== records[key].createdAtSource
+      )
+        invalid("inconsistent creation summary", "creation-provenance");
+    }
+  }
   const latest = new Map<string, RecordChange>();
   for (const [key, recordHeads] of heads) {
     if (recordHeads.size !== 1) invalid("unresolved history branches");
@@ -452,8 +577,26 @@ export function normalizeRecordLedger(
     "version",
     "records",
     "journal",
+    "origins",
   ]);
-  if (raw.version !== 1 && raw.version !== 2) invalid("unsupported version");
+  if (raw.version !== 1 && raw.version !== 2 && raw.version !== 3)
+    invalid("unsupported version");
+  let origins: Record<string, RecordOrigin> | undefined;
+  if (raw.version === 3) {
+    const rawOrigins = object(raw.origins);
+    if (Object.keys(rawOrigins).length > MAX_JOURNAL)
+      invalid("origin count limit exceeded", "safety-limit");
+    origins = Object.create(null) as Record<string, RecordOrigin>;
+    for (const [revision, value] of Object.entries(rawOrigins)) {
+      token(revision);
+      const origin = object(value, ["createdAt", "createdAtSource"]);
+      origins[revision] = {
+        createdAt: utc(origin.createdAt),
+        createdAtSource: source(origin.createdAtSource),
+      };
+    }
+  } else if ("origins" in raw)
+    invalid("origin provenance requires version three");
   const rawRecords = object(raw.records);
   const keys = Object.keys(rawRecords);
   if (!keys.includes("$") || keys.length > MAX_RECORDS)
@@ -496,7 +639,9 @@ export function normalizeRecordLedger(
     }
   }
   const dag =
-    raw.version === 2 ? normalizeDagHistory(raw.journal, records) : undefined;
+    raw.version !== 1
+      ? normalizeDagHistory(raw.journal, records, origins)
+      : undefined;
   const latest = dag?.latest ?? new Map<string, RecordChange>();
   const revisions = new Set<string>();
   const journal: RecordChange[] = dag?.journal ?? [];
@@ -557,7 +702,9 @@ export function normalizeRecordLedger(
       last.revision !== stamp.revision ||
       last.timestamp !== stamp.updatedAt ||
       deletedEvent(last) !== (stamp.deletedAt !== undefined) ||
-      ((last.kind === "merge" || last.kind === "merge-delete") &&
+      ((last.kind === "merge" ||
+        last.kind === "merge-delete" ||
+        reconciledEvent(last)) &&
         stamp.updatedAtSource !== "inferred") ||
       (last.kind === "migrate"
         ? stamp.updatedAtSource === "observed"
@@ -576,7 +723,12 @@ export function normalizeRecordLedger(
       }
     }
   }
-  return { version: raw.version, records, journal };
+  return {
+    version: raw.version,
+    records,
+    journal,
+    ...(origins ? { origins } : {}),
+  };
 }
 
 function legacyDates(value: Json, enclosing: string): Dates {
@@ -765,6 +917,13 @@ export async function reconcileRecordLedger(
     prior?.records,
   );
   const journal = prior ? [...prior.journal] : [];
+  const origins =
+    prior?.version === 3
+      ? Object.assign(
+          Object.create(null) as Record<string, RecordOrigin>,
+          prior.origins,
+        )
+      : undefined;
   let recordCount = Object.keys(records).length;
   const present = new Set(candidates.map((candidate) => candidate.key));
   const missing = Object.keys(records)
@@ -796,6 +955,11 @@ export async function reconcileRecordLedger(
       ]),
     );
     records[key] = { ...dates, revision, contentHash };
+    if (origins && !before)
+      origins[revision] = {
+        createdAt: dates.createdAt,
+        createdAtSource: dates.createdAtSource,
+      };
     if (kind === "delete") records[key].deletedAt = dates.updatedAt;
     const change: RecordChange = {
       record: key,
@@ -867,6 +1031,7 @@ export async function reconcileRecordLedger(
     version: prior?.version ?? 1,
     records,
     journal,
+    ...(origins ? { origins } : {}),
   })!;
 }
 
@@ -879,7 +1044,13 @@ export async function reconcileMergedRecordLedgers(
   value: unknown,
   local?: RecordLedger,
   remote?: RecordLedger,
+  options?: { reconcileOrigins?: boolean },
 ): Promise<RecordLedger> {
+  if (
+    options?.reconcileOrigins !== undefined &&
+    typeof options.reconcileOrigins !== "boolean"
+  )
+    invalid("invalid origin reconciliation option");
   const left = normalizeRecordLedger(local),
     right = normalizeRecordLedger(remote);
   if (!left || !right) return reconcileRecordLedger(value, left ?? right);
@@ -922,13 +1093,41 @@ export async function reconcileMergedRecordLedgers(
                     : 0,
           );
   const heads = new Map<string, Set<string>>();
-  const roots = new Set<string>();
+  const ancestry = new Map<string, ReadonlySet<string>>();
+  const recordRoots = new Map<string, Set<string>>();
+  const originBudget = { work: 0 };
+  const origins: Record<string, RecordOrigin> = Object.create(null);
+  for (const ledger of [left, right]) {
+    for (const [revision, origin] of Object.entries(ledgerOrigins(ledger))) {
+      const known = origins[revision];
+      if (
+        known &&
+        (known.createdAt !== origin.createdAt ||
+          known.createdAtSource !== origin.createdAtSource)
+      )
+        invalid("inconsistent creation provenance", "creation-provenance");
+      origins[revision] = origin;
+    }
+  }
   for (const event of journal) {
     const parents = eventParents(event);
     if (!parents.length) {
-      if (roots.has(event.record))
-        invalid("unrelated record histories", "unrelated-histories");
-      roots.add(event.record);
+      const roots = recordRoots.get(event.record) ?? new Set<string>();
+      roots.add(event.revision);
+      if (roots.size > MAX_RECORD_ORIGINS)
+        invalid("record origin limit exceeded", "safety-limit");
+      recordRoots.set(event.record, roots);
+      ancestry.set(event.revision, new Set([event.revision]));
+    } else if (parents.length === 1) {
+      ancestry.set(event.revision, ancestry.get(parents[0])!);
+    } else {
+      ancestry.set(
+        event.revision,
+        joinOrigins(
+          parents.map((parent) => ancestry.get(parent)!),
+          originBudget,
+        ).roots,
+      );
     }
     const recordHeads = heads.get(event.record) ?? new Set<string>();
     parents.forEach((parent) => recordHeads.delete(parent));
@@ -937,16 +1136,26 @@ export async function reconcileMergedRecordLedgers(
   }
   if (heads.size > MAX_RECORDS)
     invalid("record count limit exceeded", "safety-limit");
+  const independent = new Set<string>();
+  for (const [key, recordHeads] of heads) {
+    if (recordHeads.size > MAX_MERGE_PARENTS)
+      invalid("merge parent limit exceeded", "safety-limit");
+    if (
+      recordHeads.size > 1 &&
+      !joinOrigins(
+        [...recordHeads].map((head) => ancestry.get(head)!),
+        originBudget,
+      ).connected
+    ) {
+      if (!options?.reconcileOrigins)
+        invalid("unrelated record histories", "unrelated-histories");
+      independent.add(key);
+    }
+  }
   const records: Record<string, RecordStamp> = Object.create(null);
   for (const [key, recordHeads] of heads) {
     const a = left.records[key],
       b = right.records[key];
-    if (
-      a &&
-      b &&
-      (a.createdAt !== b.createdAt || a.createdAtSource !== b.createdAtSource)
-    )
-      invalid("inconsistent creation provenance", "creation-provenance");
     if (
       a &&
       b &&
@@ -957,6 +1166,12 @@ export async function reconcileMergedRecordLedgers(
     records[key] = recordHeads.has(a?.revision) ? a : b;
     if (!records[key] || !recordHeads.has(records[key].revision))
       invalid("missing branch head stamp", "missing-branch-head");
+    // A pre-repair peer can legitimately have a different summary. Its own
+    // root evidence was compared above; no summary timestamp wins content.
+    records[key] = {
+      ...records[key],
+      ...creationSummary(recordRoots.get(key)!, origins),
+    };
   }
   // Enumeration uses the union's known stable identities, not the archive
   // envelope. Callers exporting a full database pass fullDatabaseArchiveData.
@@ -967,7 +1182,11 @@ export async function reconcileMergedRecordLedgers(
     ]),
   );
   let version: RecordLedger["version"] =
-    left.version === 2 || right.version === 2 ? 2 : 1;
+    left.version === 3 || right.version === 3 || independent.size
+      ? 3
+      : left.version === 2 || right.version === 2
+        ? 2
+        : 1;
   let hashedBytes = 0;
   for (const [key, recordHeads] of heads) {
     if (recordHeads.size === 1) continue;
@@ -995,10 +1214,16 @@ export async function reconcileMergedRecordLedgers(
       .sort();
     const latestTime = parentTimes[parentTimes.length - 1];
     const updatedAt = nextTime(EPOCH, latestTime);
-    const kind = candidate ? "merge" : "merge-delete";
+    const kind = independent.has(key)
+      ? candidate
+        ? "reconcile"
+        : "reconcile-delete"
+      : candidate
+        ? "merge"
+        : "merge-delete";
     const revision = await sha256(
       JSON.stringify([
-        "record-ledger-v2",
+        version === 3 ? "record-ledger-v3" : "record-ledger-v2",
         key,
         parents,
         contentHash,
@@ -1006,6 +1231,13 @@ export async function reconcileMergedRecordLedgers(
         before.createdAt,
         before.createdAtSource,
         updatedAt,
+        ...(version === 3
+          ? [
+              [...recordRoots.get(key)!]
+                .sort()
+                .map((root) => [root, origins[root]]),
+            ]
+          : []),
       ]),
     );
     if (events.has(revision))
@@ -1028,9 +1260,14 @@ export async function reconcileMergedRecordLedgers(
       kind,
       parentRevisions: parents,
     });
-    version = 2;
+    if (version !== 3) version = 2;
   }
-  const combined = normalizeRecordLedger({ version, records, journal })!;
+  const combined = normalizeRecordLedger({
+    version,
+    records,
+    journal,
+    ...(version === 3 ? { origins } : {}),
+  })!;
   // Reconcile nonforked records changed by the already resolved payload, while
   // retaining every union event. This also verifies the final aggregate bounds.
   return reconcileRecordLedger(payload, combined, { mode: "migrate" });

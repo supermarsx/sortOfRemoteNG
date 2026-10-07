@@ -99,7 +99,7 @@ describe("record ledger v2 DAG merge", () => {
     expect(() => normalizeRecordLedger({ ...left, version: 2 })).toThrow(
       /explicit merge/,
     );
-    expect(() => normalizeRecordLedger({ ...left, version: 3 })).toThrow(
+    expect(() => normalizeRecordLedger({ ...left, version: 4 })).toThrow(
       /unsupported version/,
     );
   });
@@ -364,7 +364,7 @@ describe("strict v2 history validation", () => {
     [
       "future version",
       (ledger) => {
-        (ledger as { version: number }).version = 3;
+        (ledger as { version: number }).version = 4;
       },
     ],
     [

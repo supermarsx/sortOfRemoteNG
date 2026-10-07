@@ -296,10 +296,12 @@ async function planSync(
     let chosen = item.state === "remote" ? remoteSection : local;
     if (conflict) {
       let merged: unknown;
+      let reconciled: unknown;
       if (
         reviewOnly ||
         config.conflictResolution === "smartMerge" ||
-        resolution?.choices[id] === "smartMerge"
+        resolution?.choices[id] === "smartMerge" ||
+        resolution?.choices[id] === "reconcileHistory"
       ) {
         const result = await smartMergeSyncSection(
           local,
@@ -327,6 +329,39 @@ async function planSync(
             ];
           }
         }
+        if (
+          (reviewOnly || resolution?.choices[id] === "reconcileHistory") &&
+          result.conflicts?.some((entry) => entry.code === "history-unrelated")
+        ) {
+          // Read-only preview and reviewed apply run the identical proof. The
+          // receipt is bound to both copies and the baseline; a UI flag alone
+          // never authorizes joining arbitrary roots or overwriting content.
+          const repair = await smartMergeSyncSection(
+            local,
+            remoteSection,
+            checkpoint.smartBaseline?.[id],
+            { reconcileOrigins: true },
+          );
+          if (repair.conflictCount === 0 && repair.value !== undefined) {
+            try {
+              const checked = await upgradeCloudSyncPayload({
+                version: 1,
+                sections: { [id]: repair.value },
+              });
+              reconciled = checked.sections[id];
+              item.historyReconciliationAvailable = true;
+            } catch {
+              item.reason =
+                "The reconciled records have incompatible dependencies or metadata. Neither copy was changed.";
+              item.conflicts = [
+                { code: "dependencies", kind: "other", count: 1 },
+              ];
+            }
+          } else {
+            item.reason = repair.reason;
+            item.conflicts = repair.conflicts;
+          }
+        }
       }
       const strategy = reviewOnly
         ? "askEveryTime"
@@ -346,6 +381,14 @@ async function planSync(
             unresolved.push(
               item.reason ??
                 "Conflicting records need review; smart merge will not guess a winner.",
+            );
+          break;
+        case "reconcileHistory":
+          if (item.historyReconciliationAvailable) chosen = reconciled;
+          else
+            unresolved.push(
+              item.reason ??
+                "History reconciliation is unavailable for these copies. Refresh the review; no histories were reset.",
             );
           break;
         case "keepNewer":

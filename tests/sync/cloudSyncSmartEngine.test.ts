@@ -232,6 +232,7 @@ it("keeps specific history blockers through encrypted archive review without wri
     {
       state: "conflict",
       smartMergeAvailable: false,
+      historyReconciliationAvailable: true,
       reason: expect.stringContaining("separate starting histories"),
       conflicts: [{ code: "history-unrelated", kind: "other", count: 1 }],
       details: { hasBaseline: true },
@@ -264,4 +265,193 @@ it("keeps specific history blockers through encrypted archive review without wri
     };
     expect(checkpoints[index]).toMatchObject({ baseline, smartBaseline });
   });
+
+  // Only an explicit reviewed choice joins origins; the global strategy stays
+  // smartMerge, and the prior automatic attempt above performed no writes.
+  await runCloudSync(target, config, {
+    review,
+    choices: { "database:source-db": "reconcileHistory" },
+  });
+  const merged = local.sections["database:source-db"] as typeof base;
+  expect(merged.recordMetadata!.version).toBe(3);
+  expect(merged.connections[1].name).toBe("PRIVATE_REMOTE_CHANGE");
+  expect(merged.connections[2].name).toBe("PRIVATE_LOCAL_CHANGE");
+  for (const source of [ours, theirs])
+    expect(merged.recordMetadata!.journal).toEqual(
+      expect.arrayContaining(source.recordMetadata!.journal),
+    );
+  expect((await decodeCloudSnapshot(remote!, config)).payload).toEqual(local);
+  expect(await upgradeCloudSyncPayload(local)).toEqual(local);
+  expect(mocks.apply).toHaveBeenCalledTimes(1);
+  mocks.apply.mockClear();
+  mocks.invoke.mockClear();
+  await expect(runCloudSync(target, config)).resolves.toContain(
+    "already up to date",
+  );
+  expect(mocks.apply).not.toHaveBeenCalled();
+  expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+    "cloud_sync_read",
+  ]);
+  const nextReview = await reviewCloudSync(target, config);
+  expect(nextReview.items[0]).toMatchObject({
+    state: "same",
+    details: { versionHistory: { relationship: "same" } },
+  });
+});
+
+async function independentHistoryReview() {
+  const base = await buildFullDatabaseArchive(
+    collection,
+    await fullData(),
+    trust,
+  );
+  local = await upgradeCloudSyncPayload(wrap(base));
+  await runCloudSync(target, config);
+  const ours = structuredClone(
+    local.sections["database:source-db"],
+  ) as typeof base;
+  const theirs = structuredClone(ours);
+  ours.connections[2].name = "PRIVATE_LOCAL_CHANGE";
+  ours.recordMetadata = await reconcileRecordLedger(
+    fullDatabaseArchiveData(ours),
+    ours.recordMetadata,
+    { mode: "write", now: "2026-10-05T12:00:00.000Z" },
+  );
+  const imported = fullDatabaseArchiveData(theirs);
+  delete imported.recordMetadata;
+  theirs.recordMetadata = await reconcileRecordLedger(imported, undefined, {
+    mode: "write",
+    now: "2026-10-05T11:00:00.000Z",
+  });
+  local = wrap(ours);
+  await publishRemote(wrap(theirs));
+  const review = await reviewCloudSync(target, config);
+  expect(review.items[0].historyReconciliationAvailable).toBe(true);
+  mocks.invoke.mockClear();
+  mocks.apply.mockClear();
+  return { ours, theirs, review };
+}
+
+it.each(["local", "remote", "baseline", "selection"] as const)(
+  "rejects stale reconciliation after the %s changes without applying the old choice",
+  async (changed) => {
+    const { ours, theirs, review } = await independentHistoryReview();
+    let nextConfig = config;
+    if (changed === "local" || changed === "remote") {
+      const section = changed === "local" ? ours : theirs;
+      section.connections[1].name = "Newer unreviewed edit";
+      section.recordMetadata = await reconcileRecordLedger(
+        fullDatabaseArchiveData(section),
+        section.recordMetadata,
+        { mode: "write", now: "2026-10-05T13:00:00.000Z" },
+      );
+      if (changed === "local") local = wrap(section);
+      else await publishRemote(wrap(section));
+    } else if (changed === "baseline") {
+      for (const value of mocks.store.values()) {
+        const checkpoint = value as { smartBaseline?: unknown };
+        delete checkpoint.smartBaseline;
+      }
+    } else
+      nextConfig = {
+        ...config,
+        selectedItems: [...config.selectedItems!, "app:settings"],
+      };
+    const before = JSON.stringify({ local, remote });
+    await expect(
+      runCloudSync(target, nextConfig, {
+        review,
+        choices: { "database:source-db": "reconcileHistory" },
+      }),
+    ).rejects.toThrow(/Refresh the conflict review/);
+    expect(mocks.apply).not.toHaveBeenCalled();
+    expect(
+      mocks.invoke.mock.calls.every(
+        ([command]) => command === "cloud_sync_read",
+      ),
+    ).toBe(true);
+    expect(JSON.stringify({ local, remote })).toBe(before);
+  },
+);
+
+it("cannot force history reconciliation over true content conflicts by forging a receipt flag", async () => {
+  const { ours, theirs } = await independentHistoryReview();
+  theirs.connections[2].name = "PRIVATE_CONFLICTING_REMOTE_EDIT";
+  theirs.recordMetadata = await reconcileRecordLedger(
+    fullDatabaseArchiveData(theirs),
+    theirs.recordMetadata,
+    { mode: "write", now: "2026-10-05T13:00:00.000Z" },
+  );
+  await publishRemote(wrap(theirs));
+  const review = await reviewCloudSync(target, config);
+  expect(review.items[0].historyReconciliationAvailable).not.toBe(true);
+  expect(review.items[0].conflicts).toContainEqual({
+    code: "concurrent-edit",
+    kind: "connections",
+    count: 1,
+  });
+  review.items[0].historyReconciliationAvailable = true;
+  await expect(
+    runCloudSync(target, config, {
+      review,
+      choices: { "database:source-db": "reconcileHistory" },
+    }),
+  ).rejects.toThrow(/need review/);
+  expect(local).toEqual(wrap(ours));
+  expect(mocks.apply).not.toHaveBeenCalled();
+  expect(
+    mocks.invoke.mock.calls.every(([command]) => command === "cloud_sync_read"),
+  ).toBe(true);
+});
+
+it("does not apply a reconciliation locally when the remote compare-and-swap rejects it", async () => {
+  const { review } = await independentHistoryReview();
+  const before = JSON.stringify({ local, remote });
+  const transport = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === "cloud_sync_write")
+      throw new Error("Remote revision changed");
+    return transport(command, args);
+  });
+  await expect(
+    runCloudSync(target, config, {
+      review,
+      choices: { "database:source-db": "reconcileHistory" },
+    }),
+  ).rejects.toThrow("Remote revision changed");
+  expect(mocks.apply).not.toHaveBeenCalled();
+  expect(JSON.stringify({ local, remote })).toBe(before);
+  expect(
+    mocks.invoke.mock.calls.filter(
+      ([command]) => command === "cloud_sync_write",
+    ),
+  ).toHaveLength(1);
+});
+
+it("recovers an uploaded reconciliation after local apply failed, without resetting history or replaying the reviewed choice", async () => {
+  const { review, ours, theirs } = await independentHistoryReview();
+  mocks.apply.mockRejectedValueOnce(new Error("Database was locked"));
+  await expect(
+    runCloudSync(target, config, {
+      review,
+      choices: { "database:source-db": "reconcileHistory" },
+    }),
+  ).rejects.toMatchObject({ kind: "partial" });
+  expect(local).toEqual(wrap(ours));
+  const uploaded = (await decodeCloudSnapshot(remote!, config)).payload;
+  const merged = uploaded.sections["database:source-db"] as typeof ours;
+  for (const source of [ours, theirs])
+    expect(merged.recordMetadata!.journal).toEqual(
+      expect.arrayContaining(source.recordMetadata!.journal),
+    );
+  mocks.invoke.mockClear();
+  mocks.apply.mockClear();
+  // Simulate the user reopening the database and retrying ordinary smart sync.
+  await expect(runCloudSync(target, config)).resolves.toContain("restored");
+  expect(local).toEqual(uploaded);
+  expect(mocks.apply).toHaveBeenCalledTimes(1);
+  expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+    "cloud_sync_read",
+  ]);
+  expect((await reviewCloudSync(target, config)).items[0].state).toBe("same");
 });

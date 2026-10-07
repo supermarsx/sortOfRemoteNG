@@ -36,16 +36,19 @@ const stateLabels = {
   remote: "Remote changes — will download",
   conflict: "Conflict — choose a resolution",
 };
-const choiceLabels = {
+const choiceLabels: Record<CloudSyncReviewChoice, string> = {
   keepLocal: "Keep local",
   keepRemote: "Keep remote",
   smartMerge: "Smart merge",
+  reconcileHistory: "Reconcile histories and merge",
 };
-const choiceImpact = {
+const choiceImpact: Record<CloudSyncReviewChoice, string> = {
   keepLocal: "Replaces this artifact on the remote target with the local copy.",
   keepRemote: "Replaces this artifact's local data with the remote copy.",
   smartMerge:
     "Merges compatible changes and updates this artifact locally and on the remote target.",
+  reconcileHistory:
+    "Preserves both recorded histories and updates this artifact locally and on the remote target with the baseline-verified merge.",
 };
 
 function ConflictResolutionSection({ mgr }: { mgr: Mgr }) {
@@ -208,6 +211,14 @@ function ConflictResolutionSection({ mgr }: { mgr: Mgr }) {
                     >
                       {review.items.map((item) => {
                         const choice = state?.choices[item.id];
+                        const availableChoices: CloudSyncReviewChoice[] = [
+                          "keepLocal",
+                          "keepRemote",
+                        ];
+                        if (item.smartMergeAvailable)
+                          availableChoices.push("smartMerge");
+                        if (item.historyReconciliationAvailable === true)
+                          availableChoices.push("reconcileHistory");
                         return (
                           <li
                             key={item.id}
@@ -234,14 +245,7 @@ function ConflictResolutionSection({ mgr }: { mgr: Mgr }) {
                                 value={choice ?? ""}
                                 placeholder="Choose a resolution"
                                 disabled={blocked || !ready}
-                                options={(item.smartMergeAvailable
-                                  ? ([
-                                      "keepLocal",
-                                      "keepRemote",
-                                      "smartMerge",
-                                    ] as const)
-                                  : (["keepLocal", "keepRemote"] as const)
-                                ).map((value) => ({
+                                options={availableChoices.map((value) => ({
                                   value,
                                   label: choiceLabels[value],
                                 }))}
@@ -253,6 +257,17 @@ function ConflictResolutionSection({ mgr }: { mgr: Mgr }) {
                                 }
                               />
                             )}
+                            {item.state === "conflict" &&
+                              item.historyReconciliationAvailable === true && (
+                                <p className="text-xs text-[var(--color-textSecondary)]">
+                                  Reconcile histories and merge preserves both
+                                  recorded histories and combines only
+                                  baseline-verified, non-conflicting changes. It
+                                  does not choose the newest copy by dates. All
+                                  syncing devices need an updated app that
+                                  supports record history v3.
+                                </p>
+                              )}
                             {choice && (
                               <p className="text-xs text-warning">
                                 {choiceImpact[choice]}

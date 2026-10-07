@@ -115,6 +115,36 @@ describe("internal revision ancestry projection", () => {
     });
   });
 
+  it("recognizes reconciled copies and their pre-repair ancestors without another unrelated-origin warning", async () => {
+    const a = await version();
+    const b = await version(data(), undefined, "2026-10-06T12:00:00.000Z");
+    const joined = {
+      ...data(),
+      recordMetadata: await reconcileMergedRecordLedgers(
+        data(),
+        a.recordMetadata,
+        b.recordMetadata,
+        { reconcileOrigins: true },
+      ),
+    };
+    expect(
+      summarizeCloudSyncVersionHistory(joined, structuredClone(joined))
+        .relationship,
+    ).toBe("same");
+    for (const old of [a, b]) {
+      expect(summarizeCloudSyncVersionHistory(joined, old).relationship).toBe(
+        "local-ahead",
+      );
+      expect(summarizeCloudSyncVersionHistory(old, joined).relationship).toBe(
+        "remote-ahead",
+      );
+    }
+    const changed = await version(data("Later offline edit"), b.recordMetadata);
+    expect(summarizeCloudSyncVersionHistory(joined, changed).relationship).toBe(
+      "diverged",
+    );
+  });
+
   it("handles tombstones and restoration as real descendant revisions", async () => {
     const base = await version();
     const body = { connections: [data().connections[0]] };

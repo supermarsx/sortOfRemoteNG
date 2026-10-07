@@ -156,6 +156,15 @@ function matchingReview(): CloudSyncConflictReview {
   return receipt;
 }
 
+function reconciliationReview(): CloudSyncConflictReview {
+  const receipt = review();
+  receipt.items[1].historyReconciliationAvailable = true;
+  receipt.items[1].conflicts = [
+    { code: "history-unrelated", kind: "other", count: 1 },
+  ];
+  return receipt;
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -529,6 +538,215 @@ describe("cloud sync conflict review UI", () => {
     expect(mocks.sync).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, false])(
+    "does not infer history reconciliation from a baseline or blocker when availability is %s",
+    async (available) => {
+      const receipt = reconciliationReview();
+      receipt.items[1].historyReconciliationAvailable = available;
+      receipt.items[1].details = {
+        records: [],
+        hasBaseline: true,
+        comparisonLimited: false,
+        otherDifferences: true,
+      };
+      mocks.review.mockResolvedValueOnce(receipt);
+      render(<Harness />);
+      await openReview();
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Resolution for Scripts" }),
+      );
+      expect(
+        screen.queryByRole("option", {
+          name: "Reconcile histories and merge",
+        }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "Keep local" })).toBeVisible();
+      expect(screen.getByRole("option", { name: "Keep remote" })).toBeVisible();
+      expect(screen.queryByText(/supports record history v3/)).toBeNull();
+      expect(mocks.resolve).not.toHaveBeenCalled();
+    },
+  );
+
+  it("offers eligible history reconciliation only as an explicit reviewed choice, preserving ordinary choices and strategy", async () => {
+    const receipt = reconciliationReview();
+    mocks.review.mockResolvedValueOnce(receipt);
+    render(<Harness />);
+    await openReview();
+    const resolution = screen.getByRole("combobox", {
+      name: "Resolution for Scripts",
+    });
+    expect(resolution).toHaveTextContent("Choose a resolution");
+    const helper = screen.getByText(/combines only baseline-verified/);
+    expect(helper).toBeVisible();
+    expect(helper).toHaveTextContent("preserves both recorded histories");
+    expect(helper).toHaveTextContent(
+      "does not choose the newest copy by dates",
+    );
+    expect(helper).toHaveTextContent(
+      "All syncing devices need an updated app that supports record history v3",
+    );
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+
+    // This repair must never become an automatic/global strategy.
+    const strategy = screen.getByText("Ask Every Time").closest("button")!;
+    fireEvent.click(strategy);
+    expect(
+      screen.queryByRole("option", { name: "Reconcile histories and merge" }),
+    ).not.toBeInTheDocument();
+    fireEvent.keyDown(strategy, { key: "Escape" });
+
+    fireEvent.click(resolution);
+    expect(screen.getByRole("option", { name: "Keep local" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "Keep remote" })).toBeVisible();
+    expect(screen.queryByRole("option", { name: "Smart merge" })).toBeNull();
+    expect(
+      screen.getByRole("option", { name: "Reconcile histories and merge" }),
+    ).toHaveAttribute("aria-selected", "false");
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Reconcile histories and merge" }),
+    );
+    expect(resolution).toHaveTextContent("Reconcile histories and merge");
+    expect(
+      screen.getByText(
+        /updates this artifact locally and on the remote target with the baseline-verified merge/,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Apply reviewed choices" }),
+    ).toBeDisabled();
+    choose("Application settings", "Smart merge");
+    expect(
+      screen.getByRole("button", { name: "Apply reviewed choices" }),
+    ).toBeEnabled();
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply reviewed choices" }),
+    );
+    await screen.findByText("Reviewed choices applied.");
+    expect(mocks.resolve).toHaveBeenCalledExactlyOnceWith(
+      config().syncTargets![0],
+      config(),
+      receipt,
+      { settings: "smartMerge", scripts: "reconcileHistory" },
+    );
+    expect(mocks.sync).not.toHaveBeenCalled();
+    const persisted = mocks.update.mock.lastCall![0].cloudSync;
+    expect(persisted.conflictResolution).toBe("askEveryTime");
+    expect(persisted.targetStatus.home).toEqual(config().targetStatus!.home);
+    expect(JSON.stringify(persisted)).not.toMatch(
+      /reconcileHistory|historyReconciliationAvailable|reviewKey|choices/,
+    );
+    expect(document.body.textContent).not.toMatch(
+      /private-secret|private-receipt-key/,
+    );
+  });
+
+  it.each(["same", "local", "remote"] as const)(
+    "does not offer reconciliation for a %s artifact even if its flag is set",
+    async (state) => {
+      const receipt = reconciliationReview();
+      receipt.items[1].state = state;
+      mocks.review.mockResolvedValueOnce(receipt);
+      render(<Harness />);
+      await openReview();
+      expect(
+        screen.queryByRole("combobox", { name: "Resolution for Scripts" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/supports record history v3/)).toBeNull();
+      expect(mocks.resolve).not.toHaveBeenCalled();
+    },
+  );
+
+  it("drops the reconciliation selection when a refreshed review no longer allows it", async () => {
+    mocks.review.mockResolvedValueOnce(reconciliationReview());
+    render(<Harness />);
+    await openReview();
+    choose("Application settings", "Keep local");
+    choose("Scripts", "Reconcile histories and merge");
+    expect(
+      screen.getByRole("button", { name: "Apply reviewed choices" }),
+    ).toBeEnabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh review for Work" }),
+    );
+    await screen.findByRole("list", { name: "Reviewed artifacts for Work" });
+    expect(
+      screen.getByRole("combobox", { name: "Resolution for Scripts" }),
+    ).toHaveTextContent("Choose a resolution");
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Resolution for Scripts" }),
+    );
+    expect(
+      screen.queryByRole("option", { name: "Reconcile histories and merge" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Apply reviewed choices" }),
+    ).toBeDisabled();
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("cancels a selected reconciliation without applying or remembering it", async () => {
+    mocks.review.mockResolvedValue(reconciliationReview());
+    render(<Harness />);
+    await openReview();
+    choose("Application settings", "Keep local");
+    choose("Scripts", "Reconcile histories and merge");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel review" }));
+    await openReview();
+    expect(
+      screen.getByRole("combobox", { name: "Resolution for Scripts" }),
+    ).toHaveTextContent("Choose a resolution");
+    expect(
+      screen.getByRole("button", { name: "Apply reviewed choices" }),
+    ).toBeDisabled();
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it.each(["conflict", "partial", "failed"] as const)(
+    "never replays history reconciliation after a %s apply result",
+    async (status) => {
+      const receipt = reconciliationReview();
+      mocks.review.mockResolvedValue(receipt);
+      mocks.resolve.mockResolvedValue({
+        ...result(status),
+        message: "Refresh the conflict review before trying again.",
+      });
+      render(<Harness />);
+      await openReview();
+      choose("Application settings", "Keep local");
+      choose("Scripts", "Reconcile histories and merge");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Apply reviewed choices" }),
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Refresh the conflict review",
+      );
+      expect(mocks.resolve).toHaveBeenCalledExactlyOnceWith(
+        config().syncTargets![0],
+        config(),
+        receipt,
+        { settings: "keepLocal", scripts: "reconcileHistory" },
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Refresh review for Work" }),
+      );
+      await screen.findByRole("list", { name: "Reviewed artifacts for Work" });
+      expect(
+        screen.getByRole("combobox", { name: "Resolution for Scripts" }),
+      ).toHaveTextContent("Choose a resolution");
+      expect(
+        screen.getByRole("button", { name: "Apply reviewed choices" }),
+      ).toBeDisabled();
+      expect(mocks.resolve).toHaveBeenCalledOnce();
+      expect(mocks.update.mock.lastCall![0].cloudSync.conflictResolution).toBe(
+        "askEveryTime",
+      );
+    },
+  );
+
   it("opens and focuses the review section from the status panel", async () => {
     render(<Harness overview />);
     const status = within(
@@ -819,6 +1037,27 @@ describe("cloud sync conflict review hook guards", () => {
     });
     expect(mocks.resolve).not.toHaveBeenCalled();
   });
+
+  it.each([undefined, false])(
+    "rejects reconciliation for an ineligible conflict (%s), non-conflict or unknown artifact in the actual hook",
+    async (available) => {
+      const receipt = reconciliationReview();
+      receipt.items[0].historyReconciliationAvailable = available;
+      receipt.items[2].historyReconciliationAvailable = true;
+      mocks.review.mockResolvedValueOnce(receipt);
+      const hook = hookWithConfig();
+      await act(async () => hook.result.current.handleReviewConflicts("work"));
+      act(() => {
+        for (const id of ["settings", "scripts", "connections", "unknown"])
+          hook.result.current.setConflictReviewChoice(id, "reconcileHistory");
+      });
+      expect(hook.result.current.conflictReview?.choices).toEqual({
+        scripts: "reconcileHistory",
+      });
+      await act(async () => hook.result.current.handleApplyReviewedChoices());
+      expect(mocks.resolve).not.toHaveBeenCalled();
+    },
+  );
 
   const changes: [string, (config: CloudSyncConfig) => CloudSyncConfig][] = [
     ["selection", (c) => ({ ...c, selectedItems: ["different"] })],

@@ -285,13 +285,39 @@ interactive performance at that scale.
 
 ### Decision: three-way record merge, not last-writer-wins
 
-The current sync engine still compares **whole artifacts** against hash-only
-checkpoints. The ledger is a prerequisite for record-aware reconciliation, not
-an assertion that it has already been implemented. `Keep newer` now asks for
-review when both copies changed; snapshot upload time and locally observed
-change time cannot reliably rank offline edits.
+The sync engine compares whole artifacts first, then uses a bounded salted-hash
+content baseline for three-way smart merge. Non-overlapping record changes can
+combine; concurrent edits to the same record, deletion versus modification,
+ambiguous ordering, invalid dependencies and incompatible histories need review.
+`Keep newer` asks for review when both copies changed: snapshot upload time and
+locally observed change time cannot reliably rank offline edits.
 
-The recommended next stage is:
+#### Repairing separately initialized histories
+
+“Separate starting histories” means the same record identity has different
+initial revisions, often after independent migration or import. It does not mean
+the record is missing an ID or timezone. A content baseline alone cannot establish
+shared ancestry, and updating the app does not rewrite an existing ledger.
+
+In **Settings → Cloud Sync → Conflict Resolution**, refresh the target's review.
+When both histories validate and the shared baseline proves the current contents
+can merge without conflicts, **Reconcile histories and merge** becomes available
+for that artifact. Choose it and **Apply reviewed choices**. No repair is selected
+automatically, and the global conflict strategy is unchanged. If the option is
+absent, resolve the other reported content, history or dependency blockers first;
+do not delete metadata to force a sync.
+
+The reviewed operation retains every original history event and each root's
+creation provenance, adding explicit multi-parent reconciliation revisions in
+ledger version 3. It does not fabricate a common past, choose content by date,
+or preserve historical payload copies. Future ordinary writes and smart merges
+retain the joined history, including when a known pre-repair branch returns.
+All participating devices must use a build supporting ledger version 3; older
+builds reject it instead of discarding unfamiliar metadata. Review and apply
+recheck both copies, the baseline, dependencies and provider revisions; editing
+either copy after review requires a fresh review.
+
+Further conflict-resolution work beyond this reviewed repair includes:
 
 1. Persist an **encrypted common-base snapshot** per database/target and a
    revision DAG. Stable IDs and parent revisions determine whether a change

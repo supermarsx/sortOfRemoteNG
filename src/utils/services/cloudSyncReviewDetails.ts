@@ -111,7 +111,7 @@ export const reviewConflictGuidance: Record<SmartSyncConflictCode, string> = {
   "history-incompatible":
     "Refresh review to run the current history checks and obtain a more specific reason where available. Back up both copies before choosing either one.",
   "history-unrelated":
-    "A shared content baseline does not prove shared record history. This can happen after separate migrations or imports. Preserve both copies and reconcile the needed content before choosing a whole copy; their histories cannot be joined automatically.",
+    "These records have separately initialized histories, not necessarily missing origins. When a shared baseline proves the content can be combined safely, choose Reconcile histories and merge to preserve both histories and join them for future syncs. This is a one-time reviewed repair, never an automatic choice by date. If that option is unavailable, preserve both copies and resolve the other reported blockers first.",
   "history-revision-collision":
     "Do not reset the ledger or choose by date. Retain backups of both copies and compare a known-good backup before choosing a whole copy.",
   "history-stamp-collision":

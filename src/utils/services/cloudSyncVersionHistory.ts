@@ -1,6 +1,7 @@
 import {
   normalizeRecordLedger,
   RecordLedgerError,
+  type RecordLedger,
 } from "../storage/recordLedger";
 
 export type VersionHistoryRelationship =
@@ -59,26 +60,45 @@ export function summarizeCloudSyncVersionHistory(
         return { relationship: "incompatible" };
       sharedRevisions++;
     }
-    const localRoots = new Map(
-      left.journal
-        .filter(
-          (event) => !event.parentRevision && !event.parentRevisions?.length,
-        )
-        .map((event) => [event.record, event.revision]),
-    );
+    const roots = (ledger: RecordLedger) => {
+      const result = new Map<string, Set<string>>();
+      for (const event of ledger.journal) {
+        if (event.parentRevision || event.parentRevisions?.length) continue;
+        const revisions = result.get(event.record) ?? new Set<string>();
+        revisions.add(event.revision);
+        result.set(event.record, revisions);
+      }
+      return result;
+    };
+    const localRoots = roots(left),
+      remoteRoots = roots(right);
+    for (const [key, revisions] of localRoots) {
+      const other = remoteRoots.get(key);
+      // A reconciled record can have multiple retained roots. A returning old
+      // branch is comparable when one of those roots is its own, even though
+      // its current summary creation date differs from the joined summary.
+      if (other && ![...revisions].some((revision) => other.has(revision)))
+        return { relationship: "unrelated" };
+    }
     for (const event of right.journal) {
       if (event.parentRevision || event.parentRevisions?.length) continue;
-      const root = localRoots.get(event.record);
-      if (root && root !== event.revision) return { relationship: "unrelated" };
+      if (!localRoots.get(event.record)?.has(event.revision)) continue;
+      const original =
+        left.origins?.[event.revision] ?? left.records[event.record];
+      const other =
+        right.origins?.[event.revision] ?? right.records[event.record];
+      if (
+        original.createdAt !== other.createdAt ||
+        original.createdAtSource !== other.createdAtSource
+      )
+        return { relationship: "incompatible" };
     }
     for (const [key, stamp] of Object.entries(left.records)) {
       const other = right.records[key];
       if (!other) continue;
       if (
-        stamp.createdAt !== other.createdAt ||
-        stamp.createdAtSource !== other.createdAtSource ||
-        (stamp.revision === other.revision &&
-          JSON.stringify(stamp) !== JSON.stringify(other))
+        stamp.revision === other.revision &&
+        JSON.stringify(stamp) !== JSON.stringify(other)
       )
         return { relationship: "incompatible" };
     }

@@ -860,7 +860,9 @@ export function useCloudSyncSettings(
       !(
         choice === "keepLocal" ||
         choice === "keepRemote" ||
-        (choice === "smartMerge" && item.smartMergeAvailable)
+        (choice === "smartMerge" && item.smartMergeAvailable) ||
+        (choice === "reconcileHistory" &&
+          item.historyReconciliationAvailable === true)
       )
     )
       return;
@@ -900,7 +902,10 @@ export function useCloudSyncSettings(
         (item) =>
           state.choices[item.id] === "keepLocal" ||
           state.choices[item.id] === "keepRemote" ||
-          (state.choices[item.id] === "smartMerge" && item.smartMergeAvailable),
+          (state.choices[item.id] === "smartMerge" &&
+            item.smartMergeAvailable) ||
+          (state.choices[item.id] === "reconcileHistory" &&
+            item.historyReconciliationAvailable === true),
       )
     )
       return;
