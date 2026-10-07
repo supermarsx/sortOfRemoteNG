@@ -161,7 +161,7 @@ beforeEach(() => {
   document.addEventListener("load", holdFrameLoad, true);
   native.locked = false;
   Object.assign(native.settings, {
-    webBrowser: undefined,
+    webBrowser: normalizeWebBrowserSettings({ engine: "legacy" }),
     websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
   });
   native.vaultApi = undefined;
@@ -1671,6 +1671,11 @@ describe("real WebBrowser iframe and website automation integration", () => {
     view.unmount();
   });
   it("mounts the automatic MFA guard and retains manual fallback for a non-HTTPS session", async () => {
+    // Exercise the non-HTTPS guard after explicitly allowing automatic submission.
+    native.settings.webBrowser = normalizeWebBrowserSettings({
+      ...native.settings.webBrowser,
+      manualFormSubmit: false,
+    });
     const consoleError = vi.spyOn(console, "error");
     native.connections[0].httpApplication = {
       version: 1,
@@ -1773,7 +1778,7 @@ describe("real WebBrowser iframe and website automation integration", () => {
   });
   it("keeps manual scripts and macros blocked by the tab's effective browser default", async () => {
     native.settings.webBrowser = {
-      ...normalizeWebBrowserSettings(undefined),
+      ...normalizeWebBrowserSettings({ engine: "legacy" }),
       defaultPolicy: normalizeHttpProxyPolicy({
         ...normalizeHttpProxyPolicy(undefined),
         pageScripts: "block",

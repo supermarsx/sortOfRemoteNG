@@ -66,6 +66,27 @@ preserved, and cookies are revoked with the session. No direct fallback, added
 third-party trust, Basic header, or TLS exception is introduced. Credential-bearing
 307/308 redirects are rejected rather than replayed.
 
+## Open email links in the system browser
+
+In an **Exchange Outlook on the web (on-premises)** connection, click an external
+HTTP or HTTPS email link to review its destination, then choose **Open in
+browser**. Cancelling leaves the mailbox open. Ordinary mailbox, search, settings
+and same-origin navigation continue inside OWA.
+
+The review uses the real destination, not the app's localhost proxy address.
+OWA `redir.aspx` links are unwrapped without forwarding the wrapper's mailbox
+parameters; Microsoft SafeLinks addresses retain their signed destination URL.
+Only the reviewed URL is passed to the system browser, never saved credentials,
+embedded cookies or proxy authorization. Unsafe schemes and app-local routes
+cannot be opened through this action. A navigation, lock or changed database
+lease invalidates a pending action.
+
+The external browser uses its **own network/proxy settings and cookie session**;
+this is an explicit external handoff, not a direct-network fallback for the
+embedded page. Rebuild the desktop backend and reopen OWA to load the updated
+page-side link handler. Synthetic link tests do not establish live mailbox
+compatibility.
+
 ## Interactive cases and evidence limits
 
 MFA/CAPTCHA, ADFS/SSO, NTLM/Kerberos, password changes, rejected-login pages, and

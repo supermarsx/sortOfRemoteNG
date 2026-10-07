@@ -12,6 +12,15 @@ import {
   type DatabaseDataTarget,
 } from "../utils/connection/databaseManager";
 import { registerCloudSyncDatabaseBarrier } from "../utils/services/cloudSyncDatabaseBarrier";
+import {
+  applyBrowserSessionProjection,
+  browserSessionProjectionKey,
+} from "../utils/connection/browserSessionProjection";
+import {
+  useBrowserSessionProjection,
+  type BrowserSessionProjectionOwner,
+} from "../hooks/connection/useBrowserSessionProjection";
+import { notifyBrowserSessionProjectionChange } from "../utils/services/browserSessionProjectionEvents";
 import { StorageData } from "../utils/storage/storage";
 import { activateConnectionNotes } from "../utils/storage/connectionNotesVault";
 import { generateId } from "../utils/core/id";
@@ -477,6 +486,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const connectionsRef = useRef(state.connections);
   const recycleBinRef = useRef(state.recycleBinData ?? emptyRecycleBin());
   const loadedStorageRef = useRef<StorageData | null>(null);
+  const browserProjectionRefreshRef = useRef<Promise<{
+    changed: boolean;
+  }> | null>(null);
   const automationBusyRef = useRef(false);
   const cloudSyncBusyRef = useRef(false);
   const automationFaultRef = useRef(false);
@@ -988,6 +1000,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       saveTimerRef.current = null;
     }
 
+    // A projection refresh never flushes drafts. Saves wait until its narrow
+    // baseline advance and pending-snapshot patch have completed instead.
+    if (browserProjectionRefreshRef.current)
+      await browserProjectionRefreshRef.current;
     if (saveLoopRef.current) return saveLoopRef.current;
     if (databaseSettingsFaultRef.current)
       throw new Error(
@@ -1236,6 +1252,103 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
+  const captureBrowserSessionProjection = useCallback(
+    (databaseId?: string): BrowserSessionProjectionOwner | null => {
+      const target = activeDatabaseTargetRef.current;
+      if (
+        !target?.refreshBrowserSessionProjection ||
+        !hasLoadedRef.current ||
+        !loadedStorageRef.current ||
+        databaseRowsRevokedRef.current ||
+        recycleLoadingRef.current ||
+        (databaseId !== undefined && target.databaseId !== databaseId) ||
+        databaseManager.getCurrentDatabase()?.id !== target.databaseId
+      )
+        return null;
+      const proof = databaseManager.captureOriginBrowserOwnerProof(
+        target.databaseId,
+      );
+      const generation = loadGenerationRef.current;
+      const assertCurrent = () => {
+        proof.assertCurrent();
+        target.assertAccessible?.();
+        if (
+          !mountedRef.current ||
+          !hasLoadedRef.current ||
+          databaseRowsRevokedRef.current ||
+          recycleLoadingRef.current ||
+          loadGenerationRef.current !== generation ||
+          activeDatabaseTargetRef.current !== target ||
+          databaseManager.getCurrentDatabase()?.id !== target.databaseId
+        )
+          throw new Error("Browser projection owner changed.");
+      };
+      assertCurrent();
+      return {
+        databaseId: target.databaseId,
+        assertCurrent,
+        isBusy: () =>
+          Boolean(
+            cloudSyncBusyRef.current ||
+            automationBusyRef.current ||
+            documentsBusyRef.current ||
+            databaseSettingsBusyRef.current ||
+            vaultBusyRef.current ||
+            recycleBusyRef.current ||
+            saveLoopRef.current ||
+            browserProjectionRefreshRef.current,
+          ),
+        currentDescriptor: () => loadedStorageRef.current?.browserSessions,
+        refresh: async () => {
+          assertCurrent();
+          if (browserProjectionRefreshRef.current) {
+            await browserProjectionRefreshRef.current;
+            assertCurrent();
+            return { changed: false };
+          }
+          const work = (async () => {
+            // A save already in flight owns its snapshot until it settles.
+            if (saveLoopRef.current) await saveLoopRef.current;
+            assertCurrent();
+            const projection = await target.refreshBrowserSessionProjection!();
+            assertCurrent();
+            const loaded = loadedStorageRef.current;
+            if (!loaded) throw new Error("Browser projection is unavailable.");
+            const changed =
+              browserSessionProjectionKey(loaded.browserSessions) !==
+              browserSessionProjectionKey(projection.browserSessions);
+            loadedStorageRef.current = applyBrowserSessionProjection(
+              loaded,
+              projection,
+            );
+            const pending = pendingSnapshotRef.current;
+            if (pending?.target === target)
+              pendingSnapshotRef.current = {
+                ...pending,
+                data: applyBrowserSessionProjection(pending.data, projection),
+              };
+            // Do not dispatch rows or alter dirty/persisted user revisions.
+            return { changed };
+          })();
+          browserProjectionRefreshRef.current = work;
+          try {
+            return await work;
+          } finally {
+            if (browserProjectionRefreshRef.current === work)
+              browserProjectionRefreshRef.current = null;
+          }
+        },
+      };
+    },
+    [databaseManager],
+  );
+  useBrowserSessionProjection(
+    databaseAvailability.status === "ready"
+      ? databaseAvailability.generation
+      : undefined,
+    captureBrowserSessionProjection,
+  );
+
   useLayoutEffect(
     () =>
       registerCloudSyncDatabaseBarrier(async (ids, restore) => {
@@ -1276,6 +1389,20 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             if (restore) {
               if (!(await loadData(owner)))
                 throw new Error("Cloud restore refresh was superseded.");
+            } else {
+              // Capture can reconcile native cookie descriptors/record history.
+              // Refresh the captured writer without reloading user-editable rows.
+              const projectionOwner = captureBrowserSessionProjection(owner);
+              if (projectionOwner) {
+                const result = await projectionOwner.refresh();
+                projectionOwner.assertCurrent();
+                if (result.changed)
+                  notifyBrowserSessionProjectionChange({
+                    databaseId: owner,
+                    changeId: generateId(),
+                    assertCurrent: projectionOwner.assertCurrent,
+                  });
+              }
             }
           } finally {
             cloudSyncBusyRef.current = false;
@@ -1297,7 +1424,13 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           throw error;
         }
       }),
-    [databaseManager, flushPendingSave, loadData, publishDatabaseAvailability],
+    [
+      databaseManager,
+      flushPendingSave,
+      loadData,
+      publishDatabaseAvailability,
+      captureBrowserSessionProjection,
+    ],
   );
 
   const captureRecycleScope = useCallback((): RecycleBinScope => {

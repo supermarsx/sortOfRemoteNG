@@ -32,7 +32,10 @@ import {
   WEB_AUTOMATION_STORE_KEY,
   webAutomationStore,
 } from "../../utils/recording/webAutomationLibrary";
-import { WebAutomationBridge } from "../../utils/recording/webAutomationBridge";
+import {
+  WebAutomationBridge,
+  type WebAutomationTransport,
+} from "../../utils/recording/webAutomationBridge";
 import {
   AutomationLibraryAccessError,
   automationLibraryDiagnostic,
@@ -45,7 +48,7 @@ import {
   onDatabaseAccessChange,
 } from "../../utils/connection/databaseManager";
 
-interface Options {
+export interface WebAutomationOptions {
   effectivePolicy?: import("../../types/connection/httpProxyPolicy").HttpProxyPolicy;
   activityContext?: SessionActivityContext;
   connection: Connection | undefined;
@@ -56,10 +59,15 @@ interface Options {
   appearanceScopeKey?: string;
   blocked: boolean;
   navigationKey: string;
-  iframe: React.RefObject<HTMLIFrameElement | null>;
+  iframe?: React.RefObject<HTMLIFrameElement | null>;
+  /** Stable native execution boundary; omitted preserves legacy iframe IPC. */
+  bridge?: WebAutomationTransport;
+  /** Native CEF owns appearance; do not run the legacy dark-mode extension. */
+  nativeAppearance?: boolean;
   getDocument: () => WebAutomationDocument | null;
   updateConnection: (connection: Connection) => Promise<void>;
 }
+type Options = WebAutomationOptions;
 export type ScopedWebAutomationItem = WebAutomationItem & {
   scope?: AutomationScope;
 };
@@ -135,6 +143,9 @@ export function useWebAutomation(options: Options) {
   const [libraryKind, setLibraryKind] = useState<
     "script" | "macro" | undefined
   >();
+  const [executionOutcome, setExecutionOutcome] = useState<
+    "dispatched" | "completed" | null
+  >(null);
   const [steps, setSteps] = useState<WebInteractionStep[]>([]);
   const stepsRef = useRef<WebInteractionStep[]>([]);
   const setRecordedSteps = useCallback((next: WebInteractionStep[]) => {
@@ -193,11 +204,11 @@ export function useWebAutomation(options: Options) {
   const permissionsRef = useRef(permissions);
   permissionsRef.current = permissions;
   const bridgeRef = useRef<WebAutomationBridge | null>(null);
-  if (!bridgeRef.current)
+  if (!options.bridge && !bridgeRef.current)
     bridgeRef.current = new WebAutomationBridge(() => {
       const current = latest.current,
         doc = current.getDocument(),
-        frame = current.iframe.current?.contentWindow;
+        frame = current.iframe?.current?.contentWindow;
       try {
         captureWebAutomationAccess(current.ownerDatabaseId)();
       } catch {
@@ -212,7 +223,7 @@ export function useWebAutomation(options: Options) {
         ? { frame, document: doc }
         : null;
     });
-  const bridge = bridgeRef.current;
+  const bridge = options.bridge ?? bridgeRef.current!;
   // Appearance has its own durable saved-source proof. A failed/revoked macro
   // library must not disable that independently verified visual-only capability.
   const appearanceBridgeRef = useRef<WebAutomationBridge | null>(null);
@@ -220,7 +231,9 @@ export function useWebAutomation(options: Options) {
     appearanceBridgeRef.current = new WebAutomationBridge(() => {
       const current = latest.current,
         doc = current.getDocument(),
-        frame = current.iframe.current?.contentWindow;
+        frame = current.nativeAppearance
+          ? null
+          : current.iframe?.current?.contentWindow;
       try {
         captureWebAutomationAccess(current.ownerDatabaseId)();
       } catch {
@@ -249,6 +262,7 @@ export function useWebAutomation(options: Options) {
     if (mounted.current) {
       setValuePrompt(null);
       setPendingRun(null);
+      setExecutionOutcome(null);
       setRecording(false);
       setRecordingPending(false);
       if (!savingRef.current) setBusy(false);
@@ -416,7 +430,7 @@ export function useWebAutomation(options: Options) {
   useEffect(() => {
     mounted.current = true;
     const receive = (event: MessageEvent) => {
-      bridge.handleMessage(event);
+      bridge.handleMessage?.(event);
       appearanceBridge.handleMessage(event);
     };
     const changed = (event: Event) => {
@@ -560,7 +574,11 @@ export function useWebAutomation(options: Options) {
 
   const darkMode = useWebsiteDarkMode({
     ...options,
-    scopeKey: options.appearanceScopeKey ?? options.scopeKey,
+    scopeKey: options.nativeAppearance
+      ? ""
+      : (options.appearanceScopeKey ?? options.scopeKey),
+    settingsReady: options.nativeAppearance ? false : options.settingsReady,
+    blocked: options.nativeAppearance || options.blocked,
     bridge: appearanceBridge,
     accessRevision: appearanceEpoch,
     resetKey: `${executionKey}:${appearanceEpoch}`,
@@ -824,6 +842,7 @@ export function useWebAutomation(options: Options) {
       return;
     setPendingRun(null);
     setError(null);
+    setExecutionOutcome(null);
     const permission = permissionsRef.current.value;
     if (
       !permission ||
@@ -856,6 +875,7 @@ export function useWebAutomation(options: Options) {
       item.kind === "script" ? "website_script" : "website_macro";
     const startedAt = performance.now();
     let activityStarted = false;
+    let dispatched = false;
     const check = () => {
       assertAccess(captured);
       const enabled = permissionsRef.current.value;
@@ -872,7 +892,10 @@ export function useWebAutomation(options: Options) {
         !current ||
         current.generation !== doc.generation ||
         current.token !== doc.token ||
-        current.sessionId !== doc.sessionId
+        current.sessionId !== doc.sessionId ||
+        current.sequence !== doc.sequence ||
+        current.navigationToken !== doc.navigationToken ||
+        current.url !== doc.url
       )
         throw new Error("The page changed; website replay stopped.");
     };
@@ -894,7 +917,8 @@ export function useWebAutomation(options: Options) {
         await resolveItem(item, captured);
         checkOwner();
         check();
-        await bridge.request("script", { code });
+        dispatched =
+          (await bridge.request("script", { code })) === "dispatched";
       } else
         for (let index = 0; index < validated.steps.length; index++) {
           checkOwner();
@@ -928,9 +952,15 @@ export function useWebAutomation(options: Options) {
         }
       check();
       checkOwner();
-      recordSessionActivity(activityContext, activitySource, "completed", {
-        durationMs: performance.now() - startedAt,
-      });
+      setExecutionOutcome(dispatched ? "dispatched" : "completed");
+      recordSessionActivity(
+        activityContext,
+        activitySource,
+        dispatched ? "dispatched" : "completed",
+        {
+          durationMs: performance.now() - startedAt,
+        },
+      );
     } catch (failure) {
       if (activityStarted)
         recordSessionActivity(activityContext, activitySource, "failed", {
@@ -1258,8 +1288,14 @@ export function useWebAutomation(options: Options) {
       setError(message(failure));
     }
   };
+  // Optional for existing controls/controllers constructed without this newer
+  // native dispatch status; omission never asserts completion.
+  const executionState: {
+    executionOutcome?: "dispatched" | "completed" | null;
+  } = { executionOutcome };
   return {
     darkMode,
+    ...executionState,
     permissions: permissions.value,
     error:
       permissions.error ??

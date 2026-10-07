@@ -1,0 +1,528 @@
+{
+  "version": 1,
+  "title": "Real origin browser implementation",
+  "created": "2026-10-06",
+  "status": "in-progress",
+  "objective": "Replace localhost-rewritten website frames with isolated native browser surfaces loading real website origins through the application-private forward proxy.",
+  "constraints": [
+    "Windows, Linux and macOS ship together; macOS 14 or newer is acceptable.",
+    "Linux X11/XWayland is explicitly approved. Select the GTK/X11 backend before toolkit initialization; native Wayland is not a release requirement for this host.",
+    "An engineering probe on one OS is not authorization for a single-platform release.",
+    "All website traffic must traverse the resolved application network path, including redirects, child frames, workers and WebSockets. Unsupported transports fail closed.",
+    "The proxy is private to the application, binds loopback on an OS-assigned port, requires native-held per-attempt authentication, and never falls back directly.",
+    "No localhost website aliases, TLS interception, fake browser identities, disabled web security, or privileged application IPC in remote pages.",
+    "Bind host, profile, proxy, connection and owner database to an immutable attempt. Stale callbacks never operate on a successor.",
+    "Browser-controlled HTTPS, certificates, cookies and storage replace page-side emulation.",
+    "Bundled Chromium is authorized; CEF is the selected feasibility candidate because public WebKit APIs did not establish the full containment contract.",
+    "Forced dark mode and automatic login remain active on authentication and challenge pages at the user's explicit request. CAPTCHA interaction is still human, and this does not grant new credential consent.",
+    "Website request permissions support shared website/domain defaults and per-connection overrides, explicitly confirmed by the user.",
+    "Provider acceptance is measured separately from transport and rendering correctness; Google may reject embedded sign-in independently.",
+    "Preserve existing unrelated pending changes. No production account operations are authorized by this implementation request.",
+    "The user explicitly chose local-only verification. Do not create a branch, commit, push or dispatch remote CI; unavailable Linux/macOS runners remain unverified.",
+    "For unsupported native HTTPS trust policies, the user chose guidance only. Keep saved and inherited trust policies unchanged; do not add a one-click strict-policy switch or automatic fallback."
+  ],
+  "ownership": {
+    "main": "Architecture, shared contracts, registration, integration, plan and final evidence",
+    "windows": "Pinned native API feasibility and then assigned Windows host files",
+    "webkit": "Linux and macOS feasibility and then assigned platform host files",
+    "verification": "Independent loopback transport tests and adversarial acceptance fixtures",
+    "sharedFiles": [
+      "src-tauri/Cargo.toml",
+      "src-tauri/Cargo.lock",
+      "src-tauri/src/lib.rs",
+      "src-tauri/src/invoke_handler.rs",
+      "src-tauri/crates/sorng-protocols/src/origin_browser.rs",
+      "src/hooks/protocol/useWebBrowser.ts",
+      "src/components/protocol/webBrowser/ContentArea.tsx",
+      "package.json"
+    ]
+  },
+  "phases": [
+    {
+      "id": "host-decision",
+      "status": "in-progress",
+      "deliverables": [
+        "Verify APIs against pinned Tauri/Wry and official browser sources.",
+        "Prove or reject native per-profile proxy authentication, request admission and non-proxy traffic containment on each OS.",
+        "Choose one host architecture; document engine packaging, sandbox, native-tab embedding and accessibility implications.",
+        "Produce a real-origin local browser probe, not another string-only readiness claim."
+      ],
+      "gate": "No readiness report until actual profile/proxy binding and native enforcement are installed before navigation."
+    },
+    {
+      "id": "session-and-transport",
+      "status": "in-progress",
+      "deliverables": [
+        "Reuse OriginBrowserSession and the private HTTP/CONNECT relay; keep target TLS opaque.",
+        "Resolve direct-upstream, configured HTTP/SOCKS, tunnel and chained paths explicitly. Reject unsupported paths without substituting direct.",
+        "Native-owned session registry and attempt-fenced create, navigate, cancel, close and failure lifecycle.",
+        "Exact-origin resource/redirect admission, separate from permission to release credentials.",
+        "Domain-level request permissions with explicit precedence, visible effective rules and per-request-class controls. Domain network grants never grant credentials, auto-login consent, certificate exceptions or privileged app access.",
+        "Endpoint-only proxy authentication; no proxy secrets in renderer messages, process arguments, URLs or logs.",
+        "Revoke admission and active streams on owner lock/close, host failure or proxy failure."
+      ],
+      "gate": "Loopback tests prove destination TLS identity, authentication isolation, unauthorized-host rejection, cancellation and no fallback."
+    },
+    {
+      "id": "native-hosts",
+      "status": "in-progress",
+      "deliverables": [
+        "Isolated website surfaces with no privileged Tauri IPC or app-origin ancestor.",
+        "Profile allocation and cleanup tied to attempt; persistent login retention requires explicit database ownership and lock policy.",
+        "Native certificate verification and existing trust-policy integration; do not silently discard pins or exceptions.",
+        "Contain DNS prefetch, proxy bypass lists, loopback bypass, QUIC, WebRTC and unsupported socket APIs.",
+        "Treat startup settings, installed hooks, runtime failure handling and adversarial test evidence as separate readiness requirements.",
+        "Deny automatic popups, downloads, file access, external protocols and permission requests until their owned review paths exist."
+      ],
+      "gate": "Each platform passes the same native isolation and network-tripwire fixtures."
+    },
+    {
+      "id": "tab-integration",
+      "status": "in-progress",
+      "deliverables": [
+        "Mount the native surface in the connection-tab viewport, handling bounds, zoom, DPI and window changes.",
+        "Synchronize native visibility with selected tab, menus, dialogs, trust prompts, database lock and detach/reattach.",
+        "Wire back, forward, reload, stop, address, title, loading and failure diagnostics using typed attempt-scoped events.",
+        "Keep URL display truthful; real-origin sessions never load a protected localhost website alias.",
+        "Bound event payloads and diagnostics; never include cookies, request bodies, authorization or query values.",
+        "Keep the old mediator an explicit legacy choice; a failed real-origin session must not silently switch engines or routes."
+      ],
+      "gate": "UI integration tests reject stale events; hidden views cannot receive input, and closed or owner-locked views cannot continue network activity."
+    },
+    {
+      "id": "website-features",
+      "status": "in-progress",
+      "deliverables": [
+        "Origin-bound autofill and explicit submission consent using reviewed application adapters, not generic scripts in every frame.",
+        "Separate challenge interaction from auto-login; never solve or bypass a CAPTCHA automatically.",
+        "Keep forced dark mode and automatic login active on login/challenge pages; do not silently disable either as a compatibility fallback.",
+        "Use native pre-paint styling or engine dark rendering with narrowly scoped origin-bound login adapters; retire legacy URL/cookie/prototype shims, not the requested features.",
+        "Native dark background and theme readiness without leaving interactive invisible overlays.",
+        "Migrate dialogs, permissions, downloads, popups and external-link review without proxy bypass.",
+        "Remove obsolete cookie/URL/request shims only from the new host; preserve legacy mode until its consumers migrate."
+      ],
+      "gate": "Per-feature regressions cover manual login, staged login, consent, unrelated frames, verification prompts and cancellation."
+    },
+    {
+      "id": "acceptance",
+      "status": "in-progress",
+      "deliverables": [
+        "Local HTTPS fixture verifies location.origin, secure context, same-origin child frames and cross-origin isolation.",
+        "Native cookie, storage, redirect, module import, dedicated/shared/service worker and WebSocket tests where supported.",
+        "Independent local tripwires detect any direct connection, including loopback targets, after route loss and revocation.",
+        "Proxy credentials never satisfy a website authentication challenge.",
+        "Human-driven provider matrix: Google identifier-to-password transition, Cloudflare challenge, Porkbun sign-in, session reload and logout.",
+        "Report opening, form, password, challenge, authenticated and reload stages individually; a rendered form is not a passed login.",
+        "Repeat acceptance on Windows, Linux and macOS. No production credentials or profiles enter automated fixtures."
+      ],
+      "gate": "Transport, native-host, full-app and provider evidence are distinct and all required release checks are terminal."
+    },
+    {
+      "id": "release-and-maintenance",
+      "status": "in-progress",
+      "deliverables": [
+        "Package and sign native helpers/runtime resources on every supported platform and architecture.",
+        "If Chromium is bundled, pin matching runtime and bindings, preserve sandboxing, establish security-update and rollback procedures.",
+        "Add CI gates for native host contracts and packaging; keep unsupported/runtime-missing states explicit.",
+        "Enable the new production mode only once the cross-platform readiness contract is met.",
+        "Publish accurate configuration, migration and diagnostic documentation; record remaining provider limitations."
+      ],
+      "gate": "No platform-only rollout, unverified ready capability, silent downgrade or claimed provider guarantee."
+    }
+  ],
+  "architecture": {
+    "domainPermissions": {
+      "sharedScope": "App-wide website/domain defaults for public request policy only; never store connection secrets or query values in shared rules.",
+      "overrideScope": "Each saved connection can inherit or explicitly override its website defaults, including destination rules.",
+      "precedence": [
+        "Non-overridable native safety and route constraints",
+        "Explicit per-connection destination rule",
+        "Explicit per-connection request-class setting",
+        "Shared website destination rule",
+        "Shared website request-class default",
+        "Application default"
+      ],
+      "matching": "Exact canonical HTTPS origins initially, grouped and labelled by domain. No inferred wildcard/subdomain/port grants. Any later subdomain rule requires explicit opt-in and public-suffix validation.",
+      "requestClasses": [
+        "script",
+        "stylesheet",
+        "font",
+        "image-media",
+        "fetch-xhr",
+        "frame",
+        "worker",
+        "websocket",
+        "navigation"
+      ],
+      "ui": [
+        "Settings: shared website/domain rules",
+        "Connection Internal proxy controls: inherit/override and destination rules",
+        "Blocked-request review: display effective rule and offer explicitly scoped changes"
+      ],
+      "safety": [
+        "Network grants never authorize credential forwarding, login submission or certificate exceptions",
+        "Inline/eval execution settings belong to the owning document, not an unknown destination grant",
+        "Privileged app/relay endpoints remain inaccessible",
+        "Existing sessions receive an explicit apply/reload choice; stale attempts cannot acquire new permissions",
+        "Show the matching source and precedence of every effective setting"
+      ],
+      "status": "Strict shared/per-connection policy models, persistence normalization, themed editor and matching Rust engine implemented and unit-tested. Native CEF browser/context callbacks consume one immutable policy snapshot, classify requests using native metadata and intersect grants with session admission; unknown classes deny. Shared and per-connection editors are mounted. Native authority derives immutable saved-owner policy snapshots; legacy sessions do not consume this new policy. Operational admission now requires successful native global/system policy installation and readback; policy loss permanently revokes admission for the process. Live containment acceptance remains unverified."
+    },
+    "dataPath": [
+      "Remote website top-level native Chromium document at its actual HTTPS origin",
+      "Attempt-private browser profile and authenticated fixed proxy",
+      "Application-private HTTP/CONNECT relay with destination admission",
+      "Explicitly resolved connection network path: direct upstream, proxy, SSH tunnel or chain",
+      "Original website, with browser-to-website TLS kept end to end"
+    ],
+    "controlPath": [
+      "Trusted app shell issues bounded commands with database, connection, tab and attempt identity",
+      "Native session owner validates the unlocked owner, consent and current attempt",
+      "Native host performs the action and returns redacted typed status events",
+      "Remote documents never receive the app's invoke handler, database APIs or relay secrets"
+    ],
+    "engineDecision": {
+      "candidate": "CEF bundled Chromium; feasibility, not production availability",
+      "reason": "Public WKWebView APIs inspected did not establish complete HTTP(S)/worker/socket admission and WebRTC containment. Use a common engine if it can satisfy the contract on all three platforms.",
+      "bindingEvaluated": "cef and cef-dll-sys pinned together at 154.3.0+154.0.32 behind sorng-browser-host's cef-host feature and the root application's native-browser feature. Normal full-feature development and release selections include native-browser. Startup admission uses checked native policy installation, not a hardcoded enabled or disabled value. Operational admission does not attest cross-platform production acceptance.",
+      "platformFindings": {
+        "windows": "Raw WebView2 can prove first real-origin transport behavior in a native child; supported WebView2 flags alone are insufficient evidence for all-traffic containment.",
+        "macos": "CEF requires CefAppProtocol/CrAppControlProtocol integration into NSApplication, preserving Tao event handling and termination. A pinned Tao patch or explicit runtime bridge needs runtime validation.",
+        "linux": "Inspected CEF native child path accepts an X11 parent. XWayland also requires the app GTK shell to use X11. The user approved X11/XWayland; native Wayland is rejected explicitly before creating a child, not silently converted after initialization."
+      },
+      "nativeEmbeddingFirst": true,
+      "keepTauriShellAndRustBackend": true,
+      "mustProve": [
+        "macOS framework/helper bootstrap before app services, then a checked event-dispatch bridge on the existing TaoApp before CEF initialization",
+        "Linux native child embedding and supported X11/Wayland session behavior",
+        "Windows sandbox-enabled bootstrap, native child lifecycle and helper process packaging",
+        "No traffic bypass with fixed proxy, worker/resource interception and alternative-transport restrictions",
+        "No browser engine initialized inside the privileged app webview's JavaScript context"
+      ],
+      "notAssumed": [
+        "CEF installation alone makes Google accept embedded sign-in",
+        "A proxy preference alone contains every browser transport",
+        "An off-screen canvas preserves IME, accessibility, clipboard or focus without additional host work",
+        "Separate browser windows are an acceptable substitute for connection tabs"
+      ]
+    }
+  },
+  "workPackages": [
+    {
+      "id": "RO-01",
+      "owner": "verification",
+      "dependsOn": [],
+      "status": "implemented-tested",
+      "paths": [
+        "src-tauri/crates/sorng-protocols/tests/origin_browser_real_origin.rs"
+      ],
+      "output": "Actual loopback TLS/SNI/certificate/ALPN and WSS traversal across two proxy hops; revocation/drop, wrong certificate and redirect denial regressions.",
+      "acceptance": "All five public-API tests pass. These are Rust clients, not native browser acceptance."
+    },
+    {
+      "id": "RO-02",
+      "owner": "main",
+      "dependsOn": [],
+      "status": "implemented-tested",
+      "paths": ["src-tauri/crates/sorng-protocols/src/origin_browser.rs"],
+      "output": "Shared native authentication challenge boundary checking current attempt, proxy role, exact numeric endpoint, scheme, realm and live relay.",
+      "acceptance": "Website 401, stale attempt, wrong endpoint/realm/scheme and revocation never invoke the credential callback."
+    },
+    {
+      "id": "RO-03",
+      "owner": "windows",
+      "dependsOn": ["RO-01", "RO-02"],
+      "status": "implemented-tested",
+      "paths": [
+        "src-tauri/crates/sorng-file-viewer-host/tests/native_real_origin.rs"
+      ],
+      "output": "First real native-browser HTTPS probe through the private relay using disposable storage and synthetic local certificates.",
+      "acceptance": "Real HTTPS location, top-level document, secure context, native cookies/storage and no app IPC. Passed on Windows WebView2 146.0.3856.84. Wry's inert ipc property still exists but no IPC handler is installed and native messaging/host objects are disabled. No production Ready report or public-site login claim."
+    },
+    {
+      "id": "RO-04",
+      "owner": "webkit",
+      "dependsOn": [],
+      "status": "in-progress",
+      "paths": [
+        "src-tauri/crates/sorng-browser-host/src/bootstrap_platform.rs",
+        "src-tauri/crates/sorng-browser-host/src/platform",
+        "src-tauri/crates/sorng-browser-host/src/cef_runtime.rs",
+        "src-tauri/src/main.rs",
+        "src-tauri/src/lib.rs",
+        "src-tauri/Cargo.toml"
+      ],
+      "output": "Implemented shared single-thread external message pump and native bootstrap providers for Windows sandbox bootstrap DLL entry, Linux X11/XWayland, and macOS 14+ TaoApp event bridge and sandbox-first helper loading. Root app entry, setup, UI pump and shutdown are wired behind native-browser. Windows feature-enabled app library and dedicated helper compile. Genuine Windows and WSL2 Linux x64 entry probes pass without initializing a browser. Linux CEF initialization/rendering, macOS execution and native ARM64 execution remain unverified.",
+      "acceptance": "Public API/native lifecycle proof on macOS and Linux; any app-shell or off-screen rendering expansion is called out before implementation."
+    },
+    {
+      "id": "RO-05",
+      "owner": "main",
+      "dependsOn": ["RO-04"],
+      "status": "in-progress",
+      "paths": [
+        "src-tauri/crates/sorng-browser-host",
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/invoke_handler.rs"
+      ],
+      "output": "Native host crate implements isolated CEF context proxy preparation, auth/request guards with immutable domain permissions, owned and borrowed platform child descriptors, hidden child creation, navigation/control, redacted sequenced events and close/crash relay revocation. App-owned registry, typed command registration, native database ownership and runtime startup are wired. Saved proxy-only chains resolve from the owning protected profile and are registered at startup; unsupported SSH/VPN paths reject rather than borrowing active ports or falling back directly. Operational admission waits for actual native policy installation/readback. Revocation is terminal, while a fenced cleanup pump can drain closing windows. Certificate features without native translations still reject. Complete containment acceptance is not established.",
+      "acceptance": "Actual browser processes start sandboxed, bind to the correct route/profile, deny unsupported capabilities and shut down without affecting other tabs."
+    },
+    {
+      "id": "RO-06",
+      "owner": "main",
+      "dependsOn": ["RO-05"],
+      "status": "in-progress",
+      "paths": [
+        "src/types/protocols/originBrowser.ts",
+        "src/hooks/protocol/useOriginBrowser.ts",
+        "src/components/protocol/webBrowser/OriginBrowserViewport.tsx",
+        "src/hooks/protocol/useWebBrowser.ts",
+        "src/components/protocol/webBrowser/ContentArea.tsx",
+        "src/utils/network/resolveRuntimeNetworkPath.ts"
+      ],
+      "output": "Built and tested typed native transport, attempt-fenced controller and native viewport with bounds, tab/modal visibility, focus revision, late-create cleanup and owner-lock handling. Engine selection lives only in Settings, not a tab selector bar. An absent preference defaults to real-origin; explicitly saved legacy preferences remain unchanged. Browser controls, capability notice, engine preferences and shared/per-connection permission editors use the app's semantic theme, native tooltips, spacing and dialog components. Owner-only address-bar events retain complete validated URLs while diagnostics remain redacted. Native command registration and saved database-owner proof are wired. Actual cross-platform native tab behavior remains unverified and the production readiness gate remains closed; a default preference does not bypass it or silently substitute legacy mode.",
+      "acceptance": "No silent legacy/direct fallback; resizing, tab switches, modals, detached windows and reconnects preserve owner/attempt and input isolation."
+    },
+    {
+      "id": "RO-07",
+      "owner": "main",
+      "dependsOn": ["RO-05", "RO-06"],
+      "status": "in-progress",
+      "paths": [
+        "src-tauri/crates/sorng-protocols/src/http_dark_mode.rs",
+        "src-tauri/crates/sorng-protocols/src/autologin",
+        "src/components/protocol/webBrowser"
+      ],
+      "output": "CEF forced-dark startup flags, renderer feature handshake and origin-bound manual/generic/Porkbun/Google/Exchange ECP/Exchange OWA/Vodafone Smart Router adapters are implemented with native and DOM fixture tests. Google identifier and password stages have separate native delivery fences. The root bridge now obtains fresh native consent per attempt, binds exact origins and submission rights for ten minutes, resolves credentials only from the saved owning database and revokes on owner/attempt loss. Consent is never inferred from a renderer grant ID. Other saved application adapters or custom selectors still reject unless manual login is explicitly selected. Actual native delivery, first-paint darkness, UA/client-hint coherence and live provider acceptance remain unverified.",
+      "acceptance": "No white first paint or silent feature suspension, no repeated form submission loops, no secrets in unrelated frames, and no production URL/cookie/prototype rewriting in new mode."
+    },
+    {
+      "id": "RO-08",
+      "owner": "verification",
+      "dependsOn": ["RO-05", "RO-06", "RO-07"],
+      "status": "in-progress",
+      "paths": [
+        "scripts/browser-readiness.mjs",
+        "docs/browser-readiness.md",
+        ".github/workflows"
+      ],
+      "output": "Expanded deterministic gate to native viewport/controller and domain policy tests. Six-platform CEF package/acceptance workflow is authored but will not run remotely under the user's local-only instruction. Windows packaged run17 completes generic and Google-shaped staged synthetic login, real secure top-level HTTPS, native cookies and isolated child frames. Cookie/storage isolation and clean closure of three fixture attempts are observed, with no post-revoke requests. Native zoom/find calls succeed before revocation and reject afterward. The same-ID browser replacement cleanup bug was repaired without loosening credential guards. Aggregate acceptance remains failed because native first-paint pixels and DNS/socket containment are not fully verified; actual Google/Cloudflare acceptance and Linux/macOS runtime execution remain unproved.",
+      "acceptance": "Denials are observed at destination listeners, not only JavaScript errors. Missing runtimes/platform runs remain not-run; provider failures stay failures."
+    },
+    {
+      "id": "RO-09",
+      "owner": "main",
+      "dependsOn": ["RO-08"],
+      "status": "in-progress",
+      "paths": [
+        "scripts/browser-runtime-package.mjs",
+        "tests/tooling/browserRuntimePackage.node-test.mjs",
+        "docs/browser-runtime-packaging.md",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/Cargo.lock",
+        ".github/workflows",
+        "docs/browser-readiness.md"
+      ],
+      "output": "Offline package verifier covers Windows/Linux/macOS x64 and ARM64, exact runtime/binding pins, sandbox ABI, complete resources/locales/framework/helper layouts and staged byte identity. All six downloaded archives now match their pinned strong digests. A Windows client package and isolated app-entry/bootstrap probe were produced locally; Windows and WSL2 Linux x64 entry probes pass, while actual packaged browser acceptance still fails. Reverse-DNS executable names and macOS dotted names are preserved; build-local acquisition remains strictly offline. Whole-matrix assessment rejects Windows-only or duplicate reports. Normal app dev/release packaging still needs its CEF-aware driver. Linux/macOS browser initialization, signatures/notarization and full-platform release acceptance remain outstanding.",
+      "acceptance": "Packaged artifacts, not dev-only binaries, pass the same gates before the real-origin mode reports production readiness."
+    }
+  ],
+  "riskControls": [
+    {
+      "risk": "Provider rejects an embedded browser even at its real origin",
+      "control": "Record Google password-stage and Cloudflare human-challenge results; never promise acceptance or spoof browser identity."
+    },
+    {
+      "risk": "Dark extension or auto-submit changes sensitive page behavior",
+      "control": "Keep both active as requested. Test stage-specific timing and scoped DOM changes; report incompatibility rather than silently disabling features."
+    },
+    {
+      "risk": "Opaque HTTPS prevents proxy-side content inspection",
+      "control": "Move certificate trust, URL admission, request controls and extensions to trusted native engine boundaries; do not reintroduce TLS interception."
+    },
+    {
+      "risk": "Persistent Chromium profiles retain database secrets after lock",
+      "control": "Default to attempt-private storage; explicit retained profiles need owner-bound retention, cleanup, lock and at-rest protection design before enabling."
+    },
+    {
+      "risk": "CEF subprocess sandbox or engine version drifts",
+      "control": "Pin matching runtime/bindings, validate package manifests and sandbox startup, and treat security updates as a maintained release dependency."
+    },
+    {
+      "risk": "Native views cover application menus or capture input when hidden",
+      "control": "Native visibility and focus ownership follow tab/modal lifecycle; exercise DPI, detach/reattach and accessibility."
+    },
+    {
+      "risk": "App-private endpoints are reachable from website traffic",
+      "control": "Never grant privileged app endpoints; authenticate the relay independently and restrict target admission before opening any socket."
+    }
+  ],
+  "evidence": [
+    {
+      "date": "2026-10-06",
+      "layer": "windows-nsis-installer-client-and-payload-verification",
+      "command": "Tauri packaging-only bundle --bundles nsis; .artifacts/desktop-bundle-nsis-20261006.log; .artifacts/nsis-extraction-20261006/verification-resources.json; six focused browser build/package tooling test files",
+      "result": "NSIS packaging exited 0. The 205460831-byte installer extracted without execution. All 272 application files (720248379 bytes) match mapped sources by SHA-256; 235 CEF runtime-copy comparisons pass. The installer-specific client contains the NSS initializer at offset 186015717 while raw/unbundled clients and the pinned bootstrap remain unchanged. The driver prepares independent MSI/NSS client copies before signing and retains explicit installer selection, including attached short forms. Focused tooling tests pass 86 with two platform-specific skips. The latest diagnostic UI separately passes 161 browser tests and full TypeScript checking.",
+      "notProven": "This installer contains the earlier compiled frontend, not the later diagnostic UI edits. It was not executed or installed; runtime updater bundle-type readback, signing and all-platform provider acceptance remain unverified. The report retains a 7-Zip listing-size discrepancy for the NSIS support file StartMenu.dll, with no application resource mismatch. Stock Tauri still warns about its marker being absent from the pinned bootstrap, which is not the marker-bearing client DLL. MSI remains blocked by Windows Installer validation error 1719."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "native-startup-error-classification",
+      "command": "Read-only running-app process inspection; native authority and IPC source review; useOriginBrowser and OriginBrowserViewport regression tests",
+      "result": "CEF subprocesses were observed in the user's running development app after the staging repair. The shell no longer collapses every startup rejection into host-unavailable. Exact reviewed native messages receive safe stage-specific guidance; unknown errors remain redacted. Source inspection confirms inherited default TOFU is rejected by the native authority's strict-only certificate path; HTTP-only sites independently fail HTTPS-only admission. The certificate-policy notice preserves all settings and offers guidance only, as explicitly requested.",
+      "notProven": "The user's actual previous IPC rejection was hidden, so process and source evidence do not identify every failing connection's cause. Native TOFU/pinning/interactive trust hooks are not completed by this diagnostic repair. Real website login acceptance and cross-platform native runtime acceptance remain unverified."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "normal-windows-release-compile-and-development-staging-repair",
+      "command": "npm run tauri:build; .artifacts/desktop-normal-build-short-cache-20261006.log; .artifacts/kafka-short-cache-cargo-build-20261006.log; .artifacts/cef-dev-copy-check-9B8JXA/report.json; focused browser build/package tooling tests",
+      "result": "Shortened the raw CEF Cargo cache to .cache/cef-target, removing repeated target triples that caused Kafka FTK1011 and CEF wrapper long-path failures. A locked static Kafka Cargo build passed in 2m25s. The normal full Windows release compiled and linked in 39m14s with frontend/resource hooks enabled; its pinned CEF package reports ok=true and independent PE import checks found no missing DLLs. Development staging now merges directories while rejecting file/type collisions, destination junctions and copying a directory into itself. The actual failed-run development payload plus three resource mappings copied with SHA-256 equality for all 254 files (859764517 bytes). Focused tooling checks passed 78 tests with two platform-specific skips.",
+      "notProven": "The full normal build command still exited nonzero at MSI packaging: verbose WiX validation reported Windows Installer error 1719, LGHT0217 and ICE09 error 0x643. The service was running but inaccessible to the non-elevated validation process; validation was not disabled. Development payload copying is not an app launch. No production login, new native browser acceptance, Linux/macOS native build or signing/notarization is established. Cleanup of the old incremental cache was blocked by execution policy; no files were deleted."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "actual-packaged-windows-native-login-fixed",
+      "command": "scripts/cef-browser-acceptance.mjs; .artifacts/cef-acceptance-run-17/run-OMJsDI/native-report.json and native-trace.jsonl; .artifacts/cef-acceptance-run-17/acceptance.json; cargo test -p sorng-browser-host --features cef-host --lib --test ipc_contract --test native_login_consent --locked --offline",
+      "result": "Native fixture exits 0 with no login failures. Generic synthetic login and Google-shaped identifier/password stages complete after retaining successor document state by actual browser instance rather than numeric ID. All Form/Identifier/Password grants reach renderer execution and acceptance. Secure real-origin top-level documents, native cookies, HttpOnly isolation, cross-origin child isolation and no Tauri bridge are observed. Three attempts close with zero post-revocation requests; proxy authorization is not leaked upstream. Both production global/system policy stores read back correctly. Native zoom/reset/find/stop-find dispatch succeeds and post-revocation commands reject. Independently rerun 125 host, 27 IPC and six consent tests pass; feature-enabled Windows app library check passes.",
+      "notProven": "Actual Google/Cloudflare/Porkbun account acceptance. This uses local synthetic HTTPS fixtures even when the address is accounts.google.com. Aggregate acceptance is still false: native first-paint pixel evidence and complete DNS/socket containment remain missing. The network log has no unexpected DNS entries but retains failed IPv6 UDP connect observations; these are not ignored. DOM dark preference is observed, not painted pixels. No Linux/macOS runtime execution, OS-level packet attestation, all legacy application adapters or complete legacy feature parity is claimed."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "native-browser-controls-parity",
+      "command": "npx vitest run tests/protocol/OriginBrowserConnectionIntegration.test.tsx tests/protocol/OriginBrowserControlFencing.test.tsx tests/protocol/OriginPageToolsAsync.test.tsx tests/protocol/OriginBrowserViewport.test.tsx tests/protocol/useOriginBrowser.test.tsx tests/settings/WebsiteDomainPermissionsEditor.test.tsx tests/settings/browserEnginePersistence.test.ts tests/settings/webBrowserSettings.test.tsx tests/connectionEditor/ConnectionDomainPermissionsTheme.test.tsx tests/protocol/originBrowser.test.ts; npx tsc --noEmit --pretty false; targeted ESLint",
+      "result": "186 tests across ten files and full frontend typecheck passed independently. App-themed controls include navigation/home, refresh/stop, native zoom and find, saved bookmarks, current-address copy, reviewed external opening, ephemeral-session reset and owner-scoped credential copy. Menus/dialogs hide the native surface without disabling their authorized app-side actions. Initial zoom retries correctly after stale overlay settlement without retry loops; clipboard messages cannot update a reopened menu. Engine selection remains in Settings. Unsupported print, downloads, history menus and recording are explicitly disabled.",
+      "notProven": "Visual screenshot review, native-focused keyboard shortcut forwarding, native printing/download/recording support or complete legacy feature parity. Run16 separately exercised actual native zoom/find dispatch and post-revocation rejection, not visual scale or highlight correctness."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "actual-windows-normal-build-driver",
+      "command": "node scripts/browser-app-build.mjs build --features=native-browser --debug --no-bundle --cef-static --cef-offline with an isolated identifier, cached SDK and frontend hooks disabled; .artifacts/browser-app-driver-outer-check02-20261006/build.json and package.json; .artifacts/browser-app-driver-published-entry-check-20261006/process.json",
+      "result": "Installed Tauri CLI invoked the native runner, linked the real app client DLL, staged the digest-verified pinned CEF runtime/bootstrap and published the unpacked application. Build exited 0. Independent inspection confirms package ok=true, strong SHA-256 pin verification, 237 checked runtime members and a bootstrap-to-app entry probe exiting 0 with empty stderr.",
+      "notProven": "A fresh frontend build (existing assets were reused), normal full-feature installer creation, CEF initialization or rendering in the full app, watch restarts, signing/notarization, OS-level containment, or Linux/macOS application execution. Production readiness remains false in the build report."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "normal-browser-build-routing-and-operational-admission",
+      "command": "node --test tests/tooling/browserBuildRouting.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/browserAppBuild.node-test.mjs tests/tooling/cefReleaseWorkflow.node-test.mjs; cargo test -p sorng-commands-core --test origin_browser_runtime_flow; node scripts/native-build-env.mjs cargo check --manifest-path src-tauri/Cargo.toml -p app --lib --no-default-features --features native-browser --locked --offline",
+      "result": "71 build-routing/tooling tests, 14 async lifecycle/admission tests and the Windows native-browser application library check passed. Normal full-feature build/dev entrypoints use the pinned runtime build driver, with explicit reduced builds remaining possible. Native policy readiness replaces the permanent startup-disable flag; concurrent revocation cannot re-enable a failed runtime. Cleanup pumping remains available after traffic is revoked.",
+      "notProven": "Actual end-to-end normal app packaging, installed application rendering, production login success, OS-level packet containment or Linux/macOS native execution. Tooling tests do not establish successful package launch."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "native-browser-app-theming",
+      "command": "npx vitest run tests/protocol/OriginBrowserConnectionIntegration.test.tsx tests/protocol/OriginBrowserViewport.test.tsx tests/settings/WebsiteDomainPermissionsEditor.test.tsx tests/settings/webBrowserSettings.test.tsx tests/connectionEditor/ConnectionDomainPermissionsTheme.test.tsx; npx tsc --noEmit --pretty false",
+      "result": "Independent integration run: 88 tests passed and full frontend typecheck passed. Controls, dialogs, permissions and settings use existing semantic theme classes and native tooltips; engine selection remains settings-only.",
+      "notProven": "Visual screenshot verification: the configured in-app browser tool reported no available browser. Native cross-platform view behavior and OS-native consent dialogs are separate."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "native-proxy-chain-registration",
+      "command": "Focused origin_browser_route_tests (33 tests); node scripts/native-build-env.mjs cargo check --manifest-path src-tauri/Cargo.toml -p app --lib --no-default-features --features native-browser --locked",
+      "result": "33 focused route tests and Windows feature-enabled app library check passed. Profile-owner-scoped proxy-only chains are registered in startup; stale profile/owner/route changes fail closed.",
+      "notProven": "Native SSH/VPN route support, live proxy chain browser navigation, or Linux/macOS runtime behavior."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "offline-package-entry-probes",
+      "command": "browserRuntimePackage and browserNativePackageCI tooling suites; .artifacts/cef-reverse-dns-entry-probe-20261006/process.json; local WSL2 Linux x64 C entry probe",
+      "result": "35 package tests passed, with one Unix-specific skip on Windows. Dotted Windows executable entry and Linux x64 pinned-library/API browser dispatch passed. All six platform archives/layouts were checked locally.",
+      "notProven": "Linux cef_initialize/rendering, macOS or ARM64 runtime execution, signing, production bundle integration, or complete cross-platform acceptance. The offline Linux Rust-helper build lacks cached dependencies and GTK/WebKit development prerequisites."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "native-login-and-settings-integration",
+      "command": "cargo test -p sorng-browser-host --features cef-host --lib --test ipc_contract --test native_login_consent --locked; focused frontend engine/default/address-bar tests; npx tsc --noEmit --pretty false",
+      "result": "102 native-host library tests, 24 IPC tests, six production consent tests and 64 focused frontend tests passed. Frontend typecheck passed. Includes poisoned-consent rejection, exact origin/attempt fences, complete owner-only address URLs, new default preference and preserving explicit legacy choice.",
+      "notProven": "Real provider login, native first-paint darkness, all-traffic containment or Linux/macOS execution. Later lifecycle review fixes require their own checks."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "actual-packaged-windows-cef-failure",
+      "command": "scripts/cef-browser-acceptance.mjs with the local packaged native fixture; historical native process/report: .artifacts/cef-acceptance-run-14/run-Ms6ciJ/process.json and native-report.json",
+      "result": "Acceptance failed: generic and Google synthetic login completion timed out; native process exited 1 without the previous native exception. Private-proxy authentication, real HTTPS main/child navigation, renderer installation and form detection now work. The isolation fixture reports empty cookies/storage at https://fixture.test with correct SNI. All three attempts report closed with zero post-revoke requests, and proxy credentials were not observed upstream. The separate Windows observer reports restricted renderer tokens; this is not full sandbox containment proof. Native login grants are observed before delivery and do not establish successful credential IPC or submission.",
+      "notProven": "Successful native login, real Google/Cloudflare acceptance, native first-paint pixels, complete DNS/socket containment, all-platform behavior or production readiness. The aggregate .artifacts/cef-acceptance-run-14/acceptance.json remains failed: netlog includes 20 unexpected UDP connect attempts to [2001:4860:4860::8888]:443 (all failed with -109), plus synthetic ~NOTFOUND resolver entries. Synthetic global proxy/DNS containment does not establish production containment. Clean explicit closure does not independently prove every native load-error closure path."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "native-navigation-authentication-and-deferred-close",
+      "command": "sorng-browser-host cef-host library tests and strict clippy; feature-enabled app library cargo check --locked --offline; cefBrowserAcceptance.node-test.mjs",
+      "result": "115 native-host library tests and strict clippy passed. Feature-enabled Windows app library check passed after integration; 11 acceptance-tooling tests passed independently. Verified navigation factories retain explicit destination policy; opaque subresource initiators remain denied. Native proxy authentication uses CEF's callback instead of Chrome's prompt. Closure is deferred in two fenced UI-thread stages to avoid destroying a child window inside the DoClose callback.",
+      "notProven": "Passing synthetic login delivery, complete production packaging, cross-platform runtime acceptance or provider compatibility. Runtime admission was disabled at this historical checkpoint; later checked operational admission is recorded separately."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "creation-cancellation-regressions",
+      "command": "node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-commands-core --test origin_browser_runtime_flow --locked",
+      "result": "10 passed. A revoke-on-drop guard now covers creation and queued operation handoffs, including cancellation after preparation and while initial navigation is queued; completed creation retains its attempt.",
+      "notProven": "Actual platform-specific CEF close/focus behavior; this suite exercises production async handoff helpers without a browser process."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "wired-application-compile-on-windows",
+      "command": "node scripts/native-build-env.mjs cargo check --manifest-path src-tauri/Cargo.toml -p app --no-default-features --features native-browser --lib; npx tsc --noEmit --pretty false",
+      "result": "Feature-enabled app library and frontend typecheck passed. Root bootstrap dispatch, registry, commands, pump and shutdown are connected. Dedicated sorng-cef-helper Windows compile check also passed.",
+      "notProven": "An actual CEF website render, cross-platform packaged runtime, all-traffic containment, production login consent or Google/Cloudflare acceptance. Runtime admission was disabled at this historical checkpoint; later checked operational admission is recorded separately."
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "native-host-foundation-and-ipc-on-windows",
+      "command": "node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --features cef-host --lib --locked; repeat without cef-host and with --test ipc_contract",
+      "result": "82 CEF-feature library tests passed. Without CEF, 27 library tests and 24 exported IPC contract tests passed. Strict feature-enabled library clippy passed. Independent review identified and verified fixes for scheduler failure shutdown, positive-delay timer replacement and macOS framework lifetime after shutdown.",
+      "notProven": "Linux/macOS target compilation or execution, actual CEF browser startup/containment, production registration/viewport integration, native forced-dark/autologin adapters or live provider acceptance"
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "cross-platform-foundation-regressions-on-windows",
+      "command": "node scripts/browser-readiness.mjs --native --report .artifacts/browser-cross-platform-foundation-2026-10-06.json",
+      "result": "951 JavaScript tests passed across 22 suites, and all 11 scoped native transport suites passed. The report explicitly keeps embedded live and provider login readiness at not-run.",
+      "notProven": "Linux/macOS execution, real CEF startup/containment, production app-tab integration or Google/Cloudflare login acceptance"
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "offline-package-and-readiness-tooling",
+      "command": "node --test tests/tooling/browserReadiness.node-test.mjs tests/tooling/browserRuntimePackage.node-test.mjs",
+      "result": "47 passed; one Unix executable-permission test skipped on Windows. Synthetic layout fixtures exercise all six target manifests and whole-matrix rejection.",
+      "notProven": "Authenticity or successful launch of a signed packaged app on any platform"
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "deterministic-and-scoped-native-regression-gate",
+      "command": "node scripts/browser-readiness.mjs --native --report .artifacts/browser-real-origin-foundation-2026-10-06.json",
+      "result": "Passed: 768 JavaScript tests across 16 suites and all 11 scoped native suites. The report records public-site login stages as not-run.",
+      "notProven": "Production CEF startup, cross-platform app-tab integration, Google password-stage acceptance or Cloudflare challenge completion"
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "session-policy",
+      "command": "node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib origin_browser --locked",
+      "result": "18 passed",
+      "notProven": "Native host containment or provider acceptance"
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "opaque-tls-integration",
+      "command": "node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --test origin_browser_real_origin --test origin_browser_native_auth --locked",
+      "result": "5 real-origin transport tests and 3 native-auth boundary tests passed; delegated transport lane also repeated 10 times",
+      "notProven": "Native browser behavior or production login"
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "optional-cef-host-boundaries-windows",
+      "command": "node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --features cef-host --locked",
+      "result": "35 passed, zero ignored. Includes request/auth admission, context proxy preparation, attempt lifecycle, Windows child descriptors, established-tunnel termination on poisoned state, and stale callback isolation. An independently reviewed poison-shutdown defect was fixed and regression-tested.",
+      "notProven": "A running CEF browser, all-traffic containment, tab integration, or Linux/macOS native compilation/runtime"
+    },
+    {
+      "date": "2026-10-06",
+      "layer": "actual-windows-webview2-local-https-probe",
+      "command": "node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-file-viewer-host --test native_real_origin --locked -- --probe",
+      "result": "Passed on WebView2 146.0.3856.84: real HTTPS origin, top-level secure context, native and JavaScript cookies, HttpOnly isolation, local storage, 3 correct-SNI connections, 1 proxy authentication, 0 leaked proxy credentials; disposable profile removed.",
+      "notProven": "CEF integration, no bypass for every transport, Google password stage, Cloudflare challenge completion, or live account sign-in"
+    }
+  ],
+  "openDecisions": [
+    "CEF native-child integration with the Tauri application loop must be proved on macOS and Linux before production embedding is selected.",
+    "If native-child integration is not feasible, an OSR-to-canvas implementation or a larger app-shell replacement needs an explicit architecture decision; neither is silently substituted."
+  ]
+}

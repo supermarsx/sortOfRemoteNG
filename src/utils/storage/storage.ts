@@ -3,6 +3,10 @@ import { IndexedDbService } from "./indexedDbService";
 import { PBKDF2_ITERATIONS } from "../../config";
 import { getInvoke } from "../tauri/invoke";
 import { assertNoSynologyRedirectRuntimeContext } from "../protocol/synologyRedirectDefaults";
+import {
+  assertPublicDatabaseData,
+  NativePrivateDataError,
+} from "./nativePrivateData";
 
 const STORAGE_KEY = "mremote-connections";
 const STORAGE_META_KEY = "mremote-storage-meta";
@@ -51,6 +55,8 @@ export interface StorageData {
   documents?: import("../../types/documents/document").DatabaseDocuments;
   /** Reusable credentials belong exclusively to this managed database. */
   credentialVault?: import("../../types/security/databaseCredentialVault").DatabaseCredentialVault;
+  /** Native-owned per-connection logical revisions; never cookie plaintext or keys. */
+  browserSessions?: import("../../types/security/browserSessions").BrowserSessionsDescriptor;
   /** Color tag palette definitions, keyed by id. */
   colorTags?: Record<string, { name: string; color: string; global?: boolean }>;
 }
@@ -180,6 +186,7 @@ export class SecureStorage {
     data: StorageData,
     usePassword: boolean = false,
   ): Promise<void> {
+    assertPublicDatabaseData(data);
     assertNoSynologyRedirectRuntimeContext(data);
     const invoke = await getInvoke();
     if (invoke) {
@@ -247,6 +254,7 @@ export class SecureStorage {
     if (invoke) {
       try {
         const result = (await invoke("load_data")) as StorageData | null;
+        assertPublicDatabaseData(result);
         return result;
       } catch (err) {
         console.error("Failed to load data via Tauri:", err);
@@ -278,7 +286,9 @@ export class SecureStorage {
                 asBufferSource(fromBase64(storedData as string)),
               );
               const decoded = new TextDecoder().decode(decryptedBuffer);
-              return JSON.parse(decoded);
+              const parsed = JSON.parse(decoded);
+              assertPublicDatabaseData(parsed);
+              return parsed;
             } catch (err) {
               console.error("Failed to decrypt data:", err);
               const message = err instanceof Error ? err.message : String(err);
@@ -287,6 +297,7 @@ export class SecureStorage {
           }
         }
 
+        assertPublicDatabaseData(storedData);
         return storedData as StorageData;
       } catch (err) {
         console.error("Failed to load data:", err);
@@ -419,6 +430,7 @@ export class SecureStorage {
    * Save data using vault-backed encryption (DEK stored in OS keychain).
    */
   static async saveDataVault(data: StorageData): Promise<void> {
+    assertPublicDatabaseData(data);
     assertNoSynologyRedirectRuntimeContext(data);
     const invoke = await getInvoke();
     if (!invoke) {
@@ -436,8 +448,11 @@ export class SecureStorage {
     if (!invoke) return null;
     try {
       const json = (await invoke("vault_load_storage")) as string;
-      return JSON.parse(json) as StorageData;
+      const data = JSON.parse(json) as StorageData;
+      assertPublicDatabaseData(data);
+      return data;
     } catch (err) {
+      if (err instanceof NativePrivateDataError) throw err;
       console.error("Failed to load vault storage:", err);
       return null;
     }

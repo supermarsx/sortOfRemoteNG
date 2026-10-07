@@ -12,6 +12,10 @@ import {
   subscribeCloudSyncActivity,
 } from "../../utils/services/cloudSyncActivity";
 import { SettingsManager } from "../../utils/settings/settingsManager";
+import {
+  subscribeBrowserSessionProjectionChanges,
+  type BrowserSessionProjectionChange,
+} from "../../utils/services/browserSessionProjectionEvents";
 
 export const DATABASE_SYNC_CHANGED_EVENT = "sorng-database-data-saved";
 const intervals: Record<string, number> = {
@@ -55,7 +59,16 @@ export function useCloudSyncScheduler(
     selectionKey: string;
     changes?: ChangeBatch;
     recentWrites: number[];
-  }>({ selectionKey, recentWrites: [] });
+    ordinaryChange: boolean;
+    browserChanges: Map<string, BrowserSessionProjectionChange>;
+  }>({
+    selectionKey,
+    recentWrites: [],
+    ordinaryChange: false,
+    browserChanges: new Map(),
+  });
+  // Bounded, opaque commit IDs; duplicates must not prolong the quiet period.
+  const browserCommits = useRef(new Set<string>());
   const duration =
     config.frequency === "custom"
       ? normalizeCloudSyncIntervalMinutes(config.customIntervalMinutes) * 60_000
@@ -68,7 +81,12 @@ export function useCloudSyncScheduler(
       !changeDriven ||
       queued.current.selectionKey !== selectionKey
     )
-      queued.current = { selectionKey, recentWrites: [] };
+      queued.current = {
+        selectionKey,
+        recentWrites: [],
+        ordinaryChange: false,
+        browserChanges: new Map(),
+      };
     if (
       !ready ||
       !config.enabled ||
@@ -86,9 +104,34 @@ export function useCloudSyncScheduler(
       if (pending !== undefined) clearTimeout(pending);
       pending = undefined;
     };
+    const pruneBrowserChanges = () => {
+      for (const [databaseId, change] of state.browserChanges) {
+        try {
+          change.assertCurrent();
+          if (
+            !latest.current.config.selectedItems?.includes(
+              `database:${databaseId}`,
+            )
+          )
+            state.browserChanges.delete(databaseId);
+        } catch {
+          state.browserChanges.delete(databaseId);
+        }
+      }
+      if (
+        state.changes &&
+        !state.ordinaryChange &&
+        !state.browserChanges.size
+      ) {
+        state.changes = undefined;
+        state.recentWrites = [];
+      }
+    };
     const trigger = async () => {
+      pruneBrowserChanges();
       if (
         disposed ||
+        (!state.changes && !scheduled) ||
         running.current ||
         getCloudSyncActivity().length ||
         !latest.current.config.selectedItems?.length
@@ -97,6 +140,8 @@ export function useCloudSyncScheduler(
       // Startup/interval runs consume an already queued change batch, too.
       clearPending();
       state.changes = undefined;
+      state.ordinaryChange = false;
+      state.browserChanges.clear();
       scheduled = false;
       if (startupDue) startupRan.current = true;
       startupDue = false;
@@ -114,6 +159,7 @@ export function useCloudSyncScheduler(
     };
     const schedule = () => {
       clearPending();
+      pruneBrowserChanges();
       if (
         disposed ||
         (!state.changes && !scheduled) ||
@@ -153,9 +199,10 @@ export function useCloudSyncScheduler(
       if (!getCloudSyncActivity().length) lastFinished.current = Date.now();
       schedule();
     });
-    const changed = () => {
+    const changed = (ordinary = true) => {
       if (!["realtime", "onSave"].includes(latest.current.config.frequency))
         return;
+      state.ordinaryChange ||= ordinary;
       const now = Date.now();
       // Five timestamps suffice for a bounded rolling activity window. Keep
       // collecting during sync: a local edit must survive as one follow-up.
@@ -172,6 +219,31 @@ export function useCloudSyncScheduler(
       };
       schedule();
     };
+    const unsubscribeBrowserChanges = subscribeBrowserSessionProjectionChanges(
+      (change) => {
+        if (
+          disposed ||
+          !["realtime", "onSave"].includes(latest.current.config.frequency) ||
+          !latest.current.config.selectedItems?.includes(
+            `database:${change.databaseId}`,
+          ) ||
+          browserCommits.current.has(change.changeId)
+        )
+          return;
+        try {
+          change.assertCurrent();
+        } catch {
+          return;
+        }
+        browserCommits.current.add(change.changeId);
+        if (browserCommits.current.size > 256)
+          browserCommits.current.delete(
+            browserCommits.current.values().next().value!,
+          );
+        state.browserChanges.set(change.databaseId, change);
+        changed(false);
+      },
+    );
     const appDataChanged = (event: Event) => {
       const key = (event as CustomEvent<{ key?: unknown }>).detail?.key;
       if (
@@ -243,6 +315,7 @@ export function useCloudSyncScheduler(
       if (startup !== undefined) clearTimeout(startup);
       if (timer) clearInterval(timer);
       unsubscribe();
+      unsubscribeBrowserChanges();
       if (resume.current === schedule) resume.current = undefined;
       window.removeEventListener(DATABASE_SYNC_CHANGED_EVENT, databaseChanged);
       window.removeEventListener(APP_DATA_STORE_CHANGED_EVENT, appDataChanged);

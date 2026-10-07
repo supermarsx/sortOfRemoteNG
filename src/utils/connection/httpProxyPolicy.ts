@@ -109,6 +109,7 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
           "version",
           "pageScripts",
           "allowAllScripts",
+          "allowAllRequests",
           "httpsOnly",
           "sameOriginOnly",
           "allowExternalFonts",
@@ -130,6 +131,8 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
     typeof value.sameOriginOnly !== "boolean" ||
     (value.allowAllScripts !== undefined &&
       typeof value.allowAllScripts !== "boolean") ||
+    (value.allowAllRequests !== undefined &&
+      typeof value.allowAllRequests !== "boolean") ||
     (value.allowExternalFonts !== undefined &&
       typeof value.allowExternalFonts !== "boolean") ||
     (value.allowCrossOriginRedirects !== undefined &&
@@ -167,6 +170,7 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
     version: 1,
     pageScripts: value.pageScripts as HttpProxyPolicy["pageScripts"],
     allowAllScripts: value.allowAllScripts === true,
+    allowAllRequests: value.allowAllRequests === true,
     httpsOnly: value.httpsOnly,
     sameOriginOnly: value.sameOriginOnly,
     allowExternalFonts:

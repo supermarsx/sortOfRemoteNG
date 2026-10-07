@@ -1043,11 +1043,11 @@ test("resource controls preserve platform release features and signing inputs", 
   )?.[1];
   assert.equal(
     bundledReleaseFeatures,
-    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser",
   );
   assert.equal(
     windowsReleaseFeatures,
-    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser",
   );
   assert.equal(
     (releaseWorkflow.match(/^  RELEASE_FEATURES_(?:BUNDLED|WINDOWS):/gm) ?? [])
@@ -1057,6 +1057,9 @@ test("resource controls preserve platform release features and signing inputs", 
   assert.doesNotMatch(releaseWorkflow, /^  RELEASE_FEATURES:/m);
   const bundledFeatureSet = new Set(bundledReleaseFeatures.split(","));
   const windowsFeatureSet = new Set(windowsReleaseFeatures.split(","));
+  for (const features of [bundledFeatureSet, windowsFeatureSet]) {
+    assert.equal(features.has("native-browser"), true);
+  }
   assert.deepEqual(
     [...bundledFeatureSet]
       .filter((feature) => !["db-sqlite"].includes(feature))
@@ -1546,7 +1549,7 @@ test("Windows signing is architecture-aware and both portable archives are compl
   );
   assert.match(
     signingStep,
-    /\$portableExecutable = Get-Item -LiteralPath "src-tauri\/target\/\$env:RUST_TARGET\/release\/app\.exe"[\s\S]*?\$files \+= \$portableExecutable/,
+    /\$portableExecutable = Get-Item -LiteralPath "src-tauri\/target\/\$env:RUST_TARGET\/release\/\$\(\$cefPlan\.appName\)\.exe"[\s\S]*?\$files \+= \$portableExecutable/,
   );
   assert.doesNotMatch(signingStep, /ARTIFACT_ID -eq "windows-x86_64"/);
   assert.doesNotMatch(signingStep, /\\x64\\signtool\.exe/);
@@ -1572,7 +1575,7 @@ test("Windows signing is architecture-aware and both portable archives are compl
   assert.match(portableStep, /ARTIFACT_ID: \$\{\{ matrix\.artifact_id \}\}/);
   assert.match(
     portableStep,
-    /sourceExecutable = "src-tauri\/target\/\$env:RUST_TARGET\/release\/app\.exe"/,
+    /sourceExecutable = "src-tauri\/target\/\$env:RUST_TARGET\/release\/\$\(\$cefPlan\.appName\)\.exe"/,
   );
   assert.match(
     portableStep,
@@ -2268,7 +2271,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
 
   assert.match(
     preserveLinux,
-    /executable="\$release_root\/\$LINUX_PACKAGE_MAIN_BINARY"[\s\S]*?install -m 0755 "\$executable" "\$payload\/sortOfRemoteNG"/,
+    /launcher="\$release_root\/\$LINUX_PACKAGE_MAIN_BINARY"[\s\S]*?executable="\$release_root\/\$LINUX_PACKAGE_MAIN_BINARY\.bin"[\s\S]*?install -m 0755 "\$launcher" "\$payload\/sortOfRemoteNG"[\s\S]*?cp -a "\$cef_payload\/\." "\$payload\/lib\/"/,
   );
   assert.match(
     preserveLinux,
@@ -2276,7 +2279,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     preserveLinux,
-    /readelf -d "\$executable"[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?expected_runpath='\$ORIGIN\/\.\.\/lib\/sortOfRemoteNG'[\s\S]*?actual_runpath/,
+    /readelf -d "\$executable"[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?expected_runpath='\$ORIGIN'[\s\S]*?actual_runpath/,
   );
   assert.match(
     preserveLinux,
@@ -2342,7 +2345,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     flatpakBuild,
-    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -f \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?ldd \/app\/bin\/sortOfRemoteNG[\s\S]*?grep -F "not found"[\s\S]*?openh264_ldd_path/,
+    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -f \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?test -x \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.bin[\s\S]*?test -x \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.helper[\s\S]*?test -s \/app\/lib\/sortOfRemoteNG\/libcef\.so[\s\S]*?test -s \/app\/lib\/sortOfRemoteNG\/locales\/en-US\.pak[\s\S]*?ldd \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.bin[\s\S]*?grep -F "not found"[\s\S]*?openh264_ldd_path/,
   );
   assert.match(
     flatpakBuild,
@@ -2411,7 +2414,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     stageStep,
-    /verify_linux_openh264_payload\(\)[\s\S]*?library_path="\$\{4:-\$expected_openh264_path\}"[\s\S]*?required_runpath="\$\{5:-\}"[\s\S]*?if \[ -z "\$required_runpath" \]; then[\s\S]*?required_runpath='\$ORIGIN\/\.\.\/lib\/sortOfRemoteNG'[\s\S]*?verify_linux_openh264_library_identity "\$library" "\$label runtime" "\$identity_mode"[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?require_equal "\$label executable RUNPATH"[\s\S]*?env -u LD_LIBRARY_PATH ldd "\$executable"[\s\S]*?ldd_openh264_path[\s\S]*?require_equal "\$label OpenH264 resolved runtime path"/,
+    /verify_linux_openh264_payload\(\)[\s\S]*?local launcher="\$root\$expected_binary_path"[\s\S]*?local executable="\$root\/usr\/lib\/\$LINUX_PACKAGE_PRODUCT_NAME\/\$LINUX_PACKAGE_MAIN_BINARY\.bin"[\s\S]*?local library="\$root\$expected_openh264_path"[\s\S]*?test -x "\$launcher"[\s\S]*?test -x "\$executable"[\s\S]*?verify_linux_openh264_library_identity "\$library" "\$label runtime" "\$identity_mode"[\s\S]*?Shared library: \[libopenh264\.so\.8\][\s\S]*?\[\[ ":\$actual_runpath:" == \*':\$ORIGIN:'\* \]\][\s\S]*?env -u LD_LIBRARY_PATH ldd "\$executable"[\s\S]*?ldd_openh264_path[\s\S]*?require_equal "\$label OpenH264 resolved runtime path"/,
   );
   for (const packageKind of ["RPM", "DEB"]) {
     assert.match(
@@ -2421,7 +2424,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   }
   assert.match(
     stageStep,
-    /appimage_runtime_openh264_path=\/usr\/lib\/libopenh264\.so\.8[\s\S]*?diff -u[\s\S]*?"\$appimage_runtime_openh264_path"[\s\S]*?"\$expected_openh264_path"[\s\S]*?find "\$appimage_root\/usr\/lib"[\s\S]*?verify_linux_openh264_payload \\\s+"\$appimage_root" \\\s+AppImage \\\s+strip-safe \\\s+"\$appimage_runtime_openh264_path" \\\s+'\$ORIGIN\/\.\.\/lib'[\s\S]*?verify_linux_openh264_library_identity \\\s+"\$appimage_root\$expected_openh264_path" \\\s+"AppImage nested resource" \\\s+strip-safe/,
+    /appimage_runtime_openh264_path=\/usr\/lib\/libopenh264\.so\.8[\s\S]*?diff -u[\s\S]*?"\$appimage_runtime_openh264_path"[\s\S]*?"\$expected_openh264_path"[\s\S]*?find "\$appimage_root\/usr\/lib"[\s\S]*?verify_linux_openh264_payload \\\s+"\$appimage_root" \\\s+AppImage \\\s+strip-safe\s+verify_linux_openh264_library_identity \\\s+"\$appimage_root\$appimage_runtime_openh264_path" \\\s+"AppImage linuxdeploy copy" \\\s+strip-safe/,
   );
   assert.match(
     stageStep,

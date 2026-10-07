@@ -23,6 +23,10 @@ export interface HttpProxyPolicy {
   /** Per-connection trust exception for all HTTPS/inline scripts and script CSP.
    * pageScripts restrictions and sameOriginOnly still take precedence. */
   allowAllScripts?: boolean;
+  /** Explicit connection-scoped trust for supported anonymous HTTP(S) requests
+   * and isolated navigation. Overrides resource origin lists, not HTTPS,
+   * sameOriginOnly, transport support or saved-login/credential consent. */
+  allowAllRequests?: boolean;
   httpsOnly: boolean;
   /** Restricts mediated redirects, resources and forms; not a browser sandbox. */
   sameOriginOnly: boolean;
@@ -30,7 +34,8 @@ export interface HttpProxyPolicy {
   allowExternalFonts?: boolean;
   /** Exact HTTPS origins for both font stylesheets and font binaries (maximum 16). */
   externalFontOrigins?: string[];
-  /** Anonymous script/stylesheet GETs through the proxy; [] disables this capability. */
+  /** Anonymous script/stylesheet GETs through the proxy; [] removes listed grants,
+   * but does not revoke a broader allowAllScripts/allowAllRequests opt-in. */
   externalResourceOrigins?: HttpExternalResourceOrigin[];
   /** Review each origin before same-tab or anonymous handoff; login consent is separate. */
   allowCrossOriginRedirects?: boolean;
@@ -45,6 +50,7 @@ export const DEFAULT_HTTP_PROXY_POLICY: Readonly<HttpProxyPolicy> =
     version: 1,
     pageScripts: "allow",
     allowAllScripts: false,
+    allowAllRequests: false,
     httpsOnly: false,
     sameOriginOnly: false,
     allowExternalFonts: true,

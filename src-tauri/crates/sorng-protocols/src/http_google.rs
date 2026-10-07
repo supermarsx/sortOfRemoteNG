@@ -316,10 +316,14 @@ impl GoogleSession {
         let local_autologin = request.uri().path() == super::AUTOLOGIN_PATH
             && (login_mode != super::UpstreamAuthMode::None || source_form);
         let local_cookie_bridge = request.uri().path() == COOKIE_BRIDGE_PATH && route.documents;
+        let public_request = route.documents
+            && state.proxy_policy.allows_all_requests()
+            && super::public_requests::is_path(request.uri().path());
         if request.uri().path().starts_with("/__sortofremoteng_")
             && request.uri().path() != super::web_automation::DARKREADER_PATH
             && !local_autologin
             && !local_cookie_bridge
+            && !public_request
         {
             return Err("Google routing does not grant credential or control endpoints");
         }

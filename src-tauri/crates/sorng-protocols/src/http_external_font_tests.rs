@@ -8,6 +8,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 // Share the isolated CONNECT/TLS fixture, never a production account/server.
 #[path = "http_external_resource_tests.rs"]
 mod external_resource_tests;
+#[path = "http_public_request_tests.rs"]
+mod public_request_tests;
 
 const CDN: &str = "https://fonts.example.invalid";
 const CSS: &str = "https://css.example.invalid";
@@ -158,7 +160,13 @@ async fn server(routes: HashMap<String, Reply>) -> Server {
                         let Ok(mut socket) = acceptor.accept(socket).await else { closed.store(true, Ordering::SeqCst); return; };
                         let Some(request) = head(&mut socket).await else { return; };
                         let path = request.split_whitespace().nth(1).unwrap_or("").to_string();
-                        seen.lock().unwrap().push(request);
+                        let length = request.lines().find_map(|line| line.split_once(':')
+                            .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                            .and_then(|(_, value)| value.trim().parse::<usize>().ok())).unwrap_or(0);
+                        if length > 4 * 1024 * 1024 { return; }
+                        let mut body = vec![0; length];
+                        if socket.read_exact(&mut body).await.is_err() { return; }
+                        seen.lock().unwrap().push(format!("{request}{}", String::from_utf8_lossy(&body)));
                         let reply = routes.get(&path).cloned().unwrap_or(Reply { status: 404, ..Reply::font() });
                         if reply.hold {
                             let mut byte = [0];

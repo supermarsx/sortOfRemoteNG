@@ -70,10 +70,12 @@ test("normal Cargo and full-dev include the full supported capability set", () =
     "cert-auth",
     "tls-cert-details",
     "vpn-softether",
+    "native-browser",
   ])
     assert.ok(enabled.has(name), `missing ${name}`);
   noLinkCollisions(["default"]);
   assert.equal(closure(["lean"]).has("ops"), false);
+  assert.equal(closure(["lean"]).has("native-browser"), false);
   assert.ok(
     closure(["default", "lean"]).has("ops"),
     "lean requires explicit default opt-out",

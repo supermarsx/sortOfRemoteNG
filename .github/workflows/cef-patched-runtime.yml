@@ -1,0 +1,143 @@
+name: Patched CEF engineering runtime
+
+# Deliberately no push, PR, pull_request_target, schedule, or workflow_call.
+# Configure cef-runtime-publish with required reviewers and default-branch-only
+# deployment rules before enabling publication. Provision runners out of band;
+# this workflow never installs system packages or fabricates toolchain pins.
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_inputs:
+        description: Reviewed checkout-relative directory containing source-lock.json and its pinned inputs
+        required: true
+        type: string
+      target:
+        description: Every selected target must already have reviewed GN/toolchain/runner-map pins
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+      publish:
+        description: Request protected-environment approval to publish engineering prereleases
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Do not cancel expensive active builds; serialize equivalent dispatch inputs.
+concurrency:
+  group: cef-engine-${{ inputs.reviewed_inputs }}-${{ inputs.target }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Validate reviewed pins before scheduling engine runners
+        id: plan
+        env:
+          CEF_INPUTS: ${{ inputs.reviewed_inputs }}
+          CEF_TARGET: ${{ inputs.target }}
+        run: node scripts/cef-runtime-ci.mjs plan --inputs "$CEF_INPUTS" --target "$CEF_TARGET"
+
+  build:
+    needs: plan
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runners }}
+    timeout-minutes: 4320
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      # Runner service must supply SORNG_CEF_TOOLS_ROOT. Its reviewed inventory
+      # includes cef-ci-runner-<target>.json and the selected Python executable.
+      # RUNNER_TEMP must be short, space-free, outside checkout/node_modules,
+      # and have sufficient engine-source/object/SDK disk capacity.
+      - name: Acquire pinned source, sync bounded DEPS, build and verify SDK
+        id: build
+        env:
+          CEF_INPUTS: ${{ inputs.reviewed_inputs }}
+          CEF_TARGET: ${{ matrix.target }}
+        run: node scripts/cef-runtime-ci.mjs build --inputs "$CEF_INPUTS" --target "$CEF_TARGET" --repository "$GITHUB_REPOSITORY" --execute
+      - name: Retain complete source/build/package diagnostics
+        if: always() && steps.build.outputs.logs != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-engine-logs-${{ matrix.key }}
+          path: ${{ steps.build.outputs.logs }}
+          retention-days: 30
+          if-no-files-found: error
+      - name: Transfer verified SDK bundle to protected publisher
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-engine-bundle-${{ matrix.key }}
+          path: ${{ steps.build.outputs.bundle }}
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, build]
+    if: inputs.publish == true && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: cef-runtime-publish
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    # A different dispatch selecting "all" vs a single target must not race the
+    # same immutable release. Publication checks/compares bytes under this key.
+    concurrency:
+      group: cef-engine-publish-${{ matrix.key }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: cef-engine-bundle-${{ matrix.key }}
+          path: ${{ runner.temp }}/cef-engine-publish
+      - name: Verify bytes and publish immutable engineering prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CEF_PUBLISH_APPROVED: "true"
+          CEF_BUNDLE: ${{ runner.temp }}/cef-engine-publish
+        run: node scripts/cef-runtime-ci.mjs publish --bundle "$CEF_BUNDLE" --repository "$GITHUB_REPOSITORY" --execute

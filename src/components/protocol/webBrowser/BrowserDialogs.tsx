@@ -5,12 +5,16 @@ import { InputDialog } from "../../ui/dialogs/InputDialog";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import BookmarkEditDialog from "./BookmarkEditDialog";
 import BlockedScriptsDialog from "./BlockedScriptsDialog";
+import BlockedRequestsDialog from "./BlockedRequestsDialog";
 
 const BrowserDialogs: React.FC<SectionProps> = ({ mgr }) => (
   <>
     <BookmarkEditDialog mgr={mgr} />
     {mgr.blockedScripts && (
-      <BlockedScriptsDialog scripts={mgr.blockedScripts} />
+      <>
+        <BlockedScriptsDialog scripts={mgr.blockedScripts} />
+        <BlockedRequestsDialog permissions={mgr.blockedScripts} />
+      </>
     )}
     <ConfirmDialog
       isOpen={mgr.showClearSessionConfirm}

@@ -78,6 +78,46 @@ async function open() {
   return dialog;
 }
 describe("website notifications popover", () => {
+  it.each(["fetch", "navigation"])(
+    "opens request review for a blocked %s without reloading or using external egress",
+    async (kind) => {
+      const openRequestReview = vi.fn();
+      const openReview = vi.fn();
+      const mgr = manager({
+        webNetworkReports: [
+          {
+            kind,
+            reason: "origin-not-approved",
+            origin: "https://api.example.test",
+          },
+        ],
+        blockedScripts: {
+          hasBlockedScripts: false,
+          openReview,
+          hasBlockedRequests: true,
+          openRequestReview,
+        },
+      });
+      render(<WebsiteNotifications mgr={mgr} />);
+      expect(openRequestReview).not.toHaveBeenCalled();
+      await open();
+      expect(
+        screen.queryByRole("button", { name: "Review blocked scripts" }),
+      ).not.toBeInTheDocument();
+      expect(openRequestReview).not.toHaveBeenCalled();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Review request permissions" }),
+      );
+      expect(openRequestReview).toHaveBeenCalledOnce();
+      expect(openReview).not.toHaveBeenCalled();
+      expect(mgr.handleRefresh).not.toHaveBeenCalled();
+      expect(mgr.handleOpenApplicationExternal).not.toHaveBeenCalled();
+      expect(mgr.automation.reload).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("dialog", { name: "Website notifications" }),
+      ).not.toBeInTheDocument();
+    },
+  );
   it("keeps blocked-script review available after the toast is dismissed", async () => {
     const openReview = vi.fn();
     render(

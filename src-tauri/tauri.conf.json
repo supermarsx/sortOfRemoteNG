@@ -48,6 +48,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "macOS": {
+      "minimumSystemVersion": "14.0"
+    },
     "linux": {
       "rpm": {
         "desktopTemplate": "packaging/linux.desktop",

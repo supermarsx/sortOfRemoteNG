@@ -614,7 +614,11 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
       // Keeping this component mounted preserves the iframe, toolbar state and
       // automation lifetime while the next protected proxy is prepared.
       return (
-        <WebBrowser session={session} onActivateSession={onActivateSession} />
+        <WebBrowser
+          session={session}
+          onActivateSession={onActivateSession}
+          onOpenSettings={onOpenSettings}
+        />
       );
     }
 

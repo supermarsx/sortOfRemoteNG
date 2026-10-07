@@ -8,6 +8,7 @@ export function BrowserSelectRow({
   value,
   options,
   onChange,
+  disabled = false,
 }: {
   settingKey: string;
   label: string;
@@ -15,6 +16,7 @@ export function BrowserSelectRow({
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <div
@@ -28,10 +30,12 @@ export function BrowserSelectRow({
         )}
       </div>
       <Select
+        className="min-w-0 max-w-full"
         label={label}
         value={value}
         options={options}
         onChange={onChange}
+        disabled={disabled}
         variant="settings"
       />
     </div>

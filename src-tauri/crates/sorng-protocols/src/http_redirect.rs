@@ -65,7 +65,7 @@ fn destination_allowed(
     let valid_context = defaults.is_none_or(|scope| {
         reqwest::Url::parse(source_origin).is_ok_and(|source| scope.validate(&source).is_ok())
     });
-    let explicit = policy.allow_cross_origin_redirects
+    let explicit = (policy.allow_cross_origin_redirects || policy.allows_all_requests())
         && (!downgrade || policy.allow_http_downgrade_redirects);
     let default_destination =
         defaults.is_some_and(|scope| scope.permits(source_origin, destination));
@@ -78,6 +78,28 @@ fn destination_allowed(
         && destination.password().is_none()
         && destination.port() != Some(0)
         && destination.as_str().len() <= 4096
+}
+
+/// Public navigation is a receipt only: no credentials, referrer, HTTP cycle
+/// authority or destination document is transferred through the source origin.
+pub(super) fn record_public(
+    state: &Arc<AxumProxyState>,
+    destination: &reqwest::Url,
+    document_sequence: u64,
+    source_document: u64,
+) -> bool {
+    record_evidence(
+        state,
+        destination,
+        document_sequence,
+        None,
+        None,
+        None,
+        ReferrerEvidence {
+            suppress: true,
+            source_document: Some(source_document),
+        },
+    )
 }
 
 #[cfg(test)]

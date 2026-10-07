@@ -147,6 +147,13 @@ export function useHTTPViewer(session: ConnectionSession) {
       target.pathname = authority.initialPathname ?? "/";
       target.search = authority.initialSearch ?? "";
       target.hash = authority.initialHash ?? "";
+      // Hosted Google presets own their entry path, including the distinct
+      // Store and Console entries on play.google.com. Match useWebBrowser
+      // without accepting a different saved authority or leaking its query.
+      if (canonicalGoogleUrl && target.origin === canonicalGoogleUrl.origin) {
+        validateHttpApplicationTarget(connection, target.href);
+        return canonicalGoogleUrl.href;
+      }
       if (connection.httpApplication?.id === "exchange-owa") {
         const profile = normalizeHttpApplicationSettings(
           connection.httpApplication,

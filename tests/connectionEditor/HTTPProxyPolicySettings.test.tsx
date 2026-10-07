@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { Connection } from "../../src/types/connection/connection";
 import { useHTTPOptions } from "../../src/hooks/connection/useHTTPOptions";
@@ -9,8 +9,12 @@ import {
   DEFAULT_EXTERNAL_FONT_ORIGINS,
   DEFAULT_EXTERNAL_RESOURCE_ORIGINS,
 } from "../../src/types/connection/httpProxyPolicy";
+const shared = vi.hoisted(() => ({ settings: {} as Record<string, unknown> }));
+beforeEach(() => {
+  shared.settings = {};
+});
 vi.mock("../../src/contexts/SettingsContext", () => ({
-  useSettings: () => ({ settings: {} }),
+  useSettings: () => ({ settings: shared.settings }),
 }));
 
 function Fixture({
@@ -38,6 +42,133 @@ const fontOptOut = (): Partial<Connection> => ({
 });
 
 describe("Internal proxy controls", () => {
+  it("mounts connection-only overrides with shared inheritance without copying shared grants", () => {
+    shared.settings = {
+      webBrowser: {
+        domainPermissions: {
+          version: 1,
+          websites: [
+            {
+              origin: "https://fixture.invalid",
+              requestClasses: { script: "allow" },
+              destinations: [],
+            },
+          ],
+        },
+      },
+    };
+    const initial = { id: "connection-1", protocol: "https" as const };
+    render(<Fixture initial={initial} />);
+    expect(draft()).toEqual(initial);
+    expect(
+      screen.getByRole("heading", {
+        name: "Connection website request overrides",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Effective default: Allow · Shared request class"),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("combobox", { name: "Scripts" }));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Deny" }));
+    expect(draft().websiteDomainPermissions).toEqual({
+      version: 1,
+      websites: [
+        {
+          origin: "https://fixture.invalid",
+          requestClasses: { script: "deny" },
+          destinations: [],
+        },
+      ],
+    });
+    expect(draft().httpProxyPolicy).toBeUndefined();
+    expect(shared.settings).toMatchObject({
+      webBrowser: {
+        domainPermissions: {
+          websites: [{ requestClasses: { script: "allow" } }],
+        },
+      },
+    });
+  });
+  it("enables, persists and revokes all-request trust for only this connection across remount", () => {
+    const initial: Partial<Connection> = {
+      ...fontOptOut(),
+      httpProxyPolicy: {
+        ...fontOptOut().httpProxyPolicy!,
+        pageScripts: "block",
+        sameOriginOnly: true,
+        httpsOnly: true,
+        queryParameters: [{ name: "tenant", value: "synthetic" }],
+      },
+    };
+    const before = structuredClone(initial);
+    const view = render(<Fixture initial={initial} />);
+    const toggle = () =>
+      screen.getByRole("checkbox", { name: /Allow all website requests/ });
+    expect(toggle()).not.toBeChecked();
+    expect(draft()).toEqual(initial);
+    fireEvent.click(toggle());
+    expect(draft().httpProxyPolicy).toEqual({
+      ...initial.httpProxyPolicy,
+      allowAllRequests: true,
+      pageScripts: "allow",
+      sameOriginOnly: false,
+    });
+    expect(screen.getByText(/All-request trust is active/)).toBeVisible();
+    const saved = draft();
+    view.unmount();
+    const restored = render(<Fixture initial={saved} />);
+    expect(toggle()).toBeChecked();
+    fireEvent.click(toggle());
+    expect(draft().httpProxyPolicy).toEqual({
+      ...saved.httpProxyPolicy,
+      allowAllRequests: false,
+    });
+    expect(initial).toEqual(before);
+    restored.unmount();
+    render(<Fixture />);
+    expect(toggle()).not.toBeChecked();
+    expect(draft().httpProxyPolicy).toBeUndefined();
+  });
+
+  it.each(["scripts", "origin", "all-scripts"])(
+    "clears dormant all-request trust through the ordinary %s control",
+    (control) => {
+      render(
+        <Fixture
+          initial={{
+            protocol: "https",
+            httpProxyPolicy: {
+              ...DEFAULT_HTTP_PROXY_POLICY,
+              allowAllRequests: true,
+              sameOriginOnly: true,
+              pageScripts: "block",
+            },
+          }}
+        />,
+      );
+      if (control === "scripts") {
+        fireEvent.click(
+          screen.getByRole("combobox", { name: "Website scripts" }),
+        );
+        fireEvent.mouseDown(
+          screen.getByRole("option", { name: "Allow website scripts" }),
+        );
+      } else {
+        fireEvent.click(
+          screen.getByRole("checkbox", {
+            name:
+              control === "origin"
+                ? /Same-origin resources and forms/
+                : /Allow all website scripts/,
+          }),
+        );
+      }
+      expect(draft().httpProxyPolicy.allowAllRequests).toBe(false);
+      expect(
+        screen.getByRole("checkbox", { name: /Allow all website requests/ }),
+      ).not.toBeChecked();
+    },
+  );
   it.each(["scripts", "origin"])(
     "does not reactivate imported all-script trust by removing the %s restriction",
     (restriction) => {

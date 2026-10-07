@@ -7,6 +7,166 @@ permalink: /browser-readiness/
 
 # Browser readiness evidence
 
+## Current integration checkpoint — 2026-10-07
+
+CEF is selected for the native integration. The app now connects its native
+certificate authority to the maintained TLS bridge V2
+(`sorng-tls-v2-682c378-1`); stock CEF cannot supply that bridge. A missing bridge
+is reported without changing the saved trust policy or falling back to another
+engine. Source integration is not a completed engine rollout. Earlier sections
+below record intermediate engineering milestones, not the current completion
+status.
+
+Earlier local Windows checks (before the database-contained session changes
+currently in progress):
+
+- The application `cargo check` with `--no-default-features --features
+native-browser` passes against the pinned CEF SDK.
+- Native host: 171 unit tests, 29 IPC contract tests, 10 display-publication
+  tests and 6 login-consent tests pass. These include V2 acknowledgment lifetime
+  handling and rejection of extra automation fields.
+- Native database, route, credential and certificate authority: 47 tests pass.
+  Command test executables now embed the Common Controls v6 manifest required
+  for `TaskDialogIndirect` on Windows.
+- Native encrypted retention and saved-preference integration: 30 tests pass;
+  runtime/close coordination: 14 tests pass. These use the production codec and
+  lifecycle logic, not a running CEF CookieManager.
+- The combined settings, inheritance, capability, bookmark, mounted connection,
+  notice and automation UI suites pass (280 tests across 12 files). TypeScript
+  typechecking passes. Missing manual-submit preferences now agree between the
+  UI and native authority; explicit saved choices survive unrelated saves.
+- Build routing, custom-runtime provenance, packaging and acceptance-runner
+  checks pass (154 tests, 4 platform/privilege-related skips).
+- Native login adapter fixtures pass (48 tests), including deferred fresh-secret
+  grants, preserved manual-submit preferences and staged provider transitions.
+  These are not live sign-in or challenge-completion results.
+- The standalone TLS acceptance client passes `cargo check --all-targets` and
+  links its Windows DLL against the stock SDK. It has not been run against a
+  patched engine; compilation does not establish native TLS acceptance.
+- The two maintained engine patches apply to their exact upstream pins. The
+  standalone certificate-admission predicate and header ABI checks pass; these
+  do not execute the Chromium certificate verifier or its socket tests.
+
+After the approved interactive installation, the local toolchain doctor now
+passes: VS 2026 Build Tools 18.10.12224.181, SDK headers 10.0.28000.0,
+Debugging Tools `dbghelp.dll` 10.0.28000.2270 and Python 3.12.10. VS 2022 remains
+installed. The earlier installer rejection and terminal checkpoint files are
+historical evidence, not the current installation state. Pinned build inputs
+and the verified eight-file tool inventory are under
+`.artifacts/cef-build-inputs-20261007/`.
+
+CEF, Chromium and depot_tools checkouts match their pinned commits. Both engine
+patches also pass applicability checks against those full checkouts. The
+depot_tools bootstrap now provides `git.bat`. Bounded dependency acquisition
+verified 154 Git dependency pins, but is not a clean completed sync: Windows
+security blocked an x86 Google Updater integration-test fixture. No antivirus
+exception or quarantine bypass was applied. That fixture is not an x64 CEF
+production dependency. The approved encoding-only repair of the user-level
+`pip.ini` is complete: its settings and permissions were preserved, a backup
+was retained, and Chromium setup hooks now finish successfully.
+
+The patched Windows x64 engine has compiled and its custom runtime archive has
+been packaged, inventory-checked, round-trip verified and registered with the
+local normal-build selector. This is not yet a passing browser acceptance gate.
+The generated source workspace was moved outside the app
+repository because Chromium's TypeScript tasks were picking up the app's
+`node_modules`. The original artifact path is a junction to the isolated
+workspace, preserving existing evidence paths. Build preflight now rejects
+workspaces with ancestor `node_modules` directories. The pinned CEF release
+metadata was also fetched; upstream version generation reports the expected
+version. The completed build regenerated its version-dependent files before
+packaging. Acquisition logs are under
+`.artifacts/cef-src-20261007/acquisition-logs/`; the old
+`terminal-checkpoint.json` does not describe the resumed run.
+
+Normal-build custom-runtime staging now has source-pin, provenance and export
+validation, with no stock-runtime fallback. Global and per-connection browser
+settings exist, and the earlier native integration compiles against the pinned
+SDK. The unavailable-browser warning now has a themed button opening Settings
+→ Web Browser; its mounted UI tests pass. This action does not change the
+connection's policies or select a fallback engine.
+
+Retention is being corrected to store sign-in cookie snapshots inside the
+owning encrypted database, including its sync/export path, rather than in
+device-local sidecars. This integration and its native atomic transfer checks
+are still in progress. Retention is capability-gated and is not available merely
+because settings exist. Each attempt uses a private in-memory context; retained
+cookies may only be restored under an unlocked owning-database lease. This is
+not a full browser profile, localStorage or IndexedDB backup. Retention is off
+by default.
+
+Cookie retention settings support memory-only or encrypted database snapshots, bounded
+idle/absolute expiry and optional deletion on database lock. Lock always closes
+live attempts. An ordinary close checkpoints cookies before revoking its
+retention lease; owner loss never uses that checkpoint path. Opting out blocks
+restoration; existing encrypted snapshots can remain dormant rather than being
+deleted when settings are saved. Background cleanup runs independently of live views. File-system
+stalls can delay cleanup; error notices do not claim that deletion succeeded.
+
+The normal Windows x64 debug application build now succeeds with the locally
+registered patched engine. Its package inventory passes and staging repairs
+missing sandbox read/execute grants without disabling the sandbox. The
+standalone TLS fixture also rebuilds with the native startup repair and final
+client delay-load policy. These are build/package results, not completed
+application startup or sign-in acceptance.
+
+The final frontend browser subset passes 2,068 tests across 60 files, and the
+application TypeScript check passes. The browser tooling suites pass 253 tests
+with five platform/privilege skips; a separate browser-contract run passes 115
+tests. These checks do not replace native runtime acceptance.
+
+Cold-launch testing exposed a Windows ACL control-bit preservation failure.
+The native repair now preserves the existing auto-inheritance state; its 11
+focused regression tests pass, including unchanged descendant permissions.
+The rebuilt cold-launch fixture still needs its final runtime result.
+
+An earlier native netlog also recorded a direct IPv6 reachability UDP probe to
+`[2001:4860:4860::8888]:443`. Consequently, complete proxy containment has not
+passed: resolver switches alone do not establish that every engine request is
+routed through the app proxy. The package remains `productionReady: false`.
+
+A subsequent normal development launch was reported to reach CEF but fail
+cache, cookie and service-worker database access, followed by a fatal
+`ServiceWorkerRegistration` uninstall-state assertion. Storage initialization
+and context teardown require separate investigation; the sandbox executable
+access repair is not evidence that this later failure is resolved. Existing
+profiles and database-contained session snapshots must not be deleted as a
+blanket recovery step.
+
+Remaining gates include native socket and
+cookie restore tests, normal-build startup, all-platform
+packaging and runtime containment, live native login-adapter validation,
+and real Google/Cloudflare acceptance. CookieManager restoration, AIA/OCSP/CRL
+fetch containment and HTTP keep-alive runtime coverage remain unverified. No provider sign-in or challenge success
+is inferred from source, compilation or fixture checks. Changes are being
+committed locally by concern; no push or remote CI was run.
+
+### Windows sandbox startup recovery
+
+Windows AppContainer/LPAC children need read/execute access to packaged browser
+code and resources, independently of the signed-in user's access. Copying a
+working package into a private development directory can remove that access.
+The build/launch preflight repairs these grants, and the native browser startup
+also checks them when a packaged executable is launched directly.
+
+Recovery is a bounded preflight, not a crash/relaunch loop. It targets only the
+application bootstrap/client, pinned CEF runtime files and locale packs, with
+non-inheritable read/execute grants for the two application-package SIDs.
+Profiles, cookies, databases, unrelated files and ancestor permissions are not
+repair targets. Explicit deny rules, redirected paths and unsupported ACLs fail
+with repair/reinstallation guidance. There is no elevation, write-access grant,
+certificate-policy change or sandbox-disable fallback.
+
+The Windows final-client linker policy also follows the pinned CEF delay-load
+contract. Loading UI/COM DLLs before dispatching a sandboxed child can fail under
+Win32k lockdown; the fix delays those dependencies, rather than weakening that
+lockdown. Startup repair does not establish browser compatibility or network
+containment; those still require the native acceptance runs above.
+
+The sections below include dated earlier milestones. Their statements about
+unwired or optional integration describe those milestones; this checkpoint is
+the current integration status, not a completed rollout claim.
+
 This gate checks deterministic regressions for Google login, Cloudflare
 login/challenge routing, Porkbun opening/login helpers, proxy isolation, injected
 assets, browser identity and dark-mode readiness. It does **not** open a browser,
@@ -54,6 +214,59 @@ A bundled Chromium runtime is permitted if native engines cannot satisfy the
 same compatibility and isolation requirements; this is not a commitment to a
 particular runtime or evidence of a working host integration.
 
+The implementation sequence, ownership, dependencies, risks and acceptance gates
+are tracked in [the real-origin browser plan](real-origin-browser-plan.json).
+CEF is the current **feasibility candidate**, not a selectable production engine.
+The optional `sorng-browser-host/cef-host` engineering feature pins matching CEF
+bindings and runtime; the application does not enable it. The native API review did not establish the required complete
+resource/worker/WebRTC containment with public WKWebView APIs. CEF in turn needs
+a macOS application-event-loop bridge. Linux **X11/XWayland is approved**:
+the app GTK shell and native CEF child must both use X11, selected before toolkit
+initialization. Native Wayland embedding is not claimed or silently substituted.
+See the [CEF macOS application contract](https://github.com/chromiumembedded/cef/blob/master/include/cef_application_mac.h)
+and [Linux native child implementation](https://github.com/chromiumembedded/cef/blob/master/libcef/browser/native/browser_platform_delegate_native_linux.cc).
+
+Forced dark mode and automatic login must remain active on authentication and
+challenge pages, as explicitly requested. This does not authorize CAPTCHA
+automation, foreign-origin credential release, or silent suspension of those
+features to obtain a passing compatibility result. Shared website/domain request
+defaults **plus per-connection overrides** are also part of the planned upgrade;
+the effective permission and its source must be visible. These permission screens
+are not implemented by the transport fixtures below.
+
+### Native host engineering checks
+
+The optional host crate contains attempt-fenced lifecycle state, private in-memory
+CEF context preparation, fixed proxy preference write/readback, native proxy-auth
+and URL admission callbacks, and borrowed native-child descriptors. Context
+callbacks also cover requests without a browser/frame (for example workers).
+These components do not start a production browser or report it ready. Sandbox
+bootstrap, alternative-transport containment, native event loops, tab integration,
+dark-mode and login adapters remain release gates.
+
+```powershell
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --features cef-host --locked
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-file-viewer-host --test native_real_origin --locked -- --probe
+```
+
+On 2026-10-06, the first command passed 35 boundary tests on Windows, including
+actual tunnel termination after poisoned session/context state and protection
+against stale callbacks revoking a successor. Linux and
+macOS child modules are platform-gated and were not compiled or run here.
+The explicit `--probe` run passed on WebView2 146.0.3856.84 using a disposable
+profile and a synthetic local HTTPS hostname resolved only by the retained relay.
+It checked original `location.origin`, top-level secure context, native cookies,
+HttpOnly isolation, local storage, upstream SNI and proxy-credential isolation.
+The generated fixture certificate was pinned only in that disposable view;
+no OS trust store or production certificate policy changed. Profile cleanup passed.
+
+The probe installs no Wry IPC handler and disables native web messaging and host
+objects. Wry still exposes an inert `window.ipc` property; the receipt reports
+that honestly rather than claiming the property is absent. The probe never emits
+production Ready, uses no public website/account, and is **not** an all-traffic
+containment, CEF-runtime or provider-acceptance test. Without `--probe`, it reports
+SKIPPED; a successful process exit on that path is not browser evidence.
+
 The transport foundation uses an authenticated loopback HTTP/CONNECT listener with
 an OS-selected port and native-held, per-session credentials. After CONNECT
 admission it relays opaque bytes: the browser owns destination TLS, HTTPS origins,
@@ -81,8 +294,14 @@ requirements in [HTTP/1.1](https://httpwg.org/specs/rfc9112.html) and the
 The initial HTTP implementation deliberately closes each browser HTTP connection
 after one response, so a pipelined request cannot inherit admission for a
 different destination. Message trailers are discarded. Connection pooling,
-SOCKS4/SSH/chain adapters, browser authentication callbacks, native view hosting
+SOCKS4/SSH/chain adapters, production browser authentication callbacks, native view hosting
 and enforcement of non-proxy browser traffic are still unimplemented here.
+
+The shared native `answer_proxy_challenge` boundary now checks the current
+attempt, proxy role, exact numeric listener address/port, Basic scheme, relay
+realm and live session before calling the credential callback. A website 401
+using the relay's realm, a localhost alias or a stale attempt does not qualify.
+This boundary is available during host setup but does not assert host readiness.
 
 The native session policy defaults to its source origin only. Additional
 HTTP(S) origins can be granted explicitly (bounded to 128 total); there are no
@@ -133,7 +352,7 @@ runner verifies a JSON receipt for every required file and requires at least one
 executed, passing test in each. A missing dependency/file/receipt, skipped test,
 empty selection, failed assertion or unsuccessful child exit cannot pass.
 
-`--native` executes nine scoped commands from the repository root, each with
+`--native` executes eleven scoped commands from the repository root, each with
 its own status, counts and duration:
 
 ```powershell
@@ -146,6 +365,8 @@ node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.tom
 node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib private_forward_route --locked
 node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib browser_transport --locked
 node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --lib browser_dns --locked
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --test origin_browser_real_origin --locked
+node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-protocols --test origin_browser_native_auth --locked
 ```
 
 The native build wrapper sets up platform build helpers; there are no added
@@ -153,10 +374,14 @@ feature or target overrides. Existing Cargo environment/workspace configuration
 still apply. These cover Cloudflare/Porkbun challenge transport/CSP, Google
 identity/cookie/lifecycle fixtures, selected auto-login asset assembly and the
 first-paint dark-mode CSS/readiness contract.
-The final five selections cover the origin-preserving session contract,
+The final seven selections cover the origin-preserving session contract,
 authenticated HTTP/CONNECT relay, explicit route adapters, the opaque upstream
-transport and cancellation-safe DNS resource bounds. They do not instantiate
-native browser hosts.
+transport, cancellation-safe DNS resource bounds and public-API TLS/WSS session
+integration and native challenge credential-release boundaries. The TLS/WSS integration target tests original TLS/SNI/certificate/ALPN,
+cookie/header preservation, quiet WSS streams, owner/host/drop revocation,
+wrong-host certificates and rejected redirects across real loopback sockets.
+Both integration targets use `--test`, not similarly named `--lib` filters. These fixtures
+do not instantiate native browser hosts.
 They do not run the whole workspace. The ignored live Google probe is explicitly
 excluded with `--skip` and separately reported `not-run`. Cargo's filtered-out
 tests are outside the declared scope; zero executed tests, failed tests or

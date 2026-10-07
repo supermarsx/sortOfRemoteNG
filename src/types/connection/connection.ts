@@ -24,6 +24,7 @@ import type { ConnectionTypeCategory } from "../integrations/registry";
 import type { VoipPhoneSettings } from "../voipPhone";
 import type { HttpProxyPolicy } from "./httpProxyPolicy";
 import type { HttpFormAutomation } from "./httpFormAutomation";
+import type { BrowserSessionOverrides } from "../settings/browserSession";
 import type { ConnectionCredentialSource } from "../security/databaseCredentialVault";
 import type { ConnectionMachineAssignment } from "./machineAssignment";
 
@@ -287,6 +288,8 @@ export interface Connection
   httpRedirectAuthentication?: import("../../utils/protocol/httpRedirectAuthentication").HttpRedirectAuthentication;
   httpTrustedRedirectDestinations?: import("./httpTrustedRedirectDestinations").HttpTrustedRedirectDestinations;
   httpBookmarks?: HttpBookmarkItem[];
+  /** Sparse browser defaults; never relaxes database/connection/attempt isolation. */
+  browserSession?: BrowserSessionOverrides;
 
   /**
    * Web auto-login: when enabled, opening this saved web (http/https)
@@ -316,6 +319,8 @@ export interface Connection
   httpApplication?: HttpApplicationSettings;
   /** Typed native proxy restrictions. Parameter values may contain secrets. */
   httpProxyPolicy?: HttpProxyPolicy;
+  /** Exact-origin request overrides for the native real-origin browser. */
+  websiteDomainPermissions?: import("../settings/websiteDomainPermissions").WebsiteDomainPermissionsSettings;
   /** Explicit form controls and timing. Extra field values may contain secrets. */
   httpFormAutomation?: HttpFormAutomation;
   httpAutoMfa?: HttpAutoMfaSettings;

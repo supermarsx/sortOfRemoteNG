@@ -1,6 +1,7 @@
 use crate::vnc::diagnostics as vnc_diagnostics;
 use crate::*;
 use connection_clone_cmds as connection_clone_commands;
+use database_protection::browser_sessions as database_browser_sessions;
 #[cfg(all(feature = "opkssh", not(feature = "ops")))]
 use opkssh_commands::inner as opkssh_inner_commands;
 use sorng_encryption::commands as encryption_commands;
@@ -138,6 +139,9 @@ define_command_group!(
         storage_commands::clear_storage,
         app_shell_commands::close_all_windows,
         storage_commands::compare_and_swap_app_data,
+        database_browser_sessions::database_browser_sessions_describe,
+        database_browser_sessions::database_browser_sessions_export,
+        database_browser_sessions::database_browser_sessions_import,
         database_protection::database_protection_capabilities,
         database_protection::database_protection_change,
         database_protection::database_protection_load,
@@ -177,6 +181,7 @@ define_command_group!(
         encryption_commands::encryption_validate_new_password,
         app_shell_commands::factory_reset,
         api_capability_commands::get_api_capabilities,
+        browser_data_commands::get_browser_data_directory,
         cpu_commands::get_cpu_aes_capabilities,
         database_files::get_database_file_sizes,
         app_shell_commands::get_launch_args,
@@ -188,6 +193,7 @@ define_command_group!(
         app_auth_commands::list_users,
         storage_commands::load_data,
         database_files::load_database_data,
+        browser_data_commands::open_browser_data_directory,
         // DevTools command is registered ONLY in debug builds. In a release
         // (`--release`) build `open_devtools` is not part of the IPC handler,
         // so it cannot be invoked even though the function still exists as an
@@ -254,6 +260,7 @@ define_command_group!(
         database_files::save_database_data,
         app_shell_commands::scan_shortcuts,
         api_capability_commands::set_api_disabled_capabilities,
+        browser_data_commands::set_browser_data_directory,
         trust_store_commands::trust_apply_reviewed_batch,
         trust_store_commands::trust_cancel_force_delete_legacy,
         trust_store_commands::trust_clear_all,

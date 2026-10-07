@@ -29,10 +29,26 @@ export const SUITES = Object.freeze(
     ["isolation", "tests/protocol/webBrowserFrame.test.ts"],
     ["dark-mode", "tests/protocol/webDarkModeClient.test.ts"],
     ["dark-mode", "tests/protocol/webDarkReadinessRecovery.test.ts"],
+    ["native-host-ui", "tests/protocol/originBrowser.test.ts"],
+    ["native-host-ui", "tests/protocol/useOriginBrowser.test.tsx"],
+    ["native-host-ui", "tests/protocol/OriginBrowserViewport.test.tsx"],
+    ["domain-permissions", "tests/settings/websiteDomainPermissions.test.ts"],
+    [
+      "domain-permissions",
+      "tests/settings/WebsiteDomainPermissionsEditor.test.tsx",
+    ],
+    [
+      "domain-permissions",
+      "tests/settings/nativeWebsitePermissionPersistence.test.ts",
+    ],
   ].map(([area, file]) => Object.freeze({ area, file })),
 );
 export const LIVE_GOOGLE_PROBE =
   "live_accounts_navigation_distinguishes_malformed_metadata_from_native_identity_and_cookies";
+const NATIVE_INTEGRATIONS = Object.freeze([
+  "origin_browser_real_origin",
+  "origin_browser_native_auth",
+]);
 export const NATIVE_SUITES = Object.freeze([
   "cloudflare_challenge",
   "google_tests",
@@ -43,6 +59,7 @@ export const NATIVE_SUITES = Object.freeze([
   "private_forward_route",
   "browser_transport",
   "browser_dns",
+  ...NATIVE_INTEGRATIONS,
 ]);
 export function nativeArgs(filter) {
   if (!NATIVE_SUITES.includes(filter))
@@ -55,8 +72,9 @@ export function nativeArgs(filter) {
     "src-tauri/Cargo.toml",
     "-p",
     "sorng-protocols",
-    "--lib",
-    filter,
+    ...(NATIVE_INTEGRATIONS.includes(filter)
+      ? ["--test", filter]
+      : ["--lib", filter]),
     "--locked",
     ...(filter === "google_tests" ? ["--", "--skip", LIVE_GOOGLE_PROBE] : []),
   ];
@@ -65,6 +83,9 @@ const HELP = `Usage: npm run browser:readiness -- [--native] [--report path.json
 Runs fixed deterministic Vitest suites; --native also runs Cloudflare challenge,
 Google, auto-login asset, first-paint dark-mode and origin-preserving transport fixtures
 through the native build wrapper. Transport fixtures do not certify native browser hosts.
+Includes the public-API origin_browser_real_origin TLS/WSS integration target.
+Includes origin_browser_native_auth native proxy-authentication boundary fixtures.
+Includes native-host UI lifecycle and shared/per-connection domain permission contracts.
 The anonymous live Google probe is explicitly excluded. No live login is tested.
 --report writes a nonsecret JSON summary (replaces that report if it exists).
 Exit 0: requested automated layers passed; NOT a live-login readiness result.
@@ -304,10 +325,14 @@ export async function runReadiness(options = {}, dependencies = {}) {
   if (options.native) {
     for (const suite of report.native.suites) {
       const started = performance.now();
-      if (
-        !exists(path.join(repo, "scripts/native-build-env.mjs")) ||
-        !exists(path.join(repo, "src-tauri/Cargo.toml"))
-      ) {
+      const prerequisites = [
+        "scripts/native-build-env.mjs",
+        "src-tauri/Cargo.toml",
+        ...(NATIVE_INTEGRATIONS.includes(suite.id)
+          ? [`src-tauri/crates/sorng-protocols/tests/${suite.id}.rs`]
+          : []),
+      ];
+      if (prerequisites.some((file) => !exists(path.join(repo, file)))) {
         suite.reason = "missing-prerequisites";
         continue;
       }

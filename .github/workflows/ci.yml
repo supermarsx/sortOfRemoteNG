@@ -44,6 +44,8 @@ jobs:
         run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs tests/tooling/sourcePathCitations.node-test.mjs tests/tooling/kafkaRemoval.node-test.mjs
       - name: Verify generated cache exclusions
         run: node --test tests/tooling/buildCacheExclusions.node-test.mjs
+      - name: Verify patched browser release producer and developer acquisition
+        run: npm run browser:runtime:test
       - name: Check generated command registrar inventories
         run: node scripts/generate-command-inventory.mjs --check
       - name: Check sorted core command groups
@@ -485,7 +487,7 @@ jobs:
       - run: npm ci
       - name: Install Linux build prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev libnss3-dev libgbm-dev libx11-dev
       - name: Pin MSVC host toolchain
         if: runner.os == 'Windows'
         shell: pwsh
@@ -499,6 +501,14 @@ jobs:
           shared-key: browser-transport-contracts
       - name: Deterministic browser and native transport contracts
         run: npm run browser:readiness -- --native --report .artifacts/browser-readiness-${{ runner.os }}.json
+      - name: Real-origin host lifecycle and permission contracts
+        run: node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --lib --test ipc_contract --locked
+      - name: Platform-native CEF host contracts
+        # All three OS adapters are mandatory. These are not browser-launch,
+        # sandbox, network-containment or live-provider acceptance results.
+        run: node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --features cef-host --lib --locked
+      - name: Runtime package layout and whole-matrix contract
+        run: node --test tests/tooling/browserRuntimePackage.node-test.mjs
       - name: Upload sanitized fixture results
         if: always()
         uses: actions/upload-artifact@v4

@@ -20,6 +20,87 @@ const review = {
   removedQuery: false,
 };
 describe("redirect review boundary", () => {
+  it("allows all-request navigation without implicitly allowing HTTPS downgrades", () => {
+    const policy = { ...DEFAULT_HTTP_PROXY_POLICY, allowAllRequests: true };
+    expect(
+      parseHttpRedirectReview(review, "s", review.sourceOrigin, policy),
+    ).toEqual(review);
+    const plain = { ...review, destinationUrl: "http://target.invalid/" };
+    const approved = { ...policy, allowHttpDowngradeRedirects: true };
+    expect(
+      parseHttpRedirectReview(plain, "s", review.sourceOrigin, approved),
+    ).toEqual(plain);
+    for (const blocked of [
+      policy,
+      { ...approved, allowAllRequests: false },
+      { ...approved, sameOriginOnly: true },
+      { ...approved, httpsOnly: true },
+    ])
+      expect(
+        parseHttpRedirectReview(plain, "s", review.sourceOrigin, blocked),
+      ).toBeNull();
+  });
+
+  it("carries effective destination trust and TLS constraints through an anonymous whitelist only", () => {
+    const source = {
+      id: "original",
+      protocol: "https",
+      hostname: "source.invalid",
+      username: "SECRET_USER",
+      password: "SECRET_PASSWORD",
+      basicAuthPassword: "SECRET_BASIC",
+      authType: "header",
+      httpHeaders: { Authorization: "SECRET_HEADER", Cookie: "SECRET_COOKIE" },
+      httpCookies: [{ value: "SECRET_COOKIE" }],
+      httpAutoLogin: true,
+      httpApplication: { version: 1, id: "custom", loginMode: "form" },
+      httpAutoMfa: { enabled: true, secret: "SECRET_MFA" },
+      totpConfigs: [{ secret: "SECRET_TOTP" }],
+      credentialSource: { kind: "vault", credentialId: "SECRET_VAULT" },
+      httpProxyPolicy: {
+        ...DEFAULT_HTTP_PROXY_POLICY,
+        queryParameters: [{ name: "token", value: "SECRET_QUERY" }],
+      },
+    } as unknown as Connection;
+    const effective = {
+      ...source.httpProxyPolicy!,
+      allowAllRequests: true,
+      httpsOnly: true,
+    };
+    const before = structuredClone(source);
+    const target = anonymousRedirectConnection(source, review, effective);
+    expect(target.httpProxyPolicy).toMatchObject({
+      allowAllRequests: true,
+      allowCrossOriginRedirects: false,
+      allowHttpDowngradeRedirects: false,
+      httpsOnly: true,
+      queryParameters: [],
+    });
+    expect(target.httpVerifySsl).toBe(true);
+    expect(target.httpAutoLogin).toBe(false);
+    expect(JSON.stringify(target)).not.toContain("SECRET_");
+    for (const key of [
+      "username",
+      "password",
+      "basicAuthPassword",
+      "authType",
+      "httpHeaders",
+      "httpCookies",
+      "httpApplication",
+      "httpAutoMfa",
+      "totpConfigs",
+      "credentialSource",
+    ])
+      expect(target).not.toHaveProperty(key);
+    expect(source).toEqual(before);
+    expect(
+      anonymousRedirectConnection(
+        { ...source, httpProxyPolicy: effective },
+        review,
+        DEFAULT_HTTP_PROXY_POLICY,
+      ).httpProxyPolicy,
+    ).toMatchObject({ allowAllRequests: false, httpsOnly: true });
+  });
   it("requires both explicit downgrade opt-ins, honors HTTPS-only, and preserves consent across reviewed hops", () => {
     const candidate = {
       ...review,

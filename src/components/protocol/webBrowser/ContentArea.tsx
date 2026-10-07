@@ -9,6 +9,7 @@ import {
 } from "../../../utils/protocol/webBrowserFrame";
 import RedirectReviewPanel from "./RedirectReviewPanel";
 import TrustCheckStatus from "./TrustCheckStatus";
+import ExternalLinkReview from "./ExternalLinkReview";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
   const reviewing = !!(mgr.redirectReview?.review || mgr.redirectReview?.error);
@@ -97,12 +98,14 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           aria-hidden={mgr.loadError || reviewing ? true : undefined}
           inert={
             reviewing ||
+            !!mgr.externalLinks?.url ||
             !!mgr.pageInteractionBlocked ||
             !!mgr.trustPrompt ||
             !!mgr.loadError
           }
           tabIndex={
             reviewing ||
+            mgr.externalLinks?.url ||
             mgr.pageInteractionBlocked ||
             mgr.trustPrompt ||
             mgr.loadError
@@ -143,6 +146,9 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => {
           aria-label="Preparing dark website"
           style={{ backgroundColor: mgr.websiteDarkBootstrap?.backgroundColor }}
         />
+      )}
+      {mgr.externalLinks?.url && (
+        <ExternalLinkReview manager={mgr.externalLinks} />
       )}
       {mgr.redirectHandoffPending && !mgr.loadError && (
         <div

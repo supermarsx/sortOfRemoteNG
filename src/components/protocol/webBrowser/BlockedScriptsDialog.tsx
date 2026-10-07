@@ -21,7 +21,7 @@ export default function BlockedScriptsDialog({
   scripts: ReturnType<typeof useBlockedWebsiteScripts>;
 }) {
   const review = scripts.review;
-  if (!review) return null;
+  if (!review || review.mode !== "scripts") return null;
   const allListed = allListedWebsiteScriptPermissions(
     review.reports,
     review.policy,

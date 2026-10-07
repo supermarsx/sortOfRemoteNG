@@ -21,6 +21,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     externalResourceOrigins = new Map(),
     externalResourceEndpoint = null,
     allowAllScripts = false,
+    publicRequests = null,
     navigationOrigins = new Set(),
     quickConnectRpc = null,
     quickConnectDiscovered = null,
@@ -323,6 +324,35 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     }
     externalResourceEndpoint = externalResources.proxyEndpoint;
     allowAllScripts = externalResources.allowAllScripts === true;
+  }
+  if (configuration.publicRequests !== undefined) {
+    var publicCapability = configuration.publicRequests;
+    if (
+      !publicCapability ||
+      typeof publicCapability !== "object" ||
+      Array.isArray(publicCapability) ||
+      publicCapability.version !== 1 ||
+      Object.keys(publicCapability).some(function (key) {
+        return ![
+          "version",
+          "proxyEndpoint",
+          "navigationEndpoint",
+          "httpsOnly",
+          "allowHttpDowngrade",
+          "scripts",
+        ].includes(key);
+      }) ||
+      publicCapability.proxyEndpoint !==
+        proxyOrigin + "/__sortofremoteng_public_request_v1" ||
+      publicCapability.navigationEndpoint !==
+        proxyOrigin + "/__sortofremoteng_public_navigation_v1" ||
+      ["httpsOnly", "allowHttpDowngrade", "scripts"].some(function (key) {
+        return typeof publicCapability[key] !== "boolean";
+      })
+    )
+      throw new TypeError("Invalid public request capability configuration");
+    publicRequests = Object.freeze(Object.assign({}, publicCapability));
+    allowAllScripts = allowAllScripts || publicRequests.scripts;
   }
   // Closed native capabilities, not a foreign-origin route. The control
   // endpoint independently validates discovery commands and never forwards
@@ -707,8 +737,55 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
     }
     if (target.username || target.password)
       throw blocked(kind, "url-credentials");
+    var publicNavigation = kind === "navigation";
+    if (
+      publicRequests &&
+      target.origin === proxyOrigin &&
+      [
+        "/__sortofremoteng_public_request_v1",
+        "/__sortofremoteng_public_navigation_v1",
+      ].includes(target.pathname)
+    ) {
+      var publicParameters = target.searchParams,
+        publicKeys = new Set();
+      for (var publicKey of publicParameters.keys()) {
+        if (
+          !["destination", "kind", "document", generationKey].includes(
+            publicKey,
+          ) ||
+          publicKeys.has(publicKey)
+        )
+          throw blocked(kind, "invalid-url");
+        publicKeys.add(publicKey);
+      }
+      if (
+        publicParameters.get("document") !== String(sequence) ||
+        (publicParameters.has(generationKey) &&
+          publicParameters.get(generationKey) !== requestGeneration) ||
+        (publicNavigation
+          ? publicParameters.has("kind") ||
+            target.pathname !== "/__sortofremoteng_public_navigation_v1"
+          : (publicParameters.get("kind") !== kind &&
+              !(
+                ["resource", "font", "css"].includes(
+                  publicParameters.get("kind"),
+                ) && ["resource", "font", "css"].includes(kind)
+              )) ||
+            target.pathname !== "/__sortofremoteng_public_request_v1") ||
+        target.hash
+      )
+        throw blocked(kind, "invalid-url");
+      return routeUrl(
+        publicParameters.get("destination"),
+        kind,
+        localData,
+        method,
+        navigationReference,
+      );
+    }
     if (
       googleSession &&
+      !(publicRequests && publicNavigation) &&
       (kind === "navigation" || kind === "form" || kind === "document") &&
       !googleDocuments.has(target.origin)
     ) {
@@ -777,6 +854,78 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
         reviewUrl.searchParams.set("destination", target.href);
         return reviewUrl.href;
       }
+    }
+    if (
+      publicRequests &&
+      target.origin !== sourceOrigin &&
+      target.origin !== proxyOrigin &&
+      !fontAssets.has(target.href) &&
+      !(
+        (ptispApi || tacticalRmmApi) &&
+        (kind === "fetch" || kind === "xhr" || kind === "websocket") &&
+        (ptispApi || tacticalRmmApi).apiOrigins.has(
+          target.origin.replace(/^wss:/, "https:").replace(/^ws:/, "http:"),
+        )
+      ) &&
+      ((!routes.has(target.origin) && !proxies.has(target.origin)) ||
+        (publicNavigation &&
+          googleSession &&
+          !googleDocuments.has(target.origin)))
+    ) {
+      // A resource-only hosted alias is not a document grant. Convert it back
+      // to its upstream identity before creating an anonymous review receipt.
+      if (proxies.has(target.origin)) {
+        for (var route of routes) {
+          if (route[1] === target.origin) {
+            target = new NativeURL(
+              route[0] + target.pathname + target.search + target.hash,
+            );
+            break;
+          }
+        }
+      }
+      if (
+        (target.protocol === "data:" || target.protocol === "blob:") &&
+        (localData || (publicRequests.scripts && kind === "script"))
+      )
+        return target.href;
+      if (!/^https?:$/.test(target.protocol))
+        throw blocked(kind, "unsupported-scheme", target.origin);
+      if (target.href.length > 4096)
+        throw blocked(kind, "invalid-url", target.origin);
+      if (
+        target.protocol === "http:" &&
+        (publicRequests.httpsOnly ||
+          (new NativeURL(sourceOrigin).protocol === "https:" &&
+            !publicRequests.allowHttpDowngrade))
+      )
+        throw blocked(kind, "policy-blocked-resource", target.origin);
+      if (kind === "script" && !publicRequests.scripts)
+        throw blocked(kind, "policy-blocked-resource", target.origin);
+      if (
+        !publicNavigation &&
+        ![
+          "fetch",
+          "xhr",
+          "beacon",
+          "resource",
+          "font",
+          "css",
+          "stylesheet",
+          "script",
+        ].includes(kind)
+      )
+        throw blocked(kind, "unsupported-network-context", target.origin);
+      if (publicNavigation && navigationReference) return target.href;
+      var publicRoute = new NativeURL(
+        publicNavigation
+          ? publicRequests.navigationEndpoint
+          : publicRequests.proxyEndpoint,
+      );
+      publicRoute.searchParams.set("destination", target.href);
+      if (!publicNavigation) publicRoute.searchParams.set("kind", kind);
+      publicRoute.searchParams.set("document", String(sequence));
+      return publicRoute.href;
     }
     if (fontAssets.has(target.href)) {
       if (kind === "font" || kind === "css") return fontAssets.get(target.href);
@@ -1442,7 +1591,7 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
         : element.tagName === "FORM" || name.toLowerCase() === "formaction"
           ? "form"
           : /^(IFRAME|FRAME)$/.test(element.tagName) &&
-              configuration.popupParentDocument != null
+              (configuration.popupParentDocument != null || publicRequests)
             ? "document"
             : element.tagName === "SCRIPT"
               ? "script"
@@ -1523,7 +1672,8 @@ function installWebNetworkClient(configuration, reportBlocked, reportPopup) {
         incomplete &&
         !routes.has(target.origin) &&
         !proxies.has(target.origin) &&
-        (approvedExternalFont(target) ||
+        (publicRequests ||
+          approvedExternalFont(target) ||
           fontAssets.has(target.href) ||
           approvedExternalResource(target, "script") ||
           approvedExternalResource(target, "stylesheet"))

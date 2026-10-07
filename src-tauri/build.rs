@@ -1,4 +1,11 @@
+#[path = "native/cef_windows_delay_load.rs"]
+mod cef_windows_delay_load;
+
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=native/cef_windows_delay_load.rs");
+    cef_windows_delay_load::configure(std::env::var_os("CARGO_FEATURE_NATIVE_BROWSER").is_some());
+
     // ── Compile-time CPU feature detection ─────────────────────────────
     //
     // Emit cfg flags that first-party code can use to conditionally compile

@@ -7,6 +7,7 @@ import type {
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 import { resolveHttpApplicationLogin } from "../../utils/auth/httpApplicationLogin";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
+import { allWebsiteRequestsAllowed } from "../../utils/protocol/websiteRequestPermissions";
 import type { useHttpRedirectTrust } from "./useHttpRedirectTrust";
 import {
   getRuntimeWebNavigation,
@@ -396,6 +397,11 @@ export function useHttpRedirectReview(options: Options) {
         captured.enabled &&
         ((captured.effectivePolicy ?? captured.connection?.httpProxyPolicy)
           ?.allowCrossOriginRedirects === true ||
+          allWebsiteRequestsAllowed(
+            captured.effectivePolicy ??
+              captured.connection?.httpProxyPolicy ??
+              null,
+          ) ||
           current.trust.defaultTrusted === true) &&
         normalizeRedirectAuthentication(
           captured.connection?.httpRedirectAuthentication,

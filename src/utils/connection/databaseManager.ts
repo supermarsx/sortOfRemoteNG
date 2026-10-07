@@ -29,6 +29,17 @@ import {
 
 import { getInvoke } from "../tauri/invoke";
 import { databaseProtection } from "./databaseProtection";
+import type {
+  BrowserSessionsDescriptor,
+  BrowserSessionsTransfer,
+} from "../../types/security/browserSessions";
+import {
+  assertBrowserSessionTransferPassword,
+  normalizeBrowserSessionsTransfer,
+  normalizeBrowserSessions,
+  normalizeBrowserSessionDeletions,
+} from "../security/browserSessions";
+import { notifyBrowserSessionProjectionChange } from "../services/browserSessionProjectionEvents";
 import { normalizeHttpAutoMfa } from "./httpAutoMfa";
 import { stripHttpOptionSecrets } from "./httpOptionSecrets";
 import { validateNewPassword } from "../security/passwordPolicy";
@@ -386,6 +397,10 @@ export interface DatabaseDataTarget {
   verifyCurrent?: () => Promise<void>;
   /** Lease-checked read without advancing any writer's persisted CAS baseline. */
   readCurrent?: () => Promise<StorageData | null>;
+  /** Native-only descriptor refresh; never adopts external edits or creates ledger history. */
+  refreshBrowserSessionProjection?: () => Promise<
+    Pick<StorageData, "browserSessions" | "recordMetadata">
+  >;
   load: () => Promise<StorageData | null>;
   save: (data: StorageData) => Promise<void>;
 }
@@ -521,6 +536,11 @@ export class DatabaseManager {
   >();
   private managedListener: Promise<void> | null = null;
   private managedUnlisten: (() => void) | null = null;
+  private readonly browserSessionProjections = new Map<string, string>();
+  private readonly browserSessionRefreshes = new Map<
+    string,
+    { again: boolean }
+  >();
   private disposed = false;
 
   private emitAccess(state: DatabaseAccessState): void {
@@ -556,26 +576,109 @@ export class DatabaseManager {
   private async ensureManagedListener(): Promise<void> {
     this.managedListener ??= import("@tauri-apps/api/event")
       .then(async ({ listen }) => {
-        const unlisten = await listen<{ databaseId: string }>(
-          "database-protection:locked",
+        const unlistenSessions = await listen<{ databaseId: string }>(
+          "database-protection:browser-sessions-changed",
           ({ payload }) => {
             if (
               typeof payload?.databaseId === "string" &&
-              (this.managedAccess.has(payload.databaseId) ||
-                this.currentDatabase?.id === payload.databaseId)
-            ) {
-              this.suspendManagedDatabase(payload.databaseId, "locked");
-            }
+              payload.databaseId === this.currentDatabase?.id &&
+              this.managedSessions.has(payload.databaseId)
+            )
+              this.queueBrowserSessionProjectionRefresh(payload.databaseId);
           },
         );
-        if (this.disposed) unlisten();
-        else this.managedUnlisten = unlisten;
+        let unlisten: () => void;
+        try {
+          unlisten = await listen<{ databaseId: string }>(
+            "database-protection:locked",
+            ({ payload }) => {
+              if (
+                typeof payload?.databaseId === "string" &&
+                (this.managedAccess.has(payload.databaseId) ||
+                  this.currentDatabase?.id === payload.databaseId)
+              ) {
+                this.suspendManagedDatabase(payload.databaseId, "locked");
+              }
+            },
+          );
+        } catch (error) {
+          unlistenSessions();
+          throw error;
+        }
+        const close = () => {
+          unlistenSessions();
+          unlisten();
+        };
+        if (this.disposed) close();
+        else this.managedUnlisten = close;
       })
       .catch((error) => {
         this.managedListener = null;
         throw error;
       });
     await this.managedListener;
+  }
+
+  /** Read metadata without advancing any editor's public-body CAS baseline. */
+  async describeBrowserSessions(
+    databaseId: string,
+  ): Promise<BrowserSessionsDescriptor> {
+    const epoch = this.captureDatabaseEpoch(databaseId);
+    const session = this.requireManagedSession(databaseId);
+    const description = await databaseProtection.describeBrowserSessions(
+      databaseId,
+      session.sessionId,
+      session.securityRevision,
+    );
+    this.assertDatabaseEpoch(databaseId, epoch);
+    if (this.disposed || this.requireManagedSession(databaseId) !== session)
+      throw new Error(
+        "Database access changed during browser session refresh.",
+      );
+    return description;
+  }
+
+  private queueBrowserSessionProjectionRefresh(databaseId: string): void {
+    const pending = this.browserSessionRefreshes.get(databaseId);
+    if (pending) {
+      pending.again = true;
+      return;
+    }
+    const state = { again: false };
+    this.browserSessionRefreshes.set(databaseId, state);
+    void (async () => {
+      // Pin selection, profile and unlock generation BEFORE the first await.
+      const owner = this.captureOriginBrowserOwnerProof(databaseId);
+      do {
+        state.again = false;
+        owner.assertCurrent();
+        const description = await this.describeBrowserSessions(databaseId);
+        owner.assertCurrent();
+        const canonical = stableJsonStringify(description);
+        if (this.browserSessionProjections.get(databaseId) !== canonical) {
+          this.browserSessionProjections.set(databaseId, canonical);
+          notifyBrowserSessionProjectionChange({
+            databaseId,
+            changeId: generateId(),
+            assertCurrent: owner.assertCurrent,
+          });
+        }
+      } while (state.again);
+    })()
+      .catch(() => {
+        // A raw event is only a hint. Failed/stale describe cannot authorize sync
+        // or a provider refresh, and must not leak backend errors or revoke access.
+      })
+      .finally(() => {
+        this.browserSessionRefreshes.delete(databaseId);
+        if (
+          state.again &&
+          !this.disposed &&
+          this.currentDatabase?.id === databaseId &&
+          this.managedAccess.get(databaseId)?.status === "ready"
+        )
+          this.queueBrowserSessionProjectionRefresh(databaseId);
+      });
   }
 
   getDatabaseAccessState(id: string): DatabaseAccessState | null {
@@ -859,6 +962,14 @@ export class DatabaseManager {
       throw new Error("Invalid native database session response.");
     this.forgetUnlockedDatabase(id);
     this.latestLoadedRepresentations.set(id, structuredClone(result.data));
+    this.browserSessionProjections.set(
+      id,
+      stableJsonStringify(
+        normalizeBrowserSessions(
+          result.data.browserSessions ?? { version: 1, records: [] },
+        ),
+      ),
+    );
     const { sessionId, sessionExpiresAt, securityRevision } = result;
     this.managedSessions.set(id, {
       sessionId,
@@ -1663,6 +1774,65 @@ export class DatabaseManager {
     return this.currentDatabase;
   }
 
+  /** Capture existing native unlock authority for this exact current owner.
+   * No unlock, selection, legacy credentials, or synthesized native grant. */
+  captureOriginBrowserOwnerProof(ownerDatabaseId: string): {
+    readonly ownerDatabaseId: string;
+    readonly expectedSecurityRevision: string;
+    readonly sourceSessionId: string;
+    readonly assertCurrent: () => void;
+  } {
+    const unavailable = () =>
+      new Error(
+        "The native browser requires the current, unlocked managed database.",
+      );
+    const database = this.currentDatabase;
+    if (
+      this.disposed ||
+      !ownerDatabaseId ||
+      database?.id !== ownerDatabaseId ||
+      database.protectionFormat !== "sorng-db" ||
+      !database.isEncrypted ||
+      !database.securityRevision
+    )
+      throw unavailable();
+    const session = this.requireManagedSession(ownerDatabaseId);
+    const expectedSecurityRevision = database.securityRevision;
+    const epoch = this.captureDatabaseEpoch(ownerDatabaseId);
+    const selectionRevision = this.operationSelectionRevision;
+    const assertCurrent = () => {
+      const current = this.currentDatabase;
+      if (
+        this.disposed ||
+        this.operationSelectionRevision !== selectionRevision ||
+        current?.id !== ownerDatabaseId ||
+        current.protectionFormat !== "sorng-db" ||
+        !current.isEncrypted ||
+        current.securityRevision !== expectedSecurityRevision
+      )
+        throw unavailable();
+      this.assertDatabaseEpoch(ownerDatabaseId, epoch);
+      const active = this.requireManagedSession(ownerDatabaseId);
+      const access = this.getDatabaseAccessState(ownerDatabaseId);
+      if (
+        active !== session ||
+        !active.sessionId ||
+        active.securityRevision !== expectedSecurityRevision ||
+        access?.status !== "ready" ||
+        access.securityRevision !== expectedSecurityRevision ||
+        access.accessEpoch !== epoch
+      )
+        throw unavailable();
+    };
+    assertCurrent();
+    return Object.freeze({
+      ownerDatabaseId,
+      expectedSecurityRevision,
+      sourceSessionId: session.sessionId,
+      assertCurrent,
+    });
+  }
+
   captureCurrentDatabaseDataTarget(): DatabaseDataTarget | null {
     const current = this.currentDatabase;
     if (!current) return null;
@@ -1752,6 +1922,70 @@ export class DatabaseManager {
           throw new Error("Database access is suspended.");
         return data;
       },
+      ...(current.protectionFormat === "sorng-db"
+        ? {
+            refreshBrowserSessionProjection: async () => {
+              const owner = this.captureOriginBrowserOwnerProof(databaseId);
+              owner.assertCurrent();
+              resolvePassword();
+              const baseline = expectedData;
+              if (
+                !baseline ||
+                typeof baseline !== "object" ||
+                Array.isArray(baseline)
+              )
+                throw new Error(
+                  "Browser session projection requires a public content baseline.",
+                );
+              const fresh = await this.loadDatabaseData(
+                databaseId,
+                undefined,
+                revisionAtCapture,
+                { preserveBaseline: true },
+              );
+              owner.assertCurrent();
+              const publicBody = (value: unknown) => {
+                if (!value || typeof value !== "object" || Array.isArray(value))
+                  return undefined;
+                const { browserSessions: _nativeOwned, ...body } =
+                  value as StorageData;
+                return stableJsonStringify(body);
+              };
+              if (
+                !fresh ||
+                baseline !== expectedData ||
+                publicBody(this.loadedRepresentations.get(fresh)) !==
+                  publicBody(baseline)
+              )
+                throw new Error(
+                  "Database body changed during browser projection refresh; existing edits and baseline were retained.",
+                );
+              const description =
+                await this.describeBrowserSessions(databaseId);
+              owner.assertCurrent();
+              if (baseline !== expectedData)
+                throw new Error(
+                  "Database baseline changed during browser projection refresh.",
+                );
+              // Only native descriptors advance. Every renderer-owned byte, including
+              // recordMetadata, remains pinned so the next save still rejects a real
+              // external edit, even if that edit races the describe call.
+              const next = { ...(baseline as StorageData) };
+              if (description.records.length)
+                next.browserSessions = description;
+              else delete next.browserSessions;
+              expectedData = next;
+              return {
+                ...(description.records.length
+                  ? { browserSessions: description }
+                  : {}),
+                ...(next.recordMetadata
+                  ? { recordMetadata: structuredClone(next.recordMetadata) }
+                  : {}),
+              };
+            },
+          }
+        : {}),
       save: (data) => {
         const password = resolvePassword();
         if (expectedData === undefined)
@@ -2586,10 +2820,34 @@ export class DatabaseManager {
       /** Pinned history belonging to this exact snapshot, not a later reader. */
       recordBaseline?: RecordLedger;
       recordMetadataMode?: "migrate" | "adopt";
+      /** Internal archive restore: never save descriptors separately from secrets. */
+      browserSessionsTransfer?: {
+        transfer: BrowserSessionsTransfer;
+        password: string;
+        deletedConnectionIds?: string[];
+      };
     },
   ): Promise<void> {
     // Freeze the caller's draft before asynchronous hashing/encryption.
     const data = snapshotRecordPayload(inputData);
+    const browserSessionsTransfer = contentExpectation?.browserSessionsTransfer
+      ? {
+          ...contentExpectation.browserSessionsTransfer,
+          transfer: normalizeBrowserSessionsTransfer(
+            contentExpectation.browserSessionsTransfer.transfer,
+          ),
+        }
+      : undefined;
+    if (browserSessionsTransfer) {
+      assertBrowserSessionTransferPassword(browserSessionsTransfer.password);
+      if (!data.browserSessions)
+        throw new FullDatabaseArchiveError("browser-sessions");
+      browserSessionsTransfer.deletedConnectionIds =
+        normalizeBrowserSessionDeletions(
+          browserSessionsTransfer.deletedConnectionIds ?? [],
+          data.browserSessions,
+        );
+    }
     assertNoSynologyRedirectRuntimeContext(data);
     if (data.databaseSettings !== undefined)
       normalizeDatabaseSettings(data.databaseSettings);
@@ -2619,6 +2877,8 @@ export class DatabaseManager {
     if (revision !== undefined)
       this.assertSecurityRevision(collectionId, revision, collection);
     if (!collection) throw new DatabaseNotFoundError();
+    if (browserSessionsTransfer && collection.protectionFormat !== "sorng-db")
+      throw new FullDatabaseArchiveError("browser-sessions");
     if (!recordBaseline && expectedData && typeof expectedData === "object") {
       recordBaseline = await reconcileRecordLedger(
         expectedData,
@@ -2670,13 +2930,27 @@ export class DatabaseManager {
         );
       let outcome;
       try {
-        outcome = await databaseProtection.save(
-          collectionId,
-          session.sessionId,
-          session.securityRevision,
-          data,
-          expectedData,
-        );
+        outcome = browserSessionsTransfer
+          ? await databaseProtection.importBrowserSessions({
+              databaseId: collectionId,
+              sessionId: session.sessionId,
+              expectedSecurityRevision: session.securityRevision,
+              expected: (expectedData as StorageData).browserSessions ?? {
+                version: 1,
+                records: [],
+              },
+              selected: data.browserSessions!,
+              data,
+              expectedData,
+              ...browserSessionsTransfer,
+            })
+          : await databaseProtection.save(
+              collectionId,
+              session.sessionId,
+              session.securityRevision,
+              data,
+              expectedData,
+            );
       } catch (error) {
         // A missed cross-window notification must not leave revoked access visible.
         if (this.captureDatabaseEpoch(collectionId) === epoch)
@@ -2695,6 +2969,14 @@ export class DatabaseManager {
           throw new Error(
             "Native save returned an unexpected security revision.",
           );
+        }
+        if (browserSessionsTransfer) {
+          // Native may rebind destination-local security digests. Cache its
+          // authoritative public projection, never the submitted source guess.
+          const projection = await this.describeBrowserSessions(collectionId);
+          this.assertDatabaseEpoch(collectionId, epoch);
+          if (projection.records.length) data.browserSessions = projection;
+          else delete data.browserSessions;
         }
         if (outcome.cleanupPending || outcome.warnings.length) {
           try {
@@ -3144,7 +3426,14 @@ export class DatabaseManager {
    * defaults and history with CAS before constructing its portable snapshot. */
   async readFullDatabaseArchive(
     collectionId: string,
-    options?: { collectionPassword?: string; materializeDefaults?: boolean },
+    options?: {
+      collectionPassword?: string;
+      materializeDefaults?: boolean;
+      browserSessionsPassword?: string;
+      browserSessionsDeletedConnectionIds?: string[];
+      /** Internal CAS/review projection: cannot be serialized as a full backup. */
+      browserSessionsProjectionOnly?: boolean;
+    },
   ): Promise<FullDatabaseArchive> {
     return this.readExportableDatabaseSnapshot(collectionId, true, {
       ...options,
@@ -3152,12 +3441,41 @@ export class DatabaseManager {
     }) as Promise<FullDatabaseArchive>;
   }
 
+  private archiveBrowserSessionTransfer(
+    archive: FullDatabaseArchive,
+    password?: string,
+  ) {
+    if (!archive.browserSessionsTransfer) {
+      if (
+        archive.browserSessions?.records.length ||
+        archive.browserSessionsDeletedConnectionIds?.length
+      )
+        throw new FullDatabaseArchiveError("browser-sessions");
+      return undefined;
+    }
+    if (!password || !archive.browserSessions)
+      throw new FullDatabaseArchiveError("browser-sessions");
+    assertBrowserSessionTransferPassword(password);
+    return {
+      transfer: normalizeBrowserSessionsTransfer(
+        archive.browserSessionsTransfer,
+      ),
+      password,
+      deletedConnectionIds: normalizeBrowserSessionDeletions(
+        archive.browserSessionsDeletedConnectionIds ?? [],
+        archive.browserSessions,
+      ),
+    };
+  }
+
   /** Owner-bound cloud restore. Body and trust are separate durable transactions. */
   async restoreCloudSyncArchive(
     collectionId: string,
     value: unknown,
     expectedArchive: unknown,
+    options: { browserSessionsPassword?: string } = {},
   ): Promise<void> {
+    const browserSessionsPassword = options.browserSessionsPassword;
     const release = await acquireCloudSyncDatabaseBarrier([collectionId], true);
     let bodyCommitted = false;
     const refresh = async () => {
@@ -3189,6 +3507,24 @@ export class DatabaseManager {
       assertOwner();
       const archive = await normalizeFullDatabaseArchive(value);
       const expected = await normalizeFullDatabaseArchive(expectedArchive);
+      const transfer = this.archiveBrowserSessionTransfer(
+        archive,
+        browserSessionsPassword,
+      );
+      const selectedIds = new Set(
+        archive.browserSessions?.records.map((row) => row.connectionId),
+      );
+      const deletedIds = new Set(
+        archive.browserSessionsDeletedConnectionIds ?? [],
+      );
+      if (
+        expected.browserSessions?.records.some(
+          (row) =>
+            !selectedIds.has(row.connectionId) &&
+            !deletedIds.has(row.connectionId),
+        )
+      )
+        throw new FullDatabaseArchiveError("browser-sessions");
       assertOwner();
       if (
         archive.collection.id !== collectionId ||
@@ -3205,10 +3541,13 @@ export class DatabaseManager {
             .join(",")}}`;
         return JSON.stringify(input);
       };
+      // This is public-body CAS, NOT sync equivalence or capsule authentication.
+      // Incoming capsule bytes are always authenticated by the atomic import.
       const comparable = (input: FullDatabaseArchive) => ({
-        ...input,
+        ...fullDatabaseArchiveData(input),
         timestamp: 0,
         collection: { id: input.collection.id },
+        trustRecords: input.trustRecords,
       });
       for (const [raw, normalized] of [
         [value, archive],
@@ -3225,7 +3564,9 @@ export class DatabaseManager {
             "Cloud archive record metadata does not match the reviewed data.",
           );
       }
-      const current = await this.readFullDatabaseArchive(collectionId);
+      const current = await this.readFullDatabaseArchive(collectionId, {
+        browserSessionsProjectionOnly: true,
+      });
       assertOwner();
       if (canonical(comparable(current)) !== canonical(comparable(expected)))
         throw new Error(
@@ -3244,7 +3585,11 @@ export class DatabaseManager {
           fullDatabaseArchiveData(archive),
           undefined,
           undefined,
-          { expectedData: baseline, recordMetadataMode: "adopt" },
+          {
+            expectedData: baseline,
+            recordMetadataMode: "adopt",
+            ...(transfer ? { browserSessionsTransfer: transfer } : {}),
+          },
         );
       } catch (error) {
         if (
@@ -3310,7 +3655,10 @@ export class DatabaseManager {
     )
       throw new FullDatabaseArchiveError("password");
     const epoch = this.captureDatabaseEpoch(collectionId);
-    const archive = await this.readFullDatabaseArchive(collectionId, options);
+    const archive = await this.readFullDatabaseArchive(collectionId, {
+      ...options,
+      browserSessionsPassword: exportPassword,
+    });
     this.assertDatabaseEpoch(collectionId, epoch);
     const encrypted = await encryptFullDatabaseArchive(
       archive,
@@ -3328,6 +3676,11 @@ export class DatabaseManager {
       collectionPassword?: string;
       /** Explicit private whole-database archive; passwords and trust must be included. */
       fullDatabase?: boolean;
+      /** Explicit archive/cloud password, never the database unlock password. */
+      browserSessionsPassword?: string;
+      browserSessionsDeletedConnectionIds?: string[];
+      /** Internal public-body CAS only; exports always require a sealed capsule. */
+      browserSessionsProjectionOnly?: boolean;
       /** Explicit cloud capture only; normal archive reads remain read-only. */
       materializeDefaults?: boolean;
       /**
@@ -3385,6 +3738,37 @@ export class DatabaseManager {
         data,
         trustRecords,
       );
+      const deletions = normalizeBrowserSessionDeletions(
+        options.browserSessionsDeletedConnectionIds ?? [],
+        archive.browserSessions ?? { version: 1, records: [] },
+      );
+      if (
+        (archive.browserSessions?.records.length || deletions.length) &&
+        !options.browserSessionsProjectionOnly
+      ) {
+        if (
+          !options.browserSessionsPassword ||
+          collection.protectionFormat !== "sorng-db"
+        )
+          throw new FullDatabaseArchiveError("browser-sessions");
+        const session = this.requireManagedSession(collectionId);
+        try {
+          archive.browserSessions ??= { version: 1, records: [] };
+          if (deletions.length)
+            archive.browserSessionsDeletedConnectionIds = deletions;
+          archive.browserSessionsTransfer =
+            await databaseProtection.exportBrowserSessions(
+              collectionId,
+              session.sessionId,
+              session.securityRevision,
+              archive.browserSessions,
+              options.browserSessionsPassword,
+              deletions.length ? deletions : undefined,
+            );
+        } catch {
+          throw new FullDatabaseArchiveError("browser-sessions");
+        }
+      }
       this.assertDatabaseEpoch(collectionId, epoch);
       await this.assertSnapshotCurrent(collectionId, data);
       this.assertDatabaseEpoch(collectionId, epoch);
@@ -3629,12 +4013,48 @@ export class DatabaseManager {
       /** Internal whole-database import ownership; never infer from a connection ID. */
       sourceDatabaseId?: string;
       confirmDeviceBoundOnly?: boolean;
+      browserSessionsTransfer?: {
+        transfer: BrowserSessionsTransfer;
+        password: string;
+        deletedConnectionIds?: string[];
+      };
     } = {},
   ): Promise<ConnectionDatabase> {
     if (target.keepSlotIds.length || !target.newSlots.length)
       throw new Error(
         "A new database requires newly enrolled unlock methods; existing slot references cannot be copied.",
       );
+    // Freeze the complete import before enrollment awaits. Never create a public
+    // descriptor-only copy or include the transfer password in stored data.
+    options = {
+      ...options,
+      ...(options.data ? { data: snapshotRecordPayload(options.data) } : {}),
+      ...(options.browserSessionsTransfer
+        ? {
+            browserSessionsTransfer: {
+              password: options.browserSessionsTransfer.password,
+              deletedConnectionIds: [
+                ...(options.browserSessionsTransfer.deletedConnectionIds ?? []),
+              ],
+              transfer: normalizeBrowserSessionsTransfer(
+                options.browserSessionsTransfer.transfer,
+              ),
+            },
+          }
+        : {}),
+    };
+    if (
+      options.data?.browserSessions?.records.length &&
+      !options.browserSessionsTransfer
+    )
+      throw new FullDatabaseArchiveError("browser-sessions");
+    if (options.browserSessionsTransfer) {
+      if (!options.data?.browserSessions)
+        throw new FullDatabaseArchiveError("browser-sessions");
+      assertBrowserSessionTransferPassword(
+        options.browserSessionsTransfer.password,
+      );
+    }
     // Capability/listener failure must occur before publishing even an empty row.
     await databaseProtection.capabilities();
     await this.ensureManagedListener();
@@ -3643,6 +4063,13 @@ export class DatabaseManager {
       return await this.initializeManagedDatabase(created, target, options);
     } catch (error) {
       // No unconditional delete: another window may have changed the indexed row.
+      if (options.browserSessionsTransfer)
+        throw Object.assign(
+          new FullDatabaseRestoreIncompleteError(created.id),
+          {
+            kind: "partial" as const,
+          },
+        );
       throw new Error(
         `Database "${created.name}" (${created.id}) was created, but managed initialization did not finish. It may be empty or already protected; inspect it before retrying. ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -3656,22 +4083,58 @@ export class DatabaseManager {
       data?: StorageData;
       sourceDatabaseId?: string;
       confirmDeviceBoundOnly?: boolean;
+      browserSessionsTransfer?: {
+        transfer: BrowserSessionsTransfer;
+        password: string;
+        deletedConnectionIds?: string[];
+      };
     },
   ): Promise<ConnectionDatabase> {
     const result = await this.changeManagedDatabaseProtection(
       created.id,
       target,
       {
-        initializeWithData: options.data
-          ? rebindDatabaseQuickActions(
-              options.data,
-              options.sourceDatabaseId,
-              created.id,
-            )
-          : undefined,
+        initializeWithData: options.browserSessionsTransfer
+          ? {
+              connections: [],
+              settings: {},
+              timestamp: options.data?.timestamp ?? Date.now(),
+            }
+          : options.data
+            ? rebindDatabaseQuickActions(
+                options.data,
+                options.sourceDatabaseId,
+                created.id,
+              )
+            : undefined,
         confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
       },
     );
+    if (options.browserSessionsTransfer) {
+      // Enrollment protects only the empty placeholder. The following *single*
+      // native transaction authenticates/imports both full body and sessions.
+      // Failure leaves an inspectable empty protected destination, not a body
+      // presented as successfully restored without its cookies.
+      this.requireManagedSession(created.id);
+      const baseline = this.latestLoadedRepresentations.get(created.id);
+      if (baseline === undefined)
+        throw new FullDatabaseArchiveError("browser-sessions");
+      await this.saveDatabaseData(
+        created.id,
+        rebindDatabaseQuickActions(
+          options.data!,
+          options.sourceDatabaseId,
+          created.id,
+        ),
+        undefined,
+        result.securityRevision,
+        {
+          expectedData: baseline,
+          recordMetadataMode: "adopt",
+          browserSessionsTransfer: options.browserSessionsTransfer,
+        },
+      );
+    }
     return {
       ...created,
       isEncrypted: true,
@@ -3693,11 +4156,17 @@ export class DatabaseManager {
       protectionTarget: DatabaseProtectionTarget;
       confirmDeviceBoundOnly?: boolean;
       assertCurrent?: () => void;
+      browserSessionsPassword?: string;
     },
   ): Promise<ConnectionDatabase> {
     // Freeze caller-owned choices before any awaits (including password policy
     // and attachment validation). Later edits cannot change an approved pull.
-    const { name, confirmDeviceBoundOnly, assertCurrent } = options;
+    const {
+      name,
+      confirmDeviceBoundOnly,
+      assertCurrent,
+      browserSessionsPassword,
+    } = options;
     const target = structuredClone(options.protectionTarget);
     const hasControlCharacters = (text: string) =>
       Array.from(text).some((character) => {
@@ -3767,6 +4236,10 @@ export class DatabaseManager {
       );
     const archive = await normalizeFullDatabaseArchive(value);
     const id = archive.collection.id;
+    const transfer = this.archiveBrowserSessionTransfer(
+      archive,
+      browserSessionsPassword,
+    );
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id))
       throw new FullDatabaseArchiveError("format");
     const epoch = this.captureDatabaseEpoch(id);
@@ -3846,6 +4319,7 @@ export class DatabaseManager {
           data: fullDatabaseArchiveData(archive),
           sourceDatabaseId: id,
           confirmDeviceBoundOnly,
+          ...(transfer ? { browserSessionsTransfer: transfer } : {}),
         },
       );
       protectedBodyReady = true;
@@ -3974,6 +4448,14 @@ export class DatabaseManager {
           data: fullDatabaseArchiveData(archive),
           sourceDatabaseId: archive.collection.id,
           confirmDeviceBoundOnly: options.confirmDeviceBoundOnly,
+          ...(archive.browserSessionsTransfer
+            ? {
+                browserSessionsTransfer: this.archiveBrowserSessionTransfer(
+                  archive,
+                  options.importPassword,
+                )!,
+              }
+            : {}),
         },
       );
       const epoch = this.captureDatabaseEpoch(created.id);

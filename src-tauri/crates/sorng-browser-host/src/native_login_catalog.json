@@ -1,0 +1,682 @@
+{
+  "profiles": {
+    "amazon-shopping": {
+      "capability": "manual"
+    },
+    "aws-console": {
+      "capability": "manual"
+    },
+    "aws-console-china": {
+      "capability": "manual"
+    },
+    "aws-console-govcloud": {
+      "capability": "manual"
+    },
+    "youtube-studio": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-ad-manager": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-adsense": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-forms": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-gemini": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-workspace-admin": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-play-store": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-developers": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-play-console": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "cegid-primavera": {
+      "capability": "manual"
+    },
+    "autoridade-tributaria": {
+      "capability": "manual"
+    },
+    "seguranca-social-direta": {
+      "capability": "manual"
+    },
+    "irn-online": {
+      "capability": "manual"
+    },
+    "e-redes": {
+      "capability": "manual"
+    },
+    "meo-particulares": {
+      "capability": "manual"
+    },
+    "meo-empresas": {
+      "capability": "manual"
+    },
+    "vodafone-portugal": {
+      "capability": "manual"
+    },
+    "digi-portugal": {
+      "capability": "manual"
+    },
+    "imt-online": {
+      "capability": "manual"
+    },
+    "via-verde": {
+      "capability": "manual"
+    },
+    "uzo-particulares": {
+      "capability": "manual"
+    },
+    "apple-account": {
+      "capability": "manual"
+    },
+    "apple-developer": {
+      "capability": "manual"
+    },
+    "register-com": {
+      "capability": "manual"
+    },
+    "no-ip": {
+      "capability": "manual"
+    },
+    "microsoft-account": {
+      "capability": "manual"
+    },
+    "microsoft-developer": {
+      "capability": "manual"
+    },
+    "hpe-support": {
+      "capability": "manual"
+    },
+    "notion": {
+      "capability": "manual"
+    },
+    "zulip": {
+      "capability": "manual"
+    },
+    "arlo": {
+      "capability": "manual"
+    },
+    "uptime-kuma": {
+      "capability": "manual"
+    },
+    "steam": {
+      "capability": "manual"
+    },
+    "autodesk": {
+      "capability": "manual"
+    },
+    "kimi": {
+      "capability": "manual"
+    },
+    "lovable": {
+      "capability": "manual"
+    },
+    "npm": {
+      "capability": "manual"
+    },
+    "pypi": {
+      "capability": "manual"
+    },
+    "reddit": {
+      "capability": "manual"
+    },
+    "tesla": {
+      "capability": "manual"
+    },
+    "ebay": {
+      "capability": "manual"
+    },
+    "x": {
+      "capability": "manual"
+    },
+    "wazuh": {
+      "capability": "manual"
+    },
+    "zabbix": {
+      "capability": "manual"
+    },
+    "opnsense": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "body.page-login .login-modal-content form#iform[name=\"iform\"][method=\"post\" i]:not([target]) input#usernamefld[name=\"usernamefld\"][type=\"text\"]:enabled:not([readonly])",
+        "passwordSelector": "body.page-login .login-modal-content form#iform[name=\"iform\"][method=\"post\" i]:not([target]) input#passwordfld[name=\"passwordfld\"][type=\"password\"]:enabled:not([readonly])",
+        "submitSelector": "body.page-login .login-modal-content form#iform[name=\"iform\"][method=\"post\" i]:not([target]) button[type=\"submit\"][name=\"login\"][value=\"1\"]:enabled:not([formaction]):not([formmethod]):not([formtarget])"
+      }
+    },
+    "vodafone-smart-router-3": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "#mainbody #logindiv input#username[type=\"text\"]:enabled:not([readonly])",
+        "passwordSelector": "#mainbody #logindiv input#userpwd[type=\"password\"]:enabled:not([readonly])",
+        "submitSelector": "#mainbody #logindiv input#loginbtn[type=\"button\"][name=\"login\"]:enabled"
+      }
+    },
+    "bitwarden-self-hosted": {
+      "capability": "known-form",
+      "loginFlow": "bitwarden"
+    },
+    "vaultwarden": {
+      "capability": "known-form",
+      "loginFlow": "bitwarden"
+    },
+    "nextcloud": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form.login-form[name=\"login\"] input#user[name=\"user\"]",
+        "passwordSelector": "form.login-form[name=\"login\"] input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form.login-form[name=\"login\"] button[type=\"submit\"]"
+      }
+    },
+    "namecheap": {
+      "capability": "manual"
+    },
+    "network-solutions": {
+      "capability": "manual"
+    },
+    "time4vps": {
+      "capability": "manual"
+    },
+    "contabo": {
+      "capability": "manual"
+    },
+    "chatgpt": {
+      "capability": "known-form",
+      "loginFlow": "chatgpt"
+    },
+    "claude": {
+      "capability": "known-form",
+      "loginFlow": "claude",
+      "emailOnly": true
+    },
+    "openrouter": {
+      "capability": "manual"
+    },
+    "gitlab-com": {
+      "capability": "manual"
+    },
+    "gitlab-self-hosted": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form#sign-in-form input[name=\"user[login]\"][autocomplete=\"username\"]",
+        "passwordSelector": "form#sign-in-form input[name=\"user[password]\"][type=\"password\"]",
+        "submitSelector": "form#sign-in-form button[data-testid=\"sign-in-button\"][type=\"submit\"]"
+      }
+    },
+    "google-account": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-cloud-console": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-analytics": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-tag-manager": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-business-profile": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-search-console": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "google-ads": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "facebook": {
+      "capability": "manual"
+    },
+    "instagram": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form input[name=\"username\"]",
+        "passwordSelector": "form input[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form button[type=\"submit\"]"
+      }
+    },
+    "linkedin": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "input#username[name=\"session_key\"], input[type=\"email\"][autocomplete=\"username\"]",
+        "passwordSelector": "input#password[name=\"session_password\"][type=\"password\"], input[type=\"password\"][autocomplete=\"current-password\"]",
+        "submitSelector": "button[type=\"submit\"][data-litms-control-urn=\"login-submit\"], button[type=\"button\"]"
+      }
+    },
+    "hpe-greenlake": {
+      "capability": "manual"
+    },
+    "adobe": {
+      "capability": "manual"
+    },
+    "youtube": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "zoom": {
+      "capability": "manual"
+    },
+    "icloud": {
+      "capability": "manual"
+    },
+    "ovhcloud": {
+      "capability": "manual"
+    },
+    "ptisp": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": ".login-form-page #classic-card form input[type=\"email\"][autocomplete=\"email\"]",
+        "passwordSelector": ".login-form-page #classic-card form input[type=\"password\"][autocomplete=\"password\"]",
+        "submitSelector": ".login-form-page #classic-card form button[type=\"submit\"]"
+      }
+    },
+    "marcaria": {
+      "capability": "manual"
+    },
+    "freedns": {
+      "capability": "manual"
+    },
+    "registro-br": {
+      "capability": "manual"
+    },
+    "sqlpad": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form:has(input[name=\"password\"][type=\"password\"]) input[name=\"email\"][type=\"email\"]",
+        "passwordSelector": "form:has(input[name=\"email\"][type=\"email\"]) input[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form:has(input[name=\"email\"][type=\"email\"]):has(input[name=\"password\"][type=\"password\"]) button[type=\"submit\"]"
+      }
+    },
+    "eaton-ups": {
+      "capability": "manual"
+    },
+    "gmail": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "outlook-online": {
+      "capability": "manual"
+    },
+    "exchange-owa": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form[name=\"logonForm\"][method=\"post\" i] input#username[name=\"username\"]",
+        "passwordSelector": "form[name=\"logonForm\"][method=\"post\" i] input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form[name=\"logonForm\"][method=\"post\" i] .signinbutton[role=\"button\"]"
+      }
+    },
+    "ddwrt": {
+      "capability": "http-auth"
+    },
+    "freshtomato": {
+      "capability": "http-auth"
+    },
+    "adobe-admin-console": {
+      "capability": "known-form",
+      "loginFlow": "adobe"
+    },
+    "canva": {
+      "capability": "generic-form"
+    },
+    "matomo": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form.loginForm__form input#login_form_login[name=\"form_login\"]",
+        "passwordSelector": "form.loginForm__form input#login_form_password[name=\"form_password\"][type=\"password\"]",
+        "submitSelector": "form.loginForm__form input#login_form_submit[type=\"submit\"]"
+      }
+    },
+    "plausible": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form[action=\"/login\"] input[type=\"email\"][autocomplete=\"username\"]",
+        "passwordSelector": "form[action=\"/login\"] input#current-password[type=\"password\"][autocomplete=\"current-password\"]",
+        "submitSelector": "form[action=\"/login\"] button[type=\"submit\"]"
+      }
+    },
+    "odoo": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form.oe_login_form[action=\"/web/login\"] input#login[name=\"login\"]",
+        "passwordSelector": "form.oe_login_form[action=\"/web/login\"] input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form.oe_login_form[action=\"/web/login\"] button.btn-primary[type=\"submit\"]:not([name])"
+      }
+    },
+    "ghost": {
+      "capability": "manual"
+    },
+    "strapi": {
+      "capability": "manual"
+    },
+    "phpmyadmin": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form#login_form[name=\"login_form\"] input#input_username[name=\"pma_username\"]",
+        "passwordSelector": "form#login_form[name=\"login_form\"] input#input_password[name=\"pma_password\"][type=\"password\"]",
+        "submitSelector": "form#login_form[name=\"login_form\"] input#input_go[type=\"submit\"]"
+      }
+    },
+    "freepbx": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": ".ui-dialog form[id=\"loginform\"] input[name=\"username\"][type=\"text\"]",
+        "passwordSelector": ".ui-dialog form[id=\"loginform\"] input[name=\"password\"][type=\"password\"]",
+        "submitSelector": ".ui-dialog form[id=\"loginform\"] button[id=\"customContinue\"][type=\"button\"]"
+      }
+    },
+    "porkbun": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form#loginForm input#loginUsername[name=\"loginUsername\"][autocomplete=\"username\"]",
+        "passwordSelector": "form#loginForm input#loginPassword[name=\"loginPassword\"][type=\"password\"]",
+        "submitSelector": "#accountLoginButtonContainer button#accountLoginButton"
+      }
+    },
+    "generic-form": {
+      "capability": "generic-form"
+    },
+    "http-basic": {
+      "capability": "http-auth"
+    },
+    "http-digest": {
+      "capability": "http-auth"
+    },
+    "synology-dsm": {
+      "capability": "known-form",
+      "loginFlow": "synology"
+    },
+    "custom": {
+      "capability": "custom-form"
+    },
+    "portainer": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "input#username",
+        "passwordSelector": "input#password",
+        "submitSelector": "button[type=submit]"
+      }
+    },
+    "nginxProxyMgr": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "input[name=\"email\"], input[name=\"identity\"]",
+        "passwordSelector": "input[name=\"password\"], input[name=\"secret\"]",
+        "submitSelector": "button[type=\"submit\"]"
+      }
+    },
+    "proxmox": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "input[name=\"username\"]",
+        "passwordSelector": "input[name=\"password\"]",
+        "submitSelector": "div.x-window a.x-btn[role=\"button\"]"
+      }
+    },
+    "pfsense": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "input#usernamefld",
+        "passwordSelector": "input#passwordfld",
+        "submitSelector": "input[type=\"submit\"][name=\"login\"]"
+      }
+    },
+    "cloudflare": {
+      "capability": "known-form",
+      "loginFlow": "cloudflare"
+    },
+    "tacticalrmm": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form input[autocomplete=\"username\"]",
+        "passwordSelector": "form input[autocomplete=\"current-password\"][type=\"password\"]",
+        "submitSelector": "form:has(input[autocomplete=\"username\"]):has(input[autocomplete=\"current-password\"]) button[type=\"submit\"]"
+      }
+    },
+    "meshcentral": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "#loginpanel form input#username[name=\"username\"]",
+        "passwordSelector": "#loginpanel form input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "#loginpanel form input#loginButton[type=\"submit\"]"
+      }
+    },
+    "guacamole": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form.login-form input[name=\"username\"]",
+        "passwordSelector": "form.login-form input[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form.login-form input.login[type=\"submit\"][name=\"login\"]"
+      }
+    },
+    "github": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form[action=\"/session\"] input#login_field[name=\"login\"]",
+        "passwordSelector": "form[action=\"/session\"] input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form[action=\"/session\"] input[name=\"commit\"][type=\"submit\"]"
+      }
+    },
+    "gitea": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form[action$=\"/user/login\"] input#user_name[name=\"user_name\"]",
+        "passwordSelector": "form[action$=\"/user/login\"] input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form[action$=\"/user/login\"] button.ui.primary"
+      }
+    },
+    "drone-ci": {
+      "capability": "manual"
+    },
+    "exchange-ecp": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form[name=\"logonForm\"] input#username[name=\"username\"]",
+        "passwordSelector": "form[name=\"logonForm\"] input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form[name=\"logonForm\"] .signinbutton[role=\"button\"]"
+      }
+    },
+    "brevo": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form input#email[name=\"email\"]",
+        "passwordSelector": "form input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form:has(input#email):has(input#password) button[data-testid=\"submit-button\"][type=\"button\"]"
+      }
+    },
+    "rdweb": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form#FrmLogin[name=\"FrmLogin\"][method=\"post\" i]:is([action^=\"login.aspx\" i],[action*=\"/login.aspx\" i]):not([target]):not(:has(input[type=\"password\"]:not(#UserPass),input[autocomplete=\"one-time-code\"],input[name*=\"otp\" i],input[name*=\"captcha\" i],iframe)) input#DomainUserName[name=\"DomainUserName\"][type=\"text\"]:not(:disabled):not([readonly])",
+        "passwordSelector": "form#FrmLogin[name=\"FrmLogin\"][method=\"post\" i]:is([action^=\"login.aspx\" i],[action*=\"/login.aspx\" i]):not([target]):not(:has(input[type=\"password\"]:not(#UserPass),input[autocomplete=\"one-time-code\"],input[name*=\"otp\" i],input[name*=\"captcha\" i],iframe)) input#UserPass[name=\"UserPass\"][type=\"password\"]:not(:disabled):not([readonly])",
+        "submitSelector": "form#FrmLogin[name=\"FrmLogin\"][method=\"post\" i]:is([action^=\"login.aspx\" i],[action*=\"/login.aspx\" i]):not([target]):not(:has(input[type=\"password\"]:not(#UserPass),input[autocomplete=\"one-time-code\"],input[name*=\"otp\" i],input[name*=\"captcha\" i],iframe)) input#btnSignIn[type=\"submit\"]:not([formaction]):not([formmethod]):not([formtarget]):not([form]):not(:disabled)"
+      }
+    },
+    "wordpress": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form#loginform input#user_login[name=\"log\"]",
+        "passwordSelector": "form#loginform input#user_pass[name=\"pwd\"][type=\"password\"]",
+        "submitSelector": "form#loginform input#wp-submit[type=\"submit\"]"
+      }
+    },
+    "joomla": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form#form-login input#mod-login-username[name=\"username\"]",
+        "passwordSelector": "form#form-login input#mod-login-password[name=\"passwd\"][type=\"password\"]",
+        "submitSelector": "form#form-login button#btn-login-submit[type=\"submit\"], form#form-login button.login-button:not([type]), form#form-login button.login-button[type=\"submit\"]"
+      }
+    },
+    "drupal": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form[data-drupal-selector=\"user-login-form\"] input[name=\"name\"]",
+        "passwordSelector": "form[data-drupal-selector=\"user-login-form\"] input[name=\"pass\"][type=\"password\"]",
+        "submitSelector": "form[data-drupal-selector=\"user-login-form\"] input[type=\"submit\"]"
+      }
+    },
+    "payload-cms": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form.login__form input[name=\"email\"], form.login__form input[name=\"username\"]",
+        "passwordSelector": "form.login__form input[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form.login__form button[type=\"submit\"]"
+      }
+    },
+    "ilo": {
+      "capability": "generic-form"
+    },
+    "webmin": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form[action$=\"/session_login.cgi\"] input[name=\"user\"]",
+        "passwordSelector": "form[action$=\"/session_login.cgi\"] input[name=\"pass\"][type=\"password\"]",
+        "submitSelector": "form[action$=\"/session_login.cgi\"] button[data-submit=\"login\"], form[action$=\"/session_login.cgi\"] input[type=\"submit\"]"
+      }
+    },
+    "idrac": {
+      "capability": "generic-form"
+    },
+    "lenovo": {
+      "capability": "generic-form"
+    },
+    "supermicro": {
+      "capability": "generic-form"
+    },
+    "voip-phone": {
+      "capability": "known-form",
+      "loginFlow": "yealink",
+      "selectors": {
+        "usernameSelector": "#idUsername, input[name=\"username\"]",
+        "passwordSelector": "#idPassword, input[name=\"pwd\"][type=\"password\"]",
+        "submitSelector": "#idConfirm, input[type=\"submit\"][name=\"login\"]"
+      }
+    },
+    "netbox": {
+      "capability": "generic-form"
+    },
+    "vmware": {
+      "capability": "generic-form"
+    },
+    "cpanel": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form#login_form input#user[name=\"user\"]",
+        "passwordSelector": "form#login_form input#pass[name=\"pass\"][type=\"password\"]",
+        "submitSelector": "form#login_form button#login_submit[name=\"login\"][type=\"submit\"]"
+      }
+    },
+    "draytek": {
+      "capability": "generic-form"
+    },
+    "grafana": {
+      "capability": "generic-form"
+    },
+    "budibase": {
+      "capability": "generic-form"
+    },
+    "jira": {
+      "capability": "generic-form"
+    },
+    "osticket": {
+      "capability": "generic-form"
+    },
+    "mailcow": {
+      "capability": "generic-form"
+    },
+    "haproxy": {
+      "capability": "http-auth"
+    },
+    "traefik": {
+      "capability": "http-auth"
+    },
+    "prometheus": {
+      "capability": "http-auth"
+    },
+    "lxd": {
+      "capability": "manual"
+    },
+    "exchange": {
+      "capability": "manual"
+    },
+    "gdrive": {
+      "capability": "known-form",
+      "loginFlow": "google"
+    },
+    "vmwareDesktop": {
+      "capability": "none"
+    },
+    "ansible": {
+      "capability": "none"
+    },
+    "nginx": {
+      "capability": "none"
+    },
+    "caddy": {
+      "capability": "none"
+    },
+    "php": {
+      "capability": "none"
+    },
+    "mssql": {
+      "capability": "none"
+    },
+    "mail": {
+      "capability": "none"
+    },
+    "keepass": {
+      "capability": "none"
+    }
+  },
+  "joomla": {
+    "3": {
+      "usernameSelector": "form#form-login input#mod-login-username[name=\"username\"]",
+      "passwordSelector": "form#form-login input#mod-login-password[name=\"passwd\"][type=\"password\"]",
+      "submitSelector": "form#form-login button.login-button:not([type]), form#form-login button.login-button[type=\"submit\"]"
+    },
+    "4": {
+      "usernameSelector": "form#form-login input#mod-login-username[name=\"username\"]",
+      "passwordSelector": "form#form-login input#mod-login-password[name=\"passwd\"][type=\"password\"]",
+      "submitSelector": "form#form-login button#btn-login-submit[type=\"submit\"]"
+    },
+    "5": {
+      "usernameSelector": "form#form-login input#mod-login-username[name=\"username\"]",
+      "passwordSelector": "form#form-login input#mod-login-password[name=\"passwd\"][type=\"password\"]",
+      "submitSelector": "form#form-login button#btn-login-submit[type=\"submit\"]"
+    },
+    "6": {
+      "usernameSelector": "form#form-login input#mod-login-username[name=\"username\"]",
+      "passwordSelector": "form#form-login input#mod-login-password[name=\"passwd\"][type=\"password\"]",
+      "submitSelector": "form#form-login button#btn-login-submit[type=\"submit\"]"
+    },
+    "auto": {
+      "usernameSelector": "form#form-login input#mod-login-username[name=\"username\"]",
+      "passwordSelector": "form#form-login input#mod-login-password[name=\"passwd\"][type=\"password\"]",
+      "submitSelector": "form#form-login button#btn-login-submit[type=\"submit\"], form#form-login button.login-button:not([type]), form#form-login button.login-button[type=\"submit\"]"
+    }
+  }
+}

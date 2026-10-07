@@ -121,6 +121,13 @@ beforeEach(async () => {
       if (command === failCommand) throw new Error("PRIVATE_NATIVE_FAILURE");
       if (command === "database_protection_capabilities")
         return clone(capabilities);
+      if (command === "database_browser_sessions_describe")
+        return clone(
+          privateData.get(args.databaseId)?.browserSessions ?? {
+            version: 1,
+            records: [],
+          },
+        );
       if (command === "encryption_validate_new_password") {
         if (args.password.length < 12)
           throw new Error("Use at least 12 characters.");
@@ -210,6 +217,65 @@ beforeEach(async () => {
 afterEach(() => DatabaseManager.resetInstance());
 
 describe("remote-only cloud database import", () => {
+  it.each([true, false])(
+    "passes the cloud password/capsule to one atomic import after empty enrollment (commit=%s)",
+    async (commit) => {
+      archive.browserSessions = {
+        version: 1,
+        records: [{ connectionId: "host", revision: "a".repeat(64) }],
+      };
+      archive.browserSessionsTransfer = {
+        version: 1,
+        ciphertext: "SYNTHETIC_REMOTE_CAPSULE",
+      };
+      const before = bridge.invoke.getMockImplementation()!;
+      bridge.invoke.mockImplementation(async (command, args) => {
+        if (command === "database_browser_sessions_import") {
+          expect(args.password).toBe("remote-sync-password");
+          expect(args.transfer).toEqual(archive.browserSessionsTransfer);
+          expect(args.expected).toEqual({ version: 1, records: [] });
+          expect(args.expectedData).toEqual(privateData.get(collection.id));
+          expect(args.expectedData.connections).toEqual([]);
+          expect(args.selected).toEqual(archive.browserSessions);
+          if (!commit) throw new Error("SYNTHETIC_AUTHENTICATION_FAILURE");
+          privateData.set(collection.id, clone(args.data));
+          return {
+            committed: true,
+            cleanupPending: false,
+            warnings: [],
+            securityRevision: "local-security-revision",
+          };
+        }
+        return before(command, args);
+      });
+      const pending = pull({ browserSessionsPassword: "remote-sync-password" });
+      if (commit) {
+        expect((await pending).id).toBe(collection.id);
+        expect(privateData.get(collection.id)!.browserSessions).toEqual(
+          archive.browserSessions,
+        );
+      } else {
+        await expect(pending).rejects.toBeInstanceOf(
+          FullDatabaseRestoreIncompleteError,
+        );
+        expect(privateData.get(collection.id)!.connections).toEqual([]);
+        expect(
+          bridge.invoke.mock.calls.some(
+            ([cmd]) => cmd === "trust_import_database",
+          ),
+        ).toBe(false);
+      }
+      const commands = bridge.invoke.mock.calls.map(([cmd]) => cmd);
+      expect(
+        commands.filter((cmd) => cmd === "database_browser_sessions_import"),
+      ).toHaveLength(1);
+      expect(commands).not.toContain("database_protection_save");
+      expect(commands.indexOf("database_protection_change")).toBeLessThan(
+        commands.indexOf("database_browser_sessions_import"),
+      );
+    },
+  );
+
   it("retains sync identity, complete contents, references and remote record history", async () => {
     const original = clone(archive);
     const created = await pull({ name: "  Local display name  " });

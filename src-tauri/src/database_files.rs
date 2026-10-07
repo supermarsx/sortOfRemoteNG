@@ -610,6 +610,9 @@ fn validate_index_snapshot(
 }
 
 fn validate_data_shape(data: &serde_json::Value, encrypted: bool) -> Result<(), String> {
+    if !encrypted && data.get("_nativeBrowserSessions").is_some() {
+        return Err("Native browser sessions require managed database encryption".into());
+    }
     let valid = if encrypted {
         data.as_str().is_some_and(|value| !value.is_empty())
     } else {
@@ -1210,8 +1213,10 @@ pub(crate) async fn managed_snapshot(
     Ok(ManagedSnapshot { index, row, data })
 }
 
+/// Prepare ciphertext asynchronously, then enter the exact native owner fence
+/// for synchronous atomic publication. No session mutex is held across await.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn managed_commit(
+pub(crate) async fn managed_commit_guarded(
     profile: &Path,
     state: &EncryptionState,
     id: &str,
@@ -1219,6 +1224,9 @@ pub(crate) async fn managed_commit(
     expected_data: &serde_json::Value,
     data: &serde_json::Value,
     new_revision: &str,
+    publish: impl FnOnce(
+        &mut dyn FnMut() -> Result<database_transaction::TransactionOutcome, String>,
+    ) -> Result<database_transaction::TransactionOutcome, String>,
 ) -> Result<database_transaction::TransactionOutcome, String> {
     let mut current = managed_snapshot(profile, state, id).await?;
     if security_revision(&current.row) != expected_revision || current.data != *expected_data {
@@ -1272,7 +1280,7 @@ pub(crate) async fn managed_commit(
         configured,
     )
     .await?;
-    database_transaction::commit(&dir, id, &payload, &index)
+    publish(&mut || database_transaction::commit(&dir, id, &payload, &index))
 }
 
 /// Strict deletion of payload generations, trust and finally the latest index

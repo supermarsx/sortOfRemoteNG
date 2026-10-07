@@ -14,11 +14,13 @@ import SynologyOptions from "./SynologyOptions";
 import { SessionQuickActionsSection } from "./SessionQuickActionsSection";
 import ProxyPolicySection from "./httpOptions/ProxyPolicySection";
 import FormAutomationSection from "./httpOptions/FormAutomationSection";
+import BrowserSessionSection from "./httpOptions/BrowserSessionSection";
 
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   formData,
   setFormData,
   sections,
+  retentionCapabilities,
 }) => {
   const mgr = useHTTPOptions(formData, setFormData);
   const shows = (section: NonNullable<HTTPOptionsProps["sections"]>[number]) =>
@@ -56,6 +58,10 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
       {shows("advanced") && (
         <>
           <ProxyPolicySection mgr={mgr} />
+          <BrowserSessionSection
+            mgr={mgr}
+            retentionCapabilities={retentionCapabilities}
+          />
           <FormAutomationSection mgr={mgr} />
           <SessionQuickActionsSection
             protocol="http"

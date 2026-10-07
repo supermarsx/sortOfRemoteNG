@@ -78,9 +78,9 @@ concurrency:
 
 env:
   RELEASE_FEATURES_BUNDLED: >-
-    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser
   RELEASE_FEATURES_WINDOWS: >-
-    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser
   FLATPAK_APP_ID: com.sortofremote.ng
   FLATPAK_BUILDER_PACKAGE: 1.4.2-1build2
   FLATPAK_BUILDER_VERSION: 1.4.2
@@ -596,7 +596,7 @@ jobs:
           libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
           librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev
           libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev patchelf
-          nasm rpm
+          nasm rpm libnss3-dev libgbm-dev libx11-dev libxcb1-dev
 
       - name: Install macOS native build prerequisites
         if: matrix.platform == 'macos'
@@ -604,6 +604,32 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Install CEF archive extraction Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - name: Acquire reviewed patched CEF runtime
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, mkdir } from 'node:fs/promises';
+          import path from 'node:path';
+          import { ensurePublishedRuntime } from './scripts/lib/browser-runtime-bootstrap.mjs';
+          import { resolveLocalRuntime } from './scripts/lib/browser-local-runtime.mjs';
+          import { validateBuildHost } from './scripts/browser-app-build.mjs';
+          const target = process.env.RUST_TARGET;
+          const acquisition = { cef: true, mode: 'build', target, download: true };
+          validateBuildHost(acquisition);
+          await ensurePublishedRuntime(acquisition);
+          resolveLocalRuntime(acquisition);
+          const output = path.resolve('.artifacts/cef-release', target);
+          await mkdir(path.dirname(output), { recursive: true });
+          await appendFile(process.env.GITHUB_ENV, `SORNG_CEF_OUTPUT=${output}\nSORNG_CEF_PUBLIC_TARGET_DIR=${path.join(output, 'target')}\nSORNG_CEF_NATIVE_PREPARED=1\n`);
+          NODE
 
       - name: Stage Windows dynamic native runtime
         if: matrix.platform == 'windows'
@@ -1100,6 +1126,71 @@ jobs:
           --heartbeat-seconds 300
           --hard-timeout-minutes 285
 
+      - name: Sign complete Windows CEF payload and rebundle
+        if: matrix.platform == 'windows' && steps.windows_signing.outputs.thumbprint != ''
+        shell: pwsh
+        env:
+          WINDOWS_CERT_THUMBPRINT: ${{ steps.windows_signing.outputs.thumbprint }}
+          WINDOWS_SDK_ARCH: ${{ matrix.windows_sdk_arch }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $plan = Get-Content -Raw -LiteralPath (Join-Path $env:SORNG_CEF_OUTPUT 'plan.json') | ConvertFrom-Json
+          $build = Get-Content -Raw -LiteralPath (Join-Path $env:SORNG_CEF_OUTPUT 'build.json') | ConvertFrom-Json
+          if ($plan.target -ne $env:RUST_TARGET -or $build.target -ne $env:RUST_TARGET) { throw 'CEF target mismatch' }
+          $windowsKits = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $signtool = (Get-ChildItem "$windowsKits\*\$env:WINDOWS_SDK_ARCH\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $signtool) { throw 'signtool.exe was not found' }
+          # Sign resource-map inputs and unpacked output before final installers.
+          foreach ($root in @($plan.payload, $build.output)) {
+            foreach ($file in (Get-ChildItem -LiteralPath $root -File | Where-Object { $_.Extension -in '.exe', '.dll' })) {
+              & $signtool sign /sha1 $env:WINDOWS_CERT_THUMBPRINT /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $file.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($file.Name)" }
+              & $signtool verify /pa /tw $file.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $($file.Name)" }
+            }
+          }
+          $env:CARGO_TARGET_DIR = $plan.publicTarget
+          node node_modules/@tauri-apps/cli/tauri.js bundle --config $build.bundleConfig --target $env:RUST_TARGET --bundles msi,nsis --features $env:RELEASE_FEATURES_WINDOWS
+          if ($LASTEXITCODE -ne 0) { throw 'Signed CEF installer rebundle failed' }
+
+      - name: Collect isolated CEF release output
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { cp, mkdir, readFile, readdir, stat } from 'node:fs/promises';
+          import path from 'node:path';
+          import { packageManifest } from './scripts/browser-runtime-package.mjs';
+          const root = path.resolve(process.env.SORNG_CEF_OUTPUT);
+          const plan = JSON.parse(await readFile(path.join(root, 'plan.json'), 'utf8'));
+          const build = JSON.parse(await readFile(path.join(root, 'build.json'), 'utf8'));
+          const target = process.env.RUST_TARGET;
+          const expected = path.join(root, 'target', target, 'release');
+          if (plan.target !== target || build.target !== target || path.resolve(plan.publicTarget) !== path.join(root, 'target') || path.resolve(build.output) !== expected) throw new Error('CEF output contract mismatch');
+          if (!(await stat(path.join(expected, 'bundle'))).isDirectory()) throw new Error('CEF bundles missing');
+          if (plan.platform === 'macos') {
+            const macos = path.join(expected, 'bundle/macos');
+            const apps = (await readdir(macos)).filter((name) => name.endsWith('.app'));
+            if (apps.length !== 1) throw new Error('Expected one CEF macOS app bundle');
+            const app = path.join(macos, apps[0]);
+            const manifest = packageManifest(target, plan.appName);
+            for (const file of [...manifest.applicationFiles, ...manifest.runtimeFiles.map((file) => manifest.bundlePrefix + file)]) {
+              if (!(await stat(path.join(app, file))).isFile()) throw new Error(`Missing macOS CEF closure member: ${file}`);
+            }
+          }
+          const destination = path.resolve('src-tauri/target', target, 'release');
+          await mkdir(destination, { recursive: true });
+          // Preserve framework symlinks and modes; refuse stale output collisions.
+          for (const name of await readdir(expected)) {
+            if (name === '.cargo-lock') continue;
+            await cp(path.join(expected, name), path.join(destination, name), { recursive: true, dereference: false, verbatimSymlinks: true, force: false, errorOnExist: true });
+          }
+          NODE
+
       - name: Upload native build diagnostics
         if: always() && (matrix.platform == 'windows' || matrix.platform == 'linux')
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -1185,7 +1276,8 @@ jobs:
             }
           }
 
-          $sourceExecutable = "src-tauri/target/$env:RUST_TARGET/release/app.exe"
+          $cefPlan = Get-Content -LiteralPath (Join-Path $env:SORNG_CEF_OUTPUT "plan.json") -Raw | ConvertFrom-Json
+          $sourceExecutable = "src-tauri/target/$env:RUST_TARGET/release/$($cefPlan.appName).exe"
           if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
             throw "Windows release executable was not found at $sourceExecutable."
           }
@@ -1209,7 +1301,10 @@ jobs:
             ).FullName
           }
           if (-not $dumpbin) { throw "dumpbin.exe was not found for $env:WINDOWS_SDK_ARCH." }
-          $imports = @(& $dumpbin /DEPENDENTS $sourceExecutable 2>&1)
+          # app.exe is the CEF bootstrap; Rust hard imports live in its paired DLL.
+          $cefPlan = Get-Content -Raw -LiteralPath (Join-Path $env:SORNG_CEF_OUTPUT 'plan.json') | ConvertFrom-Json
+          $applicationDll = Join-Path (Split-Path -Parent $sourceExecutable) "$($cefPlan.appName).dll"
+          $imports = @(& $dumpbin /DEPENDENTS $applicationDll 2>&1)
           if ($LASTEXITCODE -ne 0) {
             $imports | ForEach-Object { Write-Host $_ }
             throw "dumpbin failed to inspect app.exe imports."
@@ -1377,7 +1472,8 @@ jobs:
 
           target_root=$(realpath -m "$GITHUB_WORKSPACE/src-tauri/target")
           release_root="$target_root/$RUST_TARGET/release"
-          executable="$release_root/$LINUX_PACKAGE_MAIN_BINARY"
+          launcher="$release_root/$LINUX_PACKAGE_MAIN_BINARY"
+          executable="$release_root/$LINUX_PACKAGE_MAIN_BINARY.bin"
           bundle="$release_root/bundle"
           payload="$GITHUB_WORKSPACE/.ci/flatpak-payload"
           preserved_bundles="$GITHUB_WORKSPACE/.ci/linux-native-bundles"
@@ -1402,10 +1498,10 @@ jobs:
             echo "::error::Linux release executable must have exactly one DT_NEEDED entry for libopenh264.so.8."
             exit 1
           fi
-          expected_runpath='$ORIGIN/../lib/sortOfRemoteNG'
+          expected_runpath='$ORIGIN'
           actual_runpath=$(printf '%s\n' "$executable_dynamic" |
             sed -n 's/.*(RUNPATH).*Library runpath: \[\([^]]*\)\].*/\1/p')
-          if [ "$actual_runpath" != "$expected_runpath" ]; then
+          if [[ ":$actual_runpath:" != *":$expected_runpath:"* ]]; then
             echo "::error::Linux release RUNPATH is '$actual_runpath'; expected '$expected_runpath'."
             exit 1
           fi
@@ -1434,7 +1530,10 @@ jobs:
           test "$locale_file_count" -gt 0
           test "$locale_file_count" -eq "$locale_total_file_count"
           mkdir -p "$payload/resources" "$payload/lib" "$preserved_bundles"
-          install -m 0755 "$executable" "$payload/sortOfRemoteNG"
+          install -m 0755 "$launcher" "$payload/sortOfRemoteNG"
+          # Preserve the complete CEF runtime beside the real ELF and helper.
+          cef_payload=$(node -e 'const fs=require("node:fs"),path=require("node:path"); console.log(JSON.parse(fs.readFileSync(path.join(process.env.SORNG_CEF_OUTPUT,"plan.json"))).payload)')
+          cp -a "$cef_payload/." "$payload/lib/"
           install -m 0755 "$openh264_source" "$payload/lib/libopenh264.so.8"
           cp -a "$opkssh_source" "$payload/resources/opkssh"
           cp -a "$locale_source" "$payload/resources/locales"
@@ -1649,6 +1748,22 @@ jobs:
             packaging/flatpak/com.sortofremote.ng.metainfo.xml
           canonical_manifest="$RUNNER_TEMP/sortofremoteng-flatpak-manifest.json"
           flatpak-builder --show-manifest "$FLATPAK_MANIFEST" > "$canonical_manifest"
+          # Extend the resolved recipe, leaving the checked-in recipe untouched.
+          CANONICAL_MANIFEST="$canonical_manifest" node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const file = process.env.CANONICAL_MANIFEST;
+          const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const module = manifest.modules.find((entry) => entry.name === 'sortofremoteng');
+          if (!module) throw new Error('Flatpak application module missing');
+          for (const source of module.sources) {
+            if (source.path) source.path = path.resolve(path.dirname(process.env.FLATPAK_MANIFEST), source.path);
+          }
+          module['build-commands'].push('cp -a lib/. /app/lib/sortOfRemoteNG/');
+          fs.writeFileSync(file, JSON.stringify(manifest, null, 2));
+          NODE
+          export FLATPAK_MANIFEST="$canonical_manifest"
+          echo "FLATPAK_MANIFEST=$canonical_manifest" >> "$GITHUB_ENV"
           jq -e \
             --arg app_id "$FLATPAK_APP_ID" \
             --arg runtime "$FLATPAK_RUNTIME_ID" \
@@ -1727,7 +1842,11 @@ jobs:
               test -s /app/bin/resources/native-runtime-licenses/openh264.txt
               locale_count=$(find /app/bin/resources/locales -maxdepth 1 -type f -name "*.json" | wc -l)
               test "$locale_count" -gt 0
-              ldd_output=$(ldd /app/bin/sortOfRemoteNG)
+              test -x /app/lib/sortOfRemoteNG/com.sortofremote.ng.bin
+              test -x /app/lib/sortOfRemoteNG/com.sortofremote.ng.helper
+              test -s /app/lib/sortOfRemoteNG/libcef.so
+              test -s /app/lib/sortOfRemoteNG/locales/en-US.pak
+              ldd_output=$(ldd /app/lib/sortOfRemoteNG/com.sortofremote.ng.bin)
               printf "%s\n" "$ldd_output"
               ! printf "%s\n" "$ldd_output" | grep -F "not found"
               test "$(printf "%s\n" "$ldd_output" | awk "\$1 == \"libopenh264.so.8\" && \$2 == \"=>\" { count += 1 } END { print count + 0 }")" -eq 1
@@ -1844,11 +1963,13 @@ jobs:
           $bundleDir = "src-tauri/target/$env:RUST_TARGET/release/bundle"
           $files = @(Get-ChildItem -Path $bundleDir -Recurse -Include *.msi,*.exe)
           if ($files.Count -eq 0) { throw "No Windows installers were produced." }
-          $portableExecutable = Get-Item -LiteralPath "src-tauri/target/$env:RUST_TARGET/release/app.exe"
+          $cefPlan = Get-Content -LiteralPath (Join-Path $env:SORNG_CEF_OUTPUT "plan.json") -Raw | ConvertFrom-Json
+          $portableExecutable = Get-Item -LiteralPath "src-tauri/target/$env:RUST_TARGET/release/$($cefPlan.appName).exe"
           $files += $portableExecutable
           $runtimeDlls = @(Get-ChildItem "src-tauri/resources/native-runtime/*.dll" -File)
           if ($runtimeDlls.Count -ne 4) { throw "Expected four signed native runtime DLLs." }
           $files += $runtimeDlls
+          $files += @(Get-ChildItem -LiteralPath (Split-Path -Parent $portableExecutable.FullName) -File | Where-Object { $_.Extension -in '.dll', '.exe' })
           $viewerExecutables = @(Get-ChildItem "src-tauri/crates/sorng-file-viewer-host/bundle" -Recurse -File -Filter sorng-file-viewer-host.exe)
           if ($viewerExecutables.Count -ne 1) { throw "Expected exactly one signed isolated viewer executable." }
           $files += $viewerExecutables
@@ -1920,7 +2041,11 @@ jobs:
             "windows-aarch64" { 0xAA64 }
             default { throw "Unsupported portable Windows artifact $env:ARTIFACT_ID." }
           }
-          $sourceExecutable = "src-tauri/target/$env:RUST_TARGET/release/app.exe"
+          $cefPlan = Get-Content -LiteralPath (Join-Path $env:SORNG_CEF_OUTPUT "plan.json") -Raw | ConvertFrom-Json
+          if (-not [string]::Equals($cefPlan.appName, "sortOfRemoteNG", [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Portable bootstrap stem must match its paired application DLL: $($cefPlan.appName)."
+          }
+          $sourceExecutable = "src-tauri/target/$env:RUST_TARGET/release/$($cefPlan.appName).exe"
           if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
             throw "Portable source executable was not found at $sourceExecutable."
           }
@@ -2023,6 +2148,14 @@ jobs:
           }
           New-Item -ItemType Directory -Path $portableRoot | Out-Null
           Copy-Item -LiteralPath $sourceExecutable -Destination (Join-Path $portableRoot "sortOfRemoteNG.exe")
+          $cefPlan = Get-Content -Raw -LiteralPath (Join-Path $env:SORNG_CEF_OUTPUT 'plan.json') | ConvertFrom-Json
+          $cefOutput = Split-Path -Parent $sourceExecutable
+          # Payload inventory includes the paired app DLL, CEF DLLs, .pak/.bin,
+          # locales, SwiftShader metadata and licenses, not just native DLLs.
+          foreach ($entry in (Get-ChildItem -LiteralPath $cefPlan.payload)) {
+            if ($entry.Name -eq "$($cefPlan.appName).exe") { continue }
+            Copy-Item -LiteralPath (Join-Path $cefOutput $entry.Name) -Destination (Join-Path $portableRoot $entry.Name) -Recurse
+          }
           New-Item -ItemType File -Path (Join-Path $portableRoot ".portable") | Out-Null
           foreach ($nativeDll in $nativeRuntimeFiles) {
             Copy-Item -LiteralPath $nativeDll.FullName -Destination (Join-Path $portableRoot $nativeDll.Name)
@@ -2038,14 +2171,12 @@ jobs:
           $portableBundleDir = "src-tauri/target/$env:RUST_TARGET/release/bundle/portable"
           New-Item -ItemType Directory -Path $portableBundleDir -Force | Out-Null
           $archive = Join-Path $portableBundleDir "sortOfRemoteNG_$($env:MACHINE_VERSION)_$($env:ARTIFACT_ID)-portable.zip"
-          $portableContents = @(
-            (Join-Path $portableRoot "sortOfRemoteNG.exe"),
-            (Join-Path $portableRoot ".portable"),
-            (Join-Path $portableRoot "resources")
-          )
-          $portableContents += @(
-            $expectedNativeDllNames | ForEach-Object { Join-Path $portableRoot $_ }
-          )
+          $expectedNativeDllNames = @(Get-ChildItem -LiteralPath $portableRoot -File -Filter *.dll | Select-Object -ExpandProperty Name)
+          foreach ($name in $expectedNativeDllNames) {
+            $expectedNativeRuntimeHashes[$name] = (Get-FileHash -LiteralPath (Join-Path $portableRoot $name) -Algorithm SHA256).Hash
+          }
+          $expectedPortableHashes = @(Get-RelativeFileHashes -Root $portableRoot)
+          $portableContents = @(Get-ChildItem -LiteralPath $portableRoot -Force | Select-Object -ExpandProperty FullName)
           Compress-Archive -LiteralPath $portableContents -DestinationPath $archive -CompressionLevel Optimal
 
           $verificationRoot = Join-Path $env:RUNNER_TEMP "sortOfRemoteNG-$($env:ARTIFACT_ID)-portable-verification"
@@ -2053,6 +2184,8 @@ jobs:
             throw "Refusing to replace unexpected portable verification path $verificationRoot."
           }
           Expand-Archive -LiteralPath $archive -DestinationPath $verificationRoot
+          $cefClosureDifference = @(Compare-Object -ReferenceObject $expectedPortableHashes -DifferenceObject @(Get-RelativeFileHashes -Root $verificationRoot))
+          if ($cefClosureDifference.Count -ne 0) { throw 'Portable CEF/application closure failed byte-for-byte verification' }
           $requiredPortableFiles = @("sortOfRemoteNG.exe", ".portable") + $expectedNativeDllNames
           foreach ($requiredFile in $requiredPortableFiles) {
             if (-not (Test-Path -LiteralPath (Join-Path $verificationRoot $requiredFile) -PathType Leaf)) {
@@ -2410,19 +2543,18 @@ jobs:
 
               verify_linux_openh264_payload() {
                 local root="$1" label="$2" identity_mode="${3:-exact}"
-                local library_path="${4:-$expected_openh264_path}"
-                local required_runpath="${5:-}"
-                local executable="$root$expected_binary_path"
-                local library="$root$library_path"
+                local launcher="$root$expected_binary_path"
+                local executable="$root/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/$LINUX_PACKAGE_MAIN_BINARY.bin"
+                local library="$root$expected_openh264_path"
                 local notice="$root$expected_openh264_notice_path"
                 local dynamic actual_runpath actual_notice_hash
                 local ldd_output resolved_library ldd_openh264_path
 
-                if [ -z "$required_runpath" ]; then
-                  required_runpath='$ORIGIN/../lib/sortOfRemoteNG'
-                fi
-
+                test -x "$launcher"
                 test -x "$executable"
+                test -x "$root/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/$LINUX_PACKAGE_MAIN_BINARY.helper"
+                test -s "$root/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/libcef.so"
+                test -s "$root/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/locales/en-US.pak"
                 test -s "$notice"
                 test "$(find "$(dirname "$library")" -maxdepth 1 -type f -name 'libopenh264.so.8' | wc -l | tr -d '[:space:]')" -eq 1
                 actual_notice_hash=$(sha256sum "$notice" | awk '{ print $1 }')
@@ -2435,8 +2567,8 @@ jobs:
                 actual_runpath=$(printf '%s\n' "$dynamic" |
                   sed -n 's/.*(RUNPATH).*Library runpath: \[\([^]]*\)\].*/\1/p')
                 printf '%s_openh264_executable_runpath=%s\n' "$label" "$actual_runpath"
-                require_equal "$label executable RUNPATH" \
-                  "$actual_runpath" "$required_runpath"
+                # The real ELF is co-located with CEF and OpenH264, behind a launcher.
+                [[ ":$actual_runpath:" == *':$ORIGIN:'* ]]
                 resolved_library=$(realpath "$library")
                 ldd_output=$(env -u LD_LIBRARY_PATH ldd "$executable")
                 printf '%s\n' "$ldd_output"
@@ -2592,12 +2724,10 @@ jobs:
               verify_linux_openh264_payload \
                 "$appimage_root" \
                 AppImage \
-                strip-safe \
-                "$appimage_runtime_openh264_path" \
-                '$ORIGIN/../lib'
+                strip-safe
               verify_linux_openh264_library_identity \
-                "$appimage_root$expected_openh264_path" \
-                "AppImage nested resource" \
+                "$appimage_root$appimage_runtime_openh264_path" \
+                "AppImage linuxdeploy copy" \
                 strip-safe
               test -d "$appimage_root$expected_resource_root"
               test -d "$appimage_root$expected_locale_root"

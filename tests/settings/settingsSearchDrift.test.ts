@@ -109,6 +109,7 @@ const DIR_TAB_MAP: Record<string, string> = {
   security: "security",
   sshTerminal: "sshTerminal",
   theme: "theme",
+  webBrowser: "webBrowser",
 };
 
 /** Relative POSIX path of every non-test source file under `sections/`. */

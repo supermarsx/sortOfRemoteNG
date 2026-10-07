@@ -83,6 +83,7 @@ function fixture(
   saved: Connection = structuredClone(source),
   isSaved = true,
   credentialVault?: DatabaseCredentialVaultApi,
+  effectivePolicy?: Connection["httpProxyPolicy"],
 ) {
   let databaseId = "db-a",
     epoch = 1;
@@ -121,10 +122,19 @@ function fixture(
   };
   h.context = context;
   h.manager = manager;
-  const initialProps = { connection: saved, session };
+  const initialProps: {
+    connection: Connection;
+    session: ConnectionSession;
+    effectivePolicy?: Connection["httpProxyPolicy"];
+  } = { connection: saved, session, effectivePolicy };
   const hook = renderHook(
     (props = initialProps) =>
-      useHttpRedirectTrust(props.session, props.connection),
+      useHttpRedirectTrust(
+        props.session,
+        props.connection,
+        props.connection.id,
+        props.effectivePolicy,
+      ),
     { initialProps },
   );
   return {
@@ -150,6 +160,138 @@ beforeEach(() => {
   clearRuntimeConnectionsForTests();
 });
 afterEach(cleanup);
+
+describe("durable all-request redirect authority", () => {
+  const optedIn = (): Connection => ({
+    ...source,
+    httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, allowAllRequests: true },
+  });
+
+  it("trusts an unknown HTTPS destination only from the verified saved policy", async () => {
+    const view = fixture(optedIn());
+    const result = await view.result.current.inspect(review, vi.fn());
+    expect(result).toMatchObject({
+      trusted: true,
+      defaultTrusted: false,
+      provenance: { savedConnectionId: source.id, databaseId: "db-a" },
+    });
+    expect(view.readCurrent).toHaveBeenCalledOnce();
+    expect(view.context.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(
+      view.persisted.connections[0].httpTrustedRedirectDestinations,
+    ).toBeUndefined();
+    expect(() => result.assertCurrent()).not.toThrow();
+    expect(() => result.assertLaunchCurrent!()).not.toThrow();
+  });
+
+  it.each([
+    "disabled",
+    "same-origin",
+    "runtime-disabled",
+    "runtime-same-origin",
+    "runtime-only",
+    "unsaved",
+  ])(
+    "does not grant unknown destinations for %s sources",
+    async (restriction) => {
+      const saved = optedIn();
+      if (restriction === "disabled" || restriction === "runtime-only")
+        saved.httpProxyPolicy!.allowAllRequests = false;
+      if (restriction === "same-origin")
+        saved.httpProxyPolicy!.sameOriginOnly = true;
+      const effective = restriction.startsWith("runtime-")
+        ? {
+            ...saved.httpProxyPolicy!,
+            allowAllRequests: restriction !== "runtime-disabled",
+            sameOriginOnly: restriction === "runtime-same-origin",
+          }
+        : undefined;
+      const view = fixture(
+        saved,
+        restriction !== "unsaved",
+        undefined,
+        effective,
+      );
+      expect((await view.result.current.inspect(review, vi.fn())).trusted).toBe(
+        false,
+      );
+      expect(view.context.dispatchAndFlush).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["optimistic", "revoked", "failed-read"])(
+    "rejects %s durable policy state instead of trusting the runtime opt-in",
+    async (state) => {
+      const view = fixture(optedIn());
+      if (state === "revoked")
+        expect(
+          (await view.result.current.inspect(review, vi.fn())).trusted,
+        ).toBe(true);
+      if (state === "failed-read")
+        view.readCurrent.mockRejectedValue(
+          new Error("private failed-save diagnostic"),
+        );
+      else
+        view.persisted.connections[0].httpProxyPolicy!.allowAllRequests = false;
+      await expect(
+        view.result.current.inspect(review, vi.fn()),
+      ).rejects.toThrow("Trusted redirect preferences are unavailable");
+      expect(view.context.dispatchAndFlush).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["disabled", "same-origin"])(
+    "revokes captured receipt and launch authority when effective policy becomes %s",
+    async (change) => {
+      const saved = optedIn();
+      const view = fixture(saved, true, undefined, saved.httpProxyPolicy);
+      const inspected = await view.result.current.inspect(review, vi.fn());
+      expect(inspected.trusted).toBe(true);
+      view.rerender({
+        connection: saved,
+        session,
+        effectivePolicy: {
+          ...saved.httpProxyPolicy!,
+          allowAllRequests: change !== "disabled",
+          sameOriginOnly: change === "same-origin",
+        },
+      });
+      expect(() => inspected.assertCurrent()).toThrow();
+      expect(() => inspected.assertLaunchCurrent!()).toThrow();
+    },
+  );
+
+  it("retains only original saved provenance across anonymous hops and refuses later revocation", async () => {
+    const original = optedIn();
+    const view = fixture(original);
+    const first = await view.result.current.inspect(review, vi.fn());
+    const middle = anonymousRedirectConnection(original, review);
+    registerRuntimeConnection(middle, {
+      initialUrl: review.destinationUrl,
+      redirectHops: 1,
+      assertCurrent: vi.fn(),
+      trustedRedirectSource: first.provenance!,
+    });
+    const nextReview = {
+      ...review,
+      sourceOrigin: "https://destination.invalid",
+      destinationUrl: "https://another.invalid/",
+    };
+    view.rerender({
+      connection: middle,
+      session: { ...session, connectionId: middle.id },
+    });
+    const next = await view.result.current.inspect(nextReview, vi.fn());
+    expect(next).toMatchObject({ trusted: true, provenance: first.provenance });
+    expect(middle.httpAutoLogin).toBe(false);
+    expect(middle.basicAuthPassword).toBeUndefined();
+    view.persisted.connections[0].httpProxyPolicy!.allowAllRequests = false;
+    await expect(
+      view.result.current.inspect(nextReview, vi.fn()),
+    ).rejects.toThrow();
+    expect(view.persisted.connections).toHaveLength(1);
+  });
+});
 
 describe("database-owned trusted HTTP redirect preferences", () => {
   const qc = (): Connection => ({

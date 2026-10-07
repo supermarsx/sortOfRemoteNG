@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   },
   connections: [] as Connection[],
   settings: {
+    webBrowser: { engine: "legacy" },
     httpsTrustPolicy: "always-ask",
     webRecording: { autoRecordWebSessions: false },
     proxyKeepaliveEnabled: false,
@@ -216,13 +217,18 @@ describe("mounted website page readiness", () => {
     vi.useRealTimers();
   });
 
-  it.each([false, true])(
-    "passes saved all-script trust to the native session (%s)",
-    async (allowAllScripts) => {
+  it.each([
+    ["allowAllScripts", false],
+    ["allowAllScripts", true],
+    ["allowAllRequests", false],
+    ["allowAllRequests", true],
+  ] as const)(
+    "passes saved %s=%s to the native session",
+    async (permission, enabled) => {
       await mounted(profiles[0], true, {
         httpProxyPolicy: {
           ...DEFAULT_HTTP_PROXY_POLICY,
-          allowAllScripts,
+          [permission]: enabled,
           externalResourceOrigins: [],
         },
       });
@@ -231,7 +237,7 @@ describe("mounted website page readiness", () => {
       );
       expect(starts).toHaveLength(1);
       expect(starts[0][1].config.proxy_policy).toMatchObject({
-        allowAllScripts,
+        [permission]: enabled,
         externalResourceOrigins: [],
         allowCrossOriginRedirects: false,
       });

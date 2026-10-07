@@ -1,0 +1,118 @@
+name: CEF native packages and acceptance
+
+# Engineering only. No automatic trigger, signing, release or admission grant.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native CEF ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {
+              os: windows-2022,
+              platform: windows,
+              target: x86_64-pc-windows-msvc,
+            }
+          - {
+              os: windows-11-arm,
+              platform: windows,
+              target: aarch64-pc-windows-msvc,
+            }
+          - {
+              os: ubuntu-24.04,
+              platform: linux,
+              target: x86_64-unknown-linux-gnu,
+            }
+          - {
+              os: ubuntu-24.04-arm,
+              platform: linux,
+              target: aarch64-unknown-linux-gnu,
+            }
+          - { os: macos-15-intel, platform: macos, target: x86_64-apple-darwin }
+          - { os: macos-15, platform: macos, target: aarch64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUSTUP_TOOLCHAIN: "1.98.1"
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_DEV_INCREMENTAL: "false"
+      CARGO_INCREMENTAL: "0"
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      GDK_BACKEND: x11
+      CFLAGS_aarch64_pc_windows_msvc: -Dalloca=_alloca
+      CEF_NATIVE_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.98.1"
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6, official ref checked 2026-10-06
+        with:
+          python-version: "3.13"
+      - name: Linux native build and X11 prerequisites
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential pkg-config python3 libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev libnss3-dev libgbm-dev libx11-dev libxcb1-dev nasm xvfb xauth dbus-x11
+          # Never disable AppArmor/userns policy or install a setuid workaround.
+      - name: macOS native build prerequisites
+        if: matrix.platform == 'macos'
+        run: brew install cmake nasm pkg-config
+      - name: Verify extraction interpreter
+        run: python -c 'import sys; assert sys.version_info >= (3,12), "Python 3.12+ is required"'
+      - name: Package validation unit tests (not native proof)
+        run: node --test tests/tooling/browserRuntimePackage.node-test.mjs tests/tooling/browserNativePackageCI.node-test.mjs
+      - name: Build isolated app shell, helper and actual CEF fixture; stage pinned bundles
+        run: |
+          mkdir -p .artifacts
+          node scripts/browser-runtime-native-ci.mjs build "$CEF_NATIVE_TARGET" .artifacts/cef-native-ci
+      - name: Actual X11 fixture through sandboxed helper
+        if: matrix.platform == 'linux'
+        run: |
+          dbus-run-session -- xvfb-run -a node scripts/browser-runtime-native-ci.mjs run .artifacts/cef-native-ci/sorng-cef-acceptance-bundle/sorng-cef-acceptance .artifacts/cef-native-ci/acceptance
+      - name: Actual Windows fixture through genuine bootstrap
+        if: matrix.platform == 'windows'
+        run: node scripts/browser-runtime-native-ci.mjs run .artifacts/cef-native-ci/sorng-cef-acceptance-bundle/sorng-cef-acceptance.exe .artifacts/cef-native-ci/acceptance
+      - name: Actual macOS fixture through sandbox-first helper
+        if: matrix.platform == 'macos'
+        run: node scripts/browser-runtime-native-ci.mjs run .artifacts/cef-native-ci/sorng-cef-acceptance.app/Contents/MacOS/sorng-cef-acceptance .artifacts/cef-native-ci/acceptance
+      - name: Preserve measured reports even when acceptance fails
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-native-${{ matrix.target }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            .artifacts/cef-native-ci/*.json
+            .artifacts/cef-native-ci/app-entry/*.json
+            .artifacts/cef-native-ci/acceptance/**/*.json
+            .artifacts/cef-native-ci/acceptance/**/*.log
+            .artifacts/cef-native-ci/acceptance/**/error.txt
+
+  six-platform-gate:
+    needs: native
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all six native jobs, without enabling production admission
+        env:
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: test "$NATIVE_RESULT" = success

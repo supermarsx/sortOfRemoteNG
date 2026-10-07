@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sortofremoteng:browser-session:1",
+  "title": "Per-connection browser session overrides",
+  "description": "Global defaults live in webBrowser. Connection.browserSession is sparse. All live sessions are isolated by owning database, connection and attempt. No profile sharing is permitted. Unsupported requested retention must report an ephemeral effective policy. Combined form delays may not exceed 52000 ms after inheritance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "defaultZoomPercent": { "type": "integer", "minimum": 50, "maximum": 200 },
+    "showBookmarksBar": { "type": "boolean" },
+    "showSecurityInfo": { "type": "boolean" },
+    "showLoadingProgress": { "type": "boolean" },
+    "localStorageEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Allow isolated ephemeral localStorage. Cookie retention does not retain localStorage."
+    },
+    "databasesEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Requested IndexedDB preference, currently not configurable by the native runtime. Preserved but inactive. Storage remains isolated and ephemeral; does not enable removed WebSQL."
+    },
+    "webglEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Control page-canvas WebGL only, not OffscreenCanvas WebGL."
+    },
+    "cookiesEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Allow cookies in an isolated attempt. Retention remains separately configured and capability-gated."
+    },
+    "mediaStreamEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Allow camera/microphone API requests with native session-bound prompts, never automatic permission. Screen capture is unsupported and WebRTC non-proxied UDP remains disabled."
+    },
+    "crossOriginRequestsEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Allow normal cross-origin requests subject to CORS, same-origin policy and route permissions. Never bypass browser security or app routing."
+    },
+    "websiteExtensionsEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Allow native-authorized app login and injected website scripts. Does not disable globally forced dark styling, install Chromium extensions, bypass script policy or grant credentials."
+    },
+    "hideAutomationIndicator": {
+      "type": "boolean",
+      "default": true,
+      "description": "Legacy-only WebDriver indicator suppression, not undetectable browsing. Native app automation uses a private closure without enabling the WebDriver flag, independent of this preference."
+    },
+    "initialLoadTimeoutSeconds": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 120
+    },
+    "documentReadyTimeoutSeconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 240
+    },
+    "minimumFormFillDelayMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 30000
+    },
+    "minimumFormSubmitDelayMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 30000
+    },
+    "manualFormSubmit": { "type": "boolean" },
+    "sessionRetention": { "$ref": "#/$defs/retention" }
+  },
+  "$defs": {
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "mode",
+        "idleTimeoutMinutes",
+        "maxAgeHours",
+        "clearOnDatabaseLock"
+      ],
+      "properties": {
+        "version": { "const": 1, "default": 1 },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "ephemeral",
+            "memory",
+            "encrypted-database",
+            "encrypted-local"
+          ],
+          "x-legacyAliases": { "encrypted-local": "encrypted-database" },
+          "$comment": "encrypted-local is accepted on read only. Normalize it to encrypted-database before returning or saving settings. This alias migrates configuration, not cookie payloads.",
+          "default": "ephemeral"
+        },
+        "idleTimeoutMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10080,
+          "default": 30
+        },
+        "maxAgeHours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8760,
+          "default": 24
+        },
+        "clearOnDatabaseLock": { "type": "boolean", "default": false }
+      },
+      "$comment": "Retention means sign-in cookie snapshots only, not localStorage, IndexedDB or full browser profiles. Ephemeral always clears on attempt close. Memory must never write cookies to disk. Encrypted-database stores cookies INSIDE the owning encrypted database, protected by its key and included in database sync and exports. Restore requires that database to be unlocked. Support requires explicit encryptedDatabase capability from the admitted patched native runtime; legacy encryptedLocal capability is insufficient. Cookies belong to one database+connection and import into a new isolated attempt. Database lock always stops live browsers; clearOnDatabaseLock affects retained cookies only. Configuration alias normalization does not establish cookie payload migration. No fallback to sidecars, shared or plaintext browser profiles."
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owningDatabaseId", "connectionId", "attemptId"],
+      "properties": {
+        "owningDatabaseId": { "type": "string", "minLength": 1 },
+        "connectionId": { "type": "string", "minLength": 1 },
+        "attemptId": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

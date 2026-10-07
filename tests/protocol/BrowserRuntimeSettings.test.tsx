@@ -101,7 +101,7 @@ beforeEach(() => {
   document.addEventListener("load", holdFrameLoad, true);
   mocks.ready = true;
   mocks.settings = {
-    webBrowser: normalizeWebBrowserSettings(undefined),
+    webBrowser: normalizeWebBrowserSettings({ engine: "legacy" }),
     internalProxy: normalizeInternalProxySettings(undefined),
     proxyKeepaliveEnabled: false,
     webRecording: { autoRecordWebSessions: false },
@@ -435,7 +435,12 @@ describe("browser runtime settings", () => {
         } as unknown as GlobalSettings["internalProxy"];
       await mountBrowser();
       expect(starts()).toHaveLength(0);
-      expect(screen.getByTestId("web-navigation-error-screen")).toBeVisible();
+      if (kind === "browser")
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "Browser settings are invalid",
+        );
+      else
+        expect(screen.getByTestId("web-navigation-error-screen")).toBeVisible();
     },
   );
 

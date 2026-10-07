@@ -824,6 +824,40 @@ impl ProxyNetworkState {
         }
     }
 
+    /// Passive anonymous resources can start before readiness selection (a
+    /// stylesheet can itself block load). Require native issuance, never an
+    /// arbitrary future sequence, and cancel once a newer document is selected.
+    pub(super) fn resource_document_is_eligible(&self, sequence: u64) -> bool {
+        let issued = self.issued.lock();
+        self.is_active()
+            && sequence > 0
+            && sequence >= *self.document.borrow()
+            && issued.is_ok_and(|issued| issued.contains(&sequence))
+    }
+
+    pub(super) async fn while_resource_document<T>(
+        &self,
+        sequence: u64,
+        future: impl std::future::Future<Output = T>,
+    ) -> Result<T, &'static str> {
+        let mut changes = self.document.subscribe();
+        if !self.resource_document_is_eligible(sequence) {
+            return Err("The resource document is no longer eligible.");
+        }
+        tokio::select! {
+            biased;
+            _ = async {
+                loop {
+                    if !self.resource_document_is_eligible(sequence) || changes.changed().await.is_err() { return; }
+                }
+            } => Err("The resource document has ended."),
+            output = future => {
+                if self.resource_document_is_eligible(sequence) { Ok(output) }
+                else { Err("The resource document has ended.") }
+            }
+        }
+    }
+
     /// Fixed public resources carry no document credentials. Their lease lasts
     /// for this native session, including script-disabled/manual pages and CSS
     /// requests which cannot know the primary document's asynchronous identity.
@@ -1078,6 +1112,9 @@ pub(super) fn bootstrap(
     }
     if let Some(capability) = super::external_resources::manifest(policy, proxy_origin) {
         config["externalResources"] = capability;
+    }
+    if let Some(capability) = super::public_requests::manifest(policy, proxy_origin) {
+        config["publicRequests"] = capability;
     }
     if let Some(capability) =
         super::quickconnect_control::manifest(policy, source_origin, proxy_origin)

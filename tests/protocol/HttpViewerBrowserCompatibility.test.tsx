@@ -124,7 +124,10 @@ describe("HTTP viewer browser compatibility", () => {
       http_auto_login: false,
     });
     expect(saved.httpHeaders!["uSeR-aGeNt"]).toBe("Saved-Identity/1");
-    expect(config().http_form_automation).toBeUndefined();
+    expect(config().http_form_automation).toEqual({
+      ...DEFAULT_HTTP_FORM_AUTOMATION,
+      submit: false,
+    });
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
@@ -214,6 +217,8 @@ describe("HTTP viewer browser compatibility", () => {
 
   it("does not send unsupported global delay overrides to a staged login adapter", async () => {
     browserSettings({
+      // Automatic submission is an explicit saved choice, not a missing default.
+      manualFormSubmit: false,
       hideAutomationIndicator: true,
       minimumFormFillDelayMs: 1200,
       minimumFormSubmitDelayMs: 1800,

@@ -1,0 +1,32 @@
+[package]
+name = "sorng-cef-acceptance"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Deliberately independent: this executable is never shipped with the app.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "sorng-cef-acceptance"
+path = "src/main.rs"
+
+[dependencies]
+sorng-browser-host = { path = "../..", features = ["cef-host"] }
+sorng-protocols = { path = "../../../sorng-protocols" }
+cef = { version = "=154.3.0", default-features = false, features = ["sandbox", "resources"] }
+tao = "=0.35.3"
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = "0.26"
+rustls = "0.23"
+rcgen = "0.12"
+base64 = "0.22"
+sha2 = "0.10"
+serde_json = "1"
+raw-window-handle = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_IO", "Win32_Storage_FileSystem"] }

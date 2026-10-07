@@ -159,6 +159,92 @@ afterEach(() => {
 });
 
 describe("native managed database sessions", () => {
+  it("captures only the current native browser owner proof without acquiring new authority", async () => {
+    const manager = DatabaseManager.getInstance();
+    const id = rows[0].id;
+    expect(() => manager.captureOriginBrowserOwnerProof(id)).toThrow();
+    await manager.unlockManagedDatabase(id, "password-slot", "secret");
+    expect(() => manager.captureOriginBrowserOwnerProof(id)).toThrow();
+    await manager.selectDatabase(id);
+    bridge.invoke.mockClear();
+    const proof = manager.captureOriginBrowserOwnerProof(id);
+    expect(proof).toEqual({
+      ownerDatabaseId: id,
+      expectedSecurityRevision: "rev-1",
+      sourceSessionId: "fixture-native-handle",
+      assertCurrent: expect.any(Function),
+    });
+    expect(Object.isFrozen(proof)).toBe(true);
+    proof.assertCurrent();
+    expect(bridge.invoke).not.toHaveBeenCalled();
+    expect(() =>
+      manager.captureOriginBrowserOwnerProof("different-owner"),
+    ).toThrow();
+    expect(JSON.stringify(proof)).not.toContain("secret");
+  });
+
+  it.each(["lock", "global-lock", "replacement", "revision", "dispose"])(
+    "revokes browser owner proof on %s",
+    async (change) => {
+      const manager = DatabaseManager.getInstance();
+      const id = rows[0].id;
+      await manager.unlockManagedDatabase(id, "password-slot", "secret");
+      await manager.selectDatabase(id);
+      const proof = manager.captureOriginBrowserOwnerProof(id);
+      if (change === "lock") await manager.lockDatabase(id);
+      if (change === "global-lock")
+        manager.invalidatePendingDatabaseOperations();
+      if (change === "dispose") DatabaseManager.resetInstance();
+      if (change === "replacement" || change === "revision") {
+        lease = {
+          ...lease,
+          sessionId: "replacement-handle",
+          securityRevision: change === "revision" ? "rev-2" : "rev-1",
+        };
+        await manager.unlockManagedDatabase(id, "password-slot", "secret");
+        expect(manager.captureOriginBrowserOwnerProof(id).sourceSessionId).toBe(
+          "replacement-handle",
+        );
+      }
+      expect(() => proof.assertCurrent()).toThrow();
+    },
+  );
+
+  it("does not revive a browser proof after switching away and back", async () => {
+    const manager = DatabaseManager.getInstance();
+    const id = rows[0].id;
+    await manager.unlockManagedDatabase(id, "password-slot", "secret");
+    await manager.selectDatabase(id);
+    const proof = manager.captureOriginBrowserOwnerProof(id);
+    rows.push({
+      ...rows[0],
+      id: "plain",
+      isEncrypted: false,
+      protectionFormat: undefined,
+    });
+    payloads.set("plain", structuredClone(data));
+    await manager.selectDatabase("plain");
+    expect(() => manager.captureOriginBrowserOwnerProof("plain")).toThrow();
+    expect(() => manager.captureOriginBrowserOwnerProof(id)).toThrow();
+    expect(() => proof.assertCurrent()).toThrow();
+    await manager.selectDatabase(id);
+    expect(() => proof.assertCurrent()).toThrow();
+    manager.captureOriginBrowserOwnerProof(id).assertCurrent();
+  });
+
+  it("rejects expired native browser grants even before a timer callback", async () => {
+    vi.useFakeTimers();
+    lease.sessionExpiresAt = Date.now() + 60_000;
+    const manager = DatabaseManager.getInstance();
+    const id = rows[0].id;
+    await manager.unlockManagedDatabase(id, "password-slot", "secret");
+    await manager.selectDatabase(id);
+    const proof = manager.captureOriginBrowserOwnerProof(id);
+    vi.setSystemTime(Date.now() + 60_001);
+    expect(() => proof.assertCurrent()).toThrow();
+    expect(() => manager.captureOriginBrowserOwnerProof(id)).toThrow();
+  });
+
   it.each(["active", "side"])(
     "keeps an open %s database and its captured session usable after eight idle hours",
     async (target) => {
