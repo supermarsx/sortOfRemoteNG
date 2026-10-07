@@ -385,7 +385,10 @@ test("RDP runtime packages retain optimization inside bounded release profiles",
       const sectionName = `profile.${profile}.package.${name}`;
       assert.equal(
         activeTomlSection(cargoManifest, sectionName),
-        `[${sectionName}]\nopt-level = 2`,
+        `[${sectionName}]\nopt-level = 2` +
+          (profile === "dev" && name === "sorng-rdp"
+            ? "\nincremental = false"
+            : ""),
         `${name} must optimize runtime code and inherit memory controls`,
       );
     }
