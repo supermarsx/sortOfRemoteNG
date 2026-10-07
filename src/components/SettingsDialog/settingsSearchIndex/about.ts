@@ -244,7 +244,7 @@ export const ABOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
     key: "about.protocols",
     label: "Protocol Libraries",
     description:
-      "SSH, RDP, VNC, FTP, SQL, Kafka, cloud, and infrastructure integrations.",
+      "SSH, RDP, VNC, FTP, SQL, cloud, and infrastructure integrations.",
     tags: [
       "protocol",
       "ssh",
@@ -254,7 +254,6 @@ export const ABOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "sftp",
       "database",
       "sql",
-      "kafka",
       "cloud",
       "infrastructure",
     ],

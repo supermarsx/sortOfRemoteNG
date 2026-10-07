@@ -73,13 +73,10 @@ use warpgate::service::WarpgateServiceState;
 use winmgmt::service::WinMgmtServiceState;
 use zabbix::service::ZabbixServiceState;
 
-#[cfg(feature = "kafka")]
-use kafka::service::KafkaServiceState;
-
 /// Number of concrete Tauri state registrations owned by this codegen unit.
 /// Kept as an explicit parity contract so state additions cannot accidentally
 /// migrate back into the root `app_lib` composition unit unnoticed.
-pub const MANAGED_STATE_REGISTRATIONS: usize = 74;
+pub const MANAGED_STATE_REGISTRATIONS: usize = 73;
 
 const LOCALES_DIRECTORY_NAME: &str = "locales";
 const PORTABLE_RESOURCES_DIRECTORY_NAME: &str = "resources";
@@ -390,17 +387,6 @@ pub fn register(
 
     let cicd_state: CicdServiceState = Arc::new(Mutex::new(cicd::service::CicdService::new()));
     app.manage(cicd_state);
-
-    // t5-e5: Kafka service state — registers only when the `kafka`
-    // (dynamic or static) feature is on. `KafkaService::new()` is a pure
-    // HashMap constructor and does not touch librdkafka, so registration
-    // is safe even when the native library is absent; the runtime probe
-    // fires on `kafka_connect` via `RealProbe::probe()`.
-    #[cfg(feature = "kafka")]
-    {
-        let kafka_state: KafkaServiceState = kafka::service::new_state();
-        app.manage(kafka_state);
-    }
 
     let resource_dir = app
         .path()

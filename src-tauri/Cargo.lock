@@ -251,7 +251,6 @@ dependencies = [
  "sorng-core",
  "sorng-encryption",
  "sorng-ftp",
- "sorng-kafka",
  "sorng-opkssh",
  "sorng-recording",
  "sorng-storage",
@@ -7808,37 +7807,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rdkafka"
-version = "0.36.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1beea247b9a7600a81d4cc33f659ce1a77e1988323d7d2809c7ed1c21f4c316d"
-dependencies = [
- "futures-channel",
- "futures-util",
- "libc",
- "log",
- "rdkafka-sys",
- "serde",
- "serde_derive",
- "serde_json",
- "slab",
- "tokio",
-]
-
-[[package]]
-name = "rdkafka-sys"
-version = "4.10.0+2.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e234cf318915c1059d4921ef7f75616b5219b10b46e9f3a511a15eb4b56a3f77"
-dependencies = [
- "cmake",
- "libc",
- "libz-sys",
- "num_enum",
- "pkg-config",
-]
-
-[[package]]
 name = "redis"
 version = "0.27.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9599,7 +9567,6 @@ dependencies = [
  "sorng-ipmi",
  "sorng-jira",
  "sorng-k8s",
- "sorng-kafka",
  "sorng-kernel",
  "sorng-letsencrypt",
  "sorng-lxd",
@@ -10287,7 +10254,6 @@ name = "sorng-commands-ops-messaging"
 version = "26.50.0"
 dependencies = [
  "serde_json",
- "sorng-kafka",
  "sorng-rabbitmq",
  "tauri",
 ]
@@ -11281,26 +11247,6 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "sorng-kafka"
-version = "26.50.0"
-dependencies = [
- "base64 0.23.1",
- "chrono",
- "libloading 0.8.9",
- "log",
- "rdkafka",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sorng-core",
- "thiserror 2.0.20",
- "tokio",
- "url",
- "uuid",
- "zeroize",
 ]
 
 [[package]]

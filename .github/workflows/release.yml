@@ -78,9 +78,9 @@ concurrency:
 
 env:
   RELEASE_FEATURES_BUNDLED: >-
-    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
   RELEASE_FEATURES_WINDOWS: >-
-    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,kafka-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
   FLATPAK_APP_ID: com.sortofremote.ng
   FLATPAK_BUILDER_PACKAGE: 1.4.2-1build2
   FLATPAK_BUILDER_VERSION: 1.4.2
@@ -579,7 +579,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/vcpkg-installed/${{ matrix.rust_target }}
-          key: windows-native-${{ matrix.rust_target }}-${{ hashFiles('src-tauri/native/vcpkg.json', 'src-tauri/native/ports/**/*', 'src-tauri/native/triplets/*', 'scripts/stage-windows-native-runtime.mjs', 'scripts/probe-rdkafka-runtime.ps1') }}
+          key: windows-native-${{ matrix.rust_target }}-${{ hashFiles('src-tauri/native/vcpkg.json', 'src-tauri/native/ports/**/*', 'src-tauri/native/triplets/*', 'scripts/stage-windows-native-runtime.mjs') }}
 
       - name: Cache pinned Unix OpenH264 runtime
         if: matrix.platform != 'windows'
@@ -739,8 +739,8 @@ jobs:
           ).FullName
           if (-not $signtool) { throw "signtool.exe was not found." }
           $runtimeDlls = @(Get-ChildItem "src-tauri/resources/native-runtime/*.dll" -File)
-          if ($runtimeDlls.Count -ne 9) {
-            throw "Expected exactly nine staged native runtime DLLs before signing."
+          if ($runtimeDlls.Count -ne 4) {
+            throw "Expected exactly four staged native runtime DLLs before signing."
           }
           foreach ($file in $runtimeDlls) {
             & $signtool sign `
@@ -844,25 +844,20 @@ jobs:
             };
           }
           if (process.env.PLATFORM === "windows") {
-            const opensslArchitecture = {
+            const nativeArchitecture = {
               "windows-x86_64": "x64",
               "windows-aarch64": "arm64",
             }[process.env.ARTIFACT_ID];
-            if (!opensslArchitecture) {
+            if (!nativeArchitecture) {
               throw new Error(
                 `Unsupported Windows artifact ${process.env.ARTIFACT_ID}.`,
               );
             }
             const nativeRuntimeDlls = [
-              `libcrypto-3-${opensslArchitecture}.dll`,
               "libssh2.dll",
-              `libssl-3-${opensslArchitecture}.dll`,
-              "lz4.dll",
               "openh264-8.dll",
-              "rdkafka.dll",
               "sqlite3.dll",
               "z.dll",
-              "zstd.dll",
             ];
             for (const filename of nativeRuntimeDlls) {
               const source = `resources/native-runtime/${filename}`;
@@ -1152,21 +1147,11 @@ jobs:
             "windows-aarch64" { 0xAA64 }
             default { throw "Unsupported Windows artifact $env:ARTIFACT_ID." }
           }
-          $opensslArchitecture = switch ($env:ARTIFACT_ID) {
-            "windows-x86_64" { "x64" }
-            "windows-aarch64" { "arm64" }
-            default { throw "Unsupported Windows artifact $env:ARTIFACT_ID." }
-          }
           $expectedDllNames = @(
-            "libcrypto-3-$opensslArchitecture.dll",
             "libssh2.dll",
-            "libssl-3-$opensslArchitecture.dll",
-            "lz4.dll",
             "openh264-8.dll",
-            "rdkafka.dll",
             "sqlite3.dll",
-            "z.dll",
-            "zstd.dll"
+            "z.dll"
           )
           $stageRoot = "src-tauri/resources/native-runtime"
           $stagedDlls = @(Get-ChildItem -LiteralPath $stageRoot -File -Filter *.dll)
@@ -1230,7 +1215,7 @@ jobs:
             throw "dumpbin failed to inspect app.exe imports."
           }
           $importText = $imports -join "`n"
-          foreach ($requiredImport in @("libssh2.dll", "openh264-8.dll", "rdkafka.dll", "sqlite3.dll")) {
+          foreach ($requiredImport in @("libssh2.dll", "openh264-8.dll", "sqlite3.dll")) {
             if ($importText -notmatch "(?im)^\s*$([regex]::Escape($requiredImport))\s*$") {
               throw "app.exe does not import required dynamic library $requiredImport."
             }
@@ -1862,7 +1847,7 @@ jobs:
           $portableExecutable = Get-Item -LiteralPath "src-tauri/target/$env:RUST_TARGET/release/app.exe"
           $files += $portableExecutable
           $runtimeDlls = @(Get-ChildItem "src-tauri/resources/native-runtime/*.dll" -File)
-          if ($runtimeDlls.Count -ne 9) { throw "Expected nine signed native runtime DLLs." }
+          if ($runtimeDlls.Count -ne 4) { throw "Expected four signed native runtime DLLs." }
           $files += $runtimeDlls
           $viewerExecutables = @(Get-ChildItem "src-tauri/crates/sorng-file-viewer-host/bundle" -Recurse -File -Filter sorng-file-viewer-host.exe)
           if ($viewerExecutables.Count -ne 1) { throw "Expected exactly one signed isolated viewer executable." }
@@ -1935,11 +1920,6 @@ jobs:
             "windows-aarch64" { 0xAA64 }
             default { throw "Unsupported portable Windows artifact $env:ARTIFACT_ID." }
           }
-          $opensslArchitecture = switch ($env:ARTIFACT_ID) {
-            "windows-x86_64" { "x64" }
-            "windows-aarch64" { "arm64" }
-            default { throw "Unsupported portable Windows artifact $env:ARTIFACT_ID." }
-          }
           $sourceExecutable = "src-tauri/target/$env:RUST_TARGET/release/app.exe"
           if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
             throw "Portable source executable was not found at $sourceExecutable."
@@ -1955,15 +1935,10 @@ jobs:
           }
 
           $expectedNativeDllNames = @(
-            "libcrypto-3-$opensslArchitecture.dll",
             "libssh2.dll",
-            "libssl-3-$opensslArchitecture.dll",
-            "lz4.dll",
             "openh264-8.dll",
-            "rdkafka.dll",
             "sqlite3.dll",
-            "z.dll",
-            "zstd.dll"
+            "z.dll"
           )
           $nativeRuntimeSource = "src-tauri/resources/native-runtime"
           $nativeRuntimeFiles = @(Get-ChildItem -LiteralPath $nativeRuntimeSource -File -Filter *.dll)
@@ -1994,14 +1969,10 @@ jobs:
 
           $nativeLicenseSource = "src-tauri/resources/native-runtime-licenses"
           $expectedNativeLicenseNames = @(
-            "librdkafka.txt",
             "libssh2.txt",
-            "lz4.txt",
             "openh264.txt",
-            "openssl.txt",
             "sqlite3.txt",
-            "zlib.txt",
-            "zstd.txt"
+            "zlib.txt"
           )
           $nativeLicenseFiles = @(
             Get-ChildItem -LiteralPath $nativeLicenseSource -File -Filter *.txt

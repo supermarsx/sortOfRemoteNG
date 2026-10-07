@@ -2,7 +2,7 @@
 
 Release builds hard-link OpenH264 and load its architecture-matched shared
 library at process startup. The sole vcpkg manifest in this directory builds
-OpenH264 2.6.0 from source on Windows, Linux, and macOS. Kafka, SQLite, and
+OpenH264 2.6.0 from source on Windows, Linux, and macOS. SQLite and
 libssh2 remain Windows-only manifest dependencies.
 
 The pinned OpenH264 overlay is copied from the selected vcpkg baseline. Its
@@ -21,27 +21,23 @@ npm run native:stage:windows -- --target x86_64-pc-windows-msvc
 Use `aarch64-pc-windows-msvc` for Windows on ARM. The stager verifies package
 versions, `openh264.lib`, every DLL's PE machine, the closed DLL dependency
 graph, and all license notices. It exports `OPENH264_LIB_DIR` for the hard link
-and stages this exact nine-DLL closure beside `sortOfRemoteNG.exe`:
+and stages this exact four-DLL closure beside `sortOfRemoteNG.exe`:
 
 - `openh264-8.dll`
-- `rdkafka.dll`
 - `sqlite3.dll`
 - `libssh2.dll`
-- `lz4.dll`
 - `z.dll`
-- `zstd.dll`
-- `libcrypto-3-{x64|arm64}.dll`
-- `libssl-3-{x64|arm64}.dll`
 
 The custom `x64-windows-sorng` and `arm64-windows-sorng` triplets build
 release-only DLLs while linking their MSVC runtime statically. The packaged
 closure therefore does not require a separately installed Visual C++
 Redistributable. SQLite retains the feature and compiler-option set previously
-provided by `libsqlite3-sys`'s bundled build. The pinned librdkafka overlay
-retains Snappy, gzip, LZ4, zstd, TLS, SCRAM, and OAuth bearer support.
+provided by `libsqlite3-sys`'s bundled build. libssh2 uses Windows CNG for
+cryptography and retains zlib for compression. Kafka's OpenSSL, LZ4 and zstd
+DLLs are no longer staged.
 
 `npm run tauri:build` stages this closure and creates a temporary Tauri bundle
-overlay that places the DLLs and eight license notices next to the executable.
+overlay that places the DLLs and four license notices next to the executable.
 
 ## Linux and macOS
 

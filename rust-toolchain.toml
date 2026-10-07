@@ -12,7 +12,7 @@
 # The `targets` entry ensures the MSVC *target* std is available on every
 # platform. Windows hosts MUST additionally use the MSVC *host* toolchain —
 # the GNU host fails to link large crates in this workspace (the historical
-# "export ordinal too large" error from rdkafka/ironrdp chains). That
+# "export ordinal too large" error from large IronRDP chains). That
 # requirement is enforced by:
 #   - CI: `.github/workflows/ci.yml` `rust-check-windows` job (see below).
 #   - Developers: `README.md` Toolchain section + `contributing.md`.

@@ -68,7 +68,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libayatana-appindicator3-dev \
     libglib2.0-dev \
     libgtk-3-dev \
-    librdkafka-dev \
     librsvg2-dev \
     libsoup-3.0-dev \
     libssl-dev \
@@ -205,7 +204,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libc6 \
     libgcc-s1 \
-    librdkafka1 \
     libssl3 \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/* \

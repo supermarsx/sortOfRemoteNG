@@ -52,7 +52,7 @@ default modern OpenSSH fixture without enabling weaker server algorithms.
 
 The default/full Windows Cargo graph no longer needs `openssl-sys` for this
 adapter. This does not mean every packaged native DLL is OpenSSL-free: optional
-dynamic bundles can contain externally built libssh2 or librdkafka and their
+dynamic bundles can contain externally built libssh2 and its
 OpenSSL DLL dependencies. Those packaged runtimes are not removed here.
 
 ## Callback safety and verification

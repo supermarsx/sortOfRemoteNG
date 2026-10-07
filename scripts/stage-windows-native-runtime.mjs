@@ -18,7 +18,6 @@ import path from "node:path";
 import process from "node:process";
 
 export const VCPKG_BASELINE = "b9b668c1de09b065f53a3943939801b901b585ef";
-export const MINIMUM_RDKAFKA_VERSION = "2.12.1";
 export const OPENH264_VERSION = "2.6.0";
 export const STAGED_RUNTIME_DIRECTORY = path.join(
   "src-tauri",
@@ -32,26 +31,15 @@ export const STAGED_LICENSE_DIRECTORY = path.join(
 );
 export const COMMON_RUNTIME_DLLS = Object.freeze([
   "libssh2.dll",
-  "lz4.dll",
   "openh264-8.dll",
-  "rdkafka.dll",
   "sqlite3.dll",
   "z.dll",
-  "zstd.dll",
 ]);
-export const OPENSSL_RUNTIME_DLLS = Object.freeze({
-  x64: Object.freeze(["libcrypto-3-x64.dll", "libssl-3-x64.dll"]),
-  arm64: Object.freeze(["libcrypto-3-arm64.dll", "libssl-3-arm64.dll"]),
-});
 export const REQUIRED_LICENSE_PORTS = Object.freeze([
-  "librdkafka",
   "libssh2",
-  "lz4",
   "openh264",
-  "openssl",
   "sqlite3",
   "zlib",
-  "zstd",
 ]);
 
 const modulePath = fileURLToPath(import.meta.url);
@@ -67,11 +55,6 @@ const tripletsRoot = path.join(manifestRoot, "triplets");
 const defaultStageRoot = path.join(repoRoot, STAGED_RUNTIME_DIRECTORY);
 const defaultLicenseStageRoot = path.join(repoRoot, STAGED_LICENSE_DIRECTORY);
 const bootstrapRoot = path.join(repoRoot, ".cache", "vcpkg-tool");
-const kafkaProbeScript = path.join(
-  repoRoot,
-  "scripts",
-  "probe-rdkafka-runtime.ps1",
-);
 
 function fail(message) {
   throw new Error(`[windows-native-runtime] ${message}`);
@@ -81,38 +64,12 @@ function log(message) {
   process.stdout.write(`[windows-native-runtime] ${message}\n`);
 }
 
-function validateKafkaRuntimeFeatures(stageRoot, architecture) {
-  if (process.arch !== architecture) {
-    log(
-      `skipping executable librdkafka feature probe while staging ${architecture} from ${process.arch}`,
-    );
-    return;
-  }
-
-  const existingPath = process.env.Path ?? process.env.PATH ?? "";
-  const probePath = [stageRoot, existingPath]
-    .filter(Boolean)
-    .join(path.delimiter);
-  run(
-    "powershell.exe",
-    ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", kafkaProbeScript],
-    {
-      cwd: stageRoot,
-      env: {
-        ...process.env,
-        PATH: probePath,
-        Path: probePath,
-        SORNG_RDKAFKA_DLL: path.join(stageRoot, "rdkafka.dll"),
-      },
-    },
-  );
-}
-
 export function runtimeDllsForArchitecture(architecture) {
-  const opensslDlls = OPENSSL_RUNTIME_DLLS[architecture];
-  if (!opensslDlls)
+  if (!["x64", "arm64"].includes(architecture))
     fail(`unsupported Windows runtime architecture ${architecture}`);
-  return [...opensslDlls, ...COMMON_RUNTIME_DLLS].sort();
+  // libssh2[core,zlib] selects WinCNG on Windows. No remaining Windows
+  // manifest dependency produces or requires the OpenSSL runtime DLLs.
+  return [...COMMON_RUNTIME_DLLS].sort();
 }
 
 export function windowsNativeTauriConfig(
@@ -557,16 +514,6 @@ function findPkgconf(installRoot, buildHostTriplet) {
   fail(`pkgconf host tool was not installed under ${toolsRoot}`);
 }
 
-function compareNumericVersions(left, right) {
-  const a = left.split(".").map((part) => Number.parseInt(part, 10));
-  const b = right.split(".").map((part) => Number.parseInt(part, 10));
-  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
-    const delta = (a[index] ?? 0) - (b[index] ?? 0);
-    if (delta !== 0) return Math.sign(delta);
-  }
-  return 0;
-}
-
 function pkgConfigEnvironment(pkgconf, packageRoot) {
   const pkgConfigPath = [
     path.join(packageRoot, "lib", "pkgconfig"),
@@ -750,12 +697,6 @@ export function stageWindowsNativeRuntime({
   const packageRoot = path.join(installRoot, targetConfiguration.triplet);
   const pkgconf = findPkgconf(installRoot, buildHostTriplet);
   const probeEnvironment = pkgConfigEnvironment(pkgconf, packageRoot);
-  const rdkafkaVersion = pkgConfigVersion(pkgconf, "rdkafka", probeEnvironment);
-  if (compareNumericVersions(rdkafkaVersion, MINIMUM_RDKAFKA_VERSION) < 0) {
-    fail(
-      `librdkafka ${rdkafkaVersion} is older than required ${MINIMUM_RDKAFKA_VERSION}`,
-    );
-  }
   for (const packageName of ["libssh2", "sqlite3"]) {
     log(
       `${packageName} ${pkgConfigVersion(pkgconf, packageName, probeEnvironment)}`,
@@ -789,10 +730,6 @@ export function stageWindowsNativeRuntime({
   const imports = validateRuntimeDependencyClosure(
     path.resolve(stageRoot),
     files,
-  );
-  validateKafkaRuntimeFeatures(
-    path.resolve(stageRoot),
-    targetConfiguration.architecture,
   );
   const licenses = stageRuntimeLicenses(
     packageRoot,

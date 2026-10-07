@@ -20,7 +20,7 @@ const packageManifest = JSON.parse(read("package.json"));
 test("Arch and Alpine recipes build the system-native Linux feature profile", () => {
   assert.match(
     cargo,
-    /^full-linux-system = \[[^\n]*"db-sqlite-dynamic"[^\n]*"kafka-dynamic"[^\n]*"rdp-software-decode-dynamic"[^\n]*\]$/m,
+    /^full-linux-system = \[[^\n]*"db-sqlite-dynamic"[^\n]*"rdp-software-decode-dynamic"[^\n]*\]$/m,
   );
 
   for (const recipe of [arch, alpine]) {
@@ -61,7 +61,6 @@ test("package checks enforce every requested shared native library", () => {
   for (const recipe of [arch, alpine]) {
     for (const soname of [
       "libopenh264.so.8",
-      "librdkafka.so.1",
       "libsqlite3.so.0",
       "libssh2.so.1",
     ]) {

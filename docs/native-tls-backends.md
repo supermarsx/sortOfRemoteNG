@@ -25,8 +25,8 @@ server-side updates. No weak-TLS or plaintext fallback was introduced.
 
 SSH uses a different protocol and cryptographic backend; Rustls is not a
 replacement for libssh2's signing/encryption implementation. Native packaging
-may also legitimately include OpenSSL libraries for components such as
-librdkafka. Therefore removing `openssl-sys` from the Windows Cargo build is
+may also legitimately include OpenSSL libraries for native SSH dependencies.
+Therefore removing `openssl-sys` from the Windows Cargo build is
 not a claim that every platform or packaged native dependency is OpenSSL-free.
 
 Verification uses synthetic loopback TLS and Cargo dependency/feature graphs.

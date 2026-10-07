@@ -498,7 +498,7 @@ test("workflow uploads the seal before candidate code and reconstructs by exact 
   );
   assert.match(
     workflow,
-    /cargo check --manifest-path src-tauri\/Cargo\.toml --workspace --exclude sorng-kafka --locked/,
+    /cargo check --manifest-path src-tauri\/Cargo\.toml --workspace --locked/,
   );
   assert.match(workflow, /git diff --check -- src-tauri\/Cargo\.lock/);
 

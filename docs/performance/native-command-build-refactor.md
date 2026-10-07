@@ -32,7 +32,7 @@ The crate root aliases its domain crates (for example `pub use sorng_idrac as id
 
 `sorng-commands-infra` is now a compatibility facade. It owns no command wrappers; it re-exports the child module aliases, ORs the children's `is_command` and routes each invocation to the first child that recognizes it. Its test asserts that the child inventories are disjoint, each within the bound, and completely routed (683 commands).
 
-`sorng-commands-ops` is a facade of the same shape over nine children. Its test expects 1,773 commands with the `kafka` feature and 1,734 without it.
+`sorng-commands-ops` is a facade of the same shape over nine children. Its test expects 1,734 commands. Kafka support and its 39 commands were removed on 2026-10-07.
 
 `sorng-commands-core` is not generated. Its ten `define_command_group!` lists (1,028 entries, largest 153) are hand-maintained, and each group's `is_command` is a binary search over its list, so an unsorted edit would silently mis-route. `scripts/sort-core-command-groups.mjs` rewrites the lists in canonical order; its `--check` runs in the CI `version` job, and the core unit test `generated_command_groups_are_unique_recognized_and_exactly_routed` also checks ordering and routing. VPN commands moved out of core into the generated child `sorng-commands-vpn`. Core depends on it unconditionally and routes to it before its own groups, so VPN commands remain in every build. The eight SoftEther entries keep their `vpn-softether` gate, and core's `vpn-softether` feature forwards to the child.
 
@@ -45,7 +45,7 @@ The crate root aliases its domain crates (for example `pub use sorng_idrac as id
 | `sorng-commands-nas`            | generated child of infra | Synology                                                                                                                  |      119 |
 | `sorng-commands-remote`         | generated child of infra | MeshCentral (dedicated), VoIP phone                                                                                       |       57 |
 | `sorng-commands-vpn`            | generated child of core  | OpenVPN (including dedicated), WireGuard, IKEv2, IPsec, L2TP, PPTP, SSTP, SoftEther, Tailscale, ZeroTier, proxy, chaining |      146 |
-| `sorng-commands-ops`            | facade                   | the nine children in the operations table below                                                                           |    1,773 |
+| `sorng-commands-ops`            | facade                   | the nine children in the operations table below                                                                           |    1,734 |
 
 The access, cloud, collab, mail, platform, services, sessions, tools and webservers command crates keep their existing hand-written handlers and are unchanged by this layout. The mail, services, tools and webservers crates still include their command modules by `#[path]` from files in `sorng-commands-ops/src/`. The ops facade does not compile those files itself.
 
@@ -55,7 +55,7 @@ On Windows MSVC, a registrar whose unit tests use Tauri's mock runtime (the taur
 
 `sorng-commands-ops` used to be one direct registrar with 1,773 commands in 18 `generate_handler!` groups, the largest having 542 and 481 arms. It is now a facade over the nine bounded generated children below. The facade's only dependencies are the children and `tauri`. Its `is_command` and dispatch consult the children in the order their modules first appeared in the old groups. The inventories are disjoint, so that order does not change which child handles a command.
 
-Kafka commands keep their `feature = "kafka"` gate. The app's `kafka`, `kafka-dynamic` and `kafka-static` features enable `sorng-commands-ops?/kafka`, and the facade forwards that to `sorng-commands-ops-messaging/kafka`, which enables the optional `sorng-kafka` dependency. `sorng-kafka` stays at `default-features = false`, so the app feature still selects how librdkafka is linked. A standalone Kafka check must name a linking mode, for example `cargo check -p sorng-commands-ops -p sorng-kafka --features sorng-commands-ops/kafka,sorng-kafka/cmake-build` through `scripts/native-build-env.mjs`.
+The messaging registrar now contains only RabbitMQ commands. The former Kafka crate, feature flags, startup state and command wrappers are no longer part of the application or build graph. Historical measurements above describe the earlier split, before that removal.
 
 | Crate                              | Modules (commands)                                                              | Total |
 | ---------------------------------- | ------------------------------------------------------------------------------- | ----: |
@@ -67,7 +67,7 @@ Kafka commands keep their `feature = "kafka"` gate. The app's `kafka`, `kafka-dy
 | `sorng-commands-ops-platform`      | netbox 143, cups 52, about 14, remote_backup 13                                 |   222 |
 | `sorng-commands-ops-monitoring`    | grafana 46, prometheus 22, zabbix 53, ups_mgmt 70, ipmi 41                      |   232 |
 | `sorng-commands-ops-orchestration` | compose 52, cicd 57, etcd 42, consul 32, ceph 57                                |   240 |
-| `sorng-commands-ops-messaging`     | rabbitmq 58, kafka 39 (behind `kafka`)                                          |    97 |
+| `sorng-commands-ops-messaging`     | rabbitmq 58                                                                  |    58 |
 
 ## Record comparable builds
 

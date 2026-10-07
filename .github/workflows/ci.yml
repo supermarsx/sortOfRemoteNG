@@ -41,7 +41,7 @@ jobs:
       - name: Install pinned launcher dependencies
         run: npm ci
       - name: Verify full-feature native defaults and launchers
-        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs tests/tooling/sourcePathCitations.node-test.mjs
+        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs tests/tooling/sourcePathCitations.node-test.mjs tests/tooling/kafkaRemoval.node-test.mjs
       - name: Verify generated cache exclusions
         run: node --test tests/tooling/buildCacheExclusions.node-test.mjs
       - name: Check generated command registrar inventories
@@ -401,10 +401,7 @@ jobs:
           --all-targets --no-deps -- -D warnings
 
   # ── Rust workspace check ───────────────────────────────────────────
-  # The app defaults include every capability, with source-built Kafka.
-  # Exclude the standalone Kafka package root so its dynamic-linking default
-  # cannot unify with the app's bundled linking mode. Kafka is still checked
-  # through the full app dependency graph on both Linux and Windows/MSVC.
+  # Check the full app dependency graph on both Linux and Windows/MSVC.
   rust-check-linux:
     runs-on: ubuntu-latest
     defaults:
@@ -422,17 +419,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
         with:
           toolchain: "1.98.1"
-      - name: Install librdkafka build prerequisites
-        # libcurl/sasl/zstd/zlib -dev are needed by the `kafka-static` cmake
-        # build of librdkafka from source (see kafka step below).
+      - name: Install native build prerequisites
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: cargo check (full app defaults, including bundled Kafka)
-        run: cargo check --workspace --exclude sorng-kafka
+      - name: cargo check (full app defaults)
+        run: cargo check --workspace
   # MSVC host is REQUIRED on Windows — the GNU host triggers "export ordinal
-  # too large" link errors in large crate chains (rdkafka-sys, ironrdp-*,
+  # too large" link errors in large crate chains (ironrdp-*,
   # sspi-rs). `windows-latest` runners default to the MSVC host, but we pin
   # it explicitly so a future runner-image change or a contributor's
   # `rustup default stable-x86_64-pc-windows-gnu` on a self-hosted runner
@@ -468,8 +463,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: cargo check (full app defaults, including bundled Kafka)
-        run: cargo check --workspace --exclude sorng-kafka
+      - name: cargo check (full app defaults)
+        run: cargo check --workspace
 
   # Shared browser transport fixtures must pass on every supported desktop OS.
   # This is not native-host or live provider acceptance; those remain unreleased.
@@ -673,24 +668,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
         with:
           toolchain: "1.98.1"
-      - name: Install librdkafka build prerequisites
-        # libcurl/sasl/zstd/zlib -dev feed the `kafka-static` cmake build of
-        # librdkafka from source (the feature set below uses kafka-static).
+      - name: Install native build prerequisites
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      # `--all-features` is INVALID for this workspace: it simultaneously
-      # enables the mutually-exclusive kafka linking modes (`kafka`/
-      # `kafka-dynamic` = dynamic-link vs `kafka-static` = cmake-build), which
-      # collide at the rdkafka-sys layer, plus other "losing-fork" feature
-      # combinations the app is not designed to build together. The canonical
-      # shipping set is `--features full` (see release.yml), including bundled
-      # Kafka. Keep this explicit list in sync with `full` in Cargo.toml.
-      - name: cargo check (shipping feature set — full, static Kafka)
+      # Do not combine mutually exclusive SQLite and decoder link variants.
+      # Keep this explicit shipping feature list in sync with Cargo.toml.
+      - name: cargo check (shipping feature set — full)
         run: >-
           cargo check -p app --no-default-features
-          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
 
   rust-lint:
     runs-on: ubuntu-latest
@@ -705,22 +693,17 @@ jobs:
         with:
           toolchain: "1.98.1"
           components: clippy
-      - name: Install librdkafka build prerequisites
-        # libcurl/sasl/zstd/zlib -dev feed the `kafka-static` cmake build of
-        # librdkafka from source (the feature set below uses kafka-static).
+      - name: Install native build prerequisites
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      # See rust-check-all-features-linux above: `--all-features` is invalid
-      # (mutually-exclusive kafka linking modes + losing-fork combos). Lint the
-      # canonical shipping `full` set, which builds librdkafka from source. `-p app`
-      # still lints every workspace crate app pulls in under `full`. Keep the
-      # feature list in sync with `full` in src-tauri/Cargo.toml.
-      - name: cargo clippy (shipping feature set — full, static Kafka)
+      # Lint the shipping set, not mutually exclusive SQLite/decoder variants.
+      # Keep this feature list in sync with src-tauri/Cargo.toml.
+      - name: cargo clippy (shipping feature set — full)
         run: >-
           cargo clippy -p app --no-default-features
-          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
           --all-targets -- -D warnings
 
   rolling-release:

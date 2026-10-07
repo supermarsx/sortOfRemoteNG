@@ -17,7 +17,6 @@ depends=(
   'gtk3'
   'hicolor-icon-theme'
   'libayatana-appindicator'
-  'librdkafka'
   'librsvg'
   'libserialport'
   'libsoup3'
@@ -100,7 +99,6 @@ check() {
 
   for library in \
     libopenh264.so.8 \
-    librdkafka.so.1 \
     libsqlite3.so.0 \
     libssh2.so.1
   do

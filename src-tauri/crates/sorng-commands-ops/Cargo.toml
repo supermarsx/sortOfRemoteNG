@@ -16,11 +16,3 @@ sorng-commands-ops-platform = { path = "../sorng-commands-ops-platform" }
 sorng-commands-ops-messaging = { path = "../sorng-commands-ops-messaging" }
 sorng-commands-ops-orchestration = { path = "../sorng-commands-ops-orchestration" }
 tauri = { workspace = true }
-
-[features]
-# Forwarded from the top-level app crate via `sorng-commands-ops?/kafka` so
-# that enabling `kafka` / `kafka-dynamic` / `kafka-static` on the app crate
-# also compiles the 39 `kafka_*` Tauri command handlers in the messaging
-# child. Without this forwarding hop the commands would remain unwired even
-# when the app enables Kafka.
-kafka = ["sorng-commands-ops-messaging/kafka"]

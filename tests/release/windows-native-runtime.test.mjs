@@ -13,7 +13,6 @@ import test from "node:test";
 import {
   COMMON_RUNTIME_DLLS,
   OPENH264_VERSION,
-  OPENSSL_RUNTIME_DLLS,
   REQUIRED_LICENSE_PORTS,
   VCPKG_BASELINE,
   bootstrapVcpkg,
@@ -62,13 +61,6 @@ const windowsTriplets = [
     "utf8",
   ),
 );
-const kafkaOverlayPort = readFileSync(
-  new URL(
-    "../../src-tauri/native/ports/librdkafka/portfile.cmake",
-    import.meta.url,
-  ),
-  "utf8",
-);
 const openh264OverlayManifest = JSON.parse(
   readFileSync(
     new URL(
@@ -94,14 +86,6 @@ const openh264AbiPatch = readFileSync(
 );
 const nativeRuntimeStager = readFileSync(
   new URL("../../scripts/stage-windows-native-runtime.mjs", import.meta.url),
-  "utf8",
-);
-const kafkaRuntimeProbe = readFileSync(
-  new URL("../../scripts/probe-rdkafka-runtime.ps1", import.meta.url),
-  "utf8",
-);
-const kafkaStateRegistry = readFileSync(
-  new URL("../../src-tauri/src/state_registry/ops.rs", import.meta.url),
   "utf8",
 );
 
@@ -379,30 +363,30 @@ test("reads PE imports and rejects unstaged or dynamic-CRT dependencies", (t) =>
     path.join(os.tmpdir(), "sorng-native-imports-"),
   );
   t.after(() => rmSync(fixtureRoot, { recursive: true, force: true }));
-  const rdkafka = path.join(fixtureRoot, "rdkafka.dll");
+  const fixtureNative = path.join(fixtureRoot, "fixture-native.dll");
   const zlib = path.join(fixtureRoot, "z.dll");
-  writeFileSync(rdkafka, peWithImports(0x8664, ["KERNEL32.dll", "z.dll"]));
+  writeFileSync(fixtureNative, peWithImports(0x8664, ["KERNEL32.dll", "z.dll"]));
   writeFileSync(zlib, peWithImports(0x8664, ["KERNEL32.dll"]));
 
-  assert.deepEqual(readPeImports(rdkafka), ["kernel32.dll", "z.dll"]);
+  assert.deepEqual(readPeImports(fixtureNative), ["kernel32.dll", "z.dll"]);
   assert.deepEqual(
-    validateRuntimeDependencyClosure(fixtureRoot, ["rdkafka.dll", "z.dll"]),
+    validateRuntimeDependencyClosure(fixtureRoot, ["fixture-native.dll", "z.dll"]),
     {
-      "rdkafka.dll": ["kernel32.dll", "z.dll"],
+      "fixture-native.dll": ["kernel32.dll", "z.dll"],
       "z.dll": ["kernel32.dll"],
     },
   );
 
-  writeFileSync(rdkafka, peWithImports(0x8664, ["VCRUNTIME140.dll"]));
+  writeFileSync(fixtureNative, peWithImports(0x8664, ["VCRUNTIME140.dll"]));
   assert.throws(
     () =>
-      validateRuntimeDependencyClosure(fixtureRoot, ["rdkafka.dll", "z.dll"]),
+      validateRuntimeDependencyClosure(fixtureRoot, ["fixture-native.dll", "z.dll"]),
     /static MSVC runtime/,
   );
-  writeFileSync(rdkafka, peWithImports(0x8664, ["unexpected.dll"]));
+  writeFileSync(fixtureNative, peWithImports(0x8664, ["unexpected.dll"]));
   assert.throws(
     () =>
-      validateRuntimeDependencyClosure(fixtureRoot, ["rdkafka.dll", "z.dll"]),
+      validateRuntimeDependencyClosure(fixtureRoot, ["fixture-native.dll", "z.dll"]),
     /unstaged non-system dependency/,
   );
 });
@@ -413,16 +397,12 @@ test("pins the all-platform OpenH264 dependency and Windows-only native closure"
 
   const names = nativeManifest.dependencies.map(dependencyName).sort();
   assert.deepEqual(names, [
-    "librdkafka",
     "libssh2",
     "openh264",
     "pkgconf",
     "sqlite3",
   ]);
 
-  const librdkafka = nativeManifest.dependencies.find(
-    (dependency) => dependencyName(dependency) === "librdkafka",
-  );
   const libssh2 = nativeManifest.dependencies.find(
     (dependency) => dependencyName(dependency) === "libssh2",
   );
@@ -432,12 +412,6 @@ test("pins the all-platform OpenH264 dependency and Windows-only native closure"
   const sqlite = nativeManifest.dependencies.find(
     (dependency) => dependencyName(dependency) === "sqlite3",
   );
-  assert.deepEqual(librdkafka, {
-    name: "librdkafka",
-    "default-features": false,
-    features: ["ssl", "zlib", "zstd"],
-    platform: "windows",
-  });
   assert.deepEqual(libssh2, {
     name: "libssh2",
     "default-features": false,
@@ -488,76 +462,37 @@ test("custom Windows triplets keep DLLs while preserving the bundled SQLite cont
   assert.match(releaseWorkflow, /native\/triplets\/\*/u);
 });
 
-test("the pinned librdkafka overlay retains all supported Kafka codecs", () => {
-  assert.match(kafkaOverlayPort, /-DWITH_SNAPPY=ON/u);
-  assert.match(nativeRuntimeStager, /--overlay-ports=\$\{portsRoot\}/u);
-  assert.match(nativeRuntimeStager, /validateKafkaRuntimeFeatures/u);
-  for (const feature of [
-    "gzip",
-    "snappy",
-    "ssl",
-    "sasl",
-    "lz4",
-    "sasl_gssapi",
-    "sasl_plain",
-    "sasl_scram",
-    "zstd",
-    "sasl_oauthbearer",
-  ]) {
-    assert.ok(kafkaRuntimeProbe.includes(`"${feature}"`));
-  }
-  assert.match(kafkaRuntimeProbe, /rd_kafka_conf_get/u);
-  assert.match(kafkaRuntimeProbe, /rd_kafka_conf_set/u);
-  assert.match(kafkaRuntimeProbe, /LoadLibraryEx\(\$dllPath/u);
-  assert.match(nativeRuntimeStager, /SORNG_RDKAFKA_DLL/u);
-  assert.match(nativeRuntimeStager, /cwd: stageRoot/u);
-  assert.match(releaseWorkflow, /src-tauri\/native\/ports\/\*\*\/\*/u);
-  assert.match(releaseWorkflow, /scripts\/probe-rdkafka-runtime\.ps1/u);
+test("native staging no longer provisions or probes Kafka", () => {
+  assert.doesNotMatch(nativeRuntimeStager, /kafka/i);
+  assert.doesNotMatch(releaseWorkflow, /kafka/i);
+  assert.ok(!nativeManifest.dependencies.some((item) => dependencyName(item) === "librdkafka"));
 });
 
 test("requires the exact architecture-specific native DLL closure", () => {
   assert.equal(Object.isFrozen(COMMON_RUNTIME_DLLS), true);
-  assert.equal(Object.isFrozen(OPENSSL_RUNTIME_DLLS), true);
   assert.deepEqual(COMMON_RUNTIME_DLLS, [
     "libssh2.dll",
-    "lz4.dll",
     "openh264-8.dll",
-    "rdkafka.dll",
     "sqlite3.dll",
     "z.dll",
-    "zstd.dll",
   ]);
   assert.deepEqual(runtimeDllsForArchitecture("x64"), [
-    "libcrypto-3-x64.dll",
     "libssh2.dll",
-    "libssl-3-x64.dll",
-    "lz4.dll",
     "openh264-8.dll",
-    "rdkafka.dll",
     "sqlite3.dll",
     "z.dll",
-    "zstd.dll",
   ]);
   assert.deepEqual(runtimeDllsForArchitecture("arm64"), [
-    "libcrypto-3-arm64.dll",
     "libssh2.dll",
-    "libssl-3-arm64.dll",
-    "lz4.dll",
     "openh264-8.dll",
-    "rdkafka.dll",
     "sqlite3.dll",
     "z.dll",
-    "zstd.dll",
   ]);
   assert.deepEqual(REQUIRED_LICENSE_PORTS, [
-    "librdkafka",
     "libssh2",
-    "lz4",
     "openh264",
-    "openssl",
     "sqlite3",
     "zlib",
-    "zstd",
   ]);
 });
 
@@ -592,13 +527,9 @@ test("normal Windows Tauri builds select the staged dynamic feature set", () => 
   );
   assert.match(
     cargoManifest,
-    /^full-windows-dynamic = \[[^\r\n]*"db-sqlite-dynamic"[^\r\n]*"kafka-dynamic"[^\r\n]*\]$/mu,
+    /^full-windows-dynamic = \[[^\r\n]*"db-sqlite-dynamic"[^\r\n]*\]$/mu,
   );
-  assert.match(cargoManifest, /^kafka-dynamic = \["kafka"\]$/mu);
-  assert.match(
-    kafkaStateRegistry,
-    /#\[cfg\(feature = "kafka"\)\][\s\S]*KafkaServiceState/u,
-  );
+  assert.doesNotMatch(cargoManifest, /^kafka(?:-\w+)?\s*=/mu);
 
   const runtimeDlls = runtimeDllsForArchitecture("x64");
   const resources = windowsNativeTauriConfig(runtimeDlls).bundle.resources;

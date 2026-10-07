@@ -60,9 +60,6 @@ pub fn build() -> crate::Handler {
 mod tests {
     use super::is_command;
 
-    #[cfg(feature = "kafka")]
-    const EXPECTED_COMMANDS: usize = 1773;
-    #[cfg(not(feature = "kafka"))]
     const EXPECTED_COMMANDS: usize = 1734;
 
     #[test]
@@ -91,9 +88,9 @@ mod tests {
     }
 
     #[test]
-    fn kafka_commands_are_routed_only_with_the_kafka_feature() {
+    fn removed_kafka_commands_are_not_routed() {
         for command in ["kafka_connect", "kafka_disconnect"] {
-            assert_eq!(is_command(command), cfg!(feature = "kafka"), "{command}");
+            assert!(!is_command(command), "{command}");
         }
         assert!(is_command("rabbit_aliveness_test"));
     }

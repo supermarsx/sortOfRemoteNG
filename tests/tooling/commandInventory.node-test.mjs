@@ -32,9 +32,8 @@ const opsGroups = {
   "ops-platform": 222,
   "ops-monitoring": 232,
   "ops-orchestration": 240,
-  "ops-messaging": 97,
+  "ops-messaging": 58,
 };
-const KAFKA_CFG = 'feature = "kafka"';
 const base = (name) => `src-tauri/crates/sorng-commands-${name}`;
 const manifest = (name) => JSON.parse(read(`${base(name)}/commands.json`));
 const modules = (name) =>
@@ -152,29 +151,20 @@ test("the infra facade owns no command wrappers or domain implementation depende
   assertAdaptersOwnWrappers(infraGroups);
 });
 
-test("ops preserves its exact 1,773-command public API in nine bounded owners", () => {
+test("ops preserves its exact 1,734-command public API in nine bounded owners", () => {
   const names = boundedOwnerNames(opsGroups);
-  assert.equal(new Set(names).size, 1773);
-  // Snapshot of the former single ops registrar's names (39 Kafka).
+  assert.equal(new Set(names).size, 1734);
+  // Snapshot after removing exactly the 39 Kafka commands.
   assert.equal(
     sha256(names),
-    "83534377b06510e26e9b6d7877adaa15f59cc14e377a7e10287e32429765f21c",
+    "b261ddee13f5a97b6aa2885acfee173dd52d70472694ce09359ce62306f9d3b1",
   );
-  // Kafka is the only feature-gated ops module; the messaging child owns all
-  // of it and every Kafka entry keeps the gate.
   for (const name of Object.keys(opsGroups)) {
     for (const entry of manifest(name).commands) {
-      const kafka = entry.path.startsWith("kafka_commands::");
-      assert.ok(!kafka || name === "ops-messaging", entry.path);
-      assert.equal(entry.cfg, kafka ? KAFKA_CFG : undefined, entry.path);
+      assert.ok(!entry.path.startsWith("kafka_commands::"), entry.path);
+      assert.equal(entry.cfg, undefined, entry.path);
     }
   }
-  assert.equal(
-    manifest("ops-messaging").commands.filter(
-      (entry) => entry.cfg === KAFKA_CFG,
-    ).length,
-    39,
-  );
 });
 
 test("the ops facade owns no command wrappers and routes every bounded child", () => {
@@ -195,10 +185,7 @@ test("the ops facade owns no command wrappers and routes every bounded child", (
     [...children, "tauri"].sort(),
     "the facade depends only on its children",
   );
-  assert.match(
-    section("features"),
-    /^kafka = \["sorng-commands-ops-messaging\/kafka"\]$/m,
-  );
+  assert.doesNotMatch(cargo, /kafka/i);
 
   // Match the router as a whole, not line by line: formatting may place an
   // entry and a closing delimiter on the same line.
@@ -237,22 +224,13 @@ test("the ops facade owns no command wrappers and routes every bounded child", (
     assert.ok(router.includes(`${child}::COMMAND_NAMES,`), child);
   }
 
-  // The Rust facade test's feature-selected totals must match the manifests.
+  // The Rust facade test's totals must match the manifests.
   const total = Object.keys(opsGroups).reduce(
     (sum, name) => sum + manifest(name).commands.length,
     0,
   );
-  const gated = manifest("ops-messaging").commands.filter(
-    (entry) => entry.cfg === KAFKA_CFG,
-  ).length;
-  const expected = (gate) =>
-    router.match(
-      new RegExp(
-        `#\\[cfg\\(${gate}\\)\\]\\s*const EXPECTED_COMMANDS: usize = (\\d+);`,
-      ),
-    )?.[1];
-  assert.equal(expected('feature = "kafka"'), String(total));
-  assert.equal(expected('not\\(feature = "kafka"\\)'), String(total - gated));
+  const expected = router.match(/const EXPECTED_COMMANDS: usize = (\d+);/)?.[1];
+  assert.equal(expected, String(total));
 
   assertAdaptersOwnWrappers(opsGroups);
 });

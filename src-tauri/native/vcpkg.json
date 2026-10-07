@@ -5,12 +5,6 @@
   "builtin-baseline": "b9b668c1de09b065f53a3943939801b901b585ef",
   "dependencies": [
     {
-      "name": "librdkafka",
-      "default-features": false,
-      "features": ["ssl", "zlib", "zstd"],
-      "platform": "windows"
-    },
-    {
       "name": "libssh2",
       "default-features": false,
       "features": ["zlib"],

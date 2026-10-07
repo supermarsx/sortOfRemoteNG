@@ -389,7 +389,6 @@
     "MariaDB",
     "Oracle",
     "MSSQL",
-    "Kafka",
     "RabbitMQ",
     "NATS",
     "ZeroMQ",

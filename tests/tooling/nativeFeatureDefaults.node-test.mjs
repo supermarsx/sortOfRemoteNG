@@ -27,7 +27,7 @@ const capabilities = (names) =>
     .filter(
       (name) =>
         Object.hasOwn(features, name) &&
-        !/^(default|lean|full(?:-.+)?|kafka(?:-.+)?|db-sqlite(?:-dynamic)?|rdp-software-decode(?:-dynamic)?)$/.test(
+        !/^(default|lean|full(?:-.+)?|db-sqlite(?:-dynamic)?|rdp-software-decode(?:-dynamic)?)$/.test(
           name,
         ),
     )
@@ -35,7 +35,6 @@ const capabilities = (names) =>
 const noLinkCollisions = (names) => {
   const enabled = closure(names);
   for (const pair of [
-    ["kafka", "kafka-static"],
     ["db-sqlite", "db-sqlite-dynamic"],
     ["rdp-software-decode", "rdp-software-decode-dynamic"],
   ])
@@ -65,7 +64,6 @@ test("normal Cargo and full-dev include the full supported capability set", () =
     "rdp-mf-decode",
     "rdp-snapshot",
     "rdp-software-decode",
-    "kafka-static",
     "opkssh-vendored-wrapper",
     "script-engine",
     "protocol-serial-dynamic",
@@ -119,21 +117,11 @@ test("release and platform bundles retain full capabilities without conflicting 
   );
 });
 
-test("static Kafka reaches both command dispatch and its owning startup-state crate", () => {
-  assert.ok(features["kafka-static"].includes("sorng-commands-ops?/kafka"));
-  assert.ok(features["kafka-static"].includes("sorng-app-domains/kafka"));
-  const domains = featureMap("src-tauri/crates/sorng-app-domains/Cargo.toml");
-  assert.ok(domains.kafka.includes("sorng-app-domains-ops?/kafka"));
-  const ops = featureMap("src-tauri/crates/sorng-app-domains-ops/Cargo.toml");
-  assert.ok(ops.kafka.includes("dep:sorng-kafka"));
-  assert.match(
-    read("src-tauri/crates/sorng-app-domains-ops/src/lib.rs"),
-    /#\[path = "\.\.\/\.\.\/\.\.\/src\/state_registry\/ops.rs"\]\s*pub mod ops_startup_state/,
-  );
-  assert.match(
-    read("src-tauri/src/state_registry/ops.rs"),
-    /#\[cfg\(feature = "kafka"\)\]\s*\{\s*let kafka_state/,
-  );
+test("Kafka no longer contributes a build feature or startup dependency", () => {
+  for (const file of ["src-tauri/Cargo.toml", "src-tauri/crates/sorng-app-domains/Cargo.toml", "src-tauri/crates/sorng-app-domains-ops/Cargo.toml"]) {
+    assert.doesNotMatch(read(file), /kafka/i, file);
+  }
+  assert.doesNotMatch(read("src-tauri/src/state_registry/ops.rs"), /kafka/i);
 });
 
 test("SSH scripting compiles exactly one implementation and retains command registration", () => {

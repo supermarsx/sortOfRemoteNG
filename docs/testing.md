@@ -31,12 +31,12 @@ Use a focused Vitest file during development, but do not present it as proof of 
 
 ## Rust loop
 
-The workspace has optional native dependencies and platform-specific features. Start with the crate that owns the change, then use the workspace command documented for your platform. Kafka is opt-in, and Windows contributors must use the MSVC host toolchain.
+The workspace has optional native dependencies and platform-specific features. Start with the crate that owns the change, then use the workspace command documented for your platform. Windows contributors must use the MSVC host toolchain.
 
 ```powershell
 Set-Location src-tauri
-cargo check --workspace --exclude sorng-kafka
-cargo test --workspace --exclude sorng-kafka
+cargo check --workspace
+cargo test --workspace
 ```
 
 ## E2E tiers

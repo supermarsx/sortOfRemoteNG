@@ -16,13 +16,12 @@ full feature matrix live in [`architecture.md`](architecture.md) and
     workload, Windows 10/11 SDK. **MSVC host is mandatory** (see below).
   - **macOS**: Xcode Command Line Tools (`xcode-select --install`).
   - **Linux**: `gcc`, `pkg-config`, `libssl-dev`, `libgtk-3-dev`,
-    `libwebkit2gtk-4.1-dev`, plus `cmake` + `build-essential` if you
-    enable the `kafka` feature.
+    `libwebkit2gtk-4.1-dev`, `cmake`, and `build-essential`.
 
 ### Windows: pin MSVC host
 
 The GNU host triggers `LNK1189: export ordinal too large` link errors in
-several crates in this workspace (`rdkafka-sys`, `ironrdp-*`, `sspi-rs`).
+several crates in this workspace (`ironrdp-*`, `sspi-rs`).
 Run the following once per Windows dev box:
 
 ```powershell
@@ -58,11 +57,11 @@ npm test
 npm run lint
 npm run format
 
-# Rust workspace check (Kafka is opt-in; excluded here to match default CI)
+# Rust workspace checks
 cd src-tauri
-cargo check --workspace --exclude sorng-kafka
-cargo clippy --workspace --exclude sorng-kafka --all-targets -- -D warnings
-cargo test --workspace --exclude sorng-kafka
+cargo check --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 
 # Required E2E smoke gate (same scope as the new PR smoke workflow)
 cd ..
@@ -70,13 +69,6 @@ npm run e2e:smoke:up
 npm run e2e:smoke:required
 npm run e2e:smoke:down
 ```
-
-### Kafka
-
-Kafka support is off by default. See
-[`src-tauri/crates/sorng-kafka/README.md`](src-tauri/crates/sorng-kafka/README.md)
-for per-OS `librdkafka` install and build-flag selection
-(`--features kafka` vs `--features kafka-dynamic`).
 
 ## CI expectations
 
@@ -86,9 +78,8 @@ Every PR must pass:
 - `lint` — `npm run lint` (ESLint).
 - `test` — `npm test -- --run --coverage`.
 - `e2e-smoke` — Docker-backed SSH + SFTP smoke tests only.
-- `rust-check-linux` — `cargo check --workspace --exclude sorng-kafka`
-  plus `cargo check -p app --features kafka`.
-- `rust-check-windows` — `cargo check --workspace --exclude sorng-kafka`
+- `rust-check-linux` — `cargo check --workspace`.
+- `rust-check-windows` — `cargo check --workspace`
   on an MSVC host.
 
 Broader E2E remains opt-in or nightly. See `docs/testing/e2e-runbook.md`

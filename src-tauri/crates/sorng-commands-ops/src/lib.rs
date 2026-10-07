@@ -1,8 +1,6 @@
 // Compatibility facade: each registrar is compiled in its own bounded crate.
 pub use sorng_commands_ops_databases::{mysql_admin, pg_admin};
 pub use sorng_commands_ops_identity::{freeipa, hashicorp_vault, mac_mgmt, pam};
-#[cfg(feature = "kafka")]
-pub use sorng_commands_ops_messaging::kafka;
 pub use sorng_commands_ops_messaging::rabbitmq;
 pub use sorng_commands_ops_monitoring::{grafana, ipmi, prometheus, ups_mgmt, zabbix};
 pub use sorng_commands_ops_network::{draytek, fail2ban, pfsense, port_knock};

@@ -161,7 +161,7 @@ jobs:
           npm run version:floor:check
           npm run version:check
           cargo metadata --manifest-path src-tauri/Cargo.toml --locked --format-version 1 --no-deps > /dev/null
-          cargo check --manifest-path src-tauri/Cargo.toml --workspace --exclude sorng-kafka --locked
+          cargo check --manifest-path src-tauri/Cargo.toml --workspace --locked
 
   delivery:
     name: Deliver sealed Cargo candidate
@@ -330,7 +330,7 @@ jobs:
             Policy:
             - changes only src-tauri/Cargo.lock and preserves every manifest range;
             - validates the canonical version and allocated release floor;
-            - resolves and checks the non-Kafka workspace with the sealed lock;
+            - resolves and checks the workspace with the sealed lock;
             - keeps vendored sources and manifests outside automation;
             - opens no automatic merge path.
 

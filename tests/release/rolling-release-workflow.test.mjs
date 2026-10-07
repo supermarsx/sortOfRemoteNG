@@ -659,7 +659,7 @@ test("main Docker E2E gates are SHA-scoped while PR refreshes cancel", () => {
   assert.doesNotMatch(e2eWorkflow, /cancel-in-progress: true/);
 });
 
-test("release builds distinct macOS architectures through static Kafka", () => {
+test("release builds distinct macOS architectures without Kafka", () => {
   assert.match(
     releaseWorkflow,
     /artifact_id: darwin-aarch64[\s\S]*?os: macos-15[\s\S]*?rust_target: aarch64-apple-darwin/,
@@ -668,7 +668,7 @@ test("release builds distinct macOS architectures through static Kafka", () => {
     releaseWorkflow,
     /artifact_id: darwin-x86_64[\s\S]*?os: macos-15-intel[\s\S]*?rust_target: x86_64-apple-darwin/,
   );
-  assert.match(releaseWorkflow, /kafka-static/);
+  assert.doesNotMatch(releaseWorkflow, /kafka/i);
   assert.doesNotMatch(releaseWorkflow, /--features full(?:\s|$)/m);
 });
 
@@ -1043,11 +1043,11 @@ test("resource controls preserve platform release features and signing inputs", 
   )?.[1];
   assert.equal(
     bundledReleaseFeatures,
-    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
   );
   assert.equal(
     windowsReleaseFeatures,
-    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,kafka-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
   );
   assert.equal(
     (releaseWorkflow.match(/^  RELEASE_FEATURES_(?:BUNDLED|WINDOWS):/gm) ?? [])
@@ -1057,13 +1057,20 @@ test("resource controls preserve platform release features and signing inputs", 
   assert.doesNotMatch(releaseWorkflow, /^  RELEASE_FEATURES:/m);
   const bundledFeatureSet = new Set(bundledReleaseFeatures.split(","));
   const windowsFeatureSet = new Set(windowsReleaseFeatures.split(","));
-  assert.equal(bundledFeatureSet.has("kafka-static"), true);
+  assert.deepEqual(
+    [...bundledFeatureSet]
+      .filter((feature) => !["db-sqlite"].includes(feature))
+      .sort(),
+    [...windowsFeatureSet]
+      .filter(
+        (feature) => !["db-sqlite-dynamic"].includes(feature),
+      )
+      .sort(),
+    "all non-linkage capabilities must remain identical across platforms",
+  );
   assert.equal(bundledFeatureSet.has("db-sqlite"), true);
-  assert.equal(bundledFeatureSet.has("kafka-dynamic"), false);
   assert.equal(bundledFeatureSet.has("db-sqlite-dynamic"), false);
-  assert.equal(windowsFeatureSet.has("kafka-dynamic"), true);
   assert.equal(windowsFeatureSet.has("db-sqlite-dynamic"), true);
-  assert.equal(windowsFeatureSet.has("kafka-static"), false);
   assert.equal(windowsFeatureSet.has("db-sqlite"), false);
   assert.equal(bundledFeatureSet.has("rdp-software-decode-dynamic"), true);
   assert.equal(windowsFeatureSet.has("rdp-software-decode-dynamic"), true);
@@ -1178,15 +1185,10 @@ test("resource controls preserve platform release features and signing inputs", 
 
 test("Windows releases stage, map, and validate the exact dynamic native runtime", () => {
   const expectedDllNames = [
-    "libcrypto-3-x64.dll",
     "libssh2.dll",
-    "libssl-3-x64.dll",
-    "lz4.dll",
     "openh264-8.dll",
-    "rdkafka.dll",
     "sqlite3.dll",
     "z.dll",
-    "zstd.dll",
   ];
   const buildJob = releaseWorkflow.slice(
     releaseWorkflow.indexOf("  build:"),
@@ -1231,7 +1233,7 @@ test("Windows releases stage, map, and validate the exact dynamic native runtime
   );
   assert.match(
     cacheStep,
-    /key: windows-native-\$\{\{ matrix\.rust_target \}\}-\$\{\{ hashFiles\('src-tauri\/native\/vcpkg\.json', 'src-tauri\/native\/ports\/\*\*\/\*', 'src-tauri\/native\/triplets\/\*', 'scripts\/stage-windows-native-runtime\.mjs', 'scripts\/probe-rdkafka-runtime\.ps1'\) \}\}/,
+    /key: windows-native-\$\{\{ matrix\.rust_target \}\}-\$\{\{ hashFiles\('src-tauri\/native\/vcpkg\.json', 'src-tauri\/native\/ports\/\*\*\/\*', 'src-tauri\/native\/triplets\/\*', 'scripts\/stage-windows-native-runtime\.mjs'\) \}\}/,
   );
 
   const stageStep = buildJob.slice(stageStart, configureStart);
@@ -1286,15 +1288,10 @@ test("Windows releases stage, map, and validate the exact dynamic native runtime
     "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
     "../src/i18n/locales/": "locales/",
     "resources/native-runtime-licenses/": "native-runtime-licenses/",
-    "resources/native-runtime/libcrypto-3-x64.dll": "libcrypto-3-x64.dll",
     "resources/native-runtime/libssh2.dll": "libssh2.dll",
-    "resources/native-runtime/libssl-3-x64.dll": "libssl-3-x64.dll",
-    "resources/native-runtime/lz4.dll": "lz4.dll",
     "resources/native-runtime/openh264-8.dll": "openh264-8.dll",
-    "resources/native-runtime/rdkafka.dll": "rdkafka.dll",
     "resources/native-runtime/sqlite3.dll": "sqlite3.dll",
     "resources/native-runtime/z.dll": "z.dll",
-    "resources/native-runtime/zstd.dll": "zstd.dll",
   });
   assert.deepEqual(inspectedPaths, [
     resolve("src-tauri", "resources/native-runtime-licenses/openh264.txt"),
@@ -1327,7 +1324,7 @@ test("Windows releases stage, map, and validate the exact dynamic native runtime
   assert.ok(expectedDllBlock);
   assert.deepEqual(
     [...expectedDllBlock.matchAll(/"([^"]+\.dll)"/g)].map((match) =>
-      match[1].replace("$opensslArchitecture", "x64"),
+      match[1],
     ),
     expectedDllNames,
   );
@@ -1341,7 +1338,7 @@ test("Windows releases stage, map, and validate the exact dynamic native runtime
   );
   assert.match(
     importValidationStep,
-    /foreach \(\$requiredImport in @\("libssh2\.dll", "openh264-8\.dll", "rdkafka\.dll", "sqlite3\.dll"\)\)[\s\S]*?does not import required dynamic library/,
+    /foreach \(\$requiredImport in @\("libssh2\.dll", "openh264-8\.dll", "sqlite3\.dll"\)\)[\s\S]*?does not import required dynamic library/,
   );
   assert.match(
     importValidationStep,
@@ -1501,6 +1498,22 @@ test("Windows signing is architecture-aware and both portable archives are compl
     releaseWorkflow.indexOf("  build:"),
     releaseWorkflow.indexOf("  publish:"),
   );
+  const nativeSigningStart = buildJob.indexOf(
+    "- name: Sign Windows native runtime DLLs",
+  );
+  const configureSigningStart = buildJob.indexOf(
+    "- name: Configure updater and OS signing",
+  );
+  assert.ok(nativeSigningStart >= 0);
+  assert.ok(configureSigningStart > nativeSigningStart);
+  const nativeSigningStep = buildJob.slice(
+    nativeSigningStart,
+    configureSigningStart,
+  );
+  assert.match(
+    nativeSigningStep,
+    /Get-ChildItem "src-tauri\/resources\/native-runtime\/\*\.dll" -File[\s\S]*?if \(\$runtimeDlls\.Count -ne 4\) \{\s*throw "Expected exactly four staged native runtime DLLs before signing\.";?\s*\}[\s\S]*?foreach \(\$file in \$runtimeDlls\)/,
+  );
   const verifyStart = buildJob.indexOf(
     "- name: Verify Windows Authenticode signatures",
   );
@@ -1539,30 +1552,21 @@ test("Windows signing is architecture-aware and both portable archives are compl
   assert.doesNotMatch(signingStep, /\\x64\\signtool\.exe/);
   assert.match(
     signingStep,
-    /Get-ChildItem "src-tauri\/resources\/native-runtime\/\*\.dll" -File[\s\S]*?\$runtimeDlls\.Count -ne 9[\s\S]*?\$files \+= \$runtimeDlls/,
+    /Get-ChildItem "src-tauri\/resources\/native-runtime\/\*\.dll" -File[\s\S]*?if \(\$runtimeDlls\.Count -ne 4\) \{\s*throw "Expected four signed native runtime DLLs\.";?\s*\}[\s\S]*?\$files \+= \$runtimeDlls/,
   );
 
   const portableStep = buildJob.slice(portableStart, macVerifyStart);
   const expectedNativeDllNames = [
-    "libcrypto-3-$opensslArchitecture.dll",
     "libssh2.dll",
-    "libssl-3-$opensslArchitecture.dll",
-    "lz4.dll",
     "openh264-8.dll",
-    "rdkafka.dll",
     "sqlite3.dll",
     "z.dll",
-    "zstd.dll",
   ];
   const expectedNativeLicenseNames = [
-    "librdkafka.txt",
     "libssh2.txt",
-    "lz4.txt",
     "openh264.txt",
-    "openssl.txt",
     "sqlite3.txt",
     "zlib.txt",
-    "zstd.txt",
   ];
   assert.match(portableStep, /if: matrix\.platform == 'windows'/);
   assert.match(portableStep, /ARTIFACT_ID: \$\{\{ matrix\.artifact_id \}\}/);

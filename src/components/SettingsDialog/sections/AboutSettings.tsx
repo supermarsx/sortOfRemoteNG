@@ -529,12 +529,6 @@ const CREDIT_GROUPS: CreditGroup[] = [
         license: "MIT / public domain",
       },
       {
-        name: "rdkafka / librdkafka",
-        author: "Confluent and rdkafka contributors",
-        detail: "Kafka client integration and native broker protocol support.",
-        license: "MIT / BSD-2-Clause",
-      },
-      {
         name: "lettre",
         author: "lettre contributors",
         detail: "SMTP mail transport.",
@@ -883,7 +877,6 @@ const CREDIT_REPOSITORY_URLS: Record<string, string> = {
   "Redis Rust Client": "https://github.com/redis-rs/redis-rs",
   "MongoDB Rust Driver": "https://github.com/mongodb/mongo-rust-driver",
   "rusqlite / SQLite": "https://github.com/rusqlite/rusqlite",
-  "rdkafka / librdkafka": "https://github.com/fede1024/rust-rdkafka",
   lettre: "https://github.com/lettre/lettre",
   "trust-dns": "https://github.com/hickory-dns/hickory-dns",
   Quinn: "https://github.com/quinn-rs/quinn",

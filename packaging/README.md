@@ -12,8 +12,8 @@ recipe projects the public `YY.N` identity into the source tree before build.
 The official Arch recipe targets x86_64; the Alpine recipe supports x86_64 and
 aarch64.
 
-The packages deliberately use distribution shared libraries for Kafka,
-SQLite, libssh2, and OpenH264. Their `check()` functions require the installed
+The packages deliberately use distribution shared libraries for SQLite,
+libssh2, and OpenH264. Their `check()` functions require the installed
 `/usr/bin/com.sortofremote.ng` binary to contain the corresponding ELF imports,
 including the hard OpenH264 ABI contract `libopenh264.so.8`. Locales and the
 embedded OPKSSH bridge are installed below `/usr/lib/sortOfRemoteNG`, matching

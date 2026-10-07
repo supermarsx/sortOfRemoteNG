@@ -260,7 +260,7 @@ test("parses the release workflow CLI and exports link and loader paths", () => 
 
 test("the source-build stager validates version, architecture, and loader identity", () => {
   assert.ok(nativeManifest.dependencies.includes("openh264"));
-  for (const name of ["librdkafka", "libssh2", "sqlite3"]) {
+  for (const name of ["libssh2", "sqlite3"]) {
     const dependency = nativeManifest.dependencies.find(
       (candidate) => candidate?.name === name,
     );

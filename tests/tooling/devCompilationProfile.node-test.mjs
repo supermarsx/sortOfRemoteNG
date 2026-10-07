@@ -166,7 +166,6 @@ test("full native feature defaults and full-dev alias stay full, never silently 
     "db-postgres",
     "db-redis",
     "db-sqlite",
-    "kafka-static",
     "logs-json",
     "opkssh-vendored-wrapper",
     "ops",
