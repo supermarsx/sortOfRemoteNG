@@ -1,0 +1,44 @@
+.modeBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.modes {
+  display: inline-flex;
+  gap: 0.125rem;
+  padding: 0.125rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+}
+.modes > :global(.sor-btn) {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+.hint {
+  color: var(--color-textSecondary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.text {
+  min-width: 0;
+  padding: 0.25rem 0;
+}
+.embedded {
+  min-width: 0;
+  padding: 0.625rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+}
+.embeddedTitle {
+  margin-bottom: 0.5rem;
+  color: var(--color-textSecondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.empty {
+  min-height: 4rem;
+}

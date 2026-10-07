@@ -309,7 +309,36 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
         </Card>
       </div>
 
-      {/* Tab Interaction */}
+      {/* Document tree visibility and search */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<FileText className="w-4 h-4 text-primary" />}
+          title="Documents"
+        />
+        <Card>
+          <Toggle
+            checked={settings.showDocumentsInConnectionTree === true}
+            onChange={(value) =>
+              updateSettings({ showDocumentsInConnectionTree: value })
+            }
+            icon={<FileText size={16} />}
+            label="Show documents in connection tree"
+            description="Include documents from the current database under their owning folders. App-wide documents stay in Documents."
+            settingKey="showDocumentsInConnectionTree"
+          />
+          <Toggle
+            checked={settings.searchDocumentContents === true}
+            onChange={(value) =>
+              updateSettings({ searchDocumentContents: value })
+            }
+            icon={<FileStack size={16} />}
+            label="Search document contents"
+            description="Search ordinary text, spreadsheet cells and labels in Documents and the tree. Passwords, secret values and private identity/account fields are excluded. Off searches names only."
+            settingKey="searchDocumentContents"
+          />
+        </Card>
+      </div>
+
       <div className="space-y-4">
         <SectionHeader
           icon={<GripVertical className="w-4 h-4 text-primary" />}

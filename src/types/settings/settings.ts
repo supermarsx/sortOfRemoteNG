@@ -535,6 +535,10 @@ export interface GlobalSettings {
   persistSidebarWidth: boolean;
   persistSidebarPosition: boolean;
   persistSidebarCollapsed: boolean;
+  /** Include current-database document metadata in the connection tree. */
+  showDocumentsInConnectionTree: boolean;
+  /** Search ordinary document text; structured secrets and private fields are excluded. */
+  searchDocumentContents: boolean;
   windowSize?: { width: number; height: number };
   windowPosition?: { x: number; y: number };
   sidebarWidth?: number;

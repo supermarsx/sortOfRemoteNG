@@ -564,6 +564,11 @@ export function useNetworkDiscovery({
     canDiscardResults:
       !isScanning && startedAt !== null && saveStatus !== "saving",
     hasScanned: startedAt !== null,
+    // Use the executed configuration, not the editable form after a scan ends.
+    getDocumentExportScan: () =>
+      !abortControllerRef.current && snapshotRef.current
+        ? structuredClone(snapshotRef.current.scan)
+        : null,
     native,
     selectedHosts,
     selectedServices,

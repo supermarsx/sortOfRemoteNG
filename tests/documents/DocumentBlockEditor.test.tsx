@@ -7,8 +7,10 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
-import DocumentBlockEditor from "../../src/components/documents/DocumentBlockEditor";
+import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
+import DocumentBlockEditor, {
+  type DocumentBlockEditorProps,
+} from "../../src/components/documents/DocumentBlockEditor";
 import type {
   DocumentBlock,
   DocumentReference,
@@ -18,7 +20,10 @@ const qr = vi.hoisted(() =>
 );
 vi.mock("qrcode", () => ({ toDataURL: qr }));
 const note: DocumentBlock = { id: "note", type: "note", text: "Before" };
-function Harness({ initial = [note] }: { initial?: DocumentBlock[] }) {
+function Harness({
+  initial = [note],
+  ...props
+}: { initial?: DocumentBlock[] } & Partial<DocumentBlockEditorProps>) {
   const [blocks, setBlocks] = React.useState(initial);
   return (
     <>
@@ -26,6 +31,7 @@ function Harness({ initial = [note] }: { initial?: DocumentBlock[] }) {
         documentKey="db-a:1:doc"
         blocks={blocks}
         attachments={[]}
+        {...props}
         onChange={setBlocks}
       />
       <output data-testid="blocks">{JSON.stringify(blocks)}</output>
@@ -35,11 +41,100 @@ function Harness({ initial = [note] }: { initial?: DocumentBlock[] }) {
 const blocks = () =>
   JSON.parse(screen.getByTestId("blocks").textContent!) as DocumentBlock[];
 function choose(label: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Blocks" }));
   fireEvent.click(screen.getByLabelText("Block type"));
   fireEvent.mouseDown(screen.getByRole("option", { name: label }));
   fireEvent.click(screen.getByRole("button", { name: "Add block" }));
 }
+const rangeRects = Object.getOwnPropertyDescriptor(
+  Range.prototype,
+  "getClientRects",
+);
+const rangeBox = Object.getOwnPropertyDescriptor(
+  Range.prototype,
+  "getBoundingClientRect",
+);
+beforeAll(() => {
+  // Run the real text engine; jsdom supplies no selection geometry.
+  Object.defineProperty(Range.prototype, "getClientRects", {
+    configurable: true,
+    value: () => [],
+  });
+  Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+    }),
+  });
+});
+afterAll(() => {
+  if (rangeRects)
+    Object.defineProperty(Range.prototype, "getClientRects", rangeRects);
+  else Reflect.deleteProperty(Range.prototype, "getClientRects");
+  if (rangeBox)
+    Object.defineProperty(Range.prototype, "getBoundingClientRect", rangeBox);
+  else Reflect.deleteProperty(Range.prototype, "getBoundingClientRect");
+});
 describe("document block draft editor", () => {
+  it("writes into an empty document and inserts through the real inline slash menu", async () => {
+    render(<Harness initial={[]} />);
+    const text = await screen.findByRole("textbox", {
+      name: "Rich document text",
+    });
+    expect(blocks()).toEqual([]);
+    act(() => text.focus());
+    fireEvent.paste(text, { clipboardData: { getData: () => "/note" } });
+    expect(blocks()).toHaveLength(1);
+    const sourceId = blocks()[0].id;
+    fireEvent.click(await screen.findByRole("option", { name: "Note" }));
+    await waitFor(() =>
+      expect(blocks().map((block) => block.type)).toEqual([
+        "note",
+        "rich-text",
+      ]),
+    );
+    expect(blocks()[1].id).toBe(sourceId);
+    expect(JSON.stringify(blocks())).not.toContain("/note");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("textbox", { name: "Rich document text" }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("keeps the real slash text when a reference picker is cancelled", async () => {
+    let finish!: (value: DocumentReference | null) => void;
+    render(
+      <Harness
+        initial={[]}
+        onChooseReference={() =>
+          new Promise((resolve) => {
+            finish = resolve;
+          })
+        }
+      />,
+    );
+    const text = await screen.findByRole("textbox", {
+      name: "Rich document text",
+    });
+    act(() => text.focus());
+    fireEvent.paste(text, { clipboardData: { getData: () => "/reference" } });
+    const original = structuredClone(blocks());
+    fireEvent.click(await screen.findByRole("option", { name: "Reference" }));
+    await act(async () => finish(null));
+    expect(blocks()).toEqual(original);
+    expect(
+      screen.getByRole("textbox", { name: "Rich document text" }),
+    ).toHaveTextContent("/reference");
+  });
+
   it("edits, reorders and confirms removal without deleting attachments", () => {
     render(<Harness />);
     fireEvent.change(screen.getByLabelText("Note"), {
@@ -235,6 +330,7 @@ describe("document block draft editor", () => {
       />,
     );
     expect(screen.getByRole("grid")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Blocks" }));
     expect(renderSheet).toHaveBeenCalledWith(
       spreadsheet,
       expect.any(Function),

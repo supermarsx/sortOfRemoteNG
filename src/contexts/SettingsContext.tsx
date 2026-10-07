@@ -327,6 +327,8 @@ export const defaultSettings: GlobalSettings = {
   persistSidebarWidth: true,
   persistSidebarPosition: true,
   persistSidebarCollapsed: true,
+  showDocumentsInConnectionTree: false,
+  searchDocumentContents: false,
   windowSize: { width: 1280, height: 720 },
   windowPosition: { x: 120, y: 80 },
   sidebarWidth: 320,
@@ -705,6 +707,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
       const merged = {
         ...settingsRef.current,
         ...updates,
+        showDocumentsInConnectionTree:
+          settingsManager.getSettings().showDocumentsInConnectionTree === true,
+        searchDocumentContents:
+          settingsManager.getSettings().searchDocumentContents === true,
         iconLibrary: settingsManager.getSettings().iconLibrary,
       };
       settingsRef.current = merged;

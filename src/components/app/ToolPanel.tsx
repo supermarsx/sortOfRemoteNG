@@ -577,6 +577,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           isOpen
           embedded
           onClose={onClose}
+          onActivateSession={onActivateSession}
           allowCreateConnections={databaseAvailability?.status === "ready"}
         />
       )}

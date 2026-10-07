@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Download, FolderOpen, Pencil, Trash2 } from "lucide-react";
+import { Download, FolderOpen, Pencil, Table2, Trash2 } from "lucide-react";
 import type { useNetworkDiscovery } from "../../hooks/network/useNetworkDiscovery";
 import {
   DISCOVERY_HISTORY_NAME_MAX_LENGTH,
@@ -17,11 +17,13 @@ export function DiscoveryScanHistory({
   onOpen,
   onDelete,
   onClear,
+  onExportDocument,
 }: {
   scanHistory: ReturnType<typeof useNetworkDiscovery>["scanHistory"];
   onOpen: (scan: SavedDiscoveryScan) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
+  onExportDocument?: (scan: SavedDiscoveryScan) => void;
 }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -174,6 +176,17 @@ export function DiscoveryScanHistory({
                   <Download size={15} />
                   Export CSV
                 </button>
+                {onExportDocument && (
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    disabled={busy}
+                    aria-label={`Export to Documents: ${label}`}
+                    onClick={() => onExportDocument(scan)}
+                  >
+                    <Table2 size={15} /> Export to Documents
+                  </button>
+                )}
                 <button
                   type="button"
                   className={buttonClass}

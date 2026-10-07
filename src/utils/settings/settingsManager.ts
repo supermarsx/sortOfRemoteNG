@@ -621,6 +621,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   persistSidebarWidth: true,
   persistSidebarPosition: true,
   persistSidebarCollapsed: true,
+  showDocumentsInConnectionTree: false,
+  searchDocumentContents: false,
   windowSize: { width: 1280, height: 720 },
   windowPosition: { x: 120, y: 80 },
   sidebarWidth: 320,
@@ -1178,6 +1180,9 @@ export class SettingsManager {
     return {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
+      showDocumentsInConnectionTree:
+        normalizedStored.showDocumentsInConnectionTree === true,
+      searchDocumentContents: normalizedStored.searchDocumentContents === true,
       showDocumentsIcon: normalizedStored.showDocumentsIcon !== false,
       showCredentialVaultIcon:
         normalizedStored.showCredentialVaultIcon !== false,
@@ -1331,6 +1336,12 @@ export class SettingsManager {
     delete safePatch.recordTimestamps;
     if ("showDocumentsIcon" in safePatch)
       safePatch.showDocumentsIcon = safePatch.showDocumentsIcon !== false;
+    if ("showDocumentsInConnectionTree" in safePatch)
+      safePatch.showDocumentsInConnectionTree =
+        safePatch.showDocumentsInConnectionTree === true;
+    if ("searchDocumentContents" in safePatch)
+      safePatch.searchDocumentContents =
+        safePatch.searchDocumentContents === true;
     if ("showCredentialVaultIcon" in safePatch)
       safePatch.showCredentialVaultIcon =
         safePatch.showCredentialVaultIcon !== false;

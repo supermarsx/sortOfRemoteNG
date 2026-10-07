@@ -25,9 +25,11 @@ import { fixture } from "./fixtures";
 import type { DatabaseDocumentType } from "../../src/types/settings/databaseSettings";
 import { normalizeDatabaseDocuments } from "../../src/utils/documents/validation";
 import { DOCUMENT_TYPE_OPTIONS } from "../../src/utils/documents/documentTypePolicy";
+import { createDocumentAttachment } from "../../src/utils/documents/documentAttachments";
 import styles from "../../src/components/documents/documents.module.css";
 
 const mock = vi.hoisted(() => ({
+  searchDocumentContents: false,
   ready: true,
   policyReady: true,
   disabledTypes: [] as DatabaseDocumentType[],
@@ -47,6 +49,11 @@ const mock = vi.hoisted(() => ({
     update: vi.fn(),
     remove: vi.fn(),
   },
+}));
+vi.mock("../../src/contexts/SettingsContext", () => ({
+  useSettings: () => ({
+    settings: { searchDocumentContents: mock.searchDocumentContents },
+  }),
 }));
 vi.mock("../../src/hooks/documents/useAppDocumentsStore", () => ({
   useAppDocumentsStore: () => mock.appStore,
@@ -153,6 +160,17 @@ vi.mock("../../src/components/documents/DocumentBlockEditor", () => ({
           >
             {block.label}
           </button>
+        ) : block.type === "attachment" ? (
+          <button
+            key={block.id}
+            onClick={() =>
+              props.onChange(
+                props.blocks.filter((entry) => entry.id !== block.id),
+              )
+            }
+          >
+            Remove attachment fixture
+          </button>
         ) : null,
       )}
     </div>
@@ -168,6 +186,7 @@ const request: Request = {
 let saved: DatabaseDocuments;
 beforeEach(() => {
   vi.clearAllMocks();
+  mock.searchDocumentContents = false;
   mock.ready = true;
   mock.appStore = undefined;
   mock.policyReady = true;
@@ -255,6 +274,8 @@ const loaded = async () => {
   await screen.findByDisplayValue("Inventory");
   await screen.findByTestId("mock-spreadsheet");
 };
+const editorHeader = () =>
+  within(screen.getByLabelText("Document editor header"));
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((finish) => {
@@ -264,6 +285,465 @@ function deferred<T>() {
 }
 
 describe("protected document workspace integration", () => {
+  it("searches ordinary document contents only with explicit opt-in, never structured secrets", async () => {
+    const view = show();
+    await loaded();
+    const query = screen.getByLabelText("Search documents and records");
+    fireEvent.change(query, { target: { value: "Fixture" } });
+    expect(screen.queryByRole("button", { name: "Open Inventory" })).toBeNull();
+    mock.searchDocumentContents = true;
+    view.rerender(
+      <DocumentsWorkspace sessionId="workspace-tab" request={request} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Open Inventory" }),
+    ).toBeInTheDocument();
+    fireEvent.change(query, { target: { value: "PRIVATE_FIXTURE" } });
+    expect(screen.queryByRole("button", { name: "Open Inventory" })).toBeNull();
+    fireEvent.change(query, { target: { value: "Linked host" } });
+    expect(
+      screen.getByRole("button", { name: "Open Inventory" }),
+    ).toBeInTheDocument();
+    mock.searchDocumentContents = false;
+    view.rerender(
+      <DocumentsWorkspace sessionId="workspace-tab" request={request} />,
+    );
+    expect(screen.queryByRole("button", { name: "Open Inventory" })).toBeNull();
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
+
+  it("undoes and redoes document edits as drafts, preserving other records and requiring Save", async () => {
+    show();
+    await loaded();
+    const name = screen.getByRole("textbox", { name: "Name" });
+    expect(
+      screen.getByRole("button", { name: "Undo document edit" }),
+    ).toBeDisabled();
+    fireEvent.change(name, { target: { value: "Renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Undo document edit" }));
+    expect(name).toHaveValue("Inventory");
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Redo document edit" }));
+    expect(name).toHaveValue("Renamed");
+    const other = structuredClone(saved.documents[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled(),
+    );
+    expect(saved.documents[0].name).toBe("Renamed");
+    expect(saved.documents[1]).toEqual(other);
+    fireEvent.click(screen.getByRole("button", { name: "Undo document edit" }));
+    expect(name).toHaveValue("Inventory");
+    expect(saved.documents[0].name).toBe("Renamed");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("clears edit history on scope changes and blocks it during a pending spreadsheet review", async () => {
+    const view = show();
+    await loaded();
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+      target: { value: "Draft" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Pending spreadsheet review" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Undo document edit" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Accept spreadsheet review" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Undo document edit" }),
+    ).toBeEnabled();
+    mock.store!.scope = { databaseId: "db-a", generation: 2 };
+    view.rerender(
+      <DocumentsWorkspace sessionId="workspace-tab" request={request} />,
+    );
+    await screen.findByDisplayValue("Inventory");
+    expect(
+      screen.getByRole("button", { name: "Undo document edit" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Redo document edit" }),
+    ).toBeDisabled();
+  });
+
+  it("restores removed attachment bytes with Undo without changing other documents", async () => {
+    const attachment = await createDocumentAttachment(
+      new TextEncoder().encode("Attachment fixture"),
+      "fixture.txt",
+      "text/plain",
+    );
+    saved.attachments.push(attachment);
+    saved.documents[0].blocks.push({
+      id: "attachment-block",
+      type: "attachment",
+      attachmentId: attachment.id,
+      caption: "Fixture",
+    });
+    const other = structuredClone(saved.documents[1]);
+    show();
+    await loaded();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove attachment fixture" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Remove attachment fixture" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Undo document edit" }));
+    expect(
+      screen.getByRole("button", { name: "Remove attachment fixture" }),
+    ).toBeInTheDocument();
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled(),
+    );
+    expect(saved.attachments).toEqual([attachment]);
+    expect(saved.documents[0].blocks).toContainEqual({
+      id: "attachment-block",
+      type: "attachment",
+      attachmentId: attachment.id,
+      caption: "Fixture",
+    });
+    expect(saved.documents[1]).toEqual(other);
+  });
+
+  it.each([
+    ["Ctrl", { ctrlKey: true }],
+    ["Cmd", { metaKey: true }],
+  ] as const)(
+    "saves from Name with %s+S once, ignores repeats, and waits for durable readback",
+    async (_label, modifier) => {
+      const pendingWrite = deferred<void>();
+      const pendingReadback = deferred<void>();
+      const write = mock.store!.compareAndSwap;
+      mock.store!.compareAndSwap = vi.fn(
+        async (scope, expected, replacement) => {
+          await pendingWrite.promise;
+          await write(scope, expected, replacement);
+        },
+      );
+      const original = structuredClone(saved);
+      show();
+      await loaded();
+      expect(editorHeader().getByRole("status")).toHaveTextContent(
+        "Library saved",
+      );
+      expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
+      expect(
+        editorHeader().getByRole("button", { name: "Save" }),
+      ).toBeDisabled();
+      vi.mocked(mock.store!.read).mockImplementationOnce(async () => {
+        await pendingReadback.promise;
+        return structuredClone(saved);
+      });
+      const name = editorHeader().getByRole("textbox", { name: "Name" });
+      name.focus();
+      fireEvent.change(name, { target: { value: "Saved from the title" } });
+      expect(name).toHaveFocus();
+      expect(editorHeader().getByRole("status")).toHaveTextContent(
+        "Unsaved library changes",
+      );
+      expect(saved).toEqual(original);
+      expect(
+        fireEvent.keyDown(name, { key: "s", ...modifier, repeat: true }),
+      ).toBe(false);
+      expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+      expect(fireEvent.keyDown(name, { key: "s", ...modifier })).toBe(false);
+      expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce();
+      expect(editorHeader().getByRole("status")).toHaveTextContent(
+        "Saving library…",
+      );
+      expect(name).toBeDisabled();
+      expect(
+        editorHeader().getByRole("button", { name: "Saving…" }),
+      ).toBeDisabled();
+      fireEvent.keyDown(name, { key: "s", ...modifier, repeat: true });
+      fireEvent.keyDown(name, { key: "s", ...modifier });
+      expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce();
+      await act(async () => pendingWrite.resolve());
+      await waitFor(() =>
+        expect(saved.documents[0].name).toBe("Saved from the title"),
+      );
+      expect(editorHeader().getByRole("status")).toHaveTextContent(
+        "Saving library…",
+      );
+      expect(getDocumentDraft("workspace-tab")?.dirty).toBe(true);
+      expect(mock.toast.update).not.toHaveBeenCalled();
+      await act(async () => pendingReadback.resolve());
+      await waitFor(() =>
+        expect(editorHeader().getByRole("status")).toHaveTextContent(
+          "Library saved",
+        ),
+      );
+      expect(name).toBeEnabled();
+      expect(
+        editorHeader().getByRole("button", { name: "Save" }),
+      ).toBeDisabled();
+      expect(saved.revision).toBe(original.revision + 1);
+      expect(saved.documents[0].blocks).toEqual(original.documents[0].blocks);
+      expect(saved.documents[1]).toEqual(original.documents[1]);
+      expect(getDocumentDraft("workspace-tab")?.dirty).toBe(false);
+      fireEvent.keyDown(name, { key: "s", ...modifier });
+      expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce();
+      expect(mock.toast.update).toHaveBeenCalledExactlyOnceWith(
+        "document-save",
+        expect.objectContaining({ type: "success" }),
+      );
+    },
+  );
+
+  it.each([
+    ["Ctrl", { ctrlKey: true }],
+    ["Cmd", { metaKey: true }],
+  ] as const)(
+    "refuses %s+S during pending spreadsheet review and saves after acceptance",
+    async (_label, modifier) => {
+      show();
+      await loaded();
+      const name = editorHeader().getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value: "Review before saving" } });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Pending spreadsheet review" }),
+      );
+      name.focus();
+      expect(editorHeader().getByRole("status")).toHaveTextContent(
+        "Review pending changes",
+      );
+      expect(
+        editorHeader().getByRole("button", { name: "Save" }),
+      ).toBeDisabled();
+      expect(fireEvent.keyDown(name, { key: "s", ...modifier })).toBe(false);
+      expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+      expect(mock.toast.loading).not.toHaveBeenCalled();
+      expect(saved.documents[0].name).toBe("Inventory");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Accept spreadsheet review" }),
+      );
+      expect(
+        editorHeader().getByRole("button", { name: "Save" }),
+      ).toBeEnabled();
+      fireEvent.keyDown(name, { key: "s", ...modifier });
+      await waitFor(() =>
+        expect(editorHeader().getByRole("status")).toHaveTextContent(
+          "Library saved",
+        ),
+      );
+      expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce();
+      expect(saved.documents[0].name).toBe("Review before saving");
+    },
+  );
+
+  it.each([
+    ["Ctrl", { ctrlKey: true }],
+    ["Cmd", { metaKey: true }],
+  ] as const)(
+    "does not handle %s+S outside the document editor or in its portals",
+    async (_label, modifier) => {
+      const view = show();
+      await loaded();
+      fireEvent.change(editorHeader().getByRole("textbox", { name: "Name" }), {
+        target: { value: "Keep this draft local" },
+      });
+      const shortcut = { key: "s", ...modifier };
+      for (const target of [
+        window,
+        document.body,
+        screen.getByRole("textbox", { name: "Search documents and records" }),
+      ])
+        expect(fireEvent.keyDown(target, shortcut)).toBe(true);
+      fireEvent.click(
+        editorHeader().getByRole("combobox", { name: "Owning folder" }),
+      );
+      const search = screen.getByRole("textbox", { name: "Search folders…" });
+      expect(screen.getByRole("main")).not.toContainElement(search);
+      expect(fireEvent.keyDown(search, shortcut)).toBe(true);
+      fireEvent.keyDown(search, { key: "Escape" });
+      fireEvent.click(
+        editorHeader().getByRole("button", {
+          name: "Document icon: Text file",
+        }),
+      );
+      const picker = screen.getByRole("dialog", {
+        name: "Choose document icon",
+      });
+      expect(screen.getByRole("main")).not.toContainElement(picker);
+      expect(
+        fireEvent.keyDown(
+          within(picker).getByRole("textbox", {
+            name: "Search document icons",
+          }),
+          shortcut,
+        ),
+      ).toBe(true);
+      fireEvent.keyDown(picker, { key: "Escape" });
+      fireEvent.click(editorHeader().getByRole("button", { name: "Browse" }));
+      expect(
+        screen.queryByLabelText("Document editor header"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+      expect(fireEvent.keyDown(screen.getByRole("main"), shortcut)).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "People" }));
+      expect(fireEvent.keyDown(screen.getByRole("main"), shortcut)).toBe(true);
+      expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+      expect(saved.documents[0].name).toBe("Inventory");
+      view.unmount();
+      expect(fireEvent.keyDown(window, shortcut)).toBe(true);
+      expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+    },
+  );
+
+  it("leaves modified and already-handled key combinations alone", async () => {
+    show();
+    await loaded();
+    const name = editorHeader().getByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "Still a draft" } });
+    for (const modifiers of [
+      {},
+      { ctrlKey: true, shiftKey: true },
+      { metaKey: true, shiftKey: true },
+      { ctrlKey: true, altKey: true },
+      { metaKey: true, altKey: true },
+    ])
+      expect(fireEvent.keyDown(name, { key: "s", ...modifiers })).toBe(true);
+    const handled = new KeyboardEvent("keydown", {
+      key: "s",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    handled.preventDefault();
+    fireEvent(name, handled);
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+    expect(saved.documents[0].name).toBe("Inventory");
+  });
+
+  it("keeps Name, icon and folder changes in the library draft until a single save", async () => {
+    mock.connections.push(
+      { ...mock.connections[0], id: "east", name: "East", isGroup: true },
+      { ...mock.connections[0], id: "west", name: "West", isGroup: true },
+      {
+        ...mock.connections[0],
+        id: "east-reports",
+        name: "Reports",
+        parentId: "east",
+        isGroup: true,
+      },
+      {
+        ...mock.connections[0],
+        id: "west-reports",
+        name: "Reports",
+        parentId: "west",
+        isGroup: true,
+      },
+    );
+    const original = structuredClone(saved);
+    show();
+    await loaded();
+    fireEvent.change(editorHeader().getByRole("textbox", { name: "Name" }), {
+      target: { value: "Moved inventory" },
+    });
+    fireEvent.click(
+      editorHeader().getByRole("combobox", { name: "Owning folder" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Search folders…" }), {
+      target: { value: "west reports" },
+    });
+    fireEvent.mouseDown(screen.getByRole("option", { name: "West / Reports" }));
+    expect(
+      editorHeader().getByRole("combobox", { name: "Owning folder" }),
+    ).toHaveTextContent("West / Reports");
+    fireEvent.click(
+      editorHeader().getByRole("button", { name: "Document icon: Text file" }),
+    );
+    const picker = within(
+      screen.getByRole("dialog", { name: "Choose document icon" }),
+    );
+    fireEvent.change(
+      picker.getByRole("textbox", { name: "Search document icons" }),
+      { target: { value: "Invoice" } },
+    );
+    fireEvent.click(picker.getByRole("button", { name: "Invoice" }));
+    expect(
+      editorHeader().getByRole("button", { name: "Document icon: Invoice" }),
+    ).toBeVisible();
+    expect(saved).toEqual(original);
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+    expect(getDocumentDraft("workspace-tab")?.dirty).toBe(true);
+    fireEvent.click(editorHeader().getByRole("button", { name: "Browse" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Other document" }),
+    );
+    expect(editorHeader().getByRole("status")).toHaveTextContent(
+      "Unsaved library changes",
+    );
+    fireEvent.click(editorHeader().getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(editorHeader().getByRole("status")).toHaveTextContent(
+        "Library saved",
+      ),
+    );
+    expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce();
+    expect(saved.documents[0]).toMatchObject({
+      name: "Moved inventory",
+      icon: "invoice",
+      parentFolderId: "west-reports",
+    });
+    expect(saved.documents[0].blocks).toEqual(original.documents[0].blocks);
+    expect(saved.documents[1]).toEqual(original.documents[1]);
+    expect(saved.revision).toBe(original.revision + 1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Moved inventory" }),
+    );
+    expect(editorHeader().getByRole("textbox", { name: "Name" })).toHaveValue(
+      "Moved inventory",
+    );
+    expect(
+      editorHeader().getByRole("combobox", { name: "Owning folder" }),
+    ).toHaveTextContent("West / Reports");
+    fireEvent.click(
+      editorHeader().getByRole("button", { name: "Document icon: Invoice" }),
+    );
+    const selectedPicker = within(
+      screen.getByRole("dialog", { name: "Choose document icon" }),
+    );
+    fireEvent.change(
+      selectedPicker.getByRole("textbox", { name: "Search document icons" }),
+      { target: { value: "Invoice" } },
+    );
+    expect(
+      selectedPicker.getByRole("button", { name: "Invoice" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("preserves a missing folder when a header rename is saved", async () => {
+    saved.documents[0].parentFolderId = "removed-folder";
+    show();
+    await loaded();
+    expect(
+      editorHeader().getByRole("combobox", { name: "Owning folder" }),
+    ).toHaveTextContent("Unavailable folder");
+    fireEvent.change(editorHeader().getByRole("textbox", { name: "Name" }), {
+      target: { value: "Still in the missing folder" },
+    });
+    fireEvent.click(editorHeader().getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(editorHeader().getByRole("status")).toHaveTextContent(
+        "Library saved",
+      ),
+    );
+    expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce();
+    expect(saved.documents[0]).toMatchObject({
+      name: "Still in the missing folder",
+      parentFolderId: "removed-folder",
+    });
+    expect(
+      editorHeader().getByRole("combobox", { name: "Owning folder" }),
+    ).toHaveTextContent("Unavailable folder");
+  });
+
   it("shows the default Database selector when no database is available", async () => {
     mock.ready = false;
     const { onChangeScope } = show();
@@ -352,6 +832,12 @@ describe("protected document workspace integration", () => {
     expect(screen.queryByText(/Loading this database/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New document" })).toBeEnabled();
     expect(screen.queryByText("Database-only folder")).not.toBeInTheDocument();
+    expect(
+      editorHeader().getByRole("combobox", { name: "Owning folder" }),
+    ).toHaveTextContent("App-wide root");
+    expect(
+      editorHeader().getByRole("combobox", { name: "Owning folder" }),
+    ).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "App document" },
     });
@@ -582,7 +1068,9 @@ describe("protected document workspace integration", () => {
     bulkSelect("Bulk document folder", "Team folder");
     bulkSelect("Bulk document icon", "Change document icon");
     expect(
-      screen.getByRole("button", { name: /^Document icon:/ }),
+      within(
+        screen.getByRole("dialog", { name: "Bulk edit documents" }),
+      ).getByRole("button", { name: /^Document icon:/ }),
     ).toBeVisible();
     await applyBulkReview();
     expect(saved.documents).toEqual(original);
@@ -887,6 +1375,21 @@ describe("protected document workspace integration", () => {
     expect(mock.store.read).toHaveBeenCalledTimes(reads);
     expect(mock.sheets.get("database:db-a:1:doc:sheet")?.readOnly).toBe(false);
     expect(getDocumentDraft("workspace-tab")?.dirty).toBe(true);
+    expect(editorHeader().getByRole("status")).toHaveTextContent(
+      "Reload required · draft retained",
+    );
+    expect(
+      editorHeader().getByRole("textbox", { name: "Name" }),
+    ).toBeDisabled();
+    expect(
+      editorHeader().getByRole("combobox", { name: "Owning folder" }),
+    ).toBeDisabled();
+    expect(
+      editorHeader().getByRole("button", { name: "Document icon: Text file" }),
+    ).toBeDisabled();
+    expect(
+      editorHeader().getByRole("button", { name: "Delete" }),
+    ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Open Other document" }),
@@ -898,6 +1401,15 @@ describe("protected document workspace integration", () => {
     );
     expect(screen.getByLabelText("Name")).toHaveValue("Inventory");
     expect(mock.store.read).toHaveBeenCalledTimes(reads);
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+      expect(
+        fireEvent.keyDown(screen.getByLabelText("Name"), {
+          key: "s",
+          ...modifier,
+        }),
+      ).toBe(false);
+    }
+    expect(mock.toast.loading).not.toHaveBeenCalled();
     expect(mock.store.compareAndSwap).not.toHaveBeenCalled();
   });
 

@@ -14,12 +14,14 @@ import {
   Download,
   Users,
   Ticket,
-  Printer,
   X,
   Layers,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
+import { useSettings } from "../../contexts/SettingsContext";
+import { documentMatchesSearch } from "../../utils/documents/documentSearch";
 import { useDocumentsWorkspace } from "../../hooks/documents/useDocumentsWorkspace";
+import { useDocumentEditHistory } from "../../hooks/documents/useDocumentEditHistory";
 import { createEmptyDocument } from "../../utils/documents/documentService";
 import { createDocumentAttachment } from "../../utils/documents/documentAttachments";
 import {
@@ -61,6 +63,8 @@ import {
 } from "../ui/overlays/Modal";
 import DocumentReferencePicker from "./DocumentReferencePicker";
 import DocumentBlockEditor from "./DocumentBlockEditor";
+import DocumentEditorHeader from "./DocumentEditorHeader";
+import headerStyles from "./documentEditorHeader.module.css";
 import ServiceDeskTags from "./ServiceDeskTags";
 import {
   serviceDeskTagSuggestions,
@@ -89,13 +93,6 @@ const SpreadsheetEditor = dynamic(() => import("./SpreadsheetEditor"), {
   ssr: false,
   loading: () => <p>Loading spreadsheet editor…</p>,
 });
-const ConnectionIconPicker = dynamic(
-  () =>
-    import("../connection/editor/ConnectionIconPicker").then(
-      (module) => module.ConnectionIconPicker,
-    ),
-  { ssr: false },
-);
 type Section = "documents" | "people" | "tickets";
 type Request = NonNullable<ConnectionSession["documentsWorkspace"]>;
 const APP_DOCUMENT_TYPE_SETTINGS = normalizeDatabaseSettings(undefined);
@@ -127,6 +124,8 @@ export default function DocumentsWorkspace({
   onChangeScope?: (scope: "app" | "database") => void;
 }) {
   const { state } = useConnections();
+  const { settings } = useSettings();
+  const searchContents = settings.searchDocumentContents === true;
   const scope = request.scope ?? "database";
   const isApp = scope === "app";
   const connections = isApp ? [] : state.connections;
@@ -290,6 +289,81 @@ export default function DocumentsWorkspace({
   const currentDocument = data?.documents.find(
     (item) => item.id === selectedId,
   );
+  const [historyEpoch, setHistoryEpoch] = useState(0);
+  const pendingSheetReview = Object.values(sheetValidity).some(
+    (value) => !value,
+  );
+  const editHistory = useDocumentEditHistory({
+    ownerKey:
+      workspace.accessKey && currentDocument
+        ? `${workspace.accessKey}:${currentDocument.id}`
+        : "",
+    document: currentDocument,
+    attachments: data?.attachments,
+    dirty: workspace.dirty,
+    disabled: busy || pendingSheetReview || !policyReady,
+    stale: workspace.stale,
+    apply: (snapshot) => {
+      if (
+        !data ||
+        !currentDocument ||
+        busy ||
+        workspace.stale ||
+        pendingSheetReview ||
+        !active(workspace.accessKey) ||
+        snapshot.document.id !== currentDocument.id
+      )
+        return false;
+      try {
+        if (
+          snapshot.document.parentFolderId &&
+          !connections.some(
+            (entry) =>
+              entry.isGroup && entry.id === snapshot.document.parentFolderId,
+          )
+        )
+          throw Error(
+            "The history's owning folder no longer exists. Choose a current folder before continuing.",
+          );
+        const attachments = [...data.attachments];
+        for (const attachment of snapshot.attachments) {
+          const existing = attachments.find(
+            (entry) => entry.id === attachment.id,
+          );
+          if (
+            existing &&
+            JSON.stringify(existing) !== JSON.stringify(attachment)
+          )
+            throw Error(
+              "An attachment changed since this edit. History was not applied.",
+            );
+          if (!existing) attachments.push(attachment);
+        }
+        const next = pruneAttachments({
+          ...data,
+          attachments,
+          documents: data.documents.map((entry) =>
+            entry.id === currentDocument.id
+              ? { ...snapshot.document, updatedAt: new Date().toISOString() }
+              : entry,
+          ),
+        });
+        assertAllowed(next);
+        workspace.update(() => next);
+        setHistoryEpoch((value) => value + 1);
+        setSheetValidity({});
+        setValid(true);
+        return true;
+      } catch (cause) {
+        setIoError(
+          cause instanceof Error
+            ? cause.message
+            : "This undo step could not be applied.",
+        );
+        return false;
+      }
+    },
+  });
   const currentPerson = data?.people.find((item) => item.id === selectedId);
   const currentTicket = data?.tickets.find((item) => item.id === selectedId);
   const folders = connections.filter((item) => item.isGroup);
@@ -520,7 +594,7 @@ export default function DocumentsWorkspace({
     return `${data?.documents.find((item) => item.id === reference.id)?.name ?? "Missing document"}${reference.kind === "cell" ? ` · ${reference.address}` : ""}`;
   };
   const updateDocument = (patch: Partial<DatabaseDocument>) => {
-    if (!currentDocument) return;
+    if (!currentDocument || busy) return false;
     if (
       patch.blocks &&
       data &&
@@ -544,7 +618,7 @@ export default function DocumentsWorkspace({
             ? cause.message
             : "The block could not be added.",
         );
-        return;
+        return false;
       }
     }
     workspace.update((previous) =>
@@ -557,6 +631,7 @@ export default function DocumentsWorkspace({
         ),
       }),
     );
+    return true;
   };
   const updatePerson = (patch: Partial<DocumentPerson>) =>
     workspace.update((previous) => ({
@@ -648,7 +723,11 @@ export default function DocumentsWorkspace({
         setSelectedId("");
       },
     });
-  const attach = async (file: File): Promise<DocumentAttachment | null> => {
+  const attach = async (
+    file: File,
+    isCurrent?: () => boolean,
+  ): Promise<DocumentAttachment | null> => {
+    if (isCurrent && !isCurrent()) return null;
     requireType("attachment");
     const key = access.current;
     if (!active(key) || file.size > DOCUMENT_LIMITS.attachmentBytes)
@@ -658,7 +737,7 @@ export default function DocumentsWorkspace({
       file.name,
       file.type as DocumentAttachment["mimeType"],
     );
-    if (!active(key)) return null;
+    if (!active(key) || (isCurrent && !isCurrent())) return null;
     requireType("attachment");
     workspace.update((previous) => ({
       ...previous,
@@ -964,6 +1043,7 @@ export default function DocumentsWorkspace({
             label: entry.name,
             tags: [] as string[],
             search: entry.name,
+            documentMatch: documentMatchesSearch(entry, query, searchContents),
             detail: entry.parentFolderId
               ? (folders.find((item) => item.id === entry.parentFolderId)
                   ?.name ?? "Unavailable folder")
@@ -999,6 +1079,7 @@ export default function DocumentsWorkspace({
     .filter(
       (entry) =>
         section === "tickets" ||
+        ("documentMatch" in entry && entry.documentMatch) ||
         `${entry.search} ${entry.detail}`
           .toLowerCase()
           .includes(query.toLowerCase()),
@@ -1085,14 +1166,18 @@ export default function DocumentsWorkspace({
           >
             Reload
           </button>
-          <button
-            className="sor-btn sor-btn-primary"
-            disabled={busy || !workspace.dirty || !allValid || workspace.stale}
-            onClick={() => void workspace.save()}
-          >
-            <Save size={14} />
-            {workspace.busy ? "Saving…" : "Save"}
-          </button>
+          {!(section === "documents" && currentDocument) && (
+            <button
+              className="sor-btn sor-btn-primary"
+              disabled={
+                busy || !workspace.dirty || !allValid || workspace.stale
+              }
+              onClick={() => void workspace.save()}
+            >
+              <Save size={14} />
+              {workspace.busy ? "Saving…" : "Save"}
+            </button>
+          )}
         </div>
         <input
           ref={fileInput}
@@ -1180,7 +1265,9 @@ export default function DocumentsWorkspace({
               aria-label="Search documents and records"
               placeholder={
                 section === "documents"
-                  ? "Search names and folders"
+                  ? searchContents
+                    ? "Search names, folders and text"
+                    : "Search names and folders"
                   : section === "tickets"
                     ? "Search tickets and tags"
                     : "Search people and tags"
@@ -1192,6 +1279,13 @@ export default function DocumentsWorkspace({
               }}
             />
           </label>
+          {section === "documents" && (
+            <p className="text-[0.625rem] text-[var(--color-textMuted)]">
+              {searchContents
+                ? "Full-text search · secret fields excluded"
+                : "Name search · enable full text in Settings → Layout"}
+            </p>
+          )}
           {section === "documents" && (
             <Select
               aria-label="Document folder"
@@ -1489,122 +1583,106 @@ export default function DocumentsWorkspace({
             </div>
           )}
         </aside>
-        <main className="min-w-0 flex-1 overflow-auto p-4">
+        <main
+          className={`min-w-0 flex-1 overflow-auto p-4 ${headerStyles.pane}`}
+          onKeyDown={(event) => {
+            if (
+              section !== "documents" ||
+              !currentDocument ||
+              event.defaultPrevented ||
+              !event.currentTarget.contains(event.target as Node) ||
+              !(event.ctrlKey || event.metaKey) ||
+              event.altKey ||
+              event.shiftKey ||
+              event.key.toLowerCase() !== "s"
+            )
+              return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (
+              !event.repeat &&
+              !busy &&
+              workspace.dirty &&
+              allValid &&
+              !workspace.stale
+            )
+              void workspace.save();
+          }}
+        >
           {selectedId &&
           ((section === "documents" && currentDocument) ||
             (section === "people" && currentPerson) ||
             (section === "tickets" && currentTicket)) ? (
             <div className="mx-auto max-w-6xl space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold">
-                  {section === "documents"
-                    ? "Document"
-                    : section === "people"
-                      ? "Person"
-                      : "Service desk ticket"}
-                </h3>
-                <div className="flex gap-2">
-                  <button
-                    className="sor-btn sor-btn-secondary"
-                    disabled={busy || !allValid}
-                    onClick={() => setSelectedId("")}
-                  >
-                    <FolderOpen size={14} /> Browse
-                  </button>
-                  {section === "documents" && currentDocument && (
-                    <>
-                      <button
-                        className="sor-btn sor-btn-secondary"
-                        disabled={busy || !allValid}
-                        onClick={() => {
-                          setIncludeSensitive(false);
-                          setTextMode("print");
-                        }}
-                      >
-                        <Printer size={14} />
-                        Print
-                      </button>
-                      <button
-                        className="sor-btn sor-btn-secondary"
-                        disabled={busy || !allValid}
-                        onClick={() => {
-                          setIncludeSensitive(false);
-                          setTextMode("export");
-                        }}
-                      >
-                        <Download size={14} />
-                        Export text
-                      </button>
-                    </>
-                  )}
-                  <button
-                    className="sor-btn sor-btn-secondary text-error"
-                    disabled={busy}
-                    onClick={remove}
-                  >
-                    <Trash2 size={14} />
-                    Delete
-                  </button>
+              {section !== "documents" && (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold">
+                    {section === "people" ? "Person" : "Service desk ticket"}
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      className="sor-btn sor-btn-secondary"
+                      disabled={busy || !allValid}
+                      onClick={() => setSelectedId("")}
+                    >
+                      <FolderOpen size={14} /> Browse
+                    </button>
+                    <button
+                      className="sor-btn sor-btn-secondary text-error"
+                      disabled={busy}
+                      onClick={remove}
+                    >
+                      <Trash2 size={14} />
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
               {section === "documents" && currentDocument && (
                 <>
-                  <label className="block space-y-1 text-sm">
-                    Name
-                    <input
-                      className="sor-form-input"
-                      value={currentDocument.name}
-                      maxLength={256}
-                      disabled={busy}
-                      onChange={(event) =>
-                        updateDocument({ name: event.target.value })
-                      }
-                    />
-                  </label>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <FolderOpen size={15} />
-                    <Select
-                      aria-label="Owning folder"
-                      value={currentDocument.parentFolderId ?? ""}
-                      disabled={busy}
-                      onChange={(value) =>
-                        updateDocument({ parentFolderId: value || null })
-                      }
-                      options={[
-                        {
-                          value: "",
-                          label: isApp ? "App-wide root" : "Database root",
-                        },
-                        ...folders.map((item) => ({
-                          value: item.id,
-                          label: item.name,
-                        })),
-                      ]}
-                    />
-                    <details className="min-w-64">
-                      <summary className="cursor-pointer text-sm">
-                        Choose document icon
-                      </summary>
-                      <ConnectionIconPicker
-                        connection={{
-                          protocol: "http",
-                          icon: currentDocument.icon as Connection["icon"],
-                        }}
-                        onChange={(icon) =>
-                          updateDocument({ icon: icon ?? "file-text" })
-                        }
-                      />
-                    </details>
-                  </div>
+                  <DocumentEditorHeader
+                    key={`header:${workspace.accessKey}:${currentDocument.id}`}
+                    document={currentDocument}
+                    folders={folders}
+                    scope={scope}
+                    busy={busy}
+                    saving={workspace.busy}
+                    dirty={workspace.dirty}
+                    valid={allValid}
+                    stale={workspace.stale}
+                    history={{
+                      undo: editHistory.undo,
+                      redo: editHistory.redo,
+                      notice: editHistory.notice,
+                      disabled:
+                        busy ||
+                        workspace.stale ||
+                        pendingSheetReview ||
+                        !policyReady,
+                      onStep: editHistory.step,
+                    }}
+                    onChange={updateDocument}
+                    onSave={() => void workspace.save()}
+                    onBrowse={() => setSelectedId("")}
+                    onPrint={() => {
+                      setIncludeSensitive(false);
+                      setTextMode("print");
+                    }}
+                    onExport={() => {
+                      setIncludeSensitive(false);
+                      setTextMode("export");
+                    }}
+                    onDelete={remove}
+                  />
                   <DocumentBlockEditor
                     enabledTypes={enabledTypes}
-                    key={`${workspace.accessKey}:${currentDocument.id}`}
-                    documentKey={`${workspace.accessKey}:${currentDocument.id}`}
+                    key={`${workspace.accessKey}:${currentDocument.id}:${historyEpoch}`}
+                    documentKey={`${workspace.accessKey}:${currentDocument.id}:${historyEpoch}`}
                     blocks={currentDocument.blocks}
                     attachments={data.attachments}
                     readOnly={busy}
                     onChange={(blocks) => {
-                      updateDocument({ blocks });
+                      if (!updateDocument({ blocks })) return false;
                       setSheetValidity((previous) =>
                         Object.fromEntries(
                           Object.entries(previous).filter(([id]) =>
@@ -1612,6 +1690,7 @@ export default function DocumentsWorkspace({
                           ),
                         ),
                       );
+                      return true;
                     }}
                     onAttach={attach}
                     onReference={follow}

@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  Table2,
   Plus,
   Server,
 } from "lucide-react";
@@ -351,9 +352,11 @@ function HostRows({
 export function DiscoveryHostsTable({
   mgr,
   readOnly = false,
+  onExportDocument,
 }: {
   mgr: Manager;
   readOnly?: boolean;
+  onExportDocument?: () => void;
 }) {
   const [page, setPage] = useState(0);
   const pages = Math.max(
@@ -389,6 +392,21 @@ export function DiscoveryHostsTable({
             <Download size={14} aria-hidden="true" />
             {mgr.t("networkDiscovery.exportCsv")}
           </button>
+          {onExportDocument && (
+            <button
+              type="button"
+              className="sor-btn-secondary-sm"
+              disabled={!readOnly && mgr.isScanning}
+              title={
+                !readOnly && mgr.isScanning
+                  ? "Stop the scan before exporting to Documents"
+                  : undefined
+              }
+              onClick={onExportDocument}
+            >
+              <Table2 size={14} aria-hidden="true" /> Export to Documents
+            </button>
+          )}
         </div>
       </div>
       {!readOnly && mgr.allowCreateConnections && (

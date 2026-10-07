@@ -6,6 +6,7 @@ import type {
   DocumentAttachment,
   DocumentBlock,
   DocumentReference,
+  DocumentRichTextNode,
   DocumentWorkbook,
 } from "../../types/documents/document";
 import {
@@ -18,6 +19,13 @@ import { generateId } from "../../utils/core/id";
 import { Select } from "../ui/forms";
 import styles from "./documents.module.css";
 import { initialDocumentBlock } from "../../utils/documents/documentBlocks";
+import {
+  hasWritingContent,
+  insertRichTextBlock,
+  validateRichTextBlockInsertion,
+  type RichTextBlockInsertion,
+} from "../../utils/documents/documentInlineInsert";
+import writingStyles from "./documentWriting.module.css";
 
 const RichTextEditor = dynamic(() => import("./RichTextEditor"), {
   ssr: false,
@@ -30,13 +38,17 @@ const AttachmentPreview = dynamic(() => import("./AttachmentPreview"), {
 type SheetBlock = Extract<DocumentBlock, { type: "spreadsheet" }>;
 export interface DocumentBlockEditorProps {
   blocks: DocumentBlock[];
-  onChange: (blocks: DocumentBlock[]) => void;
+  /** Return false when the owning workspace rejects a draft mutation. */
+  onChange: (blocks: DocumentBlock[]) => void | boolean;
   attachments: DocumentAttachment[];
   documentKey: string;
   readOnly?: boolean;
   /** Creation policy only: existing blocks remain visible and editable. */
   enabledTypes?: readonly DocumentBlock["type"][];
-  onAttach?: (file: File) => Promise<DocumentAttachment | null>;
+  onAttach?: (
+    file: File,
+    isCurrent?: () => boolean,
+  ) => Promise<DocumentAttachment | null>;
   onReference?: (reference: DocumentReference) => void;
   onChooseReference?: () => Promise<DocumentReference | null>;
   renderSpreadsheet?: (
@@ -91,6 +103,22 @@ export default function DocumentBlockEditor(props: DocumentBlockEditorProps) {
 }
 function DocumentBlocks(props: DocumentBlockEditorProps) {
   const addId = useId();
+  const [view, setView] = useState<"write" | "blocks">("write");
+  const [writer, setWriter] = useState(
+    () =>
+      initialDocumentBlock("rich-text") as Extract<
+        DocumentBlock,
+        { type: "rich-text" }
+      >,
+  );
+  const [writerAfter, setWriterAfter] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [editorVersions, setEditorVersions] = useState<Record<string, number>>(
+    {},
+  );
+  const surface = useRef<HTMLDivElement>(null);
+  const pendingFile = useRef<((file: File | null) => void) | null>(null);
+  const busyRef = useRef(false);
   const [kind, setKind] = useState<DocumentBlock["type"]>("rich-text");
   const [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
@@ -101,9 +129,20 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
     operation = useRef(0),
     input = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
+    const picker = input.current;
+    const cancel = () => {
+      pendingFile.current?.(null);
+      pendingFile.current = null;
+    };
+    picker?.addEventListener("cancel", cancel);
+    return () => picker?.removeEventListener("cancel", cancel);
+  }, []);
+  useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
+      pendingFile.current?.(null);
+      pendingFile.current = null;
       // An operation generation, not a rendered DOM ref.
       // eslint-disable-next-line react-hooks/exhaustive-deps
       operation.current++;
@@ -114,10 +153,50 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
     [props.blocks, props.attachments],
   );
   const { onValidityChange } = props;
-  useEffect(() => onValidityChange?.(valid), [valid, onValidityChange]);
+  useEffect(
+    () => onValidityChange?.(valid && !busy),
+    [valid, busy, onValidityChange],
+  );
+  const preparing = (value: boolean) => {
+    busyRef.current = value;
+    setBusy(value);
+  };
+  useEffect(() => {
+    if (!props.readOnly) return;
+    ++operation.current;
+    pendingFile.current?.(null);
+    pendingFile.current = null;
+    busyRef.current = false;
+    setBusy(false);
+  }, [props.readOnly]);
+  useEffect(() => {
+    if (!focusId || !surface.current || props.readOnly || view !== "write")
+      return;
+    const focus = () => {
+      const section = Array.from(
+        surface.current?.querySelectorAll<HTMLElement>(
+          "[data-writing-block]",
+        ) ?? [],
+      ).find((element) => element.dataset.writingBlock === focusId);
+      const target = section?.querySelector<HTMLElement>(
+        '[contenteditable="true"], textarea:not([readonly]), input:not([readonly]):not([type="file"])',
+      );
+      if (!target) return false;
+      target.focus({ preventScroll: true });
+      setFocusId(null);
+      return true;
+    };
+    if (focus()) return;
+    const observer = new MutationObserver(() => {
+      if (focus()) observer.disconnect();
+    });
+    observer.observe(surface.current, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [focusId, props.blocks, props.readOnly, view]);
   const update = (next: DocumentBlock[]) => {
     if (!latest.current.readOnly && alive.current)
-      latest.current.onChange(next);
+      return latest.current.onChange(next) !== false;
+    return false;
   };
   const change = (block: DocumentBlock) =>
     update(
@@ -140,9 +219,9 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
     update([...latest.current.blocks, block]);
   };
   const chooseReference = async () => {
-    if (!props.onChooseReference || busy || props.readOnly) return;
+    if (!props.onChooseReference || busyRef.current || props.readOnly) return;
     const captured = ++operation.current;
-    setBusy(true);
+    preparing(true);
     setError(null);
     try {
       const ref = await props.onChooseReference();
@@ -165,26 +244,29 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
       if (alive.current && captured === operation.current)
         setError("A reference could not be selected.");
     } finally {
-      if (alive.current && captured === operation.current) setBusy(false);
+      if (alive.current && captured === operation.current) preparing(false);
     }
   };
   const attach = async (file: File) => {
-    if (!props.onAttach || busy || props.readOnly) return;
+    if (!props.onAttach || busyRef.current || props.readOnly) return;
     if (file.size > DOCUMENT_LIMITS.attachmentBytes) {
       setError("Each attachment is limited to 4 MiB.");
       return;
     }
     const captured = ++operation.current;
-    setBusy(true);
+    const current = () =>
+      alive.current &&
+      captured === operation.current &&
+      !latest.current.readOnly &&
+      latest.current.blocks.length < DOCUMENT_LIMITS.blocksPerDocument &&
+      (!latest.current.enabledTypes ||
+        latest.current.enabledTypes.includes("attachment"));
+    if (!current()) return;
+    preparing(true);
     setError(null);
     try {
-      const attachment = await props.onAttach(file);
-      if (
-        !alive.current ||
-        captured !== operation.current ||
-        latest.current.readOnly
-      )
-        return;
+      const attachment = await props.onAttach(file, current);
+      if (!current()) return;
       if (attachment)
         append({
           id: generateId(),
@@ -198,12 +280,221 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
           "Attachment could not be added. The existing document was not saved or replaced.",
         );
     } finally {
-      if (alive.current && captured === operation.current) setBusy(false);
+      if (alive.current && captured === operation.current) preparing(false);
     }
   };
+  const availableTypes = (
+    Object.keys(LABELS) as DocumentBlock["type"][]
+  ).filter(
+    (type) =>
+      (!props.enabledTypes || props.enabledTypes.includes(type)) &&
+      (type !== "attachment" || !!props.onAttach) &&
+      (type !== "reference" || !!props.onChooseReference) &&
+      (type !== "spreadsheet" || !!props.renderSpreadsheet),
+  );
+  const insert = async (
+    sourceId: string,
+    request: RichTextBlockInsertion,
+  ): Promise<boolean> => {
+    if (busyRef.current || latest.current.readOnly || !alive.current)
+      return false;
+    const captured = ++operation.current;
+    const current = () => {
+      if (
+        !alive.current ||
+        captured !== operation.current ||
+        latest.current.readOnly
+      )
+        return false;
+      // The child additionally fences a moved caret, Escape and native editor state.
+      if (
+        "isCurrent" in request &&
+        typeof request.isCurrent === "function" &&
+        !request.isCurrent()
+      )
+        return false;
+      try {
+        validateRichTextBlockInsertion(
+          latest.current.blocks,
+          sourceId,
+          request,
+          latest.current.enabledTypes,
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    setError(null);
+    try {
+      validateRichTextBlockInsertion(
+        latest.current.blocks,
+        sourceId,
+        request,
+        latest.current.enabledTypes,
+      );
+      if (!current()) return false;
+      if (
+        (request.type === "reference" && !latest.current.onChooseReference) ||
+        (request.type === "attachment" && !latest.current.onAttach) ||
+        (request.type === "spreadsheet" && !latest.current.renderSpreadsheet)
+      )
+        return false;
+      preparing(true);
+      let block: DocumentBlock;
+      if (request.type === "reference") {
+        const reference = await latest.current.onChooseReference!();
+        if (!reference || !current()) return false;
+        validateDocumentReference(reference);
+        block = { id: generateId(), type: "reference", reference, label: "" };
+      } else if (request.type === "attachment") {
+        const file = await new Promise<File | null>((resolve) => {
+          pendingFile.current = resolve;
+          if (input.current) input.current.click();
+          else {
+            pendingFile.current = null;
+            resolve(null);
+          }
+        });
+        if (!file || !current()) return false;
+        if (file.size > DOCUMENT_LIMITS.attachmentBytes)
+          throw new Error("Each attachment is limited to 4 MiB.");
+        const attachment = await latest.current.onAttach!(file, current);
+        if (!attachment || !current()) return false;
+        block = {
+          id: generateId(),
+          type: "attachment",
+          attachmentId: attachment.id,
+          caption: "",
+        };
+      } else block = initialDocumentBlock(request.type);
+      if (!current()) return false;
+      const next = insertRichTextBlock(
+        latest.current.blocks,
+        sourceId,
+        request,
+        block,
+        latest.current.enabledTypes,
+      );
+      if (!update(next.blocks)) return false;
+      // Native text undo must not resurrect text moved into another block.
+      setEditorVersions((previous) => ({
+        ...previous,
+        [sourceId]: (previous[sourceId] ?? 0) + 1,
+      }));
+      if (next.continuationId) setFocusId(next.continuationId);
+      else {
+        setWriterAfter(block.id);
+        setFocusId(writer.id);
+      }
+      return true;
+    } catch (cause) {
+      if (alive.current && captured === operation.current)
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "The block could not be inserted. Your writing is retained.",
+        );
+      return false;
+    } finally {
+      if (alive.current && captured === operation.current) preparing(false);
+    }
+  };
+  const writeNew = (content: DocumentRichTextNode) => {
+    if (
+      !hasWritingContent(content) ||
+      latest.current.readOnly ||
+      !alive.current
+    )
+      return;
+    if (
+      latest.current.enabledTypes &&
+      !latest.current.enabledTypes.includes("rich-text")
+    )
+      return;
+    if (latest.current.blocks.length >= DOCUMENT_LIMITS.blocksPerDocument)
+      return;
+    const next = [...latest.current.blocks];
+    const anchor = writerAfter
+      ? next.findIndex((block) => block.id === writerAfter)
+      : next.length - 1;
+    if (writerAfter && anchor < 0) return;
+    next.splice(anchor + 1, 0, { ...writer, content });
+    if (!update(next)) return;
+    setFocusId(writer.id);
+    setWriter(
+      initialDocumentBlock("rich-text") as Extract<
+        DocumentBlock,
+        { type: "rich-text" }
+      >,
+    );
+    setWriterAfter(null);
+  };
+  const displayed = [...props.blocks];
+  const writerAnchor = writerAfter
+    ? displayed.findIndex((block) => block.id === writerAfter)
+    : -1;
+  if (
+    view === "write" &&
+    !props.readOnly &&
+    availableTypes.includes("rich-text") &&
+    displayed.length < DOCUMENT_LIMITS.blocksPerDocument &&
+    (writerAnchor >= 0 || displayed[displayed.length - 1]?.type !== "rich-text")
+  )
+    displayed.splice(
+      writerAnchor >= 0 ? writerAnchor + 1 : displayed.length,
+      0,
+      writer,
+    );
   return (
-    <div className={`${styles.editor} ${styles.documentEditor}`}>
-      {!props.readOnly && (
+    <div ref={surface} className={`${styles.editor} ${styles.documentEditor}`}>
+      <div className={writingStyles.modeBar}>
+        <div
+          className={writingStyles.modes}
+          role="group"
+          aria-label="Document editing view"
+        >
+          {(["write", "blocks"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={`sor-btn ${view === mode ? "sor-btn-primary" : "sor-btn-secondary"}`}
+              aria-pressed={view === mode}
+              disabled={busy}
+              onClick={() => setView(mode)}
+            >
+              {mode === "write" ? "Write" : "Blocks"}
+            </button>
+          ))}
+        </div>
+        {view === "write" && !props.readOnly && (
+          <p className={writingStyles.hint}>
+            Start a new paragraph with / to insert a block.
+          </p>
+        )}
+      </div>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        aria-label="Choose document attachment"
+        accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/markdown,.md"
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null;
+          event.target.value = "";
+          if (pendingFile.current) {
+            const resolve = pendingFile.current;
+            pendingFile.current = null;
+            resolve(file);
+          } else if (file) void attach(file);
+        }}
+      />
+      {busy && (
+        <span role="status" className={styles.editorStatus}>
+          Preparing block…
+        </span>
+      )}
+      {!props.readOnly && view === "blocks" && (
         <div className={styles.actionToolbar}>
           <label htmlFor={addId}>Block type</label>
           <div className={styles.blockTypeSelect}>
@@ -241,22 +532,6 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
             <Plus size={14} aria-hidden="true" />
             Add block
           </button>
-          <input
-            ref={input}
-            type="file"
-            hidden
-            accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/markdown,.md"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (file) void attach(file);
-            }}
-          />
-          {busy && (
-            <span role="status" className={styles.editorStatus}>
-              Preparing block…
-            </span>
-          )}
         </div>
       )}
       {error && (
@@ -270,72 +545,87 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
           dates, URLs, references and size limits before saving.
         </p>
       )}
-      {props.blocks.length === 0 && (
+      {props.blocks.length === 0 && view === "blocks" && (
         <p className={styles.help}>
           This document is empty. Add a rich-text, credential, attachment or
           other block.
         </p>
       )}
-      {props.blocks.map((block, index) => (
+      {displayed.map((block, index) => (
         <section
           key={block.id}
-          className={`${styles.block} ${styles.documentBlock}`}
+          data-writing-block={block.id}
+          className={
+            view === "blocks"
+              ? `${styles.block} ${styles.documentBlock}`
+              : block.type === "rich-text"
+                ? `${writingStyles.text} ${block.id === writer.id ? writingStyles.empty : ""}`
+                : writingStyles.embedded
+          }
           aria-label={`${LABELS[block.type] ?? "Unsupported"} block ${index + 1}`}
         >
-          <div className={styles.blockHeading}>
-            <h3 className={styles.blockTitle}>
-              <span className={styles.blockNumber} aria-hidden="true">
-                {index + 1}
-              </span>
-              {LABELS[block.type] ?? "Unsupported block"}
-            </h3>
-            {!props.readOnly && (
-              <div className={styles.actionGroup}>
-                <button
-                  type="button"
-                  className="sor-btn sor-btn-secondary"
-                  disabled={index === 0 || busy}
-                  aria-label={`Move block ${index + 1} up`}
-                  onClick={() => {
-                    const next = [...latest.current.blocks];
-                    [next[index - 1], next[index]] = [
-                      next[index],
-                      next[index - 1],
-                    ];
-                    update(next);
-                  }}
-                >
-                  <ArrowUp size={14} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="sor-btn sor-btn-secondary"
-                  disabled={index === props.blocks.length - 1 || busy}
-                  aria-label={`Move block ${index + 1} down`}
-                  onClick={() => {
-                    const next = [...latest.current.blocks];
-                    [next[index + 1], next[index]] = [
-                      next[index],
-                      next[index + 1],
-                    ];
-                    update(next);
-                  }}
-                >
-                  <ArrowDown size={14} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="sor-btn sor-btn-secondary"
-                  disabled={busy}
-                  aria-label={`Remove block ${index + 1}`}
-                  onClick={() => setRemove(block.id)}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                  Remove
-                </button>
-              </div>
-            )}
-          </div>
+          {view === "blocks" ? (
+            <div className={styles.blockHeading}>
+              <h3 className={styles.blockTitle}>
+                <span className={styles.blockNumber} aria-hidden="true">
+                  {index + 1}
+                </span>
+                {LABELS[block.type] ?? "Unsupported block"}
+              </h3>
+              {!props.readOnly && (
+                <div className={styles.actionGroup}>
+                  <button
+                    type="button"
+                    className="sor-btn sor-btn-secondary"
+                    disabled={index === 0 || busy}
+                    aria-label={`Move block ${index + 1} up`}
+                    onClick={() => {
+                      const next = [...latest.current.blocks];
+                      [next[index - 1], next[index]] = [
+                        next[index],
+                        next[index - 1],
+                      ];
+                      update(next);
+                    }}
+                  >
+                    <ArrowUp size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="sor-btn sor-btn-secondary"
+                    disabled={index === props.blocks.length - 1 || busy}
+                    aria-label={`Move block ${index + 1} down`}
+                    onClick={() => {
+                      const next = [...latest.current.blocks];
+                      [next[index + 1], next[index]] = [
+                        next[index],
+                        next[index + 1],
+                      ];
+                      update(next);
+                    }}
+                  >
+                    <ArrowDown size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="sor-btn sor-btn-secondary"
+                    disabled={busy}
+                    aria-label={`Remove block ${index + 1}`}
+                    onClick={() => setRemove(block.id)}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    Remove
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            block.type !== "rich-text" && (
+              <h3 className={writingStyles.embeddedTitle}>
+                {LABELS[block.type]}
+              </h3>
+            )
+          )}
           {remove === block.id && !props.readOnly && (
             <div role="alert" className={styles.editorAlert}>
               <span>
@@ -365,7 +655,29 @@ function DocumentBlocks(props: DocumentBlockEditorProps) {
             </div>
           )}
           <div className={styles.blockBody}>
-            <BlockFields block={block} change={change} props={props} />
+            {block.type === "rich-text" ? (
+              <RichTextEditor
+                content={block.content}
+                documentKey={`${props.documentKey}:${block.id}:${editorVersions[block.id] ?? 0}`}
+                readOnly={props.readOnly}
+                presentation={view === "write" ? "inline" : "full"}
+                onChange={(content) =>
+                  block.id === writer.id
+                    ? writeNew(content)
+                    : change({ ...block, content })
+                }
+                onReference={props.onReference}
+                onChooseReference={props.onChooseReference}
+                insertableBlocks={view === "write" ? availableTypes : []}
+                onInsertBlock={
+                  view === "write"
+                    ? (request) => insert(block.id, request)
+                    : undefined
+                }
+              />
+            ) : (
+              <BlockFields block={block} change={change} props={props} />
+            )}
           </div>
         </section>
       ))}

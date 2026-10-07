@@ -1,0 +1,119 @@
+.root {
+  flex: none;
+}
+
+.trigger:global(.sor-btn) {
+  position: relative;
+  width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border-radius: 0.375rem;
+  color: var(--color-text);
+  border-color: color-mix(
+    in srgb,
+    var(--color-primary) 28%,
+    var(--color-border)
+  );
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--color-primary) 10%, var(--color-surface)),
+    var(--color-surface)
+  );
+}
+
+.trigger:global(.sor-btn):not(:disabled):hover,
+.trigger:global(.sor-btn)[aria-expanded="true"] {
+  border-color: var(--color-primary);
+  background: color-mix(
+    in srgb,
+    var(--color-primary) 12%,
+    var(--color-surface)
+  );
+}
+
+.chevron {
+  position: absolute;
+  right: 0.25rem;
+  bottom: 0.2rem;
+  color: var(--color-textSecondary);
+}
+
+.body {
+  padding: 1rem 1.25rem;
+}
+
+.picker {
+  min-width: 0;
+  color: var(--color-text);
+}
+
+.current {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.125rem;
+}
+
+.currentIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-background);
+}
+
+.currentCaption {
+  display: block;
+  margin-bottom: 0.125rem;
+  color: var(--color-textSecondary);
+  font-size: 0.6875rem;
+}
+
+.currentLabel {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.75rem, 1fr));
+  gap: 0.375rem;
+  max-height: 17rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-top: 0.875rem;
+  padding: 0.25rem;
+}
+
+.choice:global(.sor-icon-btn) {
+  position: relative;
+  width: 100%;
+  height: 2.75rem;
+  border-radius: 0.625rem;
+}
+
+.check {
+  position: absolute;
+  right: 0.1875rem;
+  top: 0.1875rem;
+}
+
+.status {
+  margin-top: 0.75rem;
+  color: var(--color-textSecondary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.empty {
+  padding: 2rem 1rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-background);
+  text-align: center;
+}

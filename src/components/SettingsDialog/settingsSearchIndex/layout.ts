@@ -98,6 +98,43 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
 
   // ─── Tab interaction ────────────────────────────────────────────
   {
+    key: "showDocumentsInConnectionTree",
+    label: "Show documents in connection tree",
+    description:
+      "Include current database documents under their owning sidebar folders. App-wide documents stay in Documents.",
+    tags: ["documents", "sidebar", "tree", "folders", "visibility"],
+    synonyms: [
+      "documents in tree",
+      "hide documents",
+      "show documents",
+      "tree documents",
+    ],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
+    key: "searchDocumentContents",
+    label: "Search document contents",
+    description:
+      "Opt in to full-text search of ordinary document content, spreadsheet cells and labels. Passwords, secret values and private identity/account fields are excluded.",
+    tags: [
+      "documents",
+      "search",
+      "contents",
+      "full text",
+      "privacy",
+      "sidebar",
+    ],
+    synonyms: [
+      "full-text search",
+      "document search",
+      "search bodies",
+      "names only",
+    ],
+    section: "layout",
+    sectionLabel: "Layout",
+  },
+  {
     key: "enableTabReorder",
     label: "Allow tab reordering",
     labelKey: "settingsLayout.allowTabReordering",

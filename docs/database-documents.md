@@ -8,7 +8,7 @@ description: Keep private documents and simple service records in their owning d
 Open **Documents** from the top bar's right-hand **Management** group for a
 dedicated browser tab. Show or hide this button under **Settings → Layout →
 Documents** (search for “documents button”). The browser lists names and folders,
-supports metadata-only search and folder filtering, and pages larger lists.
+supports search and folder filtering, and pages larger lists.
 Opening a record reuses the protected editor; **Browse** returns to the list
 without discarding your draft. Reopening the toolbar tab preserves your current
 record and section.
@@ -51,6 +51,50 @@ hidden until explicitly revealed. Save commits the whole draft to the owning
 database. A failed save retains your edits. Switching databases or closing the
 workspace warns about unsaved changes; locking storage hides private content.
 
+The document editor header keeps the editable title and icon together, with a
+searchable folder selector showing nested folder paths. Click the icon to open
+the focused icon-library chooser; Escape closes it without changing the icon.
+The command bar groups Browse, Print, Export text, Delete and Save, and remains
+visible while scrolling in wider editor panes. Smaller panes wrap the controls
+instead of pinning a tall header over the document. Ctrl+S / Cmd+S saves from
+inside the document editor. The status refers to the **whole library draft**, not
+only the selected document; a failed save retains the draft and requires review.
+
+### Writing and edit history
+
+**Write** is the compact, inline editing view. Type ordinary paragraphs and use
+Markdown shortcuts for headings, lists and formatting. Type `/` at the start of
+a paragraph to search the insert menu, then choose a spreadsheet, diagram,
+attachment or another enabled block. Arrow keys navigate, Enter inserts and
+Escape dismisses. Attachment and reference pickers leave your text unchanged
+when cancelled. **Blocks** retains the explicit block management view.
+
+The header's **Undo** and **Redo** controls restore document edits, including
+title, icon, folder and content. Their dropdowns list named changes and let you
+step through several changes at once. Normal text-editor keyboard undo remains
+local to the text being edited. Header history is temporary and bounded to 50
+steps and approximately 32 MiB per editor; it is cleared when the owning document
+or storage changes, locks, or becomes stale. Restoring a step changes the draft;
+use Save to persist it. Save still commits the entire library draft. Older steps
+may be released for large documents, with a notice in the history controls.
+
+### Search and the connection tree
+
+Under **Settings → Layout → Documents**, enable **Show documents in connection
+tree** to include the current database's documents alongside its connections.
+Tree filters select connections, documents or both, and can narrow document
+types. Documents remain in their database folder hierarchy; they are not
+connectable sessions or draggable connections. App-wide documents remain in
+the Documents workspace. Tree visibility is off by default.
+
+**Search document contents** is also **off by default**. Enabling it adds ordinary
+document text, captions, labels, diagrams and spreadsheet contents to document
+search in the workspace and tree. Structured passwords and identity/account
+fields are excluded. Ordinary prose and spreadsheet cells may still contain
+private information: they are searched only in available, unlocked storage,
+without creating a persistent content index. Formulas are searched as text,
+not evaluated. Disabling the option immediately returns to name search.
+
 ## Spreadsheets and links
 
 The spreadsheet editor supports multiple sheets, cell editing, formatting,
@@ -63,6 +107,23 @@ Spreadsheet engines load only when needed. Network formulas, macros, external
 workbook references and arbitrary active content are not enabled. This is not a
 complete Excel replacement. Review import warnings before saving; advanced Excel
 formatting, validation and filter features may not survive conversion.
+
+### Network scan results
+
+In Network Scanner, use **Export to Documents** on a completed/stopped scan or a
+saved history entry. Choose all hosts or the current filtered hosts (across all
+pages), a document name, and its storage and folder. Database storage is the
+default; available App-wide storage can be chosen explicitly. Saving adds a new
+spreadsheet document with **Scan**, **Hosts**, **Services** and **Probes** sheets,
+including timestamps, the executed scan configuration and identification
+evidence. Scanned text is stored as literal cell values, never as formulas.
+
+The export preserves existing documents and requires available, unlocked storage
+and permission to create spreadsheets. Save or discard any pending Documents
+draft in the chosen storage before exporting; the dialog provides an action to
+open that workspace. A storage switch or lock invalidates the export dialog.
+After a successful save, **Open document** opens the new spreadsheet. Oversized
+exports are rejected without truncation; narrow the host filter or export CSV.
 
 ## Import, export and printing
 
@@ -91,5 +152,5 @@ and deduplicated without case sensitivity, saved with the protected database, an
 preserved in protected document archives. Suggestions come only from the current
 database. Service Desk combines text, status, priority and exact-tag filters with
 matching counts and Clear filters; these filters do not remove records and reset
-when the owning database changes. Document search still uses metadata rather than
-searching private document blocks.
+when the owning database changes. Full-text document search is a separate,
+opt-in setting and does not expand People or Tickets searches.

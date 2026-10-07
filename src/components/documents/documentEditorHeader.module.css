@@ -1,0 +1,231 @@
+.pane {
+  container-type: inline-size;
+  container-name: document-pane;
+}
+.header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  position: sticky;
+  top: -1rem;
+  z-index: 5;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 2px 8px
+    color-mix(in srgb, var(--color-background) 45%, transparent);
+}
+.commandBar,
+.commands,
+.metadata {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.commandBar {
+  justify-content: flex-end;
+  gap: 0.25rem;
+  padding: 0.5rem 0.625rem 0.5rem 0;
+}
+.commands {
+  gap: 0.25rem;
+}
+.commandBar .command {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+.commandBar .iconCommand {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+}
+.history,
+.historyPair {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.history {
+  gap: 0.25rem;
+}
+.historyPair {
+  position: relative;
+}
+.commandBar .historyToggle {
+  padding: 0;
+  width: 0.875rem;
+}
+.historyMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 20;
+  width: min(17rem, 80vw);
+  max-height: 16rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  padding: 0.25rem;
+  background: var(--color-surface);
+  box-shadow: 0 4px 12px
+    color-mix(in srgb, var(--color-background) 65%, transparent);
+}
+.historyCaption {
+  padding: 0.25rem 0.375rem;
+  color: var(--color-textMuted);
+  font-size: 0.625rem;
+}
+.historyMenu > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  text-align: left;
+}
+.historyMenu > button:hover,
+.historyMenu > button:focus-visible {
+  background: var(--color-surfaceHover);
+  outline: 1px solid var(--color-primary);
+  outline-offset: -1px;
+}
+.historyMenu > button > span:last-child {
+  flex-shrink: 0;
+  color: var(--color-textMuted);
+  font-size: 0.625rem;
+}
+.commandBar .delete {
+  color: var(--color-error);
+}
+.separator {
+  height: 1.25rem;
+  width: 1px;
+  margin-inline: 0.125rem;
+  background: var(--color-border);
+}
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  min-width: 0;
+}
+.titleGroup {
+  flex: 1;
+  min-width: 0;
+}
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-inline: 0.375rem;
+  color: var(--color-textMuted);
+  font-size: 0.625rem;
+}
+.breadcrumb > svg {
+  flex-shrink: 0;
+}
+.location {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.titleGroup .title {
+  width: 100%;
+  min-width: 0;
+  border-color: transparent;
+  border-radius: 0.375rem;
+  background: transparent;
+  padding: 0 0.375rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+}
+.titleGroup .title:hover:not(:disabled) {
+  background: var(--color-surfaceHover);
+  border-color: var(--color-border);
+}
+.titleGroup .title:focus {
+  background: var(--color-input);
+  border-color: var(--color-primary);
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.title:disabled {
+  opacity: 0.65;
+}
+.metadata {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--color-border);
+  gap: 0.375rem 0.75rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.6875rem;
+  color: var(--color-textMuted);
+}
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 1 15rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.label {
+  font-size: 0.6875rem;
+  color: var(--color-textSecondary);
+}
+.folder .folderSelect {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.6875rem;
+}
+.detail,
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.detail > svg,
+.status > svg {
+  flex-shrink: 0;
+}
+.status {
+  margin-inline-start: auto;
+  color: var(--color-textSecondary);
+}
+.status[data-state="dirty"] > svg,
+.status[data-state="warning"] > svg {
+  color: var(--color-warning);
+}
+@container document-pane (max-width: 40rem) {
+  .header {
+    position: static;
+  }
+  .status {
+    margin-inline-start: 0;
+  }
+}
+@container document-pane (max-width: 28rem) {
+  .header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .commandBar {
+    padding: 0 0.625rem 0.375rem;
+  }
+}

@@ -21,12 +21,17 @@ import { effectiveDiscoveryPingMethod } from "../../utils/discovery/discoveryPin
 import type { SavedDiscoveryScan } from "../../utils/discovery/scanHistory";
 import { exportDiscoveryScanCsv } from "../../utils/discovery/exportDiscoveryScan";
 import { DiscoveryScanHistory } from "./DiscoveryScanHistory";
+import {
+  DiscoverySpreadsheetDialog,
+  type DiscoverySpreadsheetRequest,
+} from "./DiscoverySpreadsheetDialog";
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
   onClose: () => void;
   embedded?: boolean;
   allowCreateConnections?: boolean;
+  onActivateSession?: (id: string) => void;
 }
 
 type Mgr = ReturnType<typeof useNetworkDiscovery>;
@@ -144,10 +149,12 @@ function SavedScanView({
   scan,
   mgr,
   onUseTargets,
+  onExportDocument,
 }: {
   scan: SavedDiscoveryScan;
   mgr: Mgr;
   onUseTargets: () => void;
+  onExportDocument: (request: DiscoverySpreadsheetRequest) => void;
 }) {
   const [filter, setFilter] = useState("");
   const filteredHosts = scan.hosts.filter((host) =>
@@ -210,7 +217,13 @@ function SavedScanView({
         Saved snapshot, not a current reachability check. Loading its
         configuration does not start a scan.
       </p>
-      <DiscoveryHostsTable mgr={viewManager} readOnly />
+      <DiscoveryHostsTable
+        mgr={viewManager}
+        readOnly
+        onExportDocument={() =>
+          onExportDocument({ scan, filteredHosts, filterText: filter })
+        }
+      />
       {scan.hosts.length === 0 && (
         <p className="text-sm">No live hosts were recorded.</p>
       )}
@@ -240,6 +253,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
   onClose,
   embedded = false,
   allowCreateConnections = true,
+  onActivateSession,
 }) => {
   const mgr = useNetworkDiscovery({
     onClose,
@@ -249,9 +263,17 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
   const [tab, setTab] = useState<"current" | "history" | "saved">("current");
   const tabId = useId();
   const [savedScanId, setSavedScanId] = useState<string | null>(null);
+  const [exportRequest, setExportRequest] =
+    useState<DiscoverySpreadsheetRequest | null>(null);
+  const exportDocument = (request: DiscoverySpreadsheetRequest) =>
+    setExportRequest(structuredClone(request));
   const savedScan = mgr.scanHistory.scans.find(
     (scan) => scan.id === savedScanId,
   );
+
+  useEffect(() => {
+    if (!isOpen) setExportRequest(null);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!savedScan && !mgr.scanHistory.loading) {
@@ -387,6 +409,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                   );
                 }}
                 onClear={() => setSavedScanId(null)}
+                onExportDocument={(scan) => exportDocument({ scan })}
               />
             </div>
           )}
@@ -401,6 +424,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                 scan={savedScan}
                 mgr={mgr}
                 onUseTargets={() => setTab("current")}
+                onExportDocument={exportDocument}
               />
             </div>
           )}
@@ -421,13 +445,31 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                   {mgr.scanError}
                 </p>
               )}
-              <DiscoveryHostsTable mgr={mgr} />
+              <DiscoveryHostsTable
+                mgr={mgr}
+                onExportDocument={() => {
+                  const scan = mgr.getDocumentExportScan();
+                  if (scan)
+                    exportDocument({
+                      scan,
+                      filteredHosts: mgr.filteredHosts,
+                      filterText: mgr.filterText,
+                    });
+                }}
+              />
               <EmptyState mgr={mgr} />
             </div>
           )}
         </main>
         {tab === "current" && <DiscoveryConfigSidebar mgr={mgr} />}
       </div>
+      {exportRequest && (
+        <DiscoverySpreadsheetDialog
+          request={exportRequest}
+          onClose={() => setExportRequest(null)}
+          onActivateSession={onActivateSession}
+        />
+      )}
     </div>
   );
 
